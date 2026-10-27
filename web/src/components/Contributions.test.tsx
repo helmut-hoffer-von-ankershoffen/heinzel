@@ -57,6 +57,17 @@ const actions = [
     effect: { kind: "command", command: "hz clock", runs: true },
   },
   { ...entry, id: "acme:hidden", slots: { header: false }, label: "Hidden", icon: "zap", badge: 0, effect: null },
+  {
+    ...entry,
+    module: "weather",
+    plugin: "heinzel-weather",
+    id: "weather:map",
+    slots: { header: true },
+    label: "Weather map",
+    icon: "cloud-sun",
+    badge: 0,
+    effect: { kind: "command", command: "hz weather map", runs: true },
+  },
 ];
 
 const widgets = [
@@ -132,6 +143,8 @@ describe("Contributions", () => {
     renderAt("/doctor");
     expect(await screen.findByRole("button", { name: "Team clock (2)" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Hidden/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Weather map" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Open weather report" })).not.toBeInTheDocument();
   });
 
   it("forwards a private contribution's flat JSON body without putting nested or sensitive values in the URL", async () => {

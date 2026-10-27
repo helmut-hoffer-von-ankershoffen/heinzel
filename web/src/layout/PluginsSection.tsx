@@ -1,4 +1,4 @@
-// Settings → Plugins, as in a desktop chat app: "Yours" lists what's installed, "Discover" what can be (first-party
+// Settings → Plugins, as in a desktop chat app: "Installed" lists what's installed, "Discover" what can be (first-party
 // and community plugins), "Add" installs from a name or a git URL. Installing runs code, so it takes two steps: the
 // backend first answers what a spec would install (source, version, publisher, pinned), and only the confirm sends
 // that pinned requirement with `confirm=true` (ADR 0047). The app then restarts `hz ui` itself and reloads.
@@ -36,14 +36,44 @@ import { displayName } from "./settingsSections";
 
 type PluginKind = NonNullable<SchemaPluginInfo["kinds"]>[number];
 
-/** The catalog may identify a community/private source; absence of that evidence means only "Plugin". */
-export function sourceLabel(plugin: SchemaPluginInfo, community?: boolean): string {
-  if (plugin.first_party) return t("plugins.firstParty");
-  return community === undefined ? t("plugins.plugin") : community ? t("plugins.community") : t("plugins.private");
+/** Label the actual source repository; catalog membership and reserved package names establish no provenance. */
+export function sourceLabel(
+  plugin: Pick<SchemaPluginInfo, "source_url" | "homepage">,
+  privateRepository?: boolean | null,
+  sourceUrl?: string | null,
+): string {
+  const repository = knownRepository(sourceUrl ?? plugin.source_url ?? plugin.homepage);
+  if (repository === "heinzel") return t("plugins.firstParty");
+  if (repository === "heinzel-contrib") return t("plugins.community");
+  if (privateRepository === true) return t("plugins.private");
+  if (privateRepository === false) return t("plugins.custom");
+  return t("plugins.sourceUnknown");
+}
+
+/** Compare complete GitHub repository identities; a similarly prefixed fork is a different source. */
+function knownRepository(sourceUrl: string | null | undefined): string | null {
+  if (!sourceUrl) return null;
+  try {
+    const source = new URL(sourceUrl);
+    const [owner, repository] = source.pathname.slice(1).toLowerCase().split("/");
+    if (
+      source.protocol !== "https:" ||
+      source.hostname !== "github.com" ||
+      source.port ||
+      source.username ||
+      source.password ||
+      owner !== "helmut-hoffer-von-ankershoffen"
+    )
+      return null;
+    const name = repository?.replace(/\.git$/, "");
+    return name === "heinzel" || name === "heinzel-contrib" ? name : null;
+  } catch {
+    return null;
+  }
 }
 
 /** The head of a module's page, the same everywhere: its name with the kinds of what it adds on the left, and on
- *  the right, on the same line, where it comes from (First-party, Contrib, Private) and its version. */
+ *  the right, on the same line, where it comes from (First-Party, Community, Private) and its version. */
 export function ModuleHeader({
   title,
   plugin,
@@ -71,7 +101,7 @@ export function ModuleHeader({
                 className="rounded-md border border-border px-1.5 text-[11px] hover:bg-accent/60"
                 title={t("settings.openPlugin")}
               >
-                {sourceLabel(plugin)}
+                {sourceLabel(plugin, plugin.private_repository, plugin.source_url ?? plugin.homepage)}
               </button>
               <span className="text-xs tabular-nums">v{plugin.version}</span>
             </>
@@ -119,7 +149,7 @@ function repositoryOfEntry(entry: {
   repository_url?: string | null;
 }): string | null {
   if (entry.repository_url) return entry.repository_url;
-  return entry.source === "first-party" ? `${CORE}/tree/main/plugins/${entry.name}` : repositoryOf(entry.install_spec);
+  return repositoryOf(entry.install_spec);
 }
 
 /** `https://github.com/o/r/tree/main/plugins/x` → `github.com/o/r`: which repository it comes from. */
@@ -185,9 +215,7 @@ function CandidateDetails({ candidate }: { candidate: SchemaPluginCandidate }) {
     [t("plugins.field.publisher"), candidate.publisher ?? t("plugins.unknown")],
     [
       t("plugins.field.source"),
-      `${candidate.first_party ? `${t("plugins.firstParty")}, ` : ""}${candidate.source}${
-        candidate.private ? `, ${t("plugins.privateRepository")}` : ""
-      }`,
+      `${sourceLabel({ source_url: candidate.url }, candidate.private)}${candidate.private === true ? `, ${t("plugins.privateRepository")}` : ""}`,
     ],
   ];
   if (candidate.installed_version) rows.push([t("plugins.field.replaces"), candidate.installed_version]);
@@ -219,6 +247,7 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
   const [adding, setAdding] = useState(false);
   const [spec, setSpec] = useState("");
   const [pending, setPending] = useState<Pending | null>(null);
+  const [pluginProgress, setPluginProgress] = useState<string | null>(null);
   const pluginRestartRequired = useRef(false);
   const preview = usePluginPreview();
   const change = useChangePlugin();
@@ -229,6 +258,7 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
     );
   const show = (value: string) => {
     change.reset();
+    setPluginProgress(null);
     preview.mutate(value, {
       onSuccess: (answer) => {
         if (answer.candidate) setPending({ action: "add", candidate: answer.candidate });
@@ -237,12 +267,17 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
   };
   const ask = (value: Pending) => {
     change.reset();
+    setPluginProgress(null);
     preview.reset();
     setPending(value);
   };
   const confirm = async () => {
     if (!pending) return false;
-    const answer = await change.mutateAsync(request(pending));
+    setPluginProgress(null);
+    const operation = request(pending);
+    const answer = await change.mutateAsync(
+      "add" in operation ? { ...operation, onProgress: setPluginProgress } : operation,
+    );
     pluginRestartRequired.current = answer.restart_required;
     setPending(null);
     setAdding(false);
@@ -349,6 +384,11 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
               {change.error.message}
             </p>
           )}
+          {change.isPending && pluginProgress && (
+            <p role="status" className="mt-1 text-xs text-muted-foreground">
+              {pluginProgress}
+            </p>
+          )}
           <div className="mt-2">
             <RestartAndApply
               target={t("plugins.title")}
@@ -399,8 +439,8 @@ function Yours({ query, onChange }: { query: string; onChange: (pending: Pending
               <ul>
                 {shown.map((plugin) => {
                   const entry = known.get(plugin.distribution);
-                  const source = sourceLabel(plugin, entry?.community);
-                  const url = plugin.source_url ?? (entry ? repositoryOfEntry(entry) : null);
+                  const url = plugin.source_url ?? plugin.homepage ?? null;
+                  const source = sourceLabel(plugin, plugin.private_repository, url);
                   const enabled = plugin.enabled ?? true;
                   return (
                     <li
@@ -583,11 +623,7 @@ function Discover({ query, onInstall }: { query: string; onInstall: (spec: strin
                 </span>
                 <span className="flex shrink-0 items-center gap-2">
                   <span className="rounded-md border border-border px-1.5 text-[11px] text-muted-foreground">
-                    {plugin.source === "contrib"
-                      ? t("plugins.contrib")
-                      : plugin.community
-                        ? t("plugins.community")
-                        : t("plugins.firstParty")}
+                    {sourceLabel({ source_url: repositoryOfEntry(plugin) }, plugin.private_repository)}
                   </span>
                   <span aria-hidden className={VERSION} />
                 </span>

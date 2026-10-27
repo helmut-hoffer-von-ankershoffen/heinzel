@@ -7,6 +7,7 @@ starts the very command line the runner hands the agent, as a real stdio MCP ser
 
 import json
 import os
+import time
 from dataclasses import dataclass, field
 from datetime import timedelta
 from pathlib import Path
@@ -18,6 +19,7 @@ from mcp import Client, StdioServerParameters
 from typer.testing import CliRunner
 
 from heinzel import ActionGate, AgentResult, Budget, Module, Progress, TokenUsage, ToolProfile
+from heinzel.heads import _stream as operation_stream
 from heinzel.heads import api, mcp, web
 from heinzel.heads._exposure import exposed
 from heinzel.heads.cli import build
@@ -384,6 +386,28 @@ def test_a_bug_in_a_streamed_operation_ends_the_stream_with_an_error(make_kernel
 
     body = web_client(make_kernel(builtins=True, buggy=module), tmp_path).post("/api/stream/buggy/crash", headers=AUTH)
     assert stream_events(body.text) == [("error", {"error": "crash failed with a bug; the log of `hz ui` says why."})]
+
+
+def test_a_quiet_long_operation_stream_sends_keepalives(make_kernel, tmp_path, monkeypatch):
+    module = Module("slow", "A quiet, long operation.")
+
+    @module.operation(heads={"cli", "web"})
+    def install(progress: Progress) -> str:
+        """Report an install before doing quiet work."""
+        with progress.task("Installing plugin"):
+            time.sleep(0.04)
+        return "installed"
+
+    monkeypatch.setattr(operation_stream, "HEARTBEAT_SECONDS", 0.01)
+    body = (
+        web_client(make_kernel(builtins=True, slow=module), tmp_path)
+        .post("/api/stream/slow/install", headers=AUTH)
+        .text
+    )
+
+    assert 'event: task\ndata: {"text": "Installing plugin"}' in body
+    assert ": keep-alive\n\n" in body
+    assert 'event: result\ndata: {"data": "installed"}' in body
 
 
 def test_the_unauthenticated_rest_head_has_no_chat(kernel):

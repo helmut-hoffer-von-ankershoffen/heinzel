@@ -37,10 +37,10 @@ afterEach(() => {
 });
 
 describe("World Clock", () => {
-  it("shows every zone in order, marks yours, keeps UTC readable without a marker and uses 24 hours", async () => {
+  it("shows every zone in order, marks the primary, keeps UTC readable without a marker and uses 24 hours", async () => {
     vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
     const { container } = show();
-    expect(await screen.findByText("Berlin · Yours")).toBeInTheDocument();
+    expect(await screen.findByText("Berlin · Primary")).toBeInTheDocument();
     expect(screen.getByText("UTC · No map location")).toBeInTheDocument();
     const list = screen.getByRole("list");
     expect(
@@ -70,9 +70,9 @@ describe("World Clock", () => {
         </MemoryRouter>
       </Providers>,
     );
-    expect(await screen.findByText("New Zone · Yours")).toBeInTheDocument();
+    expect(await screen.findByText("New Zone · Primary")).toBeInTheDocument();
     expect(screen.getByText("Time unavailable in this browser")).toBeInTheDocument();
-    expect(screen.queryByText("New York · Yours")).not.toBeInTheDocument();
+    expect(screen.queryByText("New York · Primary")).not.toBeInTheDocument();
   });
   it("explains a missing clock plugin without leaking previously cached zones", async () => {
     const client = queryClient();
@@ -87,14 +87,14 @@ describe("World Clock", () => {
     );
     expect(await screen.findByText("Add the clock plugin and choose your team's time zones.")).toBeInTheDocument();
     expect(screen.queryByText("Loading time zones…")).not.toBeInTheDocument();
-    expect(screen.queryByText("Berlin · Yours")).not.toBeInTheDocument();
+    expect(screen.queryByText("Berlin · Primary")).not.toBeInTheDocument();
   });
   it("does not initialise WebGL under reduced motion", async () => {
     const media = window.matchMedia("(prefers-reduced-motion: reduce)");
     vi.spyOn(window, "matchMedia").mockReturnValue({ ...media, matches: true });
     create.mockClear();
     show();
-    await screen.findByText("Berlin · Yours");
+    await screen.findByText("Berlin · Primary");
     expect(create).not.toHaveBeenCalled();
     expect(screen.queryByRole("button", { name: "Rotate globe left" })).not.toBeInTheDocument();
   });
@@ -105,7 +105,7 @@ describe("World Clock", () => {
     update.mockClear();
     create.mockReturnValue({ destroy, update });
     const { unmount } = show();
-    await screen.findByText("Berlin · Yours");
+    await screen.findByText("Berlin · Primary");
     const count = create.mock.calls.length;
     await userEvent.click(screen.getByRole("button", { name: "Rotate globe right" }));
     expect(create).toHaveBeenCalledTimes(count);
@@ -130,7 +130,7 @@ describe("World Clock", () => {
     vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({} as WebGLRenderingContext);
     create.mockReturnValue({ destroy, update });
     const { container } = show();
-    await screen.findByText("Berlin · Yours");
+    await screen.findByText("Berlin · Primary");
     const canvas = container.querySelector("canvas");
     expect(canvas).not.toBeNull();
     if (canvas) fireEvent(canvas, new Event("webglcontextlost"));
@@ -150,7 +150,7 @@ describe("World Clock", () => {
     vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({} as WebGLRenderingContext);
     create.mockReturnValue({ destroy, update });
     show();
-    await screen.findByText("Berlin · Yours");
+    await screen.findByText("Berlin · Primary");
     update.mockClear();
     await act(() => vi.advanceTimersByTimeAsync(1000));
     expect(update).toHaveBeenCalledWith({ phi: expect.any(Number) });

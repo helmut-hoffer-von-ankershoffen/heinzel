@@ -2,6 +2,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { splash, unreachableError } from "@/splash/store";
 import { api, unwrap } from "./client";
+import type { components } from "./schema";
+import { stream } from "./stream";
 
 export const keys = {
   doctor: ["system", "doctor"],
@@ -200,7 +202,11 @@ export const usePluginPreview = () =>
     mutationFn: (spec: string) => unwrap(api.POST("/system/plugin/add", { params: { query: { spec } } })),
   });
 
-export type PluginChangeRequest = { add: string } | { remove: string } | { enable: string } | { disable: string };
+export type PluginChangeRequest =
+  | { add: string; onProgress?: (text: string) => void }
+  | { remove: string }
+  | { enable: string }
+  | { disable: string };
 
 /** `hz system plugin add --confirm|remove|enable|disable`: changes what code runs, so the UI asks first (ADR 0047). */
 export const useChangePlugin = () => {
@@ -209,7 +215,15 @@ export const useChangePlugin = () => {
     mutationFn: (variables: PluginChangeRequest) => {
       if ("add" in variables) {
         // The requirement the preview answered, pinned to what was shown, so the dialog's version is the one installed.
-        return unwrap(api.POST("/system/plugin/add", { params: { query: { spec: variables.add, confirm: true } } }));
+        // Installing rebuilds the uv tool environment and can take minutes. The authenticated operation stream sends
+        // its task event immediately, keeps quiet work alive across proxies, and returns the same result or error.
+        return stream<components["schemas"]["PluginChange"]>(
+          "/system/plugin/add",
+          { spec: variables.add, confirm: true },
+          (event) => {
+            if (event.event === "task" && typeof event.data.text === "string") variables.onProgress?.(event.data.text);
+          },
+        );
       }
       if ("remove" in variables) {
         return unwrap(api.POST("/system/plugin/remove", { params: { query: { distribution: variables.remove } } }));

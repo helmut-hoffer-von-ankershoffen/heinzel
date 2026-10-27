@@ -76,7 +76,7 @@ Plugins add their own tables.
 
 | Key | Environment variable | Default | Description |
 | --- | --- | --- | --- |
-| `zones` | `HZ_CLOCK__ZONES` | `[{'name': 'Europe/Berlin', 'hours': [9, 18]}, {'name': 'America/New_York', 'hours': [9, 18]}, {'name': 'America/Los_Angeles', 'hours': [9, 18]}]` | The time zones your team works in, with the working hours in each. The first one is yours. Example: [{ hours = [10, 19], name = "Asia/Tokyo" }]. |
+| `zones` | `HZ_CLOCK__ZONES` | `[{'name': 'Europe/Berlin', 'hours': [9, 18]}, {'name': 'America/New_York', 'hours': [9, 18]}, {'name': 'America/Los_Angeles', 'hours': [9, 18]}]` | The time zones your team works in, with the working hours in each. The first one is primary. Example: [{ hours = [10, 19], name = "Asia/Tokyo" }]. |
 | `working_hours` | `HZ_CLOCK__WORKING_HOURS` | `None` | Deprecated: the hours of every zone given by name only. Give each zone its hours instead. |
 
 ## `[github]`
@@ -248,6 +248,7 @@ Plugins add their own tables.
 | Key | Environment variable | Default | Description |
 | --- | --- | --- | --- |
 | `contributions` | `HZ_SYSTEM_UI__CONTRIBUTIONS` | platform-specific | Which status items, actions and widgets show in which place of the app; anything you leave out keeps the place its module chose. Never read from a project's hz.toml. |
+| `audio_visualizer` | `HZ_SYSTEM_UI__AUDIO_VISUALIZER` | `False` | Show the optional audio sharing visualizer at the right edge of the app. Off by default; turning it on asks you to choose a browser audio source before anything is captured. Never read from a project's hz.toml. |
 
 ## `[tailscale]`
 

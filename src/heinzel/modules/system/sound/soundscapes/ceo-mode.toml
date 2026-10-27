@@ -1,8 +1,0 @@
-# CEO mode, a core soundscape. Played in YouTube's privacy-enhanced player; nothing loads until you press Play.
-name = "ceo-mode"
-title = "CEO mode"
-kind = "stream"
-
-[stream]
-provider = "youtube"
-video = "q770AP07Xqw"

@@ -1,5 +1,6 @@
 import base64
 import io
+import json
 import os
 import subprocess
 import sys
@@ -52,6 +53,56 @@ def service_for(make_kernel, prefix, runner=None, kernel=None, settings=None):
         old = ModuleRecord("old", Module("old", "An old plugin."), Origin("heinzel-old", "1.0.0", builtin=False))
         kernel = Kernel(make_kernel().settings, [old])
     return PluginService(kernel, installation, settings or PluginSettings(github_token=None))
+
+
+def test_installed_plugins_keep_repository_visibility_from_install_history(make_kernel, tmp_path):
+    service = service_for(make_kernel, tmp_path)
+    service._record("add", "heinzel-old", private_repository=True)
+
+    assert service.installed()[0].private_repository is True
+
+    service._record("remove", "heinzel-old")
+    assert service.installed()[0].private_repository is None
+
+
+@pytest.mark.parametrize("action", ["add", "develop"])
+def test_replacing_a_source_without_visibility_does_not_inherit_its_private_badge(make_kernel, tmp_path, action):
+    service = service_for(make_kernel, tmp_path)
+    service._record("add", "heinzel-old", private_repository=True)
+    service._record(action, "heinzel-old")
+    assert service.installed()[0].private_repository is None
+
+
+@pytest.mark.parametrize(
+    ("name", "url", "expected"),
+    [
+        ("clock", f"{_service.REPOSITORY}/tree/main/plugins/heinzel-clock", True),
+        ("extra", f"{_service.REPOSITORY}.git", True),
+        ("clock", f"{_service.REPOSITORY}-contrib", False),
+        ("clock", f"{_service.REPOSITORY}-fork", False),
+        ("clock", "https://github.com/another-owner/heinzel", False),
+        ("clock", "https://github.com.evil.example/helmut-hoffer-von-ankershoffen/heinzel", False),
+        ("clock", "https://github.com:8443/helmut-hoffer-von-ankershoffen/heinzel", False),
+        ("acme", _service.REFERENCE["acme"][1], False),
+        ("clock", None, False),
+    ],
+)
+def test_installed_first_party_classification_uses_exact_repository_not_reserved_name(
+    make_kernel, tmp_path, name, url, expected
+):
+    class Dist:
+        version = "1.0.0"
+        metadata = types.MappingProxyType({})
+
+        def read_text(self, _filename):
+            return json.dumps({"url": url, "vcs_info": {"commit_id": "abc"}}) if url else None
+
+    distribution = f"heinzel-{name}"
+    record = ModuleRecord(name, Module(name, "An installed plugin."), Origin(distribution, "1.0.0", builtin=False))
+    service = service_for(make_kernel, tmp_path, kernel=Kernel(make_kernel().settings, [record]))
+    Dist.name = distribution
+    service.distributions = {distribution: Dist()}
+    assert service.installed()[0].first_party is expected
 
 
 def test_add_in_tool_env_reinstalls_with_plugins(make_kernel, tool_env):
@@ -685,6 +736,15 @@ def test_search_entries_carry_their_repository_url(make_kernel, tmp_path, github
     assert plugins["heinzel-crm"].repository_url == "https://github.com/someone/heinzel-crm"
     assert plugins["heinzel-clock"].repository_url == f"{_service.REPOSITORY}/tree/main/plugins/heinzel-clock"
     assert plugins["heinzel-acme"].repository_url == _service.REFERENCE["acme"][1]
+
+
+@pytest.mark.parametrize("visibility", [True, False, None, "false", 0])
+@pytest.mark.parametrize("monorepo", [False, True])
+def test_catalog_visibility_is_reported_only_for_boolean_github_metadata(make_kernel, tmp_path, visibility, monorepo):
+    service = service_for(make_kernel, tmp_path)
+    service._monorepo_plugins = lambda _repository: [("heinzel-tools", "plugins/tools", "Tools.")] if monorepo else []
+    [plugin] = service._community_plugins(repository("heinzel-tools", 0, private=visibility), set())
+    assert plugin.private_repository is (visibility if isinstance(visibility, bool) else None)
 
 
 def test_installed_plugins_say_where_they_came_from(make_kernel, tmp_path):

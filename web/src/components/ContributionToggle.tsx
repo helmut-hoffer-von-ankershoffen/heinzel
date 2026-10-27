@@ -73,7 +73,7 @@ function publicUrl(value: string | null | undefined): string | null {
   return null;
 }
 
-function signInOrigin(control: ContributionToggleControl): string | null {
+function authenticatedUrl(control: ContributionToggleControl): string | null {
   const session = sessionToken();
   if (!control.checked || !session || session.startsWith("hzd_") || /\s/.test(session)) return null;
   if (!control.url || control.sign_in_url !== control.url) return null;
@@ -81,7 +81,9 @@ function signInOrigin(control: ContributionToggleControl): string | null {
     const parsed = new URL(control.sign_in_url);
     // The server's exact approved origin is the only place a session fragment may go.
     if (parsed.protocol !== "https:" || parsed.origin !== control.sign_in_url) return null;
-    return parsed.origin;
+    const link = new URL(parsed.origin);
+    link.hash = new URLSearchParams({ token: session }).toString();
+    return link.href;
   } catch {
     return null;
   }
@@ -115,7 +117,6 @@ export function ContributionToggle({ control, refresh, applySettings }: Props) {
   const requested = !control.checked && control.requested === true;
   const operation = (control.checked || requested ? control.disable : control.enable).call;
   const url = control.checked && !pending ? publicUrl(control.url) : null;
-  const signIn = url && signInOrigin(control);
   const copied = control.checked && !!control.url && copiedUrl === control.url;
 
   const change = async () => {
@@ -171,16 +172,9 @@ export function ContributionToggle({ control, refresh, applySettings }: Props) {
     }
   };
 
-  const copy = async (signingIn: boolean) => {
-    let value = signingIn ? signInOrigin(control) : publicUrl(control.url);
+  const copy = async () => {
+    const value = authenticatedUrl(control) ?? publicUrl(control.url);
     if (!control.checked || !value) return;
-    if (signingIn) {
-      const session = sessionToken();
-      if (!session || session.startsWith("hzd_")) return;
-      const link = new URL(value);
-      link.hash = new URLSearchParams({ token: session }).toString();
-      value = link.href;
-    }
     try {
       await navigator.clipboard.writeText(value);
       if (mounted.current) {
@@ -238,7 +232,7 @@ export function ContributionToggle({ control, refresh, applySettings }: Props) {
         <div className="space-y-2">
           <p className="break-all font-mono text-xs">{control.url}</p>
           <div className="flex flex-wrap gap-2">
-            <Button type="button" size="sm" variant="outline" onClick={() => void copy(false)}>
+            <Button type="button" size="sm" variant="outline" onClick={() => void copy()}>
               {copied ? <Check aria-hidden /> : <Copy aria-hidden />}
               {t("contrib.toggle.copyUrl")}
             </Button>
@@ -248,12 +242,6 @@ export function ContributionToggle({ control, refresh, applySettings }: Props) {
                 {t("status.open")}
               </a>
             </Button>
-            {signIn && (
-              <Button type="button" size="sm" variant="outline" onClick={() => void copy(true)}>
-                <Copy aria-hidden />
-                {t("contrib.toggle.copySignIn")}
-              </Button>
-            )}
           </div>
         </div>
       )}

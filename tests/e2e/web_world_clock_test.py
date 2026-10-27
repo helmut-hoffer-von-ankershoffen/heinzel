@@ -21,8 +21,7 @@ def test_world_clock_cold_open_markers_and_rotation(tmp_path):
     assert spec.loader
     web_build = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(web_build)
-    if not web_build.current():
-        web_build.build()
+    web_build.ensure_built()
     run = [sys.executable, str(REPO / "scripts" / "web_build.py")]
     subprocess.run(
         [*run, "exec", "playwright-core", "install", "chromium"],

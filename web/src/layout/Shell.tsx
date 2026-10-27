@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Outlet, useLocation, useSearchParams } from "react-router";
+import { useConfig } from "@/api/queries";
 import { AudioVisualizer } from "@/audio/AudioVisualizer";
 import { ChatProvider } from "@/chat/ChatContext";
 import { AvatarThemeProvider } from "@/components/AvatarTheme";
@@ -75,6 +76,11 @@ export function Shell() {
 }
 
 function Layout() {
+  const config = useConfig();
+  const audioVisualizer = config.data?.settings.find(
+    (setting) => setting.section === "system.ui" && setting.key === "audio_visualizer",
+  );
+  const showAudioVisualizer = (audioVisualizer?.value ?? audioVisualizer?.default) === true;
   // Narrow windows start with the navigation as a rail, so the screen keeps its room.
   const [navOpen, setNavOpen] = useRemembered("hz.nav.open", () => window.innerWidth >= 1024);
   const [chatOpen, setChatOpen] = useRemembered("hz.chat.open", () => true);
@@ -153,7 +159,10 @@ function Layout() {
     return () => window.removeEventListener("keydown", open);
   }, [setParams]);
   return (
-    <div className="relative flex h-dvh overflow-clip">
+    <div
+      data-testid="app-shell"
+      className="relative box-border flex h-dvh overflow-clip pt-[var(--hz-safe-area-top,env(safe-area-inset-top,0px))] pr-[var(--hz-safe-area-right,env(safe-area-inset-right,0px))] pb-[var(--hz-safe-area-bottom,env(safe-area-inset-bottom,0px))] pl-[var(--hz-safe-area-left,env(safe-area-inset-left,0px))]"
+    >
       <a
         href="#content"
         className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-50 focus:rounded-md focus:bg-card focus:p-2"
@@ -261,9 +270,11 @@ function Layout() {
         {/* One mounted footer: moving its host preserves controls when the side panel moves below. */}
         {createPortal(<StatusBar />, footerHost)}
       </div>
-      <section aria-label="Audio visualizer" className="h-full w-7 shrink-0 border-l border-border">
-        <AudioVisualizer />
-      </section>
+      {showAudioVisualizer && (
+        <section aria-label="Audio visualizer" className="h-dvh w-7 shrink-0 border-l border-border">
+          <AudioVisualizer />
+        </section>
+      )}
       {params.get("panel") === "notifications" && (
         <NotificationPanel
           navOpen={navOpen}

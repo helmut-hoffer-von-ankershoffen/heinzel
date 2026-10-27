@@ -11,6 +11,7 @@ import { cityOf, TimeZonePicker } from "./TimeZonePicker";
 
 const field =
   "h-8 rounded-lg border border-border bg-input px-2 text-sm outline-none focus:border-muted-foreground/50 disabled:opacity-50";
+const selectField = cn(field, "pr-8");
 
 const pad = (value: number | string) => (typeof value === "number" && value < 10 ? `0${value}` : String(value));
 /** Hours read as times: 9 → 09:00; other numbers as they are. */
@@ -60,7 +61,7 @@ export function SchemaValue({ id, label, schema, control = controlFor(schema), v
             const picked = control.options.find((option) => String(option) === event.target.value);
             onChange(picked);
           }}
-          className={field}
+          className={selectField}
         >
           {(value === undefined || value === null) && <option value="">{t("settings.notSet")}</option>}
           {control.options.map((option) => (
@@ -103,7 +104,7 @@ export function SchemaValue({ id, label, schema, control = controlFor(schema), v
       const [from, to] = pair as [number, number];
       const choice = { kind: "choice", options: control.options } as const;
       return (
-        <span className="flex items-center gap-1">
+        <span className="flex items-center gap-3">
           <SchemaValue
             label={t("settings.from", { what: label })}
             schema={schema}
@@ -293,7 +294,7 @@ function Table({
           return (
             // A row's place is its identity (the order means something); its fields show what it holds now.
             // biome-ignore lint/suspicious/noArrayIndexKey: see above
-            <li key={index} className="flex flex-wrap items-center gap-2 rounded-lg border border-border/70 p-1.5">
+            <li key={index} className="flex flex-wrap items-center gap-3 rounded-lg border border-border/70 p-1.5">
               {control.columns.map(([key, schema]) => {
                 const inner = controlFor(schema);
                 return (
@@ -325,9 +326,9 @@ function Table({
               })}
               {zones && (
                 // Every row keeps the badge's column, so the first row's pickers are as wide as the others'.
-                <span className="flex w-16 shrink-0 justify-center">
+                <span className="flex w-20 shrink-0 justify-center">
                   {index === 0 && (
-                    <span className="rounded-md border border-primary/40 px-1.5 text-[11px] text-primary">
+                    <span className="rounded-md border border-primary/40 px-2 py-0.5 text-[11px] text-primary">
                       {t("settings.primary")}
                     </span>
                   )}
@@ -467,7 +468,7 @@ function InstalledChoices({
           value={selected[0] ?? ""}
           disabled={disabled || pending}
           onChange={(event) => onChange(event.target.value)}
-          className={field}
+          className={selectField}
         >
           {selected.length === 0 && (
             <option value="" disabled>
@@ -549,7 +550,7 @@ function DurationValue({ id, label, value, disabled, onChange }: Omit<Props, "sc
             setUnit(event.target.value);
             commit(event.target.value);
           }}
-          className={field}
+          className={selectField}
         >
           {Object.entries(durationUnits).map(([key, title]) => (
             <option key={key} value={key}>

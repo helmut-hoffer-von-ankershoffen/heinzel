@@ -69,6 +69,10 @@ class PluginInfo(BaseModel):
     first_party: bool = Field(
         default=False, description="Whether it is maintained and released with Heinzelmännchen (ADR 0017)."
     )
+    private_repository: bool | None = Field(
+        default=None,
+        description="Whether the GitHub repository is private, when its visibility was checked before installation.",
+    )
     enabled: bool = Field(
         default=True, description="Whether its modules are loaded; `hz system plugin disable` switches it off."
     )
@@ -107,7 +111,7 @@ class AvailablePlugin(BaseModel):
     )
     description: str = Field(description="What the plugin does, in its authors' words.")
     source: Literal["first-party", "contrib", "github"] = Field(
-        description="Where it was found: `first-party` (maintained with Heinzelmännchen), `contrib` (the "
+        description="Its catalog route: `first-party` (core and named reference plugins), `contrib` (the "
         "heinzel-contrib monorepo) or `github` (a repository with the topic heinzel-plugin)."
     )
     community: bool = Field(description="Whether it is a community plugin, not maintained with Heinzelmännchen.")
@@ -116,6 +120,9 @@ class AvailablePlugin(BaseModel):
     repository_url: str | None = Field(
         description="The repository `install_spec` installs from, as a browser opens it (`/tree/<ref>/<dir>` for a "
         "subdirectory); none when it names no https repository."
+    )
+    private_repository: bool | None = Field(
+        default=None, description="Whether the catalog repository is private; none when visibility was not reported."
     )
     stars: int | None = Field(description="GitHub stars; none for first-party plugins.")
     installed: bool = Field(description="Whether a plugin of this name is installed.")
@@ -142,7 +149,10 @@ class PluginCandidate(BaseModel):
     source: Source = Field(description="`pypi` or `git`; `path` only for a first-party plugin in a checkout.")
     url: str = Field(description="Where to read about it: its repository or PyPI page.")
     publisher: str | None = Field(description="Who publishes it: the repository owner or the package's author.")
-    first_party: bool = Field(description="Whether it is maintained and released with Heinzelmännchen.")
+    first_party: bool = Field(
+        description="Whether confirmation uses a named core/reference install route; repository provenance "
+        "is determined separately from url and private."
+    )
     private: bool | None = Field(
         description="Whether the repository is private (read with your gh login); none when unknown."
     )
@@ -179,3 +189,6 @@ class PluginEvent(BaseModel):
     source: Source | None = Field(description="Where it came from, for `add` and `develop`.")
     version: str | None = Field(description="The version installed or removed, when known.")
     publisher: str | None = Field(description="Who publishes it, as shown before confirming.")
+    private_repository: bool | None = Field(
+        default=None, description="Whether the GitHub repository was private when it was installed."
+    )

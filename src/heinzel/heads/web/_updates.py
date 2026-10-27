@@ -47,8 +47,17 @@ class _Entrypoints(HTMLParser):
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         values = dict(attrs)
-        if tag == "script" or (tag == "link" and values.get("rel") == "stylesheet"):
-            self.paths.append(values.get("src" if tag == "script" else "href") or "")
+        # Inline scripts (for example, the connection splash bootstrap) are not
+        # installed asset entrypoints. Ignore them; only external JS and CSS
+        # files can establish the frontend identity used by safe updates.
+        if tag == "script":
+            src = values.get("src")
+            if src:
+                self.paths.append(src)
+        elif tag == "link" and values.get("rel") == "stylesheet":
+            href = values.get("href")
+            if href:
+                self.paths.append(href)
 
 
 def _asset_hashes(assets: Path) -> dict[str, str]:
@@ -110,7 +119,8 @@ def add_updates(app: FastAPI, kernel: Kernel, static: Path | None, *, restartabl
         reason = (
             "Restart this UI with hz ui before updating."
             if not restartable
-            else "This frontend build cannot be verified; update it using its installation method."
+            else "Frontend assets are incomplete, so hz cannot safely update this install. For uv, run `uv tool "
+            "upgrade heinzel`; otherwise use your installer. Then restart `hz ui`."
             if frontend is None
             else "This installation is deliberately pinned or is not a persistent uv tool; update it where installed."
             if not source_allowed

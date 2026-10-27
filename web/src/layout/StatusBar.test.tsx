@@ -14,6 +14,29 @@ const answers = {
 };
 
 describe("The status bar's clock", () => {
+  it("does not render a clock when the clock plugin is absent", async () => {
+    mockApi({
+      ...shell,
+      "/api/system/info": { version: "0.4.0", modules: [] },
+      "/api/system/ui/status": [
+        {
+          id: "clock:primary-zone",
+          module: "clock",
+          plugin: "heinzel-clock",
+          order: 900,
+          refresh: 60,
+          problem: null,
+          slots: { footer: true },
+          item: { text: "Berlin", tone: "neutral", icon: "clock" },
+        },
+      ],
+    });
+    renderAt("/doctor");
+    const bar = await screen.findByRole("contentinfo");
+    expect(within(bar).queryByRole("button", { description: /World Clock/ })).not.toBeInTheDocument();
+    expect(bar.textContent).not.toMatch(/\b\d{2}:\d{2}:\d{2}\b/);
+  });
+
   it("keeps the zones open while the pointer moves up to them, and their link opens the clock's settings", async () => {
     mockApi(answers);
     const user = userEvent.setup();
@@ -104,10 +127,9 @@ describe("Mounted footer measurements", () => {
     renderAt("/doctor");
     const footer = await screen.findByRole("contentinfo");
     expect(await within(footer).findByRole("button", { name: "Daemon running, OK" })).toBeInTheDocument();
-    expect(within(footer).getByRole("button", { name: /CPU Memory Load/ })).toBeInTheDocument();
+    expect(within(footer).getByRole("button", { name: /CPU Mem Load/ })).toBeInTheDocument();
     expect(within(footer).getByRole("button", { name: /System health/ })).toBeInTheDocument();
     expect(within(footer).getByRole("button", { name: "0 Heinzelmännchen, off" })).toBeInTheDocument();
-    expect(within(footer).queryByRole("button", { name: "More status items" })).not.toBeInTheDocument();
     expect(footer.textContent).not.toContain("🐻");
     expect(footer.querySelector('[data-footer-part="@version"]')).toBe(footer.firstElementChild);
   });
@@ -144,13 +166,13 @@ describe("Footer items are icons with a state and a pane", () => {
     window.innerWidth = widthBefore;
   });
 
-  it("gives each state its own colour and shape, named for assistive tech, and passes axe", async () => {
+  it("gives each state its own colour and accessible state, and passes axe", async () => {
     mockApi(states);
     window.innerWidth = 1280;
     const { container } = renderAt("/doctor");
     const bar = (await screen.findByRole("contentinfo")) as HTMLElement;
     expect(within(bar).queryByText("helpers accelerating product teams")).not.toBeInTheDocument();
-    expect(within(bar).getByText("built with AI in Berlin")).toBeInTheDocument();
+    expect(within(bar).queryByText("built with AI in Berlin")).not.toBeInTheDocument();
     for (const [tone, word, colour] of [
       ["ok", "OK", "text-ok"],
       ["warn", "warning", "text-warn"],
@@ -162,7 +184,7 @@ describe("Footer items are icons with a state and a pane", () => {
       });
       expect(button).toHaveClass(colour);
       expect(button.parentElement).toHaveAttribute("data-state", tone);
-      expect(button.querySelectorAll("svg")).toHaveLength(2); // the icon and the shape of the state
+      expect(button.querySelectorAll("svg")).toHaveLength(1); // no secondary state glyph beside the footer icon
     }
     await expectAccessible(container);
   });
@@ -209,7 +231,7 @@ describe("Footer items are icons with a state and a pane", () => {
     expect(await screen.findByRole("dialog", { name: "Settings" })).toBeInTheDocument();
   });
 
-  it("shows what changed in the running release from the installed changelog, with the release on GitHub", async () => {
+  it("shows the installed changelog and a compact GitHub release link", async () => {
     mockApi(states);
     window.innerWidth = 1280;
     const user = userEvent.setup();
@@ -219,14 +241,14 @@ describe("Footer items are icons with a state and a pane", () => {
     const pane = await screen.findByRole("region", { name: "v0.4.0" });
     const about = within(pane).getByRole("region", { name: "About Heinzelmännchen" });
     expect(within(about).getByRole("img", { name: "Heinzelmännchen" })).toBeInTheDocument();
-    const tagline = within(about).getByText("helpers accelerating product teams,");
-    const origin = within(about).getByText("like the little elves from Cologne");
-    expect(tagline.nextElementSibling).toBe(origin);
-    expect(tagline).toHaveClass("block");
-    expect(origin).toHaveClass("block");
-    expect(within(about).getByText("built with AI in Berlin")).toBeInTheDocument();
+    expect(about).toHaveTextContent("helpers accelerating product teams, like the little elves from Cologne");
+    expect(within(about).getByText(/helpers accelerating/).parentElement).toHaveClass("text-[11px]");
+    expect(about.querySelectorAll("p > span")).toHaveLength(2);
+    expect(within(about).queryByText("built with AI in Berlin")).not.toBeInTheDocument();
     expect(await within(pane).findByText("Something new")).toBeInTheDocument();
-    expect(within(pane).getByRole("link", { name: "Release notes on GitHub" })).toHaveAttribute(
+    expect(within(pane).queryByText("What changed in this release")).not.toBeInTheDocument();
+    expect(within(pane).queryByRole("link", { name: "Full changelog" })).not.toBeInTheDocument();
+    expect(within(pane).getByRole("link", { name: "GitHub release" })).toHaveAttribute(
       "href",
       "https://github.com/helmut-hoffer-von-ankershoffen/heinzel/releases/tag/v0.4.0",
     );

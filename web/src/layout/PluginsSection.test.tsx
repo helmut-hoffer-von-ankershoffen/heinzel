@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Providers, queryClient } from "@/App";
 import { expectAccessible } from "@/test/render";
-import { PluginsSection } from "./PluginsSection";
+import { ModuleHeader, PluginsSection, sourceLabel } from "./PluginsSection";
 
 const PINNED = `heinzel-crm @ git+https://github.com/acme-example/heinzel-crm@${"b".repeat(40)}`;
 
@@ -13,7 +13,7 @@ const installed = {
   modules: ["clock"],
   name: "clock",
   summary: "What time it is for everyone on the team.",
-  source_kind: "git",
+  source_kind: "git" as const,
   source_url: "https://github.com/helmut-hoffer-von-ankershoffen/heinzel/tree/v0.3.0/plugins/heinzel-clock",
   revision: "abc",
   homepage: null,
@@ -41,6 +41,60 @@ const candidate = {
   warnings: ["It is named crm-tools, not heinzel-<name> as plugins are (ADR 0025)."],
 };
 
+describe("plugin source labels", () => {
+  it.each([
+    ["https://github.com/helmut-hoffer-von-ankershoffen/heinzel/tree/main/plugins/heinzel-clock", null, "First-Party"],
+    ["https://github.com/HELMUT-HOFFER-VON-ANKERSHOFFEN/HEINZEL.git", null, "First-Party"],
+    ["https://github.com/helmut-hoffer-von-ankershoffen/heinzel-contrib", null, "Community"],
+    ["https://github.com/helmut-hoffer-von-ankershoffen/heinzel-fork", true, "Private"],
+    ["https://github.com/helmut-hoffer-von-ankershoffen/heinzel-acme", false, "Custom"],
+    ["https://github.com/another-owner/heinzel", false, "Custom"],
+    ["https://github.com.evil.example/helmut-hoffer-von-ankershoffen/heinzel", false, "Custom"],
+    ["https://github.com:8443/helmut-hoffer-von-ankershoffen/heinzel", null, "source not reported yet"],
+    [null, null, "source not reported yet"],
+  ])("uses repository identity despite a stale legacy first-party flag: %s", (url, visibility, expected) => {
+    expect(sourceLabel({ ...installed, source_url: url }, visibility)).toBe(expected);
+  });
+
+  it("labels the actual installed repository instead of a catalog match", () => {
+    const plugin = {};
+    expect(sourceLabel(plugin, true, "https://github.com/acme-example/private-fork")).toBe("Private");
+    expect(sourceLabel(plugin, false, "https://github.com/acme-example/public-plugin")).toBe("Custom");
+    expect(
+      sourceLabel(
+        plugin,
+        true,
+        "https://github.com/helmut-hoffer-von-ankershoffen/heinzel-contrib/tree/main/plugins/heinzel-weather",
+      ),
+    ).toBe("Community");
+  });
+
+  it("does not infer community provenance from an unknown or missing source", () => {
+    const plugin = {};
+    expect(sourceLabel(plugin, null, null)).toBe("source not reported yet");
+    expect(sourceLabel(plugin, null, "https://github.com/acme-example/heinzel-contrib")).toBe(
+      "source not reported yet",
+    );
+  });
+
+  it("uses the repository in a Settings header even when legacy metadata calls the plugin first-party", () => {
+    render(
+      <ModuleHeader
+        title="Conditions"
+        plugin={{
+          ...installed,
+          source_url:
+            "https://github.com/helmut-hoffer-von-ankershoffen/heinzel-contrib/tree/main/plugins/heinzel-clock",
+        }}
+        version="0.3.0"
+        onOpen={() => {}}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "Community" })).toBeInTheDocument();
+    expect(screen.queryByText("First-Party")).not.toBeInTheDocument();
+  });
+});
+
 function change(action: string, done: boolean, extra: Record<string, unknown> = {}) {
   return {
     action,
@@ -67,6 +121,13 @@ function serve(answer: Answer) {
       const url = new URL(request.url);
       const found = answer(url, request);
       if (!found) return Response.json({ error: `no answer for ${url.pathname}` }, { status: 404 });
+      if (url.pathname.startsWith("/api/stream/")) {
+        const events = [
+          `event: task\ndata: ${JSON.stringify({ text: "Adding plugin heinzel-crm" })}\n\n`,
+          `event: result\ndata: ${JSON.stringify({ data: found.body })}\n\n`,
+        ].join("");
+        return new Response(events, { status: found.status ?? 200, headers: { "Content-Type": "text/event-stream" } });
+      }
       return Response.json(found.body, { status: found.status ?? 200 });
     }),
   );
@@ -111,7 +172,7 @@ afterEach(() => vi.unstubAllGlobals());
 describe("PluginsSection", () => {
   it("shows what a spec would install first, and installs the pinned requirement only on confirm", async () => {
     const calls = serve((url) => {
-      if (url.pathname === "/api/system/plugin/add") {
+      if (url.pathname === "/api/system/plugin/add" || url.pathname === "/api/stream/system/plugin/add") {
         return {
           body: change("add", url.searchParams.get("confirm") === "true"),
         };
@@ -126,7 +187,11 @@ describe("PluginsSection", () => {
     await user.click(screen.getByRole("button", { name: "Install" }));
 
     const preview = await screen.findByRole("group", { name: /Install this plugin/ });
-    const adds = () => calls.filter((request) => new URL(request.url).pathname === "/api/system/plugin/add");
+    const adds = () =>
+      calls.filter((request) => {
+        const path = new URL(request.url).pathname;
+        return path === "/api/system/plugin/add" || path === "/api/stream/system/plugin/add";
+      });
     expect(adds()).toHaveLength(1);
     expect(new URL(adds()[0]?.url ?? "").searchParams.get("spec")).toBe(candidate.spec);
     expect(new URL(adds()[0]?.url ?? "").searchParams.get("confirm")).toBeNull();
@@ -147,6 +212,7 @@ describe("PluginsSection", () => {
     await waitFor(() => expect(reload).toHaveBeenCalledTimes(1));
     expect(calls.some((request) => new URL(request.url).pathname === "/api/restart")).toBe(true);
     const confirmed = new URL(adds()[1]?.url ?? "");
+    expect(confirmed.pathname).toBe("/api/stream/system/plugin/add");
     expect(confirmed.searchParams.get("spec")).toBe(PINNED);
     expect(confirmed.searchParams.get("confirm")).toBe("true");
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
@@ -161,7 +227,13 @@ describe("PluginsSection", () => {
       community,
       install_spec,
       url: `https://example.org/${name}`,
-      repository_url: `https://github.com/acme-example/heinzel-${name}`,
+      repository_url:
+        source === "contrib"
+          ? `https://github.com/helmut-hoffer-von-ankershoffen/heinzel-contrib/tree/main/plugins/heinzel-${name}`
+          : !community
+            ? `https://github.com/helmut-hoffer-von-ankershoffen/heinzel/tree/main/plugins/heinzel-${name}`
+            : `https://github.com/acme-example/heinzel-${name}`,
+      private_repository: false,
       stars: null,
       installed: false,
     });
@@ -170,12 +242,22 @@ describe("PluginsSection", () => {
       if (url.pathname === "/api/system/plugin/search") {
         return {
           body: {
-            plugins: [entry("zoom", false, "zoom"), entry("crm", true, git), entry("weather", true, "w", "contrib")],
+            plugins: [
+              entry("zoom", false, "zoom"),
+              entry("crm", true, git),
+              entry("weather", true, "w", "contrib"),
+              {
+                ...entry("reference", false, "reference"),
+                repository_url: "https://github.com/helmut-hoffer-von-ankershoffen/heinzel-acme",
+              },
+              { ...entry("private-tools", true, "private"), private_repository: true },
+              { ...entry("unknown", true, "unknown"), private_repository: null },
+            ],
             warnings: [],
           },
         };
       }
-      if (url.pathname === "/api/system/plugin/add") {
+      if (url.pathname === "/api/system/plugin/add" || url.pathname === "/api/stream/system/plugin/add") {
         const first =
           url.searchParams.get("spec") === "zoom" || url.searchParams.get("spec") === "heinzel-zoom @ git+x";
         return {
@@ -195,10 +277,18 @@ describe("PluginsSection", () => {
     show({ reload: vi.fn(), restartInterval: 1 });
     await user.click(screen.getByRole("tab", { name: "Discover" }));
     const labels = (await screen.findAllByRole("listitem")).map((row) => row.textContent);
-    expect(labels.some((text) => text?.includes("Contrib"))).toBe(true);
-    expect(labels.some((text) => text?.includes("Contrib"))).toBe(true);
-    expect(labels.some((text) => text?.includes("First-party"))).toBe(true);
-    const adds = () => calls.filter((request) => new URL(request.url).pathname === "/api/system/plugin/add");
+    expect(labels.some((text) => text?.includes("Community"))).toBe(true);
+    expect(labels.some((text) => text?.includes("Custom"))).toBe(true);
+    expect(labels.some((text) => text?.includes("First-Party"))).toBe(true);
+    const row = (name: string) => screen.getByText(name, { exact: true }).closest("li") as HTMLElement;
+    expect(within(row("Reference")).getByText("Custom")).toBeInTheDocument();
+    expect(within(row("Private tools")).getByText("Private")).toBeInTheDocument();
+    expect(within(row("Unknown")).getByText("source not reported yet")).toBeInTheDocument();
+    const adds = () =>
+      calls.filter((request) => {
+        const path = new URL(request.url).pathname;
+        return path === "/api/system/plugin/add" || path === "/api/stream/system/plugin/add";
+      });
     const spec = (index: number) => new URL(adds()[index]?.url ?? "").searchParams.get("spec");
 
     const installs = await screen.findAllByRole("button", {

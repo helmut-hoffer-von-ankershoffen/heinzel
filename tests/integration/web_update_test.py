@@ -28,8 +28,13 @@ def client(make_kernel, tmp_path, **options):
     static = tmp_path / "static"
     static.mkdir(exist_ok=True)
     (static / "assets").mkdir(exist_ok=True)
-    (static / "index.html").write_text('<script type="module" src="/assets/app-a.js"></script>')
+    (static / "index.html").write_text(
+        '<script type="module" src="/assets/app-a.js"></script>'
+        "<script>window.splashReady = true;</script>"
+        '<link rel="stylesheet" href="/assets/app-a.css">'
+    )
     (static / "assets" / "app-a.js").write_text("export const ready = true;")
+    (static / "assets" / "app-a.css").write_text("body { color: black; }")
     if unsafe == "remote":
         (static / "index.html").write_text('<script src="https://example.test/app.js"></script>')
     elif unsafe in {"missing", "symlink"}:
@@ -88,8 +93,11 @@ def test_frontend_descriptor_hashes_only_installed_assets_and_entrypoints(make_k
     assert response.status_code == 200
     assert response.headers["Cache-Control"] == "no-store"
     result = response.json()
-    assert result["entrypoints"] == ["/assets/app-a.js"]
-    assert result["files"] == {"/assets/app-a.js": hashlib.sha256(b"export const ready = true;").hexdigest()}
+    assert result["entrypoints"] == ["/assets/app-a.css", "/assets/app-a.js"]
+    assert result["files"] == {
+        "/assets/app-a.css": hashlib.sha256(b"body { color: black; }").hexdigest(),
+        "/assets/app-a.js": hashlib.sha256(b"export const ready = true;").hexdigest(),
+    }
     assert len(result["identity"]) == 64
     assert result["version"] == __version__
 
@@ -98,4 +106,7 @@ def test_frontend_descriptor_hashes_only_installed_assets_and_entrypoints(make_k
 def test_unsafe_or_missing_frontend_cannot_enable_one_click(make_kernel, tmp_path, unsafe):
     app = client(make_kernel, tmp_path, unsafe=unsafe)
     assert app.get("/api/frontend", headers=AUTH).status_code == 409
-    assert not app.get("/api/update-status", headers=AUTH).json()["supported"]
+    status = app.get("/api/update-status", headers=AUTH).json()
+    assert not status["supported"]
+    assert "Frontend assets are incomplete" in status["reason"]
+    assert "uv tool upgrade heinzel" in status["reason"]

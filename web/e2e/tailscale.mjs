@@ -4,13 +4,28 @@ import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { chromium } from "playwright-core";
 
+const ORIGIN = "https://workstation.tail-example.ts.net";
+
 async function openSharing(page) {
   const trigger = page.locator('[data-footer-content="tailscale:sharing"] button').first();
-  const container = page.locator('[data-footer-part="tailscale:sharing"]');
-  if ((await container.getAttribute("data-footer-hidden")) === "overflow") {
-    const more = page.getByRole("region", { name: "More status items", exact: true });
-    if (!(await more.isVisible())) await page.getByRole("button", { name: "More status items", exact: true }).click();
-  }
+  const more = page.getByRole("button", { name: "More status items", exact: true });
+  const popup = page.getByRole("region", { name: "More status items", exact: true });
+  // Footer overflow is measured after fonts, plugin controls and the viewport settle. During that first layout,
+  // an item's anchor can briefly report `overflow` even though the follow-up measurement puts it inline. Wait
+  // for an actionable, visible state instead of trusting that transient data attribute.
+  await page.waitForFunction(() => {
+    const visible = (element) => {
+      if (!element) return false;
+      const box = element.getBoundingClientRect();
+      return box.width > 0 && box.height > 0 && getComputedStyle(element).visibility !== "hidden";
+    };
+    return (
+      visible(document.querySelector('[data-footer-content="tailscale:sharing"] button')) ||
+      visible(document.querySelector('button[aria-label="More status items"]')) ||
+      visible(document.querySelector('[role="region"][aria-label="More status items"]'))
+    );
+  });
+  if (!(await trigger.isVisible()) && !(await popup.isVisible())) await more.click();
   await trigger.click();
   const panel = page.getByRole("region", { name: "Tailscale", exact: true });
   await panel.waitFor();
@@ -30,6 +45,18 @@ async function sharingStatus(page) {
     });
     if (!response.ok) throw new Error("Authenticated sharing status must succeed.");
     return response.json();
+  });
+}
+
+async function externalStatus(request, url) {
+  const session = new URLSearchParams(new URL(url).hash.slice(1)).get("token");
+  assert.ok(session);
+  return request.get(new URL("/api/tailscale/status", url).href, {
+    headers: {
+      Authorization: `Bearer ${session}`,
+      Host: new URL(ORIGIN).host,
+      Origin: ORIGIN,
+    },
   });
 }
 
@@ -64,38 +91,7 @@ try {
   const page = await context.newPage();
   const errors = [];
   const failedRequests = [];
-  const verificationResponses = [];
   const mutations = { enable: 0, disable: 0, restart: 0 };
-  const instances = new Set();
-  const lifecycleResponses = [];
-  const verify = [];
-  let verifying = false;
-  let observedVerification = () => {};
-  const verificationObserved = new Promise((resolve) => {
-    observedVerification = resolve;
-  });
-  let releaseVerification = () => {};
-  const verificationGate = new Promise((resolve) => {
-    releaseVerification = resolve;
-  });
-  await page.route("**/api/lifecycle/verify", async (route) => {
-    const response = await route.fetch();
-    let result;
-    if (response.ok()) result = await response.json();
-    verificationResponses.push({
-      status: response.status(),
-      instance: result?.instance,
-      version: result?.version,
-      matches: result?.matches,
-      mismatched: result?.mismatched,
-    });
-    if (response.ok() && result?.matches && !verifying) {
-      verifying = true;
-      observedVerification();
-      await verificationGate;
-    }
-    await route.fulfill({ response });
-  });
   page.on("pageerror", (error) => errors.push(error.message));
   page.on("requestfailed", (request) => {
     const path = new URL(request.url()).pathname;
@@ -108,82 +104,33 @@ try {
     if (path === "/api/tailscale/disable") mutations.disable++;
     if (path === "/api/restart") mutations.restart++;
   });
-  page.on("response", async (response) => {
-    const path = new URL(response.url()).pathname;
-    if (path === "/api/lifecycle") {
-      let instance;
-      if (response.ok()) {
-        instance = (await response.json()).instance;
-        instances.add(instance);
-      }
-      lifecycleResponses.push({ status: response.status(), instance });
-    }
-    if (response.ok() && path === "/api/lifecycle/verify") verify.push(await response.json());
-  });
   await page.goto(url);
   await loaded(page);
   const anonymous = await context.request.get(new URL("/api/tailscale/status", url).href);
   assert.equal(anonymous.status(), 401);
+  assert.equal((await externalStatus(context.request, url)).status(), 403);
   let panel = await openSharing(page);
   let control = panel.getByRole("switch", { name: "Share over Tailscale", exact: true });
   assert.equal(await control.getAttribute("aria-checked"), "false");
   assert.equal(await panel.getByRole("button", { name: "Copy URL", exact: true }).count(), 0);
   await control.click();
-  // The retiring process's successful POST and even a held replacement proof cannot announce completion yet.
-  let verificationTimer;
-  try {
-    await Promise.race([
-      verificationObserved,
-      new Promise((_resolve, reject) => {
-        verificationTimer = setTimeout(
-          () =>
-            reject(
-              new Error(
-                `The mounted control must request replacement verification: ${JSON.stringify({
-                  verificationResponses,
-                  failedRequests,
-                  errors,
-                  mutations,
-                  lifecycleResponses,
-                  instances: [...instances],
-                })}`,
-              ),
-            ),
-          15_000,
-        );
-      }),
-    ]);
-  } finally {
-    clearTimeout(verificationTimer);
-  }
-  assert.equal(await control.getAttribute("aria-busy"), "true");
-  assert.equal(await panel.getByRole("button", { name: "Copy URL", exact: true }).count(), 0);
-  releaseVerification();
+  // The live server applies access policy in-process; no daemon restart or replacement process is needed.
   await page.waitForFunction(
     () => document.querySelector('[role="switch"][aria-checked="true"][aria-busy="false"]'),
     null,
-    { timeout: 60_000 },
+    { timeout: 15_000 },
   );
-  await control.waitFor({ state: "visible" });
   assert.equal(await control.getAttribute("aria-busy"), "false");
   assert.equal(mutations.enable, 1);
-  assert.equal(mutations.restart, 1);
-  assert.ok(
-    verify.some((answer) => answer.matches),
-    "ON must include actual replacement policy proof.",
-  );
+  assert.equal(mutations.restart, 0);
   const ready = await sharingStatus(page);
   assert.equal(ready.state, "ready");
   assert.equal(ready.target, `http://127.0.0.1:${new URL(url).port}`);
+  assert.equal((await externalStatus(context.request, url)).status(), 200);
   await panel.getByRole("button", { name: "Copy URL", exact: true }).click();
   const copied = await page.evaluate(() => navigator.clipboard.readText());
-  assert.equal(copied, "https://workstation.tail-example.ts.net/");
-  assert.ok(!copied.includes("token"));
-  const signIn = panel.getByRole("button", { name: "Copy sign-in link", exact: true });
-  await signIn.click();
-  const signed = await page.evaluate(() => navigator.clipboard.readText());
-  assert.equal(new URL(signed).origin, "https://workstation.tail-example.ts.net");
-  assert.equal(new URL(signed).hash, new URL(url).hash);
+  assert.equal(new URL(copied).origin, "https://workstation.tail-example.ts.net");
+  assert.equal(new URL(copied).hash, new URL(url).hash);
   assert.ok(
     !(await page.locator("body").textContent()).includes(new URL(url).hash),
     "A credential link must stay out of the DOM.",
@@ -221,18 +168,15 @@ try {
   await page.waitForFunction(() => !document.querySelector('[role="switch"][aria-checked="true"]'));
   await page.waitForFunction(() => document.querySelector('[role="switch"][aria-busy="false"]'));
   assert.equal(await panel.getByRole("button", { name: "Copy URL", exact: true }).count(), 0);
-  assert.equal(await panel.getByRole("button", { name: "Copy sign-in link", exact: true }).count(), 0);
   const status = await sharingStatus(page);
   assert.equal(status.state, "off");
   assert.equal(status.desired_enabled, false);
+  assert.equal((await externalStatus(context.request, url)).status(), 403);
   assert.deepEqual(status.apply_settings, {});
-  assert.deepEqual(mutations, { enable: 1, disable: 1, restart: 2 });
-  assert.equal(instances.size, 3);
-  assert.equal(verify.filter((answer) => answer.matches).length, 2);
+  assert.deepEqual(mutations, { enable: 1, disable: 1, restart: 0 });
   assert.deepEqual(errors, []);
   console.log(
     JSON.stringify({
-      replacements: instances.size - 1,
       mutations,
       copied: new URL(copied).origin,
       layouts,

@@ -28,7 +28,9 @@ def kernel(make_kernel, settings, calls):
         """Run every minute."""
         calls.append("minutely")
 
-    quiet = settings.model_copy(update={"disabled_modules": frozenset({"system.state"})})  # its job every 15 minutes
+    # This test isolates the example job from unrelated background jobs. Both built-in jobs can be due depending on
+    # when the integration suite starts: system.state every 15 minutes and heinzel:prune once a day.
+    quiet = settings.model_copy(update={"disabled_modules": frozenset({"system.state", "heinzel"})})
     return make_kernel(builtins=True, settings_=quiet, example=module)
 
 

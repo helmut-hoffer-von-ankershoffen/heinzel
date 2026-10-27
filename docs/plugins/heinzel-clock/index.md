@@ -7,7 +7,7 @@ What time it is for everyone on the team: a Heinzelmännchen plugin.
 | | |
 | --- | --- |
 | Kind | **capability** |
-| Version | `0.7.14` (first-party, released with Heinzelmännchen) |
+| Version | `0.7.16` (first-party, released with Heinzelmännchen) |
 | Source | <https://github.com/helmut-hoffer-von-ankershoffen/heinzel/tree/main/plugins/heinzel-clock> |
 | Licence | MIT |
 | Install | `hz system plugin add clock --confirm` |
@@ -152,7 +152,7 @@ In your configuration file (`hz system config set <key> <value>`), or as environ
 
 | Key | Type | Default | Environment variable | Description |
 | --- | --- | --- | --- | --- |
-| `zones` | array of Zone | `[{"name": "Europe/Berlin", "hours": [9, 18]}, {"name": "America/New_York", "hours": [9, 18]}, {"name": "America/Los_Angeles", "hours": [9, 18]}]` | `HZ_CLOCK__ZONES` | The time zones your team works in, with the working hours in each. The first one is yours. |
+| `zones` | array of Zone | `[{"name": "Europe/Berlin", "hours": [9, 18]}, {"name": "America/New_York", "hours": [9, 18]}, {"name": "America/Los_Angeles", "hours": [9, 18]}]` | `HZ_CLOCK__ZONES` | The time zones your team works in, with the working hours in each. The first one is primary. |
 | `working_hours` | array or null | `null` | `HZ_CLOCK__WORKING_HOURS` | Deprecated: the hours of every zone given by name only. Give each zone its hours instead. |
 
 ## Setup and health

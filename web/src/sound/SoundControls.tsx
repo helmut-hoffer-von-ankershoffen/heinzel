@@ -1,6 +1,6 @@
-// The sound's controls (ADR 0058): the speaker button beside the light/dark toggle (a click plays or pauses; its
-// chevron, a right-click or a long press opens the popover), and the same choices in Settings → General.
-import { Check, ChevronUp, Volume, Volume2, VolumeX } from "lucide-react";
+// The sound's controls (ADR 0058): one visible speaker beside the light/dark toggle (a click plays or pauses; a
+// right-click or a long press opens the popover), and the same choices in Settings → General.
+import { Check, Volume, Volume2, VolumeX } from "lucide-react";
 import { type ReactNode, type RefObject, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Link } from "react-router";
@@ -30,55 +30,57 @@ function detail(soundscape: SchemaSoundscapeView): string | null {
   return credits.length ? t("sound.credits", { credits: credits.join(", ") }) : null;
 }
 
-/** Off, Claude FM and the plugins' soundscapes, the configured one checked, as a group of radios. */
+/** Claude FM and the plugins' soundscapes, the configured one checked, as a group of radios. */
 export function SoundChoices({ list, onPicked }: { list: SchemaSoundList; onPicked?: () => void }) {
   const choose = useSetSound();
   const themes = useThemes().data?.themes ?? [];
   return (
     <div role="radiogroup" aria-label={t("sound.title")} className="flex flex-col gap-0.5">
-      {list.soundscapes.map((soundscape) => {
-        const checked = soundscape.name === list.effective;
-        const themeTitles = themes
-          .filter(
-            (theme) =>
-              theme.plugin === soundscape.plugin &&
-              theme.plugin !== null &&
-              soundscape.pairs_with?.includes(theme.name),
-          )
-          .map((theme) => theme.title);
-        const origin =
-          soundscape.kind === "off"
-            ? null
-            : soundscape.plugin === "heinzel"
-              ? t("sound.builtIn")
-              : themeTitles.length
-                ? t("sound.fromTheme", { theme: themeTitles.join(", ") })
-                : soundscape.plugin
-                  ? t("sound.fromPlugin", { plugin: soundscape.plugin })
-                  : null;
-        const about = [origin, detail(soundscape)].filter(Boolean).join(" · ");
-        return (
-          // biome-ignore lint/a11y/useSemanticElements: a list of choices, announced as the radios of its group
-          <button
-            key={soundscape.name}
-            type="button"
-            role="radio"
-            aria-checked={checked}
-            disabled={choose.isPending}
-            onClick={() => {
-              if (!checked || list.follow_theme) choose.mutate(soundscape.name);
-              onPicked?.();
-            }}
-            className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-ui hover:bg-accent disabled:opacity-50"
-          >
-            <span className="min-w-0 flex-1">
-              <span className="block truncate">{soundscape.title}</span>
-              {about && <span className="block truncate text-xs text-muted-foreground">{about}</span>}
-            </span>
-            <Check aria-hidden className={cn("size-4 shrink-0", !checked && "invisible")} />
-          </button>
-        );
-      })}
+      {list.soundscapes
+        .filter((soundscape) => soundscape.kind !== "off")
+        .map((soundscape) => {
+          const checked = soundscape.name === list.effective;
+          const themeTitles = themes
+            .filter(
+              (theme) =>
+                theme.plugin === soundscape.plugin &&
+                theme.plugin !== null &&
+                soundscape.pairs_with?.includes(theme.name),
+            )
+            .map((theme) => theme.title);
+          const origin =
+            soundscape.kind === "off"
+              ? null
+              : soundscape.plugin === "heinzel"
+                ? t("sound.builtIn")
+                : themeTitles.length
+                  ? t("sound.fromTheme", { theme: themeTitles.join(", ") })
+                  : soundscape.plugin
+                    ? t("sound.fromPlugin", { plugin: soundscape.plugin })
+                    : null;
+          const about = [origin, detail(soundscape)].filter(Boolean).join(" · ");
+          return (
+            // biome-ignore lint/a11y/useSemanticElements: a list of choices, announced as the radios of its group
+            <button
+              key={soundscape.name}
+              type="button"
+              role="radio"
+              aria-checked={checked}
+              disabled={choose.isPending}
+              onClick={() => {
+                if (!checked || list.follow_theme) choose.mutate(soundscape.name);
+                onPicked?.();
+              }}
+              className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-ui hover:bg-accent disabled:opacity-50"
+            >
+              <span className="min-w-0 flex-1">
+                <span className="block truncate">{soundscape.title}</span>
+                {about && <span className="block truncate text-xs text-muted-foreground">{about}</span>}
+              </span>
+              <Check aria-hidden className={cn("size-4 shrink-0", !checked && "invisible")} />
+            </button>
+          );
+        })}
     </div>
   );
 }
@@ -110,27 +112,6 @@ function VolumeSlider({ list }: { list: SchemaSoundList }) {
           timer.current = setTimeout(() => setting.save("volume", next), VOLUME_DEBOUNCE_MS);
         }}
         className="flex-1 accent-(--color-primary)"
-      />
-    </div>
-  );
-}
-
-/** Sound on or off: "off" is the soundscape that plays nothing; on brings back the first one that does. */
-function OnOff({ list }: { list: SchemaSoundList }) {
-  const choose = useSetSound();
-  const id = useId();
-  const on = list.selected !== "off";
-  const first = list.soundscapes.find((soundscape) => soundscape.kind !== "off");
-  return (
-    <div className="flex items-center gap-3 px-2.5 py-1.5">
-      <span id={id} className="flex-1 text-ui">
-        {t("sound.on")}
-      </span>
-      <Switch
-        labelledBy={id}
-        on={on}
-        disabled={choose.isPending || (!on && !first)}
-        onToggle={() => choose.mutate(on ? "off" : (first?.name ?? "off"))}
       />
     </div>
   );
@@ -237,8 +218,7 @@ export function SoundButton({ compact = false }: { compact?: boolean }) {
       {open && list.data && (
         <Popover anchor={ref} side={compact ? "right" : "above"} dialog={dialog}>
           <p className="px-2.5 pt-1 pb-1.5 text-ui-sm text-muted-foreground">{t("sound.title")}</p>
-          <OnOff list={list.data} />
-          <SoundChoices list={list.data} />
+          <SoundChoices list={list.data} onPicked={() => setOpen(false)} />
           <Notes list={list.data} />
           <hr className="mx-2 my-1 border-border" />
           <VolumeSlider list={list.data} />
@@ -257,6 +237,7 @@ export function SoundButton({ compact = false }: { compact?: boolean }) {
         </Popover>
       )}
       <button
+        ref={opener}
         type="button"
         onClick={() => {
           if (pressed.current) {
@@ -267,6 +248,11 @@ export function SoundButton({ compact = false }: { compact?: boolean }) {
           else toggle();
         }}
         onContextMenu={(event) => {
+          event.preventDefault();
+          setOpen(true);
+        }}
+        onKeyDown={(event) => {
+          if (event.key !== "ArrowDown") return;
           event.preventDefault();
           setOpen(true);
         }}
@@ -281,6 +267,10 @@ export function SoundButton({ compact = false }: { compact?: boolean }) {
         onPointerUp={() => clearTimeout(press.current)}
         onPointerLeave={() => clearTimeout(press.current)}
         aria-pressed={current ? sound.playing : undefined}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        aria-keyshortcuts="ArrowDown"
+        aria-description={t("sound.optionsKeyboardHelp")}
         aria-label={label}
         title={label}
         className={cn(
@@ -289,21 +279,6 @@ export function SoundButton({ compact = false }: { compact?: boolean }) {
         )}
       >
         {!current ? <Volume aria-hidden /> : sound.playing ? <Volume2 aria-hidden /> : <VolumeX aria-hidden />}
-      </button>
-      <button
-        ref={opener}
-        type="button"
-        onClick={() => setOpen((value) => !value)}
-        aria-haspopup="dialog"
-        aria-expanded={open}
-        aria-label={t("sound.options")}
-        title={t("sound.options")}
-        className={cn(
-          "flex items-center justify-center rounded-md text-icon hover:bg-accent/70",
-          compact ? "h-6 w-7" : "-ml-1 h-9 w-6",
-        )}
-      >
-        <ChevronUp aria-hidden className="size-3" />
       </button>
     </div>
   );

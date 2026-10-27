@@ -47,6 +47,16 @@ def test_authentication_alone_does_not_prove_a_loaded_origin_or_overridden_port(
     assert not SharingReadiness(runtime, User("web-session")).verifies(MAPPING)
 
 
+def test_apply_origins_updates_only_the_process_with_a_bound_web_listener():
+    web_runtime = LocalWebRuntime(port=9123)
+    SharingReadiness(web_runtime, User("web-session")).apply_origins(frozenset({MAPPING.origin}))
+    assert web_runtime.loaded_origins == frozenset({MAPPING.origin})
+
+    cli_runtime = LocalWebRuntime()
+    SharingReadiness(cli_runtime, User("cli")).apply_origins(frozenset({MAPPING.origin}))
+    assert cli_runtime.loaded_origins == frozenset()
+
+
 @pytest.mark.parametrize(
     "origin", ["https://[broken", "https://evil.example", MAPPING.origin + "/", MAPPING.origin + "?x=1"]
 )

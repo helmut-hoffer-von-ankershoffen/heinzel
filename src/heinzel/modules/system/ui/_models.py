@@ -17,7 +17,7 @@ class UiSettings(ModuleSettings):
     person's app shows.
     """
 
-    ignored_in_project: ClassVar[frozenset[str]] = frozenset({"contributions"})
+    ignored_in_project: ClassVar[frozenset[str]] = frozenset({"contributions", "audio_visualizer"})
 
     contributions: dict[str, dict[Slot, bool]] = Field(
         default_factory=dict[str, dict[Slot, bool]],
@@ -25,6 +25,12 @@ class UiSettings(ModuleSettings):
         description="Which status items, actions and widgets show in which place of the app; anything you leave out "
         "keeps the place its module chose.",
         json_schema_extra={"x-expert": True},
+    )
+    audio_visualizer: bool = Field(
+        default=False,
+        title="Audio visualizer",
+        description="Show the optional audio sharing visualizer at the right edge of the app. Off by default; "
+        "turning it on asks you to choose a browser audio source before anything is captured.",
     )
 
 

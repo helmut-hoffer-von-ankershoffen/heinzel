@@ -20,10 +20,10 @@ def test_shows_each_zone_with_its_working_hours(hz):
     ]
 
 
-def test_the_first_zone_is_yours_and_the_table_says_so(hz, monkeypatch):
+def test_the_first_zone_is_primary_and_the_table_says_so(hz, monkeypatch):
     monkeypatch.setenv("HZ_CLOCK__ZONES", '["Asia/Tokyo", "Europe/Berlin"]')
     assert [zone["primary"] for zone in hz("clock", "--at", AT).json] == [True, False]
-    assert "Asia/Tokyo (yours)" in hz("clock", "--at", AT, json=False).output
+    assert "Asia/Tokyo (Primary)" in hz("clock", "--at", AT, json=False).output
 
 
 def test_nobody_is_working_at_the_weekend(hz):
@@ -252,5 +252,6 @@ def test_the_plugin_declares_its_settings_and_existing_panel_navigation():
 
     (navigation,) = [let for let in module.lets if isinstance(let, NavLet)]
     assert navigation.settings.sections == ("clock",)
+    assert navigation.settings.group == "preferences"
     assert navigation.icon == "clock"
     assert navigation.sidebar == Navigate(path="/?panel=world-clock")

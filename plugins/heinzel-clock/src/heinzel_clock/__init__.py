@@ -35,7 +35,7 @@ module = Module("clock", "World Clock: what time it is for everyone on the team.
 module.nav(
     title="World Clock",
     icon="clock",
-    settings=NavSettings(sections=("clock",), group="customize"),
+    settings=NavSettings(sections=("clock",), group="preferences"),
     sidebar=Navigate(path="/?panel=world-clock"),
 )
 
@@ -88,7 +88,7 @@ class ClockSettings(ModuleSettings):
     zones: list[Zone] = Field(
         default=[Zone(name=name) for name in DEFAULT_ZONES],
         title="Time zones",
-        description="The time zones your team works in, with the working hours in each. The first one is yours.",
+        description="The time zones your team works in, with the working hours in each. The first one is primary.",
         examples=[[{"name": "Asia/Tokyo", "hours": [10, 19]}]],
     )
     working_hours: tuple[int, int] | None = Field(
@@ -120,7 +120,7 @@ class ZoneTime(BaseModel):
     time: str = Field(description="Local weekday and time there, e.g. Mon 14:05.")
     hours: tuple[int, int] = Field(description="Start and end hour of a working day there.")
     working: bool = Field(description="Whether it is within the working hours there, Monday to Friday.")
-    primary: bool = Field(default=False, description="Whether this is your own zone: the first one configured.")
+    primary: bool = Field(default=False, description="Whether this is the primary zone: the first one configured.")
 
 
 def _render(times: list[ZoneTime]) -> Table:
@@ -128,7 +128,7 @@ def _render(times: list[ZoneTime]) -> Table:
     for column in ("Zone", "Time", "Working hours", "Working"):
         table.add_column(column)
     for item in times:
-        zone = f"{item.zone} (yours)" if item.primary else item.zone
+        zone = f"{item.zone} (Primary)" if item.primary else item.zone
         table.add_row(zone, item.time, f"{item.hours[0]:02d}-{item.hours[1]:02d}", "yes" if item.working else "no")
     return table
 

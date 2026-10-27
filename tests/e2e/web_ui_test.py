@@ -111,8 +111,7 @@ def environment(tmp_path):
 @pytest.mark.timeout(600)
 def test_hz_ui_opens_the_app_and_it_shows_the_doctor_report(environment, tmp_path):
     env, recorded = environment
-    if not web_build.current():
-        web_build.build()
+    web_build.ensure_built()
     run = [sys.executable, str(REPO / "scripts" / "web_build.py")]
     install = [*run, "exec", "playwright-core", "install", "chromium"]
     subprocess.run(install, cwd=REPO, check=True, timeout=600, capture_output=True)
@@ -167,6 +166,31 @@ def test_hz_ui_opens_the_app_and_it_shows_the_doctor_report(environment, tmp_pat
 
 
 @pytest.mark.timeout(600)
+def test_footer_measurement_waits_for_the_navigation_width_transition():
+    """A nearly finished sidebar animation still changes the available footer width."""
+    run = [sys.executable, str(REPO / "scripts" / "web_build.py")]
+    subprocess.run(
+        [*run, "exec", "playwright-core", "install", "chromium"],
+        cwd=REPO,
+        check=True,
+        timeout=600,
+        capture_output=True,
+    )
+    driven = subprocess.run(
+        [*run, "exec", "node", "e2e/footer-readiness.mjs"],
+        cwd=REPO,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=110,
+    )
+    assert driven.returncode == 0, driven.stderr
+    result = json.loads(driven.stdout.strip().splitlines()[-1])
+    assert 56 < result["nearFinalWidth"] <= 57
+    assert result["waitedForFinishedAnimation"] is True
+
+
+@pytest.mark.timeout(600)
 def test_theme_image_viewports_preserve_the_cap_hinge_in_actual_chromium(tmp_path):
     run = [sys.executable, str(REPO / "scripts" / "web_build.py")]
     subprocess.run(
@@ -194,8 +218,7 @@ def test_theme_image_viewports_preserve_the_cap_hinge_in_actual_chromium(tmp_pat
 def test_mobile_touch_viewports_keep_navigation_settings_and_chat_reachable(environment, tmp_path):
     """Chromium mobile emulation checks responsive reachability; it is not a physical iPhone Safari test."""
     env, _recorded = environment
-    if not web_build.current():
-        web_build.build()
+    web_build.ensure_built()
     run = [sys.executable, str(REPO / "scripts" / "web_build.py")]
     subprocess.run(
         [*run, "exec", "playwright-core", "install", "chromium"],
@@ -247,8 +270,7 @@ def test_mobile_touch_viewports_keep_navigation_settings_and_chat_reachable(envi
 def test_docked_media_stays_below_every_overlay_in_mounted_chromium(environment, tmp_path):
     """A focused real-browser hit test of media against menus, status popovers and Settings."""
     env, _recorded = environment
-    if not web_build.current():
-        web_build.build()
+    web_build.ensure_built()
     run = [sys.executable, str(REPO / "scripts" / "web_build.py")]
     subprocess.run(
         [*run, "exec", "playwright-core", "install", "chromium"],

@@ -97,7 +97,7 @@ REFERENCE: Mapping[str, tuple[str, str]] = MappingProxyType(
         ),
     }
 )
-"""First-party plugins in repositories of their own, by name: their descriptions and repositories."""
+"""Reference plugins resolved by name from their own repositories; this is not core repository provenance."""
 CONTRIB = ("helmut-hoffer-von-ankershoffen", "heinzel-contrib", "main")
 """The contrib monorepo (`plugins/heinzel-<name>`), a known community source: listed in Discover without the topic."""
 _CONTRIB_CACHE: dict[str, Any] = {}
@@ -170,6 +170,15 @@ class PluginService:
 
     def installed(self) -> list[PluginInfo]:
         """Every installed plugin, enabled or not, with where it came from and what it brings."""
+        visibility: dict[str, bool | None] = {}
+        for event in self.history():
+            if not event.distribution:
+                continue
+            distribution_name = canonicalize_name(event.distribution)
+            if event.action == "remove":
+                visibility.pop(distribution_name, None)
+            elif event.action in {"add", "develop"}:
+                visibility[distribution_name] = event.private_repository
         records: dict[str, list[ModuleRecord]] = {}
         enabled: dict[str, bool] = {}
         for record in self._kernel.modules:
@@ -178,16 +187,16 @@ class PluginService:
                 enabled[canonicalize_name(record.origin.distribution)] = True
         for record in self._kernel.blocked:
             if not record.origin.builtin:
-                name: str = canonicalize_name(record.origin.distribution)
-                records.setdefault(name, []).append(record)
-                enabled.setdefault(name, False)
+                distribution_name = canonicalize_name(record.origin.distribution)
+                records.setdefault(distribution_name, []).append(record)
+                enabled.setdefault(distribution_name, False)
         distributions = self._plugin_distributions()
         errors = self._errors_by_distribution()
         plugins: list[PluginInfo] = []
         # What the kernel loaded, blocked or failed to load; with `[hz] plugins_enabled` off, that is nothing.
-        for name in sorted(set(records) | set(errors)):
-            mine = sorted(records.get(name, []), key=lambda r: r.path)
-            dist = distributions.get(name)
+        for plugin_name in sorted(set(records) | set(errors)):
+            mine = sorted(records.get(plugin_name, []), key=lambda r: r.path)
+            dist = distributions.get(plugin_name)
             origin = mine[0].origin if mine else None
             homepage = origin.url if origin else None
             kind, url, revision = _source_of(dist, homepage)
@@ -203,19 +212,20 @@ class PluginService:
             )
             plugins.append(
                 PluginInfo(
-                    distribution=origin.distribution if origin else (dist.name if dist else name),
+                    distribution=origin.distribution if origin else (dist.name if dist else plugin_name),
                     # The metadata installed now: the kernel read its origin at start, before an upgrade replaced it.
                     version=dist.version if dist else (origin.version if origin else "unknown"),
                     modules=[r.qualname for r in mine],
-                    name=short_name(name),
+                    name=short_name(plugin_name),
                     summary=str(dist.metadata.get("Summary") or "") if dist else "",
                     source_kind=kind,
                     source_url=url,
                     revision=revision,
                     homepage=homepage,
-                    first_party=_is_first_party(name, kind, url),
-                    enabled=enabled.get(name, False) and self._kernel.settings.plugins_enabled,
-                    error=errors.get(name),
+                    first_party=_is_first_party(url or homepage),
+                    private_repository=visibility.get(plugin_name),
+                    enabled=enabled.get(plugin_name, False) and self._kernel.settings.plugins_enabled,
+                    error=errors.get(plugin_name),
                     layers=[
                         PluginLayer(module=let.name, parent=let.parent, site=let.site)
                         for record in mine
@@ -357,6 +367,7 @@ class PluginService:
                 source=candidate.source,
                 version=candidate.version,
                 publisher=candidate.publisher,
+                private_repository=candidate.private,
             )
             return self._changed("add", candidate.distribution, candidate)
 
@@ -524,6 +535,7 @@ class PluginService:
                 install_spec=name,
                 url=url,
                 repository_url=url,
+                private_repository=False,
                 stars=None,
                 installed=f"heinzel-{name}" in installed,
             )
@@ -598,6 +610,7 @@ class PluginService:
                 install_spec=f"{dist} @ git+{url}@{branch}#subdirectory={path}",
                 url=f"{url}/tree/{branch}/{path}",
                 repository_url=repository_url(f"git+{url}"),
+                private_repository=False,
                 stars=None,
                 installed=canonicalize_name(dist) in installed,
             )
@@ -610,6 +623,8 @@ class PluginService:
         """The plugins of one repository with the topic: one per entry of a monorepo, else the repository itself."""
         url = repository["html_url"]
         stars = repository.get("stargazers_count") or 0
+        private = repository.get("private")
+        visibility = private if isinstance(private, bool) else None
         entries = self._monorepo_plugins(repository)
         if not entries:
             return [
@@ -622,6 +637,7 @@ class PluginService:
                     install_spec=f"git+{url}",
                     url=url,
                     repository_url=repository_url(f"git+{url}"),
+                    private_repository=visibility,
                     stars=stars,
                     installed=canonicalize_name(repository["name"]) in installed,
                 )
@@ -637,6 +653,7 @@ class PluginService:
                 install_spec=f"{name} @ git+{url}#subdirectory={path}",
                 url=f"{url}/tree/{branch}/{path}",
                 repository_url=repository_url(f"git+{url}"),
+                private_repository=visibility,
                 stars=stars,
                 installed=canonicalize_name(name) in installed,
             )
@@ -808,6 +825,7 @@ class PluginService:
         source: Source | None = None,
         version: str | None = None,
         publisher: str | None = None,
+        private_repository: bool | None = None,
     ) -> None:
         event = PluginEvent(
             at=datetime.now(UTC),
@@ -817,6 +835,7 @@ class PluginService:
             source=source,
             version=version,
             publisher=publisher,
+            private_repository=private_repository,
         )
         path = self._history_path()
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -896,14 +915,24 @@ def _same(a: str, b: str) -> bool:
 SourceKind = Literal["pypi", "git", "path"]
 
 
-def _is_first_party(name: str, kind: SourceKind | None, url: str | None) -> bool:
-    """A first-party name from the repository it is released in, or from a checkout of it."""
-    short = short_name(name)
-    if short in REFERENCE:
-        return url is not None and url.startswith(REFERENCE[short][1])
-    if short not in FIRST_PARTY:
+def _is_first_party(url: str | None) -> bool:
+    """Only the exact core repository establishes installed first-party provenance, never a package name."""
+    if not url:
         return False
-    return kind in {None, "path"} or (url is not None and url.startswith(REPOSITORY))
+    try:
+        parsed = urlsplit(url)
+        path = parsed.path[1:].lower().split("/")
+        return (
+            parsed.scheme == "https"
+            and parsed.hostname == "github.com"
+            and parsed.port in {None, 443}
+            and parsed.username is None
+            and parsed.password is None
+            and len(path) > 1
+            and (path[0], path[1].removesuffix(".git")) == ("helmut-hoffer-von-ankershoffen", "heinzel")
+        )
+    except ValueError:
+        return False
 
 
 def _source_of(

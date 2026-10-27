@@ -1,6 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { type CapturedAudio, captureAudio } from "./capture";
 
+export function spectrumGeometry(height: number) {
+  const rows = Math.max(8, Math.min(128, Math.floor(height / 4)));
+  const rowHeight = height / rows;
+  return { rows, rowHeight, barHeight: Math.max(2, rowHeight * 0.68) };
+}
+
+export function spectrumLevel(value: number) {
+  return Math.sqrt(Math.max(0, Math.min(255, value)) / 255);
+}
+
 /** A real spectrum at the right edge. Showing the control never starts capture; the person clicks to share. */
 export function AudioVisualizer({ enabled = true }: { enabled?: boolean }) {
   const [session, setSession] = useState<CapturedAudio | null>(null);
@@ -96,15 +106,16 @@ export function AudioVisualizer({ enabled = true }: { enabled?: boolean }) {
       drawing.clearRect(0, 0, width, height);
       drawing.fillStyle = getComputedStyle(element).color;
       session.analyser.getByteFrequencyData(data);
-      const rows = Math.max(8, Math.min(128, Math.floor(height / 8)));
+      const { rows, rowHeight, barHeight } = spectrumGeometry(height);
       for (let row = 0; row < rows; row += 1) {
         const from = Math.floor(((rows - 1 - row) * data.length) / rows);
         const to = Math.max(from + 1, Math.floor(((rows - row) * data.length) / rows));
         let peak = 0;
         for (let index = from; index < to; index += 1) peak = Math.max(peak, data[index] ?? 0);
-        const bar = 1 + (peak / 255) * (width - 1);
-        drawing.globalAlpha = 0.2 + (peak / 255) * 0.8;
-        drawing.fillRect((width - bar) / 2, (row * height) / rows, bar, 2);
+        const level = spectrumLevel(peak);
+        const bar = 1 + level * (width - 1);
+        drawing.globalAlpha = 0.2 + level * 0.8;
+        drawing.fillRect((width - bar) / 2, row * rowHeight, bar, barHeight);
       }
       drawing.globalAlpha = 1;
     };
@@ -128,7 +139,7 @@ export function AudioVisualizer({ enabled = true }: { enabled?: boolean }) {
   return (
     <button
       type="button"
-      className="relative flex h-full min-h-6 w-6 shrink-0 items-stretch justify-center border-l border-border px-1 text-muted-foreground hover:text-foreground"
+      className="relative flex h-dvh min-h-6 w-6 shrink-0 items-stretch justify-center px-1 text-muted-foreground hover:text-foreground"
       aria-label={label}
       aria-pressed={Boolean(session)}
       aria-describedby="audio-visualizer-help"
