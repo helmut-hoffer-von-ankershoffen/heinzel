@@ -85,7 +85,11 @@ export function WorkspacePanels({ panels, active, onSelect, flowing = false }: P
           hidden={panel.id !== selected}
           className={cn(
             "min-w-0",
-            flowing ? "shrink-0" : "min-h-0 flex-1 overflow-hidden",
+            flowing
+              ? panel.id === "world-clock" || panel.id === "page"
+                ? "shrink-0"
+                : "h-[min(36rem,75dvh)] shrink-0 overflow-hidden"
+              : "min-h-0 flex-1 overflow-hidden",
             panel.id !== selected && "hidden",
           )}
         >

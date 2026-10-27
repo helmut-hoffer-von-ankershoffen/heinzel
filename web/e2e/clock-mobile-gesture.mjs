@@ -85,6 +85,38 @@ try {
   const last = panel.getByText("Los Angeles", { exact: true });
   const box = await last.boundingBox();
   assert.ok(box && box.y >= 0 && box.y + box.height <= 844, "last location is visible after scrolling");
+  // The other workspace panels also follow the page, and switching preserves their contents.
+  await page.getByRole("tab", { name: "Chat", exact: true }).click();
+  const composer = page.getByRole("textbox", { name: "Your message" });
+  await composer.scrollIntoViewIfNeeded();
+  await composer.tap();
+  await composer.fill("Draft remains available");
+  const chatFacts = await pane.evaluate((element) => ({
+    top: element.getBoundingClientRect().top,
+    mainBottom: element.parentElement.querySelector("main").getBoundingClientRect().bottom,
+    mainInert: element.parentElement.querySelector("main").inert,
+  }));
+  assert.ok(chatFacts.top >= chatFacts.mainBottom - 1, "chat follows the page");
+  assert.equal(chatFacts.mainInert, false);
+  await page.getByRole("button", { name: "Open a terminal", exact: true }).click();
+  const terminal = page.getByRole("region", { name: "Terminal", exact: true });
+  await terminal.scrollIntoViewIfNeeded();
+  const terminalFacts = await pane.evaluate((element) => ({
+    top: element.getBoundingClientRect().top,
+    mainBottom: element.parentElement.querySelector("main").getBoundingClientRect().bottom,
+    mainInert: element.parentElement.querySelector("main").inert,
+  }));
+  assert.ok(terminalFacts.top >= terminalFacts.mainBottom - 1, "terminal follows the page");
+  assert.equal(terminalFacts.mainInert, false);
+  await terminal.getByRole("button", { name: "Full screen", exact: true }).click();
+  assert.equal(
+    await pane.evaluate((element) => getComputedStyle(element).position),
+    "absolute",
+    "explicit full screen remains an overlay",
+  );
+  await terminal.getByRole("button", { name: "Leave full screen", exact: true }).click();
+  await page.getByRole("tab", { name: "Chat", exact: true }).click();
+  assert.equal(await composer.inputValue(), "Draft remains available");
 } finally {
   await browser.close();
 }
