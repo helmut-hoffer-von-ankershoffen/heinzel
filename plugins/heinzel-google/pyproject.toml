@@ -1,11 +1,11 @@
 [project]
 name = "heinzel-google"
-version = "0.7.23"
+version = "0.7.24"
 description = "Google Docs, Sheets, Drive, Calendar and Gmail: the documents, calendar and mail capabilities."
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.12"
-dependencies = ["heinzel>=0.7.23"] # released together; the release process bumps the bound
+dependencies = ["heinzel>=0.7.24"] # released together; the release process bumps the bound
 
 [project.urls]
 Source = "https://github.com/helmut-hoffer-von-ankershoffen/heinzel/tree/main/plugins/heinzel-google"

@@ -7,7 +7,7 @@ Read meetings from Zoom's meeting-summary emails: the meetings capability.
 | | |
 | --- | --- |
 | Kind | **connector** |
-| Version | `0.7.23` (first-party, released with Heinzelmännchen) |
+| Version | `0.7.24` (first-party, released with Heinzelmännchen) |
 | Source | <https://github.com/helmut-hoffer-von-ankershoffen/heinzel/tree/main/plugins/heinzel-zoom> |
 | Licence | MIT |
 | Install | `hz system plugin add zoom --confirm` |

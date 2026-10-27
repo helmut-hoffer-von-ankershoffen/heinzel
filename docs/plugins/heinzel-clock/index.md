@@ -7,7 +7,7 @@ What time it is for everyone on the team: a Heinzelmännchen plugin.
 | | |
 | --- | --- |
 | Kind | **capability** |
-| Version | `0.7.23` (first-party, released with Heinzelmännchen) |
+| Version | `0.7.24` (first-party, released with Heinzelmännchen) |
 | Source | <https://github.com/helmut-hoffer-von-ankershoffen/heinzel/tree/main/plugins/heinzel-clock> |
 | Licence | MIT |
 | Install | `hz system plugin add clock --confirm` |
