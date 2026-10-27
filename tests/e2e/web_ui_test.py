@@ -166,6 +166,31 @@ def test_hz_ui_opens_the_app_and_it_shows_the_doctor_report(environment, tmp_pat
 
 
 @pytest.mark.timeout(600)
+def test_footer_measurement_waits_for_the_navigation_width_transition():
+    """A nearly finished sidebar animation still changes the available footer width."""
+    run = [sys.executable, str(REPO / "scripts" / "web_build.py")]
+    subprocess.run(
+        [*run, "exec", "playwright-core", "install", "chromium"],
+        cwd=REPO,
+        check=True,
+        timeout=600,
+        capture_output=True,
+    )
+    driven = subprocess.run(
+        [*run, "exec", "node", "e2e/footer-readiness.mjs"],
+        cwd=REPO,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=110,
+    )
+    assert driven.returncode == 0, driven.stderr
+    result = json.loads(driven.stdout.strip().splitlines()[-1])
+    assert 56 < result["nearFinalWidth"] <= 57
+    assert result["waitedForFinishedAnimation"] is True
+
+
+@pytest.mark.timeout(600)
 def test_theme_image_viewports_preserve_the_cap_hinge_in_actual_chromium(tmp_path):
     run = [sys.executable, str(REPO / "scripts" / "web_build.py")]
     subprocess.run(

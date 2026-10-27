@@ -92,7 +92,8 @@ export async function verifyLayers(page, shots, screenshot) {
   const results = [];
   async function front(name, pane) {
     await pane.waitFor();
-    await page.waitForFunction(() => document.fonts.status === "loaded", null, { timeout: 5000 });
+    // The layer assertion is about geometry and hit testing. Some CI hosts keep an optional font request
+    // pending even after the UI is usable; the stable-rectangle check below is the relevant readiness gate.
     const stabilityKey = `__hzStablePane_${++stabilityCheck}`;
     await pane.evaluate((element, key) => element.setAttribute("data-hz-e2e-stability", key), stabilityKey);
     try {
