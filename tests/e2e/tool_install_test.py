@@ -216,10 +216,7 @@ def test_skill_lifecycle(tmp_path, wheel):
 
 def test_install_from_git_like_users_do(sandbox):
     """`uv tool install git+https://...` builds from a git checkout; this builds from the local repository's HEAD."""
-    if (
-        not (REPO / ".git").is_dir()
-        or subprocess.run(["git", "-C", str(REPO), "rev-parse", "HEAD"], check=False, timeout=60).returncode != 0
-    ):
+    if not HEAD:
         pytest.skip("needs a git checkout with at least one commit")
     sandbox.run("uv", "tool", "install", f"git+file://{REPO}@{HEAD}")
     assert sandbox.hz("--version").startswith("hz ")
@@ -233,7 +230,7 @@ def test_install_from_git_like_users_do(sandbox):
 
 def installed_from_git(sandbox) -> None:
     """Core installed from this checkout's HEAD, so first-party plugins come from the same repository and revision."""
-    if not (REPO / ".git").is_dir() or not HEAD:
+    if not HEAD:
         pytest.skip("needs a git checkout with at least one commit")
     sandbox.run("uv", "tool", "install", f"git+file://{REPO}@{HEAD}")
 
@@ -301,9 +298,32 @@ def test_the_web_head_installs_a_first_party_catalog_entry_by_its_install_spec(s
         shown = httpx.post(add, params={"spec": entry["install_spec"]}, headers=auth, timeout=120).json()
         assert shown["done"] is False
         assert shown["candidate"]["first_party"] is True
-        done = httpx.post(add, params={"spec": shown["candidate"]["spec"], "confirm": True}, headers=auth, timeout=240)
-        assert done.status_code == 200, done.text
-        assert done.json()["done"] is True
+        # The UI streams installation so the task appears immediately and quiet builds stay alive across proxies.
+        events: list[tuple[str, dict]] = []
+        event_name = ""
+        data = ""
+        with httpx.stream(
+            "POST",
+            f"{base.rstrip('/')}/api/stream/system/plugin/add",
+            params={"spec": shown["candidate"]["spec"], "confirm": True},
+            headers=auth,
+            timeout=240,
+        ) as response:
+            assert response.status_code == 200
+            assert response.headers["content-type"].startswith("text/event-stream")
+            for line in response.iter_lines():
+                if line.startswith("event: "):
+                    event_name = line.removeprefix("event: ")
+                elif line.startswith("data: "):
+                    data = line.removeprefix("data: ")
+                elif not line and event_name and data:
+                    events.append((event_name, json.loads(data)))
+                    event_name = data = ""
+                    if events[-1][0] in {"result", "error"}:
+                        break
+        assert events[0] == ("task", {"text": "Adding plugin heinzel-clock"})
+        assert events[-1][0] == "result", events
+        assert events[-1][1]["data"]["done"] is True
     finally:
         ui.terminate()
         ui.wait(30)

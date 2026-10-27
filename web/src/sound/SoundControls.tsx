@@ -3,9 +3,9 @@
 import { Check, Volume, Volume2, VolumeX } from "lucide-react";
 import { type ReactNode, type RefObject, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Link } from "react-router";
 import type { SchemaSoundList, SchemaSoundscapeView } from "@/api/client";
 import { useThemes } from "@/api/queries";
+import { SettingsShortcut } from "@/components/SettingsShortcut";
 import { t } from "@/i18n";
 import { Switch } from "@/layout/SettingControls";
 import { cn } from "@/lib/utils";
@@ -227,13 +227,9 @@ export function SoundButton({ compact = false }: { compact?: boolean }) {
           <Toggle list={list.data} field="mute_in_meetings" label={t("sound.muteInMeetings")} />
           {sound.problem && <p className="px-2.5 py-1 text-ui-sm text-bad">{sound.problem}</p>}
           <hr className="mx-2 my-1 border-border" />
-          <Link
-            to="?settings=hz"
-            onClick={() => setOpen(false)}
-            className="flex min-h-7 items-center rounded-lg px-2.5 text-ui-sm text-primary underline hover:bg-accent"
-          >
-            {t("sound.more")}
-          </Link>
+          <div className="flex justify-end px-1">
+            <SettingsShortcut section="hz" label={t("sound.more")} onClick={() => setOpen(false)} />
+          </div>
         </Popover>
       )}
       <button
