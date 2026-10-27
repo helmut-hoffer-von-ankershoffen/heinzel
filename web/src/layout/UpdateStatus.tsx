@@ -76,9 +76,10 @@ export function UpdateStatus() {
   const status = query.data;
   const available = status?.available === true;
   const canUpdate = available && status?.supported && !busy && !recovery;
+  const label = status ? (available ? t("updates.availableLabel") : t("updates.currentLabel")) : t("updates.title");
   return (
     <FooterItem
-      label={canUpdate ? t("updates.action") : t("updates.title")}
+      label={canUpdate ? `${t("updates.action")} · ${label}` : label}
       state={problem ? "bad" : available ? "warn" : status ? "ok" : "off"}
       icon={busy ? LoaderCircle : Download}
       className={available && !problem ? "animate-pulse text-bad" : status && !problem ? "text-ok" : undefined}

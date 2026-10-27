@@ -30,7 +30,7 @@ describe("one continuous zone ticker", () => {
     const { container } = renderAt("/doctor");
     const ticker = await screen.findByTestId("zone-ticker");
     expect(ticker).toHaveAccessibleName(
-      /^World Clock: Berlin 12:00:00 · Working · 3h since start · 6h left · New York 06:00:00 · Starts in 3h .*Tokyo 19:00:00 · Starts in 14h/,
+      /^World clock: Berlin 12:00:00 · Working · 3h since start · 6h left · New York 06:00:00 · Starts in 3h .*Tokyo 19:00:00 · Starts in 14h/,
     );
     expect(ticker).toHaveAttribute("href", "/doctor?panel=world-clock");
     expect(ticker.querySelector("svg")).toBeNull();
@@ -43,7 +43,7 @@ describe("one continuous zone ticker", () => {
     mockApi(answers(["Unknown/Zone", ...names]));
     renderAt("/doctor");
     expect(await screen.findByTestId("zone-ticker")).toHaveAccessibleName(
-      /^World Clock: Zone Time unavailable.*Berlin/,
+      /^World clock: Zone Time unavailable.*Berlin/,
     );
   });
   it("is absent when its sidebar placement is off", async () => {
@@ -59,8 +59,8 @@ describe("one continuous zone ticker", () => {
     renderAt("/doctor");
     const ticker = await screen.findByTestId("zone-ticker");
     ticker.focus();
-    expect(ticker).toHaveAccessibleName(/^World Clock: Berlin 12:00:00/);
+    expect(ticker).toHaveAccessibleName(/^World clock: Berlin 12:00:00/);
     await act(() => vi.advanceTimersByTimeAsync(1000));
-    expect(ticker).toHaveAccessibleName(/^World Clock: Berlin 12:00:01/);
+    expect(ticker).toHaveAccessibleName(/^World clock: Berlin 12:00:01/);
   });
 });

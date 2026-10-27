@@ -1,7 +1,9 @@
 import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { Palette } from "lucide-react";
 import { describe, expect, it } from "vitest";
 import type { SchemaNavEntry, SchemaPluginInfo } from "@/api/client";
+import { ICONS } from "@/components/Contributions";
 import { config, shell } from "@/test/fixtures";
 import { expectAccessible, mockApi, renderAt } from "@/test/render";
 import { sourceLabel } from "./PluginsSection";
@@ -61,6 +63,82 @@ const answers = {
 };
 
 describe("navigation declared by any installed provider", () => {
+  it("normalizes contributed labels and gives legacy theme/weather preferences semantic closed icons", () => {
+    const theme = {
+      ...provider,
+      name: "acme",
+      distribution: "heinzel-acme",
+      modules: ["acme"],
+      kinds: ["theme" as const],
+    };
+    const weather = { ...provider, capabilities: ["field-notes:weather"] };
+    const legacy = (module: string): SchemaNavEntry => ({
+      ...entry,
+      id: `${module}:@settings`,
+      module,
+      plugin: `heinzel-${module}`,
+      title: module === "harbor" ? "weather" : module,
+      icon: "code",
+      declared: false,
+      settings: { sections: [module], group: "preferences" },
+    });
+    const nav = settingsNav(["acme", "harbor"], [theme, weather], [legacy("acme"), legacy("harbor")]);
+    expect(nav.pages.find((page) => page.id === "acme:@settings")).toMatchObject({ title: "ACME", icon: Palette });
+    expect(nav.pages.find((page) => page.id === "harbor:@settings")).toMatchObject({
+      title: "Weather",
+      icon: ICONS["cloud-sun"],
+    });
+    const declared = settingsNav(["harbor"], [weather], [{ ...entry, title: "weather", icon: "code" }]);
+    expect(declared.pages.find((page) => page.id === entry.id)).toMatchObject({ title: "Weather", icon: ICONS.code });
+    const mixedCase = settingsNav(["harbor"], [weather], [{ ...entry, title: "eBay settings" }]);
+    expect(mixedCase.pages.find((page) => page.id === entry.id)?.title).toBe("eBay settings");
+  });
+
+  it("renders ACME and Weather preference labels with semantic icons in the actual Settings navigation", async () => {
+    const theme = {
+      ...provider,
+      name: "acme",
+      distribution: "heinzel-acme",
+      modules: ["acme"],
+      kinds: ["theme" as const],
+    };
+    const weather = {
+      ...provider,
+      name: "weather",
+      distribution: "heinzel-weather",
+      modules: ["weather"],
+      capabilities: ["openmeteo:weather"],
+    };
+    const navigation = ["acme", "weather"].map(
+      (name): SchemaNavEntry => ({
+        ...entry,
+        id: `${name}:@settings`,
+        module: name,
+        plugin: `heinzel-${name}`,
+        title: name,
+        icon: "code",
+        declared: false,
+        settings: { group: "preferences", sections: [name] },
+      }),
+    );
+    mockApi({
+      ...answers,
+      "/api/system/plugin/list": [theme, weather],
+      "/api/system/ui/navigation": navigation,
+      "/api/system/config/show": { ...config, settings: [] },
+    });
+    renderAt("/doctor?settings=acme:@settings");
+    const dialog = await screen.findByRole("dialog", { name: "Settings" });
+    const nav = await within(dialog).findByRole("navigation", { name: "Settings" });
+    const acme = await within(nav).findByRole("button", { name: "ACME" });
+    const forecast = within(nav).getByRole("button", { name: "Weather" });
+    expect(acme.querySelector(".lucide-palette")).toBeInTheDocument();
+    expect(forecast.querySelector(".lucide-cloud-sun")).toBeInTheDocument();
+    expect(acme.querySelector(".lucide-code")).not.toBeInTheDocument();
+    await userEvent.setup().click(forecast);
+    expect(await within(dialog).findByRole("heading", { name: "Weather" })).toBeInTheDocument();
+  });
+
   it("offers the same provider and every host page through the compact page selector", async () => {
     mockApi(answers);
     const user = userEvent.setup();

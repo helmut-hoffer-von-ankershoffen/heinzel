@@ -15,6 +15,7 @@ import { NotificationSettings } from "@/notifications/NotificationSettings";
 import { SoundSettings } from "@/sound/SoundControls";
 import { AiAccessSetting } from "./AiAccessSetting";
 import { ConnectorsSection } from "./ConnectorsSection";
+import { DaemonSettings } from "./DaemonSettings";
 import { FROM_CLAUDE, FromClaudeSection } from "./FromClaudeSection";
 import { ModuleHeader, PluginsSection } from "./PluginsSection";
 import { Row, Switch } from "./SettingControls";
@@ -145,7 +146,7 @@ function Body({ report, query, setQuery, searchRef, section, onSection }: BodyPr
       type="button"
       onClick={() => go(entry.id)}
       aria-current={current === entry.id && !needle ? "page" : undefined}
-      className={item(current === entry.id)}
+      className={cn(item(current === entry.id), entry.module === "clock" && "mt-2")}
     >
       <entry.icon aria-hidden />
       {entry.title}
@@ -264,13 +265,17 @@ function Body({ report, query, setQuery, searchRef, section, onSection }: BodyPr
             )}
             {current === "ai" && <AiAccessSetting />}
             {current === "notifications" && <NotificationSettings />}
-            {(matching.length > 0 || !["appearance", "ai", "notifications"].includes(current)) && (
+            {current === "daemon" && (
+              <>
+                {header}
+                <DaemonSettings />
+              </>
+            )}
+            {(matching.length > 0 || !["appearance", "ai", "notifications", "daemon"].includes(current)) && (
               <Sections
                 settings={matching}
-                heading={page.title}
-                header={
-                  current === "appearance" || current === "ai" || current === "notifications" ? undefined : header
-                }
+                heading={current === "daemon" ? t("daemon.configuration") : page.title}
+                header={["appearance", "ai", "notifications", "daemon"].includes(current) ? undefined : header}
                 summary={page.plugin?.summary ? plainSummary(page.plugin.summary) : undefined}
               />
             )}

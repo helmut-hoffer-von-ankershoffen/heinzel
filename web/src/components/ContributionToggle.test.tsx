@@ -216,20 +216,28 @@ describe("generic provider toggle", () => {
 });
 
 describe("authenticated URL copy", () => {
-  it("copies a usable session link without rendering the credential", async () => {
+  it("shows and copies the usable session URL, including its fragment token", async () => {
     const user = userEvent.setup();
     const clipboard = vi.spyOn(navigator.clipboard, "writeText");
     const { container } = show(control({ checked: true, url: ORIGIN, sign_in_url: ORIGIN }));
     expect(clipboard).not.toHaveBeenCalled();
-    expect(container.innerHTML).not.toContain("session-for-tests");
+    expect(container).toHaveTextContent(`${ORIGIN}/#token=session-for-tests`);
     await user.click(screen.getByRole("button", { name: "Copy URL" }));
     expect(clipboard).toHaveBeenLastCalledWith(`${ORIGIN}/#token=session-for-tests`);
-    expect(container.innerHTML).not.toContain("session-for-tests");
     expect(screen.queryByRole("button", { name: "Copy sign-in link" })).not.toBeInTheDocument();
     const link = screen.getByRole("link", { name: "Open" });
-    expect(link).toHaveAttribute("href", `${ORIGIN}/`);
+    expect(link).toHaveAttribute("href", `${ORIGIN}/#token=session-for-tests`);
     expect(link).toHaveAttribute("rel", "noopener noreferrer");
     expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("shows only the public URL when the provider has not approved this host for sign-in", () => {
+    const { container } = show(
+      control({ checked: true, url: ORIGIN, sign_in_url: "https://other.tail-example.ts.net" }),
+    );
+    expect(container).toHaveTextContent(`${ORIGIN}/`);
+    expect(container).not.toHaveTextContent("session-for-tests");
+    expect(screen.getByRole("link", { name: "Open" })).toHaveAttribute("href", `${ORIGIN}/`);
   });
 
   it.each(["paired-only", "device-in-session"])("does not amplify a device credential: %s", (source) => {
@@ -261,7 +269,7 @@ describe("authenticated URL copy", () => {
     const { container } = show(control({ checked: true, url: ORIGIN, sign_in_url: ORIGIN }));
     await user.click(screen.getByRole("button", { name: "Copy URL" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("Could not copy the link.");
-    expect(container.innerHTML).not.toContain("session-for-tests");
+    expect(container).toHaveTextContent(`${ORIGIN}/#token=session-for-tests`);
     expect(screen.getByRole("status")).not.toHaveTextContent("Copied");
   });
 });

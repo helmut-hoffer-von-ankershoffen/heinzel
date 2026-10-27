@@ -66,6 +66,14 @@ def makefile() -> str:
     text = text.replace("@$(TOOLS) install build web", "@$(TOOLS) install")
     text = text.replace("build: web-build ## ", "build: ## ").replace("; the web app first)", ")")
     text = text.replace(" src/heinzel/heads/web/static", "")
+    # Native process ownership belongs to the core; plugins carry neither its code nor build dependencies.
+    text = text.replace(" managed-backend-setup managed-backend-check", "")
+    text = re.sub(
+        r"\n# The managed backend has no Electron dependency;.*?\nMANAGED_TYPES := [^\n]*", "", text, flags=re.DOTALL
+    )
+    text = re.sub(r" \$\(MANAGED_(CHECK|TYPES)\)", "", text)
+    text = text.replace("\n\t@$(MAKE) --no-print-directory managed-backend-setup", "")
+    text = re.sub(r"\n(managed-backend-setup|managed-backend-check):.*?\n(?:\t.*\n)+", "\n", text)
     # Heinzel Notifier, the core's macOS notifier app (ADR 0043): plugins have none.
     text = re.sub(r"(?m)^(\.PHONY:.*?) notifier\b", r"\1", text)
     text = re.sub(r"\nnotifier:.*?\n(?:\t.*\n)+", "\n", text)
@@ -93,6 +101,7 @@ def ci_workflow() -> str:
     text = text.replace("- name: Check the wheel ships the changelog", "- name: Check the wheel ships the package")
     # The web head's app (ADR 0039) and ATTRIBUTIONS.md, the notices of what it bundles: plugins have neither.
     text = re.sub(r"\n      - run: make test-web[^\n]*", "", text)
+    text = re.sub(r"\n      - run: make managed-backend-[^\n]*", "", text)
     text = re.sub(r"\n      - name: Check the wheel ships the attributions\n[^\n]*", "", text)
     text = re.sub(r"\n      - name: Check the wheel ships the web app\n[^\n]*", "", text)
     text = text.replace("      - run: uv build --all-packages\n", "      - run: uv build\n")
