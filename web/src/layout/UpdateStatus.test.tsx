@@ -1,4 +1,4 @@
-import { screen } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, expect, it, vi } from "vitest";
 import { shell } from "@/test/fixtures";
@@ -18,10 +18,21 @@ it("offers a compact one-click update only after a deliberate gesture", async ()
   const user = userEvent.setup();
   renderAt("/");
   const icon = await screen.findByRole("button", { name: "Update hz and plugins, warning" });
+  expect(icon).toHaveClass("animate-pulse", "text-bad");
   await user.hover(icon);
   expect(startUpdate).not.toHaveBeenCalled();
   await user.click(icon);
   expect(startUpdate).toHaveBeenCalledTimes(1);
+});
+
+it("shows a green update control when the installed version is current", async () => {
+  mockApi({ ...shell, "/api/update-status": { ...status, latest: status.current, available: false } });
+  renderAt("/");
+  const icon = await screen.findByRole("button", { name: "Updates, off" });
+  await waitFor(() => {
+    expect(icon).toHaveClass("text-ok");
+    expect(icon).not.toHaveClass("animate-pulse", "text-bad");
+  });
 });
 
 it("shows a manual-install reason instead of overriding a deliberate pin", async () => {
