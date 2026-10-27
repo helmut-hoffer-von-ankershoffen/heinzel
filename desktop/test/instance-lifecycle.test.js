@@ -94,8 +94,36 @@ test("second instance before readiness opens one window after readiness", async 
   app.emit("second-instance", {}, ["malicious"]);
   assert.deepEqual(events, ["parse"]);
   lifecycle.setReady();
-  await new Promise((resolve) => setImmediate(resolve));
-  assert.deepEqual(events, ["parse", "window"]);
+  await lifecycle.open();
+  assert.deepEqual(events, ["parse", "window", "focus"]);
+});
+
+test("an early second instance cannot leave a rejected window creation unhandled", async () => {
+  const failure = new Error("window creation failed");
+  const unhandled = [];
+  const onUnhandled = (reason) => unhandled.push(reason);
+  const { app, events, lifecycle } = setup({
+    createWindow: () => {
+      events.push("window");
+      return Promise.reject(failure);
+    },
+  });
+  process.on("unhandledRejection", onUnhandled);
+  try {
+    lifecycle.acquire(["trusted-connection"]);
+    app.emit("second-instance", {}, ["malicious"]);
+    lifecycle.setReady();
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.deepEqual(events, ["parse"]);
+    assert.deepEqual(unhandled, []);
+
+    await assert.rejects(lifecycle.open(), failure);
+    assert.deepEqual(events, ["parse", "window"]);
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.deepEqual(unhandled, []);
+  } finally {
+    process.off("unhandledRejection", onUnhandled);
+  }
 });
 
 test("second instance during pending creation focuses the created window", async () => {

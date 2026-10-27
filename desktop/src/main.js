@@ -42,7 +42,8 @@ if (instance.acquire(process.argv.slice(app.isPackaged ? 1 : 2))) {
     return lifecycle(instance.currentConnection());
   });
   app.on("before-quit", () => { quitting = true; });
-  await app.whenReady();
-  instance.setReady();
-  await instance.open();
+  void app.whenReady().then(() => {
+    instance.setReady();
+    return instance.open();
+  }).catch(() => app.quit());
 }

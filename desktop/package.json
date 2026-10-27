@@ -6,7 +6,8 @@
   "description": "Electron window for an explicitly supplied local Heinzelmännchen API.",
   "scripts": {
     "start": "electron .",
-    "test": "node --test test/*.test.js"
+    "test": "node --test test/*.test.js",
+    "test:native": "node e2e/native-startup.mjs"
   },
   "devDependencies": { "electron": "45.0.0" }
 }
