@@ -6,6 +6,7 @@ step is the real org step with discovery faked.
 
 import json
 import tomllib
+from pathlib import Path
 
 import pytest
 from pydantic import BaseModel, Field
@@ -223,6 +224,17 @@ def test_join_finds_you_in_the_roster_and_sets_up_the_rest(settings, found, plac
     assert invite.startswith("  invite the next one post the same line: uvx --from git+https://github.com/")
     assert invite.endswith(f"heinzel join {URL}")
     assert user_config()["note"] == {"text": "hi"}
+
+
+def test_the_joining_guide_quotes_the_emitted_keep_command(settings, found, place, monkeypatch):
+    terminal(monkeypatch)
+    result, _, said = join_with(settings, {"Mira-Example": "mira"}, ["engineer", "", ""])
+    assert result.exit_code == 0, result.output
+    guide = Path(__file__).resolve().parents[2] / "docs" / "guides" / "joining.md"
+    quoted = guide.read_text(encoding="utf-8").split("```text\n", 1)[1].split("\n```", 1)[0]
+    emitted_keep = next(line for line in said if line.startswith("  keep hz"))
+    quoted_keep = next(line for line in quoted.splitlines() if line.startswith("  keep hz"))
+    assert quoted_keep == emitted_keep
 
 
 def test_join_proposes_you_when_the_roster_lacks_you(settings, found, place, monkeypatch):

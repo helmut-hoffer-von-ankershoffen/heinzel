@@ -19,8 +19,9 @@ as posted:
 uvx --from heinzel heinzel join https://github.com/acme-example/hz-team-checkout.git
 ```
 
-It runs hz without installing it; the line as posted is pinned to a release (`heinzel@vX.Y.Z`). To keep hz, install
-it once and use `hz` from then on:
+This PyPI command runs hz without a persistent installation. The invite printed by `hz join` currently uses the Git
+repository at your release tag (`@vX.Y.Z`). To keep hz, use the recommended PyPI installation once and run
+`hz` from then on:
 
 ```bash
 uv tool install heinzel
@@ -54,7 +55,7 @@ The roster lists you as theo-example (engineer).
 Make checkout your team? [Y/n]: y
 
 What happens next
-  keep hz             uv tool install heinzel
+  keep hz             uv tool install git+https://github.com/helmut-hoffer-von-ankershoffen/heinzel
   what is missing     hz setup, any time
   invite the next one post the same line: uvx --from ... heinzel join https://github.com/acme-example/hz-team-checkout.git
 ```
