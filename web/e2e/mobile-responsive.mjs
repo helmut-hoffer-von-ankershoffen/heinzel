@@ -8,7 +8,7 @@ import ts from "typescript";
 
 const [url, shots] = process.argv.slice(2);
 mkdirSync(shots, { recursive: true });
-const useWebKit = process.env.HZ_BROWSER_ENGINE === "webkit";
+const useWebKit = process.env.PLAYWRIGHT_BROWSER === "webkit";
 const browser = useWebKit
   ? await webkit.launch()
   : await chromium.launch().catch(() => chromium.launch({ channel: "chrome" }));

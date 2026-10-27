@@ -155,5 +155,5 @@ new panel, menu or control. Right-side content uses `WorkspacePanels` descriptor
 view, mounted state preserved while hidden, and Page available on phones; see ADR 0089. Exercise both navigation widths, chat, terminal, all settings, footer panes, safe areas,
 zoom and visual-only keyboard shrink at the six phone viewports. Inspect saved screenshots as well as assertions.
 Run `HZ_SCREENSHOTS=/tmp/hz-mobile-proof uv run pytest tests/e2e/web_ui_test.py -q`; also run the mobile test with
-`HZ_BROWSER_ENGINE=webkit` after installing WebKit with `uv run --script scripts/web_build.py exec playwright-core install webkit`.
+`PLAYWRIGHT_BROWSER=webkit` after installing WebKit with `uv run --script scripts/web_build.py exec playwright-core install webkit`.
 These are browser-engine emulations; physical iPhone Safari remains a separate verification when available.
