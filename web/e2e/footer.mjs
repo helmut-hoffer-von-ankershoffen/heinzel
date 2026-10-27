@@ -101,7 +101,9 @@ export async function verifyFooter(page, shots) {
             },
           };
         });
-        assert.fail(`Overflow items are present but the accessible More control is not visible at ${width}px: ${JSON.stringify(domState)}`);
+        assert.fail(
+          `Overflow items are present but the accessible More control is not visible at ${width}px: ${JSON.stringify(domState)}`,
+        );
       }
       assert.ok(
         await more.isVisible(),
