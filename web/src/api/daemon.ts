@@ -21,7 +21,7 @@ export const useDaemonStatus = () =>
     refetchInterval: 3000,
   });
 
-/** Only the existing web-exposed operations; persistence installation/removal remain CLI-only. */
+/** Daemon controls; persistence installation/removal are called only after explicit Settings confirmation. */
 export function useChangeDaemon() {
   const client = useQueryClient();
   return useMutation({
