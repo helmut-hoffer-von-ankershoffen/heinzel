@@ -24,7 +24,11 @@ def staged(tmp_path):
         deployments = store.directory / "deployments"
         deployments.mkdir(mode=0o700)
         candidates = []
-        python = Path(sys.executable).resolve()
+        # This suite verifies lifecycle metadata; it never executes this candidate runtime. Keep its
+        # executable-shaped fixture independent from the CI interpreter, which may be linked or public.
+        python = tmp_path / "candidate-python"
+        python.write_bytes(b"fixture runtime executable")
+        python.chmod(0o700)
         for version in ("0.7.12", "0.7.13"):
             worker = version.encode()
             manifest = RuntimeManifest(
@@ -69,7 +73,13 @@ def invoke(store, candidate, expected):
     result = subprocess.run(
         [sys.executable, "-I", "-B", "-m", "heinzel._lifecycle_control"],
         input=json.dumps(
-            {"directory": str(store.directory), "action": "prepare", "candidate": candidate, "expected": expected}
+            {
+                "directory": str(store.directory),
+                "action": "prepare",
+                "candidate": candidate,
+                "expected": expected,
+                "first_install": expected is None,
+            }
         ),
         capture_output=True,
         text=True,
