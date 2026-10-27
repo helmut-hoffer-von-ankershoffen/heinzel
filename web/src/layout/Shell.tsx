@@ -159,7 +159,10 @@ function Layout() {
     return () => window.removeEventListener("keydown", open);
   }, [setParams]);
   return (
-    <div className="relative flex h-dvh overflow-clip">
+    <div
+      data-testid="app-shell"
+      className="relative box-border flex h-dvh overflow-clip pt-[var(--hz-safe-area-top,env(safe-area-inset-top,0px))] pr-[var(--hz-safe-area-right,env(safe-area-inset-right,0px))] pb-[var(--hz-safe-area-bottom,env(safe-area-inset-bottom,0px))] pl-[var(--hz-safe-area-left,env(safe-area-inset-left,0px))]"
+    >
       <a
         href="#content"
         className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-50 focus:rounded-md focus:bg-card focus:p-2"
