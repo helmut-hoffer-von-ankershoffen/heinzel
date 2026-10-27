@@ -4,12 +4,15 @@ import fcntl
 import hashlib
 import json
 import os
+import select
 import selectors
 import signal
 import socket
 import subprocess
 import sys
 import urllib.request
+from collections.abc import Callable, Iterator
+from contextlib import closing, contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
@@ -152,6 +155,34 @@ def identity(ready):
         return json.load(response)
 
 
+@contextmanager
+def process_exited(pid: int) -> Iterator[Callable[[float], bool]]:
+    """Observe an exact process exit without requiring its parent to have reaped a zombie."""
+    if sys.platform == "linux":
+        descriptor = os.pidfd_open(pid)
+        try:
+            with selectors.DefaultSelector() as selector:
+                selector.register(descriptor, selectors.EVENT_READ)
+                yield lambda timeout: bool(selector.select(timeout))
+        finally:
+            os.close(descriptor)
+    else:
+        with closing(select.kqueue()) as queue:
+            queue.control(
+                [
+                    select.kevent(
+                        pid,
+                        filter=select.KQ_FILTER_PROC,
+                        flags=select.KQ_EV_ADD | select.KQ_EV_ONESHOT,
+                        fflags=select.KQ_NOTE_EXIT,
+                    )
+                ],
+                0,
+                0,
+            )
+            yield lambda timeout: bool(queue.control([], 1, timeout))
+
+
 def test_retained_listener_recovers_a_crashed_worker_with_same_origin_and_new_verified_instance(tmp_path):
     process = launch(tmp_path)
     try:
@@ -264,15 +295,42 @@ def test_killed_controller_broker_does_not_leave_its_worker_listening(tmp_path):
     try:
         ready = event(process)
         before = identity(ready)
-        process.kill()
-        process.wait(timeout=3)
-        # The inherited pipe is the worker's lease; wait on actual process termination without sleeping.
-        with selectors.DefaultSelector() as selector:
-            selector.register(process.stderr, selectors.EVENT_READ)
-            assert selector.select(5), "Worker retained broker stderr after its lease was lost"
-            assert process.stderr.read(1) == b""
-        with pytest.raises(ProcessLookupError):
-            os.kill(before["pid"], 0)
+        with process_exited(before["pid"]) as exited:
+            process.kill()
+            process.wait(timeout=3)
+            # EOF alone is insufficient: descriptors close before exit, and a dead PID can remain a zombie.
+            with selectors.DefaultSelector() as selector:
+                selector.register(process.stderr, selectors.EVENT_READ)
+                assert selector.select(5), "Worker retained broker stderr after its lease was lost"
+                assert process.stderr.read(1) == b""
+            assert exited(5), "Worker stayed alive after losing its broker lease"
+        with socket.socket() as connection:
+            connection.settimeout(2)
+            with pytest.raises(ConnectionRefusedError):
+                connection.connect(("127.0.0.1", urlsplit(ready["url"]).port))
+    finally:
+        close(process)
+
+
+def test_process_exit_proof_does_not_confuse_closed_stderr_with_a_terminated_worker() -> None:
+    process = subprocess.Popen(
+        [sys.executable, "-I", "-S", "-c", "import os; os.close(2); os.read(0, 1)"],
+        stdin=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    assert process.stdin is not None
+    assert process.stderr is not None
+    try:
+        with process_exited(process.pid) as exited:
+            with selectors.DefaultSelector() as selector:
+                selector.register(process.stderr, selectors.EVENT_READ)
+                assert selector.select(5)
+                assert process.stderr.read(1) == b""
+            assert not exited(0), "A live worker closing stderr cannot prove process exit"
+            process.stdin.close()
+            assert exited(5), "Closing the explicit input gate must terminate this fixture"
+            # The kernel event is observable before wait() reaps this exact process.
+            assert process.wait(timeout=3) == 0
     finally:
         close(process)
 
