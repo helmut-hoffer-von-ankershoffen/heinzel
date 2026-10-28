@@ -1,11 +1,11 @@
 [project]
 name = "heinzel-clock"
-version = "0.7.27"
+version = "0.7.28"
 description = "What time it is for everyone on the team: a Heinzelmännchen plugin."
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.12"
-dependencies = ["heinzel>=0.7.27"] # released together; the release process bumps the bound
+dependencies = ["heinzel>=0.7.28"] # released together; the release process bumps the bound
 
 [project.urls]
 Source = "https://github.com/helmut-hoffer-von-ankershoffen/heinzel/tree/main/plugins/heinzel-clock"
