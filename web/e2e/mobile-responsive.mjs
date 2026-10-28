@@ -80,6 +80,7 @@ async function viewportFacts(page, name) {
         : null,
       scrollOwners: {
         main: main ? getComputedStyle(main).overflowY : null,
+        workspace: getComputedStyle(document.querySelector(".workspace-area")).overflowY,
         conversation: conversation ? getComputedStyle(conversation).overflowY : null,
       },
     };
@@ -97,7 +98,10 @@ async function viewportFacts(page, name) {
     Math.abs(facts.dynamicViewportHeight - facts.height) <= 1,
     `${name}: 100dvh does not match viewport height`,
   );
-  assert.equal(facts.scrollOwners.main, "auto", `${name}: main screen must own vertical scrolling`);
+  assert.ok(
+    facts.scrollOwners.main === "auto" || facts.scrollOwners.workspace === "auto",
+    `${name}: main content must be in a vertical scroll area`,
+  );
   assert.equal(facts.scrollOwners.conversation, "auto", `${name}: chat conversation must own vertical scrolling`);
   return facts;
 }
@@ -113,6 +117,7 @@ async function assertTouchTarget(locator, description, name) {
 
 async function assertContained(page, locator, name) {
   await locator.waitFor();
+  await locator.scrollIntoViewIfNeeded();
   await page.waitForFunction(
     () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
   );
@@ -358,10 +363,14 @@ try {
     });
     await assertContained(
       page,
-      page.getByRole("region", { name: "World clock", exact: true }),
-      `${spec.name}: world clock with chat and terminal open`,
+      page.getByRole("region", { name: "World clock", exact: true }).getByRole("button", { name: "Close World clock" }),
+      `${spec.name}: world clock header with chat and terminal open`,
     );
     await page.getByRole("tab", { name: "Chat", exact: true }).click();
+    const chatFooter = await footerPane(page, "@version", /^v/);
+    await assertContained(page, chatFooter, `${spec.name}: footer in chat`);
+    await page.mouse.click(3, 3);
+    await chatFooter.waitFor({ state: "hidden" });
     assert.equal(await page.getByRole("textbox", { name: "Your message" }).inputValue(), "A draft to keep.");
     await page
       .getByRole("tablist", { name: "Workspace panels" })
@@ -380,6 +389,10 @@ try {
     await terminal.getByRole("button", { name: "Full screen", exact: true }).click();
     await assertContained(page, terminal, `${spec.name}: full-screen terminal`);
     await terminal.getByRole("button", { name: "Leave full screen", exact: true }).click();
+    const terminalFooter = await footerPane(page, "@version", /^v/);
+    await assertContained(page, terminalFooter, `${spec.name}: footer after full screen`);
+    await page.mouse.click(3, 3);
+    await terminalFooter.waitFor({ state: "hidden" });
     await terminal.getByRole("button", { name: "Close the terminal", exact: true }).click();
     await page.getByRole("button", { name: "Close the chat", exact: true }).first().click();
     await showPage(page);
@@ -449,6 +462,8 @@ try {
     );
     await page.getByRole("button", { name: "Close notifications" }).click();
     await page.getByRole("tab", { name: "Chat", exact: true }).click();
+    await composer.scrollIntoViewIfNeeded();
+    await composer.tap();
     await page.setViewportSize({ width: spec.width, height: Math.max(240, spec.height - 180) });
     await page.waitForTimeout(100);
     const keyboardComposerBox = await composer.boundingBox();

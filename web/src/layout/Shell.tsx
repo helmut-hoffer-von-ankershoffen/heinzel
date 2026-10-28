@@ -177,10 +177,11 @@ function Layout() {
                 : !beside
                   ? "page"
                   : "chat";
-  // Page selection can reveal the same footer at a new capacity without a viewport resize.
+  // Panel and full-screen changes can reveal the same footer at a new capacity without a viewport resize.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: each layout change requires a fresh footer measurement
   useLayoutEffect(() => {
-    if (beside || selectedPanel === "page") window.dispatchEvent(new Event(FOOTER_RELOCATED));
-  }, [beside, selectedPanel]);
+    window.dispatchEvent(new Event(FOOTER_RELOCATED));
+  }, [beside, selectedPanel, terminalFull]);
   const route = useLocation().pathname;
   const previousRoute = useRef(route);
   useEffect(() => {
