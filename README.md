@@ -4,7 +4,7 @@
 
 | Name                                                          |    Stmts |     Miss |   Branch |   BrPart |   Cover |   Missing |
 |-------------------------------------------------------------- | -------: | -------: | -------: | -------: | ------: | --------: |
-| plugins/heinzel-atlassian/src/heinzel\_atlassian/\_acli.py    |      118 |        1 |       30 |        2 |     98% |79-\>81, 226 |
+| plugins/heinzel-atlassian/src/heinzel\_atlassian/\_acli.py    |      118 |        0 |       30 |        1 |     99% |   79-\>81 |
 | plugins/heinzel-atlassian/src/heinzel\_atlassian/\_storage.py |      291 |        1 |      150 |        5 |     99% |245, 252-\>exit, 258-\>exit, 262-\>exit, 312-\>exit |
 | plugins/heinzel-github/src/heinzel\_github/\_client.py        |      114 |        2 |       32 |        1 |     98% |   104-105 |
 | plugins/heinzel-google/src/heinzel\_google/\_mail.py          |      422 |        0 |      144 |        1 |     99% | 485-\>487 |
@@ -19,7 +19,7 @@
 | src/heinzel/heads/cli/\_serve.py                              |      101 |        4 |       30 |        5 |     93% |83-\>85, 116-\>exit, 192, 214-215, 239 |
 | src/heinzel/heads/cli/\_setup.py                              |      319 |        6 |       96 |        6 |     97% |275, 342, 427, 434, 481-\>490, 504, 507 |
 | src/heinzel/heads/mcp/\_\_init\_\_.py                         |       91 |        2 |       22 |        2 |     96% |  158, 193 |
-| src/heinzel/heads/web/\_\_init\_\_.py                         |      252 |       15 |       58 |        3 |     94% |411-413, 459, 469-\>473, 480-482, 490-\>exit, 510-511, 514-519 |
+| src/heinzel/heads/web/\_\_init\_\_.py                         |      253 |       15 |       58 |        3 |     94% |412-414, 460, 470-\>474, 481-483, 491-\>exit, 511-512, 515-520 |
 | src/heinzel/heads/web/\_devices.py                            |      100 |        2 |       12 |        0 |     98% |   125-126 |
 | src/heinzel/heads/web/\_lifecycle.py                          |      133 |        7 |       38 |        2 |     95% |83, 99-100, 108-\>103, 110-111, 182-183 |
 | src/heinzel/heads/web/\_shutdown.py                           |       83 |        3 |       14 |        1 |     96% |112, 141-142 |
@@ -41,7 +41,7 @@
 | src/heinzel/kernel/\_session\_store.py                        |      240 |        5 |       52 |        3 |     97% |243-245, 266-267, 277-\>283 |
 | src/heinzel/kernel/\_settings.py                              |       66 |        2 |       16 |        2 |     95% |  196, 198 |
 | src/heinzel/kernel/\_skills.py                                |      380 |       11 |      120 |        2 |     97% |164-166, 375-376, 477-481, 610, 615, 631 |
-| src/heinzel/kernel/\_soundscapes.py                           |      269 |        3 |       70 |        0 |     99% |   102-104 |
+| src/heinzel/kernel/\_soundscapes.py                           |      271 |        3 |       70 |        0 |     99% |   105-107 |
 | src/heinzel/kernel/\_telemetry.py                             |      129 |        0 |       34 |        1 |     99% | 160-\>162 |
 | src/heinzel/kernel/\_themes.py                                |      562 |        3 |      162 |        3 |     99% |318, 378, 983 |
 | src/heinzel/modules/ai/\_\_init\_\_.py                        |       49 |       25 |       14 |        0 |     38% |38, 43-62, 82-94 |
@@ -130,7 +130,7 @@
 | src/heinzel/modules/telemetry/\_\_init\_\_.py                 |       44 |        2 |        0 |        0 |     95% |  110, 164 |
 | src/heinzel/modules/telemetry/\_render.py                     |       15 |       10 |        2 |        0 |     29% |11-17, 22-27 |
 | src/heinzel/modules/telemetry/\_service.py                    |      236 |        8 |       70 |        3 |     96% |146-\>152, 154-\>152, 162, 219-220, 289-291, 344-345 |
-| **TOTAL**                                                     | **29838** |  **796** | **7414** |  **350** | **97%** |           |
+| **TOTAL**                                                     | **29841** |  **795** | **7414** |  **349** | **97%** |           |
 
 165 files skipped due to complete coverage.
 
