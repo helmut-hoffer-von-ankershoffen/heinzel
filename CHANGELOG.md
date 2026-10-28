@@ -4,7 +4,7 @@ All notable changes to Heinzelmännchen, newest first. Versions follow [Semantic
 
 ## [0.7.29](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/releases/tag/v0.7.29) - 2026-10-28
 
-Plugin installation now keeps its progress and safely recovers its result after Settings closes, a reload or a slow install.
+Plugin installation now shows progress and can recover its result after Settings closes or reloads; uncertain outcomes are flagged rather than repeated.
 
 ### 🐛 Bug fixes
 
