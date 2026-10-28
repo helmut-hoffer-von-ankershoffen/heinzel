@@ -5,8 +5,9 @@ import { lifecycle } from "./connection.js";
 import { createInstanceLifecycle } from "./instance-lifecycle.js";
 import { createLifecycleHandler } from "./lifecycle-ipc.js";
 import { createOwnedCli } from "./owned-cli.js";
+import { initializeDesktopIdentity } from "./identity.js";
 
-app.setName("Heinzelmännchen");
+const identityReady = initializeDesktopIdentity(app, dialog);
 const windows = new WeakSet();
 const instance = createInstanceLifecycle({
   app,
@@ -41,7 +42,7 @@ const instance = createInstanceLifecycle({
 
 let quitting = false;
 const ownedCli = createOwnedCli();
-if (instance.acquire(process.argv.slice(app.isPackaged ? 1 : 2))) {
+if (identityReady && instance.acquire(process.argv.slice(app.isPackaged ? 1 : 2))) {
   ipcMain.handle("hz:lifecycle", createLifecycleHandler({
     windows,
     fromWebContents: (contents) => BrowserWindow.fromWebContents(contents),
