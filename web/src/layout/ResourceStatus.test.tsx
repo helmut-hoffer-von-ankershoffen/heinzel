@@ -40,7 +40,12 @@ describe("footer system resources", () => {
     const { container, calls } = show();
     const trigger = await screen.findByRole("button", { name: "CPU Mem Load: CPU 13%, mem 40%, load 3.00, OK" });
     expect(trigger.closest("[data-state]")).toHaveAttribute("data-state", "ok");
-    expect(trigger).toHaveTextContent("CPU Mem Load");
+    expect(trigger.textContent).toBe("");
+    const bars = trigger.querySelectorAll("[data-state]");
+    expect(bars).toHaveLength(3);
+    for (const [index, height] of ["12.5%", "40%", "15%"].entries()) {
+      expect(bars[index]?.firstElementChild).toHaveStyle({ height });
+    }
     expect(screen.queryByRole("region")).not.toBeInTheDocument();
     fireEvent.focus(trigger);
     expect(screen.getByRole("region")).toHaveTextContent("1-minute load · 10 logical cores");
