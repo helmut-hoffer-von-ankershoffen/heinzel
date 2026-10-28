@@ -15,12 +15,6 @@ async function result<T>(call: Promise<{ data?: T; error?: unknown; response: Re
   throw problem(response.status, error);
 }
 
-function runnerUnavailable(reason: unknown): boolean {
-  if (!(reason instanceof Error)) return false;
-  if ("status" in reason && reason.status === 404) return true;
-  return /agent-runner:read|No module provides AgentRunner/i.test(reason.message);
-}
-
 /** Recognize only the fixed five-minute request supported by this local scheduling flow. */
 function asksForFiveMinuteCheckIn(message: string): boolean {
   return /^(?:please\s+)?(?:(?:schedule|set up)\s+(?:a\s+)?check[ -]?in|(?:remind me to )?check[ -]?in|notify me|send me (?:a )?notification)\s+every\s+(?:5|five)\s+minutes?[.!]?$/i.test(
@@ -202,13 +196,10 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
           updateComposer({ agentPending: null, text: "" });
           setIntentNotice(true);
         }
-      } catch (reason) {
+      } catch {
         setError(true);
         setScheduleError(true);
         setScheduleErrorMessage(t("durable.agentUnavailable"));
-        if (runnerUnavailable(reason)) {
-          updateComposer({ agentPending: null, text: "" });
-        }
         if (openedChatId !== null) {
           try {
             const current = await result(
@@ -250,13 +241,10 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
         } else {
           updateComposer({ agentPending: null, text: "" });
         }
-      } catch (reason) {
+      } catch {
         setError(true);
         setScheduleError(true);
         setScheduleErrorMessage(t("durable.agentUnavailable"));
-        if (runnerUnavailable(reason)) {
-          updateComposer({ agentPending: null, text: "" });
-        }
         try {
           const current = await result(
             api.GET("/system/runner/chat/show", { params: { query: { session: agentChatId } } }),

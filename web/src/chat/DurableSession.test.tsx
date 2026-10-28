@@ -1,5 +1,5 @@
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { frame, mockWithStream } from "@/test/chat";
 import { shell } from "@/test/fixtures";
 import { expectAccessible, mockApi, renderAt } from "@/test/render";
@@ -404,6 +404,81 @@ describe("personal conversation links", () => {
     expect(retriedPayloads[0]).toEqual(firstPayloads[0]);
     expect(sessionStorage.getItem(`hz.durable.composer.${sessionId}`)).toBeNull();
   });
+
+  it.each([404, 422])(
+    "keeps the runner message and request id after a pre-acceptance %s and reload",
+    async (status) => {
+      const agentChat = {
+        id: "abcdef0123456789",
+        title: "Check-in conversation",
+        context: { kind: "check-in", ref: sessionId, request_id: "open-request", timezone: "Europe/Berlin" },
+        messages: [],
+        actions: [],
+        costs: { spent_usd: 0, session_max_usd: 2, message_max_usd: 0.2 },
+      };
+      const completed = {
+        ...agentChat,
+        messages: [
+          {
+            role: "user",
+            text: "Notify me every 5 minutes",
+            request_id: "stable-runner-request",
+            at: "2026-10-28T12:00:00Z",
+            status: "completed",
+          },
+          {
+            role: "assistant",
+            text: "I prepared the schedule proposal for review.",
+            request_id: "stable-runner-request",
+            at: "2026-10-28T12:00:01Z",
+            status: "completed",
+          },
+        ],
+      };
+      const { calls } = mockApi({
+        ...shell,
+        "/api/heinzel/session": { ...snapshot, schedule: null },
+        "/api/system/runner/chat/open-check-in": agentChat,
+        "/api/system/runner/chat/show": agentChat,
+      });
+      const originalFetch = globalThis.fetch;
+      const requestIds: string[] = [];
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (input: Request) => {
+          if (new URL(input.url).pathname === "/api/stream/system/runner/chat/send") {
+            calls.push(input);
+            requestIds.push(new URL(input.url).searchParams.get("request_id") ?? "");
+            if (requestIds.length === 1) return Response.json({ detail: "runner unavailable" }, { status });
+            return new Response(frame("result", { data: completed }), {
+              headers: { "Content-Type": "text/event-stream" },
+            });
+          }
+          return originalFetch(input);
+        }),
+      );
+
+      const first = renderAt(`/heinzel?chat=${sessionId}`);
+      const message = "Notify me every 5 minutes";
+      fireEvent.change(await screen.findByLabelText("Message your Heinzel"), { target: { value: message } });
+      fireEvent.click(screen.getByRole("button", { name: "Prepare schedule review" }));
+      await screen.findByText(/configured agent runner could not answer/i);
+      expect(await screen.findByLabelText("Message your Heinzel")).toHaveValue(message);
+      const saved = JSON.parse(sessionStorage.getItem(`hz.durable.composer.${sessionId}`) ?? "null");
+      expect(saved.agentPending.message).toBe(message);
+      const requestId = saved.agentPending.request_id;
+      first.unmount();
+
+      renderAt(`/heinzel?chat=${sessionId}&agent-chat=${agentChat.id}`);
+      expect(await screen.findByLabelText("Message your Heinzel")).toHaveValue(message);
+      const retry = await screen.findByRole("button", { name: "Retry the same message" });
+      await waitFor(() => expect(retry).toBeEnabled());
+      fireEvent.click(retry);
+      await waitFor(() => expect(requestIds).toHaveLength(2));
+      expect(requestIds).toEqual([requestId, requestId]);
+      expect(sessionStorage.getItem(`hz.durable.composer.${sessionId}`)).toBeNull();
+    },
+  );
   it("opens the durable conversation from a check-in notice", async () => {
     localStorage.setItem("hz.chat.open", "false");
     const notice = {
