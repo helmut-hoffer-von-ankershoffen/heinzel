@@ -8,8 +8,10 @@ import { useNotices } from "@/api/queries";
 import { Gnome } from "@/components/Gnome";
 import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
+import { isLocalServer } from "@/lib/browser";
 import { cn } from "@/lib/utils";
 import { zoneTime } from "@/lib/zoneTime";
+import { useDesktopState } from "@/notifications/desktop";
 import { NotificationTest } from "@/notifications/NotificationTest";
 
 const SEEN = "hz.notify.seen";
@@ -88,6 +90,8 @@ export function when(at: string): string {
 }
 
 export function NotificationPanel({ onClose, navOpen }: { onClose: () => void; navOpen: boolean }) {
+  const local = isLocalServer();
+  const browser = useDesktopState();
   const notices = useLiveNotices();
   const [seen, markSeen] = useSeen();
   const [kind, setKind] = useState<SchemaNotice["kind"] | "all">("all");
@@ -196,11 +200,13 @@ export function NotificationPanel({ onClose, navOpen }: { onClose: () => void; n
                           <span className="mt-0.5 line-clamp-2 block text-sm text-muted-foreground">{notice.body}</span>
                         )}
                         <span className="mt-1 block text-xs text-muted-foreground/80">
-                          {notice.delivered_by
-                            ? t("notify.shownBy", { by: t(`notify.by.${notice.delivered_by}`) })
-                            : notice.held
-                              ? notice.held
-                              : t("notify.waiting")}
+                          {notice.delivered_by === "daemon" && !local
+                            ? t("notify.shownOnServer")
+                            : notice.delivered_by
+                              ? t("notify.shownBy", { by: t(`notify.by.${notice.delivered_by}`) })
+                              : notice.held
+                                ? notice.held
+                                : t(browser !== "on" && !local ? "notify.saved" : "notify.waiting")}
                         </span>
                       </span>
                       {unread && (
@@ -218,7 +224,7 @@ export function NotificationPanel({ onClose, navOpen }: { onClose: () => void; n
         ))}
       </div>
       <footer className="flex max-h-[50%] shrink-0 flex-col gap-1.5 overflow-y-auto border-t border-border px-4 py-2.5 text-xs text-muted-foreground">
-        <span className="truncate">{notices.data?.native}</span>
+        {local && <span className="truncate">{notices.data?.native}</span>}
         <NotificationTest />
       </footer>
     </section>

@@ -7,6 +7,7 @@ import { useEffect, useRef, useState } from "react";
 import type { SchemaSoundscapeView } from "@/api/client";
 import { useThemes } from "@/api/queries";
 import { t } from "@/i18n";
+import { isIOS } from "@/lib/browser";
 import { type Inputs, rampSeconds, type Signals, targetGain, type Why, why } from "./machine";
 import { type EarconView, type LayerView, Mixer } from "./mixer";
 import {
@@ -39,6 +40,7 @@ export function SoundEngine() {
   const list = useSoundscapes();
   const sound = useSound();
   const current = effective(list.data);
+  const deviceStream = Boolean(current?.stream && isIOS());
   const meeting = useMeeting(Boolean(list.data?.mute_in_meetings && sound.started));
   useEffect(() => {
     if (list.data) rememberPageFrame(list.data);
@@ -68,10 +70,10 @@ export function SoundEngine() {
   const level = useLevel(
     {
       playing: sound.playing,
-      volume: list.data?.volume ?? 50,
+      volume: deviceStream ? 100 : (list.data?.volume ?? 50),
       typing: sound.typing,
       voice: sound.voice,
-      duckWhileTyping: list.data?.duck_while_typing ?? true,
+      duckWhileTyping: !deviceStream && (list.data?.duck_while_typing ?? true),
       meeting,
       muteInMeetings: list.data?.mute_in_meetings ?? true,
     },
@@ -79,7 +81,14 @@ export function SoundEngine() {
   );
   if (!current || !sound.started) return null;
   if (current.stream)
-    return <StreamPlayer key={current.name} soundscape={current} stream={current.stream} level={level} />;
+    return (
+      <StreamPlayer
+        key={current.name}
+        soundscape={current}
+        stream={current.stream}
+        level={deviceStream && sound.voice ? { ...level, gain: 0 } : level}
+      />
+    );
   return (
     <LayeredPlayer key={current.name} soundscape={current} signals={listSignals(list.data).signals()} level={level} />
   );

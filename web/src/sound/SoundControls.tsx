@@ -8,6 +8,7 @@ import { useThemes } from "@/api/queries";
 import { SettingsShortcut } from "@/components/SettingsShortcut";
 import { t } from "@/i18n";
 import { Switch } from "@/layout/SettingControls";
+import { isIOS } from "@/lib/browser";
 import { placePopover, popoverHeight } from "@/lib/placement";
 import { cn } from "@/lib/utils";
 import { viewportBounds, watchViewport } from "@/lib/viewport";
@@ -94,6 +95,9 @@ function VolumeSlider({ list }: { list: SchemaSoundList }) {
   useEffect(() => setValue(list.volume), [list.volume]);
   useEffect(() => () => clearTimeout(timer.current), []);
   const id = useId();
+  if (isIOS() && effective(list)?.stream) {
+    return <p className="px-2.5 py-1.5 text-ui-sm text-muted-foreground">{t("sound.deviceVolume")}</p>;
+  }
   return (
     <div className="flex items-center gap-3 px-2.5 py-1.5">
       <label htmlFor={id} className="text-ui-sm text-muted-foreground">
@@ -131,6 +135,7 @@ function Toggle({
   const setting = useSoundSetting();
   const id = useId();
   const on = list[field];
+  if (field === "duck_while_typing" && isIOS() && effective(list)?.stream) return null;
   return (
     <div className="flex items-center gap-3 px-2.5 py-1.5">
       <span id={id} className="flex-1 text-ui">

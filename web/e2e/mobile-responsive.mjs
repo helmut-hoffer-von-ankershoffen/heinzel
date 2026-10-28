@@ -626,6 +626,8 @@ try {
   // The full sidebar retains its dock slot at a phone-sized width. Check the player itself and its controls fit and
   // remain actionable after a touch gesture; this says nothing about physical iOS Safari behavior.
   const soundPage = await browser.newPage({
+    userAgent:
+      "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Version/18.0 Mobile/15E148 Safari/604.1",
     viewport: { width: 430, height: 932 },
     screen: { width: 430, height: 932 },
     isMobile: true,
@@ -688,6 +690,12 @@ try {
   await soundPage.getByRole("button", { name: "Expand navigation" }).click();
   await soundPage.getByRole("button", { name: "Collapse navigation" }).waitFor();
   await soundPage.getByRole("button", { name: "Choose a soundscape", exact: true }).click();
+  const soundDialog = soundPage.getByRole("dialog", { name: "Sound" });
+  await soundDialog.getByText("Use your iPhone or iPad volume buttons to adjust YouTube audio.").waitFor();
+  assert.equal(await soundDialog.getByRole("slider", { name: "Volume" }).count(), 0);
+  assert.equal(await soundDialog.getByRole("switch", { name: "Softer while I type" }).count(), 0);
+  await assertContained(soundPage, soundDialog, "iPhone sound controls");
+  await soundPage.screenshot({ path: join(shots, "mobile-iphone-sound-controls.png") });
   await soundPage
     .getByRole("dialog", { name: "Sound" })
     .getByRole("button", { name: "Play Mobile dock probe", exact: true })
@@ -770,6 +778,57 @@ try {
     popOutTarget: popOutBox,
     popOutUsable: true,
   };
+  // A phone tests this device, even when a Mac backend reports its own notification failures.
+  await soundPage.setViewportSize({ width: 390, height: 844 });
+  const collapseNavigation = soundPage.getByRole("button", { name: "Collapse navigation" });
+  if (await collapseNavigation.isVisible()) await collapseNavigation.tap();
+  const testNotice = {
+    id: "20261028T190000Z-iphone",
+    kind: "test",
+    title: "Notifications work",
+    body: "A test on this device.",
+    route: "/notifications",
+    command: "hz system notify list",
+    key: "test:iphone",
+    urgent: true,
+    at: "2026-10-28T19:00:00Z",
+    due: "2026-10-28T19:00:00Z",
+    popup: true,
+    held: null,
+    delivered_by: null,
+    delivered_at: null,
+  };
+  await soundPage.route("**/api/system/notify/list**", (route) =>
+    route.fulfill({ json: { notices: [testNotice], waiting: 1, native: "through Heinzel Notifier on macOS" } }),
+  );
+  await soundPage.route("**/api/system/notify/test**", (route) => {
+    assert.equal(new URL(route.request().url()).searchParams.get("native"), "false");
+    return route.fulfill({
+      status: 503,
+      json: {
+        notice: testNotice,
+        native: "macOS doesn't allow Heinzel Notifier",
+        channels: [
+          { name: "web", state: "closed", detail: "no web app is open" },
+          { name: "native", state: "blocked", detail: "macOS doesn't allow Heinzel Notifier", fix: "open-settings" },
+        ],
+        pops_up: false,
+      },
+    });
+  });
+  await soundPage.getByRole("button", { name: /^Notifications(,|$)/ }).tap();
+  const notifications = soundPage.getByRole("region", { name: "Notifications", exact: true });
+  await notifications.getByRole("button", { name: "Send a test notification" }).tap();
+  const report = notifications.getByRole("region", { name: "How the test went" });
+  await report.getByText("The test was added to Notifications in this app.").waitFor();
+  await report.getByText(/Add to Home Screen/).waitFor();
+  await notifications.getByText("Saved in Notifications").waitFor();
+  assert.doesNotMatch((await notifications.textContent()) ?? "", /macOS|Native pop-ups|no web app is open/);
+  await assertContained(soundPage, notifications, "iPhone notification panel");
+  await report.scrollIntoViewIfNeeded();
+  await assertContained(soundPage, report, "iPhone notification test result");
+  await soundPage.screenshot({ path: join(shots, "mobile-iphone-notification-test.png") });
+  result.iphoneControls = { deviceVolume: true, notificationTest: true, serverActionsHidden: true };
   await soundPage.close();
 } catch (error) {
   for (const context of browser.contexts())

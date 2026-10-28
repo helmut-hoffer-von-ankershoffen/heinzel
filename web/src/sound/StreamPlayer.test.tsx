@@ -44,6 +44,33 @@ afterEach(() => {
 });
 
 describe("stream recovery", () => {
+  it("uses mute and pause on iPhone when the stream cannot change its volume", () => {
+    vi.spyOn(navigator, "userAgent", "get").mockReturnValue("Mozilla/5.0 (iPhone) AppleWebKit/605.1.15");
+    const view = mount();
+    const post = vi.spyOn(player().contentWindow as Window, "postMessage");
+    const sent = () => post.mock.calls.map(([data]) => JSON.parse(String(data)).func);
+    message("onReady");
+    expect(sent()).toEqual(["mute", "unMute", "playVideo"]);
+    post.mockClear();
+    message("initialDelivery");
+    message("onReady");
+    expect(sent()).toEqual(["unMute", "unMute"]);
+    post.mockClear();
+    view.rerender(<StreamPlayer soundscape={soundscape} stream={stream} level={{ ...level, gain: 0 }} />);
+    expect(sent()).toEqual(["mute", "playVideo"]);
+    post.mockClear();
+    message("initialDelivery");
+    expect(sent()).toEqual(["mute"]);
+    post.mockClear();
+    view.rerender(<StreamPlayer soundscape={soundscape} stream={stream} level={level} />);
+    expect(sent()).toEqual(["unMute", "playVideo"]);
+    post.mockClear();
+    view.rerender(
+      <StreamPlayer soundscape={soundscape} stream={stream} level={{ gain: 0, seconds: 4, playing: false }} />,
+    );
+    expect(sent()).toEqual(["mute", "pauseVideo"]);
+  });
+
   it("switches to the account player only by choice, remembers it, and lets the viewer reverse it", () => {
     const { unmount } = mount();
     expect(new URL(player().src).origin).toBe(ORIGIN);

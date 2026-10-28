@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { SchemaSoundscapeView } from "@/api/client";
 import { t } from "@/i18n";
+import { isIOS } from "@/lib/browser";
 import { PlayerCard } from "./PlayerCard";
 import { page } from "./queries";
 import { stop } from "./store";
@@ -60,6 +61,7 @@ function Player({
   const volume = useRef(0);
   const src = embedSrc(stream);
   const origin = stream.frame_origin;
+  const deviceVolume = isIOS();
 
   useEffect(() => {
     const onMessage = (message: MessageEvent) => {
@@ -77,7 +79,8 @@ function Player({
       if (state === 1) setHasPlayed(true);
       if (data.event !== "onReady" && data.event !== "initialDelivery") return;
       // The frame starts silent so a retry cannot jump to YouTube's own volume.
-      command(frame.current, origin, "setVolume", [volume.current]);
+      if (deviceVolume) command(frame.current, origin, volume.current === 0 ? "mute" : "unMute");
+      else command(frame.current, origin, "setVolume", [volume.current]);
       setReady(true);
     };
     const onViolation = (event: SecurityPolicyViolationEvent) => {
@@ -89,7 +92,7 @@ function Player({
       window.removeEventListener("message", onMessage);
       document.removeEventListener("securitypolicyviolation", onViolation);
     };
-  }, [origin]);
+  }, [origin, deviceVolume]);
 
   useEffect(() => {
     if (!level.playing || hasPlayed || blocked) return;
@@ -107,6 +110,13 @@ function Player({
   useEffect(() => {
     if (!ready) return;
     const target = Math.round(level.gain * 100);
+    // iOS owns media volume; mute and pause still work, so meetings and Pause must not depend on a fade.
+    if (deviceVolume) {
+      volume.current = target;
+      command(frame.current, origin, target === 0 ? "mute" : "unMute");
+      command(frame.current, origin, level.playing ? "playVideo" : "pauseVideo");
+      return;
+    }
     if (level.playing) command(frame.current, origin, "playVideo");
     const steps = Math.max(1, Math.round((level.seconds * 1000) / STEP_MS));
     const start = volume.current;
@@ -121,7 +131,7 @@ function Player({
       }
     }, STEP_MS);
     return () => clearInterval(timer);
-  }, [ready, level.gain, level.seconds, level.playing, origin]);
+  }, [ready, level.gain, level.seconds, level.playing, origin, deviceVolume]);
 
   if (!src) return null;
   return (
