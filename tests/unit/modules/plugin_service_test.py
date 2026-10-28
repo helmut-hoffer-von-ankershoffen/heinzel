@@ -6,6 +6,7 @@ import multiprocessing
 import os
 import subprocess
 import sys
+import time
 import types
 import urllib.error
 
@@ -456,12 +457,6 @@ def installing(make_kernel, prefix, monkeypatch, gh=None):
     return service, runs
 
 
-def _hold_receipt_install_lock(directory, acquired, release):
-    with PluginReceipts(directory).installing():
-        acquired.set()
-        release.wait(10)
-
-
 def raising(exc):
     def get(url):
         raise exc
@@ -608,21 +603,44 @@ def test_receipt_directory_creation_syncs_parent(make_kernel, tool_env, monkeypa
 
 
 def test_receipt_install_lock_is_shared_between_processes(tmp_path):
-    context = multiprocessing.get_context("fork")
-    acquired = context.Event()
-    release = context.Event()
-    process = context.Process(target=_hold_receipt_install_lock, args=(tmp_path, acquired, release))
+    context = multiprocessing.get_context("spawn")
+    acquired = tmp_path / "lock-acquired"
+    release = tmp_path / "release-lock"
+    script = """
+import sys
+import time
+from pathlib import Path
+from heinzel.modules.system.plugin._receipts import PluginReceipts
+
+directory = Path(sys.argv[1])
+with PluginReceipts(directory).installing():
+    (directory / "lock-acquired").touch()
+    deadline = time.monotonic() + 10
+    while not (directory / "release-lock").exists() and time.monotonic() < deadline:
+        time.sleep(0.01)
+"""
+    process = context.Process(
+        target=subprocess.run,
+        args=([sys.executable, "-c", script, str(tmp_path)],),
+        kwargs={"check": True},
+    )
     process.start()
     try:
-        assert acquired.wait(5)
+        deadline = time.monotonic() + 10
+        while not acquired.exists() and process.is_alive() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert acquired.exists()
         with (
             pytest.raises(HeinzelError, match="Another plugin installation is running"),
             PluginReceipts(tmp_path).installing(),
         ):
             pass
     finally:
-        release.set()
+        release.touch()
         process.join(10)
+        if process.is_alive():
+            process.terminate()
+            process.join(10)
     assert process.exitcode == 0
 
 
