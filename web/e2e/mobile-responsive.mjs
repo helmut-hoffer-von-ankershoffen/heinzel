@@ -80,7 +80,7 @@ async function viewportFacts(page, name) {
         : null,
       scrollOwners: {
         main: main ? getComputedStyle(main).overflowY : null,
-        workspace: getComputedStyle(document.querySelector(".workspace-area")).overflowY,
+        workspace: getComputedStyle(document.querySelector(".workspace-scroll")).overflowY,
         conversation: conversation ? getComputedStyle(conversation).overflowY : null,
       },
     };
@@ -230,6 +230,44 @@ try {
     if (facts.shellClientHeight !== undefined) {
       assert.ok(facts.shellClientHeight <= facts.height, `${spec.name}: shell exceeds the viewport height`);
     }
+
+    // Long phone pages scroll under the header and footer, which stay visible and usable.
+    const scrollSelector = await page.evaluate(() =>
+      getComputedStyle(document.querySelector(".workspace-scroll")).overflowY === "auto" ? ".workspace-scroll" : "main",
+    );
+    const scroller = page.locator(scrollSelector);
+    const topbar = page.locator(".workspace-topbar");
+    const footer = page.locator("footer").last();
+    await page.locator("main").evaluate((main) => {
+      const probe = document.createElement("div");
+      probe.id = "mobile-scroll-probe";
+      probe.style.height = "1500px";
+      main.append(probe);
+    });
+    const beforeScroll = { top: await topbar.boundingBox(), bottom: await footer.boundingBox() };
+    const moved = await scroller.evaluate((element) => {
+      element.scrollTop = 600;
+      return element.scrollTop;
+    });
+    assert.ok(moved > 0, `${spec.name}: page did not scroll`);
+    const afterScroll = { top: await topbar.boundingBox(), bottom: await footer.boundingBox() };
+    assert.ok(beforeScroll.top && beforeScroll.bottom && afterScroll.top && afterScroll.bottom);
+    assert.ok(await topbar.isVisible(), `${spec.name}: header is hidden while scrolling`);
+    assert.ok(await footer.isVisible(), `${spec.name}: footer is hidden while scrolling`);
+    assert.ok(Math.abs(afterScroll.top.y - beforeScroll.top.y) <= 1, `${spec.name}: header moved while scrolling`);
+    assert.ok(
+      Math.abs(afterScroll.bottom.y - beforeScroll.bottom.y) <= 1,
+      `${spec.name}: footer moved while scrolling`,
+    );
+    assert.ok(afterScroll.top.y >= 0 && afterScroll.bottom.y + afterScroll.bottom.height <= spec.height + 1);
+    await page.getByRole("button", { name: "Home", exact: true }).click();
+    assert.ok(await page.getByRole("menu").isVisible(), `${spec.name}: header menu is unreachable`);
+    await page.keyboard.press("Escape");
+    await page.screenshot({ path: join(shots, `mobile-${spec.name}-sticky-scroll.png`) });
+    await page.locator("#mobile-scroll-probe").evaluate((element) => element.remove());
+    await scroller.evaluate((element) => {
+      element.scrollTop = 0;
+    });
 
     // Main navigation remains touch reachable in the collapsed rail.
     const navigation = page.getByRole("navigation", { name: "Main" });
@@ -396,7 +434,26 @@ try {
       page.getByRole("region", { name: "World clock", exact: true }).getByRole("button", { name: "Close World clock" }),
       `${spec.name}: world clock header with chat and terminal open`,
     );
+    if ((await page.locator('[data-placement="below"]').count()) > 0) {
+      const scrollArea = page.locator(".workspace-scroll");
+      const headerBefore = await topbar.boundingBox();
+      const footerBefore = await footer.boundingBox();
+      await scrollArea.evaluate((element) => {
+        element.scrollTop = element.scrollHeight;
+      });
+      const headerAfter = await topbar.boundingBox();
+      const footerAfter = await footer.boundingBox();
+      assert.ok(await topbar.isVisible(), `${spec.name}: header hidden with World Clock selected`);
+      assert.ok(headerBefore && headerAfter && footerBefore && footerAfter);
+      assert.ok(Math.abs(headerBefore.y - headerAfter.y) <= 1, `${spec.name}: header moved in World Clock`);
+      assert.ok(Math.abs(footerBefore.y - footerAfter.y) <= 1, `${spec.name}: footer moved in World Clock`);
+      const end = await page
+        .locator('[data-placement="below"]')
+        .evaluate((element) => element.getBoundingClientRect().bottom);
+      assert.ok(end <= footerAfter.y + 1, `${spec.name}: panel bottom is covered by footer`);
+    }
     await page.getByRole("tab", { name: "Chat", exact: true }).click();
+    assert.ok(await topbar.isVisible(), `${spec.name}: header hidden with Chat selected`);
     const chatFooter = await footerPane(page, "@version", /^v/);
     await assertContained(page, chatFooter, `${spec.name}: footer in chat`);
     await page.mouse.click(3, 3);

@@ -139,6 +139,17 @@ function Layout() {
   }, []);
   const rem = Number.parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
   const beside = fitsBeside(useWidth(area), rem);
+  const besideHeader = useRef<HTMLDivElement>(null);
+  const belowHeader = useRef<HTMLDivElement>(null);
+  const [headerHost] = useState(() => document.createElement("div"));
+  useLayoutEffect(() => {
+    const target = beside ? besideHeader.current : belowHeader.current;
+    if (!target || headerHost.parentElement === target) return;
+    const focused = headerHost.contains(document.activeElement) ? (document.activeElement as HTMLElement) : null;
+    target.appendChild(headerHost);
+    focused?.focus({ preventScroll: true });
+  }, [beside, headerHost]);
+  useLayoutEffect(() => () => headerHost.remove(), [headerHost]);
   const besideFooter = useRef<HTMLDivElement>(null);
   const belowFooter = useRef<HTMLDivElement>(null);
   const [footerHost] = useState(() => document.createElement("div"));
@@ -284,18 +295,114 @@ function Layout() {
           }
         />
       </aside>
-      <div
-        ref={area}
-        className={cn(
-          "workspace-area relative flex min-w-0 flex-1",
-          beside ? "flex-row" : flowingWorkspace ? "flex-col overflow-y-auto" : "flex-col",
-        )}
-      >
+      <div ref={area} className="workspace-area relative flex min-w-0 flex-1 flex-col">
+        <div ref={belowHeader} hidden={beside || full} className="shrink-0" />
         <div
-          inert={full}
-          aria-hidden={full || undefined}
-          className={cn("flex min-w-0 flex-col", flowingWorkspace ? "min-h-full shrink-0" : "min-h-0 flex-1")}
+          className={cn(
+            "workspace-scroll relative flex min-h-0 min-w-0 flex-1",
+            beside ? "flex-row" : flowingWorkspace ? "flex-col overflow-y-auto" : "flex-col",
+          )}
         >
+          <div
+            inert={full}
+            aria-hidden={full || undefined}
+            className={cn("flex min-w-0 flex-col", flowingWorkspace ? "min-h-full shrink-0" : "min-h-0 flex-1")}
+          >
+            <div ref={besideHeader} hidden={!beside} className="shrink-0" />
+            <main
+              id="content"
+              inert={!beside && selectedPanel !== "page" && !flowingWorkspace}
+              aria-hidden={!beside && selectedPanel !== "page" && !flowingWorkspace ? true : undefined}
+              tabIndex={-1}
+              className={cn(
+                "flex-1 bg-[linear-gradient(to_bottom,var(--color-main-tint),transparent_18rem),var(--theme-backdrop)]",
+                !flowingWorkspace && "min-h-0 overflow-y-auto",
+              )}
+            >
+              <Outlet />
+            </main>
+            <div ref={besideFooter} hidden={!beside} className="shrink-0" />
+          </div>
+          {(chatOpen || terminalOpen || clockOpen || clockRetained) && (
+            // One selected workspace panel; the same mounted contents move between desktop and phone layouts.
+            <div
+              data-placement={beside ? "beside" : "below"}
+              data-active={selectedPanel}
+              className={cn(
+                "workspace-panel flex min-h-0 flex-col bg-background",
+                full
+                  ? "absolute inset-0"
+                  : beside
+                    ? "w-96 shrink-0 border-l border-border"
+                    : selectedPanel === "page" || flowingWorkspace
+                      ? "shrink-0 border-t border-border"
+                      : "absolute inset-x-0 top-12 bottom-0 border-t border-border",
+              )}
+            >
+              <WorkspacePanels
+                flowing={flowingWorkspace}
+                active={selectedPanel}
+                onSelect={selectPanel}
+                panels={[
+                  ...(!beside ? [{ id: "page", title: t("workspace.page"), content: null }] : []),
+                  ...(chatOpen
+                    ? [
+                        {
+                          id: "chat",
+                          title: t("chat.title"),
+                          content: (
+                            <aside aria-label={t("chat.title")} className="h-full min-h-0">
+                              <ChatPanel onCollapse={() => setChatOpen(false)} />
+                            </aside>
+                          ),
+                        },
+                      ]
+                    : []),
+                  ...(terminalOpen
+                    ? [
+                        {
+                          id: "terminal",
+                          title: t("terminal.title"),
+                          content: (
+                            <TerminalPanel
+                              full={terminalFull}
+                              onToggleFull={() => setTerminalFull((value) => !value)}
+                              onClose={() => {
+                                setTerminalOpen(false);
+                                setTerminalFull(false);
+                              }}
+                            />
+                          ),
+                        },
+                      ]
+                    : []),
+                  ...(clockOpen || clockRetained
+                    ? [
+                        {
+                          id: "world-clock",
+                          title: t("worldClock.title"),
+                          content: (
+                            <aside
+                              aria-label={t("worldClock.panel")}
+                              className={flowingWorkspace ? "" : "h-full min-h-0"}
+                            >
+                              <WorldClock onClose={closeClock} flowing={flowingWorkspace} />
+                            </aside>
+                          ),
+                        },
+                      ]
+                    : []),
+                ]}
+              />
+            </div>
+          )}
+        </div>
+        <div
+          ref={belowFooter}
+          hidden={beside || (selectedPanel !== "page" && !flowingWorkspace)}
+          className="shrink-0"
+        />
+        {createPortal(
           <TopBar
             chatOpen={chatOpen && selectedPanel === "chat"}
             onToggleChat={() => {
@@ -315,100 +422,10 @@ function Layout() {
                 selectPanel("terminal");
               }
             }}
-          />
-          <main
-            id="content"
-            inert={!beside && selectedPanel !== "page" && !flowingWorkspace}
-            aria-hidden={!beside && selectedPanel !== "page" && !flowingWorkspace ? true : undefined}
-            tabIndex={-1}
-            className={cn(
-              "flex-1 bg-[linear-gradient(to_bottom,var(--color-main-tint),transparent_18rem),var(--theme-backdrop)]",
-              !flowingWorkspace && "min-h-0 overflow-y-auto",
-            )}
-          >
-            <Outlet />
-          </main>
-          <div ref={besideFooter} hidden={!beside} className="shrink-0" />
-        </div>
-        {(chatOpen || terminalOpen || clockOpen || clockRetained) && (
-          // One selected workspace panel; the same mounted contents move between desktop and phone layouts.
-          <div
-            data-placement={beside ? "beside" : "below"}
-            data-active={selectedPanel}
-            className={cn(
-              "workspace-panel flex min-h-0 flex-col bg-background",
-              full
-                ? "absolute inset-0"
-                : beside
-                  ? "w-96 shrink-0 border-l border-border"
-                  : selectedPanel === "page" || flowingWorkspace
-                    ? "shrink-0 border-t border-border"
-                    : "absolute inset-x-0 top-12 bottom-0 border-t border-border",
-            )}
-          >
-            <WorkspacePanels
-              flowing={flowingWorkspace}
-              active={selectedPanel}
-              onSelect={selectPanel}
-              panels={[
-                ...(!beside ? [{ id: "page", title: t("workspace.page"), content: null }] : []),
-                ...(chatOpen
-                  ? [
-                      {
-                        id: "chat",
-                        title: t("chat.title"),
-                        content: (
-                          <aside aria-label={t("chat.title")} className="h-full min-h-0">
-                            <ChatPanel onCollapse={() => setChatOpen(false)} />
-                          </aside>
-                        ),
-                      },
-                    ]
-                  : []),
-                ...(terminalOpen
-                  ? [
-                      {
-                        id: "terminal",
-                        title: t("terminal.title"),
-                        content: (
-                          <TerminalPanel
-                            full={terminalFull}
-                            onToggleFull={() => setTerminalFull((value) => !value)}
-                            onClose={() => {
-                              setTerminalOpen(false);
-                              setTerminalFull(false);
-                            }}
-                          />
-                        ),
-                      },
-                    ]
-                  : []),
-                ...(clockOpen || clockRetained
-                  ? [
-                      {
-                        id: "world-clock",
-                        title: t("worldClock.title"),
-                        content: (
-                          <aside
-                            aria-label={t("worldClock.panel")}
-                            className={flowingWorkspace ? "" : "h-full min-h-0"}
-                          >
-                            <WorldClock onClose={closeClock} flowing={flowingWorkspace} />
-                          </aside>
-                        ),
-                      },
-                    ]
-                  : []),
-              ]}
-            />
-          </div>
+          />,
+          headerHost,
         )}
-        <div
-          ref={belowFooter}
-          hidden={beside || (selectedPanel !== "page" && !flowingWorkspace)}
-          className="shrink-0"
-        />
-        {/* One mounted footer: moving its host preserves controls when the side panel moves below. */}
+        {/* Moving the mounted controls preserves their state when the side panel moves below. */}
         {createPortal(<StatusBar />, footerHost)}
       </div>
       {showAudioVisualizer && (
