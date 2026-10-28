@@ -1,5 +1,4 @@
-// "Install app": the browser's own install prompt on Chrome and Edge, where Safari keeps it (File > Add to Dock), or
-// nothing when the app is installed already. Installed, it opens from the Dock in a window of its own.
+// Installation uses the browser's prompt or platform-specific Safari guidance. Installed apps open from their icon.
 import { Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
@@ -19,5 +18,6 @@ export function InstallApp({ compact = false }: { compact?: boolean }) {
     );
   }
   if (state === "safari") return <p className="text-xs text-muted-foreground">{t("install.safari")}</p>;
+  if (state === "ios") return <p className="text-xs text-muted-foreground">{t("install.ios")}</p>;
   return compact ? null : <p className="text-xs text-muted-foreground">{t("install.unsupported")}</p>;
 }

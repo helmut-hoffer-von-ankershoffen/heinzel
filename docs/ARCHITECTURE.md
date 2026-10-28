@@ -236,3 +236,13 @@ The workspace uses descriptor-driven tabs for Chat, Terminal and World Clock on 
 stay mounted; Page returns to the main screen on phones. The header and footer stay visible while scrolling, except
 in the full-screen terminal. New panels use the same renderer rather than
 adding another stack or viewport rule; [ADR 0089](adr/0089-one-selected-workspace-panel.md) records the boundary.
+
+On iPhone and iPad, embedded YouTube volume belongs to the device's volume buttons. The sound picker explains this
+instead of offering a slider or typing ducking; layered Web Audio soundscapes keep both. Stream pause, meeting mute
+and mute during voice input use the player's pause/mute commands rather than volume fades.
+
+Notification tests report the browser running the app. Only loopback desktop pages also test and offer repairs for
+the server's native notifier. Remote pages never open the server's notification settings or claim its pop-up reached
+the phone. The test shows a browser notification and checks that delivery before claiming success. iPhone/iPad tabs
+explain Share → Add to Home Screen; the installed app can request permission. The app must remain running to receive
+notices: it has no background Web Push service (ADR 0046).
