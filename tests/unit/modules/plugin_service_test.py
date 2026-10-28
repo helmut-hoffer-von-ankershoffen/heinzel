@@ -1148,9 +1148,12 @@ def test_a_first_party_preview_confirms_by_name_not_by_its_git_requirement(make_
     rendered = render_change(preview)
     from rich.console import Console
 
-    console = Console(record=True, width=200)
-    console.print(rendered)
-    assert "not reviewed" not in console.export_text()
+    console = Console(record=True, width=60)
+    console.print(rendered, soft_wrap=getattr(rendered, "soft_wrap", False))
+    output = console.export_text()
+    assert "not reviewed" not in output
+    [hint] = [line for line in output.splitlines() if line.startswith("To install: ")]
+    assert preview.operation_id in hint
     assert service.add(preview.candidate.spec, confirm=True, operation_id=preview.operation_id).done
     assert len(runs) == 1
 

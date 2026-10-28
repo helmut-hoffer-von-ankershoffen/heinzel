@@ -131,7 +131,8 @@ def _present(
         rendered = operation.render(result)
         # Bare text is content to copy or pipe as it is (a draft, a flowchart): the terminal wraps it, Rich must not
         # break its lines. Tables and groups are laid out for the terminal's width.
-        console.print(TerminalSafe(rendered), soft_wrap=isinstance(rendered, Text))
+        soft_wrap = isinstance(rendered, Text) or getattr(rendered, "soft_wrap", False)
+        console.print(TerminalSafe(rendered), soft_wrap=soft_wrap)
     else:
         show(console, result)
     if epilogue is not None:

@@ -14,6 +14,12 @@ RIGHTS = (
 RESTART = "Every new hz command sees it now; restart a running `hz ui` or MCP server to load it there."
 
 
+class _PasteableGroup(Group):
+    """A rendered result with a command people need to paste exactly as shown."""
+
+    soft_wrap = True
+
+
 def render_search(result: PluginSearch) -> RenderableType:
     """A table of installable plugins, then any warnings and a reminder that plugins run with your rights."""
     table = Table(title="Installable plugins", expand=True)
@@ -66,8 +72,8 @@ def render_change(change: PluginChange) -> RenderableType:
     parts: list[RenderableType] = []
     if (candidate := change.candidate) is not None and not change.done and change.previewed:
         parts.append(Text("Not installed.", style="bold"))
-        parts.extend(Text(f"To install later: {command}") for command in change.next)
-        return Group(*parts)
+        parts.extend(Text(f"To install later: {command}", no_wrap=True, overflow="ignore") for command in change.next)
+        return _PasteableGroup(*parts)
     if (candidate := change.candidate) is not None and not change.done:
         table = Table.grid(padding=(0, 2))
         table.add_column(style="bold")
@@ -92,8 +98,9 @@ def render_change(change: PluginChange) -> RenderableType:
         if not candidate.first_party:
             parts.append(Text(RIGHTS, style="dim"))
         parts.append(Text("Not installed yet: this was a preview.", style="bold"))
-        parts.extend(Text(f"To install: {command}") for command in change.next)
-        return Group(*parts)
+        # Keep the receipt token on one pasteable output line even in narrow terminals.
+        parts.extend(Text(f"To install: {command}", no_wrap=True, overflow="ignore") for command in change.next)
+        return _PasteableGroup(*parts)
     done = {"add": "Added", "develop": "Added", "remove": "Removed", "enable": "Enabled", "disable": "Disabled"}
     if change.action == "add" and change.candidate is not None:
         version = f" {change.candidate.version}" if change.candidate.version else ""
