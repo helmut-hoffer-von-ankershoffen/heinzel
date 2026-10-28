@@ -456,14 +456,3 @@ body {
   font-size: var(--workspace-cost-font, 0.75rem);
   line-height: var(--workspace-cost-leading, 1rem);
 }
-
-:root[data-keyboard-open="true"]
-  .workspace-area:has(.workspace-panel[data-placement="below"]:not([data-active="page"]))
-  .workspace-topbar {
-  visibility: hidden;
-}
-@media (max-height: 400px) {
-  .workspace-area:has(.workspace-panel[data-placement="below"]:not([data-active="page"])) .workspace-topbar {
-    visibility: hidden;
-  }
-}

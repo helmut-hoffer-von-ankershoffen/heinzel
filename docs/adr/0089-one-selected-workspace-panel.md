@@ -25,7 +25,8 @@ Chosen option: **one selected panel with a shared tab strip**, because the same 
 to the desktop sidebar and accepts additional panel descriptors without bespoke sizing.
 
 - `WorkspacePanels` takes stable panel ids, labels and contents. Desktop places it beside the page; narrow screens
-  place it below, with a Page tab that returns to the screen and footer without closing sessions. On phones the
+  place it below, with a Page tab that returns to the screen without closing sessions. The header and footer stay
+  visible while the workspace scrolls, except in full-screen terminal. On phones the
   selected task uses the content area; keyboard and short-screen modes compact the controls while keeping panel switching available. Tabs select one open panel and support arrow keys, Home and End.
 - Selecting another tab hides the prior panel without unmounting it. Drafts, terminal sessions and clock state
   survive switching and resizing. Closing a panel remains explicit and releases its resources as before.
@@ -42,4 +43,4 @@ Users see one panel at a time instead of simultaneously stacked chat and termina
 
 `WorkspacePanels.test.tsx` verifies selection, keyboard navigation and retained mounted state. `Panel.test.tsx`
 checks shell integration and responsive placement. The mobile browser sweep opens chat, terminal and World Clock
-together and switches among them at phone sizes.
+together, switches among them and checks bar positions while scrolling at phone sizes.
