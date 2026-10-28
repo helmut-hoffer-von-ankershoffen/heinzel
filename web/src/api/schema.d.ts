@@ -1217,8 +1217,9 @@ export interface paths {
          * @description Show what a plugin would install, then add it with `--confirm`; adding it again replaces it.
          *
          *     Without `confirm` it only reads PyPI or GitHub and answers what `requirement` would be installed, pinned to the
-         *     release or commit it read; with `confirm` it installs that and records it in the plugin history. Running servers
-         *     (`hz ui`, MCP) see the plugin after a restart (`restart_required`).
+         *     release or commit it read; the answer includes a receipt that can confirm exactly that candidate once. Existing
+         *     callers may still confirm by spec. Running servers (`hz ui`, MCP) see the plugin after a restart
+         *     (`restart_required`).
          */
         post: operations["system_plugin_add"];
         delete?: never;
@@ -1328,6 +1329,26 @@ export interface paths {
          *         HeinzelError: If the requested fresh interpreter cannot read the installed environment.
          */
         get: operations["system_plugin_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/plugin/operation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read the status and result of a plugin add without repeating it.
+         * @description Read the status and result of a plugin add without repeating it.
+         */
+        get: operations["system_plugin_operation"];
         put?: never;
         post?: never;
         delete?: never;
@@ -6604,6 +6625,11 @@ export interface components {
              */
             next: string[];
             /**
+             * Operation Id
+             * @description Opaque server receipt for confirming or checking this add.
+             */
+            operation_id?: string | null;
+            /**
              * Plugins
              * @description The plugins installed afterwards (now, if not done).
              */
@@ -6787,6 +6813,27 @@ export interface components {
              * @description The site layer it names, if any.
              */
             site: string | null;
+        };
+        /**
+         * PluginOperation
+         * @description Durable state of one plugin-add preview and its confirmation.
+         */
+        PluginOperation: {
+            /** @description The exact candidate shown before confirmation. */
+            candidate: components["schemas"]["PluginCandidate"];
+            /**
+             * Operation Id
+             * @description Opaque id returned by the preview; it contains no candidate details.
+             */
+            operation_id: string;
+            /** @description The authoritative result after a completed add. */
+            result?: components["schemas"]["PluginChange"] | null;
+            /**
+             * Status
+             * @description Whether confirmation is available, running, finished, or uncertain and must not be replayed.
+             * @enum {string}
+             */
+            status: "previewed" | "running" | "completed" | "unknown";
         };
         /**
          * PluginPage
@@ -10399,6 +10446,7 @@ export type SchemaPluginChange = components['schemas']['PluginChange'];
 export type SchemaPluginEvent = components['schemas']['PluginEvent'];
 export type SchemaPluginInfo = components['schemas']['PluginInfo'];
 export type SchemaPluginLayer = components['schemas']['PluginLayer'];
+export type SchemaPluginOperation = components['schemas']['PluginOperation'];
 export type SchemaPluginPage = components['schemas']['PluginPage'];
 export type SchemaPluginSearch = components['schemas']['PluginSearch'];
 export type SchemaPluginUpdate = components['schemas']['PluginUpdate'];
@@ -12087,6 +12135,8 @@ export interface operations {
                 spec: string;
                 /** @description Install it. Without it, nothing is installed: the answer shows the source, version and publisher to confirm first, because a plugin runs with your rights. */
                 confirm?: boolean;
+                /** @description Opaque receipt returned by a preview; confirms that exact candidate only once. */
+                operation_id?: string | null;
             };
             header?: never;
             path?: never;
@@ -12253,6 +12303,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PluginInfo"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_plugin_operation: {
+        parameters: {
+            query: {
+                /** @description Receipt id from a plugin preview. */
+                operation_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PluginOperation"];
                 };
             };
             /** @description Validation Error */

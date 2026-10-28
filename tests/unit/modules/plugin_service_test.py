@@ -1,9 +1,12 @@
 import base64
+import errno
 import io
 import json
+import multiprocessing
 import os
 import subprocess
 import sys
+import time
 import types
 import urllib.error
 
@@ -11,8 +14,9 @@ import pytest
 
 from heinzel import HeinzelError, Kernel, Module, ModuleRecord, Progress, Settings, Theme
 from heinzel.kernel import DEFAULT_THEME, Installation, Origin
-from heinzel.modules.system.plugin import _service, _sources
+from heinzel.modules.system.plugin import _receipts, _service, _sources
 from heinzel.modules.system.plugin._models import PluginSettings
+from heinzel.modules.system.plugin._receipts import PluginReceipts
 from heinzel.modules.system.plugin._service import PluginService, distributions_in_spec
 
 pytestmark = pytest.mark.unit
@@ -469,7 +473,8 @@ def test_without_confirm_add_installs_nothing_and_shows_a_pinned_pypi_release(ma
     assert (candidate.requirement, candidate.version) == ("heinzel-crm==1.1.0", "1.1.0")
     assert (candidate.publisher, candidate.source, candidate.first_party) == ("Ada Example", "pypi", False)
     assert candidate.url == "https://pypi.org/project/heinzel-crm/"
-    assert change.next == ["hz system plugin add heinzel-crm==1.1.0 --confirm"]
+    assert change.operation_id is not None
+    assert change.next == [f"hz system plugin add heinzel-crm==1.1.0 --confirm --operation-id {change.operation_id}"]
     assert service.history() == []
 
 
@@ -497,6 +502,146 @@ def test_confirmed_add_installs_exactly_what_was_shown_and_records_it(make_kerne
         "1.1.0",
         "Ada Example",
     )
+
+
+def test_preview_receipt_binds_candidate_and_duplicate_confirmation_returns_durable_result(
+    make_kernel, tool_env, monkeypatch
+):
+    service, runs = installing(make_kernel, tool_env, monkeypatch)
+    service.pypi = lambda url: pypi_project("heinzel-crm", "1.1.0")
+    preview = service.add("heinzel-crm")
+    assert preview.operation_id
+    assert preview.candidate
+    assert preview.candidate
+    assert service.operation(preview.operation_id).status == "previewed"
+    with pytest.raises(HeinzelError, match="different preview"):
+        service.add("heinzel-other", confirm=True, operation_id=preview.operation_id)
+    monkeypatch.setattr(
+        service,
+        "_changed",
+        lambda action, distribution, candidate: preview.model_copy(
+            update={"done": True, "restart_required": True, "operation_id": preview.operation_id}
+        ),
+    )
+
+    result = service.add(preview.candidate.requirement, confirm=True, operation_id=preview.operation_id)
+    again = service.add(preview.candidate.requirement, confirm=True, operation_id=preview.operation_id)
+    reloaded = service_for(make_kernel, tool_env)
+
+    assert len(runs) == 1
+    assert result.done
+    assert again == result
+    assert reloaded.operation(preview.operation_id).status == "completed"
+    assert reloaded.operation(preview.operation_id).result == result
+
+
+def test_receipt_marked_unknown_after_owner_process_exits(make_kernel, tool_env, monkeypatch):
+    service, _ = installing(make_kernel, tool_env, monkeypatch)
+    service.pypi = lambda url: pypi_project("heinzel-crm", "1.1.0")
+    preview = service.add("heinzel-crm")
+    assert preview.operation_id
+    assert preview.candidate
+    receipt = service._receipts.claim(preview.operation_id)
+    assert receipt.status == "running"
+    path = service._receipts._path(preview.operation_id)
+    stored = json.loads(path.read_text(encoding="utf-8"))
+    stored["owner_pid"] = 2**30
+    path.write_text(json.dumps(stored), encoding="utf-8")
+
+    # The status operation is declared read-only; it derives unknown from the dead owner without rewriting the file.
+    assert service.operation(preview.operation_id).status == "unknown"
+    assert json.loads(path.read_text(encoding="utf-8"))["status"] == "running"
+    with pytest.raises(HeinzelError, match="unknown result"):
+        service.add(preview.candidate.requirement, confirm=True, operation_id=preview.operation_id)
+    assert json.loads(path.read_text(encoding="utf-8"))["status"] == "unknown"
+
+
+def test_receipt_claim_fails_closed_when_parent_directory_fsync_fails(make_kernel, tool_env, monkeypatch):
+    service, runs = installing(make_kernel, tool_env, monkeypatch)
+    service.pypi = lambda url: pypi_project("heinzel-crm", "1.1.0")
+    preview = service.add("heinzel-crm")
+    assert preview.operation_id
+    assert preview.candidate
+    path = service._receipts._path(preview.operation_id)
+    original_sync = _receipts._fsync_directory
+
+    def fail_receipt_directory_sync(directory):
+        if directory == service._receipts.directory:
+            msg = "simulated directory fsync failure"
+            raise OSError(errno.EIO, msg)
+        original_sync(directory)
+
+    monkeypatch.setattr(_receipts, "_fsync_directory", fail_receipt_directory_sync)
+    with pytest.raises(HeinzelError, match="could not be made durable"):
+        service.add(preview.candidate.requirement, confirm=True, operation_id=preview.operation_id)
+
+    assert runs == []
+    assert json.loads(path.read_text(encoding="utf-8"))["status"] == "unknown"
+    assert service.operation(preview.operation_id).status == "unknown"
+    with pytest.raises(HeinzelError, match="unknown result"):
+        service.add(preview.candidate.requirement, confirm=True, operation_id=preview.operation_id)
+    assert runs == []
+
+
+def test_receipt_directory_creation_syncs_parent(make_kernel, tool_env, monkeypatch, tmp_path):
+    service, _ = installing(make_kernel, tool_env, monkeypatch)
+    service.pypi = lambda url: pypi_project("heinzel-crm", "1.1.0")
+    preview = service.add("heinzel-crm")
+    assert preview.candidate
+    new_state = tmp_path / "new-state"
+    synced = []
+    original_sync = _receipts._fsync_directory
+
+    def record_sync(directory):
+        synced.append(directory)
+        original_sync(directory)
+
+    monkeypatch.setattr(_receipts, "_fsync_directory", record_sync)
+    PluginReceipts(new_state).create(preview.candidate)
+
+    assert new_state in synced
+
+
+def test_receipt_install_lock_is_shared_between_processes(tmp_path):
+    context = multiprocessing.get_context("spawn")
+    acquired = tmp_path / "lock-acquired"
+    release = tmp_path / "release-lock"
+    script = """
+import sys
+import time
+from pathlib import Path
+from heinzel.modules.system.plugin._receipts import PluginReceipts
+
+directory = Path(sys.argv[1])
+with PluginReceipts(directory).installing():
+    (directory / "lock-acquired").touch()
+    deadline = time.monotonic() + 10
+    while not (directory / "release-lock").exists() and time.monotonic() < deadline:
+        time.sleep(0.01)
+"""
+    process = context.Process(
+        target=subprocess.run,
+        args=([sys.executable, "-c", script, str(tmp_path)],),
+        kwargs={"check": True},
+    )
+    process.start()
+    try:
+        deadline = time.monotonic() + 10
+        while not acquired.exists() and process.is_alive() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert acquired.exists()
+        with (
+            pytest.raises(HeinzelError, match="Another plugin installation is running"),
+            PluginReceipts(tmp_path).installing(),
+        ):
+            pass
+    finally:
+        release.touch()
+        process.join(10)
+        if process.is_alive():
+            process.terminate()
+            process.join(10)
+    assert process.exitcode == 0
 
 
 def test_a_github_repository_is_pinned_to_the_commit_its_ref_points_at(make_kernel, tool_env, monkeypatch):
@@ -996,14 +1141,20 @@ def test_a_first_party_preview_confirms_by_name_not_by_its_git_requirement(make_
     preview = service.add("clock")
     assert preview.candidate is not None
     assert preview.candidate.requirement != "clock"  # a git or path requirement ...
-    assert preview.next == ["hz system plugin add clock --confirm"]  # ... which the hint must not suggest
+    assert preview.operation_id
+    assert preview.next == [
+        f"hz system plugin add clock --confirm --operation-id {preview.operation_id}"
+    ]  # ... which the hint must not suggest
     rendered = render_change(preview)
     from rich.console import Console
 
-    console = Console(record=True, width=200)
-    console.print(rendered)
-    assert "not reviewed" not in console.export_text()
-    assert service.add(preview.next[0].split()[-2], confirm=True).done  # the hinted name installs
+    console = Console(record=True, width=60)
+    console.print(rendered, soft_wrap=getattr(rendered, "soft_wrap", False))
+    output = console.export_text()
+    assert "not reviewed" not in output
+    [hint] = [line for line in output.splitlines() if line.startswith("To install: ")]
+    assert preview.operation_id in hint
+    assert service.add(preview.candidate.spec, confirm=True, operation_id=preview.operation_id).done
     assert len(runs) == 1
 
 
@@ -1015,7 +1166,8 @@ def test_a_community_preview_still_confirms_by_its_requirement_and_warns(make_ke
     service, _ = installing(make_kernel, tool_env, monkeypatch)
     service.pypi = lambda url: pypi_project("heinzel-crm", "1.1.0")
     preview = service.add("heinzel-crm")
-    assert preview.next == ["hz system plugin add heinzel-crm==1.1.0 --confirm"]
+    assert preview.operation_id
+    assert preview.next == [f"hz system plugin add heinzel-crm==1.1.0 --confirm --operation-id {preview.operation_id}"]
     console = Console(record=True, width=200)
     console.print(render_change(preview))
     assert "not reviewed" in console.export_text()

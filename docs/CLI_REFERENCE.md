@@ -2129,6 +2129,7 @@ $ hz system plugin [OPTIONS] COMMAND [ARGS]...
 * `history`: (expert) List plugin changes made on this...
 * `list`: (expert) List installed plugins, enabled...
 * `new`: (expert) Scaffold a plugin repository from...
+* `operation`: (expert) Read the status and result of a...
 * `remove`: (expert) Remove a plugin.
 * `search`: (expert) Find plugins to install:...
 
@@ -2149,6 +2150,7 @@ $ hz system plugin add [OPTIONS] {spec}
 **Options**:
 
 * `--confirm / --no-confirm`: Install it. Without it, nothing is installed: the answer shows the source, version and publisher to confirm first, because a plugin runs with your rights.  [default: no-confirm]
+* `--operation-id <str>`: Opaque receipt returned by a preview; confirms that exact candidate only once.
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
@@ -2325,6 +2327,26 @@ $ hz system plugin new [OPTIONS] {destination}
 * `--data <str>`: Answer a template question as key=value, e.g. plugin_name=crm; repeat for each.
 * `--template <str>`: Copier template: a git URL, gh:owner/repo or a local path.  [default: gh:helmut-hoffer-von-ankershoffen/heinzel]
 * `--ref <str>`: Template version; defaults to this Heinzelmännchen&#x27;s release tag.
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system plugin operation`
+
+(expert) Read the status and result of a plugin add without repeating it.
+
+**Usage**:
+
+```console
+$ hz system plugin operation [OPTIONS] {operation_id}
+```
+
+**Arguments**:
+
+* `operation_id`: Receipt id from a plugin preview.  [required]
+
+**Options**:
+
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.

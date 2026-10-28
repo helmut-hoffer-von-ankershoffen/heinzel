@@ -374,6 +374,7 @@ Find, add, remove, enable, disable, list and scaffold plugins.
 | --- | --- | --- | --- | --- | --- | --- |
 | List installed plugins, enabled or not, with their source and the modules and adapters they bring. | `hz system plugin list` | `system_plugin_list` | `GET /system/plugin/list` | `GET /api/system/plugin/list` |  | expert |
 | Show what a plugin would install, then add it with `--confirm`; adding it again replaces it. | `hz system plugin add` | `system_plugin_add` | — | `POST /api/system/plugin/add` | yes | expert |
+| Read the status and result of a plugin add without repeating it. | `hz system plugin operation` | `system_plugin_operation` | — | `GET /api/system/plugin/operation` |  | expert |
 | Add the plugin in a directory on this machine, to try a plugin you are writing. | `hz system plugin develop` | — | — | — | yes | expert |
 | Remove a plugin. | `hz system plugin remove` | `system_plugin_remove` | — | `POST /api/system/plugin/remove` | yes | expert |
 | Switch a plugin off without removing it, in `[hz] disabled_modules` of your user file. | `hz system plugin disable` | `system_plugin_disable` | — | `POST /api/system/plugin/disable` | yes | expert |

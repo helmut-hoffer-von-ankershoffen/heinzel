@@ -17,12 +17,14 @@ import {
   Trash2,
   Users,
 } from "lucide-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { SchemaPluginCandidate, SchemaPluginChange, SchemaPluginInfo } from "@/api/client";
 import {
   type PluginChangeRequest,
   pluginIdentity,
+  readPluginOperation,
   useChangePlugin,
+  usePluginOperation,
   usePluginPreview,
   usePluginSearch,
   usePlugins,
@@ -32,6 +34,7 @@ import { Button } from "@/components/ui/button";
 import { SearchField } from "@/components/ui/search-field";
 import { type MessageKey, t } from "@/i18n";
 import { cn } from "@/lib/utils";
+import type { RestartObservation } from "@/lifecycle/controller";
 import { RestartAndApply } from "@/lifecycle/RestartAndApply";
 import { displayName } from "./settingsSections";
 
@@ -191,20 +194,70 @@ function RepositoryLine({ url }: { url: string | null | undefined }) {
 }
 
 type Pending =
-  | { action: "add"; candidate: SchemaPluginCandidate }
+  | { action: "add"; candidate: SchemaPluginCandidate; operationId: string }
   | { action: "remove" | "enable" | "disable"; name: string };
 
 function request(pending: Pending): PluginChangeRequest {
   switch (pending.action) {
     case "add":
       // A first-party plugin is added by the name asked for; its git requirement is refused as a spec.
-      return { add: pending.candidate.first_party ? pending.candidate.spec : pending.candidate.requirement };
+      return {
+        add: pending.candidate.first_party ? pending.candidate.spec : pending.candidate.requirement,
+        operationId: pending.operationId,
+      };
     case "remove":
       return { remove: pending.name };
     case "enable":
       return { enable: pending.name };
     case "disable":
       return { disable: pending.name };
+  }
+}
+
+const RECEIPT_STORAGE_KEY = "hz.plugin-add-operation.v1";
+const RESTART_STORAGE_KEY = "hz.plugin-add-restart.v1";
+
+function validRestartObservation(value: unknown): value is RestartObservation {
+  if (!value || typeof value !== "object") return false;
+  const observation = value as Partial<RestartObservation>;
+  return (
+    Array.isArray(observation.retired) &&
+    observation.retired.length > 0 &&
+    observation.retired.every((instance) => typeof instance === "string" && instance.trim()) &&
+    typeof observation.version === "string" &&
+    observation.version.trim().length > 0 &&
+    Array.isArray(observation.settings) &&
+    observation.settings.every(
+      (setting) =>
+        setting &&
+        typeof setting.section === "string" &&
+        typeof setting.key === "string" &&
+        Object.hasOwn(setting, "value"),
+    )
+  );
+}
+
+function restoredPluginFlow(): {
+  receiptId: string | null;
+  restartObservation: RestartObservation | null;
+  blocked: boolean;
+} {
+  try {
+    const receiptId = window.sessionStorage.getItem(RECEIPT_STORAGE_KEY);
+    const restart = window.sessionStorage.getItem(RESTART_STORAGE_KEY);
+    if (!restart) return { receiptId, restartObservation: null, blocked: false };
+    const saved: unknown = JSON.parse(restart);
+    if (!saved || typeof saved !== "object") return { receiptId, restartObservation: null, blocked: true };
+    const record = saved as { operation_id?: unknown; observation?: unknown };
+    if (
+      typeof record.operation_id !== "string" ||
+      record.operation_id !== receiptId ||
+      !validRestartObservation(record.observation)
+    )
+      return { receiptId, restartObservation: null, blocked: true };
+    return { receiptId, restartObservation: record.observation, blocked: false };
+  } catch {
+    return { receiptId: null, restartObservation: null, blocked: true };
   }
 }
 
@@ -249,11 +302,44 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
   const [spec, setSpec] = useState("");
   const [pending, setPending] = useState<Pending | null>(null);
   const [pluginProgress, setPluginProgress] = useState<string | null>(null);
+  const [restored] = useState(restoredPluginFlow);
+  const [receiptId, setReceiptId] = useState<string | null>(restored.receiptId);
+  const [restartObservation, setRestartObservation] = useState<RestartObservation | null>(restored.restartObservation);
+  const [restartBlocked, setRestartBlocked] = useState(restored.blocked);
+  const operation = usePluginOperation(receiptId);
+  const [resolveArmed, setResolveArmed] = useState(false);
   const pluginRestartRequired = useRef(false);
   const completed = useRef<SchemaPluginChange | null>(null);
   const attempted = useRef(false);
   const preview = usePluginPreview();
   const change = useChangePlugin();
+  const resolveReceipt = () => {
+    if (!resolveArmed) {
+      setResolveArmed(true);
+      return;
+    }
+    try {
+      window.sessionStorage.removeItem(RECEIPT_STORAGE_KEY);
+      window.sessionStorage.removeItem(RESTART_STORAGE_KEY);
+      setReceiptId(null);
+      setRestartObservation(null);
+      setRestartBlocked(false);
+      setPending(null);
+      setResolveArmed(false);
+    } catch {
+      setResolveArmed(true);
+    }
+  };
+  useEffect(() => {
+    const saved = operation.data;
+    if (!saved) return;
+    const candidate = saved.result?.candidate ?? saved.candidate;
+    setPending({ action: "add", candidate, operationId: saved.operation_id });
+    if (saved.status === "completed" && saved.result) {
+      completed.current = saved.result;
+      pluginRestartRequired.current = saved.result.restart_required;
+    }
+  }, [operation.data]);
   const tabClass = (active: boolean) =>
     cn(
       "rounded-lg px-3 py-1 text-sm transition-colors hover:bg-accent/70",
@@ -261,13 +347,26 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
     );
   const show = (value: string) => {
     if (change.isPending) return;
+    if (restartObservation || restartBlocked) return;
+    if (receiptId && operation.data?.status !== "previewed") return;
     change.reset();
     completed.current = null;
     attempted.current = false;
     setPluginProgress(null);
+    try {
+      window.sessionStorage.removeItem(RECEIPT_STORAGE_KEY);
+      window.sessionStorage.removeItem(RESTART_STORAGE_KEY);
+    } catch {
+      // Confirmation fails closed if this tab cannot persist the next receipt before sending the request.
+    }
+    setReceiptId(null);
+    setRestartObservation(null);
     preview.mutate(value, {
       onSuccess: (answer) => {
-        if (answer.candidate) setPending({ action: "add", candidate: answer.candidate });
+        if (answer.candidate && answer.operation_id) {
+          setReceiptId(answer.operation_id);
+          setPending({ action: "add", candidate: answer.candidate, operationId: answer.operation_id });
+        }
       },
     });
   };
@@ -280,15 +379,32 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
     preview.reset();
     setPending(value);
   };
-  const confirm = async () => {
+  const confirm = async (signal: AbortSignal) => {
     if (!pending) return false;
     if (completed.current) return completed.current.restart_required;
     if (attempted.current) throw new Error(t("plugins.resultUnknown"));
-    attempted.current = true;
     setPluginProgress(null);
     const operation = request(pending);
+    if ("add" in operation) {
+      if (!operation.operationId) throw new Error(t("plugins.receiptStorageUnavailable"));
+      try {
+        window.sessionStorage.setItem(RECEIPT_STORAGE_KEY, operation.operationId);
+      } catch {
+        throw new Error(t("plugins.receiptStorageUnavailable"));
+      }
+      if (receiptId !== operation.operationId) setReceiptId(operation.operationId);
+      const status = await readPluginOperation(operation.operationId);
+      if (status.status === "running") throw new Error(t("plugins.operationRunning"));
+      if (status.status === "unknown") throw new Error(t("plugins.operationUnknown"));
+      if (status.status === "completed" && status.result) {
+        completed.current = status.result;
+        pluginRestartRequired.current = status.result.restart_required;
+        return status.result.restart_required;
+      }
+      attempted.current = true;
+    }
     const answer = await change.mutateAsync(
-      "add" in operation ? { ...operation, onProgress: setPluginProgress } : operation,
+      "add" in operation ? { ...operation, signal, onProgress: setPluginProgress } : { ...operation, signal },
     );
     if (!answer.done) throw new Error(t("plugins.notCompleted"));
     completed.current = answer;
@@ -318,6 +434,15 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
     })[action];
   return (
     <>
+      {restartBlocked && (
+        <div className="mb-4 space-y-2 rounded-xl border border-warn/50 bg-warn/5 p-3 text-sm">
+          <p role="alert">{t("plugins.operationUnavailable")}</p>
+          <p className="text-xs text-muted-foreground">{t("plugins.operationUnknownHelp")}</p>
+          <Button size="sm" variant="outline" onClick={resolveReceipt}>
+            {resolveArmed ? t("plugins.operationResolveConfirm") : t("plugins.operationResolve")}
+          </Button>
+        </div>
+      )}
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <h3 className="mr-2 text-ui font-medium">{t("plugins.title")}</h3>
         <div role="tablist" className="flex gap-1">
@@ -386,6 +511,15 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
           {preview.error.message}
         </p>
       )}
+      {receiptId && operation.isError && (
+        <div className="mb-4 space-y-2 rounded-xl border border-warn/50 bg-warn/5 p-3 text-sm">
+          <p role="alert">{t("plugins.operationUnavailable")}</p>
+          <p className="text-xs text-muted-foreground">{t("plugins.operationUnknownHelp")}</p>
+          <Button size="sm" variant="outline" onClick={resolveReceipt}>
+            {resolveArmed ? t("plugins.operationResolveConfirm") : t("plugins.operationResolve")}
+          </Button>
+        </div>
+      )}
       {pending && (
         <fieldset className="mb-4 rounded-xl border border-warn/50 bg-warn/5 p-3 text-sm">
           <legend className="font-medium">{confirmText()}</legend>
@@ -402,25 +536,80 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
             </p>
           )}
           <div className="mt-2">
-            <RestartAndApply
-              target={t("plugins.title")}
-              changes={[
-                `${actionText(pending.action)}: ${pending.action === "add" ? (pending.candidate.distribution ?? pending.candidate.spec) : pending.name}`,
-              ]}
-              preserve={confirm}
-              onApplied={() => {
-                setPending(null);
-                setAdding(false);
-                setSpec("");
-                if (pluginRestartRequired.current) (reload ?? (() => window.location.reload()))();
-              }}
-              options={{
-                ...(restartInterval ? { interval: restartInterval } : {}),
-              }}
-            />
-            <Button size="sm" variant="ghost" onClick={() => setPending(null)} disabled={change.isPending}>
-              {t("plugins.cancel")}
-            </Button>
+            {pending.action === "add" && operation.data?.status === "running" ? (
+              <p role="status" className="mt-2 text-xs text-muted-foreground">
+                {t("plugins.operationRunning")}
+              </p>
+            ) : pending.action === "add" && operation.data?.status === "unknown" ? (
+              <div className="mt-2 space-y-2">
+                <p role="alert" className="text-xs text-bad">
+                  {t("plugins.operationUnknown")}
+                </p>
+                <p className="text-xs text-muted-foreground">{t("plugins.operationUnknownHelp")}</p>
+                <Button size="sm" variant="outline" onClick={resolveReceipt}>
+                  {resolveArmed ? t("plugins.operationResolveConfirm") : t("plugins.operationResolve")}
+                </Button>
+              </div>
+            ) : (
+              <>
+                <RestartAndApply
+                  target={t("plugins.title")}
+                  changes={[
+                    `${actionText(pending.action)}: ${pending.action === "add" ? (pending.candidate.distribution ?? pending.candidate.spec) : pending.name}`,
+                  ]}
+                  preserve={confirm}
+                  initialObservation={pending.action === "add" ? (restartObservation ?? undefined) : undefined}
+                  onApplied={() => {
+                    if (pending.action === "add") {
+                      try {
+                        window.sessionStorage.removeItem(RECEIPT_STORAGE_KEY);
+                        window.sessionStorage.removeItem(RESTART_STORAGE_KEY);
+                        setReceiptId(null);
+                        setRestartObservation(null);
+                        setRestartBlocked(false);
+                      } catch {
+                        // Keeping the receipt is safe; the next visit will read the completed result.
+                      }
+                    }
+                    setPending(null);
+                    setAdding(false);
+                    setSpec("");
+                    if (pluginRestartRequired.current) (reload ?? (() => window.location.reload()))();
+                  }}
+                  options={{
+                    ...(pending.action === "add" ? { preserveTimeout: 20 * 60_000 } : {}),
+                    ...(restartInterval ? { interval: restartInterval } : {}),
+                    ...(pending.action === "add"
+                      ? {
+                          onObservation: (observation: RestartObservation) => {
+                            window.sessionStorage.setItem(
+                              RESTART_STORAGE_KEY,
+                              JSON.stringify({ operation_id: pending.operationId, observation }),
+                            );
+                            setRestartObservation(observation);
+                          },
+                        }
+                      : {}),
+                  }}
+                />
+                {(pending.action !== "add" || operation.data?.status === "previewed") && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => {
+                      if (pending.action === "add") {
+                        setReceiptId(null);
+                        setRestartObservation(null);
+                      }
+                      setPending(null);
+                    }}
+                    disabled={change.isPending}
+                  >
+                    {t("plugins.cancel")}
+                  </Button>
+                )}
+              </>
+            )}
           </div>
         </fieldset>
       )}
