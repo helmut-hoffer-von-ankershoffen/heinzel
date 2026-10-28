@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
 import { finishUpdate, pendingUpdate, readUpdateStatus, startUpdate } from "@/updates/controller";
 
-/** Inspect on hover/focus; one deliberate click updates through the existing installer and verified lifecycle. */
+/** Inspect the pane first; its update button uses the existing installer and verified lifecycle. */
 export function UpdateStatus() {
   const query = useQuery({
     queryKey: ["web", "update-status"],
@@ -75,29 +75,41 @@ export function UpdateStatus() {
   }, [run]);
   const status = query.data;
   const available = status?.available === true;
+  const checked = status?.latest != null;
+  const installed = status?.installed_at ? new Date(status.installed_at) : null;
+  const installedDate =
+    installed && !Number.isNaN(installed.getTime())
+      ? installed.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })
+      : null;
   const canUpdate = available && status?.supported && !busy && !recovery;
-  const label = status ? (available ? t("updates.availableLabel") : t("updates.currentLabel")) : t("updates.title");
+  const current = checked && status?.supported === true;
+  const label = available ? t("updates.availableLabel") : current ? t("updates.currentLabel") : t("updates.title");
+  const summary =
+    phase ??
+    message ??
+    (available ? t("updates.available", { version: status?.latest ?? "" }) : !checked ? t("updates.unknown") : null);
   return (
     <FooterItem
-      label={canUpdate ? `${t("updates.action")} · ${label}` : label}
-      state={problem ? "bad" : available ? "warn" : status ? "ok" : "off"}
+      label={label}
+      state={problem ? "bad" : available ? "warn" : current ? "ok" : "off"}
       icon={busy ? LoaderCircle : Download}
-      className={available && !problem ? "animate-pulse text-bad" : status && !problem ? "text-ok" : undefined}
-      onActivate={canUpdate ? () => void run(false) : undefined}
+      className={available && !problem ? "animate-pulse text-bad" : current && !problem ? "text-ok" : undefined}
       disabled={busy}
     >
       <div className="space-y-2 px-1.5 pb-1.5">
-        <p role="status">
-          {phase ??
-            message ??
-            (status
-              ? available
-                ? t("updates.available", { version: status.latest ?? "" })
-                : t("updates.current", { version: status.current })
-              : t("updates.unknown"))}
-        </p>
+        {summary && <p role="status">{summary}</p>}
+        {status && <p>{t("updates.installedVersion", { version: status.current })}</p>}
+        {status && (
+          <p className="text-xs text-muted-foreground">
+            {installedDate ? t("updates.installedDate", { date: installedDate }) : t("updates.installedDateUnknown")}
+          </p>
+        )}
         {status?.reason && <p className="text-xs text-muted-foreground">{status.reason}</p>}
-        {canUpdate && <p className="text-xs text-muted-foreground">{t("updates.help")}</p>}
+        {canUpdate && (
+          <Button size="sm" variant="outline" onClick={() => void run(false)}>
+            {t("updates.action")}
+          </Button>
+        )}
         {problem && (
           <p role="alert" className="text-bad">
             {problem}

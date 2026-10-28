@@ -884,10 +884,10 @@ const en = {
   "fromClaude.source.code-plugin": "Claude Code, plugin",
   "updates.action": "Update hz and plugins",
   "updates.available": "hz {version} is available.",
-  "updates.current": "Up to date · hz {version}",
+  "updates.installedVersion": "Installed: hz {version}",
+  "updates.installedDate": "Last installed: {date}",
+  "updates.installedDateUnknown": "Installation date unavailable.",
   "updates.unknown": "Update availability is unavailable.",
-  "updates.help":
-    "Click the update icon to update core and plugins, restart, and reload. Your chat draft is preserved.",
   "updates.failed": "The update could not be verified. Inspect the installation before trying again.",
   "updates.verify": "Verify update again",
 } as const;

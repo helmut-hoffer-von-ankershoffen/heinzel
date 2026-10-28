@@ -222,6 +222,24 @@ try {
       };
       await route.fulfill({ response, json: report });
     });
+    let updateAvailable = false;
+    let updateRequests = 0;
+    await page.route("**/api/system/update", (route) => {
+      updateRequests += 1;
+      return route.abort();
+    });
+    await page.route("**/api/update-status", (route) =>
+      route.fulfill({
+        json: {
+          current: "0.7.30",
+          latest: updateAvailable ? "0.7.31" : "0.7.30",
+          installed_at: "2026-01-02T12:00:00Z",
+          available: updateAvailable,
+          supported: true,
+          reason: null,
+        },
+      }),
+    );
     await page.goto(url);
     await page.getByRole("heading", { name: "Today" }).waitFor();
     await page.locator("#splash").waitFor({ state: "hidden", timeout: 15_000 });
@@ -384,6 +402,27 @@ try {
       await page.screenshot({ path: join(shots, `mobile-${spec.name}-${id.slice(1)}.png`) });
       await page.mouse.click(spec.width - 4, 4);
     }
+    const updatePane = await footerPane(page, "@updates", "Up to date");
+    await assertContained(page, updatePane, `${spec.name}: update pane`);
+    assert.equal(await updatePane.getByText("Up to date", { exact: true }).count(), 1);
+    await updatePane.getByText("Installed: hz 0.7.30").waitFor();
+    await updatePane.getByText(/^Last installed:/).waitFor();
+    await page.screenshot({ path: join(shots, `mobile-${spec.name}-updates.png`) });
+    await page.mouse.click(spec.width - 4, 4);
+    updateAvailable = true;
+    await page.goto(url);
+    await page.getByRole("heading", { name: "Today" }).waitFor();
+    const availablePane = await footerPane(page, "@updates", "Update available");
+    await assertContained(page, availablePane, `${spec.name}: available update pane`);
+    await availablePane.getByText(/^Last installed:/).waitFor();
+    await assertTouchTarget(
+      availablePane.getByRole("button", { name: "Update hz and plugins" }),
+      "update action",
+      spec.name,
+    );
+    assert.equal(updateRequests, 0, `${spec.name}: inspecting the update must not start installation`);
+    await page.screenshot({ path: join(shots, `mobile-${spec.name}-update-available.png`) });
+    updateAvailable = false;
     await page.goto(url);
     await page.getByRole("heading", { name: "Today" }).waitFor();
     await page.getByRole("button", { name: /^Notifications/ }).click();

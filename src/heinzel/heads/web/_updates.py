@@ -3,7 +3,10 @@
 import hashlib
 import json
 import re
+import stat
+from datetime import UTC, datetime
 from html.parser import HTMLParser
+from importlib import metadata
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Response
@@ -16,6 +19,7 @@ MAX_FILES = 128
 MAX_ASSET_BYTES = 8 * 1024 * 1024
 MAX_TOTAL_BYTES = 32 * 1024 * 1024
 MAX_HTML_BYTES = 1024 * 1024
+MAX_INSTALLER_BYTES = 16
 _ASSET = re.compile(r"/assets/[A-Za-z0-9_.-]+\Z")
 
 
@@ -35,6 +39,9 @@ class UpdateStatus(BaseModel):
 
     current: str = Field(description="The version this server actually loaded.")
     latest: str | None = Field(description="Latest cached release, absent when checks are disabled or never succeeded.")
+    installed_at: datetime | None = Field(
+        description="When uv installed the current core, from its installation metadata; absent when unknown."
+    )
     available: bool = Field(description="Whether the cached release is newer than this server.")
     supported: bool = Field(description="Whether a persistent uv tool, source policy and frontend can be updated here.")
     reason: str | None = Field(description="Why a manual update is required; contains no private installation source.")
@@ -103,16 +110,51 @@ def _frontend(static: Path | None) -> Frontend | None:
     )
 
 
+def _now() -> datetime:
+    return datetime.now(UTC)
+
+
+def _installed_at(installation: Installation) -> datetime | None:
+    """Use uv's installed core metadata, not a release date or a plugin's more recent receipt change.
+
+    This is a best-effort timestamp: migrated or copied environments may preserve an older file time. Other
+    installers, editable sources, missing metadata and metadata outside the running tool return no date.
+    """
+    if not installation.is_tool:
+        return None
+    try:
+        dist = metadata.distribution("heinzel")
+        marker = next((file for file in dist.files or () if str(file).endswith(".dist-info/INSTALLER")), None)
+        if dist.version != __version__ or marker is None:
+            return None
+        path = Path(marker.locate()).resolve(strict=True)
+        if not path.is_relative_to(installation.prefix.resolve()):
+            return None
+        info = path.stat()
+        if (
+            not stat.S_ISREG(info.st_mode)
+            or info.st_size > MAX_INSTALLER_BYTES
+            or path.read_text(encoding="utf-8").strip() != "uv"
+        ):
+            return None
+        stamp = datetime.fromtimestamp(info.st_mtime, UTC)
+        return stamp if 0 < stamp.timestamp() <= _now().timestamp() else None
+    except (OSError, UnicodeError, OverflowError, ValueError, metadata.PackageNotFoundError):
+        return None
+
+
 def add_updates(app: FastAPI, kernel: Kernel, static: Path | None, *, restartable: bool) -> None:
     """Expose only authenticated transport facts; never refresh releases or run the updater during a read."""
     frontend = _frontend(static)
+    installation = kernel.resolve(Installation)
+    installed_at = _installed_at(installation)
 
     @app.get("/update-status", tags=["web"])
     def status(response: Response) -> UpdateStatus:
         response.headers["Cache-Control"] = "no-store"
         cache = ReleaseCache(kernel.settings.cache_dir)
         enabled = kernel.settings.update_check
-        pin = kernel.resolve(Installation).core_pin()
+        pin = installation.core_pin()
         source_allowed = pin is not None and (
             pin.kind in {"release", "default", "index"} or (pin.kind == "ref" and pin.ref == "main")
         )
@@ -129,6 +171,7 @@ def add_updates(app: FastAPI, kernel: Kernel, static: Path | None, *, restartabl
         return UpdateStatus(
             current=__version__,
             latest=cache.latest if enabled else None,
+            installed_at=installed_at,
             available=enabled and cache.newer_than(__version__) is not None,
             supported=reason is None,
             reason=reason,

@@ -15,17 +15,17 @@ cannot inspect the installed version or date without starting installation.
 
 ## Considered Options
 
-- **Inspect first on touch, keep one-click updates for precise pointers** (chosen): touch can see the details and
-  choose the update action explicitly, while a mouse can inspect on hover and update with one click.
+- **Inspect first, then choose the update action** (chosen): every input method can see the details before installing.
 - **Keep one-click updates on every device**: touch users cannot reliably inspect the pane before installing.
+- **Switch by pointer capability**: hybrid devices can have both touch and hover, so a tap could still install immediately.
 
 ## Decision Outcome
 
-Chosen option: **inspect first on touch, keep one-click updates for precise pointers**, because both types of input
-can inspect the details before the updater runs.
+Chosen option: **inspect first, then choose the update action**, because all input methods can inspect the details
+before the updater runs, including on hybrid devices.
 
-- On devices without a fine pointer and hover, tapping the footer control opens the pane; an explicit button inside
-  starts the existing verified update flow. On a device with both, hover or focus previews and a click starts it.
+- Activating the footer control opens the pane; an explicit button inside starts the existing verified update flow.
+  Hover and focus continue to preview the pane.
 - The pane shows the installed version and a best-effort installation date from uv's core metadata. Missing or
   unsupported metadata is shown as unavailable. Copied environments can preserve an older metadata timestamp.
 - A deliberately pinned or otherwise unsupported installation is not labeled up to date solely because its version
@@ -34,10 +34,10 @@ can inspect the details before the updater runs.
 ### Consequences
 
 - Good: an available update's details can be inspected on a phone without starting installation.
-- Bad: touch users need a second tap to update.
+- Bad: starting an update takes a second action.
 
 ### Confirmation
 
 `web/src/layout/UpdateStatus.test.tsx` tests the deliberate touch and pointer actions and missing metadata.
-`web/e2e/mobile-responsive.mjs` opens the pane and its update action on phone-sized touch viewports.
+`web/e2e/mobile-responsive.mjs` checks the update button is visible without installing on phone-sized touch viewports.
 `tests/integration/web_update_test.py` tests the authenticated date and metadata boundaries.
