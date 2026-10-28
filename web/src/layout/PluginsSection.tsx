@@ -379,7 +379,7 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
     preview.reset();
     setPending(value);
   };
-  const confirm = async () => {
+  const confirm = async (signal: AbortSignal) => {
     if (!pending) return false;
     if (completed.current) return completed.current.restart_required;
     if (attempted.current) throw new Error(t("plugins.resultUnknown"));
@@ -404,7 +404,7 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
       attempted.current = true;
     }
     const answer = await change.mutateAsync(
-      "add" in operation ? { ...operation, onProgress: setPluginProgress } : operation,
+      "add" in operation ? { ...operation, signal, onProgress: setPluginProgress } : { ...operation, signal },
     );
     if (!answer.done) throw new Error(t("plugins.notCompleted"));
     completed.current = answer;
@@ -577,6 +577,7 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
                     if (pluginRestartRequired.current) (reload ?? (() => window.location.reload()))();
                   }}
                   options={{
+                    ...(pending.action === "add" ? { preserveTimeout: 20 * 60_000 } : {}),
                     ...(restartInterval ? { interval: restartInterval } : {}),
                     ...(pending.action === "add"
                       ? {

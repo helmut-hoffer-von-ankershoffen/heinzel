@@ -52,6 +52,10 @@ export type ApplyOptions = {
   signal?: AbortSignal;
   timeout?: number;
   requestTimeout?: number;
+  /** Brief readiness window before any mutation; each read keeps the short request timeout. */
+  readinessTimeout?: number;
+  /** Long-running confirmed work performed before restart, such as rebuilding the plugin environment. */
+  preserveTimeout?: number;
   interval?: number;
   onPhase?: (phase: ApplyPhase) => void;
   onObservation?: (observation: RestartObservation) => void;
@@ -127,7 +131,50 @@ async function session<T>(options: ApplyOptions, run: (signal: AbortSignal) => P
   }
 }
 
+/** Retry a transient preflight failure because no confirmed change has been sent yet. */
+async function readyBeforeChange(options: ApplyOptions, owner: AbortSignal): Promise<Lifecycle> {
+  const transport = options.transport ?? lifecycleTransport;
+  try {
+    return await session({ ...options, signal: owner, timeout: options.readinessTimeout ?? 15_000 }, async (signal) => {
+      for (;;) {
+        try {
+          return checkedLifecycle(
+            await bounded((signal) => transport.read(signal), signal, options.requestTimeout ?? 4_000),
+          );
+        } catch (error) {
+          if (!transient(error)) throw error;
+        }
+        await bounded(
+          (signal) =>
+            new Promise<void>((resolve) => {
+              const timer = setTimeout(resolve, options.interval ?? 500);
+              signal.addEventListener("abort", () => clearTimeout(timer), { once: true });
+            }),
+          signal,
+          (options.interval ?? 500) + 1_000,
+        );
+      }
+    });
+  } catch (error) {
+    if (options.signal?.aborted) throw new RestartApplyError("aborted", t("lifecycle.beforeChangeCancelled"));
+    if (owner.aborted || (error instanceof DOMException && error.name === "TimeoutError")) {
+      throw new RestartApplyError("timeout", t("lifecycle.beforeChangeTimeout"));
+    }
+    throw error;
+  }
+}
+
 async function observe(
+  observation: RestartObservation,
+  options: ApplyOptions,
+  signal: AbortSignal,
+): Promise<Lifecycle> {
+  return session({ ...options, signal, timeout: options.timeout ?? 60_000 }, (observeSignal) =>
+    observeUntil(observation, options, observeSignal),
+  );
+}
+
+async function observeUntil(
   observation: RestartObservation,
   options: ApplyOptions,
   signal: AbortSignal,
@@ -218,12 +265,16 @@ export function restartAndApply(
   options: ApplyOptions = {},
 ): Promise<Lifecycle> {
   if (!request.confirmed) return Promise.reject(new RestartApplyError("confirmation", t("lifecycle.confirmFirst")));
-  return session(options, async (signal) => {
+  const requestTimeout = options.requestTimeout ?? 4_000;
+  const totalTimeout =
+    (options.readinessTimeout ?? 15_000) +
+    (request.preserve ? (options.preserveTimeout ?? requestTimeout) : 0) +
+    requestTimeout +
+    (options.timeout ?? 60_000);
+  return session({ ...options, timeout: totalTimeout }, async (signal) => {
     const transport = options.transport ?? lifecycleTransport;
     options.onPhase?.("checking");
-    const before = checkedLifecycle(
-      await bounded((signal) => transport.read(signal), signal, options.requestTimeout ?? 4_000),
-    );
+    const before = await readyBeforeChange(options, signal);
     const observation: RestartObservation = {
       retired: [before.instance],
       version: request.version ?? before.version,
@@ -237,7 +288,7 @@ export function restartAndApply(
         (await bounded<boolean | undefined>(
           (signal) => request.preserve?.(signal) ?? Promise.resolve(undefined),
           signal,
-          options.requestTimeout ?? 4_000,
+          options.preserveTimeout ?? requestTimeout,
         )) !== false;
     }
     if (!restartRequired) return before;

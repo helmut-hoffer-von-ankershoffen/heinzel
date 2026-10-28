@@ -1,8 +1,10 @@
 import base64
+import errno
 import io
 import json
 import multiprocessing
 import os
+import stat
 import subprocess
 import sys
 import types
@@ -552,9 +554,38 @@ def test_receipt_marked_unknown_after_owner_process_exits(make_kernel, tool_env,
     stored["owner_pid"] = 2**30
     path.write_text(json.dumps(stored), encoding="utf-8")
 
+    # The status operation is declared read-only; it derives unknown from the dead owner without rewriting the file.
     assert service.operation(preview.operation_id).status == "unknown"
+    assert json.loads(path.read_text(encoding="utf-8"))["status"] == "running"
     with pytest.raises(HeinzelError, match="unknown result"):
         service.add(preview.candidate.requirement, confirm=True, operation_id=preview.operation_id)
+    assert json.loads(path.read_text(encoding="utf-8"))["status"] == "unknown"
+
+
+def test_receipt_claim_fails_closed_when_parent_directory_fsync_fails(make_kernel, tool_env, monkeypatch):
+    service, runs = installing(make_kernel, tool_env, monkeypatch)
+    service.pypi = lambda url: pypi_project("heinzel-crm", "1.1.0")
+    preview = service.add("heinzel-crm")
+    assert preview.operation_id
+    assert preview.candidate
+    path = service._receipts._path(preview.operation_id)
+    original_fsync = os.fsync
+
+    def fail_directory_sync(descriptor):
+        if stat.S_ISDIR(os.fstat(descriptor).st_mode):
+            msg = "simulated directory fsync failure"
+            raise OSError(errno.EIO, msg)
+        original_fsync(descriptor)
+
+    monkeypatch.setattr(os, "fsync", fail_directory_sync)
+    with pytest.raises(HeinzelError, match="could not be made durable"):
+        service.add(preview.candidate.requirement, confirm=True, operation_id=preview.operation_id)
+
+    assert runs == []
+    assert json.loads(path.read_text(encoding="utf-8"))["status"] == "running"
+    with pytest.raises(HeinzelError, match="still running"):
+        service.add(preview.candidate.requirement, confirm=True, operation_id=preview.operation_id)
+    assert runs == []
 
 
 def test_receipt_install_lock_is_shared_between_processes(tmp_path):

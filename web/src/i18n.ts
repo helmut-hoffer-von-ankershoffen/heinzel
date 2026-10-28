@@ -61,6 +61,9 @@ const en = {
   "lifecycle.cancelled": "Cancelled",
   "lifecycle.requestTimeout": "The server request timed out.",
   "lifecycle.deadlineTimeout": "Restart verification timed out.",
+  "lifecycle.beforeChangeTimeout":
+    "The server did not become ready. No changes were sent; check the connection and try again.",
+  "lifecycle.beforeChangeCancelled": "Stopped checking. No changes were sent.",
   "work.unavailable": "Working hours unavailable",
   "work.state.working": "Working hours",
   "work.state.off-duty": "Off duty · time for fun",

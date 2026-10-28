@@ -53,9 +53,9 @@ class PluginReceipts:
         with self._locked():
             record = self._read(path)
             if record.status == "running" and not _alive(record.owner_pid):
-                record.status = "unknown"
-                record.owner_pid = None
-                self._write(record)
+                # Status reads remain read-only: report a dead owner's outcome as unknown. A later explicit
+                # confirmation persists that terminal state under the same receipt lock before refusing replay.
+                record = record.model_copy(update={"status": "unknown", "owner_pid": None})
             return record.public()
 
     def claim(self, operation_id: str) -> PluginOperation:
@@ -137,11 +137,20 @@ class PluginReceipts:
         target = self._path(record.operation_id)
         partial = self.directory / f".{record.operation_id}.{secrets.token_hex(4)}.tmp"
         descriptor = os.open(partial, os.O_WRONLY | os.O_CREAT | os.O_EXCL, PRIVATE_FILE)
-        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
-            handle.write(record.model_dump_json() + "\n")
-            handle.flush()
-            os.fsync(handle.fileno())
-        partial.replace(target)
+        try:
+            with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+                handle.write(record.model_dump_json() + "\n")
+                handle.flush()
+                os.fsync(handle.fileno())
+            partial.replace(target)
+        except BaseException:
+            partial.unlink(missing_ok=True)
+            raise
+        try:
+            _fsync_directory(self.directory)
+        except OSError as exc:
+            msg = "The plugin operation receipt could not be made durable; inspect its status before retrying."
+            raise HeinzelError(msg) from exc
 
     @contextmanager
     def _locked(self) -> Generator[None]:
@@ -166,3 +175,12 @@ def _alive(pid: int | None) -> bool:
     except PermissionError:
         return True
     return True
+
+
+def _fsync_directory(directory: Path) -> None:
+    """Persist a replaced receipt name, not just the bytes in its file."""
+    descriptor = os.open(directory, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)

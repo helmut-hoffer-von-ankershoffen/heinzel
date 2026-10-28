@@ -220,11 +220,12 @@ export const usePluginOperation = (operationId: string | null) =>
 export const readPluginOperation = async (operationId: string) =>
   unwrap(api.GET("/system/plugin/operation", { params: { query: { operation_id: operationId } } }));
 
-export type PluginChangeRequest =
-  | { add: string; operationId: string; onProgress?: (text: string) => void }
+export type PluginChangeRequest = (
+  | { add: string; operationId: string; onProgress?: (text: string) => void; signal?: AbortSignal }
   | { remove: string }
   | { enable: string }
-  | { disable: string };
+  | { disable: string }
+) & { signal?: AbortSignal };
 
 /** `hz system plugin add --confirm|remove|enable|disable`: changes what code runs, so the UI asks first (ADR 0047). */
 export const useChangePlugin = () => {
@@ -241,15 +242,31 @@ export const useChangePlugin = () => {
           (event) => {
             if (event.event === "task" && typeof event.data.text === "string") variables.onProgress?.(event.data.text);
           },
+          variables.signal,
         );
       }
       if ("remove" in variables) {
-        return unwrap(api.POST("/system/plugin/remove", { params: { query: { distribution: variables.remove } } }));
+        return unwrap(
+          api.POST("/system/plugin/remove", {
+            params: { query: { distribution: variables.remove } },
+            signal: variables.signal,
+          }),
+        );
       }
       if ("enable" in variables) {
-        return unwrap(api.POST("/system/plugin/enable", { params: { query: { distribution: variables.enable } } }));
+        return unwrap(
+          api.POST("/system/plugin/enable", {
+            params: { query: { distribution: variables.enable } },
+            signal: variables.signal,
+          }),
+        );
       }
-      return unwrap(api.POST("/system/plugin/disable", { params: { query: { distribution: variables.disable } } }));
+      return unwrap(
+        api.POST("/system/plugin/disable", {
+          params: { query: { distribution: variables.disable } },
+          signal: variables.signal,
+        }),
+      );
     },
     onSuccess: async (answer) => {
       if (answer.operation_id && answer.candidate) {

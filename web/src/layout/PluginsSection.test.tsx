@@ -41,6 +41,7 @@ const candidate = {
   warnings: ["It is named crm-tools, not heinzel-<name> as plugins are (ADR 0025)."],
 };
 let receiptCount = 0;
+let confirmedStreamDelay = 0;
 
 describe("plugin source labels", () => {
   it.each([
@@ -165,10 +166,28 @@ function serve(answer: Answer) {
       }
       if (!found) return Response.json({ error: `no answer for ${url.pathname}` }, { status: 404 });
       if (url.pathname.startsWith("/api/stream/")) {
-        const events = [
-          `event: task\ndata: ${JSON.stringify({ text: "Adding plugin heinzel-crm" })}\n\n`,
-          `event: result\ndata: ${JSON.stringify({ data: found.body })}\n\n`,
-        ].join("");
+        const task = `event: task\ndata: ${JSON.stringify({ text: "Adding plugin heinzel-crm" })}\n\n`;
+        const result = `event: result\ndata: ${JSON.stringify({ data: found.body })}\n\n`;
+        if (confirmedStreamDelay > 0 && url.searchParams.get("confirm") === "true") {
+          let timer: ReturnType<typeof setTimeout> | undefined;
+          return new Response(
+            new ReadableStream<Uint8Array>({
+              start(controller) {
+                const encoder = new TextEncoder();
+                controller.enqueue(encoder.encode(task));
+                timer = setTimeout(() => {
+                  controller.enqueue(encoder.encode(result));
+                  controller.close();
+                }, confirmedStreamDelay);
+              },
+              cancel() {
+                clearTimeout(timer);
+              },
+            }),
+            { status: found.status ?? 200, headers: { "Content-Type": "text/event-stream" } },
+          );
+        }
+        const events = [task, result].join("");
         return new Response(events, { status: found.status ?? 200, headers: { "Content-Type": "text/event-stream" } });
       }
       return Response.json(found.body, { status: found.status ?? 200 });
@@ -209,6 +228,7 @@ function show(props: Parameters<typeof PluginsSection>[0] = {}) {
 beforeEach(() => {
   sessionStorage.clear();
   receiptCount = 0;
+  confirmedStreamDelay = 0;
   lifecycleReads = 0;
 });
 afterEach(() => vi.unstubAllGlobals());
@@ -440,6 +460,32 @@ describe("PluginsSection", () => {
     expect(confirmed.searchParams.get("spec")).toBe(PINNED);
     expect(confirmed.searchParams.get("confirm")).toBe("true");
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+  });
+
+  it("keeps a streamed confirmed install alive beyond the four-second request bound", { timeout: 15_000 }, async () => {
+    confirmedStreamDelay = 4_250;
+    const calls = serve((url) => {
+      if (url.pathname === "/api/system/plugin/add" || url.pathname === "/api/stream/system/plugin/add") {
+        return { body: change("add", url.searchParams.get("confirm") === "true") };
+      }
+      return base(url);
+    });
+    const user = userEvent.setup();
+    const reload = vi.fn();
+    show({ reload, restartInterval: 1 });
+    await user.click(screen.getByRole("button", { name: "Add" }));
+    await user.type(screen.getByLabelText(/A plugin's name/), candidate.spec);
+    await user.click(screen.getByRole("button", { name: "Install" }));
+    const preview = await screen.findByRole("group", { name: /Install this plugin/ });
+    await user.click(within(preview).getByRole("button", { name: "Restart and apply" }));
+    await user.click(await screen.findByRole("button", { name: "Restart and apply Plugins" }));
+
+    expect(await screen.findByText("Adding plugin heinzel-crm")).toBeInTheDocument();
+    await waitFor(() => expect(reload).toHaveBeenCalledOnce(), { timeout: 10_000 });
+    const paths = calls.map((request) => new URL(request.url).pathname);
+    expect(paths.filter((path) => path === "/api/stream/system/plugin/add")).toHaveLength(1);
+    expect(paths.filter((path) => path === "/api/restart")).toHaveLength(1);
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
   it("installs a first-party plugin from Discover by name and a community one by its spec", async () => {

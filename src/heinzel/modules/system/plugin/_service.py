@@ -369,6 +369,11 @@ class PluginService:
                 msg = "This plugin operation is still running; check its receipt before continuing."
                 raise HeinzelError(msg)
             if receipt.status == "unknown":
+                # A read-only receipt lookup may infer this from a dead owner. Persist it on this explicit write path
+                # before refusing replay, so status reads remain truthful to their read-only operation metadata.
+                receipt = self._receipts.claim(operation_id)
+                if receipt.status == "completed" and receipt.result:
+                    return receipt.result
                 msg = "This plugin operation has an unknown result and must not be replayed."
                 raise HeinzelError(msg)
             return self._confirm_receipt(operation_id, candidate)
