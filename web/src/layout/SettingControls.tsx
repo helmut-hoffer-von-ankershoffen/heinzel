@@ -111,8 +111,8 @@ export function Row({ setting }: { setting: SchemaSettingInfo }) {
   };
   return (
     <li className="border-b border-border/70 py-4 last:border-b-0">
-      <div className="flex items-start gap-6 max-sm:flex-col max-sm:gap-2">
-        <div className="min-w-0 flex-1">
+      <div className="flex flex-wrap items-start gap-x-6 gap-y-2 max-sm:flex-col">
+        <div className="min-w-0 flex-[1_1_16rem] max-sm:flex-auto">
           {wide ? (
             <p id={inputId} className="text-ui">
               {title}
@@ -130,7 +130,7 @@ export function Row({ setting }: { setting: SchemaSettingInfo }) {
             </p>
           )}
         </div>
-        <div className="flex shrink-0 flex-wrap items-center gap-2 pt-0.5 max-sm:w-full">
+        <div className="flex min-w-0 max-w-full shrink-0 flex-wrap items-center gap-2 pt-0.5 max-sm:w-full">
           {reset}
           {!wide && editor}
           {control.kind === "path" && <PathReveal settingKey={key} value={value} saving={save.isPending} />}

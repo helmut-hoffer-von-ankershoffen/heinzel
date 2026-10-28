@@ -174,6 +174,8 @@ try {
       viewport: { width: spec.width, height: spec.height },
       screen: { width: spec.width, height: spec.height },
       isMobile: true,
+      // Layout probes intercept provider labels; a controlling worker can bypass Playwright routes.
+      serviceWorkers: "block",
       hasTouch: true,
       deviceScaleFactor: 2,
       isLandscape: spec.width > spec.height,
@@ -200,6 +202,25 @@ try {
         last_test: null,
       });
       await route.fulfill({ response, json: listing });
+    });
+    // Include advanced controls using the real isolated-profile operation.
+    const expertResponse = await context.request.post(new URL("/api/system/expert/on", url).href, {
+      headers: { Authorization: `Bearer ${new URL(url).hash.slice("#token=".length)}` },
+    });
+    assert.ok(expertResponse.ok(), "Advanced settings must be enabled in the isolated fixture");
+    // Enum display labels come from providers and can exceed a native select's intrinsic phone width.
+    await page.route("**/api/system/config/show", async (route) => {
+      const response = await route.fetch();
+      const report = await response.json();
+      const backend = report.settings.find(
+        (setting) => setting.section === "system.credential" && setting.key === "backend",
+      );
+      assert.ok(backend, "The mobile sweep must exercise the real credential backend selector");
+      backend.json_schema["x-labels"] = {
+        ...backend.json_schema["x-labels"],
+        auto: "Automatic: the system keychain if there is one — with a provider-specific explanatory label",
+      };
+      await route.fulfill({ response, json: report });
     });
     await page.goto(url);
     await page.getByRole("heading", { name: "Today" }).waitFor();
@@ -275,7 +296,8 @@ try {
     );
     await page.screenshot({ path: join(shots, `mobile-${spec.name}-settings.png`) });
     const settingsPages = await settingsDialog
-      .locator("select option")
+      .getByLabel("Settings page", { exact: true })
+      .locator("option")
       .evaluateAll((options) => options.map((option) => ({ id: option.value, title: option.textContent.trim() })));
     assert.ok(settingsPages.length > 5, `${spec.name}: the complete settings registry must be exercised`);
     for (const settingsPage of settingsPages) {
@@ -287,6 +309,14 @@ try {
           .getByRole("button", { name: settingsPage.title, exact: true })
           .click();
       await assertContained(page, settingsDialog, `${spec.name}: settings ${settingsPage.id}`);
+      if (settingsPage.id === "credentials") {
+        await settingsDialog
+          .locator("option")
+          .filter({
+            hasText: "Automatic: the system keychain if there is one — with a provider-specific explanatory label",
+          })
+          .waitFor({ state: "attached" });
+      }
       const content = settingsDialog.locator("[data-settings-content]");
       await content.evaluate((element) => {
         element.scrollTop = element.scrollHeight;
@@ -533,6 +563,7 @@ try {
       await session.send("Emulation.setPageScaleFactor", { pageScaleFactor: 1 });
       await session.detach();
     }
+    await page.unrouteAll({ behavior: "wait" });
     await context.close();
   }
   // The full sidebar retains its dock slot at a phone-sized width. Check the player itself and its controls fit and
