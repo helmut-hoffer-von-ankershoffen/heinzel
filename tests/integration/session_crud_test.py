@@ -311,6 +311,87 @@ def test_cli_stdio_mcp_and_private_http_share_the_same_saved_personal_look(kerne
     anyio.run(scenario)
 
 
+def test_stdio_mcp_can_create_propose_inspect_and_pause_but_cannot_activate_without_human_proof(kernel):
+    client, auth = protected(kernel)
+
+    async def create_and_inspect_tools():
+        async with Client(mcp.build(kernel)) as connected:
+            available = {tool.name for tool in (await connected.list_tools()).tools}
+            assert {
+                "heinzel_new_chat",
+                "heinzel_sessions",
+                "heinzel_session",
+                "heinzel_propose_check_in",
+                "heinzel_schedule_control",
+            } <= available
+            created = await connected.call_tool("heinzel_new_chat", {"request_id": "mcp-create", "name": "MCP helper"})
+            assert not created.is_error
+            session = created.structured_content["session_id"]
+            listed = await connected.call_tool("heinzel_sessions", {})
+            assert not listed.is_error
+            assert any(item["session_id"] == session for item in listed.structured_content["sessions"])
+            inspected = await connected.call_tool("heinzel_session", {"session_id": session})
+            assert not inspected.is_error
+            assert inspected.structured_content["schedule"] is None
+            proposed = await connected.call_tool(
+                "heinzel_propose_check_in",
+                {"session_id": session, "request_id": "mcp-proposal", "timezone": "UTC"},
+            )
+            assert not proposed.is_error
+            assert proposed.structured_content["schedule"]["status"] == "proposed"
+            return session, proposed.structured_content["schedule"]
+
+    session, schedule = anyio.run(create_and_inspect_tools)
+    activation = {
+        "session_id": session,
+        "request_id": "mcp-human-activation",
+        "expected_revision": schedule["revision"],
+        "action": "activate",
+        "expected_contract_version": schedule["contract_version"],
+        "expected_preview_hash": schedule["preview_hash"],
+    }
+
+    async def reject_unapproved_mcp_activation():
+        async with Client(mcp.build(kernel)) as connected:
+            result = await connected.call_tool("heinzel_schedule_control", activation)
+            assert result.is_error
+
+    anyio.run(reject_unapproved_mcp_activation)
+    proof = _seed_test_approval(
+        kernel,
+        session,
+        activation["request_id"],
+        activation["expected_revision"],
+        activation["action"],
+        activation["expected_contract_version"],
+        activation["expected_preview_hash"],
+    )
+    activated = client.post("/heinzel/schedule-control", headers=auth, json={**activation, "approval_proof": proof})
+    assert activated.status_code == 200, activated.text
+
+    async def pause_and_attempt_resume():
+        async with Client(mcp.build(kernel)) as connected:
+            paused = await connected.call_tool(
+                "heinzel_schedule_control",
+                {"session_id": session, "request_id": "mcp-pause", "expected_revision": 2, "action": "pause"},
+            )
+            assert not paused.is_error
+            assert paused.structured_content["schedule"]["status"] == "paused"
+            inspected = await connected.call_tool("heinzel_session", {"session_id": session})
+            assert inspected.structured_content["schedule"]["status"] == "paused"
+            resumed_without_proof = await connected.call_tool(
+                "heinzel_schedule_control",
+                {"session_id": session, "request_id": "mcp-resume-denied", "expected_revision": 3, "action": "resume"},
+            )
+            assert resumed_without_proof.is_error
+
+    anyio.run(pause_and_attempt_resume)
+
+    snapshot = client.get("/heinzel/session", headers=auth, params={"session_id": session})
+    assert snapshot.status_code == 200
+    assert snapshot.json()["schedule"]["status"] == "paused"
+
+
 def test_public_http_schema_and_network_mcp_do_not_expose_private_session_operations(kernel):
     client = TestClient(api.build(kernel), base_url=BASE)
     paths = client.get("/openapi.json").json()["paths"]

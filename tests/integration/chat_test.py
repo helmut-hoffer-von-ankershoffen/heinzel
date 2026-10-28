@@ -292,9 +292,13 @@ def test_runner_chat_can_only_propose_the_bound_inactive_check_in(kernel, script
         ordinary_chat = service.open(None)
         with pytest.raises(HeinzelError, match="requires a durable check-in chat"):
             mcp.build(kernel, chat=ordinary_chat.id, chat_tools="personal-check-in")
-        assert not any(
+        assert any(
             item.record.qualname == "heinzel" and item.operation.name == "propose-check-in"
             for item in exposed(kernel, mcp.HEAD)
+        )
+        assert not any(
+            item.record.qualname == "heinzel" and item.operation.name == "propose-check-in"
+            for item in exposed(kernel, "mcp-http")
         )
         sent = hz(
             kernel,
@@ -720,11 +724,20 @@ def test_human_web_approval_is_consumed_by_mcp_without_crossing_the_tool_protoco
         "/api/heinzel/new-chat", headers=AUTH, json={"request_id": "mcp-handoff-create", "name": "Moss"}
     ).json()
     session_id = created["session_id"]
-    schedule = client.post(
-        "/api/heinzel/propose-check-in",
-        headers=AUTH,
-        json={"session_id": session_id, "request_id": "mcp-handoff-schedule", "timezone": "UTC"},
-    ).json()["schedule"]
+
+    async def propose_from_stdio_mcp():
+        async with Client(mcp.build(kernel)) as direct:
+            tools = {tool.name for tool in (await direct.list_tools()).tools}
+            assert "heinzel_propose_check_in" in tools
+            response = await direct.call_tool(
+                "heinzel_propose_check_in",
+                {"session_id": session_id, "request_id": "mcp-handoff-schedule", "timezone": "UTC"},
+            )
+            assert not response.is_error
+            assert response.structured_content["schedule"]["status"] == "proposed"
+            return response.structured_content["schedule"]
+
+    schedule = anyio.run(propose_from_stdio_mcp)
     proposal = stage_schedule(client, session_id, activation_arguments(session_id, schedule, "mcp-handoff-action"))
     assert proposal.status_code == 200, proposal.text
     chat_id = proposal.json()["id"]

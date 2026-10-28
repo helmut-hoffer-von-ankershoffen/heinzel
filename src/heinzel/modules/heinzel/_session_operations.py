@@ -170,7 +170,9 @@ def register_session_operations(module: Module) -> None:  # noqa: C901 - operati
     @module.operation(
         private=True,
         read_only=False,
-        heads=frozenset({"cli", "web", "api-private", "mcp-check-in"}),
+        # An inactive proposal is safe to create from an authenticated local MCP client. Activation still requires
+        # exact-intent human approval, and mcp-stdio keeps it out of unauthenticated streamable HTTP.
+        heads=frozenset({"cli", "web", "api-private", "mcp-stdio", "mcp-check-in"}),
         audience="everyday",
     )
     def propose_check_in(
