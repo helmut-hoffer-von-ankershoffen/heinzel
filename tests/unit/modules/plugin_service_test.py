@@ -4,7 +4,6 @@ import io
 import json
 import multiprocessing
 import os
-import stat
 import subprocess
 import sys
 import types
@@ -14,7 +13,7 @@ import pytest
 
 from heinzel import HeinzelError, Kernel, Module, ModuleRecord, Progress, Settings, Theme
 from heinzel.kernel import DEFAULT_THEME, Installation, Origin
-from heinzel.modules.system.plugin import _service, _sources
+from heinzel.modules.system.plugin import _receipts, _service, _sources
 from heinzel.modules.system.plugin._models import PluginSettings
 from heinzel.modules.system.plugin._receipts import PluginReceipts
 from heinzel.modules.system.plugin._service import PluginService, distributions_in_spec
@@ -569,23 +568,43 @@ def test_receipt_claim_fails_closed_when_parent_directory_fsync_fails(make_kerne
     assert preview.operation_id
     assert preview.candidate
     path = service._receipts._path(preview.operation_id)
-    original_fsync = os.fsync
+    original_sync = _receipts._fsync_directory
 
-    def fail_directory_sync(descriptor):
-        if stat.S_ISDIR(os.fstat(descriptor).st_mode):
+    def fail_receipt_directory_sync(directory):
+        if directory == service._receipts.directory:
             msg = "simulated directory fsync failure"
             raise OSError(errno.EIO, msg)
-        original_fsync(descriptor)
+        original_sync(directory)
 
-    monkeypatch.setattr(os, "fsync", fail_directory_sync)
+    monkeypatch.setattr(_receipts, "_fsync_directory", fail_receipt_directory_sync)
     with pytest.raises(HeinzelError, match="could not be made durable"):
         service.add(preview.candidate.requirement, confirm=True, operation_id=preview.operation_id)
 
     assert runs == []
-    assert json.loads(path.read_text(encoding="utf-8"))["status"] == "running"
-    with pytest.raises(HeinzelError, match="still running"):
+    assert json.loads(path.read_text(encoding="utf-8"))["status"] == "unknown"
+    assert service.operation(preview.operation_id).status == "unknown"
+    with pytest.raises(HeinzelError, match="unknown result"):
         service.add(preview.candidate.requirement, confirm=True, operation_id=preview.operation_id)
     assert runs == []
+
+
+def test_receipt_directory_creation_syncs_parent(make_kernel, tool_env, monkeypatch, tmp_path):
+    service, _ = installing(make_kernel, tool_env, monkeypatch)
+    service.pypi = lambda url: pypi_project("heinzel-crm", "1.1.0")
+    preview = service.add("heinzel-crm")
+    assert preview.candidate
+    new_state = tmp_path / "new-state"
+    synced = []
+    original_sync = _receipts._fsync_directory
+
+    def record_sync(directory):
+        synced.append(directory)
+        original_sync(directory)
+
+    monkeypatch.setattr(_receipts, "_fsync_directory", record_sync)
+    PluginReceipts(new_state).create(preview.candidate)
+
+    assert new_state / "plugin-operations" in synced
 
 
 def test_receipt_install_lock_is_shared_between_processes(tmp_path):

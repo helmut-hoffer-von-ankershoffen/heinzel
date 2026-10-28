@@ -5,7 +5,7 @@ import os
 import re
 import secrets
 from collections.abc import Generator
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from pathlib import Path
 from typing import Literal
 
@@ -69,7 +69,20 @@ class PluginReceipts:
                 return record.public()
             record.status = "running"
             record.owner_pid = os.getpid()
-            self._write(record)
+            try:
+                self._write(record)
+            except HeinzelError:
+                # The atomic replace is visible even when the following fsync fails. This install has not
+                # started, so replace that ambiguous running marker with a fail-closed, user-resolvable result.
+                record.status = "unknown"
+                record.owner_pid = None
+                with suppress(HeinzelError):
+                    # The directory already exists here. Skip its parent sync on recovery so a persistent
+                    # parent-sync error cannot prevent replacing the unstarted running marker with unknown.
+                    self._write(record, sync_parent=False)
+                    # _write replaces before syncing. Even if sync keeps failing, a live status read sees unknown;
+                    # after a crash, the receipt is either unknown or unavailable, both of which block replay.
+                raise
             return record.public()
 
     def complete(self, operation_id: str, result: PluginChange) -> PluginOperation:
@@ -99,8 +112,7 @@ class PluginReceipts:
         Raises:
             HeinzelError: If another process already holds the installer lock.
         """
-        self.directory.mkdir(parents=True, exist_ok=True, mode=PRIVATE_DIR)
-        self.directory.chmod(PRIVATE_DIR)
+        _ensure_directory(self.directory)
         path = self.directory / "install.lock"
         descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, PRIVATE_FILE)
         with os.fdopen(descriptor, "a") as handle:
@@ -131,9 +143,8 @@ class PluginReceipts:
             raise HeinzelError(msg)
         return record
 
-    def _write(self, record: _Record) -> None:
-        self.directory.mkdir(parents=True, exist_ok=True, mode=PRIVATE_DIR)
-        self.directory.chmod(PRIVATE_DIR)
+    def _write(self, record: _Record, *, sync_parent: bool = True) -> None:
+        _ensure_directory(self.directory, sync_parent=sync_parent)
         target = self._path(record.operation_id)
         partial = self.directory / f".{record.operation_id}.{secrets.token_hex(4)}.tmp"
         descriptor = os.open(partial, os.O_WRONLY | os.O_CREAT | os.O_EXCL, PRIVATE_FILE)
@@ -154,8 +165,7 @@ class PluginReceipts:
 
     @contextmanager
     def _locked(self) -> Generator[None]:
-        self.directory.mkdir(parents=True, exist_ok=True, mode=PRIVATE_DIR)
-        self.directory.chmod(PRIVATE_DIR)
+        _ensure_directory(self.directory)
         descriptor = os.open(self.directory / "receipts.lock", os.O_WRONLY | os.O_CREAT | os.O_APPEND, PRIVATE_FILE)
         with os.fdopen(descriptor, "a") as handle:
             fcntl.flock(handle, fcntl.LOCK_EX)
@@ -184,3 +194,22 @@ def _fsync_directory(directory: Path) -> None:
         os.fsync(descriptor)
     finally:
         os.close(descriptor)
+
+
+def _ensure_directory(directory: Path, *, sync_parent: bool = True) -> None:
+    """Create the receipt directory durably before relying on files inside it.
+
+    Raises:
+        HeinzelError: If the directory entry cannot be made durable.
+    """
+    directory.mkdir(parents=True, exist_ok=True, mode=PRIVATE_DIR)
+    directory.chmod(PRIVATE_DIR)
+    if not sync_parent:
+        return
+    try:
+        # Sync on every entry, not only the mkdir call: a prior attempt may have created the directory
+        # but failed before making its parent entry durable.
+        _fsync_directory(directory.parent)
+    except OSError as exc:
+        msg = "The plugin operation directory could not be made durable."
+        raise HeinzelError(msg) from exc
