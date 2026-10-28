@@ -602,6 +602,7 @@ def test_receipt_directory_creation_syncs_parent(make_kernel, tool_env, monkeypa
     assert new_state in synced
 
 
+@pytest.mark.timeout(25)  # The child has a ten-second startup deadline and another ten seconds for cleanup.
 def test_receipt_install_lock_is_shared_between_processes(tmp_path):
     context = multiprocessing.get_context("spawn")
     acquired = tmp_path / "lock-acquired"
