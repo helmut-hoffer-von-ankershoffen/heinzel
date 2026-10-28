@@ -1,11 +1,12 @@
 // Desktop notifications from this tab (ADR 0041): only after the person turned them on in Settings, which is where the
 // browser's permission is asked, never on page load. The choice is per browser, so it lives in localStorage.
 import { useSyncExternalStore } from "react";
+import { isIOS } from "@/lib/browser";
 
 const KEY = "hz.notifications";
 const listeners = new Set<() => void>();
 
-export type DesktopState = "unsupported" | "off" | "on" | "denied";
+export type DesktopState = "unsupported" | "install" | "off" | "on" | "denied";
 
 function supported(): boolean {
   return typeof window !== "undefined" && "Notification" in window;
@@ -21,6 +22,12 @@ function chosen(): boolean {
 
 /** Whether this tab may pop up notices now: supported, turned on here, and permitted by the browser. */
 export function desktopState(): DesktopState {
+  if (
+    isIOS() &&
+    !window.matchMedia("(display-mode: standalone)").matches &&
+    !(navigator as Navigator & { standalone?: boolean }).standalone
+  )
+    return "install";
   if (!supported()) return "unsupported";
   if (Notification.permission === "denied") return "denied";
   return chosen() && Notification.permission === "granted" ? "on" : "off";
@@ -32,6 +39,7 @@ function changed() {
 
 /** Turn desktop notifications on (asking the browser for permission) or off; the state that results. */
 export async function setDesktop(on: boolean): Promise<DesktopState> {
+  if (on && ["install", "unsupported"].includes(desktopState())) return desktopState();
   try {
     if (on) localStorage.setItem(KEY, "on");
     else localStorage.removeItem(KEY);
