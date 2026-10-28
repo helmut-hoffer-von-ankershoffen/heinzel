@@ -7962,6 +7962,18 @@
             "title": "Next",
             "type": "array"
           },
+          "operation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Opaque server receipt for confirming or checking this add.",
+            "title": "Operation Id"
+          },
           "plugins": {
             "description": "The plugins installed afterwards (now, if not done).",
             "items": {
@@ -8322,6 +8334,49 @@
           "site"
         ],
         "title": "PluginLayer",
+        "type": "object"
+      },
+      "PluginOperation": {
+        "description": "Durable state of one plugin-add preview and its confirmation.",
+        "properties": {
+          "candidate": {
+            "$ref": "#/components/schemas/PluginCandidate",
+            "description": "The exact candidate shown before confirmation."
+          },
+          "operation_id": {
+            "description": "Opaque id returned by the preview; it contains no candidate details.",
+            "title": "Operation Id",
+            "type": "string"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PluginChange"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The authoritative result after a completed add."
+          },
+          "status": {
+            "description": "Whether confirmation is available, running, finished, or uncertain and must not be replayed.",
+            "enum": [
+              "previewed",
+              "running",
+              "completed",
+              "unknown"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "operation_id",
+          "status",
+          "candidate"
+        ],
+        "title": "PluginOperation",
         "type": "object"
       },
       "PluginPage": {
@@ -16734,7 +16789,7 @@
     },
     "/system/plugin/add": {
       "post": {
-        "description": "Show what a plugin would install, then add it with `--confirm`; adding it again replaces it.\n\nWithout `confirm` it only reads PyPI or GitHub and answers what `requirement` would be installed, pinned to the\nrelease or commit it read; with `confirm` it installs that and records it in the plugin history. Running servers\n(`hz ui`, MCP) see the plugin after a restart (`restart_required`).",
+        "description": "Show what a plugin would install, then add it with `--confirm`; adding it again replaces it.\n\nWithout `confirm` it only reads PyPI or GitHub and answers what `requirement` would be installed, pinned to the\nrelease or commit it read; the answer includes a receipt that can confirm exactly that candidate once. Existing\ncallers may still confirm by spec. Running servers (`hz ui`, MCP) see the plugin after a restart\n(`restart_required`).",
         "operationId": "system_plugin_add",
         "parameters": [
           {
@@ -16758,6 +16813,24 @@
               "description": "Install it. Without it, nothing is installed: the answer shows the source, version and publisher to confirm first, because a plugin runs with your rights.",
               "title": "Confirm",
               "type": "boolean"
+            }
+          },
+          {
+            "description": "Opaque receipt returned by a preview; confirms that exact candidate only once.",
+            "in": "query",
+            "name": "operation_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Opaque receipt returned by a preview; confirms that exact candidate only once.",
+              "title": "Operation Id"
             }
           }
         ],
@@ -17027,6 +17100,51 @@
           }
         },
         "summary": "List installed plugins, enabled or not, with their source and the modules and adapters they bring.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/plugin/operation": {
+      "get": {
+        "description": "Read the status and result of a plugin add without repeating it.",
+        "operationId": "system_plugin_operation",
+        "parameters": [
+          {
+            "description": "Receipt id from a plugin preview.",
+            "in": "query",
+            "name": "operation_id",
+            "required": true,
+            "schema": {
+              "description": "Receipt id from a plugin preview.",
+              "title": "Operation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginOperation"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read the status and result of a plugin add without repeating it.",
         "tags": [
           "system"
         ]

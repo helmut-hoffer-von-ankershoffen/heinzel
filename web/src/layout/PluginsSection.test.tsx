@@ -40,6 +40,7 @@ const candidate = {
   installed_version: null,
   warnings: ["It is named crm-tools, not heinzel-<name> as plugins are (ADR 0025)."],
 };
+let receiptCount = 0;
 
 describe("plugin source labels", () => {
   it.each([
@@ -114,12 +115,54 @@ let lifecycleReads = 0;
 /** Answer the API by path and query, recording every request. */
 function serve(answer: Answer) {
   const calls: Request[] = [];
+  const receipts = new Map<string, typeof candidate>();
   vi.stubGlobal(
     "fetch",
     vi.fn(async (request: Request) => {
       calls.push(request);
       const url = new URL(request.url);
-      const found = answer(url, request);
+      let found = answer(url, request);
+      if (
+        (url.pathname === "/api/system/plugin/add" || url.pathname === "/api/stream/system/plugin/add") &&
+        !url.searchParams.has("confirm")
+      ) {
+        receiptCount += 1;
+      }
+      const receiptId = String(receiptCount).padStart(43, "0");
+      if (url.pathname === "/api/system/plugin/operation" && !found) {
+        const id = url.searchParams.get("operation_id") ?? receiptId;
+        found = {
+          body: {
+            operation_id: id,
+            status: "previewed",
+            candidate: receipts.get(id) ?? candidate,
+            result: null,
+          },
+        };
+      }
+      if (
+        found &&
+        (url.pathname === "/api/system/plugin/add" || url.pathname === "/api/stream/system/plugin/add") &&
+        typeof found.body === "object" &&
+        found.body !== null
+      ) {
+        const body = found.body as Record<string, unknown>;
+        const id =
+          url.searchParams.get("confirm") === "true" ? (url.searchParams.get("operation_id") ?? receiptId) : receiptId;
+        const proposed = body.candidate;
+        if (typeof proposed === "object" && proposed !== null && !url.searchParams.has("confirm"))
+          receipts.set(id, proposed as typeof candidate);
+        found = {
+          ...found,
+          body: {
+            ...body,
+            ...(!url.searchParams.has("confirm") ? { operation_id: id } : {}),
+            ...(url.searchParams.get("confirm") === "true"
+              ? { operation_id: url.searchParams.get("operation_id") }
+              : {}),
+          },
+        };
+      }
       if (!found) return Response.json({ error: `no answer for ${url.pathname}` }, { status: 404 });
       if (url.pathname.startsWith("/api/stream/")) {
         const events = [
@@ -165,6 +208,7 @@ function show(props: Parameters<typeof PluginsSection>[0] = {}) {
 
 beforeEach(() => {
   sessionStorage.clear();
+  receiptCount = 0;
   lifecycleReads = 0;
 });
 afterEach(() => vi.unstubAllGlobals());
@@ -177,7 +221,8 @@ describe("PluginsSection", () => {
         : base(url),
     );
     const user = userEvent.setup();
-    show();
+    const reload = vi.fn();
+    show({ reload, restartInterval: 1 });
     await user.click(screen.getByRole("button", { name: "Add" }));
     await user.type(screen.getByLabelText(/A plugin's name/), candidate.spec);
     await user.click(screen.getByRole("button", { name: "Install" }));
@@ -187,13 +232,54 @@ describe("PluginsSection", () => {
       }),
     );
     await user.click(await screen.findByRole("button", { name: "Restart and apply Plugins" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("not confirmed complete");
+    expect(await screen.findByRole("alert")).toHaveTextContent("cannot confirm how this installation ended");
     expect(screen.queryByRole("button", { name: "Remove heinzel-crm" })).not.toBeInTheDocument();
     expect(calls.filter((request) => new URL(request.url).pathname === "/api/restart")).toHaveLength(0);
+    expect(await screen.findByRole("button", { name: "Resolve after checking" })).toBeInTheDocument();
+    expect(calls.filter((request) => new URL(request.url).searchParams.get("confirm") === "true")).toHaveLength(1);
+  });
+
+  it("reconciles a completed server receipt after reload without replaying the install", async () => {
+    const operationId = "z".repeat(43);
+    const result = change("add", true, { operation_id: operationId });
+    const calls = serve((url) =>
+      url.pathname === "/api/system/plugin/operation"
+        ? { body: { operation_id: operationId, status: "completed", candidate, result } }
+        : base(url),
+    );
+    sessionStorage.setItem("hz.plugin-add-operation.v1", operationId);
+    const reload = vi.fn();
+    const user = userEvent.setup();
+    show({ reload, restartInterval: 1 });
+
     await user.click(await screen.findByRole("button", { name: "Restart and apply" }));
     await user.click(await screen.findByRole("button", { name: "Restart and apply Plugins" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("request result is unknown");
-    expect(calls.filter((request) => new URL(request.url).searchParams.get("confirm") === "true")).toHaveLength(1);
+    await waitFor(() => expect(reload).toHaveBeenCalledOnce());
+
+    expect(calls.filter((request) => new URL(request.url).pathname === "/api/stream/system/plugin/add")).toHaveLength(
+      0,
+    );
+    expect(sessionStorage.getItem("hz.plugin-add-operation.v1")).toBeNull();
+    expect(
+      calls.filter((request) => new URL(request.url).pathname === "/api/system/plugin/operation").length,
+    ).toBeGreaterThan(0);
+  });
+
+  it("shows a server-confirmed running receipt after reload without offering another install request", async () => {
+    const operationId = "y".repeat(43);
+    const calls = serve((url) =>
+      url.pathname === "/api/system/plugin/operation"
+        ? { body: { operation_id: operationId, status: "running", candidate, result: null } }
+        : base(url),
+    );
+    sessionStorage.setItem("hz.plugin-add-operation.v1", operationId);
+    show();
+
+    expect(await screen.findByText(/server is still working on this installation/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Restart and apply" })).not.toBeInTheDocument();
+    expect(calls.filter((request) => new URL(request.url).pathname === "/api/stream/system/plugin/add")).toHaveLength(
+      0,
+    );
   });
 
   it("moves a completed install to Installed and reconciles a stale Discover snapshot without restarting", async () => {
@@ -256,6 +342,17 @@ describe("PluginsSection", () => {
     const calls = serve((url) => {
       if (url.pathname === "/api/system/plugin/list") return { body: installedNow ? [installed, crm] : [installed] };
       if (url.pathname === "/api/restart") return { status: 400, body: { error: "Restart refused fixture" } };
+      if (url.pathname === "/api/system/plugin/operation") {
+        const operationId = url.searchParams.get("operation_id") ?? "";
+        return {
+          body: {
+            operation_id: operationId,
+            status: installedNow ? "completed" : "previewed",
+            candidate,
+            result: installedNow ? change("add", true, { operation_id: operationId }) : null,
+          },
+        };
+      }
       if (url.pathname === "/api/system/plugin/add" || url.pathname === "/api/stream/system/plugin/add") {
         installedNow = url.searchParams.get("confirm") === "true";
         return { body: change("add", installedNow, { plugins: installedNow ? [installed, crm] : [installed] }) };
@@ -263,7 +360,8 @@ describe("PluginsSection", () => {
       return base(url);
     });
     const user = userEvent.setup();
-    show();
+    const reload = vi.fn();
+    const view = show({ reload, restartInterval: 1 });
     await user.click(screen.getByRole("button", { name: "Add" }));
     await user.type(screen.getByLabelText(/A plugin's name/), candidate.spec);
     await user.click(screen.getByRole("button", { name: "Install" }));
@@ -279,10 +377,21 @@ describe("PluginsSection", () => {
     await confirm();
     expect(await screen.findByRole("alert")).toHaveTextContent("Restart refused fixture");
     expect(screen.getByText("CRM", { exact: true })).toBeInTheDocument();
-    await confirm();
-    expect(await screen.findByRole("alert")).toHaveTextContent("Restart refused fixture");
+    expect(screen.getByRole("button", { name: "Check again" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Restart and apply" })).not.toBeInTheDocument();
     expect(calls.filter((call) => new URL(call.url).searchParams.get("confirm") === "true")).toHaveLength(1);
-    expect(calls.filter((call) => new URL(call.url).pathname === "/api/restart")).toHaveLength(2);
+    expect(calls.filter((call) => new URL(call.url).pathname === "/api/restart")).toHaveLength(1);
+
+    const savedRestart = JSON.parse(sessionStorage.getItem("hz.plugin-add-restart.v1") ?? "null");
+    expect(savedRestart.observation.retired).toContain("old");
+    view.unmount();
+    show({ reload, restartInterval: 1 });
+    expect(await screen.findByRole("alert")).toHaveTextContent("restart may already have been accepted");
+    expect(screen.queryByRole("button", { name: "Restart and apply" })).not.toBeInTheDocument();
+    await user.click(await screen.findByRole("button", { name: "Check again" }));
+    await waitFor(() => expect(reload).toHaveBeenCalledOnce());
+    expect(calls.filter((call) => new URL(call.url).pathname === "/api/restart")).toHaveLength(1);
+    expect(calls.filter((call) => new URL(call.url).searchParams.get("confirm") === "true")).toHaveLength(1);
   });
 
   it("shows what a spec would install first, and installs the pinned requirement only on confirm", async () => {

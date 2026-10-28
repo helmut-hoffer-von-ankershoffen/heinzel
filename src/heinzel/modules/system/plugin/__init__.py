@@ -13,6 +13,7 @@ from heinzel.modules.system.plugin._models import (
     PluginEvent,
     PluginInfo,
     PluginLayer,
+    PluginOperation,
     PluginSearch,
     PluginSettings,
 )
@@ -76,14 +77,19 @@ def add(
             "publisher to confirm first, because a plugin runs with your rights."
         ),
     ] = False,
+    operation_id: Annotated[
+        str | None,
+        Field(description="Opaque receipt returned by a preview; confirms that exact candidate only once."),
+    ] = None,
 ) -> PluginChange:
     """Show what a plugin would install, then add it with `--confirm`; adding it again replaces it.
 
     Without `confirm` it only reads PyPI or GitHub and answers what `requirement` would be installed, pinned to the
-    release or commit it read; with `confirm` it installs that and records it in the plugin history. Running servers
-    (`hz ui`, MCP) see the plugin after a restart (`restart_required`).
+    release or commit it read; the answer includes a receipt that can confirm exactly that candidate once. Existing
+    callers may still confirm by spec. Running servers (`hz ui`, MCP) see the plugin after a restart
+    (`restart_required`).
     """
-    change = service.add(spec, confirm=confirm)
+    change = service.add(spec, confirm=confirm, operation_id=operation_id)
     if confirm or not prompter.interactive or change.candidate is None:
         return change
     # A person at a terminal sees the preview and answers, instead of retyping the command with --confirm.
@@ -91,8 +97,16 @@ def add(
     candidate = change.candidate
     name = f"{candidate.distribution or spec} {candidate.version or ''}".strip()
     if prompter.confirm(f"Install {name} now?", default=False):
-        return service.add(spec, confirm=True)
+        return service.add(spec, confirm=True, operation_id=change.operation_id)
     return change.model_copy(update={"previewed": True})
+
+
+@module.operation(heads=CHANGES)
+def operation(
+    service: PluginService, operation_id: Annotated[str, Field(description="Receipt id from a plugin preview.")]
+) -> PluginOperation:
+    """Read the status and result of a plugin add without repeating it."""
+    return service.operation(operation_id)
 
 
 @module.operation(read_only=False, heads={"cli"}, render=render_change)  # a path on this machine, typed at it
@@ -174,6 +188,7 @@ __all__ = [
     "PluginEvent",
     "PluginInfo",
     "PluginLayer",
+    "PluginOperation",
     "PluginSearch",
     "PluginService",
     "PluginSettings",

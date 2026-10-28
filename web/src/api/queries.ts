@@ -206,8 +206,22 @@ export const usePluginPreview = () =>
     mutationFn: (spec: string) => unwrap(api.POST("/system/plugin/add", { params: { query: { spec } } })),
   });
 
+/** Poll only while a confirmed install is active; the server receipt is authoritative across reloads. */
+export const usePluginOperation = (operationId: string | null) =>
+  useQuery({
+    queryKey: ["system", "plugin", "operation", operationId],
+    queryFn: ({ signal }) =>
+      unwrap(api.GET("/system/plugin/operation", { params: { query: { operation_id: operationId ?? "" } }, signal })),
+    enabled: Boolean(operationId),
+    refetchInterval: (query) => (query.state.data?.status === "running" ? 1000 : false),
+    retry: false,
+  });
+
+export const readPluginOperation = async (operationId: string) =>
+  unwrap(api.GET("/system/plugin/operation", { params: { query: { operation_id: operationId } } }));
+
 export type PluginChangeRequest =
-  | { add: string; onProgress?: (text: string) => void }
+  | { add: string; operationId: string; onProgress?: (text: string) => void }
   | { remove: string }
   | { enable: string }
   | { disable: string };
@@ -223,7 +237,7 @@ export const useChangePlugin = () => {
         // its task event immediately, keeps quiet work alive across proxies, and returns the same result or error.
         return stream<components["schemas"]["PluginChange"]>(
           "/system/plugin/add",
-          { spec: variables.add, confirm: true },
+          { spec: variables.add, confirm: true, operation_id: variables.operationId },
           (event) => {
             if (event.event === "task" && typeof event.data.text === "string") variables.onProgress?.(event.data.text);
           },
@@ -238,6 +252,14 @@ export const useChangePlugin = () => {
       return unwrap(api.POST("/system/plugin/disable", { params: { query: { distribution: variables.disable } } }));
     },
     onSuccess: async (answer) => {
+      if (answer.operation_id && answer.candidate) {
+        client.setQueryData(["system", "plugin", "operation", answer.operation_id], {
+          operation_id: answer.operation_id,
+          status: answer.done ? "completed" : "unknown",
+          candidate: answer.candidate,
+          result: answer,
+        });
+      }
       if (!answer.done) return;
       // A query started before the installation must not replace its authoritative after-state.
       await client.cancelQueries({ queryKey: ["system", "plugin"] });
@@ -259,9 +281,11 @@ export const useChangePlugin = () => {
       void client.invalidateQueries({ queryKey: ["system", "plugin"] });
       void client.invalidateQueries({ queryKey: ["ui"] });
     },
-    onError: () => {
+    onError: (_error, variables) => {
       // A lost response is uncertain; reconcile reads without replaying an installation.
       void client.invalidateQueries({ queryKey: ["system", "plugin"] });
+      if ("add" in variables && variables.operationId)
+        void client.invalidateQueries({ queryKey: ["system", "plugin", "operation", variables.operationId] });
     },
   });
 };

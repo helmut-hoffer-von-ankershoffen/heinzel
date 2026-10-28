@@ -1,6 +1,7 @@
 import base64
 import io
 import json
+import multiprocessing
 import os
 import subprocess
 import sys
@@ -13,6 +14,7 @@ from heinzel import HeinzelError, Kernel, Module, ModuleRecord, Progress, Settin
 from heinzel.kernel import DEFAULT_THEME, Installation, Origin
 from heinzel.modules.system.plugin import _service, _sources
 from heinzel.modules.system.plugin._models import PluginSettings
+from heinzel.modules.system.plugin._receipts import PluginReceipts
 from heinzel.modules.system.plugin._service import PluginService, distributions_in_spec
 
 pytestmark = pytest.mark.unit
@@ -453,6 +455,12 @@ def installing(make_kernel, prefix, monkeypatch, gh=None):
     return service, runs
 
 
+def _hold_receipt_install_lock(directory, acquired, release):
+    with PluginReceipts(directory).installing():
+        acquired.set()
+        release.wait(10)
+
+
 def raising(exc):
     def get(url):
         raise exc
@@ -469,7 +477,8 @@ def test_without_confirm_add_installs_nothing_and_shows_a_pinned_pypi_release(ma
     assert (candidate.requirement, candidate.version) == ("heinzel-crm==1.1.0", "1.1.0")
     assert (candidate.publisher, candidate.source, candidate.first_party) == ("Ada Example", "pypi", False)
     assert candidate.url == "https://pypi.org/project/heinzel-crm/"
-    assert change.next == ["hz system plugin add heinzel-crm==1.1.0 --confirm"]
+    assert change.operation_id is not None
+    assert change.next == [f"hz system plugin add heinzel-crm==1.1.0 --confirm --operation-id {change.operation_id}"]
     assert service.history() == []
 
 
@@ -497,6 +506,74 @@ def test_confirmed_add_installs_exactly_what_was_shown_and_records_it(make_kerne
         "1.1.0",
         "Ada Example",
     )
+
+
+def test_preview_receipt_binds_candidate_and_duplicate_confirmation_returns_durable_result(
+    make_kernel, tool_env, monkeypatch
+):
+    service, runs = installing(make_kernel, tool_env, monkeypatch)
+    service.pypi = lambda url: pypi_project("heinzel-crm", "1.1.0")
+    preview = service.add("heinzel-crm")
+    assert preview.operation_id
+    assert preview.candidate
+    assert preview.candidate
+    assert service.operation(preview.operation_id).status == "previewed"
+    with pytest.raises(HeinzelError, match="different preview"):
+        service.add("heinzel-other", confirm=True, operation_id=preview.operation_id)
+    monkeypatch.setattr(
+        service,
+        "_changed",
+        lambda action, distribution, candidate: preview.model_copy(
+            update={"done": True, "restart_required": True, "operation_id": preview.operation_id}
+        ),
+    )
+
+    result = service.add(preview.candidate.requirement, confirm=True, operation_id=preview.operation_id)
+    again = service.add(preview.candidate.requirement, confirm=True, operation_id=preview.operation_id)
+    reloaded = service_for(make_kernel, tool_env)
+
+    assert len(runs) == 1
+    assert result.done
+    assert again == result
+    assert reloaded.operation(preview.operation_id).status == "completed"
+    assert reloaded.operation(preview.operation_id).result == result
+
+
+def test_receipt_marked_unknown_after_owner_process_exits(make_kernel, tool_env, monkeypatch):
+    service, _ = installing(make_kernel, tool_env, monkeypatch)
+    service.pypi = lambda url: pypi_project("heinzel-crm", "1.1.0")
+    preview = service.add("heinzel-crm")
+    assert preview.operation_id
+    assert preview.candidate
+    receipt = service._receipts.claim(preview.operation_id)
+    assert receipt.status == "running"
+    path = service._receipts._path(preview.operation_id)
+    stored = json.loads(path.read_text(encoding="utf-8"))
+    stored["owner_pid"] = 2**30
+    path.write_text(json.dumps(stored), encoding="utf-8")
+
+    assert service.operation(preview.operation_id).status == "unknown"
+    with pytest.raises(HeinzelError, match="unknown result"):
+        service.add(preview.candidate.requirement, confirm=True, operation_id=preview.operation_id)
+
+
+def test_receipt_install_lock_is_shared_between_processes(tmp_path):
+    context = multiprocessing.get_context("fork")
+    acquired = context.Event()
+    release = context.Event()
+    process = context.Process(target=_hold_receipt_install_lock, args=(tmp_path, acquired, release))
+    process.start()
+    try:
+        assert acquired.wait(5)
+        with (
+            pytest.raises(HeinzelError, match="Another plugin installation is running"),
+            PluginReceipts(tmp_path).installing(),
+        ):
+            pass
+    finally:
+        release.set()
+        process.join(10)
+    assert process.exitcode == 0
 
 
 def test_a_github_repository_is_pinned_to_the_commit_its_ref_points_at(make_kernel, tool_env, monkeypatch):
@@ -996,14 +1073,17 @@ def test_a_first_party_preview_confirms_by_name_not_by_its_git_requirement(make_
     preview = service.add("clock")
     assert preview.candidate is not None
     assert preview.candidate.requirement != "clock"  # a git or path requirement ...
-    assert preview.next == ["hz system plugin add clock --confirm"]  # ... which the hint must not suggest
+    assert preview.operation_id
+    assert preview.next == [
+        f"hz system plugin add clock --confirm --operation-id {preview.operation_id}"
+    ]  # ... which the hint must not suggest
     rendered = render_change(preview)
     from rich.console import Console
 
     console = Console(record=True, width=200)
     console.print(rendered)
     assert "not reviewed" not in console.export_text()
-    assert service.add(preview.next[0].split()[-2], confirm=True).done  # the hinted name installs
+    assert service.add(preview.candidate.spec, confirm=True, operation_id=preview.operation_id).done
     assert len(runs) == 1
 
 
@@ -1015,7 +1095,8 @@ def test_a_community_preview_still_confirms_by_its_requirement_and_warns(make_ke
     service, _ = installing(make_kernel, tool_env, monkeypatch)
     service.pypi = lambda url: pypi_project("heinzel-crm", "1.1.0")
     preview = service.add("heinzel-crm")
-    assert preview.next == ["hz system plugin add heinzel-crm==1.1.0 --confirm"]
+    assert preview.operation_id
+    assert preview.next == [f"hz system plugin add heinzel-crm==1.1.0 --confirm --operation-id {preview.operation_id}"]
     console = Console(record=True, width=200)
     console.print(render_change(preview))
     assert "not reviewed" in console.export_text()

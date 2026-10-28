@@ -51,10 +51,12 @@ from heinzel.modules.system.plugin._models import (
     PluginInfo,
     PluginKind,
     PluginLayer,
+    PluginOperation,
     PluginSearch,
     PluginSettings,
     Source,
 )
+from heinzel.modules.system.plugin._receipts import PluginReceipts
 from heinzel.modules.system.plugin._sources import (
     PREFIX,
     JsonGetter,
@@ -159,6 +161,7 @@ class PluginService:
         self._installation = installation
         self._settings = settings
         self._changing = threading.Lock()
+        self._receipts = PluginReceipts(kernel.settings.state_dir)
         self.github_api: JsonGetter = github_getter(settings.github_token)
         """Reads the GitHub API for `add`; tests replace it."""
         self.pypi: JsonGetter = pypi_get
@@ -345,15 +348,34 @@ class PluginService:
             warnings=warnings,
         )
 
-    def add(self, spec: str, *, confirm: bool = False) -> PluginChange:
+    def add(self, spec: str, *, confirm: bool = False, operation_id: str | None = None) -> PluginChange:
         """Show what `spec` installs; with `confirm`, install exactly that, record it and list the plugins after.
 
         Raises:
             HeinzelError: If the source is refused, unknown, or installing fails.
         """
+        if operation_id is not None:
+            if not confirm:
+                msg = "A plugin operation receipt can only be used to confirm an add."
+                raise HeinzelError(msg)
+            receipt = self._receipts.get(operation_id)
+            candidate = receipt.candidate
+            if spec not in {candidate.spec, candidate.requirement}:
+                msg = "This plugin operation receipt belongs to a different preview."
+                raise HeinzelError(msg)
+            if receipt.status == "completed" and receipt.result:
+                return receipt.result
+            if receipt.status == "running":
+                msg = "This plugin operation is still running; check its receipt before continuing."
+                raise HeinzelError(msg)
+            if receipt.status == "unknown":
+                msg = "This plugin operation has an unknown result and must not be replayed."
+                raise HeinzelError(msg)
+            return self._confirm_receipt(operation_id, candidate)
         candidate = self.candidate(spec)
         if not confirm:
             handle = candidate.spec if candidate.first_party else candidate.requirement
+            receipt = self._receipts.create(candidate)
             return PluginChange(
                 action="add",
                 done=False,
@@ -362,9 +384,10 @@ class PluginService:
                 plugins=self.installed(),
                 restart_required=False,
                 # A first-party plugin is added by the name asked for: its git requirement is refused as a spec.
-                next=[f"hz system plugin add {shlex.quote(handle)} --confirm"],
+                next=[f"hz system plugin add {shlex.quote(handle)} --confirm --operation-id {receipt.operation_id}"],
+                operation_id=receipt.operation_id,
             )
-        with self._exclusive():
+        with self._receipts.installing(), self._exclusive():
             self._installation.run(
                 self.add_command(candidate.requirement),
                 f"Failed to add plugin {spec!r}.",
@@ -381,6 +404,45 @@ class PluginService:
                 private_repository=candidate.private,
             )
             return self._changed("add", candidate.distribution, candidate)
+
+    def operation(self, operation_id: str) -> PluginOperation:
+        """Read the durable status of a preview receipt without repeating its mutation."""
+        return self._receipts.get(operation_id)
+
+    def _confirm_receipt(self, operation_id: str, candidate: PluginCandidate) -> PluginChange:
+        claimed = False
+        try:
+            with self._receipts.installing(), self._exclusive():
+                receipt = self._receipts.claim(operation_id)
+                if receipt.status != "running":
+                    if receipt.status == "completed" and receipt.result:
+                        return receipt.result
+                    _raise_not_replayable(receipt.status)
+                claimed = True
+                self._installation.run(
+                    self.add_command(candidate.requirement),
+                    f"Failed to add plugin {candidate.spec!r}.",
+                    f"Adding plugin {candidate.distribution or candidate.spec}",
+                    self._git_environment(),
+                )
+                self._record(
+                    "add",
+                    candidate.distribution,
+                    requirement=candidate.requirement,
+                    source=candidate.source,
+                    version=candidate.version,
+                    publisher=candidate.publisher,
+                    private_repository=candidate.private,
+                )
+                result = self._changed("add", candidate.distribution, candidate)
+                completed = self._receipts.complete(operation_id, result)
+                if completed.result is None:
+                    _raise_missing_result()
+                return cast("PluginChange", completed.result)
+        except BaseException:
+            if claimed:
+                self._receipts.unknown(operation_id)
+            raise
 
     def develop(self, path: Path) -> PluginChange:
         """Install the plugin in a directory on this machine, as `add` would a released one.
@@ -399,7 +461,7 @@ class PluginService:
         except (tomllib.TOMLDecodeError, KeyError) as exc:
             msg = f"{pyproject} names no project ({exc}); is it a plugin's checkout?"
             raise HeinzelError(msg) from exc
-        with self._exclusive():
+        with self._receipts.installing(), self._exclusive():
             self._installation.run(
                 self.add_command(f"{name} @ {directory.as_uri()}"),
                 f"Failed to add plugin {path}.",
@@ -444,7 +506,7 @@ class PluginService:
         Raises:
             HeinzelError: If it isn't an installed plugin, or uninstalling fails.
         """
-        with self._exclusive():
+        with self._receipts.installing(), self._exclusive():
             version = next((p.version for p in self.installed() if _same(p.distribution, distribution)), None)
             self._installation.run(
                 self.remove_command(distribution),
@@ -882,6 +944,16 @@ class PluginService:
             PluginInfo.model_validate(item)
             for item in json.loads(self._installation.hz("system", "plugin", "list", "--json"))
         ]
+
+
+def _raise_not_replayable(status: str) -> None:
+    msg = f"This plugin operation is {status}; it will not be replayed."
+    raise HeinzelError(msg)
+
+
+def _raise_missing_result() -> None:
+    msg = "The plugin operation finished without a stored result."
+    raise HeinzelError(msg)
 
 
 def _dicts(value: object) -> list[dict[str, object]]:

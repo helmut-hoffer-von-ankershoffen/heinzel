@@ -54,6 +54,7 @@ export type ApplyOptions = {
   requestTimeout?: number;
   interval?: number;
   onPhase?: (phase: ApplyPhase) => void;
+  onObservation?: (observation: RestartObservation) => void;
 };
 
 function abortReason(signal: AbortSignal): Error {
@@ -240,6 +241,7 @@ export function restartAndApply(
         )) !== false;
     }
     if (!restartRequired) return before;
+    options.onObservation?.(observation);
     options.onPhase?.("restarting");
     try {
       const answer = await bounded((signal) => transport.restart(signal), signal, options.requestTimeout ?? 4_000);
