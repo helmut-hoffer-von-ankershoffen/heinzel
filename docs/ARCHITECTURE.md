@@ -216,9 +216,10 @@ Enforced by [import-linter](https://import-linter.readthedocs.io) (`make lint`):
 ## World Clock
 
 The clock plugin's header button opens the local World Clock in the right panel (`?panel=world-clock`). It shows
-configured zones on a draggable globe, with a 24-hour time list and approximate daylight. Reduced motion or missing
-WebGL uses a static map. Orange marks the primary zone; selecting a place centres it. Markers are the representative
-locations of IANA time-zone names, never people's locations. No map service is contacted.
+configured zones on a draggable globe, with city names in the list and marker tooltips, 24-hour times and approximate
+daylight. Reduced motion or missing WebGL uses a static map. Orange marks the primary zone; selecting a place centres
+it. Markers are the representative locations of IANA time-zone names, never people's locations. No map service is
+contacted.
 
 The fallback land outline is simplified [Natural Earth land](https://www.naturalearthdata.com/about/terms-of-use/)
 (public domain), and representative zone points are from IANA's public-domain `zone.tab`. See
