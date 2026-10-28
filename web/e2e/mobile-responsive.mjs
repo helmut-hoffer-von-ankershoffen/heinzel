@@ -885,6 +885,8 @@ try {
     }
   throw error;
 } finally {
+  for (const context of browser.contexts())
+    for (const page of context.pages()) await page.unrouteAll({ behavior: "ignoreErrors" }).catch(() => {});
   await browser.close();
 }
 writeFileSync(join(shots, "mobile-responsive.json"), `${JSON.stringify(result, null, 2)}\n`);
