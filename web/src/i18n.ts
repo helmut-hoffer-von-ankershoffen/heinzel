@@ -33,6 +33,11 @@ const en = {
   "durable.send": "Queue message",
   "durable.retry": "Retry the same message",
   "durable.failed": "The message could not be confirmed. Retry the same message or reopen this conversation.",
+  "durable.preservationFailed":
+    "This tab could not preserve your message. It has not been sent; try again or copy it before leaving.",
+  "durable.draftUnreadable":
+    "Saved composer work for this conversation could not be read. Review the conversation above before clearing it.",
+  "durable.clearUnreadableDraft": "I reviewed the conversation; clear unreadable composer work",
   "durable.schedule": "Five-minute check-in",
   "durable.scheduleEmpty": "This schedule is only a proposal until you review and confirm it.",
   "durable.scheduleStatus": "Status",

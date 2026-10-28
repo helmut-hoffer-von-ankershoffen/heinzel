@@ -5,6 +5,7 @@ import { useSearchParams } from "react-router";
 import { chatKey, sendChat } from "@/api/chat";
 import { api, problem, type SchemaSessionSnapshot } from "@/api/client";
 import { ActionCard } from "@/chat/Conversation";
+import { useDurableDraft } from "@/chat/durableDraft";
 import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
 
@@ -30,9 +31,14 @@ function asksForFiveMinuteCheckIn(message: string): boolean {
 export function DurableSession({ sessionId, onClose }: { sessionId: string; onClose: () => void }) {
   const client = useQueryClient();
   const [params, setParams] = useSearchParams();
-  const [text, setText] = useState("");
-  const [pending, setPending] = useState<{ request_id: string; message: string } | null>(null);
-  const [agentPending, setAgentPending] = useState<{ request_id: string; message: string } | null>(null);
+  const {
+    state: composer,
+    update: updateComposer,
+    storageError,
+    recoveryBlocked,
+    resolveRecovery,
+  } = useDurableDraft(sessionId);
+  const { text, pending, agentPending, checkInRequest } = composer;
   const [error, setError] = useState(false);
   const [busy, setBusy] = useState(false);
   const [scheduleBusy, setScheduleBusy] = useState(false);
@@ -47,7 +53,6 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
     const message = reason instanceof Error ? reason.message : "";
     return message.startsWith("Check-ins are blocked because the daemon unit version") ? message : null;
   };
-  const checkInRequest = useRef<string | null>(null);
   const controlRequest = useRef<string | null>(params.get("approval-request"));
   const running = useRef(false);
   const query = useQuery({
@@ -132,6 +137,10 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
     });
   }, [approvalActions, approvalChatId, approvalQuery.isError, approvalQuery.isPending, setParams]);
   const send = async () => {
+    if (recoveryBlocked || storageError) {
+      setError(true);
+      return;
+    }
     if (running.current || (!pending && !agentPending && !text.trim())) return;
     const requestedMessage = agentPending?.message ?? pending?.message ?? text;
     if (
@@ -149,7 +158,9 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
       try {
         const stableRequestId = agentPending?.request_id ?? crypto.randomUUID();
         requestId = stableRequestId;
-        setAgentPending({ request_id: stableRequestId, message: requestedMessage });
+        if (!updateComposer({ agentPending: { request_id: stableRequestId, message: requestedMessage } })) {
+          throw new Error("The message could not be preserved in this tab.");
+        }
         setParams(
           (current) => {
             const next = new URLSearchParams(current);
@@ -184,12 +195,11 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
         client.setQueryData(chatKey(answered.id), answered);
         const last = answered.messages?.at(-1);
         if (last?.role === "assistant" && last.status !== "completed") {
-          setAgentPending(null);
+          if (last.status !== "pending") updateComposer({ agentPending: null });
           setScheduleError(true);
           setScheduleErrorMessage(`${last.detail} ${t("durable.agentUnavailable")}`.trim());
         } else {
-          setAgentPending(null);
-          setText("");
+          updateComposer({ agentPending: null, text: "" });
           setIntentNotice(true);
         }
       } catch (reason) {
@@ -197,8 +207,7 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
         setScheduleError(true);
         setScheduleErrorMessage(t("durable.agentUnavailable"));
         if (runnerUnavailable(reason)) {
-          setAgentPending(null);
-          setText("");
+          updateComposer({ agentPending: null, text: "" });
         }
         if (openedChatId !== null) {
           try {
@@ -207,9 +216,8 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
             );
             client.setQueryData(chatKey(current.id), current);
             const last = current.messages?.at(-1);
-            if (last?.role === "assistant" && last.request_id === requestId) {
-              setAgentPending(null);
-              setText("");
+            if (last?.role === "assistant" && last.request_id === requestId && last.status !== "pending") {
+              updateComposer({ agentPending: null, text: "" });
             }
           } catch {
             // The stable chat link remains available for a later inspection.
@@ -229,25 +237,25 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
       try {
         const request = agentPending ?? { request_id: crypto.randomUUID(), message: requestedMessage };
         requestId = request.request_id;
-        setAgentPending(request);
+        if (!agentPending && !updateComposer({ agentPending: request })) {
+          throw new Error("The message could not be preserved in this tab.");
+        }
         const answered = await sendChat(agentChatId, request.message, () => {}, {}, request.request_id);
         client.setQueryData(chatKey(answered.id), answered);
         const last = answered.messages?.at(-1);
         if (last?.role === "assistant" && last.status !== "completed") {
-          setAgentPending(null);
+          if (last.status !== "pending") updateComposer({ agentPending: null });
           setScheduleError(true);
           setScheduleErrorMessage(`${last.detail} ${t("durable.agentUnavailable")}`.trim());
         } else {
-          setAgentPending(null);
-          setText("");
+          updateComposer({ agentPending: null, text: "" });
         }
       } catch (reason) {
         setError(true);
         setScheduleError(true);
         setScheduleErrorMessage(t("durable.agentUnavailable"));
         if (runnerUnavailable(reason)) {
-          setAgentPending(null);
-          setText("");
+          updateComposer({ agentPending: null, text: "" });
         }
         try {
           const current = await result(
@@ -255,9 +263,8 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
           );
           client.setQueryData(chatKey(current.id), current);
           const last = current.messages?.at(-1);
-          if (last?.role === "assistant" && last.request_id === requestId) {
-            setAgentPending(null);
-            setText("");
+          if (last?.role === "assistant" && last.request_id === requestId && last.status !== "pending") {
+            updateComposer({ agentPending: null, text: "" });
           }
         } catch {
           // Keep the request id; the next click retries the same message without replaying it.
@@ -270,7 +277,11 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
     }
     running.current = true;
     const request = pending ?? { request_id: crypto.randomUUID(), message: text };
-    setPending(request);
+    if (!pending && !updateComposer({ pending: request })) {
+      setError(true);
+      running.current = false;
+      return;
+    }
     setBusy(true);
     setError(false);
     try {
@@ -279,8 +290,7 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
       );
       if (accepted.session_id !== sessionId || accepted.request_id !== request.request_id)
         throw new Error("Invalid acknowledgement");
-      setPending(null);
-      setText("");
+      updateComposer({ pending: null, text: "" });
       await client.invalidateQueries({ queryKey: ["heinzel", "session", sessionId] });
     } catch {
       setError(true);
@@ -291,8 +301,13 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
   };
 
   const proposeCheckIn = async (): Promise<SchemaSessionSnapshot | null> => {
-    if (scheduleBusy || !query.data) return null;
-    checkInRequest.current ??= crypto.randomUUID();
+    if (scheduleBusy || !query.data || recoveryBlocked) return null;
+    const requestId = checkInRequest ?? crypto.randomUUID();
+    if (!checkInRequest && !updateComposer({ checkInRequest: requestId })) {
+      setScheduleError(true);
+      setScheduleErrorMessage(t("durable.preservationFailed"));
+      return null;
+    }
     setScheduleBusy(true);
     clearScheduleError();
     try {
@@ -300,12 +315,12 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
         api.POST("/heinzel/propose-check-in", {
           body: {
             session_id: sessionId,
-            request_id: checkInRequest.current,
+            request_id: requestId,
             timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
           },
         }),
       );
-      checkInRequest.current = null;
+      updateComposer({ checkInRequest: null });
       client.setQueryData(["heinzel", "session", sessionId], proposed);
       await client.invalidateQueries({ queryKey: ["heinzel", "session", sessionId] });
       return proposed;
@@ -582,6 +597,8 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
                 size="sm"
                 disabled={
                   scheduleBusy ||
+                  recoveryBlocked ||
+                  storageError ||
                   agentPending !== null ||
                   pendingAgentActions.length > 0 ||
                   runningAgentActions.length > 0 ||
@@ -655,17 +672,40 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
         }}
       >
         <p className="text-xs text-muted-foreground">{t("durable.queued")}</p>
+        {recoveryBlocked ? (
+          <div className="space-y-2 text-sm" role="alert">
+            <p>{t("durable.draftUnreadable")}</p>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                if (resolveRecovery()) setError(false);
+              }}
+            >
+              {t("durable.clearUnreadableDraft")}
+            </Button>
+          </div>
+        ) : storageError ? (
+          <p className="text-sm" role="alert">
+            {t("durable.preservationFailed")}
+          </p>
+        ) : null}
         <label className="block space-y-1 text-sm">
           <span>{t("durable.message")}</span>
           <textarea
             className="w-full rounded border border-border bg-background p-2"
             value={text}
-            disabled={busy || pending !== null || agentPending !== null || !query.data}
-            onChange={(event) => setText(event.target.value)}
+            maxLength={4000}
+            disabled={busy || pending !== null || agentPending !== null || !query.data || recoveryBlocked}
+            onChange={(event) => updateComposer({ text: event.target.value })}
           />
         </label>
         {error && <p role="alert">{t("durable.failed")}</p>}
-        <Button type="submit" disabled={busy || !query.data || (!pending && !text.trim())}>
+        <Button
+          type="submit"
+          disabled={busy || storageError || recoveryBlocked || !query.data || (!pending && !text.trim())}
+        >
           {busy
             ? t("durable.scheduleWorking")
             : pending || agentPending

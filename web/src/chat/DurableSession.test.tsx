@@ -1,8 +1,9 @@
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { frame, mockWithStream } from "@/test/chat";
 import { shell } from "@/test/fixtures";
 import { expectAccessible, mockApi, renderAt } from "@/test/render";
+import { preserveUpdateWork } from "@/updates/work";
 
 const sessionId = "hz-01ARZ3NDEKTSV4RRFFQ69G5FAV";
 const snapshot = {
@@ -51,6 +52,8 @@ const approvedChat = {
   actions: [{ ...reviewChat.actions[0], status: "done", result: "schedule active" }],
   messages: [{ role: "action", text: "Ran `hz heinzel schedule-control`: schedule active" }],
 };
+
+afterEach(() => sessionStorage.clear());
 
 describe("personal conversation links", () => {
   it.each([
@@ -331,6 +334,75 @@ describe("personal conversation links", () => {
     await waitFor(() => expect(sent).toHaveLength(2));
     expect(sent[1]).toEqual(sent[0]);
     expect(sent[0]).toMatchObject({ session_id: sessionId, message: "A follow-up", when_busy: "follow_up" });
+  });
+
+  it("preserves unsent text for an update and restores it after the durable panel remounts", async () => {
+    mockApi({ ...shell, "/api/heinzel/session": snapshot });
+    const first = renderAt(`/heinzel?chat=${sessionId}`);
+    const box = await screen.findByLabelText("Message your Heinzel");
+    fireEvent.change(box, { target: { value: "Keep this unsent request" } });
+    expect(sessionStorage.getItem(`hz.durable.composer.${sessionId}`)).toContain("Keep this unsent request");
+    expect(preserveUpdateWork).not.toThrow();
+    first.unmount();
+
+    mockApi({ ...shell, "/api/heinzel/session": snapshot });
+    renderAt(`/heinzel?chat=${sessionId}`);
+    expect(await screen.findByLabelText("Message your Heinzel")).toHaveValue("Keep this unsent request");
+    await waitFor(() => expect(screen.getByRole("button", { name: "Queue message" })).toBeEnabled());
+  });
+
+  it("blocks new work when saved composer state is unreadable until the person resolves it", async () => {
+    sessionStorage.setItem(`hz.durable.composer.${sessionId}`, "not valid saved state");
+    mockApi({ ...shell, "/api/heinzel/session": snapshot });
+    renderAt(`/heinzel?chat=${sessionId}`);
+    const box = await screen.findByLabelText("Message your Heinzel");
+    expect(await screen.findByRole("alert")).toHaveTextContent(/saved composer work.*could not be read/i);
+    expect(box).toBeDisabled();
+    expect(preserveUpdateWork).toThrow(/could not be preserved/);
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "I reviewed the conversation; clear unreadable composer work" }),
+    );
+    expect(box).toBeEnabled();
+    expect(sessionStorage.getItem(`hz.durable.composer.${sessionId}`)).toBeNull();
+  });
+
+  it("restores an uncertain request id after reload and retries the exact same request", async () => {
+    const firstPayloads: unknown[] = [];
+    mockApi({
+      ...shell,
+      "/api/heinzel/session": snapshot,
+      "/api/heinzel/chat": async (request: Request) => {
+        firstPayloads.push(await request.json());
+        return { status: 503, body: { detail: "acknowledgement lost" } };
+      },
+    });
+    const first = renderAt(`/heinzel?chat=${sessionId}`);
+    fireEvent.change(await screen.findByLabelText("Message your Heinzel"), { target: { value: "A follow-up" } });
+    fireEvent.click(screen.getByRole("button", { name: "Queue message" }));
+    await screen.findByRole("button", { name: "Retry the same message" });
+    const saved = JSON.parse(sessionStorage.getItem(`hz.durable.composer.${sessionId}`) ?? "null");
+    expect(saved.pending).toMatchObject({ message: "A follow-up" });
+    expect(preserveUpdateWork).not.toThrow();
+    first.unmount();
+
+    const retriedPayloads: unknown[] = [];
+    mockApi({
+      ...shell,
+      "/api/heinzel/session": snapshot,
+      "/api/heinzel/chat": async (request: Request) => {
+        retriedPayloads.push(await request.json());
+        const body = retriedPayloads[0] as { request_id: string };
+        return { session_id: sessionId, request_id: body.request_id, disposition: "queued", inbox_position: 2 };
+      },
+    });
+    renderAt(`/heinzel?chat=${sessionId}`);
+    const retry = await screen.findByRole("button", { name: "Retry the same message" });
+    await waitFor(() => expect(retry).toBeEnabled());
+    fireEvent.click(retry);
+    await waitFor(() => expect(retriedPayloads).toHaveLength(1));
+    expect(retriedPayloads[0]).toEqual(firstPayloads[0]);
+    expect(sessionStorage.getItem(`hz.durable.composer.${sessionId}`)).toBeNull();
   });
   it("opens the durable conversation from a check-in notice", async () => {
     localStorage.setItem("hz.chat.open", "false");
