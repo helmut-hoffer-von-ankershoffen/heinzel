@@ -233,5 +233,6 @@ changes. Floating controls respect device safe areas; touch form fields use at l
 keyboard-sized heights and zoom. The collapsed sidebar keeps direct play/pause; see [ADR 0088](adr/0088-collapsed-sidebar-keeps-sound-controls.md).
 
 The workspace uses descriptor-driven tabs for Chat, Terminal and World Clock on desktop and phone. Hidden contents
-stay mounted; Page restores the main screen and footer on phones. New panels use the same renderer rather than
+stay mounted; Page returns to the main screen on phones. The header and footer stay visible while scrolling, except
+in the full-screen terminal. New panels use the same renderer rather than
 adding another stack or viewport rule; [ADR 0089](adr/0089-one-selected-workspace-panel.md) records the boundary.
