@@ -14,7 +14,7 @@
 | src/heinzel/heads/\_stream.py                                 |       64 |        1 |        4 |        1 |     97% |47-\>49, 58 |
 | src/heinzel/heads/cli/\_\_init\_\_.py                         |      248 |        6 |       64 |        6 |     96% |139-\>141, 163-166, 169, 173-\>exit, 229-\>221, 415, 428-\>430 |
 | src/heinzel/heads/cli/\_chat.py                               |      147 |       13 |       40 |        5 |     90% |29-30, 71-72, 85, 109, 130-133, 157-\>exit, 169-\>exit, 188-190 |
-| src/heinzel/heads/cli/\_command.py                            |      110 |        3 |       32 |        3 |     96% |89, 97, 188 |
+| src/heinzel/heads/cli/\_command.py                            |      111 |        3 |       32 |        3 |     96% |89, 97, 189 |
 | src/heinzel/heads/cli/\_join.py                               |      143 |        0 |       32 |        1 |     99% | 213-\>218 |
 | src/heinzel/heads/cli/\_serve.py                              |      101 |        4 |       30 |        5 |     93% |83-\>85, 116-\>exit, 192, 214-215, 239 |
 | src/heinzel/heads/cli/\_setup.py                              |      319 |        6 |       96 |        6 |     97% |275, 342, 427, 434, 481-\>490, 504, 507 |
@@ -95,9 +95,10 @@
 | src/heinzel/modules/system/notify/\_service.py                |      251 |       17 |       74 |        8 |     92% |177-179, 254-\>253, 280-281, 294, 328-\>341, 333-335, 348, 385-\>388, 416, 450, 465-469 |
 | src/heinzel/modules/system/notify/\_store.py                  |      101 |        9 |        0 |        0 |     91% |50-52, 76-77, 91-92, 106-107 |
 | src/heinzel/modules/system/notify/\_watch.py                  |       34 |        7 |       10 |        4 |     75% |21-29, 40, 43-44, 59, 68 |
-| src/heinzel/modules/system/plugin/\_\_init\_\_.py             |       54 |        3 |        6 |        0 |     95% |104, 122, 147 |
-| src/heinzel/modules/system/plugin/\_render.py                 |       83 |       12 |       30 |        7 |     80% |38, 47, 84, 86, 88-\>87, 104-106, 116-120 |
-| src/heinzel/modules/system/plugin/\_service.py                |      473 |       13 |      138 |       11 |     96% |128-\>130, 187, 200-\>199, 437-438, 479-480, 493-\>498, 708-\>714, 789-\>788, 806-\>805, 897, 900-901, 916, 945-946, 961-962 |
+| src/heinzel/modules/system/plugin/\_\_init\_\_.py             |       57 |        3 |        6 |        0 |     95% |118, 136, 161 |
+| src/heinzel/modules/system/plugin/\_receipts.py               |      155 |       25 |       18 |        4 |     82% |92-93, 101-106, 131-132, 138-140, 142-143, 157-159, 180, 185-187, 213-215 |
+| src/heinzel/modules/system/plugin/\_render.py                 |       85 |       12 |       30 |        7 |     80% |44, 53, 90, 92, 94-\>93, 111-113, 123-127 |
+| src/heinzel/modules/system/plugin/\_service.py                |      526 |       27 |      160 |       17 |     93% |130-\>132, 190, 203-\>202, 359-360, 369-370, 376, 423-425, 445, 449, 504-505, 546-547, 560-\>565, 775-\>781, 856-\>855, 873-\>872, 955-956, 960-961, 974, 977-978, 993, 1022-1023, 1038-1039 |
 | src/heinzel/modules/system/plugin/\_sources.py                |      272 |        2 |       90 |        1 |     99% |253-\>255, 427-428 |
 | src/heinzel/modules/system/plugin/docs/\_build.py             |       24 |        0 |        8 |        1 |     97% |   22-\>24 |
 | src/heinzel/modules/system/plugin/docs/\_files.py             |      104 |        6 |       32 |        2 |     94% |51-52, 122-123, 126-127 |
@@ -129,7 +130,7 @@
 | src/heinzel/modules/telemetry/\_\_init\_\_.py                 |       44 |        2 |        0 |        0 |     95% |  110, 164 |
 | src/heinzel/modules/telemetry/\_render.py                     |       15 |       10 |        2 |        0 |     29% |11-17, 22-27 |
 | src/heinzel/modules/telemetry/\_service.py                    |      236 |        8 |       70 |        3 |     96% |146-\>152, 154-\>152, 162, 219-220, 289-291, 344-345 |
-| **TOTAL**                                                     | **29618** |  **756** | **7374** |  **339** | **97%** |           |
+| **TOTAL**                                                     | **29838** |  **795** | **7414** |  **349** | **97%** |           |
 
 165 files skipped due to complete coverage.
 
