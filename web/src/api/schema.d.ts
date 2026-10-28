@@ -9751,7 +9751,7 @@ export interface components {
             requested?: boolean | null;
             /**
              * Sign In Url
-             * @description Computed by the host only: a ready URL whose exact origin is explicitly allowed. Copying a sign-in fragment still requires a separate owner gesture and a session credential.
+             * @description Computed by the host only: a ready URL whose exact origin is explicitly allowed. Copying a sign-in fragment still requires a separate owner gesture and an active session or device credential.
              */
             sign_in_url?: string | null;
             /**

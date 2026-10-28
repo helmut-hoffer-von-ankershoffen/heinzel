@@ -2,7 +2,7 @@
 import { Check, Copy, ExternalLink } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import { problem, type SchemaOperationCall } from "@/api/client";
-import { sessionToken, token } from "@/api/token";
+import { token } from "@/api/token";
 import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
 import { cn } from "@/lib/utils";
@@ -74,15 +74,15 @@ function publicUrl(value: string | null | undefined): string | null {
 }
 
 function authenticatedUrl(control: ContributionToggleControl): string | null {
-  const session = sessionToken();
-  if (!control.checked || !session || session.startsWith("hzd_") || /\s/.test(session)) return null;
+  const bearer = token();
+  if (!control.checked || !bearer || /\s/.test(bearer)) return null;
   if (!control.url || control.sign_in_url !== control.url) return null;
   try {
     const parsed = new URL(control.sign_in_url);
-    // The server's exact approved origin is the only place a session fragment may go.
+    // The server's exact approved origin is the only place a token fragment may go.
     if (parsed.protocol !== "https:" || parsed.origin !== control.sign_in_url) return null;
     const link = new URL(parsed.origin);
-    link.hash = new URLSearchParams({ token: session }).toString();
+    link.hash = new URLSearchParams({ token: bearer }).toString();
     return link.href;
   } catch {
     return null;

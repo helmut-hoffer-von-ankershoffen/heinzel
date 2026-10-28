@@ -6,7 +6,7 @@ amends: 0047
 related: 0003, 0019, 0039, 0046
 ---
 
-# 0090: Confirmed plugin adds use server-owned operation receipts
+# 0091: Confirmed plugin adds use server-owned operation receipts
 
 ## Context and Problem Statement
 
