@@ -110,7 +110,7 @@ describe("phone workspace entry and closing", () => {
     expect(screen.getByRole("tab", { name: "Chat", selected: true })).toBeInTheDocument();
   });
 
-  it("keeps the covered page inert and restores it through Page without closing the terminal", async () => {
+  it("keeps the shared page active and restores it through Page without closing the terminal", async () => {
     widthOf(390);
     mockApi(base);
     const user = userEvent.setup();
@@ -118,8 +118,9 @@ describe("phone workspace entry and closing", () => {
     await user.click(await screen.findByRole("button", { name: "Open a terminal" }));
     const terminal = screen.getByRole("region", { name: "Terminal" });
     const main = document.getElementById("content");
-    expect(main).toHaveAttribute("inert");
-    expect(main).toHaveAttribute("aria-hidden", "true");
+    // Below the workspace, Page and the selected panel share one scroll area rather than covering each other.
+    expect(main).not.toHaveAttribute("inert");
+    expect(main).not.toHaveAttribute("aria-hidden");
     await user.click(screen.getByRole("tab", { name: "Page" }));
     expect(main).not.toHaveAttribute("inert");
     expect(main).not.toHaveAttribute("aria-hidden");
