@@ -47,6 +47,7 @@ def test_a_stream_names_an_allowed_provider_and_a_video_never_a_url():
     stream = Soundscape.model_validate(STREAM).stream
     assert stream == SoundStream(provider="youtube", video="tRsQsTMvPNg")
     assert STREAM_PROVIDERS["youtube"].frame_origin == "https://www.youtube-nocookie.com"
+    assert STREAM_PROVIDERS["youtube"].additional_frame_origins == ("https://www.youtube.com",)
     assert STREAM_PROVIDERS["youtube"].embed_url("tRsQsTMvPNg") == "https://www.youtube-nocookie.com/embed/tRsQsTMvPNg"
     assert STREAM_PROVIDERS["youtube"].watch_url("x") == "https://www.youtube.com/watch?v=x"
 

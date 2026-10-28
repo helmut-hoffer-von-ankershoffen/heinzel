@@ -10,6 +10,36 @@ export type StreamView = {
 };
 
 const VIDEO = /^[A-Za-z0-9_-]{11}$/;
+const ACCOUNT_KEY = "hz.sound.youtubeAccount";
+const PRIVATE_ORIGIN = "https://www.youtube-nocookie.com";
+const ACCOUNT_ORIGIN = "https://www.youtube.com";
+
+/** The viewer's explicit choice in this browser; blocked storage keeps the private default. */
+export function readYouTubeAccount(): boolean {
+  try {
+    return localStorage.getItem(ACCOUNT_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
+
+export function rememberYouTubeAccount(account: boolean): void {
+  try {
+    localStorage.setItem(ACCOUNT_KEY, String(account));
+  } catch {
+    // The choice still applies to the mounted player when storage is unavailable.
+  }
+}
+
+/** Only the known YouTube private embed has a fixed account-enabled alternative (ADR 0092). */
+export function accountStream(stream: StreamView): StreamView | null {
+  if (stream.provider !== "youtube" || stream.frame_origin !== PRIVATE_ORIGIN || !embedSrc(stream)) return null;
+  return {
+    ...stream,
+    frame_origin: ACCOUNT_ORIGIN,
+    embed_url: `${ACCOUNT_ORIGIN}/embed/${stream.video}`,
+  };
+}
 
 /** The frame's attributes besides `src`: what the host's player needs, and nothing that could leave our page. */
 export const FRAME_ATTRIBUTES = {
@@ -17,6 +47,8 @@ export const FRAME_ATTRIBUTES = {
   sandbox: "allow-scripts allow-same-origin allow-presentation allow-popups allow-popups-to-escape-sandbox",
   allow: "autoplay; encrypted-media",
 } as const;
+
+export const ACCOUNT_SANDBOX = `${FRAME_ATTRIBUTES.sandbox} allow-storage-access-by-user-activation`;
 
 /** The player's URL for `stream` on this page (no autoplay: it plays once it is silent, faded in by commands), or null if the stream isn't the embed of its own frame origin. */
 export function embedSrc(stream: StreamView, origin: string = window.location.origin): string | null {
@@ -44,14 +76,25 @@ export function command(frame: HTMLIFrameElement | null, origin: string, func: s
 /** Ask the player to tell us when it is ready, so the volume can be set before it is heard. */
 export function listen(frame: HTMLIFrameElement | null, origin: string): void {
   frame?.contentWindow?.postMessage(JSON.stringify({ event: "listening", id: "hz-sound", channel: "widget" }), origin);
+  for (const event of ["onStateChange", "onError", "onAutoplayBlocked"]) {
+    command(frame, origin, "addEventListener", [event]);
+  }
 }
 
+export type PlayerEvent = { event: string; info?: unknown };
+
 /** The event of a message from our player: only from its origin and its frame, only a known shape; else null. */
-export function playerEvent(message: MessageEvent, frame: HTMLIFrameElement | null, origin: string): string | null {
+export function playerEvent(
+  message: MessageEvent,
+  frame: HTMLIFrameElement | null,
+  origin: string,
+): PlayerEvent | null {
   if (message.origin !== origin || !frame || message.source !== frame.contentWindow) return null;
   try {
     const data: unknown = typeof message.data === "string" ? JSON.parse(message.data) : message.data;
-    if (data && typeof data === "object" && "event" in data && typeof data.event === "string") return data.event;
+    if (data && typeof data === "object" && "event" in data && typeof data.event === "string") {
+      return { event: data.event, info: "info" in data ? data.info : undefined };
+    }
   } catch {
     // not JSON: not a message of the player's
   }

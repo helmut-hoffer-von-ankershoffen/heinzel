@@ -282,6 +282,15 @@ const en = {
   "sound.close": "Stop and close the player",
   "sound.reloadNeeded": "This page loaded before this stream was picked; load it again to play it.",
   "sound.reload": "Reload",
+  "sound.playbackHelp": "YouTube asking you to sign in?",
+  "sound.privateHelp":
+    "The private player may not use your YouTube sign-in. Try the regular player to use your YouTube account.",
+  "sound.accountHelp":
+    "Sign in to YouTube in this browser, then retry. You may need to allow YouTube's embedded content or third-party cookies. If sign-in is blocked, play on YouTube instead; it uses YouTube's controls.",
+  "sound.accountPlayer": "Use YouTube sign-in",
+  "sound.privatePlayer": "Use private player",
+  "sound.retryPlayer": "Retry player",
+  "sound.playOnYouTube": "Play on YouTube",
   "sound.noAudio": "This browser can't play layered sound.",
   "sound.cantLoad": "{title} couldn't be loaded.",
   "theme.light": "Light",
