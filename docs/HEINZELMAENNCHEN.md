@@ -48,8 +48,12 @@ hz heinzel schedule-control <session-id> pause-v1 2 pause --json
 
 The web conversation panel offers “Review activation in chat” for a proposed schedule. The stored proposal shows the
 exact change before the person confirms it. That chat confirmation invokes the internal issuer and passes a short-lived
-proof directly to schedule control; no CLI, REST or MCP operation can issue a proof on its own. The CLI reads a proof
-from hidden input or stdin with `--approval-proof -` and never expects the secret as a command-line argument.
+proof directly to schedule control. Direct stdio MCP activation and resume show the exact schedule arguments on the
+controlling terminal and require a fresh typed challenge; the tool schema accepts no proof, and the proof stays inside
+the server. If stdio MCP has no controlling terminal, that direct action fails closed; use paired web review or the
+private CLI/web handoff to authorize the chat-scoped MCP confirmation tool. MCP over HTTP cannot access private
+schedule controls. The CLI reads a proof from hidden input or stdin with `--approval-proof -` and never expects the
+secret as a command-line argument.
 
 An active check-in attempts one local `system.notify` notice for each eligible five-minute slot after activation or
 resume. The daemon must tick at least every five minutes; a slower configured or foreground cadence reports a failed

@@ -13,6 +13,7 @@ from heinzel.kernel import (
     CheckInChatContextSource,
     CheckInHistoryMessage,
     DaemonAttestation,
+    Kernel,
 )
 from heinzel.kernel._approval import ApprovalConfirmation, ApprovalIssuer
 from heinzel.modules.heinzel._models import HeinzelSettings
@@ -51,16 +52,19 @@ def _crud(current: CurrentUser) -> SessionCrud:
 class _SessionApprovalIssuer(ApprovalIssuer):
     """Require a current version observed in a daemon tick before issuing exact schedule approval."""
 
-    def __init__(self, service: SessionCrud, daemon: DaemonAttestation) -> None:
+    def __init__(self, service: SessionCrud, daemon: DaemonAttestation | None) -> None:
         self.service = service
         self.daemon = daemon
 
-    def issue(self, module: str, operation: str, arguments: dict[str, JsonValue], provenance: str) -> str:
+    def _check_daemon(self, module: str, operation: str, arguments: dict[str, JsonValue]) -> None:
         if (
             module == "heinzel"
             and operation == "schedule-control"
             and arguments.get("action") in {"activate", "resume"}
         ):
+            if self.daemon is None:
+                msg = "Check-ins are blocked because the daemon attestation service is unavailable"
+                raise HeinzelError(msg)
             status = self.daemon.status()
             if status.installed and (
                 status.version is None or status.installed_version is None or status.version_mismatch
@@ -73,14 +77,22 @@ class _SessionApprovalIssuer(ApprovalIssuer):
                     "tick from the current Heinzel, then review this action again"
                 )
                 raise HeinzelError(msg)
+
+    def review(self, module: str, operation: str, arguments: dict[str, JsonValue]) -> dict[str, JsonValue]:
+        self._check_daemon(module, operation, arguments)
+        return self.service.review(module, operation, arguments)
+
+    def issue(self, module: str, operation: str, arguments: dict[str, JsonValue], provenance: str) -> str:
+        self._check_daemon(module, operation, arguments)
         return self.service.issue(module, operation, arguments, provenance)
 
     def applied(self, module: str, operation: str, arguments: dict[str, JsonValue]) -> bool:
         return self.service.applied(module, operation, arguments)
 
 
-def _approval_issuer(service: SessionCrud, daemon: DaemonAttestation) -> ApprovalIssuer:
+def _approval_issuer(service: SessionCrud, kernel: Kernel) -> ApprovalIssuer:
     """Expose the internal issuer only as a kernel service, never as a callable operation."""
+    daemon = kernel.resolve(DaemonAttestation) if kernel.provides(DaemonAttestation) else None
     return _SessionApprovalIssuer(service, daemon)
 
 

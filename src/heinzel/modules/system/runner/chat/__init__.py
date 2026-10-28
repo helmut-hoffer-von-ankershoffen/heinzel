@@ -6,7 +6,9 @@ person's `confirm`. `hz chat` in a terminal and the web app's right sidebar are 
 
 Chat and direct `confirm` are CLI/web only. A person may separately authorize one exact schedule action for a later
 MCP confirmation; the approval proof stays in private server state, and the MCP tool can only consume that grant.
-Neither unauthenticated REST nor an MCP caller can issue a human decision.
+For direct stdio MCP schedule control, the MCP head asks for a fresh challenge on the local controlling terminal;
+the model-facing caller cannot supply a proof or the human answer. Unauthenticated REST and MCP over HTTP cannot
+issue or consume private human decisions.
 """
 
 import getpass

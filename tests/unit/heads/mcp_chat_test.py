@@ -1,6 +1,12 @@
 """The MCP head for one chat (ADR 0045): the full tool surface, reads run, every other call only proposes."""
 
 import json
+import os
+import pty
+import re
+import select
+import threading
+import time
 
 import anyio
 import pytest
@@ -150,6 +156,100 @@ def test_chat_read_uses_only_the_local_stdio_identity(kernel):
     assert "current" not in tool.input_schema.get("properties", {})
     with pytest.raises(HeinzelError, match="requires an authenticated private API"):
         kernel.resolve(CurrentUser).context()
+
+
+def test_schedule_approval_reads_the_fresh_challenge_from_the_controlling_terminal(monkeypatch):
+    master, slave = pty.openpty()
+    real_open = os.open
+    monkeypatch.setattr(
+        mcp.os,
+        "open",
+        lambda path, flags, *args, **kwargs: (
+            os.dup(slave) if path == "/dev/tty" else real_open(path, flags, *args, **kwargs)
+        ),
+    )
+    arguments = {
+        "session_id": "hz-01M62DMG48VTMF92SK1KN5QZWN",
+        "request_id": "mcp-owner-approval",
+        "expected_revision": 1,
+        "action": "activate",
+        "expected_contract_version": 1,
+        "expected_preview_hash": "a" * 64,
+    }
+    result: list[Exception] = []
+
+    def confirm() -> None:
+        try:
+            mcp._confirm_schedule_on_tty(arguments)
+        except HeinzelError as exc:
+            result.append(exc)
+        else:
+            result.append(None)
+
+    worker = threading.Thread(target=confirm)
+    worker.start()
+    prompt = bytearray()
+    deadline = time.monotonic() + 2
+    while b"> " not in prompt:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0 or not select.select([master], [], [], max(0, remaining))[0]:
+            pytest.fail("MCP did not display its terminal approval prompt")
+        prompt.extend(os.read(master, 4096))
+    shown = prompt.decode("utf-8")
+    assert arguments["session_id"] in shown
+    assert arguments["expected_preview_hash"] in shown
+    match = re.search(r"Type exactly: ([^\r\n]+)", shown)
+    assert match is not None
+    os.write(master, f"{match.group(1)}\n".encode())
+    worker.join(timeout=2)
+    os.close(master)
+    os.close(slave)
+    assert not worker.is_alive()
+    assert result == [None]
+
+
+def test_schedule_approval_rejects_a_wrong_terminal_challenge_and_missing_tty(monkeypatch):
+    master, slave = pty.openpty()
+    real_open = os.open
+    monkeypatch.setattr(
+        mcp.os,
+        "open",
+        lambda path, flags, *args, **kwargs: (
+            os.dup(slave) if path == "/dev/tty" else real_open(path, flags, *args, **kwargs)
+        ),
+    )
+    arguments = {"session_id": "hz-01M62DMG48VTMF92SK1KN5QZWN", "request_id": "wrong", "action": "activate"}
+    errors: list[Exception] = []
+
+    def decline() -> None:
+        try:
+            mcp._confirm_schedule_on_tty(arguments)
+        except HeinzelError as exc:
+            errors.append(exc)
+        else:
+            errors.append(HeinzelError("unexpected approval"))
+
+    worker = threading.Thread(target=decline)
+    worker.start()
+    prompt = bytearray()
+    deadline = time.monotonic() + 2
+    while b"> " not in prompt:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0 or not select.select([master], [], [], max(0, remaining))[0]:
+            pytest.fail("MCP did not display its terminal approval prompt")
+        prompt.extend(os.read(master, 4096))
+    os.write(master, b"no\n")
+    worker.join(timeout=2)
+    os.close(master)
+    os.close(slave)
+    assert not worker.is_alive()
+    assert len(errors) == 1
+    assert isinstance(errors[0], HeinzelError)
+    assert "not confirmed" in str(errors[0])
+
+    monkeypatch.setattr(mcp.os, "open", lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("no tty")))
+    with pytest.raises(HeinzelError, match="controlling terminal"):
+        mcp._confirm_schedule_on_tty(arguments)
 
 
 def test_chat_server_fails_closed_for_non_stdio_transport_before_exposing_or_invoking_tools(kernel, ran):

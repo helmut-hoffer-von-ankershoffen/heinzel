@@ -7,6 +7,10 @@ starts the very command line the runner hands the agent, as a real stdio MCP ser
 
 import json
 import os
+import pty
+import re
+import select
+import threading
 import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
@@ -16,6 +20,7 @@ import anyio
 import pytest
 from fastapi.testclient import TestClient
 from mcp import Client, StdioServerParameters
+from mcp.server.mcpserver.exceptions import ToolError
 from typer.testing import CliRunner
 
 from heinzel import (
@@ -37,6 +42,7 @@ from heinzel.heads.cli import build
 from heinzel.kernel import Config, Kernel, boot
 from heinzel.modules.heinzel._session_crud import SessionCrud
 from heinzel.modules.heinzel._session_models import MessageRequest
+from heinzel.modules.heinzel._session_operations import _crud
 from heinzel.modules.heinzel._session_repository import PersonalSessionRepository
 from heinzel.modules.system.daemon._service import DaemonService
 from heinzel.modules.system.runner.chat._models import ChatMessage
@@ -573,7 +579,7 @@ def test_personal_schedule_approval_uses_the_existing_human_chat_gate(kernel, tm
     schedule = proposed_response.json()["schedule"]
     activation = activation_arguments(session_id, schedule, "human-check-in-activation")
 
-    # Neither an ordinary private request nor the agent's MCP tool list can issue or carry a human decision.
+    # An ordinary private request or a chat-scoped MCP action cannot supply or mint a human decision.
     denied = client.post("/api/heinzel/schedule-control", headers=AUTH, json=activation)
     assert denied.status_code == 400
     chat_proposal = stage_schedule(client, session_id, activation)
@@ -842,6 +848,140 @@ def test_human_web_approval_is_consumed_by_mcp_without_crossing_the_tool_protoco
         events = PersonalSessionRepository(kernel.resolve(CurrentUser)).control_read(session_id).events
     assert sum(event.kind == "approval.issued" for event in events) == 2
     assert sum(event.kind == "schedule.activated" for event in events) == 1
+
+
+def test_stdio_mcp_can_require_direct_human_terminal_approval_without_a_bearer(  # noqa: PLR0915 - proof boundary flow
+    kernel, tmp_path, monkeypatch
+):
+    user = kernel.resolve(CurrentUser)
+    with user.local("cli"):
+        crud = kernel.resolve(SessionCrud)
+        created = crud.new_chat("mcp-terminal-create", "Terminal approved helper")
+        proposed = crud.propose_check_in(created.session_id, "mcp-terminal-proposal", "UTC")
+    schedule = proposed.schedule
+    assert schedule is not None
+    arguments = {
+        "session_id": created.session_id,
+        "request_id": "mcp-terminal-activate",
+        "expected_revision": schedule.revision,
+        "action": "activate",
+        "expected_contract_version": schedule.contract_version,
+        "expected_preview_hash": schedule.preview_hash,
+    }
+    item = next(
+        item
+        for item in exposed(kernel, mcp.HEAD)
+        if item.record.qualname == "heinzel" and item.operation.name == "schedule-control"
+    )
+    handler = mcp.tool(kernel, mcp._mcp_item(item), local=True)
+
+    async def schema():
+        async with Client(mcp.build(kernel)) as client:
+            tools = {tool.name: tool for tool in (await client.list_tools()).tools}
+            return tools["heinzel_schedule_control"].input_schema
+
+    schedule_schema = anyio.run(schema)
+    assert "approval_proof" not in schedule_schema["properties"]
+    with pytest.raises(ToolError, match="cannot accept approval proofs"):
+        handler(**(arguments | {"approval_proof": "model-supplied-bearer"}))
+    assert not any(
+        item.record.qualname == "heinzel" and item.operation.name == "schedule-control"
+        for item in exposed(kernel, "mcp-http")
+    )
+
+    def invoke_with_tty(call_arguments: dict[str, object], *, approve: bool):
+        master, slave = pty.openpty()
+        real_open = os.open
+        terminal_prompt: list[str] = []
+        terminal_errors: list[str] = []
+
+        def open_terminal(path: str, flags: int, *args, **kwargs):
+            return os.dup(slave) if path == "/dev/tty" else real_open(path, flags, *args, **kwargs)
+
+        with monkeypatch.context() as patcher:
+            patcher.setattr(mcp.os, "open", open_terminal)
+
+            def answer_on_tty() -> None:
+                prompt = bytearray()
+                deadline = time.monotonic() + 3
+                while b"> " not in prompt:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0 or not select.select([master], [], [], max(0, remaining))[0]:
+                        terminal_errors.append("MCP did not show the exact schedule approval challenge")
+                        os.write(master, b"no\n")
+                        return
+                    prompt.extend(os.read(master, 4096))
+                displayed = prompt.decode("utf-8")
+                match = re.search(r"Type exactly: ([^\r\n]+)", displayed)
+                if match is None:
+                    terminal_errors.append("MCP approval prompt omitted its challenge")
+                    os.write(master, b"no\n")
+                    return
+                terminal_prompt.append(displayed)
+                answer = match.group(1) if approve else "no"
+                os.write(master, f"{answer}\n".encode())
+
+            reader = threading.Thread(target=answer_on_tty)
+            reader.start()
+
+            async def call_tool():
+                async with Client(mcp.build(kernel)) as connected:
+                    return await connected.call_tool("heinzel_schedule_control", call_arguments)
+
+            response = anyio.run(call_tool)
+            reader.join(timeout=3)
+            os.close(master)
+            os.close(slave)
+            assert not reader.is_alive()
+            assert terminal_errors == []
+            assert len(terminal_prompt) == 1
+            displayed = terminal_prompt[0]
+            assert call_arguments["session_id"] in displayed
+            assert call_arguments["expected_preview_hash"] in displayed
+            return response, displayed
+
+    rejected, _ = invoke_with_tty(arguments, approve=False)
+    assert rejected.is_error
+    with user.local("cli"):
+        assert crud.snapshot(created.session_id).schedule.status == "proposed"
+        assert not any(
+            event.kind in {"approval.issued", "schedule.activated"}
+            for event in PersonalSessionRepository(user).control_read(created.session_id).events
+        )
+
+    activated, shown = invoke_with_tty(arguments, approve=True)
+    assert not activated.is_error
+    assert activated.structured_content["schedule"]["status"] == "active"
+    assert schedule.summary in shown
+    assert schedule.cron in shown
+    assert schedule.timezone in shown
+    with pytest.raises(ToolError, match="schedule changed"):
+        handler(**arguments)
+    with user.local("cli"):
+        events = PersonalSessionRepository(user).control_read(created.session_id).events
+    assert sum(event.kind == "approval.issued" for event in events) == 1
+    assert sum(event.kind == "schedule.activated" for event in events) == 1
+
+    foreign = CurrentUser(tmp_path / "foreign-owner" / "identity")
+    with foreign.local("cli"):
+        foreign_crud = _crud(foreign)
+        foreign_created = foreign_crud.new_chat("foreign-mcp-create", "Foreign helper")
+        foreign_proposal = foreign_crud.propose_check_in(foreign_created.session_id, "foreign-mcp-proposal", "UTC")
+    assert foreign_proposal.schedule is not None
+    foreign_arguments = {
+        "session_id": foreign_created.session_id,
+        "request_id": "foreign-mcp-activate",
+        "expected_revision": foreign_proposal.schedule.revision,
+        "action": "activate",
+        "expected_contract_version": foreign_proposal.schedule.contract_version,
+        "expected_preview_hash": foreign_proposal.schedule.preview_hash,
+    }
+    with pytest.raises(ToolError):
+        handler(**foreign_arguments)
+    with foreign.local("cli"):
+        assert foreign_crud.snapshot(foreign_created.session_id).schedule.status == "proposed"
+        foreign_events = PersonalSessionRepository(foreign).control_read(foreign_created.session_id).events
+    assert not any(event.kind in {"approval.issued", "schedule.activated"} for event in foreign_events)
 
 
 def test_mcp_handoff_crashes_fail_closed_before_and_after_the_schedule_commit(kernel, tmp_path, monkeypatch):

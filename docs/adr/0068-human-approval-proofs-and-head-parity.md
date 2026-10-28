@@ -120,8 +120,9 @@ transport choice must not change data ownership or permit an agent to authorize 
 
 The first implementation slice supplies trusted principal contexts and the authenticated private API. The personal
 five-minute check-in now has a production issuer behind the internal `ApprovalIssuer` kernel service. It is called
-only after the CLI or paired web directly confirms, or authorizes for one later MCP run, a stored exact-intent
-proposal; there is no proof-issue operation exposed to MCP. The issuer rechecks the schedule under its owner-scoped writer lock,
+only after the CLI or paired web directly confirms, authorizes for one later MCP run, or a direct stdio MCP request
+receives a fresh controlling-terminal challenge for a stored exact-intent proposal; there is no proof-issue operation
+exposed to MCP. The issuer rechecks the schedule under its owner-scoped writer lock,
 records a five-minute proof hash, and the normal `schedule_control` operation consumes the proof with the schedule
 effect. The web UI creates and inspects the proposal in the personal-session panel, then presents the exact action
 card with direct-confirm and authorize-for-MCP choices. CLI users can stage and confirm the same operation, or
@@ -142,16 +143,18 @@ no proof in API/MCP results, and replay refusal.
 
 This is a schedule-specific server-side handoff, not a bearer token exported into MCP parameters. MCP clients can
 retain tool arguments and transcripts, so passing the raw proof through a tool parameter would not meet the
-no-token-in-logs requirement; the installed MCP SDK has no elicitation channel for an out-of-band secret. The private
-proof file is readable by the same OS principal as Heinzel, so this protects against model/tool-result exposure and
-other local users, not a compromised process running as the owner. CLI/web authorization and MCP consumption must run
-under the same local principal and configured state directory; the normal chat runner carries the project directory
+no-token-in-logs requirement; the installed MCP SDK has no elicitation channel for a human answer. Direct stdio MCP
+schedule activation and resume therefore display the exact intent on `/dev/tty`, require a fresh random challenge
+within 60 seconds, mint and consume the proof internally, and omit the proof field from the tool schema. Calls without
+a controlling terminal fail closed. The MCP tool caller cannot supply the challenge answer as an argument. This is
+application-level confirmation, not hardware-backed proof of presence; a hostile process running as the same owner
+can access that user's controlling terminal and state. CLI/web authorization and MCP consumption must run under the
+same local principal and configured state directory; the normal chat runner carries the project directory
 used to open the chat. Web authorization accepts only the paired `web-session` or `web-device` identity. CLI
 authorization requires an interactive terminal and a typed session/action challenge; a
 headless CLI call is refused. A different profile, state directory, host or principal has no handoff and fails closed.
-MCP does not prompt a person or mint approvals: if no person authorized it first through CLI/web, the consumer
-refuses. The TTY check is still application-level confirmation, not proof of physical presence against a hostile
-same-user process.
+The chat-scoped MCP consumer still requires a CLI/web-issued private grant; direct MCP stdio schedule-control uses
+the separate local-terminal flow above. MCP over HTTP cannot access these private operations.
 Other action types do not yet have this handoff. The MCP model can choose when to consume an already-approved exact
 action, but cannot change or create that intent.
 
@@ -162,16 +165,18 @@ current intent and revisions, revocation and expiry. The schedule action calls t
 writer lock. It stores the exact proof hash, intent and schedule snapshot in one `schedule.activated` or
 `schedule.resume` event, and recognizes a prior event without authorizing a second effect. Test-only synthetic records
 are not human decisions. The record and current intent come from trusted services, never a request or model response.
-A retry resolves the existing disposition from that journal, including after proof expiry. The private API, stdio MCP
-and CLI/web heads accept the same proof-bearing schedule operation; the user-facing chat issuer either executes it
-directly after confirmation or keeps the proof private for the MCP handoff. It never returns a transferable proof. The CLI still accepts `--approval-proof -` and reads
+A retry resolves the existing disposition from that journal, including after proof expiry. The private API and CLI/web
+heads accept the same proof-bearing schedule operation. Stdio MCP strips the proof field and issues/consumes it
+internally only after its TTY challenge; the user-facing chat issuer either executes directly after confirmation or
+keeps the proof private for the MCP handoff. No head returns a transferable proof. The CLI still accepts `--approval-proof -` and reads
 external proof input from hidden input or stdin instead of argv.
 
-The chat confirmation boundary is an explicit app decision, not hardware-backed presence: the CLI `confirm` command
-and paired web button run the exact stored arguments; the chat MCP head cannot issue a human decision and can only
-consume the schedule-specific private handoff above. Authentication alone does not mint proof. A compromised trusted host or same-origin
+The human confirmation boundary is an explicit app or local-terminal decision, not hardware-backed presence: the CLI
+`confirm` command and paired web button run the exact stored arguments; a model-facing MCP call cannot issue a human
+decision, and direct stdio MCP confirmation is obtained only from the controlling terminal. The chat MCP head can
+also consume the schedule-specific private handoff above. Authentication alone does not mint proof. A compromised trusted host or same-origin
 web code can still act as the owner; this flow does not claim otherwise. Passkey enrollment is not required for this
 five-minute use case. An optional stronger factor could add WebAuthn user verification later, with the extra enrollment
-and recovery cost. Other direct API/MCP consumers can still accept proof-bearing private inputs; no human UI exports
-raw proof for manual transfer. The issuer, revocation and all revisions needed at consumption are
+and recovery cost. The private API still accepts proof-bearing inputs from trusted user clients; stdio MCP does not
+accept proof input, and no human UI exports raw proof for manual transfer. The issuer, revocation and all revisions needed at consumption are
 coordinated with the action's authoritative journal, so a stale schedule fails closed.

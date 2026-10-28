@@ -6,23 +6,36 @@ description from the docstring, its output schema from the return model, and `re
 With `chat=<session>` (`hz system serve mcp --chat <session>`, started over stdio by the agent of a chat, ADR 0045)
 it serves the same tools to that one chat, and enforces the chat's rule in code: a read-only operation runs and
 returns its result as JSON without email addresses; any other operation does not run. It is handed to the
-`ActionGate` as a proposal, and the tool returns its action id. Ordinary MCP calls cannot confirm themselves. A
-separate chat tool can consume a one-use approval the person issued through CLI or paired web; the proof stays in
-private state and never appears in MCP arguments or results. Tools follow the MCP head's own exposure, so what a UI
-hides from beginners is still a tool here.
+`ActionGate` as a proposal, and the tool returns its action id. MCP cannot supply an approval proof. Direct stdio MCP
+schedule activation or resume requires a separate exact-intent challenge typed on the controlling terminal; without
+that terminal, the call fails closed. Chat MCP can consume a one-use approval the person issued through CLI or paired
+web; the proof stays in private state and never appears in MCP arguments or results. Tools follow the MCP head's own
+exposure, so what a UI hides from beginners is still a tool here.
 """
 
+from __future__ import annotations
+
 import inspect
+import io
 import json
 import logging
+import os
+import secrets
+import select
 import shlex
+import stat
 from collections.abc import Callable
-from typing import Any, Literal
+from dataclasses import replace
+from threading import Lock
+from typing import TYPE_CHECKING, Any, Literal
 
 from mcp.server import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import ToolAnnotations
 from pydantic_core import to_jsonable_python
+
+if TYPE_CHECKING:
+    from pydantic import JsonValue
 
 from heinzel import __version__
 from heinzel.heads._exposure import MCP_HTTP, Exposed, exposed
@@ -38,9 +51,11 @@ from heinzel.kernel import (
     boot,
     redact_emails,
 )
+from heinzel.kernel._approval import ApprovalIssuer
 
 HEAD = "mcp"
 log = logging.getLogger(__name__)
+_SCHEDULE_APPROVAL_LOCK = Lock()
 INSTRUCTIONS = (
     "Heinzelmännchen helps product development teams with the busywork of running a team. Tools are named after "
     "their command path: `system_doctor` is `hz system doctor`. Start with `system_info` or `system_doctor`; tools "
@@ -103,12 +118,13 @@ def build(
         annotations = ToolAnnotations(
             read_only_hint=item.operation.read_only, destructive_hint=not item.operation.read_only
         )
+        tool_item = _mcp_item(item)
         server.add_tool(
-            tool(kernel, item, local=transport == "stdio")
+            tool(kernel, tool_item, local=transport == "stdio")
             if chat is None
-            else chat_tool(kernel, item, chat, local=transport == "stdio"),
-            name=item.name,
-            description=item.operation.summary,
+            else chat_tool(kernel, tool_item, chat, local=transport == "stdio"),
+            name=tool_item.name,
+            description=tool_item.operation.summary,
             annotations=annotations,
         )
         # Old tool names of renamed operations, for the one minor release both work (ADR 0051); a chat gets the
@@ -118,7 +134,7 @@ def build(
                 continue
             names.add(alias)
             server.add_tool(
-                _signed(tool(kernel, item, local=transport == "stdio"), item, item.returns, name=alias),
+                _signed(tool(kernel, tool_item, local=transport == "stdio"), tool_item, item.returns, name=alias),
                 name=alias,
                 description=f"Deprecated: use `{item.name}`, which this runs; goes in the next minor release. "
                 f"{item.operation.summary}",
@@ -127,6 +143,14 @@ def build(
     if transport == "stdio" and chat is None:  # skills may be internal: only for a client that started hz as you
         add_skills(server, kernel)
     return server
+
+
+def _mcp_item(item: Exposed) -> Exposed:
+    """Never ask an MCP caller for a bearer proof; stdio obtains human approval at its local terminal."""
+    if item.record.qualname != "heinzel" or item.operation.name != "schedule-control":
+        return item
+    parameters = tuple(parameter for parameter in item.parameters if parameter.name != "approval_proof")
+    return replace(item, parameters=parameters)
 
 
 def _verify_chat(kernel: Kernel, transport: Transport, chat: str | None) -> None:
@@ -170,11 +194,106 @@ def tool(kernel: Kernel, item: Exposed, *, local: bool = True) -> Callable[..., 
         try:
             with user.local("mcp-stdio") if local else user.using(None):
                 mark_authenticated_presence(kernel, item.record.qualname)
+                if _is_schedule_approval(item, kwargs):
+                    kwargs = _authorize_mcp_schedule(kernel, item, kwargs, local=local)
                 return kernel.invoke(item.operation, **kwargs)
         except HeinzelError as exc:
             raise ToolError(str(exc)) from exc
 
     return _signed(run, item, item.returns)
+
+
+def _is_schedule_approval(item: Exposed, arguments: dict[str, Any]) -> bool:
+    return (
+        item.record.qualname == "heinzel"
+        and item.operation.name == "schedule-control"
+        and arguments.get("action") in {"activate", "resume"}
+    )
+
+
+def _authorize_mcp_schedule(kernel: Kernel, item: Exposed, arguments: dict[str, Any], *, local: bool) -> dict[str, Any]:
+    """Issue an internal proof only after an exact MCP request is approved on its controlling terminal.
+
+    Raises:
+        HeinzelError: If this is not a local, human-confirmed schedule action.
+    """
+    if not local:
+        msg = "Schedule approval requires a trusted local stdio MCP connection"
+        raise HeinzelError(msg)
+    if arguments.get("approval_proof") is not None:
+        msg = "MCP cannot accept approval proofs; confirm this exact action on the controlling terminal"
+        raise HeinzelError(msg)
+    approval_arguments: dict[str, JsonValue] = {
+        name: to_jsonable_python(arguments[name], fallback=str)
+        for name in (
+            "session_id",
+            "request_id",
+            "expected_revision",
+            "action",
+            "expected_contract_version",
+            "expected_preview_hash",
+        )
+        if name in arguments
+    }
+    issuer = kernel.resolve(ApprovalIssuer)
+    current_schedule = issuer.review(item.record.qualname, item.operation.name, approval_arguments)
+    _confirm_schedule_on_tty({"requested_control": approval_arguments, "current_schedule": current_schedule})
+    proof = issuer.issue(
+        item.record.qualname,
+        item.operation.name,
+        approval_arguments,
+        "human-mcp-terminal-confirmation",
+    )
+    return arguments | {"approval_proof": proof}
+
+
+def _confirm_schedule_on_tty(arguments: dict[str, Any]) -> None:
+    """Require an explicit local-terminal challenge; never fall back to MCP stdin or protocol output.
+
+    Raises:
+        HeinzelError: If no controlling terminal exists, the challenge is declined or its 60-second window expires.
+    """
+    challenge = f"approve schedule {secrets.token_hex(3)}"
+    review = json.dumps(arguments, ensure_ascii=False, sort_keys=True, indent=2)
+    with _SCHEDULE_APPROVAL_LOCK:
+        descriptor = -1
+        terminal_fd = -1
+        try:
+            descriptor = os.open("/dev/tty", os.O_RDWR | os.O_NOCTTY | os.O_CLOEXEC)
+            _require_controlling_tty(descriptor)
+            terminal_fd = os.dup(descriptor)
+            raw = io.FileIO(terminal_fd, "r+")
+            terminal_fd = -1
+            with io.TextIOWrapper(raw, encoding="utf-8", errors="strict", line_buffering=True) as terminal:
+                terminal.write("Human approval requested for this exact schedule action:\n")
+                terminal.write(review)
+                terminal.write(f"\nType exactly: {challenge}\n> ")
+                terminal.flush()
+                ready, _, _ = select.select([descriptor], [], [], 60)
+                answer = terminal.readline(256) if ready else ""
+        except (OSError, UnicodeError):
+            msg = "MCP schedule approval needs a controlling terminal; use the paired web review instead"
+            raise HeinzelError(msg) from None
+        finally:
+            if terminal_fd >= 0:
+                os.close(terminal_fd)
+            if descriptor >= 0:
+                os.close(descriptor)
+    if not answer.endswith("\n") or not secrets.compare_digest(answer.rstrip("\r\n"), challenge):
+        msg = "MCP schedule approval was not confirmed"
+        raise HeinzelError(msg)
+
+
+def _require_controlling_tty(descriptor: int) -> None:
+    """Verify the descriptor is a real controlling terminal.
+
+    Raises:
+        OSError: If the descriptor is not a character terminal.
+    """
+    info = os.fstat(descriptor)
+    if not stat.S_ISCHR(info.st_mode) or not os.isatty(descriptor):
+        msg = "no controlling terminal"
+        raise OSError(msg)
 
 
 def chat_tool(kernel: Kernel, item: Exposed, session: str, *, local: bool) -> Callable[..., str]:

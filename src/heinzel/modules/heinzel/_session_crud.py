@@ -874,12 +874,67 @@ class SessionCrud(ApprovalIssuer):
                 )
         return self.snapshot(session_id)
 
+    def review(self, module: str, operation: str, arguments: dict[str, JsonValue]) -> dict[str, JsonValue]:
+        """Describe the exact current schedule to its owner without creating approval state.
+
+        Raises:
+            HeinzelError: If the action is unsupported, foreign or stale.
+        """
+        invalid = "Approval is invalid or unavailable"
+        if module != "heinzel" or operation != "schedule-control" or "approval_proof" in arguments:
+            raise HeinzelError(invalid)
+        try:
+            session_id = _SESSION_ID.validate_python(arguments["session_id"])
+            request_id = str(_REQUEST.validate_python(arguments["request_id"]))
+            action = arguments["action"]
+            revision = arguments["expected_revision"]
+            contract_version = arguments["expected_contract_version"]
+            preview_hash = arguments["expected_preview_hash"]
+        except (KeyError, TypeError, ValueError, ValidationError):
+            raise HeinzelError(invalid) from None
+        if (
+            not isinstance(action, str)
+            or action not in {"activate", "resume"}
+            or type(revision) is not int
+            or revision < 1
+            or type(contract_version) is not int
+            or contract_version < 1
+            or not isinstance(preview_hash, str)
+            or len(preview_hash) != HASH_LENGTH
+            or any(char not in "0123456789abcdef" for char in preview_hash)
+        ):
+            raise HeinzelError(invalid)
+        snapshot = self.snapshot(session_id)
+        schedule = snapshot.schedule
+        expected_status = "proposed" if action == "activate" else "paused"
+        if (
+            schedule is None
+            or schedule.revision != revision
+            or schedule.contract_version != contract_version
+            or schedule.preview_hash != preview_hash
+            or schedule.status != expected_status
+        ):
+            msg = "This schedule changed; reload before reviewing it"
+            raise HeinzelError(msg)
+        return {
+            "name": snapshot.name,
+            "action": action,
+            "summary": schedule.summary,
+            "cron": schedule.cron,
+            "timezone": schedule.timezone,
+            "status": schedule.status,
+            "revision": schedule.revision,
+            "contract_version": schedule.contract_version,
+            "preview_hash": schedule.preview_hash,
+            "request_id": request_id,
+        }
+
     def issue(self, module: str, operation: str, arguments: dict[str, JsonValue], provenance: str) -> str:
         """Issue a short-lived check-in proof after ChatService confirms its stored action.
 
-        The only supported caller is the kernel's non-operation `ApprovalIssuer` service, reached by a trusted
-        CLI/web confirmation or schedule-authorization boundary. Recheck the authoritative schedule under its writer
-        lock.
+        The only supported caller is the kernel's non-operation `ApprovalIssuer` service, reached by trusted CLI/web
+        confirmation, a CLI/web MCP-authorization boundary, or the stdio MCP head after terminal confirmation.
+        Recheck the authoritative schedule under its writer lock.
 
         Raises:
             HeinzelError: If the proposal is not a supported check-in action or its preview has changed.

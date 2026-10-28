@@ -227,8 +227,8 @@ def test_propose_activate_pause_and_resume_five_minute_check_in_through_private_
     async def same_approval_from_stdio_mcp():
         async with Client(mcp.build(kernel)) as connected:
             result = await connected.call_tool("heinzel_schedule_control", {**activation, "approval_proof": approval})
-            assert not result.is_error
-            assert result.structured_content["schedule"]["status"] == "active"
+            assert result.is_error
+            assert "approval_proof" not in str(result.content)
 
     anyio.run(same_approval_from_stdio_mcp)
     with kernel.resolve(CurrentUser).local("cli"):

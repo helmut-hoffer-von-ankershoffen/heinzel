@@ -5,7 +5,8 @@ records are stored privately and never returned to the model or caller. The owni
 its current intent while holding its own journal lock. This records an application-level user decision, not
 hardware-backed proof of physical presence. CLI and paired web may issue a short-lived decision for a pending
 schedule action; the MCP chat head consumes that decision from private owner state, without accepting or returning a
-bearer. MCP still cannot issue the human decision itself.
+bearer. A direct stdio MCP schedule-control call may issue only after a separate challenge is typed on the local
+controlling terminal; no proof or human answer is accepted through model-facing tool parameters.
 """
 
 import hashlib
@@ -82,6 +83,15 @@ class ApprovalIssuer:
 
         Raises:
             HeinzelError: If this issuer does not own the action or its current intent cannot be approved.
+        """
+        msg = "Approval is invalid or unavailable"
+        raise HeinzelError(msg)
+
+    def review(self, _module: str, _operation: str, _arguments: dict[str, JsonValue]) -> dict[str, JsonValue]:
+        """Return an owner-scoped human-readable view of an exact intent without issuing a proof.
+
+        Raises:
+            HeinzelError: If the action is unsupported or its current intent cannot be reviewed.
         """
         msg = "Approval is invalid or unavailable"
         raise HeinzelError(msg)
@@ -244,8 +254,9 @@ def consume_approval(  # noqa: PLR0912, PLR0913, PLR0917, C901 - one locked vali
     authoritative revisions from state protected by this same lock, never from a model or transport. A changed
     request cannot reuse the nonce. Existing intents may be read after expiry, but `existing` never authorizes another
     effect. A journal-backed action can provide its event kind and effect data so authorization and the resulting
-    state share one durable event. MCP cannot self-issue proofs; its restricted chat consumer can only use a private
-    proof previously issued by a trusted human boundary.
+    state share one durable event. MCP tool calls cannot self-issue proofs: a direct stdio schedule-control call
+    obtains terminal confirmation first, then issues and consumes its proof internally; the restricted chat consumer
+    can use only a private proof previously issued by a trusted human boundary.
 
     Raises:
         HeinzelError: If the proof, stored decision or current authority is invalid.
