@@ -604,7 +604,7 @@ def test_receipt_directory_creation_syncs_parent(make_kernel, tool_env, monkeypa
     monkeypatch.setattr(_receipts, "_fsync_directory", record_sync)
     PluginReceipts(new_state).create(preview.candidate)
 
-    assert new_state / "plugin-operations" in synced
+    assert new_state in synced
 
 
 def test_receipt_install_lock_is_shared_between_processes(tmp_path):
