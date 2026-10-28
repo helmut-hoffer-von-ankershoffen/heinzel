@@ -126,7 +126,7 @@ describe("World clock", () => {
     vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({} as WebGLRenderingContext);
     create.mockReturnValue({ destroy, update });
     show();
-    const marker = await screen.findByRole("button", { name: "Berlin", exact: true });
+    const marker = await screen.findByRole("button", { name: "Berlin" });
     await userEvent.hover(marker);
     expect(await screen.findByRole("tooltip")).toHaveTextContent(/^Berlin$/);
     marker.focus();
