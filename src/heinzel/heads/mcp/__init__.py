@@ -28,8 +28,16 @@ from heinzel import __version__
 from heinzel.heads._exposure import MCP_HTTP, Exposed, exposed
 from heinzel.heads._presence import mark_authenticated_presence
 from heinzel.heads.mcp._skills import add_skills
-from heinzel.kernel import ActionGate, CurrentUser, HeinzelError, Kernel, ProposedCall, boot, redact_emails
-from heinzel.modules.system.runner.chat._store import ChatStore
+from heinzel.kernel import (
+    ActionGate,
+    CurrentUser,
+    HeinzelError,
+    Kernel,
+    McpChatSessions,
+    ProposedCall,
+    boot,
+    redact_emails,
+)
 
 HEAD = "mcp"
 log = logging.getLogger(__name__)
@@ -66,6 +74,7 @@ def build(
     Raises:
         HeinzelError: If the personal check-in tool profile is requested for a chat without its durable context.
     """
+    _verify_chat(kernel, transport, chat)
     server = MCPServer(
         name="heinzel",
         title="Heinzelmännchen",
@@ -95,7 +104,9 @@ def build(
             read_only_hint=item.operation.read_only, destructive_hint=not item.operation.read_only
         )
         server.add_tool(
-            tool(kernel, item, local=transport == "stdio") if chat is None else chat_tool(kernel, item, chat),
+            tool(kernel, item, local=transport == "stdio")
+            if chat is None
+            else chat_tool(kernel, item, chat, local=transport == "stdio"),
             name=item.name,
             description=item.operation.summary,
             annotations=annotations,
@@ -118,14 +129,29 @@ def build(
     return server
 
 
+def _verify_chat(kernel: Kernel, transport: Transport, chat: str | None) -> None:
+    """Bind chat-mode tools to a verified local stdio identity and an existing local chat.
+
+    Raises:
+        HeinzelError: If chat mode is requested over HTTP or its local session is unavailable.
+    """
+    if chat is None:
+        return
+    if transport != "stdio":
+        msg = "A chat's tools are served over stdio only, never on a port."
+        raise HeinzelError(msg)
+    # The agent cannot choose this principal: only this local child transport can construct a chat server.
+    with kernel.resolve(CurrentUser).local_read("mcp-stdio"):
+        kernel.resolve(McpChatSessions).require(chat)
+
+
 def _check_in_items(kernel: Kernel, chat: str) -> list[Exposed]:
     """The one proposal tool, only for a durable chat bound to its owner's session.
 
     Raises:
         HeinzelError: If the chat is not a durable check-in context.
     """
-    scoped_chat = kernel.resolve(ChatStore).load(chat)
-    if scoped_chat.context is None or scoped_chat.context.kind != "check-in" or scoped_chat.context.timezone is None:
+    if not kernel.resolve(McpChatSessions).is_check_in(chat):
         msg = "The personal-check-in tool profile requires a durable check-in chat"
         raise HeinzelError(msg)
     return [
@@ -151,13 +177,17 @@ def tool(kernel: Kernel, item: Exposed, *, local: bool = True) -> Callable[..., 
     return _signed(run, item, item.returns)
 
 
-def chat_tool(kernel: Kernel, item: Exposed, session: str) -> Callable[..., str]:
+def chat_tool(kernel: Kernel, item: Exposed, session: str, *, local: bool) -> Callable[..., str]:
     """The tool of one chat session: runs a read-only operation, and only proposes any other (ADR 0045)."""
+    user = kernel.resolve(CurrentUser)
 
     def run(**kwargs: Any) -> str:  # noqa: ANN401 - the operation's own parameters
         try:
             if item.operation.read_only:
-                result = kernel.invoke(item.operation, **kwargs)
+                # The chat MCP server is a local stdio child, like the regular MCP head. Give reads the trusted
+                # installation identity, while keeping the chat-specific exposed tool list as the access boundary.
+                with user.local_read("mcp-stdio") if local else user.using(None):
+                    result = kernel.invoke(item.operation, **kwargs)
                 # Redacted before it is cut, so no address is cut into something the pattern misses.
                 text = redact_emails(json.dumps(to_jsonable_python(result, fallback=str), ensure_ascii=False))
                 return text[:RESULT_LIMIT] + ("…(cut)" if len(text) > RESULT_LIMIT else "")

@@ -20,6 +20,7 @@ from pathlib import Path
 from pydantic import JsonValue, ValidationError
 
 from heinzel import ActionGate, HeinzelError, Kernel, ProposedCall, Settings
+from heinzel.kernel import McpChatSessions
 from heinzel.modules.system.runner._models import RunnerSettings
 from heinzel.modules.system.runner.chat._models import (
     ChatAction,
@@ -75,7 +76,7 @@ def _write_private(path: Path, text: str) -> None:
             temporary.unlink()
 
 
-class ChatStore:
+class ChatStore(McpChatSessions):
     """Reads, writes and prunes chat sessions."""
 
     def __init__(self, settings: Settings, chat: ChatSettings, runner: RunnerSettings) -> None:
@@ -140,6 +141,15 @@ class ChatStore:
             action.command = describe(action.module, action.operation, action.arguments)
         chat.costs = self.costs(chat.messages)
         return chat
+
+    def require(self, session_id: str) -> None:
+        """Validate existence without exposing this head's private chat model."""
+        self.load(session_id)
+
+    def is_check_in(self, session_id: str) -> bool:
+        """Whether a local chat is bound to a durable personal check-in."""
+        context = self.load(session_id).context
+        return context is not None and context.kind == "check-in" and context.timezone is not None
 
     def save(self, chat: ChatSession) -> None:
         """Write `chat` atomically, readable by this user only.

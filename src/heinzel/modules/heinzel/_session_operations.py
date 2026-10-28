@@ -8,7 +8,12 @@ from typing import Annotated, Literal
 from pydantic import Field, JsonValue
 
 from heinzel import Config, CurrentUser, HeinzelError, Module
-from heinzel.kernel import DaemonAttestation
+from heinzel.kernel import (
+    CheckInChatContext,
+    CheckInChatContextSource,
+    CheckInHistoryMessage,
+    DaemonAttestation,
+)
 from heinzel.kernel._approval import ApprovalConfirmation, ApprovalIssuer
 from heinzel.modules.heinzel._models import HeinzelSettings
 from heinzel.modules.heinzel._session_crud import SessionCrud
@@ -84,11 +89,36 @@ def _approval_confirmation() -> ApprovalConfirmation:
     return ApprovalConfirmation()
 
 
+class _CheckInContextSource(CheckInChatContextSource):
+    """Project only the bounded fields runner chat needs from the current owner's durable session."""
+
+    def __init__(self, service: SessionCrud) -> None:
+        self.service = service
+
+    def get(self, session_id: str) -> CheckInChatContext:
+        snapshot = self.service.snapshot(session_id, limit=200)
+        history = self.service.recent_history(session_id)
+        schedule = snapshot.schedule
+        return CheckInChatContext(
+            name=snapshot.name,
+            state=snapshot.state,
+            schedule_status=schedule.status if schedule is not None else None,
+            cron=schedule.cron if schedule is not None else None,
+            timezone=schedule.timezone if schedule is not None else None,
+            history=tuple(CheckInHistoryMessage(role=item.role, text=item.text) for item in history),
+        )
+
+
+def _check_in_context_source(service: SessionCrud) -> CheckInChatContextSource:
+    return _CheckInContextSource(service)
+
+
 def register_session_operations(module: Module) -> None:  # noqa: C901 - operation declarations define one shared head surface
     """Register once on the owning module; constructing the service performs no private I/O."""
     module.service(SessionCrud, _crud)
     module.service(ApprovalIssuer, _approval_issuer)
     module.service(ApprovalConfirmation, _approval_confirmation)
+    module.service(CheckInChatContextSource, _check_in_context_source)
 
     @module.operation(private=True, read_only=False, audience="everyday")
     def new_chat(

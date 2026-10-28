@@ -93,7 +93,7 @@ def fake_runner_module(script: Script, ran: list[str]) -> Module:
             surface = {item.name: item for item in exposed(script.kernel, head)}
             for name, arguments in script.calls:
                 emit("tool", {"name": name})
-                mcp.chat_tool(script.kernel, surface[name], session)(**arguments)
+                mcp.chat_tool(script.kernel, surface[name], session, local=True)(**arguments)
             if script.result is not None:
                 return script.result
             for word in WORDS:
@@ -270,6 +270,7 @@ def test_runner_chat_can_only_propose_the_bound_inactive_check_in(kernel, script
         assert chat["context"]["detail"].find("Keep our notes local.") >= 0
         assert chat["context"]["timezone"] == timezone
         assert hz(kernel, "chat", "open", "--context", f"check-in:{durable.session_id}").exit_code == 1
+        unrelated = crud.new_chat("unrelated-check-in-owner", "Unrelated session")
 
         async def listed_tools() -> set[str]:
             async with Client(mcp.build(kernel, chat=chat["id"], chat_tools="personal-check-in")) as client:
@@ -279,9 +280,15 @@ def test_runner_chat_can_only_propose_the_bound_inactive_check_in(kernel, script
                     {"session_id": durable.session_id, "request_id": "wrong-timezone", "timezone": "UTC"},
                 )
                 assert wrong.is_error
+                unbound = await client.call_tool(
+                    "heinzel_propose_check_in",
+                    {"session_id": unrelated.session_id, "request_id": "other-session", "timezone": timezone},
+                )
+                assert unbound.is_error
                 return names
 
         assert anyio.run(listed_tools) == {"heinzel_propose_check_in"}
+        assert not kernel.resolve(ChatService)._store.load(chat["id"]).actions
         ordinary_chat = service.open(None)
         with pytest.raises(HeinzelError, match="requires a durable check-in chat"):
             mcp.build(kernel, chat=ordinary_chat.id, chat_tools="personal-check-in")

@@ -12932,6 +12932,7 @@ export interface operations {
             query: {
                 /** @description The durable personal session id from `hz heinzel sessions` or the personal Heinzel page. */
                 session_id: string;
+                /** @description A stable id for opening or resuming this scoped chat. */
                 request_id: string;
                 /** @description The IANA time zone to use for this schedule preview. */
                 timezone: string;

@@ -239,6 +239,7 @@ $ hz chat [OPTIONS] COMMAND [ARGS]...
 * `decline`: Decline an action the agent proposed; it...
 * `list`: List chat sessions, most recent first;...
 * `open`: Open a chat session, optionally about a...
+* `open-check-in`: Open a runner chat bound to this owner&#x27;s...
 * `propose-schedule-control`: Stage a schedule action for review in...
 * `recover`: Check an interrupted confirmation without...
 * `remove`: (expert) Delete a chat session and...
@@ -363,6 +364,28 @@ $ hz chat open [OPTIONS]
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
 
+### `hz chat open-check-in`
+
+Open a runner chat bound to this owner&#x27;s durable session and current conversation history.
+
+**Usage**:
+
+```console
+$ hz chat open-check-in [OPTIONS] {session_id} {request_id} {timezone}
+```
+
+**Arguments**:
+
+* `session_id`: The durable personal session id from `hz heinzel sessions` or the personal Heinzel page.  [required]
+* `request_id`: A stable id for opening or resuming this scoped chat.  [required]
+* `timezone`: The IANA time zone to use for this schedule preview.  [required]
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
 ### `hz chat propose-schedule-control`
 
 Stage a schedule action for review in chat; creating the proposal never changes or activates it.
@@ -449,6 +472,7 @@ $ hz chat send [OPTIONS] {session} {message}
 * `--budget-usd <float>`: Most this answer may cost in US dollars, within the per-message and session caps.
 * `--model <str>`: The model this chat uses from now on, one `hz ai models` lists, e.g. `sonnet`; empty goes back to the default.
 * `--effort <|low|medium|high|xhigh|max>`: The effort this chat uses from now on: low, medium, high, xhigh or max; empty: the default.
+* `--request-id <str>`: Stable id for a safe exact-message retry.
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
@@ -2674,7 +2698,7 @@ $ hz system serve mcp [OPTIONS]
 * `--port <int>`: Port for streamable-http.  [default: 8765]
 * `--chat SESSION`: Serve the tools of this chat session: reads run, everything else waits for your confirmation in the chat. Started by `hz chat` for its agent, over stdio only.
 * `--project <path>`: Read the configuration as if started in this directory (its hz.toml), as the chat does.
-* `--chat-tools <everyday|all>`: With --chat: the everyday operations as tools (cheaper messages), or all of them.  [default: everyday]
+* `--chat-tools <everyday|all|personal-check-in>`: With --chat: the everyday operations as tools (cheaper messages), or all of them.  [default: everyday]
 * `--help`: Show this message and exit.
 
 ### `hz system skill`

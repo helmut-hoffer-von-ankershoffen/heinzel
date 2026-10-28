@@ -19,6 +19,12 @@ from heinzel.kernel._bindings import HOWS, Adapters, CapabilityView, How, Reques
 from heinzel.kernel._boot import boot
 from heinzel.kernel._capabilities import CAPABILITIES, MODES, NO_ADAPTER, Capability, Mode, Requirement
 from heinzel.kernel._chat import ActionGate, ProposedCall
+from heinzel.kernel._chat_services import (
+    CheckInChatContext,
+    CheckInChatContextSource,
+    CheckInHistoryMessage,
+    McpChatSessions,
+)
 from heinzel.kernel._config import (
     FILENAME,
     KERNEL_SECTION,
@@ -305,6 +311,9 @@ __all__ = [
     "CatchUp",
     "Chat",
     "Check",
+    "CheckInChatContext",
+    "CheckInChatContextSource",
+    "CheckInHistoryMessage",
     "CodeHost",
     "CommandFailed",
     "CompiledJobs",
@@ -379,6 +388,7 @@ __all__ = [
     "MailMessage",
     "MailQuery",
     "MailThread",
+    "McpChatSessions",
     "McpServer",
     "Meeting",
     "Meetings",

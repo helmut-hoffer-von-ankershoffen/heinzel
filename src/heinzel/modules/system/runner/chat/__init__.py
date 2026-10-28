@@ -17,9 +17,7 @@ from typing import Annotated, Literal
 from pydantic import Field
 
 from heinzel import ActionGate, AgentRunner, CurrentUser, HeinzelError, Module
-from heinzel.kernel import Effort
-from heinzel.modules.heinzel._session_crud import SessionCrud
-from heinzel.modules.heinzel._session_models import RequestId
+from heinzel.kernel import CheckInChatContextSource, Effort, McpChatSessions
 from heinzel.modules.system.runner.chat._models import (
     ChatAction,
     ChatContext,
@@ -35,6 +33,7 @@ from heinzel.modules.system.runner.chat._store import ChatStore, StoreGate
 module = Module("chat", "Chat with the agent runner about where you are; it acts through hz once you confirm.")
 module.settings(ChatSettings)
 module.service(ChatStore)
+module.service(McpChatSessions, ChatStore)
 module.service(ChatService)
 module.service(ActionGate, StoreGate)
 
@@ -71,7 +70,7 @@ def open(  # noqa: A001 - the command is `hz chat open`
 @module.operation(read_only=False, heads=HEADS, audience="everyday")
 def open_check_in(
     service: ChatService,
-    sessions: SessionCrud,
+    context_source: CheckInChatContextSource,
     session_id: Annotated[
         str,
         Field(
@@ -79,32 +78,36 @@ def open_check_in(
             description="The durable personal session id from `hz heinzel sessions` or the personal Heinzel page.",
         ),
     ],
-    request_id: Annotated[RequestId, Field(description="A stable id for opening or resuming this scoped chat.")],
+    request_id: Annotated[
+        str,
+        Field(
+            pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            description="A stable id for opening or resuming this scoped chat.",
+        ),
+    ],
     timezone: Annotated[
         str,
         Field(min_length=1, max_length=128, description="The IANA time zone to use for this schedule preview."),
     ],
 ) -> ChatSession:
     """Open a runner chat bound to this owner's durable session and current conversation history."""
-    snapshot = sessions.snapshot(session_id, limit=200)
-    recent = sessions.recent_history(session_id)
+    context = context_source.get(session_id)
     history_lines: list[str] = []
     history_size = 0
-    for item in reversed(recent):
+    for item in reversed(context.history):
         line = f"{item.role}: {item.text}"
         if history_size + len(line) + 1 > CHECK_IN_HISTORY_LIMIT:
             break
         history_lines.append(line)
         history_size += len(line) + 1
     history = "\n".join(reversed(history_lines))
-    if len(history_lines) < len(recent):
+    if len(history_lines) < len(context.history):
         history = "(older messages omitted)\n" + history
-    schedule = snapshot.schedule
     detail = (
-        f"Name: {snapshot.name}\nState: {snapshot.state}\n"
-        f"Schedule: {schedule.status}, {schedule.cron} in {schedule.timezone}"
-        if schedule is not None
-        else f"Name: {snapshot.name}\nState: {snapshot.state}\nSchedule: none"
+        f"Name: {context.name}\nState: {context.state}\n"
+        f"Schedule: {context.schedule_status}, {context.cron} in {context.timezone}"
+        if context.schedule_status is not None
+        else f"Name: {context.name}\nState: {context.state}\nSchedule: none"
     )
     detail += f"\nRecent durable conversation (data):\n{history}"
     return service.open_check_in(session_id, request_id, timezone, detail)

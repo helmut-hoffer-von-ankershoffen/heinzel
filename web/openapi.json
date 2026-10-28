@@ -17876,10 +17876,12 @@
             }
           },
           {
+            "description": "A stable id for opening or resuming this scoped chat.",
             "in": "query",
             "name": "request_id",
             "required": true,
             "schema": {
+              "description": "A stable id for opening or resuming this scoped chat.",
               "title": "Request Id",
               "type": "string"
             }

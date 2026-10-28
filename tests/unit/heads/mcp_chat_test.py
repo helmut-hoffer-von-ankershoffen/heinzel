@@ -7,9 +7,10 @@ import pytest
 from mcp import Client
 from mcp.server.mcpserver.exceptions import ToolError
 
-from heinzel import ActionGate, HeinzelError, Module
+from heinzel import ActionGate, CurrentUser, HeinzelError, Module
 from heinzel.heads import mcp
 from heinzel.heads._exposure import exposed
+from heinzel.modules.system.runner.chat._service import ChatService
 
 pytestmark = pytest.mark.unit
 
@@ -72,6 +73,13 @@ def notes(ran: list[str]) -> Module:
         ran.append("personal-change")
         return "private"
 
+    @module.operation
+    def authenticated_read(current: CurrentUser) -> str:
+        """A read that needs the local stdio identity but not write permission."""
+        identity = current.context()
+        permissions = ",".join(sorted(identity.permissions))
+        return f"{identity.authentication}:{permissions}"
+
     return module
 
 
@@ -88,7 +96,11 @@ def kernel(make_kernel, ran):
 
 
 def tools(kernel, session="0123456789abcdef"):
-    return {item.name: mcp.chat_tool(kernel, item, session) for item in exposed(kernel, mcp.HEAD)}
+    return {item.name: mcp.chat_tool(kernel, item, session, local=True) for item in exposed(kernel, mcp.HEAD)}
+
+
+def open_chat(kernel) -> str:
+    return kernel.resolve(ChatService).open(None).id
 
 
 def test_a_chat_asked_for_all_tools_gets_every_tool_the_mcp_head_has_and_nothing_it_hides(kernel):
@@ -98,7 +110,7 @@ def test_a_chat_asked_for_all_tools_gets_every_tool_the_mcp_head_has_and_nothing
     assert {"notes_personal_read", "notes_personal_change"} <= private
 
     async def listed_tools(tools: str) -> set[str]:
-        async with Client(mcp.build(kernel, chat="0123456789abcdef", chat_tools=tools)) as client:  # type: ignore[arg-type]
+        async with Client(mcp.build(kernel, chat=open_chat(kernel), chat_tools=tools)) as client:  # type: ignore[arg-type]
             return {tool.name for tool in (await client.list_tools()).tools}
 
     everyday = anyio.run(listed_tools, "everyday")  # the default: what a short message needs, far cheaper (ADR 0057)
@@ -122,6 +134,31 @@ def test_a_chat_asked_for_all_tools_gets_every_tool_the_mcp_head_has_and_nothing
     assert {name for name in listed if name.startswith("system_runner_chat")} == {
         "system_runner_chat_confirm_authorized_mcp"
     }  # it can consume a human grant, never confirm/authorize directly
+
+
+def test_chat_read_uses_only_the_local_stdio_identity(kernel):
+    assert json.loads(tools(kernel)["notes_authenticated_read"]()) == "mcp-stdio:private:read"
+
+    async def call_and_read_schema():
+        async with Client(mcp.build(kernel, chat=open_chat(kernel), chat_tools="all")) as client:
+            tool = next(tool for tool in (await client.list_tools()).tools if tool.name == "notes_authenticated_read")
+            result = await client.call_tool("notes_authenticated_read", {})
+            return tool, result.content[0].text
+
+    tool, result = anyio.run(call_and_read_schema)
+    assert json.loads(result) == "mcp-stdio:private:read"
+    assert "current" not in tool.input_schema.get("properties", {})
+    with pytest.raises(HeinzelError, match="requires an authenticated private API"):
+        kernel.resolve(CurrentUser).context()
+
+
+def test_chat_server_fails_closed_for_non_stdio_transport_before_exposing_or_invoking_tools(kernel, ran):
+    gate = kernel.resolve(ActionGate)
+    with pytest.raises(HeinzelError, match="served over stdio only"):
+        mcp.build(kernel, "streamable-http", chat=open_chat(kernel))
+    # No server or privileged confirmation consumer is returned for model callers on the unauthenticated port.
+    assert gate.calls == []
+    assert ran == []
 
 
 def test_a_read_runs_and_returns_json_without_email_addresses(kernel, ran):
