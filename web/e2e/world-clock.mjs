@@ -80,10 +80,12 @@ try {
   );
 
   // Markers are exposed as projected, keyboard accessible hit targets over the canvas.
-  const marker = panel.getByRole("button", { name: "Berlin · Europe/Berlin" });
-  const markerName = panel.getByText("Berlin · Europe/Berlin");
+  const marker = panel.getByRole("button", { name: "Berlin", exact: true });
+  const markerName = panel.getByRole("tooltip");
   await marker.hover();
   await markerName.waitFor({ timeout: 1_000 });
+  assert.equal(await markerName.textContent(), "Berlin");
+  assert.doesNotMatch((await panel.getByRole("list").textContent()) ?? "", /Europe\/Berlin|America\/New_York/);
 
   const left = panel.getByRole("button", { name: "Rotate globe left" });
   const right = panel.getByRole("button", { name: "Rotate globe right" });

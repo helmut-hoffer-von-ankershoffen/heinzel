@@ -37,7 +37,7 @@ afterEach(() => {
 });
 
 describe("World clock", () => {
-  it("shows every zone in order, marks the primary, keeps UTC readable without a marker and uses 24 hours", async () => {
+  it("shows city names in order, marks the primary, keeps UTC readable and uses 24 hours", async () => {
     vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
     const { container } = show();
     expect(await screen.findByText("Primary")).toBeInTheDocument();
@@ -52,6 +52,8 @@ describe("World clock", () => {
         .getAllByRole("listitem")
         .map((item) => item.textContent),
     ).toEqual([expect.stringContaining("Berlin"), expect.stringContaining("New York"), expect.stringContaining("UTC")]);
+    expect(within(list).queryByText("Europe/Berlin")).not.toBeInTheDocument();
+    expect(within(list).queryByText("America/New_York")).not.toBeInTheDocument();
     for (const time of container.querySelectorAll("time")) expect(time.textContent).toMatch(/^\d{2}:\d{2}:\d{2}$/);
     expect(screen.getByText(/Static map/)).toBeInTheDocument();
     await expectAccessible(container);
@@ -124,9 +126,9 @@ describe("World clock", () => {
     vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({} as WebGLRenderingContext);
     create.mockReturnValue({ destroy, update });
     show();
-    const marker = await screen.findByRole("button", { name: "Berlin · Europe/Berlin" });
+    const marker = await screen.findByRole("button", { name: "Berlin", exact: true });
     await userEvent.hover(marker);
-    expect(await screen.findByRole("tooltip")).toHaveTextContent("Berlin · Europe/Berlin");
+    expect(await screen.findByRole("tooltip")).toHaveTextContent(/^Berlin$/);
     marker.focus();
     expect(marker).toHaveAttribute("aria-describedby", expect.stringContaining("world-clock-marker"));
     update.mockClear();
