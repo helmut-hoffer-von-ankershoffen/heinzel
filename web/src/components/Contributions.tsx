@@ -596,9 +596,13 @@ function ActionButton({
 }
 
 /** The header buttons modules add, before the built-in ones. */
-export function HeaderActions() {
+export function HeaderActions({ onWorldClock }: { onWorldClock?: () => void } = {}) {
   const { entries, updatedAt } = useEntries("actions", "header");
   const { run, dialog } = useEffectRunner();
+  const runHeader = (effect: Effect) => {
+    if (effect.kind === "navigate" && effect.path === "/?panel=world-clock" && onWorldClock) onWorldClock();
+    else run(effect);
+  };
   // Weather is available through its Preferences section and Today widget; it
   // does not contribute a header action or weather-map panel.
   const headerEntries = entries.filter((entry) => entry.module !== "weather");
@@ -606,7 +610,7 @@ export function HeaderActions() {
   return (
     <>
       {headerEntries.map((entry) => (
-        <ActionButton key={entry.id} entry={entry} updatedAt={updatedAt} run={run} />
+        <ActionButton key={entry.id} entry={entry} updatedAt={updatedAt} run={runHeader} />
       ))}
       {dialog}
     </>

@@ -107,11 +107,19 @@ function Layout() {
   const [searchOpen, setSearchOpen] = useState(false);
   useNoticeStream();
   // Home is where the chat is (ADR 0045): going there opens it, beside Today or below it.
-  const home = useLocation().pathname === "/";
+  const location = useLocation();
+  const home = location.pathname === "/";
   useEffect(() => {
     if (home) setChatOpen(true);
   }, [home, setChatOpen]);
   const area = useRef<HTMLDivElement>(null);
+  const scroller = useRef<HTMLDivElement>(null);
+  const workspace = useRef<HTMLDivElement>(null);
+  const pageScroll = useRef<(() => void) | null>(null);
+  const [scrollTarget, setScrollTarget] = useState<{ id: string } | null>(null);
+  const [pageHold, setPageHold] = useState<number | null>(null);
+  const requestScroll = useCallback((id: string) => setScrollTarget({ id }), []);
+  useEffect(() => () => pageScroll.current?.(), []);
   // Keep a focused composer visible when a phone's on-screen keyboard resizes the visual viewport.
   useEffect(() => {
     let frame: number | null = null;
@@ -193,7 +201,7 @@ function Layout() {
   useLayoutEffect(() => {
     window.dispatchEvent(new Event(FOOTER_RELOCATED));
   }, [beside, selectedPanel, terminalFull]);
-  const route = useLocation().pathname;
+  const route = location.pathname;
   const previousRoute = useRef(route);
   useEffect(() => {
     if (previousRoute.current !== route && !beside) setActivePanel("page");
@@ -201,20 +209,111 @@ function Layout() {
   }, [route, beside]);
   const full = terminalOpen && terminalFull && selectedPanel === "terminal";
   const flowingWorkspace = !beside && !full;
+  // An explicit navigation to the clock can repeat the same URL, and should still bring it into view.
+  const previousLocation = useRef(location);
+  const ownNavigation = useRef<{ path: string; search: string } | null>(null);
+  useEffect(() => {
+    const previous = previousLocation.current;
+    previousLocation.current = location;
+    const changed = previous.key !== location.key;
+    const own =
+      changed &&
+      ownNavigation.current?.path === location.pathname &&
+      ownNavigation.current.search === location.search.replace(/^\?/, "");
+    if (changed) ownNavigation.current = null;
+    if (beside || (changed && !own)) {
+      pageScroll.current?.();
+      setScrollTarget(null);
+      setPageHold(null);
+    }
+    if (
+      !beside &&
+      clockOpen &&
+      changed &&
+      !own &&
+      (previous.pathname !== location.pathname ||
+        previous.search === location.search ||
+        new URLSearchParams(previous.search).get("panel") !== "world-clock")
+    ) {
+      pageScroll.current?.();
+      requestScroll("world-clock");
+    }
+  }, [beside, clockOpen, location, requestScroll]);
+
+  useLayoutEffect(() => {
+    if (!scrollTarget) return;
+    if (beside || full) {
+      setScrollTarget(null);
+      setPageHold(null);
+      return;
+    }
+    if (scrollTarget.id !== "page" && selectedPanel !== scrollTarget.id) return;
+    const box = scroller.current;
+    const panel = workspace.current;
+    if (!box || (scrollTarget.id !== "page" && !panel)) return;
+    const frame = requestAnimationFrame(() => {
+      const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      if (scrollTarget.id === "page" && pageHold !== null && !reduced && box.scrollTop > 1 && box.scrollTo) {
+        let timer = 0;
+        const cleanup = () => {
+          box.removeEventListener("scrollend", onScrollEnd);
+          window.clearTimeout(timer);
+          pageScroll.current = null;
+        };
+        const finish = () => {
+          cleanup();
+          setPageHold(null);
+        };
+        const onScrollEnd = () => {
+          if (box.scrollTop <= 1) finish();
+        };
+        pageScroll.current = () => {
+          cleanup();
+          setPageHold(null);
+          box.scrollTo({ top: box.scrollTop, behavior: "instant" });
+        };
+        box.addEventListener("scrollend", onScrollEnd);
+        timer = window.setTimeout(finish, 1200);
+      } else if (pageHold !== null) setPageHold(null);
+      box.scrollTo?.({
+        top: scrollTarget.id === "page" ? 0 : (panel?.offsetTop ?? 0),
+        behavior: reduced ? "auto" : "smooth",
+      });
+      setScrollTarget(null);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [beside, full, pageHold, scrollTarget, selectedPanel]);
+
   const selectPanel = useCallback(
     (id: string) => {
+      pageScroll.current?.();
+      setScrollTarget(null);
+      // Preserve the old panel height while Page scrolls up so selecting its tab cannot clamp the scroll instantly.
+      const hold =
+        id === "page" &&
+        !beside &&
+        !full &&
+        selectedPanel !== "page" &&
+        (scroller.current?.scrollTop ?? 0) > 1 &&
+        !window.matchMedia("(prefers-reduced-motion: reduce)").matches
+          ? (workspace.current?.getBoundingClientRect().height ?? null)
+          : null;
+      setPageHold(hold);
       setActivePanel(id);
       setTerminalFull(false);
       setParams((current) => {
         const next = new URLSearchParams(current);
         if (id === "world-clock") next.set("panel", "world-clock");
         else if (next.get("panel") === "world-clock") next.delete("panel");
+        ownNavigation.current = { path: location.pathname, search: next.toString() };
         return next;
       });
+      if (!beside) requestScroll(id);
     },
-    [setParams],
+    [beside, full, location.pathname, requestScroll, selectedPanel, setParams],
   );
   const closeClock = () => {
+    pageScroll.current?.();
     setClockRetained(false);
     setParams((current) => {
       const next = new URLSearchParams(current);
@@ -298,6 +397,7 @@ function Layout() {
       <div ref={area} className="workspace-area relative flex min-w-0 flex-1 flex-col">
         <div ref={belowHeader} hidden={beside || full} className="shrink-0" />
         <div
+          ref={scroller}
           className={cn(
             "workspace-scroll relative flex min-h-0 min-w-0 flex-1",
             beside ? "flex-row" : flowingWorkspace ? "flex-col overflow-y-auto" : "flex-col",
@@ -326,6 +426,8 @@ function Layout() {
           {(chatOpen || terminalOpen || clockOpen || clockRetained) && (
             // One selected workspace panel; the same mounted contents move between desktop and phone layouts.
             <div
+              ref={workspace}
+              style={pageHold !== null && selectedPanel === "page" ? { minHeight: pageHold } : undefined}
               data-placement={beside ? "beside" : "below"}
               data-active={selectedPanel}
               className={cn(
@@ -404,9 +506,11 @@ function Layout() {
         />
         {createPortal(
           <TopBar
+            navigationMode={!beside}
+            onWorldClock={() => selectPanel("world-clock")}
             chatOpen={chatOpen && selectedPanel === "chat"}
             onToggleChat={() => {
-              if (chatOpen && selectedPanel === "chat") setChatOpen(false);
+              if (beside && chatOpen && selectedPanel === "chat") setChatOpen(false);
               else {
                 setChatOpen(true);
                 selectPanel("chat");
@@ -414,7 +518,7 @@ function Layout() {
             }}
             terminalOpen={terminalOpen && selectedPanel === "terminal"}
             onToggleTerminal={() => {
-              if (terminalOpen && selectedPanel === "terminal") {
+              if (beside && terminalOpen && selectedPanel === "terminal") {
                 setTerminalOpen(false);
                 setTerminalFull(false);
               } else {
