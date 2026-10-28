@@ -13331,7 +13331,7 @@
                 "type": "null"
               }
             ],
-            "description": "Computed by the host only: a ready URL whose exact origin is explicitly allowed. Copying a sign-in fragment still requires a separate owner gesture and a session credential.",
+            "description": "Computed by the host only: a ready URL whose exact origin is explicitly allowed. Copying a sign-in fragment still requires a separate owner gesture and an active session or device credential.",
             "title": "Sign In Url"
           },
           "url": {

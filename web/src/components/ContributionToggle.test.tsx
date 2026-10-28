@@ -219,6 +219,7 @@ describe("authenticated URL copy", () => {
   it("shows and copies the usable session URL, including its fragment token", async () => {
     const user = userEvent.setup();
     const clipboard = vi.spyOn(navigator.clipboard, "writeText");
+    localStorage.setItem("hz.device", "hzd_saved-device");
     const { container } = show(control({ checked: true, url: ORIGIN, sign_in_url: ORIGIN }));
     expect(clipboard).not.toHaveBeenCalled();
     expect(container).toHaveTextContent(`${ORIGIN}/#token=session-for-tests`);
@@ -240,20 +241,28 @@ describe("authenticated URL copy", () => {
     expect(screen.getByRole("link", { name: "Open" })).toHaveAttribute("href", `${ORIGIN}/`);
   });
 
-  it.each(["paired-only", "device-in-session"])("does not amplify a device credential: %s", (source) => {
+  it.each(["paired-only", "device-in-session"])("shows and copies the device token URL: %s", async (source) => {
+    const user = userEvent.setup();
+    const clipboard = vi.spyOn(navigator.clipboard, "writeText");
     localStorage.setItem("hz.device", "hzd_device-fixture");
     if (source === "paired-only") sessionStorage.removeItem("hz.token");
     else sessionStorage.setItem("hz.token", "hzd_device-fixture");
-    show(control({ checked: true, url: ORIGIN, sign_in_url: ORIGIN }));
-    expect(screen.queryByRole("button", { name: "Copy sign-in link" })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Copy URL" })).toBeInTheDocument();
+    const { container } = show(control({ checked: true, url: ORIGIN, sign_in_url: ORIGIN }));
+    const expected = `${ORIGIN}/#token=hzd_device-fixture`;
+    expect(container).toHaveTextContent(expected);
+    expect(screen.getByRole("link", { name: "Open" })).toHaveAttribute("href", expected);
+    await user.click(screen.getByRole("button", { name: "Copy URL" }));
+    expect(clipboard).toHaveBeenLastCalledWith(expected);
   });
 
   it.each([null, "https://evil.example", `${ORIGIN}/path`, `${ORIGIN}?token=guess`])(
     "refuses absent or nonmatching host approval %s",
     (approved) => {
-      show(control({ checked: true, url: ORIGIN, sign_in_url: approved }));
-      expect(screen.queryByRole("button", { name: "Copy sign-in link" })).not.toBeInTheDocument();
+      sessionStorage.removeItem("hz.token");
+      localStorage.setItem("hz.device", "hzd_device-fixture");
+      const { container } = show(control({ checked: true, url: ORIGIN, sign_in_url: approved }));
+      expect(container).not.toHaveTextContent("hzd_device-fixture");
+      expect(screen.getByRole("link", { name: "Open" })).toHaveAttribute("href", `${ORIGIN}/`);
     },
   );
 

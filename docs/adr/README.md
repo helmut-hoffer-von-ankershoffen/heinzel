@@ -185,3 +185,4 @@ of inventing them. Two factual corrections came with it: ADR 0004 names the plug
 | [0087](0087-managed-backend-ownership-is-independent-of-the-window.md) | Managed backend ownership is independent of the native window | proposed | 2026-10-27 |
 | [0088](0088-collapsed-sidebar-keeps-sound-controls.md) | The collapsed sidebar keeps sound controls | proposed | 2026-10-27 |
 | [0089](0089-one-selected-workspace-panel.md) | One selected workspace panel on every screen size | proposed | 2026-10-27 |
+| [0090](0090-installed-apps-share-their-authenticated-url.md) | Installed apps share their authenticated URL | proposed | 2026-10-28 |
