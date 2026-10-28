@@ -26,7 +26,16 @@ export async function verifyFooter(page, shots) {
   await page.locator("#splash").waitFor({ state: "hidden" });
   await page.waitForFunction(() => !document.querySelector("#root")?.hasAttribute("inert"));
   const footer = page.getByRole("contentinfo");
-  await footer.locator('[data-footer-content="@resources"] button').waitFor();
+  const resourceTrigger = footer.locator('[data-footer-content="@resources"] button');
+  await resourceTrigger.waitFor();
+  const resourceIcon = await resourceTrigger.evaluate((button) => ({
+    width: button.getBoundingClientRect().width,
+    text: button.textContent,
+    bars: button.querySelectorAll("[data-state]").length,
+  }));
+  assert.ok(resourceIcon.width <= 24, `Resource indicator must fit one footer icon: ${resourceIcon.width}px`);
+  assert.equal(resourceIcon.text, "");
+  assert.equal(resourceIcon.bars, 3);
   await footer.locator('[data-footer-content="@version"] button').waitFor();
   await footer.evaluate((bar) => {
     window.footerSyntheticResizes = 0;
