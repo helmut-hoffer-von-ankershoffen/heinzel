@@ -402,7 +402,8 @@ class ToggleControl(_Data):
     sign_in_url: Link | None = Field(
         default=None,
         description="Computed by the host only: a ready URL whose exact origin is explicitly allowed. "
-        "Copying a sign-in fragment still requires a separate owner gesture and a session credential.",
+        "Copying a sign-in fragment still requires a separate owner gesture and an active session or device "
+        "credential.",
     )
 
 
