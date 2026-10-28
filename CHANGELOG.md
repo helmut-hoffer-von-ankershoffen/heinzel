@@ -4,11 +4,12 @@ All notable changes to Heinzelmännchen, newest first. Versions follow [Semantic
 
 ## [0.7.28](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/releases/tag/v0.7.28) - 2026-10-28
 
-On narrow screens, the workspace now follows the main content in one scroll, so the World clock, chat and terminal remain reachable.
+On narrow screens, the workspace now follows the main content in one scroll, so the World clock, chat and terminal remain reachable. The footer shows CPU, memory and load as three compact bars.
 
 ### 🐛 Bug fixes
 
 - **web:** Keep mobile workspace in page scroll ([#244](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/244)) ([5149426](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/51494266b6fe78e4b45e4873342712e043acf82e))
+- **web:** Compact resource status into three vertical bars ([#245](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/245)) ([366cb3c](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/366cb3c47f39f5cbe59c146af4621c0015488d9f))
 
 ## [0.7.27](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/releases/tag/v0.7.27) - 2026-10-28
 
