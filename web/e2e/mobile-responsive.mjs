@@ -575,6 +575,19 @@ try {
     hasTouch: true,
     deviceScaleFactor: 2,
   });
+  await soundPage
+    .context()
+    .addCookies([
+      { name: "hz_test", value: "signed", url: "https://www.youtube.com/", secure: true, sameSite: "None" },
+    ]);
+  await soundPage
+    .context()
+    .route("https://www.youtube.com/watch**", (route) =>
+      route.fulfill({ contentType: "text/html", body: "<!doctype html><title>Watch fixture</title>" }),
+    );
+  await soundPage.route("https://www.youtube.com/embed/**", (route) =>
+    route.fulfill({ contentType: "text/html", body: "<!doctype html><title>Account player fixture</title>" }),
+  );
   const sound = {
     name: "mobile-dock-probe",
     title: "Mobile dock probe",
@@ -625,6 +638,11 @@ try {
   await soundPage.keyboard.press("Escape");
   const player = soundPage.getByRole("region", { name: "Mobile dock probe player" });
   await player.waitFor();
+  const privateFrame = await (await player.locator("iframe").elementHandle()).contentFrame();
+  await privateFrame.waitForURL(/youtube-nocookie\.com\/embed\//);
+  assert.equal(await privateFrame.evaluate(() => document.cookie.includes("hz_test=signed")), false);
+  const playerFrameBox = await player.locator("iframe").boundingBox();
+  assert.ok(playerFrameBox.width >= 200 && playerFrameBox.height >= 200, "YouTube's minimum player size");
   assert.equal(
     await player.getAttribute("data-dock"),
     "docked",
@@ -652,6 +670,43 @@ try {
   await soundPage.waitForFunction(() => document.querySelector('[data-dock="floating"]'));
   await soundPage.setViewportSize({ width: 360, height: 400 });
   await assertContained(soundPage, player, "rotated floating player");
+  await player.getByText("YouTube asking you to sign in?").tap();
+  await assertContained(soundPage, player, "expanded playback recovery");
+  const accountChoice = player.getByRole("button", { name: "Use YouTube sign-in" });
+  await assertTouchTarget(accountChoice, "YouTube account player choice", "short-landscape");
+  await accountChoice.tap();
+  assert.ok(
+    (await player.locator("iframe").getAttribute("src")).startsWith("https://www.youtube.com/embed/"),
+    "explicit sign-in choice must switch to the regular YouTube origin",
+  );
+  const accountContent = await (await player.locator("iframe").elementHandle()).contentFrame();
+  await accountContent.waitForURL(/youtube\.com\/embed\//);
+  if (!useWebKit) {
+    assert.equal(
+      await accountContent.evaluate(() => document.cookie.includes("hz_test=signed")),
+      true,
+      "the regular player can receive the browser's YouTube session when third-party cookies are allowed",
+    );
+  }
+  await player.getByText("YouTube asking you to sign in?").tap();
+  const accountFrame = await player.locator("iframe").elementHandle();
+  await player.getByRole("button", { name: "Retry player" }).tap();
+  assert.equal(await accountFrame.evaluate((frame) => frame.isConnected), false, "retry must replace the frame");
+  await player.getByText("YouTube asking you to sign in?").tap();
+  await player.getByRole("button", { name: "Use private player" }).tap();
+  assert.ok(
+    (await player.locator("iframe").getAttribute("src")).startsWith("https://www.youtube-nocookie.com/embed/"),
+    "private player choice must restore the privacy-enhanced origin",
+  );
+  await player.getByText("YouTube asking you to sign in?").tap();
+  const [youtubePage] = await Promise.all([
+    soundPage.waitForEvent("popup"),
+    player.getByRole("link", { name: "Play on YouTube" }).tap(),
+  ]);
+  await youtubePage.waitForURL("https://www.youtube.com/watch**");
+  assert.equal(new URL(youtubePage.url()).searchParams.get("v"), sound.stream.video);
+  await player.waitFor({ state: "detached" });
+  await youtubePage.close();
   result.dockedPlayer = {
     viewport: { width: 430, height: 932 },
     dockedBox: playerBox,

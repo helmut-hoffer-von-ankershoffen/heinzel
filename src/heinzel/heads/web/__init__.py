@@ -285,6 +285,7 @@ def page_csp(kernel: Kernel) -> str:
     stream = STREAM_PROVIDERS.get(provider) if provider else None
     if stream:
         origins.append(stream.frame_origin)
+        origins.extend(stream.additional_frame_origins)
     return f"{CSP}; frame-src {' '.join(dict.fromkeys(origins))}" if origins else CSP
 
 

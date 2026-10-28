@@ -7,6 +7,7 @@ import { acmeTheme, shell, themeList } from "@/test/fixtures";
 import { expectAccessible, mockApi, renderAt } from "@/test/render";
 import { needsReload, page, rememberPageFrame, resetPageFrame } from "./queries";
 import { resetSound, soundState } from "./store";
+import { rememberYouTubeAccount } from "./stream";
 
 const ORIGIN = "https://www.youtube-nocookie.com";
 
@@ -293,6 +294,19 @@ describe("Sound", () => {
     expect(within(activeDialog).getByRole("button", { name: "Pause Claude FM" })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Stop and close the player" }));
     expect(document.querySelector("iframe")).toBeNull();
+  });
+
+  it("does not load YouTube before Play even when this browser remembers account playback", async () => {
+    rememberYouTubeAccount(true);
+    const { calls } = soundApi("claude-fm");
+    const user = userEvent.setup();
+    renderAt("/");
+    await speaker(/^Choose a soundscape$/);
+    expect(document.querySelector("iframe")).toBeNull();
+    expect(calls.some((call) => !call.url.startsWith(window.location.origin))).toBe(false);
+    await playSound(user, "Claude FM");
+    const frame = (await screen.findByTitle("Claude FM player")) as HTMLIFrameElement;
+    expect(new URL(frame.src).origin).toBe("https://www.youtube.com");
   });
 
   it("with nothing picked, the speaker opens the choices instead of playing", async () => {

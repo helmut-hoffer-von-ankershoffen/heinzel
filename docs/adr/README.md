@@ -131,8 +131,8 @@ automatically);
 [0050](0050-pydantic-ai-runs-a-turn-a-coding-agent-is-a-handoff.md) (`[heinzel] model` gives way to `[ai]` routing);
 [0058](0058-soundscapes-are-data-a-plugin-ships-chosen-like-a-theme.md) amends
 [0027](0027-nothing-is-sent-home.md), [0039](0039-a-web-head-a-react-app-served-by-the-api-head.md) and
-[0046](0046-an-installable-web-app-with-paired-devices.md) (one allowlisted frame origin while a stream soundscape is in
-effect, from Play onwards);
+[0046](0046-an-installable-web-app-with-paired-devices.md) (fixed allowlisted player origins while a stream is in
+effect; the player loads only after Play; amended by [0092](0092-youtube-sign-in-is-an-explicit-player-choice.md));
 [0060](0060-themes-follow-the-time-of-day-and-the-weather.md) amends [0044](0044-themes-are-data-a-plugin-ships.md)
 (variants that follow signals; a base theme is checked for contrast too);
 [0059](0059-the-calendar-and-the-mail-write-through-hz-after-a-confirmation.md) amends
@@ -187,3 +187,4 @@ of inventing them. Two factual corrections came with it: ADR 0004 names the plug
 | [0089](0089-one-selected-workspace-panel.md) | One selected workspace panel on every screen size | proposed | 2026-10-27 |
 | [0090](0090-installed-apps-share-their-authenticated-url.md) | Installed apps share their authenticated URL | proposed | 2026-10-28 |
 | [0091](0091-plugin-add-uses-server-owned-operation-receipts.md) | Confirmed plugin adds use server-owned operation receipts | proposed | 2026-10-28 |
+| [0092](0092-youtube-sign-in-is-an-explicit-player-choice.md) | YouTube sign-in is an explicit player choice | proposed | 2026-10-28 |

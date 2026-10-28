@@ -96,7 +96,13 @@ export function PlayerCard({ title, watchUrl, host, children }: Props) {
       if (next.x !== rect.left || next.y !== rect.top) setFloating(next.x, next.y);
     };
     keepVisible();
-    return watchViewport(keepVisible);
+    const unwatch = watchViewport(keepVisible);
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(keepVisible);
+    if (card.current) observer?.observe(card.current);
+    return () => {
+      unwatch();
+      observer?.disconnect();
+    };
   }, [pref.docked]);
 
   const size = () => {
@@ -234,6 +240,7 @@ export function PlayerCard({ title, watchUrl, host, children }: Props) {
         )}
         <a
           href={watchUrl}
+          onClick={stop}
           target="_blank"
           rel="noopener noreferrer"
           aria-label={t("sound.openOn", { host })}

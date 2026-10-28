@@ -59,9 +59,13 @@ Only the latest release receives security fixes while the project is on 0.x; upd
   `hz system release` (the same request) or `hz system plugin search` (the same kind, plus your GitHub token if
   you configured one), and when a plugin you installed calls a service.
 - **Sound in the web app is off until you press Play.** A stream soundscape (Claude FM or a plugin's)
-  plays in its host's own player; the only host allowed is YouTube's privacy-enhanced `youtube-nocookie.com`, named
+  plays in its host's own player; the default is YouTube's privacy-enhanced `youtube-nocookie.com`, named
   in code, never by a plugin or a configuration file. Nothing of it loads before you press Play, and the page's CSP
-  admits that one frame origin only while a stream is the soundscape in effect. Once you press Play, YouTube receives
+  admits YouTube's two fixed player origins only while a stream is the soundscape in effect. “Use YouTube sign-in”
+  switches to the regular `youtube.com` player and remembers this browser's choice. It can use your YouTube account
+  when the browser allows it; “Use private player” reverses the choice
+  ([ADR 0092](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/blob/main/docs/adr/0092-youtube-sign-in-is-an-explicit-player-choice.md)).
+  Once you press Play, YouTube receives
   your IP address and the app's local address (`http://127.0.0.1:<port>`), and may keep storage in its frame. A
   repository's `hz.toml` can't switch sound on
   ([ADR 0058](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/blob/main/docs/adr/0058-soundscapes-are-data-a-plugin-ships-chosen-like-a-theme.md)).

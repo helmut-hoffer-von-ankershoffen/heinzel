@@ -63,11 +63,13 @@ class StreamProvider:
     """A host whose official player a stream soundscape plays in: the frame origin and how a video's URLs look."""
 
     frame_origin: str
-    """The only origin the page's CSP admits as a frame, while a stream of this provider is in effect."""
+    """The default player origin, admitted only while a stream of this provider is in effect."""
     embed: str
     """The embed URL with `{video}` for the id."""
     watch: str
     """Where a person opens the video on the host itself, with `{video}`."""
+    additional_frame_origins: tuple[str, ...] = ()
+    """Fixed alternative player origins for explicit viewer choices (ADR 0092)."""
 
     def embed_url(self, video: str) -> str:
         """The embed URL of `video`."""
@@ -84,6 +86,7 @@ STREAM_PROVIDERS: Mapping[str, StreamProvider] = {
         frame_origin="https://www.youtube-nocookie.com",
         embed="https://www.youtube-nocookie.com/embed/{video}",
         watch="https://www.youtube.com/watch?v={video}",
+        additional_frame_origins=("https://www.youtube.com",),
     ),
 }
 """The hosts a stream may come from, in code: a plugin or a configuration file can't add one."""
