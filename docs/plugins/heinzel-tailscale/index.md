@@ -7,7 +7,7 @@ Share the authenticated web app privately through Tailscale Serve: a Heinzelmän
 | | |
 | --- | --- |
 | Kind | **capability** |
-| Version | `0.7.28` (first-party, released with Heinzelmännchen) |
+| Version | `0.7.29` (first-party, released with Heinzelmännchen) |
 | Source | <https://github.com/helmut-hoffer-von-ankershoffen/heinzel/tree/main/plugins/heinzel-tailscale> |
 | Licence | MIT |
 | Install | `hz system plugin add tailscale --confirm` |
