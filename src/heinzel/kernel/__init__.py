@@ -76,6 +76,7 @@ from heinzel.kernel._credentials import (
     environment_variable,
     subprocess_environment,
 )
+from heinzel.kernel._daemon_attestation import DaemonAttestation, DaemonStatusAttestation
 from heinzel.kernel._directory import ConfirmedLines, ReportingDraft, draft_reporting_lines
 from heinzel.kernel._discovery import BUILTIN_PACKAGE, ENTRY_POINT_GROUP, discover, walk
 from heinzel.kernel._duration import MAX_WINDOW, WINDOW_PATTERN, Span, format_duration, parse_duration, parse_window
@@ -96,7 +97,7 @@ from heinzel.kernel._installation import (
     Installation,
     requirement_from_receipt,
 )
-from heinzel.kernel._jobs import CompiledJobs, JobInactive
+from heinzel.kernel._jobs import CompiledJobs, JobInactive, tick_interval, using_tick_interval
 from heinzel.kernel._kernel import Kernel, ModuleRecord, Origin
 from heinzel.kernel._layers import (
     Label,
@@ -319,6 +320,8 @@ __all__ = [
     "CredentialLet",
     "Credentials",
     "CurrentUser",
+    "DaemonAttestation",
+    "DaemonStatusAttestation",
     "Daypart",
     "DeclaredCredential",
     "Delivery",
@@ -529,7 +532,9 @@ __all__ = [
     "skill_tools",
     "skills_in",
     "subprocess_environment",
+    "tick_interval",
     "toml_value",
     "user_config_dir",
+    "using_tick_interval",
     "walk",
 ]

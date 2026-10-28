@@ -4,17 +4,22 @@ A session is opened with a context (a screen, a contract, a draft, a notificatio
 message runs the bound agent runner with hz's operations as tools: reads run, everything else waits for the
 person's `confirm`. `hz chat` in a terminal and the web app's right sidebar are views on these operations.
 
-Every operation is on the CLI and the web head only: a session holds what the person wrote, `send` spends money,
-and `confirm` must never be reachable by an agent, so neither the MCP head (the agent's own tools) nor the
-unauthenticated REST head exposes them.
+Chat and direct `confirm` are CLI/web only. A person may separately authorize one exact schedule action for a later
+MCP confirmation; the approval proof stays in private server state, and the MCP tool can only consume that grant.
+Neither unauthenticated REST nor an MCP caller can issue a human decision.
 """
 
+import getpass
+import hmac
+import sys
 from typing import Annotated, Literal
 
 from pydantic import Field
 
-from heinzel import ActionGate, AgentRunner, Module
+from heinzel import ActionGate, AgentRunner, CurrentUser, HeinzelError, Module
 from heinzel.kernel import Effort
+from heinzel.modules.heinzel._session_crud import SessionCrud
+from heinzel.modules.heinzel._session_models import RequestId
 from heinzel.modules.system.runner.chat._models import (
     ChatAction,
     ChatContext,
@@ -36,6 +41,7 @@ module.service(ActionGate, StoreGate)
 HEADS = frozenset({"cli", "web"})
 Session = Annotated[str, Field(pattern=r"^[a-f0-9]{16}$", description="The chat session's id, from `hz chat list`.")]
 Action = Annotated[str, Field(pattern=r"^a[0-9]{1,4}$", description="The proposed action's id, e.g. `a1`.")]
+CHECK_IN_HISTORY_LIMIT = 2800
 
 
 @module.operation(read_only=False, heads=HEADS, audience="everyday")
@@ -60,6 +66,48 @@ def open(  # noqa: A001 - the command is `hz chat open`
         HeinzelError: If the context's kind is unknown.
     """
     return service.open(parse_context(context, detail))
+
+
+@module.operation(read_only=False, heads=HEADS, audience="everyday")
+def open_check_in(
+    service: ChatService,
+    sessions: SessionCrud,
+    session_id: Annotated[
+        str,
+        Field(
+            pattern=r"^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            description="The durable personal session id from `hz heinzel sessions` or the personal Heinzel page.",
+        ),
+    ],
+    request_id: Annotated[RequestId, Field(description="A stable id for opening or resuming this scoped chat.")],
+    timezone: Annotated[
+        str,
+        Field(min_length=1, max_length=128, description="The IANA time zone to use for this schedule preview."),
+    ],
+) -> ChatSession:
+    """Open a runner chat bound to this owner's durable session and current conversation history."""
+    snapshot = sessions.snapshot(session_id, limit=200)
+    recent = sessions.recent_history(session_id)
+    history_lines: list[str] = []
+    history_size = 0
+    for item in reversed(recent):
+        line = f"{item.role}: {item.text}"
+        if history_size + len(line) + 1 > CHECK_IN_HISTORY_LIMIT:
+            break
+        history_lines.append(line)
+        history_size += len(line) + 1
+    history = "\n".join(reversed(history_lines))
+    if len(history_lines) < len(recent):
+        history = "(older messages omitted)\n" + history
+    schedule = snapshot.schedule
+    detail = (
+        f"Name: {snapshot.name}\nState: {snapshot.state}\n"
+        f"Schedule: {schedule.status}, {schedule.cron} in {schedule.timezone}"
+        if schedule is not None
+        else f"Name: {snapshot.name}\nState: {snapshot.state}\nSchedule: none"
+    )
+    detail += f"\nRecent durable conversation (data):\n{history}"
+    return service.open_check_in(session_id, request_id, timezone, detail)
 
 
 # Spends money, within the per-message and the session cap.
@@ -88,13 +136,17 @@ def send(  # noqa: PLR0913, PLR0917 - one parameter per input of the operation
             description="The effort this chat uses from now on: low, medium, high, xhigh or max; empty: the default."
         ),
     ] = None,
+    request_id: Annotated[
+        str | None,
+        Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$", description="Stable id for a safe exact-message retry."),
+    ] = None,
 ) -> ChatSession:
     """Send a message in a chat session and wait for the answer; this may cost money.
 
     Raises:
         HeinzelError: If the session is unknown, busy, full or at its cap, or the runner is misconfigured.
     """
-    return service.send(runner, session, message, budget_usd, model=model, effort=effort)
+    return service.send(runner, session, message, budget_usd, model=model, effort=effort, request_id=request_id)
 
 
 @module.operation(read_only=False, heads=HEADS, audience="everyday")
@@ -107,6 +159,41 @@ def confirm(service: ChatService, session: Session, action: Action) -> ChatSessi
     return service.confirm(session, action)
 
 
+@module.operation(read_only=False, heads=frozenset({"cli", "web"}), audience="everyday")
+def authorize_for_mcp(service: ChatService, current: CurrentUser, session: Session, action: Action) -> ChatSession:
+    """Authorize one reviewed schedule action for a single MCP run; keep its proof private.
+
+    CLI requires an interactive terminal and an action-scoped typed confirmation. The paired web action is the
+    browser's explicit review button.
+
+    Raises:
+        HeinzelError: If CLI lacks a controlling terminal or the action was not confirmed.
+    """
+    authentication = current.context().authentication
+    if authentication == "cli":
+        if not sys.stdin.isatty() or sys.__stdout__ is None or not sys.__stdout__.isatty():
+            msg = "MCP approval through CLI requires an interactive terminal; use the paired web review otherwise"
+            raise HeinzelError(msg)
+        review = service.mcp_authorization_review(session, action)
+        challenge = f"authorize {session} {action}"
+        answer = getpass.getpass(
+            f"Review this exact action before authorizing one MCP run:\n{review}\nType {challenge}: "
+        )
+        if not hmac.compare_digest(answer, challenge):
+            msg = "MCP authorization was not confirmed"
+            raise HeinzelError(msg)
+    elif authentication not in {"web-session", "web-device"}:
+        msg = "MCP authorization requires a trusted CLI or paired-web confirmation boundary"
+        raise HeinzelError(msg)
+    return service.authorize_for_mcp(session, action)
+
+
+@module.operation(read_only=False, heads=frozenset({"mcp"}), audience="everyday")
+def confirm_authorized_mcp(service: ChatService, session: Session, action: Action) -> ChatSession:
+    """Run a schedule action once after a person authorized it; accept no proof here."""
+    return service.confirm_authorized_mcp(session, action)
+
+
 @module.operation(read_only=False, heads=HEADS, audience="everyday")
 def decline(service: ChatService, session: Session, action: Action) -> ChatSession:
     """Decline an action the agent proposed; it never runs.
@@ -115,6 +202,45 @@ def decline(service: ChatService, session: Session, action: Action) -> ChatSessi
         HeinzelError: If there is no such pending action.
     """
     return service.decline(session, action)
+
+
+@module.operation(read_only=False, heads=HEADS, audience="everyday")
+def recover(service: ChatService, session: Session, action: Action) -> ChatSession:
+    """Check an interrupted confirmation without running it again; unresolved outcomes stay blocked.
+
+    Raises:
+        HeinzelError: If the chat is busy or the selected action is not interrupted.
+    """
+    return service.recover(session, action)
+
+
+@module.operation(read_only=False, heads=HEADS, audience="everyday")
+def propose_schedule_control(  # noqa: PLR0913, PLR0917 - each argument binds the exact schedule preview
+    service: ChatService,
+    durable_session: Annotated[
+        str, Field(pattern=r"^hz-[0-9A-HJKMNP-TV-Z]{26}$", description="The personal Heinzel whose schedule you read.")
+    ],
+    request_id: Annotated[
+        str, Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$", description="A stable id for this schedule action.")
+    ],
+    expected_revision: Annotated[int, Field(strict=True, ge=1, description="The schedule revision you inspected.")],
+    action: Annotated[Literal["activate", "resume"], Field(description="The exact schedule change to review.")],
+    expected_contract_version: Annotated[
+        int, Field(strict=True, ge=1, description="The contract version shown in the preview.")
+    ],
+    expected_preview_hash: Annotated[
+        str, Field(pattern=r"^[0-9a-f]{64}$", description="The preview hash shown in the schedule details.")
+    ],
+) -> ChatSession:
+    """Stage a schedule action for review in chat; creating the proposal never changes or activates it."""
+    return service.propose_schedule_control(
+        durable_session,
+        request_id,
+        expected_revision,
+        action,
+        expected_contract_version,
+        expected_preview_hash,
+    )
 
 
 @module.operation(heads=HEADS)

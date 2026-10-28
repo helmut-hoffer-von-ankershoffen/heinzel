@@ -118,8 +118,60 @@ transport choice must not change data ownership or permit an agent to authorize 
 
 ## More Information
 
-The first implementation slice supplies trusted principal contexts and the authenticated private API. Approval
-issuance, consumption and the parity manifest follow with their own evidence. Until those land, existing human
-confirmation rules remain and no new head may issue or accept proof by assumption. Native CLI execution and
-Pydantic model bridges have separate conformance requirements; an unrestricted native process is not made safe
-by receiving a principal id.
+The first implementation slice supplies trusted principal contexts and the authenticated private API. The personal
+five-minute check-in now has a production issuer behind the internal `ApprovalIssuer` kernel service. It is called
+only after the CLI or paired web directly confirms, or authorizes for one later MCP run, a stored exact-intent
+proposal; there is no proof-issue operation exposed to MCP. The issuer rechecks the schedule under its owner-scoped writer lock,
+records a five-minute proof hash, and the normal `schedule_control` operation consumes the proof with the schedule
+effect. The web UI creates and inspects the proposal in the personal-session panel, then presents the exact action
+card with direct-confirm and authorize-for-MCP choices. CLI users can stage and confirm the same operation, or
+authorize its one-use MCP handoff. The proof remains in private owner state and
+does not appear in chat arguments, results, or the event spine. If confirmation is interrupted, the CLI and web can
+reconcile its saved `running` action against the schedule journal. Only an exact recorded effect becomes `done`; all
+other outcomes become `uncertain` and cannot be retried from that action. Recovery observes state and never invokes
+the schedule operation. Native CLI execution and Pydantic model bridges have separate conformance requirements; an
+unrestricted native process is not made safe by receiving a principal id.
+
+The human can approve a pending exact schedule action through CLI or paired web for one later MCP execution. That
+trusted boundary asks the existing issuer to create its normal five-minute proof and writes it to a private, mode-0600
+per-chat handoff file; the chat record exposes only an `mcp_authorized` boolean. A chat-scoped stdio MCP tool consumes
+the proof by session/action id. It accepts no proof argument, returns no proof, is hidden from non-chat MCP, and rejects
+calls without a live grant. The session lock, exact issuer intent, proof expiry, running-before-effect state, and
+one-use journal consumption continue to apply. The end-to-end test verifies refusal before approval, one execution,
+no proof in API/MCP results, and replay refusal.
+
+This is a schedule-specific server-side handoff, not a bearer token exported into MCP parameters. MCP clients can
+retain tool arguments and transcripts, so passing the raw proof through a tool parameter would not meet the
+no-token-in-logs requirement; the installed MCP SDK has no elicitation channel for an out-of-band secret. The private
+proof file is readable by the same OS principal as Heinzel, so this protects against model/tool-result exposure and
+other local users, not a compromised process running as the owner. CLI/web authorization and MCP consumption must run
+under the same local principal and configured state directory; the normal chat runner carries the project directory
+used to open the chat. Web authorization accepts only the paired `web-session` or `web-device` identity. CLI
+authorization requires an interactive terminal and a typed session/action challenge; a
+headless CLI call is refused. A different profile, state directory, host or principal has no handoff and fails closed.
+MCP does not prompt a person or mint approvals: if no person authorized it first through CLI/web, the consumer
+refuses. The TTY check is still application-level confirmation, not proof of physical presence against a hostile
+same-user process.
+Other action types do not yet have this handoff. The MCP model can choose when to consume an already-approved exact
+action, but cannot change or create that intent.
+
+**Approval issuance and verification.**
+
+The internal approval verifier checks an opaque proof against a trusted stored record, the authenticated principal,
+current intent and revisions, revocation and expiry. The schedule action calls the journal helper under the owner-scoped
+writer lock. It stores the exact proof hash, intent and schedule snapshot in one `schedule.activated` or
+`schedule.resume` event, and recognizes a prior event without authorizing a second effect. Test-only synthetic records
+are not human decisions. The record and current intent come from trusted services, never a request or model response.
+A retry resolves the existing disposition from that journal, including after proof expiry. The private API, stdio MCP
+and CLI/web heads accept the same proof-bearing schedule operation; the user-facing chat issuer either executes it
+directly after confirmation or keeps the proof private for the MCP handoff. It never returns a transferable proof. The CLI still accepts `--approval-proof -` and reads
+external proof input from hidden input or stdin instead of argv.
+
+The chat confirmation boundary is an explicit app decision, not hardware-backed presence: the CLI `confirm` command
+and paired web button run the exact stored arguments; the chat MCP head cannot issue a human decision and can only
+consume the schedule-specific private handoff above. Authentication alone does not mint proof. A compromised trusted host or same-origin
+web code can still act as the owner; this flow does not claim otherwise. Passkey enrollment is not required for this
+five-minute use case. An optional stronger factor could add WebAuthn user verification later, with the extra enrollment
+and recovery cost. Other direct API/MCP consumers can still accept proof-bearing private inputs; no human UI exports
+raw proof for manual transfer. The issuer, revocation and all revisions needed at consumption are
+coordinated with the action's authoritative journal, so a stale schedule fails closed.

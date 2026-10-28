@@ -9,7 +9,7 @@ from collections.abc import Callable
 from datetime import timedelta
 from typing import Any
 
-from heinzel.kernel import HeinzelError, Kernel, OperationLet
+from heinzel.kernel import HeinzelError, Kernel, OperationLet, using_tick_interval
 
 TICK_MODULE = "system.daemon"
 TICK_OPERATION = "tick"
@@ -45,11 +45,12 @@ def serve(
     """
     operation = tick_operation(kernel)
     done = 0
-    while ticks is None or done < ticks:
-        try:
-            report(kernel.invoke(operation))
-        except Exception as exc:  # noqa: BLE001 - a loop that dies on one bad tick isn't a daemon; launchd wouldn't stop
-            report(exc)
-        done += 1
-        if ticks is None or done < ticks:
-            sleep(interval.total_seconds())
+    with using_tick_interval(interval):
+        while ticks is None or done < ticks:
+            try:
+                report(kernel.invoke(operation))
+            except Exception as exc:  # noqa: BLE001 - isolate a single failing tick
+                report(exc)
+            done += 1
+            if ticks is None or done < ticks:
+                sleep(interval.total_seconds())

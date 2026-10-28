@@ -5,7 +5,7 @@ from typing import Annotated
 from pydantic import Field
 
 from heinzel import Check, Module
-from heinzel.kernel import parse_duration
+from heinzel.kernel import DaemonAttestation, parse_duration
 from heinzel.modules.system.daemon._models import (
     DaemonSettings,
     DaemonStatus,
@@ -28,6 +28,14 @@ module = Module("daemon", "Run modules' jobs in the background, supervised by la
 `hz system daemon pause`, `hz system daemon uninstall`, or by disabling the module that brings them."""
 module.settings(DaemonSettings)
 module.service(DaemonService, DaemonService.for_user)
+
+
+def _attestation(service: DaemonService) -> DaemonAttestation:
+    """Expose the existing daemon service through a shared read-only module boundary."""
+    return DaemonAttestation(status=service.status)
+
+
+module.service(DaemonAttestation, _attestation)
 
 INTERVAL_PATTERN = r"^[1-9][0-9]*m$|^1h$"
 

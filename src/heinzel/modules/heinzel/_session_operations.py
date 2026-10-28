@@ -1,11 +1,15 @@
 """Private durable-session operations: one declared surface for CLI, stdio MCP, paired web and private API."""
 
+import getpass
+import sys
 from pathlib import Path
 from typing import Annotated, Literal
 
-from pydantic import Field
+from pydantic import Field, JsonValue
 
-from heinzel import Config, CurrentUser, Module
+from heinzel import Config, CurrentUser, HeinzelError, Module
+from heinzel.kernel import DaemonAttestation
+from heinzel.kernel._approval import ApprovalConfirmation, ApprovalIssuer
 from heinzel.modules.heinzel._models import HeinzelSettings
 from heinzel.modules.heinzel._session_crud import SessionCrud
 from heinzel.modules.heinzel._session_models import (
@@ -39,9 +43,52 @@ def _crud(current: CurrentUser) -> SessionCrud:
     return SessionCrud(PersonalSessionRepository(current), costs)
 
 
-def register_session_operations(module: Module) -> None:
+class _SessionApprovalIssuer(ApprovalIssuer):
+    """Require a current version observed in a daemon tick before issuing exact schedule approval."""
+
+    def __init__(self, service: SessionCrud, daemon: DaemonAttestation) -> None:
+        self.service = service
+        self.daemon = daemon
+
+    def issue(self, module: str, operation: str, arguments: dict[str, JsonValue], provenance: str) -> str:
+        if (
+            module == "heinzel"
+            and operation == "schedule-control"
+            and arguments.get("action") in {"activate", "resume"}
+        ):
+            status = self.daemon.status()
+            if status.installed and (
+                status.version is None or status.installed_version is None or status.version_mismatch
+            ):
+                observed = status.version or "unknown"
+                installed = status.installed_version or "unknown"
+                msg = (
+                    f"Check-ins are blocked because the daemon unit version is {installed} and the last daemon "
+                    f"service tick version is {observed}; run `hz system daemon restart`, wait for a service-managed "
+                    "tick from the current Heinzel, then review this action again"
+                )
+                raise HeinzelError(msg)
+        return self.service.issue(module, operation, arguments, provenance)
+
+    def applied(self, module: str, operation: str, arguments: dict[str, JsonValue]) -> bool:
+        return self.service.applied(module, operation, arguments)
+
+
+def _approval_issuer(service: SessionCrud, daemon: DaemonAttestation) -> ApprovalIssuer:
+    """Expose the internal issuer only as a kernel service, never as a callable operation."""
+    return _SessionApprovalIssuer(service, daemon)
+
+
+def _approval_confirmation() -> ApprovalConfirmation:
+    """Use a context-local proof marker for the one internal CLI/web confirmation call."""
+    return ApprovalConfirmation()
+
+
+def register_session_operations(module: Module) -> None:  # noqa: C901 - operation declarations define one shared head surface
     """Register once on the owning module; constructing the service performs no private I/O."""
     module.service(SessionCrud, _crud)
+    module.service(ApprovalIssuer, _approval_issuer)
+    module.service(ApprovalConfirmation, _approval_confirmation)
 
     @module.operation(private=True, read_only=False, audience="everyday")
     def new_chat(
@@ -89,6 +136,92 @@ def register_session_operations(module: Module) -> None:
     ) -> SessionSnapshot:
         """Save this Heinzel's name or look against the exact profile revision you saw."""
         return service.profile(session_id, request_id, expected_revision, name=name, appearance=appearance)
+
+    @module.operation(
+        private=True,
+        read_only=False,
+        heads=frozenset({"cli", "web", "api-private", "mcp-check-in"}),
+        audience="everyday",
+    )
+    def propose_check_in(
+        service: SessionCrud,
+        session_id: Identity,
+        request_id: Request,
+        timezone: Annotated[
+            str, Field(description="The IANA time zone for the schedule preview.", min_length=1, max_length=128)
+        ] = "UTC",
+    ) -> SessionSnapshot:
+        """Propose local five-minute check-ins; the schedule stays inactive until activated."""
+        return service.propose_check_in(session_id, request_id, timezone)
+
+    @module.operation(private=True, read_only=False, audience="everyday")
+    def schedule_control(  # noqa: PLR0913, PLR0917 - flat private HTTP input binds the approval to its preview
+        service: SessionCrud,
+        current: CurrentUser,
+        confirmation: ApprovalConfirmation,
+        session_id: Identity,
+        request_id: Request,
+        expected_revision: Annotated[
+            int, Field(description="The schedule revision you last inspected.", strict=True, ge=1)
+        ],
+        action: Annotated[
+            Literal["activate", "pause", "resume"],
+            Field(description="Explicitly activate the proposal, pause it, or resume a paused schedule."),
+        ],
+        approval_proof: Annotated[
+            str | None,
+            Field(
+                description="Human-issued exact-intent proof required to activate or resume; never returned by reads. "
+                "On CLI, pass `-` to read it from hidden input or stdin."
+            ),
+        ] = None,
+        expected_contract_version: Annotated[
+            int, Field(description="The contract version in the schedule preview.", strict=True, ge=1)
+        ] = 1,
+        expected_preview_hash: Annotated[
+            str | None,
+            Field(description="The preview hash shown for this exact schedule.", min_length=1, max_length=64),
+        ] = None,
+    ) -> SessionSnapshot:
+        """Pause a schedule; activation and resume require an exact-intent approval from a trusted issuer.
+
+        Raises:
+            HeinzelError: If the schedule is stale or approval is invalid or unavailable.
+        """
+        authentication = current.context().authentication
+        if authentication == "cli":
+            issued_in_confirm = confirmation.matches(
+                "heinzel",
+                "schedule-control",
+                {
+                    "session_id": session_id,
+                    "request_id": request_id,
+                    "expected_revision": expected_revision,
+                    "action": action,
+                    "approval_proof": approval_proof,
+                    "expected_contract_version": expected_contract_version,
+                    "expected_preview_hash": expected_preview_hash,
+                },
+            )
+            if approval_proof not in {None, "-"} and not issued_in_confirm:
+                msg = "Use `--approval-proof -` on the CLI so the proof is not exposed in process arguments"
+                raise HeinzelError(msg)
+            if approval_proof == "-":
+                approval_proof = (
+                    getpass.getpass("Approval proof: ") if sys.stdin.isatty() else sys.stdin.readline().rstrip("\r\n")
+                )
+        elif approval_proof == "-":
+            msg = "Approval input `-` is only available on the CLI"
+            raise HeinzelError(msg)
+        return service.schedule_control(
+            session_id,
+            request_id,
+            expected_revision,
+            action,
+            approval_proof,
+            expected_contract_version,
+            expected_preview_hash,
+        )
 
     @module.operation(private=True, read_only=False, audience="everyday")
     def chat(

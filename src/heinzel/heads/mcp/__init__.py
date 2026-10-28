@@ -6,8 +6,10 @@ description from the docstring, its output schema from the return model, and `re
 With `chat=<session>` (`hz system serve mcp --chat <session>`, started over stdio by the agent of a chat, ADR 0045)
 it serves the same tools to that one chat, and enforces the chat's rule in code: a read-only operation runs and
 returns its result as JSON without email addresses; any other operation does not run. It is handed to the
-`ActionGate` as a proposal, and the tool returns its action id: only the person's `hz chat confirm` (CLI or web head,
-never MCP) runs it. Tools follow the MCP head's own exposure, so what a UI hides from beginners is still a tool here.
+`ActionGate` as a proposal, and the tool returns its action id. Ordinary MCP calls cannot confirm themselves. A
+separate chat tool can consume a one-use approval the person issued through CLI or paired web; the proof stays in
+private state and never appears in MCP arguments or results. Tools follow the MCP head's own exposure, so what a UI
+hides from beginners is still a tool here.
 """
 
 import inspect
@@ -27,6 +29,7 @@ from heinzel.heads._exposure import MCP_HTTP, Exposed, exposed
 from heinzel.heads._presence import mark_authenticated_presence
 from heinzel.heads.mcp._skills import add_skills
 from heinzel.kernel import ActionGate, CurrentUser, HeinzelError, Kernel, ProposedCall, boot, redact_emails
+from heinzel.modules.system.runner.chat._store import ChatStore
 
 HEAD = "mcp"
 log = logging.getLogger(__name__)
@@ -46,7 +49,7 @@ RESULT_LIMIT = 20000
 Transport = Literal["stdio", "streamable-http"]
 
 
-ChatTools = Literal["everyday", "all"]
+ChatTools = Literal["everyday", "all", "personal-check-in"]
 
 
 def build(
@@ -59,6 +62,9 @@ def build(
 
     Over streamable HTTP, which has no authentication, the operations restricted to stdio (`mcp-stdio` in their
     `heads`, such as installing plugins) are left out. Over stdio, outside a chat, skills are prompts and resources.
+
+    Raises:
+        HeinzelError: If the personal check-in tool profile is requested for a chat without its durable context.
     """
     server = MCPServer(
         name="heinzel",
@@ -67,9 +73,21 @@ def build(
         instructions=INSTRUCTIONS if chat is None else CHAT_INSTRUCTIONS,
     )
     items = exposed(kernel, HEAD if transport == "stdio" else MCP_HTTP)
+    if chat is not None and chat_tools == "personal-check-in":
+        items = _check_in_items(kernel, chat)
     names = {item.name for item in items}
     for item in items:
-        if chat is not None and item.operation.private:
+        if item.record.qualname == "system.runner.chat" and item.operation.name == "confirm-authorized-mcp":
+            if chat is None:
+                continue
+            server.add_tool(
+                authorized_chat_confirmation(kernel, item, chat),
+                name=item.name,
+                description=item.operation.summary,
+                annotations=ToolAnnotations(read_only_hint=False, destructive_hint=True),
+            )
+            continue
+        if chat is not None and item.operation.private and chat_tools != "personal-check-in":
             continue  # Private session data is granted by the durable engine, never ambient chat tools.
         if chat is not None and chat_tools == "everyday" and item.operation.audience != "everyday":
             continue
@@ -98,6 +116,23 @@ def build(
     if transport == "stdio" and chat is None:  # skills may be internal: only for a client that started hz as you
         add_skills(server, kernel)
     return server
+
+
+def _check_in_items(kernel: Kernel, chat: str) -> list[Exposed]:
+    """The one proposal tool, only for a durable chat bound to its owner's session.
+
+    Raises:
+        HeinzelError: If the chat is not a durable check-in context.
+    """
+    scoped_chat = kernel.resolve(ChatStore).load(chat)
+    if scoped_chat.context is None or scoped_chat.context.kind != "check-in" or scoped_chat.context.timezone is None:
+        msg = "The personal-check-in tool profile requires a durable check-in chat"
+        raise HeinzelError(msg)
+    return [
+        item
+        for item in exposed(kernel, "mcp-check-in")
+        if item.record.qualname == "heinzel" and item.operation.name == "propose-check-in"
+    ]
 
 
 def tool(kernel: Kernel, item: Exposed, *, local: bool = True) -> Callable[..., Any]:
@@ -148,6 +183,28 @@ def chat_tool(kernel: Kernel, item: Exposed, session: str) -> Callable[..., str]
         )
 
     return _signed(run, item, str)
+
+
+def authorized_chat_confirmation(kernel: Kernel, item: Exposed, session: str) -> Callable[..., Any]:
+    """Expose only the private-proof consumer in this chat; it cannot approve or broaden an action."""
+    user = kernel.resolve(CurrentUser)
+
+    def run(**kwargs: Any) -> Any:  # noqa: ANN401 - operation's public signature
+        if kwargs.get("session") != session:
+            msg = "This confirmation is limited to the MCP chat session"
+            raise ToolError(msg)
+        try:
+            with user.local("mcp-stdio"):
+                mark_authenticated_presence(kernel, item.record.qualname)
+                return kernel.invoke(item.operation, **kwargs)
+        except HeinzelError as exc:
+            raise ToolError(redact_emails(str(exc))) from exc
+        except Exception as exc:
+            log.exception("Authorized confirmation failed for chat %s", session)
+            msg = "The authorized confirmation failed; no approval token was returned"
+            raise ToolError(msg) from exc
+
+    return _signed(run, item, item.returns)
 
 
 def command_line(item: Exposed, arguments: dict[str, Any]) -> str:

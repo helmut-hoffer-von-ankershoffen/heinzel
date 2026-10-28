@@ -2,12 +2,14 @@
 
 import hashlib
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
+from hashlib import sha256
 
 import pytest
 from pydantic import ValidationError
 
 from heinzel import CallIdentity, CurrentUser, HeinzelError, Principal
+from heinzel.kernel._approval import ApprovalIntent, ApprovalRecord, arguments_hash
 from heinzel.modules.heinzel import _session_crud
 from heinzel.modules.heinzel._session_bodies import immutable_body
 from heinzel.modules.heinzel._session_crud import SessionCrud
@@ -19,11 +21,45 @@ pytestmark = pytest.mark.unit
 AT = datetime(2026, 10, 25, tzinfo=UTC)
 
 
+def _issue_test_approval(repository, current, session_id, request_id, revision, action, preview_hash):  # noqa: PLR0913, PLR0917
+    proof = sha256(f"proof:{request_id}".encode()).hexdigest()
+    intent = ApprovalIntent(
+        owner=current.principal().id,
+        audience="personal-check-in",
+        session=session_id,
+        action=action,
+        resource="five-minute-check-in",
+        arguments_hash=arguments_hash(
+            {
+                "request_id": request_id,
+                "expected_revision": revision,
+                "contract_version": 1,
+                "preview_hash": preview_hash,
+            }
+        ),
+        contract_revision=1,
+        grant_revision=0,
+        policy_revision=0,
+    )
+    record = ApprovalRecord(
+        intent=intent,
+        proof_hash=sha256(proof.encode()).hexdigest(),
+        nonce=sha256(f"nonce:{request_id}".encode()).hexdigest(),
+        provenance="test-only-synthetic-decision",
+        decision="approve",
+        issued_at=AT,
+        expires_at=AT + timedelta(minutes=5),
+    )
+    with repository.control_writer(session_id) as writer:
+        writer.append("approval.issued", key=record.proof_hash, data=record.model_dump(mode="json"))
+    return proof
+
+
 @pytest.fixture
 def services(tmp_path):
     current = CurrentUser(tmp_path / "state" / "identity")
     repository = PersonalSessionRepository(current, clock=lambda: AT)
-    service = SessionCrud(repository, lambda: SessionCosts(session_max_usd=2, message_max_usd=0.2))
+    service = SessionCrud(repository, lambda: SessionCosts(session_max_usd=2, message_max_usd=0.2), clock=lambda: AT)
     with current.local("cli"):
         yield service, repository, current
 
@@ -64,6 +100,181 @@ def test_profile_exact_replay_precedes_stale_revision_and_restore_default_roundt
     restored = service.profile(first.session_id, "edit-3", 2, appearance=HeinzelAppearance())
     assert restored.appearance.hat is restored.appearance.shirt is restored.appearance.beard is None
     assert restored.name == "Named helper"
+
+
+def test_check_in_contract_and_schedule_are_private_inactive_versioned_and_restartable(services):  # noqa: PLR0915
+    service, repository, current = services
+    created = service.new_chat("create-1", "Five-minute helper", HeinzelAppearance(hat="teal"))
+    proposed = service.propose_check_in(created.session_id, "check-in-v1", "Europe/Berlin")
+    assert proposed.schedule is not None
+    assert proposed.schedule.status == "proposed"
+    assert proposed.state == "proposed"
+    assert proposed.schedule.cron == "*/5 * * * *"
+    assert proposed.contract_version is None
+    assert proposed.contracts[0].version == 1
+    assert proposed.contracts[0].status == "proposed"
+    assert proposed.contracts[0].text
+    assert service.propose_check_in(created.session_id, "check-in-v1", "Europe/Berlin") == proposed
+
+    with pytest.raises(HeinzelError, match="Approval is invalid"):
+        service.schedule_control(
+            created.session_id,
+            "activate-v1",
+            1,
+            "activate",
+            expected_contract_version=proposed.schedule.contract_version,
+            expected_preview_hash=proposed.schedule.preview_hash,
+        )
+
+    spine = json.dumps([event.model_dump(mode="json") for event in repository.control_read(created.session_id).events])
+    assert "Five-minute check-in" not in spine
+    assert "At each explicitly approved" not in spine
+    assert "Five-minute helper" not in spine
+
+    activate_proof = _issue_test_approval(
+        repository, current, created.session_id, "activate-v1", 1, "activate", proposed.schedule.preview_hash
+    )
+    with pytest.raises(HeinzelError, match="Approval is invalid"):
+        service.schedule_control(
+            created.session_id,
+            "activate-v1",
+            1,
+            "activate",
+            activate_proof,
+            proposed.schedule.contract_version,
+            "0" * 64,
+        )
+    active = service.schedule_control(
+        created.session_id,
+        "activate-v1",
+        1,
+        "activate",
+        activate_proof,
+        proposed.schedule.contract_version,
+        proposed.schedule.preview_hash,
+    )
+    assert active.schedule is not None
+    assert active.schedule.status == "active"
+    assert active.contract_version == 1
+    assert active.contracts[0].status == "approved"
+    assert active.state == "awake"
+    service.clock = lambda: AT + timedelta(days=1)
+    assert (
+        service.schedule_control(
+            created.session_id,
+            "activate-v1",
+            1,
+            "activate",
+            activate_proof,
+            proposed.schedule.contract_version,
+            proposed.schedule.preview_hash,
+        )
+        == active
+    )
+    assert sum(event.kind == "schedule.activated" for event in repository.control_read(created.session_id).events) == 1
+    service.clock = lambda: AT
+    with pytest.raises(HeinzelError, match="different schedule control"):
+        service.schedule_control(created.session_id, "activate-v1", 1, "pause")
+    with pytest.raises(HeinzelError, match="schedule changed"):
+        service.schedule_control(created.session_id, "stale-pause", 1, "pause")
+    paused = service.schedule_control(created.session_id, "pause-v1", 2, "pause")
+    assert paused.schedule is not None
+    assert paused.schedule.status == "paused"
+    assert paused.state == "paused"
+    with pytest.raises(HeinzelError, match="Approval is invalid"):
+        service.schedule_control(
+            created.session_id,
+            "resume-v1",
+            3,
+            "resume",
+            expected_contract_version=proposed.schedule.contract_version,
+            expected_preview_hash=proposed.schedule.preview_hash,
+        )
+    resume_proof = _issue_test_approval(
+        repository, current, created.session_id, "resume-v1", 3, "resume", proposed.schedule.preview_hash
+    )
+    resumed = service.schedule_control(
+        created.session_id,
+        "resume-v1",
+        3,
+        "resume",
+        resume_proof,
+        proposed.schedule.contract_version,
+        proposed.schedule.preview_hash,
+    )
+    assert resumed.schedule is not None
+    assert resumed.schedule.status == "active"
+    assert resumed.appearance == HeinzelAppearance(hat="teal")
+
+    restarted = SessionCrud(PersonalSessionRepository(current), service.costs, clock=lambda: AT)
+    reopened = restarted.snapshot(created.session_id)
+    assert reopened.schedule == resumed.schedule
+    assert reopened.contracts == resumed.contracts
+    assert reopened.name == resumed.name
+    assert restarted.listing().sessions[0].state == "awake"
+
+
+def test_check_in_schedule_requires_valid_timezone_and_explicit_transition(services):
+    service, _repository, _current = services
+    created = service.new_chat("create-1")
+    with pytest.raises(HeinzelError, match="Unknown IANA time zone"):
+        service.propose_check_in(created.session_id, "check-in-v1", "Mars/Olympus")
+    assert service.snapshot(created.session_id).schedule is None
+    proposed = service.propose_check_in(created.session_id, "check-in-v1")
+    assert proposed.schedule is not None
+    assert proposed.schedule.status == "proposed"
+    assert proposed.state == "proposed"
+    with pytest.raises(HeinzelError, match="Cannot pause"):
+        service.schedule_control(created.session_id, "premature-pause", 1, "pause")
+
+
+def test_only_the_internal_issuer_records_a_fresh_exact_intent(services):
+    service, repository, _current = services
+    created = service.new_chat("issuer-create")
+    proposed = service.propose_check_in(created.session_id, "issuer-check-in", "Europe/Berlin")
+    assert proposed.schedule is not None
+    arguments = {
+        "session_id": created.session_id,
+        "request_id": "issuer-activate",
+        "expected_revision": proposed.schedule.revision,
+        "action": "activate",
+        "expected_contract_version": proposed.schedule.contract_version,
+        "expected_preview_hash": proposed.schedule.preview_hash,
+    }
+    with pytest.raises(HeinzelError, match="invalid or unavailable"):
+        service.issue("heinzel", "schedule-control", arguments | {"approval_proof": "caller-supplied"}, "test")
+    with pytest.raises(HeinzelError, match="invalid or unavailable"):
+        service.issue("other", "schedule-control", arguments, "test")
+    proof = service.issue("heinzel", "schedule-control", arguments, "chat-confirm:test:a1")
+    assert len(proof) >= 43
+    events = repository.control_read(created.session_id).events
+    issued = [event for event in events if event.kind == "approval.issued"]
+    assert len(issued) == 1
+    record = ApprovalRecord.model_validate_json(json.dumps(issued[0].data))
+    assert record.intent.session == created.session_id
+    assert record.intent.arguments_hash == arguments_hash(
+        {
+            "request_id": arguments["request_id"],
+            "expected_revision": arguments["expected_revision"],
+            "contract_version": arguments["expected_contract_version"],
+            "preview_hash": arguments["expected_preview_hash"],
+        }
+    )
+    assert record.provenance == "chat-confirm:test:a1"
+    assert record.expires_at - record.issued_at == timedelta(minutes=5)
+    active = service.schedule_control(
+        created.session_id,
+        arguments["request_id"],
+        arguments["expected_revision"],
+        "activate",
+        proof,
+        arguments["expected_contract_version"],
+        arguments["expected_preview_hash"],
+    )
+    assert active.schedule is not None
+    assert active.schedule.status == "active"
+    assert service.applied("heinzel", "schedule-control", arguments)
+    assert not service.applied("heinzel", "schedule-control", arguments | {"request_id": "another-request"})
 
 
 def test_identity_is_required_each_call_and_other_principal_cannot_read_or_change_a_known_id(services):

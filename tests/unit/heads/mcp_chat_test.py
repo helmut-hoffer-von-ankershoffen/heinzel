@@ -119,7 +119,9 @@ def test_a_chat_asked_for_all_tools_gets_every_tool_the_mcp_head_has_and_nothing
         for item in ordinary
         if item.name.startswith("notes_") and not item.operation.private
     )
-    assert not any(name.startswith("system_runner_chat") for name in listed)  # never its own confirm
+    assert {name for name in listed if name.startswith("system_runner_chat")} == {
+        "system_runner_chat_confirm_authorized_mcp"
+    }  # it can consume a human grant, never confirm/authorize directly
 
 
 def test_a_read_runs_and_returns_json_without_email_addresses(kernel, ran):

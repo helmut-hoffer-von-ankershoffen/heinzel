@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field, JsonValue, StringConstraints
 from heinzel import ModuleSettings
 from heinzel.kernel import Billing, Effort
 
-ContextKind = Literal["route", "contract", "draft", "event", "text"]
+ContextKind = Literal["route", "contract", "draft", "event", "text", "check-in"]
 SessionId = Annotated[str, StringConstraints(pattern=r"^[a-f0-9]{16}$")]
 """16 hex characters: a session's directory name, so never a path."""
 ActionId = Annotated[str, StringConstraints(pattern=r"^a[0-9]{1,4}$")]
@@ -61,7 +61,7 @@ class ChatSettings(ModuleSettings):
 class ChatContext(BaseModel):
     """What a chat was opened about: the screen, a contract, a draft or a notification event; it seeds the chat."""
 
-    kind: ContextKind = Field(description="`route`, `contract`, `draft`, `event` or `text`.")
+    kind: ContextKind = Field(description="The context kind; `check-in` is created only by the durable-session flow.")
     ref: str = Field(
         default="",
         max_length=300,
@@ -72,6 +72,12 @@ class ChatContext(BaseModel):
         max_length=4000,
         description="What the opener knows about it, in words (a notification's title and body); email addresses are "
         "never sent to the agent.",
+    )
+    request_id: str | None = Field(
+        default=None, description="The idempotency key for opening a scoped durable check-in conversation."
+    )
+    timezone: str | None = Field(
+        default=None, max_length=128, description="The user's selected time zone for a proposed check-in schedule."
     )
 
 
@@ -84,9 +90,13 @@ class ChatAction(BaseModel):
     operation: str = Field(description="The operation's name, e.g. `set`.")
     command: str = Field(description="The same as a command line: what the person confirms.")
     arguments: dict[str, JsonValue] = Field(default_factory=dict, description="The arguments it runs with.")
-    status: Literal["pending", "running", "done", "failed", "declined"] = Field(
+    status: Literal["pending", "running", "done", "failed", "declined", "uncertain"] = Field(
         default="pending",
-        description="`pending` until the person confirms it (`running`, then `done` or `failed`) or declines it.",
+        description="`pending` until confirmed, declined, or reconciled after an interrupted confirmation.",
+    )
+    mcp_authorized: bool = Field(
+        default=False,
+        description="Whether a person explicitly authorized this exact pending action for one MCP confirmation.",
     )
     result: str = Field(default="", description="What it returned, or why it failed; empty while pending.")
     proposed: datetime = Field(description="When the agent proposed it.")
@@ -101,6 +111,9 @@ class ChatMessage(BaseModel):
     )
     text: str = Field(description="The message; for an assistant, empty when the run did not complete.")
     at: datetime = Field(description="When it was written.")
+    request_id: str | None = Field(
+        default=None, description="The stable client id for a retriable message; absent for older and generic chats."
+    )
     status: str = Field(default="completed", description="For an assistant message: how the run ended.")
     detail: str = Field(default="", description="Why the run did not complete; empty when it did.")
     fix: str = Field(default="", description="A command that fixes why it did not complete, if there is one.")

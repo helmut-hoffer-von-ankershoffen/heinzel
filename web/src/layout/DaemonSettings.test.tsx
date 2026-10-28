@@ -14,6 +14,7 @@ const running: SchemaDaemonStatus = {
   loaded: true,
   paused: false,
   version: "1.2.3",
+  installed_version: "1.2.3",
   version_mismatch: false,
   jobs: 3,
   failing: [],
@@ -51,8 +52,8 @@ function show(initial: Partial<SchemaDaemonStatus> = {}, failed = false) {
       return { paused: false };
     },
     "/api/system/daemon/restart": () => {
-      status = { ...status, loaded: true, version: "2.0.0", version_mismatch: false };
-      return { restarted: true, version: status.version, interval_minutes: 5 };
+      status = { ...status, loaded: true, installed_version: "2.0.0", version_mismatch: false };
+      return { restarted: true, version: "2.0.0", interval_minutes: 5 };
     },
   });
   const view = render(
@@ -74,7 +75,12 @@ describe("Daemon Settings", () => {
   it.each([true, false])("mounts actual status and safe controls in Settings, installed=%s", async (installed) => {
     const { calls } = mockApi({
       ...shell,
-      "/api/system/daemon/status": { ...running, installed, loaded: installed },
+      "/api/system/daemon/status": {
+        ...running,
+        installed,
+        loaded: installed,
+        installed_version: installed ? running.installed_version : null,
+      },
       "/api/system/daemon/install": {
         platform: "darwin",
         executable: "/usr/bin/hz",
@@ -106,7 +112,7 @@ describe("Daemon Settings", () => {
       </Providers>,
     );
     const controls = await screen.findByRole("region", { name: "Daemon status and controls" });
-    expect(await within(controls).findByText("1.2.3")).toBeInTheDocument();
+    expect(await within(controls).findAllByText("1.2.3")).toHaveLength(installed ? 2 : 1);
     expect(within(controls).getByText("3")).toBeInTheDocument();
     expect(screen.queryByLabelText("Service folder")).not.toBeInTheDocument();
     expect(screen.queryByText("No settings here")).not.toBeInTheDocument();
@@ -125,7 +131,7 @@ describe("Daemon Settings", () => {
   it("shows actual daemon version, job count and last tick without exposing service-folder configuration", async () => {
     const lastTick = "2026-10-27T08:00:00.000Z";
     const { container, calls } = show({ last_tick: lastTick });
-    expect(await screen.findByText("1.2.3")).toBeInTheDocument();
+    expect(await screen.findAllByText("1.2.3")).toHaveLength(2);
     expect(screen.getByText("3")).toBeInTheDocument();
     expect(screen.getByText("Last tick")).toBeInTheDocument();
     expect(screen.getByText(new Date(lastTick).toLocaleString())).toBeInTheDocument();
@@ -191,8 +197,8 @@ describe("Daemon Settings", () => {
   });
 
   it("shows unknown recorded version and zero jobs honestly, and confirms a needed restart", async () => {
-    const { user, calls } = show({ loaded: false, version: null, jobs: 0 });
-    expect(await screen.findByText("Unknown")).toBeInTheDocument();
+    const { user, calls } = show({ loaded: false, version: null, installed_version: null, jobs: 0 });
+    expect(await screen.findAllByText("Unknown")).toHaveLength(2);
     expect(screen.getByText("0")).toBeInTheDocument();
     expect(screen.getByRole("status")).toHaveTextContent("not loaded");
     await user.click(screen.getByRole("button", { name: "Restart" }));

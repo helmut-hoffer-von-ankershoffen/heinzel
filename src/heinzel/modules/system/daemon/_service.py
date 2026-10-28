@@ -10,6 +10,7 @@ The service reads only user-scope configuration (site and user files and the env
 import json
 import logging
 import os
+import re
 import shutil
 import sys
 from collections.abc import Callable
@@ -34,7 +35,7 @@ from heinzel import (
     Status,
     __version__,
 )
-from heinzel.kernel import KERNEL_SECTION
+from heinzel.kernel import KERNEL_SECTION, tick_interval
 from heinzel.modules.system.daemon import _schedule as schedule
 from heinzel.modules.system.daemon._ledger import Ledger
 from heinzel.modules.system.daemon._models import (
@@ -88,6 +89,8 @@ STALE_TICKS = 3
 PLATFORMS = ("darwin", "linux")
 """launchd and systemd read unit files; they hold no secrets."""
 MODULE_SECTION = "system.daemon"
+MAX_SERVICE_MANAGER_OUTPUT = 1_000_000
+MAX_PID_DIGITS = 10
 
 
 @dataclass(frozen=True, slots=True)
@@ -110,6 +113,36 @@ class Due:
 def notifier_in_applications() -> bool:
     """Whether Heinzel Notifier.app is in ~/Applications."""
     return (Path.home() / "Applications" / NOTIFIER_APP).exists()
+
+
+def _launchd_pid(output: str, expected_label: str) -> int | None:
+    """Parse one bounded label-specific launchctl property record, or return unknown.
+
+    The service-specific `list` response is not a promised stable data interface, so accept only the exact current
+    Label/PID keys and fail closed when the shape changes.
+    """
+    if len(output) > MAX_SERVICE_MANAGER_OUTPUT:
+        return None
+    labels = re.findall(r'(?m)^\s*"Label"\s*=\s*"([^"\r\n]+)"\s*;\s*$', output)
+    pids = re.findall(r'(?m)^\s*"PID"\s*=\s*([0-9]+)\s*;\s*$', output)
+    if labels != [expected_label] or len(pids) != 1:
+        return None
+    return _positive_pid(pids[0])
+
+
+def _reported_pid(output: str) -> int | None:
+    """Parse a decimal process id from a manager's machine-readable output, or return unknown."""
+    if len(output) > MAX_SERVICE_MANAGER_OUTPUT:
+        return None
+    return _positive_pid(output.strip())
+
+
+def _positive_pid(value: str) -> int | None:
+    """Parse a bounded decimal PID greater than zero."""
+    if not re.fullmatch(rf"[0-9]{{1,{MAX_PID_DIGITS}}}", value):
+        return None
+    pid = int(value)
+    return pid if pid > 0 else None
 
 
 class DaemonService:
@@ -191,6 +224,15 @@ class DaemonService:
         private_dir(self.log_path.parent)
         for path, content in files.items():
             write_private(path, content, shared_dir=True)  # 0600: launchd and systemd read user units as the user
+        if self._platform == "darwin":  # bootstrap fails on a loaded agent; unload the old one, if any, first
+            self._runner(self._command("launchctl", "bootout", f"gui/{self._uid()}/{LABEL}"))
+        for command in commands:
+            result = self._runner(command)
+            if result.returncode != 0:
+                msg = f"`{' '.join(command)}` failed: {(result.stderr or result.stdout).strip()}"
+                raise HeinzelError(msg)
+        # This marker is used to refuse new schedule approvals when an older daemon may still be running. Write it
+        # only after the service manager accepted the load/reload commands, so a failed replacement stays fail-closed.
         self._write_state(
             "install.json",
             {
@@ -201,13 +243,6 @@ class DaemonService:
                 "version": __version__,
             },
         )
-        if self._platform == "darwin":  # bootstrap fails on a loaded agent; unload the old one, if any, first
-            self._runner(self._command("launchctl", "bootout", f"gui/{self._uid()}/{LABEL}"))
-        for command in commands:
-            result = self._runner(command)
-            if result.returncode != 0:
-                msg = f"`{' '.join(command)}` failed: {(result.stderr or result.stdout).strip()}"
-                raise HeinzelError(msg)
         hint = LOGIN_ITEM_HINT if self._platform == "darwin" and not self._notifier_installed() else None
         return Installed(
             platform=self._platform,
@@ -220,7 +255,10 @@ class DaemonService:
         )
 
     def restart(self) -> Restarted:
-        """Reload the installed daemon with the interval it has, so it runs with the hz that is installed now.
+        """Ask the service manager to reload the installed daemon with the interval it has.
+
+        The result says which version the unit was asked to use. `status` remains unknown until a tick records the
+        version that actually ran.
 
         Raises:
             HeinzelError: If loading fails.
@@ -264,7 +302,16 @@ class DaemonService:
         installed = self._platform in PLATFORMS and all(path.exists() for path in self._unit_paths())
         recorded = self._read_state("install.json")
         jobs = self.jobs()
-        version = str(recorded["version"]) if installed and "version" in recorded else None
+        # install.json records the intended unit version, not the code that actually ran. The tick heartbeat is
+        # written by the executing process and intentionally stays unknown for older versions without this field.
+        heartbeat = self._read_state("heartbeat.json")
+        version = str(heartbeat["version"]) if installed and isinstance(heartbeat.get("version"), str) else None
+        installed_version = str(recorded["version"]) if installed and isinstance(recorded.get("version"), str) else None
+        version_mismatch = installed and (
+            (version is not None and version != __version__)
+            or (installed_version is not None and installed_version != __version__)
+            or (version is not None and installed_version is not None and version != installed_version)
+        )
         return DaemonStatus(
             platform=self._platform,
             installed=installed,
@@ -276,7 +323,8 @@ class DaemonService:
             jobs=len(jobs),
             failing=[job.job for job in jobs if job.problem or job.last_disposition is Disposition.FAILED],
             version=version,
-            version_mismatch=version is not None and version != __version__,
+            installed_version=installed_version,
+            version_mismatch=version_mismatch,
         )
 
     def health(self) -> list[Check]:
@@ -404,7 +452,10 @@ class DaemonService:
             log = TickLog(self.log_path, f"{now:%Y%m%dT%H%M%S}", self._clock)
             try:
                 runs = self._run(jobs, job, now, log)
-                self._write_state("heartbeat.json", {"last_tick": now.isoformat()})
+                heartbeat: dict[str, str | int] = {"last_tick": now.isoformat()}
+                if self._service_manager_pid() == os.getpid():
+                    heartbeat["version"] = __version__
+                self._write_state("heartbeat.json", heartbeat)
                 self._post_notices(log)
                 log.write(logging.INFO, f"tick done: {len(runs)} run(s)")
             finally:
@@ -485,7 +536,7 @@ class DaemonService:
         previous = self._abandoned.get(job.id)
         if skip is None and previous is not None and previous.is_alive():
             skip = "its previous run timed out and is still running"
-        outcome = Outcome(error=skip) if skip is not None else self._execute(job)
+        outcome = Outcome(error=skip) if skip is not None else self._execute(job, due.slot)
         if isinstance(outcome.value, JobInactive) and outcome.error is None:
             return JobRun(
                 job=job.id, as_of=due.slot, wake=due.wake, disposition=Disposition.SKIPPED, error=outcome.value.reason
@@ -527,10 +578,17 @@ class DaemonService:
             HeinzelError: If the job's receipts are damaged.
         """
         if manual is not None:
-            return [Due(now, Wake.MANUAL)]
+            skip = "this job only runs on its scheduled slots" if job.let.scheduled_only else None
+            return [Due(now, Wake.MANUAL, skip)]
         if schedule.problem(job.let.schedule):
             return []
         interval = timedelta(minutes=self._interval())
+        cadence = tick_interval() or interval
+        if job.let.max_tick_interval is not None and cadence > job.let.max_tick_interval:
+            msg = (
+                f"{job.id} needs daemon ticks at least every {job.let.max_tick_interval}; current cadence is {cadence}"
+            )
+            raise HeinzelError(msg)
         last = ledger.last(job.id, Wake.SCHEDULE)
         start = max(filter(None, (self._last_tick(), now - interval)))
         if last is not None and last.as_of > now + interval:
@@ -553,7 +611,7 @@ class DaemonService:
             return [Due(slot, Wake.SCHEDULE, "missed slot; catch_up is skip")]
         return [Due(slot, Wake.SCHEDULE)]
 
-    def _execute(self, job: Job) -> Outcome:
+    def _execute(self, job: Job, slot: datetime) -> Outcome:
         """Run a job through kernel injection with its timeout, retrying failures but never a timeout.
 
         A job that timed out may still be running, so running it again could do its work twice; its thread is
@@ -561,7 +619,10 @@ class DaemonService:
         """
         outcome = Outcome()
         for _ in range(job.let.retries + 1):
-            outcome = self._time_limit(lambda: self._kernel.call(job.let.func), job.let.timeout.total_seconds())
+            outcome = self._time_limit(
+                lambda: job.let.run_for_slot(slot) if job.let.run_for_slot else self._kernel.call(job.let.func),
+                job.let.timeout.total_seconds(),
+            )
             if outcome.abandoned is not None:
                 self._abandoned[job.id] = outcome.abandoned
                 return outcome
@@ -589,6 +650,36 @@ class DaemonService:
 
     def _last_tick(self) -> datetime | None:
         return self._timestamp("heartbeat.json", "last_tick")
+
+    def _service_manager_pid(self) -> int | None:
+        """The process manager's PID for this tick, or unknown; never infer service origin from a CLI flag/env var.
+
+        The label-specific launchd `list` response and systemd's `MainPID` property expose the currently running
+        process. The daemon's jobs are oneshot, so the manager reports a PID only while its scheduled tick is active.
+        Any missing, malformed, unsupported or failed query remains unknown and cannot attest this invocation.
+        """
+        try:
+            if self._platform == "darwin":
+                command = self._command("launchctl", "list", LABEL)
+                parser = "launchd"
+            elif self._platform == "linux":
+                command = self._command(
+                    "systemctl",
+                    "--user",
+                    "show",
+                    f"{SYSTEMD_NAME}.service",
+                    "--property=MainPID",
+                    "--value",
+                )
+                parser = "systemd"
+            else:
+                return None
+            result = self._runner(command)
+        except (OSError, HeinzelError):
+            return None
+        if result.returncode != 0:
+            return None
+        return _launchd_pid(result.stdout, LABEL) if parser == "launchd" else _reported_pid(result.stdout)
 
     def _timestamp(self, name: str, key: str) -> datetime | None:
         value = self._read_state(name).get(key)
