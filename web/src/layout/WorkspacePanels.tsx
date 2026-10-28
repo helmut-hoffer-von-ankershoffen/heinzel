@@ -7,6 +7,16 @@ export type WorkspacePanel = { id: string; title: string; content: ReactNode };
 
 type Props = { panels: WorkspacePanel[]; active: string; onSelect: (id: string) => void; flowing?: boolean };
 
+/** Reveal a tab horizontally without moving the workspace's vertical scroll position. */
+function revealTab(tab: HTMLButtonElement | undefined) {
+  const list = tab?.parentElement;
+  if (!tab || !list) return;
+  const box = tab.getBoundingClientRect();
+  const bounds = list.getBoundingClientRect();
+  if (box.left < bounds.left) list.scrollLeft += box.left - bounds.left;
+  else if (box.right > bounds.right) list.scrollLeft += box.right - bounds.right;
+}
+
 export function WorkspacePanels({ panels, active, onSelect, flowing = false }: Props) {
   const prefix = useId();
   const tabs = useRef(new Map<string, HTMLButtonElement>());
@@ -15,13 +25,13 @@ export function WorkspacePanels({ panels, active, onSelect, flowing = false }: P
   useLayoutEffect(() => {
     if (previous.current === selected) return;
     if (selected) {
-      tabs.current.get(selected)?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+      revealTab(tabs.current.get(selected));
       if (
         previous.current &&
         !panels.some((panel) => panel.id === previous.current) &&
         document.activeElement === document.body
       )
-        tabs.current.get(selected)?.focus();
+        tabs.current.get(selected)?.focus({ preventScroll: true });
     }
     previous.current = selected;
   }, [selected, panels]);
@@ -62,8 +72,8 @@ export function WorkspacePanels({ panels, active, onSelect, flowing = false }: P
                 if (!target) return;
                 event.preventDefault();
                 onSelect(target.id);
-                tabs.current.get(target.id)?.focus();
-                tabs.current.get(target.id)?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+                tabs.current.get(target.id)?.focus({ preventScroll: true });
+                revealTab(tabs.current.get(target.id));
               }}
               className={cn(
                 "min-h-8 shrink-0 whitespace-nowrap rounded-lg px-3 text-ui-sm hover:bg-accent",

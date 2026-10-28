@@ -155,6 +155,13 @@ async function assertContained(page, locator, name) {
 }
 
 async function showPage(page) {
+  // A hovered footer pane can cover the tabs after a viewport resize; dismiss it as a person would.
+  const releaseNotes = page.getByRole("region", { name: /^v\d/ });
+  if (await releaseNotes.isVisible()) {
+    await page.mouse.move(3, 3);
+    await page.mouse.click(3, 3);
+    await releaseNotes.waitFor({ state: "hidden" });
+  }
   const tab = page.getByRole("tab", { name: "Page", exact: true });
   if (await tab.isVisible()) await tab.click();
 }
@@ -662,6 +669,211 @@ try {
     await page.unrouteAll({ behavior: "wait" });
     await context.close();
   }
+  // Header actions navigate within the shared phone scroller, without requiring a manual swipe.
+  const scrollPage = await browser.newPage({
+    viewport: { width: 390, height: 844 },
+    isMobile: true,
+    hasTouch: true,
+    serviceWorkers: "block",
+  });
+  await scrollPage.addInitScript(() => {
+    localStorage.setItem("hz.onboarding", JSON.stringify({ step: "you", visited: [], closed: true }));
+    const scroll = Element.prototype.scrollTo;
+    window.workspaceScrollCalls = [];
+    window.workspaceTimers = { started: [], cleared: [] };
+    const startTimer = window.setTimeout.bind(window);
+    const clearTimer = window.clearTimeout.bind(window);
+    window.setTimeout = (callback, delay, ...args) => {
+      const id = startTimer(callback, delay, ...args);
+      if (delay === 1200) window.workspaceTimers.started.push(id);
+      return id;
+    };
+    window.clearTimeout = (id) => {
+      window.workspaceTimers.cleared.push(id);
+      return clearTimer(id);
+    };
+    Element.prototype.scrollTo = function (...args) {
+      if (this.classList.contains("workspace-scroll")) window.workspaceScrollCalls.push(args[0]);
+      return scroll.apply(this, args);
+    };
+  });
+  await scrollPage.route("**/api/system/ui/actions**", (route) =>
+    route.fulfill({
+      json: [
+        {
+          id: "clock:team-clock",
+          module: "clock",
+          plugin: "heinzel-clock",
+          order: 500,
+          refresh: 60,
+          problem: null,
+          slots: { header: true },
+          label: "World clock",
+          icon: "globe",
+          badge: 0,
+          effect: { kind: "navigate", path: "/?panel=world-clock" },
+        },
+      ],
+    }),
+  );
+  await scrollPage.route("**/api/clock", (route) =>
+    route.fulfill({
+      json: [
+        { zone: "Europe/Berlin", hours: [9, 18], working: false, time: "" },
+        { zone: "America/New_York", hours: [9, 18], working: false, time: "" },
+      ],
+    }),
+  );
+  await scrollPage.goto(url);
+  await scrollPage.getByRole("heading", { name: "Today" }).waitFor();
+  const workspaceScroll = scrollPage.locator(".workspace-scroll");
+  const atPanel = async (id) => {
+    await scrollPage.waitForFunction(
+      (id) => {
+        const box = document.querySelector(".workspace-scroll");
+        const panel = document.querySelector('[data-placement="below"]');
+        return (
+          panel?.getAttribute("data-active") === id &&
+          box &&
+          Math.abs(box.scrollTop - Math.min(panel.offsetTop, box.scrollHeight - box.clientHeight)) < 2
+        );
+      },
+      id,
+      { timeout: 5000 },
+    );
+  };
+  const atPage = async () => {
+    await scrollPage.waitForFunction(
+      () => {
+        const box = document.querySelector(".workspace-scroll");
+        return box && box.scrollTop < 2 && document.querySelector('[data-active="page"]');
+      },
+      null,
+      { timeout: 5000 },
+    );
+  };
+  const lastScroll = async () => scrollPage.evaluate(() => window.workspaceScrollCalls.at(-1));
+  await scrollPage.getByRole("button", { name: "World clock", exact: true }).tap();
+  await atPanel("world-clock");
+  assert.equal((await lastScroll()).behavior, "smooth", "clock header scrolls smoothly");
+  await workspaceScroll.evaluate((element) => {
+    element.scrollTop = 0;
+  });
+  await scrollPage.getByRole("button", { name: "World clock", exact: true }).tap();
+  await atPanel("world-clock");
+  assert.equal((await lastScroll()).behavior, "smooth", "repeated clock selection scrolls again");
+  const startTop = await workspaceScroll.evaluate((element) => element.scrollTop);
+  await scrollPage.getByRole("tab", { name: "World clock", exact: true }).focus();
+  await scrollPage.keyboard.press("Home");
+  const pageTab = scrollPage.getByRole("tab", { name: "Page", exact: true });
+  await pageTab.waitFor({ state: "visible" });
+  await scrollPage.waitForFunction(
+    () => document.querySelector('[role="tab"][aria-selected="true"]')?.textContent === "Page",
+    null,
+    { timeout: 1000 },
+  );
+  assert.ok(await pageTab.evaluate((element) => element === document.activeElement), "Page tab keeps keyboard focus");
+  await scrollPage.waitForFunction(
+    (start) => {
+      const top = document.querySelector(".workspace-scroll").scrollTop;
+      return top > 2 && top < start - 2;
+    },
+    startTop,
+    { timeout: 5000 },
+  );
+  await atPage();
+  assert.equal((await lastScroll()).behavior, "smooth", "Page scrolls smoothly to the top");
+  await scrollPage.getByRole("button", { name: "Chat with your Heinzelmännchen" }).tap();
+  await atPanel("chat");
+  assert.equal((await lastScroll()).behavior, "smooth", "chat header scrolls smoothly");
+  await workspaceScroll.evaluate((element) => {
+    element.scrollTop = 0;
+  });
+  await scrollPage.getByRole("button", { name: "Show chat" }).tap();
+  await atPanel("chat");
+  await scrollPage.getByRole("tab", { name: "Page", exact: true }).tap();
+  await atPage();
+  await scrollPage.getByRole("button", { name: "Open a terminal" }).tap();
+  await atPanel("terminal");
+  assert.equal((await lastScroll()).behavior, "smooth", "terminal header scrolls smoothly");
+  await workspaceScroll.evaluate((element) => {
+    element.scrollTop = 0;
+  });
+  await scrollPage.getByRole("button", { name: "Show terminal" }).tap();
+  await atPanel("terminal");
+  // A later selection cancels the pending Page transition, even after its fallback timer.
+  await scrollPage.evaluate(() => {
+    window.workspaceTimers = { started: [], cleared: [] };
+  });
+  await scrollPage.getByRole("tab", { name: "Page", exact: true }).tap();
+  await scrollPage.waitForFunction(() => window.workspaceTimers.started.length > 0);
+  await scrollPage.getByRole("button", { name: "Chat with your Heinzelmännchen" }).tap();
+  await atPanel("chat");
+  const timers = await scrollPage.evaluate(() => window.workspaceTimers);
+  assert.ok(
+    timers.started.length > 0 && timers.cleared.includes(timers.started.at(-1)),
+    "superseded Page timer is cancelled",
+  );
+  assert.equal(await scrollPage.locator('[data-placement="below"]').getAttribute("data-active"), "chat");
+  await scrollPage.emulateMedia({ reducedMotion: "reduce" });
+  await scrollPage.getByRole("tab", { name: "Page", exact: true }).tap();
+  await atPage();
+  assert.equal((await lastScroll()).behavior, "auto", "reduced motion avoids animation");
+  await scrollPage.getByRole("button", { name: "Open a terminal" }).tap();
+  await atPanel("terminal");
+  assert.equal((await lastScroll()).behavior, "auto", "reduced motion also applies to panel navigation");
+  await scrollPage.emulateMedia({ reducedMotion: "no-preference" });
+  await scrollPage.evaluate(() => {
+    window.workspaceTimers = { started: [], cleared: [] };
+  });
+  await scrollPage.getByRole("tab", { name: "Page", exact: true }).tap();
+  await scrollPage.waitForFunction(() => window.workspaceTimers.started.length > 0);
+  await scrollPage.getByRole("link", { name: "Heinzelmännchen", exact: true }).tap();
+  await scrollPage.waitForURL("**/heinzel");
+  await scrollPage.waitForFunction(() =>
+    window.workspaceTimers.cleared.includes(window.workspaceTimers.started.at(-1)),
+  );
+  const routeTimers = await scrollPage.evaluate(() => window.workspaceTimers);
+  assert.ok(routeTimers.cleared.includes(routeTimers.started.at(-1)), "route changes cancel the Page timer");
+  await scrollPage.getByRole("button", { name: "World clock", exact: true }).tap();
+  await atPanel("world-clock");
+  await scrollPage.evaluate(() => {
+    window.workspaceTimers = { started: [], cleared: [] };
+  });
+  await scrollPage.getByRole("tab", { name: "Page", exact: true }).tap();
+  await scrollPage.waitForFunction(() => window.workspaceTimers.started.length > 0);
+  await scrollPage.setViewportSize({ width: 1400, height: 900 });
+  await scrollPage.waitForFunction(() => document.querySelector('[data-placement="beside"]'));
+  await scrollPage.waitForFunction(() =>
+    window.workspaceTimers.cleared.includes(window.workspaceTimers.started.at(-1)),
+  );
+  const resizeTimers = await scrollPage.evaluate(() => window.workspaceTimers);
+  assert.ok(resizeTimers.cleared.includes(resizeTimers.started.at(-1)), "wide layout cancels the Page timer");
+  await scrollPage.setViewportSize({ width: 390, height: 844 });
+  await scrollPage.goto(url);
+  await scrollPage.getByRole("heading", { name: "Today" }).waitFor();
+  await scrollPage.getByRole("button", { name: "Open a terminal" }).tap();
+  await atPanel("terminal");
+  await scrollPage.setViewportSize({ width: 844, height: 320 });
+  await scrollPage.getByRole("button", { name: "Show terminal" }).tap();
+  await atPanel("terminal");
+  await scrollPage.getByRole("tab", { name: "Page", exact: true }).tap();
+  await atPage();
+  assert.equal((await lastScroll()).behavior, "smooth", "short landscape Page scrolls smoothly");
+  await scrollPage.setViewportSize({ width: 390, height: 844 });
+  await scrollPage.goto(`${new URL("/doctor?view=probe", url).href}${new URL(url).hash}`);
+  await scrollPage.locator("main table").waitFor();
+  await scrollPage.getByRole("button", { name: "World clock", exact: true }).tap();
+  await atPanel("world-clock");
+  assert.equal(new URL(scrollPage.url()).pathname, "/doctor", "clock keeps the current page");
+  assert.equal(new URL(scrollPage.url()).searchParams.get("view"), "probe");
+  await scrollPage.getByRole("tab", { name: "Page", exact: true }).tap();
+  await atPage();
+  assert.equal(new URL(scrollPage.url()).pathname, "/doctor", "Page returns to the original route");
+  await scrollPage.screenshot({ path: join(shots, "mobile-workspace-navigation.png") });
+  await scrollPage.unrouteAll({ behavior: "wait" });
+  await scrollPage.close();
+
   // The full sidebar retains its dock slot at a phone-sized width. Check the player itself and its controls fit and
   // remain actionable after a touch gesture; this says nothing about physical iOS Safari behavior.
   const soundPage = await browser.newPage({

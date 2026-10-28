@@ -43,9 +43,18 @@ type Props = {
   onToggleChat: () => void;
   terminalOpen: boolean;
   onToggleTerminal: () => void;
+  navigationMode?: boolean;
+  onWorldClock?: () => void;
 };
 
-export function TopBar({ chatOpen, onToggleChat, terminalOpen, onToggleTerminal }: Props) {
+export function TopBar({
+  chatOpen,
+  onToggleChat,
+  terminalOpen,
+  onToggleTerminal,
+  navigationMode = false,
+  onWorldClock,
+}: Props) {
   const { title, command } = useScreen();
   const queries = useQueryClient();
   const playful = usePlayful();
@@ -110,7 +119,7 @@ export function TopBar({ chatOpen, onToggleChat, terminalOpen, onToggleTerminal 
         )}
       </div>
       <div className="ml-auto flex items-center gap-0.5 text-icon">
-        <HeaderActions />
+        <HeaderActions onWorldClock={onWorldClock} />
         <Button variant="ghost" size="icon" onClick={refresh} aria-label={t("top.refresh")} title={t("top.refresh")}>
           <RefreshCw aria-hidden />
         </Button>
@@ -119,8 +128,8 @@ export function TopBar({ chatOpen, onToggleChat, terminalOpen, onToggleTerminal 
           size="icon"
           onClick={onToggleTerminal}
           aria-pressed={terminalOpen}
-          aria-label={terminalOpen ? t("terminal.close") : t("terminal.open")}
-          title={terminalOpen ? t("terminal.close") : t("terminal.open")}
+          aria-label={terminalOpen ? t(navigationMode ? "terminal.show" : "terminal.close") : t("terminal.open")}
+          title={terminalOpen ? t(navigationMode ? "terminal.show" : "terminal.close") : t("terminal.open")}
           className={cn(terminalOpen && "bg-accent text-accent-foreground")}
         >
           <SquareTerminal aria-hidden />
@@ -132,8 +141,8 @@ export function TopBar({ chatOpen, onToggleChat, terminalOpen, onToggleTerminal 
           onClick={onToggleChat}
           aria-expanded={chatOpen}
           aria-pressed={chatOpen}
-          aria-label={chatOpen ? t("chat.collapse") : t("chat.expand")}
-          title={chatOpen ? t("chat.collapse") : t("chat.expand")}
+          aria-label={chatOpen ? t(navigationMode ? "chat.show" : "chat.collapse") : t("chat.expand")}
+          title={chatOpen ? t(navigationMode ? "chat.show" : "chat.collapse") : t("chat.expand")}
           className="relative hover:bg-transparent hover:opacity-70"
         >
           <HeinzelAvatar view="head" age="young" shirt="teal" alive={playful} className="size-[1.4em] text-lg" />
