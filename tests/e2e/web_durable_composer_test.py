@@ -2,9 +2,12 @@
 
 import importlib.util
 import os
+import select
 import subprocess
 import sys
+import time
 from pathlib import Path
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
@@ -16,6 +19,25 @@ assert spec
 assert spec.loader
 web_build = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(web_build)
+
+
+def _startup_url(ui: subprocess.Popen[str]) -> str:
+    """Read one bounded startup line without exposing it in timeout diagnostics."""
+    assert ui.stdout is not None
+    deadline = time.monotonic() + 30
+    data = b""
+    while b"\n" not in data:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0 or not select.select([ui.stdout], [], [], remaining)[0]:
+            pytest.fail("The isolated web head did not start in time")
+        chunk = os.read(ui.stdout.fileno(), 4096)
+        if not chunk or len(data) + len(chunk) > 16384:
+            pytest.fail("The isolated web head did not provide a bounded session URL")
+        data += chunk
+    try:
+        return data.split(b"\n", 1)[0].decode("utf-8").strip()
+    except UnicodeDecodeError:
+        pytest.fail("The isolated web head provided an invalid session URL")
 
 
 @pytest.mark.timeout(600)
@@ -50,29 +72,47 @@ def test_durable_composer_survives_update_reload_and_stays_session_scoped(tmp_pa
         "HZ_ORG__EMAIL": "mira@example.com",
     }
     ui = subprocess.Popen(
-        ["uv", "run", "hz", "ui", "--port", "0"], cwd=REPO, env=env, stderr=subprocess.PIPE, text=True
+        ["uv", "run", "hz", "ui", "--no-browser", "--port", "0"],
+        cwd=REPO,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        text=True,
     )
     try:
-        assert ui.stderr is not None
-        for line in ui.stderr:
-            if "runs at" in line:
-                url = line.strip().rsplit(" ", 1)[-1]
-                break
-        else:
-            pytest.fail("The isolated web head exited before printing its session URL")
-        assert url.startswith("http://127.0.0.1:")
-        driven = subprocess.run(
-            [*run, "exec", "node", "e2e/durable-composer.mjs", url],
-            cwd=REPO,
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=300,
-        )
-        assert driven.returncode == 0, f"{driven.stderr}\n{driven.stdout}"
-        assert '"updateReload":"verified"' in driven.stdout
+        url = _startup_url(ui)
+        if not url.startswith("http://127.0.0.1:"):
+            pytest.fail("The isolated web head did not provide a loopback URL")
+        token = parse_qs(urlsplit(url).fragment).get("token", [""])[0]
+        if not token:
+            pytest.fail("The isolated web head did not provide a session token")
+        timed_out = False
+        try:
+            driven = subprocess.run(
+                [*run, "exec", "node", "e2e/durable-composer.mjs", url],
+                cwd=REPO,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=300,
+            )
+        except subprocess.TimeoutExpired:
+            timed_out = True
+        if timed_out:
+            pytest.fail("The isolated composer browser test timed out")
+        if driven.returncode:
+            diagnostics = f"{driven.stderr}\n{driven.stdout}".replace(token, "<redacted-session>")
+            pytest.fail(diagnostics)
+        if '"updateReload":"verified"' not in driven.stdout:
+            pytest.fail("The isolated composer browser test did not verify reload")
     finally:
-        ui.terminate()
-        ui.wait(30)
-        if ui.stderr is not None:
-            ui.stderr.close()
+        try:
+            ui.terminate()
+            try:
+                ui.wait(30)
+            except subprocess.TimeoutExpired:
+                ui.kill()
+                ui.wait(30)
+        finally:
+            if ui.stdout is not None:
+                ui.stdout.close()
