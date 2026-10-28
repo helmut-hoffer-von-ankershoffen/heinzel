@@ -112,6 +112,31 @@ function Layout() {
     if (home) setChatOpen(true);
   }, [home, setChatOpen]);
   const area = useRef<HTMLDivElement>(null);
+  // Keep a focused composer visible when a phone's on-screen keyboard resizes the visual viewport.
+  useEffect(() => {
+    let frame: number | null = null;
+    const keepEditorVisible = () => {
+      const active = document.activeElement;
+      if (
+        !(active instanceof HTMLElement) ||
+        !active.matches('input, textarea, [contenteditable="true"]') ||
+        !active.closest('[data-placement="below"]')
+      )
+        return;
+      if (frame !== null) cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        frame = null;
+        if (document.activeElement === active) active.scrollIntoView({ block: "nearest", inline: "nearest" });
+      });
+    };
+    window.addEventListener("resize", keepEditorVisible);
+    window.visualViewport?.addEventListener("resize", keepEditorVisible);
+    return () => {
+      window.removeEventListener("resize", keepEditorVisible);
+      window.visualViewport?.removeEventListener("resize", keepEditorVisible);
+      if (frame !== null) cancelAnimationFrame(frame);
+    };
+  }, []);
   const rem = Number.parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
   const beside = fitsBeside(useWidth(area), rem);
   const besideFooter = useRef<HTMLDivElement>(null);
@@ -152,10 +177,11 @@ function Layout() {
                 : !beside
                   ? "page"
                   : "chat";
-  // Page selection can reveal the same footer at a new capacity without a viewport resize.
+  // Panel and full-screen changes can reveal the same footer at a new capacity without a viewport resize.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: each layout change requires a fresh footer measurement
   useLayoutEffect(() => {
-    if (beside || selectedPanel === "page") window.dispatchEvent(new Event(FOOTER_RELOCATED));
-  }, [beside, selectedPanel]);
+    window.dispatchEvent(new Event(FOOTER_RELOCATED));
+  }, [beside, selectedPanel, terminalFull]);
   const route = useLocation().pathname;
   const previousRoute = useRef(route);
   useEffect(() => {
@@ -163,6 +189,7 @@ function Layout() {
     previousRoute.current = route;
   }, [route, beside]);
   const full = terminalOpen && terminalFull && selectedPanel === "terminal";
+  const flowingWorkspace = !beside && !full;
   const selectPanel = useCallback(
     (id: string) => {
       setActivePanel(id);
@@ -257,8 +284,18 @@ function Layout() {
           }
         />
       </aside>
-      <div ref={area} className={cn("workspace-area relative flex min-w-0 flex-1", beside ? "flex-row" : "flex-col")}>
-        <div inert={full} aria-hidden={full || undefined} className="flex min-h-0 min-w-0 flex-1 flex-col">
+      <div
+        ref={area}
+        className={cn(
+          "workspace-area relative flex min-w-0 flex-1",
+          beside ? "flex-row" : flowingWorkspace ? "flex-col overflow-y-auto" : "flex-col",
+        )}
+      >
+        <div
+          inert={full}
+          aria-hidden={full || undefined}
+          className={cn("flex min-w-0 flex-col", flowingWorkspace ? "min-h-full shrink-0" : "min-h-0 flex-1")}
+        >
           <TopBar
             chatOpen={chatOpen && selectedPanel === "chat"}
             onToggleChat={() => {
@@ -281,10 +318,13 @@ function Layout() {
           />
           <main
             id="content"
-            inert={!beside && selectedPanel !== "page"}
-            aria-hidden={!beside && selectedPanel !== "page" ? true : undefined}
+            inert={!beside && selectedPanel !== "page" && !flowingWorkspace}
+            aria-hidden={!beside && selectedPanel !== "page" && !flowingWorkspace ? true : undefined}
             tabIndex={-1}
-            className="min-h-0 flex-1 overflow-y-auto bg-[linear-gradient(to_bottom,var(--color-main-tint),transparent_18rem),var(--theme-backdrop)]"
+            className={cn(
+              "flex-1 bg-[linear-gradient(to_bottom,var(--color-main-tint),transparent_18rem),var(--theme-backdrop)]",
+              !flowingWorkspace && "min-h-0 overflow-y-auto",
+            )}
           >
             <Outlet />
           </main>
@@ -301,12 +341,13 @@ function Layout() {
                 ? "absolute inset-0"
                 : beside
                   ? "w-96 shrink-0 border-l border-border"
-                  : selectedPanel === "page"
+                  : selectedPanel === "page" || flowingWorkspace
                     ? "shrink-0 border-t border-border"
                     : "absolute inset-x-0 top-12 bottom-0 border-t border-border",
             )}
           >
             <WorkspacePanels
+              flowing={flowingWorkspace}
               active={selectedPanel}
               onSelect={selectPanel}
               panels={[
@@ -348,8 +389,11 @@ function Layout() {
                         id: "world-clock",
                         title: t("worldClock.title"),
                         content: (
-                          <aside aria-label={t("worldClock.panel")} className="h-full min-h-0">
-                            <WorldClock onClose={closeClock} />
+                          <aside
+                            aria-label={t("worldClock.panel")}
+                            className={flowingWorkspace ? "" : "h-full min-h-0"}
+                          >
+                            <WorldClock onClose={closeClock} flowing={flowingWorkspace} />
                           </aside>
                         ),
                       },
@@ -359,7 +403,11 @@ function Layout() {
             />
           </div>
         )}
-        <div ref={belowFooter} hidden={beside || selectedPanel !== "page"} className="shrink-0" />
+        <div
+          ref={belowFooter}
+          hidden={beside || (selectedPanel !== "page" && !flowingWorkspace)}
+          className="shrink-0"
+        />
         {/* One mounted footer: moving its host preserves controls when the side panel moves below. */}
         {createPortal(<StatusBar />, footerHost)}
       </div>

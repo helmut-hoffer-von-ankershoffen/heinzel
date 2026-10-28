@@ -12,7 +12,7 @@ import { zoneClock } from "@/lib/zoneTime";
 import { city, knownZone, useZones } from "./StatusBar";
 
 /** Both a labelled time list and a globe. The globe never contacts a map service. */
-export function WorldClock({ onClose }: { onClose: () => void }) {
+export function WorldClock({ onClose, flowing = false }: { onClose: () => void; flowing?: boolean }) {
   const zones = useZones();
   const [now, setNow] = useState(() => new Date());
   const [phi, setPhi] = useState(0);
@@ -125,7 +125,7 @@ export function WorldClock({ onClose }: { onClose: () => void }) {
   );
   const hover = markers.find((point) => point.zone === hovered && point.visible);
   return (
-    <section className="flex h-full flex-col" aria-label={t("worldClock.title")}>
+    <section className={flowing ? "flex flex-col" : "flex h-full flex-col"} aria-label={t("worldClock.title")}>
       <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-3">
         <Globe aria-hidden className="size-4" />
         <h2 className="flex-1 font-semibold">{t("worldClock.title")}</h2>
@@ -133,7 +133,7 @@ export function WorldClock({ onClose }: { onClose: () => void }) {
           <X aria-hidden />
         </Button>
       </header>
-      <div className="min-h-0 flex-1 overflow-auto p-4">
+      <div className={flowing ? "p-4" : "min-h-0 flex-1 overflow-auto p-4"}>
         {!times.length ? (
           <p className="text-sm text-muted-foreground">
             {zones.isLoading ? t("worldClock.loading") : t("worldClock.empty")}
@@ -182,7 +182,7 @@ export function WorldClock({ onClose }: { onClose: () => void }) {
               </svg>
               {!flat && (
                 <div
-                  className="absolute inset-0 touch-none"
+                  className="absolute inset-0 touch-pan-y"
                   onPointerDown={(event) => {
                     drag.current = event.clientX;
                     event.currentTarget.setPointerCapture(event.pointerId);
