@@ -3,6 +3,7 @@ status: proposed
 date: 2026-10-26
 decision-makers: maintainer
 related: 0006, 0031, 0046, 0083
+amended-by: 0093
 ---
 
 # 0085: Web updates verify the reloaded frontend
