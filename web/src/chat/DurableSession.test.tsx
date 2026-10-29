@@ -705,13 +705,14 @@ describe("personal conversation links", () => {
       "/api/heinzel/session": snapshot,
       "/api/heinzel/tool-activity": {
         session_id: sessionId,
-        items: [{ seq: 10, at: "2026-10-30T00:00:00Z", turn_id: "turn-1", tool: "example:read", status: "completed" }],
+        items: [{ seq: 10, at: "2026-10-30T00:00:00Z", turn_id: "turn-1", tool: "example:read", status: "completed", arguments: { secret: "private-argument" } }],
       },
     });
     renderAt(`/heinzel?chat=${sessionId}`);
     const panel = within(await screen.findByRole("complementary", { name: "Chat" }));
     const activity = within(await panel.findByRole("region", { name: "Recorded tool activity" }));
     expect(activity.getByText("example:read · completed")).toBeInTheDocument();
+    expect(panel.queryByText(/private-argument/)).not.toBeInTheDocument();
   });
 
   it("attaches recorded events only to the exact reply and can expand the bounded recent window", async () => {
