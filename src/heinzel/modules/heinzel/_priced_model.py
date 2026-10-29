@@ -167,6 +167,9 @@ class ReservedModel(WrapperModel):
         if type(output) is not int or not 1 <= output <= MAX_OUTPUT:
             msg = "The model requires an explicit supported output-token bound"
             raise HeinzelError(msg)
+        # Divide the approved turn-wide output ceiling among permitted requests. The owner ledger still
+        # atomically enforces the aggregate, including prior reservations and interrupted attempts.
+        output = min(output, max(1, self._max_turn_output_tokens // self._max_requests))
         for message in messages:
             if isinstance(message, ModelRequest):
                 for part in message.parts:
@@ -183,7 +186,7 @@ class ReservedModel(WrapperModel):
                 msg = "This pricing policy supports text-only input"  # type: ignore[unreachable]  # runtime guard
                 raise HeinzelError(msg)
         # Counting is a remote provider call. Reserve the full supported context without contacting the provider.
-        settings.update({"openai_service_tier": "default", "max_retries": 0})
+        settings.update({"max_tokens": output, "openai_service_tier": "default", "max_retries": 0})
         resolve_pricing(MODEL, "standard", self._now())
         self._calls += 1
         request = f"{self._turn}-{self._calls}"

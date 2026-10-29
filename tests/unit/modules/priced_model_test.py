@@ -78,9 +78,10 @@ def test_worst_case_tokens_and_dollars_are_reserved_before_any_provider_work(tmp
             transport, repo, session, "output", max_turn_tokens=3_000_000, max_turn_output_tokens=200, **options
         )
         asyncio.run(output_bound.request(messages, {"max_tokens": 200}, ModelRequestParameters()))
-        with pytest.raises(HeinzelError, match="output token cap"):
+        asyncio.run(output_bound.request(messages, {"max_tokens": 200}, ModelRequestParameters()))
+        with pytest.raises(HeinzelError, match="request limit"):
             asyncio.run(output_bound.request(messages, {"max_tokens": 200}, ModelRequestParameters()))
-        assert calls == [1, 1]
+        assert calls == [1, 1, 1]
         assert transport.counted == []
         unsupported = ReservedModel(
             transport, repo, session, "image", max_turn_tokens=2_000_000, max_turn_output_tokens=200, **options
@@ -88,7 +89,7 @@ def test_worst_case_tokens_and_dollars_are_reserved_before_any_provider_work(tmp
         image = ModelRequest(parts=[UserPromptPart(content=[BinaryContent(data=b"image", media_type="image/png")])])
         with pytest.raises(HeinzelError, match="text-only"):
             asyncio.run(unsupported.request([image], {"max_tokens": 200}, ModelRequestParameters()))
-        assert calls == [1, 1]
+        assert calls == [1, 1, 1]
         assert transport.counted == []
 
 
@@ -213,6 +214,124 @@ def test_fake_provider_completes_chat_after_reservation(tmp_path):
         assert result.text == "Completed safely"
         assert calls == [1]
         assert len(repo.budget_read(session).events) == 1
+
+
+def test_two_step_tool_turn_reserves_separate_output_allocations_and_replays_without_calls(tmp_path):
+    current = CurrentUser(tmp_path / "identity")
+    allocations = []
+
+    def reply(_messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        allocations.append(info.model_settings["max_tokens"])
+        if len(allocations) == 1:
+            return ModelResponse(
+                [ToolCallPart("use_tool", {"name": "text.word_count", "arguments": {"text": "one two"}})]
+            )
+        return ModelResponse([ToolCallPart(info.output_tools[0].name, {"report": "Two words."})])
+
+    with current.local("cli"):
+        repo = PersonalSessionRepository(current)
+        crud = SessionCrud(repo, lambda: SessionCosts(session_max_usd=3, message_max_usd=2))
+        session = crud.new_chat("two-step").session_id
+        crud.accept(session, MessageRequest(request_id="one", text="Count the words"))
+        model = CountedModel(reply)
+        wrapped = ReservedModel(
+            model,
+            repo,
+            session,
+            "turn",
+            max_requests=2,
+            max_turn_tokens=2 * CONTEXT + 200,
+            max_turn_output_tokens=200,
+            message_cap=Decimal(1),
+            session_cap=Decimal(2),
+            owner_cap=Decimal(3),
+            now=lambda: CHECKED,
+        )
+        runner = InteractiveTurn(crud)
+        limits = TurnLimits(requests=2, total_tokens=2 * CONTEXT + 200, output_tokens=200)
+        result = asyncio.run(runner.run(session, "one", wrapped, limits=limits))
+        assert result.text == "Two words."
+        assert allocations == [100, 100]
+        assert model.counted == []
+        reservations = repo.budget_read(session).events
+        assert len(reservations) == 2
+        assert [event.data["envelope"]["max_output_tokens"] for event in reservations] == [100, 100]
+        assert asyncio.run(runner.run(session, "one", wrapped, limits=limits)) == result
+        assert allocations == [100, 100]
+
+
+def test_direct_responses_payload_enforces_the_reserved_output_allocation(tmp_path, monkeypatch):
+    import httpx2
+    import pydantic_ai.models
+    from pydantic_ai.models.openai import OpenAIResponsesModel
+    from pydantic_ai.providers.openai import OpenAIProvider
+
+    from heinzel.modules.heinzel._budget_reservation import initialize_budget
+
+    monkeypatch.setattr(pydantic_ai.models, "ALLOW_MODEL_REQUESTS", True)
+    bodies = []
+
+    def reply(request):
+        import json
+
+        bodies.append(json.loads(request.content))
+        return httpx2.Response(
+            200,
+            json={
+                "id": "resp-test",
+                "object": "response",
+                "created_at": 1793300000,
+                "status": "completed",
+                "model": "gpt-4.1-mini-2025-04-14",
+                "output": [
+                    {
+                        "id": "msg-test",
+                        "type": "message",
+                        "role": "assistant",
+                        "status": "completed",
+                        "content": [{"type": "output_text", "text": "ok", "annotations": []}],
+                    }
+                ],
+                "usage": {
+                    "input_tokens": 1,
+                    "output_tokens": 1,
+                    "total_tokens": 2,
+                    "input_tokens_details": {"cached_tokens": 0},
+                    "output_tokens_details": {"reasoning_tokens": 0},
+                },
+            },
+        )
+
+    client = httpx2.AsyncClient(transport=httpx2.MockTransport(reply))
+    model = OpenAIResponsesModel(
+        "gpt-4.1-mini-2025-04-14", provider=OpenAIProvider(api_key="test-only", http_client=client)
+    )
+    current = CurrentUser(tmp_path / "identity")
+    with current.local("cli"):
+        repo = PersonalSessionRepository(current)
+        session = (
+            SessionCrud(repo, lambda: SessionCosts(session_max_usd=3, message_max_usd=2)).new_chat("wire").session_id
+        )
+        initialize_budget(repo, session)
+        wrapped = ReservedModel.for_openai(
+            model,
+            repo,
+            session,
+            "wire-turn",
+            max_requests=2,
+            max_turn_tokens=2 * CONTEXT + 200,
+            max_turn_output_tokens=200,
+            message_cap=Decimal(1),
+            session_cap=Decimal(2),
+            owner_cap=Decimal(3),
+            now=lambda: CHECKED,
+        )
+        messages = [ModelRequest(parts=[UserPromptPart(content="test")])]
+        asyncio.run(wrapped.request(messages, {"max_tokens": 200}, ModelRequestParameters()))
+        asyncio.run(wrapped.request(messages, {"max_tokens": 200}, ModelRequestParameters()))
+        assert [body["max_output_tokens"] for body in bodies] == [100, 100]
+        assert len(repo.budget_read(session).events) == 3  # initialization and two reservations
+    asyncio.run(client.aclose())
 
 
 def test_changed_authority_after_reservation_blocks_provider_call(tmp_path):
