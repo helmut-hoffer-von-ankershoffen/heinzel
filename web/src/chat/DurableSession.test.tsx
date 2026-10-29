@@ -1,5 +1,9 @@
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { createMemoryRouter, RouterProvider } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { Providers, queryClient } from "@/App";
+import { daemonStatusKey } from "@/api/daemon";
+import { DurableSession } from "@/chat/DurableSession";
 import { frame, mockWithStream } from "@/test/chat";
 import { shell } from "@/test/fixtures";
 import { expectAccessible, mockApi, renderAt } from "@/test/render";
@@ -819,5 +823,59 @@ describe("personal conversation links", () => {
     const panel = within(await screen.findByRole("complementary", { name: "Chat" }));
     expect(await panel.findByText("active")).toBeInTheDocument();
     expect(panel.queryByRole("link", { name: "Open daemon settings" })).not.toBeInTheDocument();
+  });
+
+  it("rechecks readiness as an unchanged daemon heartbeat ages across status polls", async () => {
+    let now = Date.parse("2026-10-29T12:00:00Z");
+    vi.spyOn(Date, "now").mockImplementation(() => now);
+    const observedAt = new Date(now).toISOString();
+    const { calls } = mockApi({
+      ...shell,
+      "/api/heinzel/session": { ...snapshot, schedule: { ...proposedSchedule, status: "active" } },
+      "/api/system/daemon/status": {
+        executable: "/usr/local/bin/hz",
+        failing: [],
+        installed: true,
+        installed_version: "1.2.3",
+        interval_minutes: 1,
+        jobs: 1,
+        last_tick: observedAt,
+        loaded: true,
+        paused: false,
+        platform: "darwin",
+        version: "1.2.3",
+        version_mismatch: false,
+      },
+    });
+    sessionStorage.setItem("hz.token", "test-token");
+    const client = queryClient();
+    const router = createMemoryRouter(
+      [{ path: "/heinzel", element: <DurableSession sessionId={sessionId} onClose={() => {}} /> }],
+      { initialEntries: ["/heinzel"] },
+    );
+    const view = render(
+      <Providers client={client}>
+        <RouterProvider router={router} />
+      </Providers>,
+    );
+    try {
+      const schedule = within(await screen.findByRole("region", { name: "Five-minute check-in" }));
+      expect(await schedule.findByText("active")).toBeInTheDocument();
+      await act(async () => {
+        await client.refetchQueries({ queryKey: daemonStatusKey });
+      });
+      expect(schedule.queryByRole("link", { name: "Open daemon settings" })).not.toBeInTheDocument();
+      now += 11 * 60_000;
+      await act(async () => {
+        await client.refetchQueries({ queryKey: daemonStatusKey });
+      });
+      expect(await schedule.findByText(/has not reported a recent valid tick/i)).toBeInTheDocument();
+      expect(
+        calls.filter((request) => new URL(request.url).pathname.endsWith("/daemon/status")).length,
+      ).toBeGreaterThan(1);
+    } finally {
+      view.unmount();
+      vi.restoreAllMocks();
+    }
   });
 });
