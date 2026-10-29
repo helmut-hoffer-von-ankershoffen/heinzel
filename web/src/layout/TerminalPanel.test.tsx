@@ -41,12 +41,17 @@ vi.mock("@xterm/addon-fit", () => ({ FitAddon: class {} }));
 vi.mock("@/lib/terminal", () => ({ connectTerminal: vi.fn(), followSize: () => ({ refit() {}, dispose() {} }) }));
 class Socket {
   static OPEN = 1;
+  static instances: Socket[] = [];
   readyState = 1;
   send = vi.fn();
   close() {}
+  constructor() {
+    Socket.instances.push(this);
+  }
 }
 afterEach(() => {
   terminals.length = 0;
+  Socket.instances.length = 0;
   desktopState.mockReturnValue("off");
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
@@ -63,6 +68,9 @@ describe("terminal tabs", () => {
     act(() => {
       expect(terminals[0]?.osc.get(7501)?.("?")).toBe(true);
     });
+    expect(new TextDecoder().decode(Socket.instances[0]?.send.mock.calls[0]?.[0])).toBe(
+      "\x1b]7501;?:states=idle,working,done,blocked,error:kinds=permission,question,auth\x1b\\",
+    );
     act(() => {
       terminals[0]?.osc.get(7501)?.("state=working:app=codex");
     });
