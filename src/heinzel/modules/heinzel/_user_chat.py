@@ -6,7 +6,6 @@ default. Subscription usage remains unpriced; the user must explicitly select pl
 
 import asyncio
 import json
-import os
 import shutil
 import tempfile
 from collections.abc import Callable
@@ -24,6 +23,7 @@ from heinzel.modules.heinzel._claude_subscription_model import (
     ClaudeSubscriptionModel,
     SubscriptionAdmission,
     executable_digest,
+    subscription_environment,
 )
 from heinzel.modules.heinzel._engine import TurnLimits
 from heinzel.modules.heinzel._interactive_turn import InteractiveTurn, ToolActivity, _turn_id
@@ -121,10 +121,7 @@ class UserChatService:
             raise HeinzelError(msg)
 
     def _login(self, executable: Path) -> None:
-        env = {key: os.environ[key] for key in ("HOME", "LANG", "TMPDIR") if key in os.environ}
-        env.update(
-            {"PATH": "/usr/bin:/bin", "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1", "DISABLE_AUTOUPDATER": "1"}
-        )
+        env = subscription_environment()
         try:
             with tempfile.TemporaryDirectory(prefix="hz-auth-") as directory:
                 result = self._execute(
