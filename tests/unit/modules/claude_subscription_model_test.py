@@ -236,3 +236,37 @@ def test_policy_revoked_during_slot_reservation_prevents_model_launch(tmp_path):
         asyncio.run(model.request([ModelRequest(parts=[UserPromptPart(content="private")])], None, parameters()))
     assert len(launches) == 1
     assert launches[0][-1] == "--version"
+
+
+def test_cli_reported_error_is_redacted_and_cannot_be_replayed(tmp_path):
+    from heinzel.modules.system.runner._process import Outcome
+
+    policy = admission()
+    calls = []
+
+    def fake(command, **_kwargs):
+        if command[-1] == "--version":
+            return Outcome(0, "2.1.312 (Claude Code)\n", "")
+        calls.append(1)
+        return Outcome(
+            1,
+            json.dumps(
+                {
+                    "type": "result",
+                    "subtype": "success",
+                    "is_error": True,
+                    "permission_denials": [],
+                    "result": "private provider details",
+                }
+            ),
+            "",
+        )
+
+    model = fixture_model(fake_cli(tmp_path), policy, FixtureVerifier(), lambda: policy, execute=fake)
+    messages = [ModelRequest(parts=[UserPromptPart(content="private prompt")])]
+    with pytest.raises(HeinzelError, match="reported an error") as error:
+        asyncio.run(model.request(messages, None, parameters()))
+    assert "private" not in str(error.value)
+    with pytest.raises(HeinzelError, match="safely admitted"):
+        asyncio.run(model.request(messages, None, parameters()))
+    assert calls == [1]

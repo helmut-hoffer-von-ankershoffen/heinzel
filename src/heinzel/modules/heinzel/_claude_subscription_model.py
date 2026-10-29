@@ -314,6 +314,7 @@ class ClaudeSubscriptionModel(Model):
         if len(payload.encode()) > _MAX_INPUT:
             raise HeinzelError(denied)
         self._inflight = True
+        reported_error = False
         try:
             executable = self._executable.resolve(strict=True)
             digest = executable_digest(executable)
@@ -366,9 +367,14 @@ class ClaudeSubscriptionModel(Model):
                     timeout=self._policy.timeout_seconds,
                     limit=self._policy.max_output_bytes,
                 )
-            if outcome.returncode != 0 or outcome.truncated:
+            if outcome.truncated:
                 raise HeinzelError(denied)  # noqa: TRY301 - all process failures are redacted at this boundary
             result = json.loads(outcome.stdout)
+            if isinstance(result, dict) and result.get("type") == "result" and result.get("is_error") is True:
+                reported_error = True
+                raise HeinzelError(denied)  # noqa: TRY301 - do not retain the CLI error body
+            if outcome.returncode != 0:
+                raise HeinzelError(denied)  # noqa: TRY301
             if (
                 not isinstance(result, dict)
                 or result.get("type") != "result"
@@ -398,6 +404,9 @@ class ClaudeSubscriptionModel(Model):
             raise
         except Exception:  # noqa: BLE001 - verifier, process and response errors can contain private data
             self._blocked = True
+            if reported_error:
+                msg = "Claude Code reported an error; the turn outcome is uncertain"
+                raise HeinzelError(msg) from None
             raise HeinzelError(denied) from None
         finally:
             self._inflight = False
