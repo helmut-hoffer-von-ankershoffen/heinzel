@@ -154,16 +154,58 @@ async function assertContained(page, locator, name) {
   return box;
 }
 
-async function showPage(page) {
-  // A hovered footer pane can cover the tabs after a viewport resize; dismiss it as a person would.
-  const releaseNotes = page.getByRole("region", { name: /^v\d/ });
-  if (await releaseNotes.isVisible()) {
-    await page.mouse.move(3, 3);
-    await page.mouse.click(3, 3);
-    await releaseNotes.waitFor({ state: "hidden" });
+async function dismissFooterPane(page) {
+  const footer = page.getByRole("contentinfo");
+  const controls = footer.locator("[aria-controls]");
+  for (let attempt = 0; attempt < 8; attempt++) {
+    let trigger;
+    let pane;
+    for (let index = 0; index < (await controls.count()); index++) {
+      const candidate = controls.nth(index);
+      const paneId = await candidate.getAttribute("aria-controls");
+      if (!paneId) continue;
+      const candidatePane = page.locator(`[id="${paneId}"]`);
+      if (await candidatePane.isVisible()) {
+        trigger = candidate;
+        pane = candidatePane;
+        break;
+      }
+    }
+    if (!trigger || !pane) return;
+    await trigger.focus();
+    await page.keyboard.press("Escape");
+    await pane.waitFor({ state: "hidden", timeout: 5000 });
   }
+  assert.fail("Escape did not collapse every visible footer pane");
+}
+
+async function showPage(page) {
+  // Touch viewports can retain a hover target after a layout change. Move the mouse clear of the footer before
+  // observing its panes; then wait for the safe-area/layout update to settle before sending a real touch tap.
+  await page.mouse.move(3, 3);
+  await dismissFooterPane(page);
   const tab = page.getByRole("tab", { name: "Page", exact: true });
-  if (await tab.isVisible()) await tab.click();
+  if (!(await tab.isVisible())) return;
+  await page.evaluate(() => {
+    window.__mobilePageTabRect = undefined;
+  });
+  await page.waitForFunction(() => {
+    const tabs = [...document.querySelectorAll('[role="tab"]')];
+    const pageTab = tabs.find(
+      (element) => element.getAttribute("aria-label") === "Page" || element.textContent?.trim() === "Page",
+    );
+    const footer = document.querySelector("footer");
+    const panes = [...document.querySelectorAll("footer [aria-controls]")]
+      .map((trigger) => document.getElementById(trigger.getAttribute("aria-controls") ?? ""))
+      .filter((pane) => pane && pane.getClientRects().length > 0);
+    if (!pageTab || !footer || footer.matches(":hover") || panes.length > 0) return false;
+    const rect = pageTab.getBoundingClientRect();
+    const current = `${rect.x}:${rect.y}:${rect.width}:${rect.height}`;
+    const previous = window.__mobilePageTabRect;
+    window.__mobilePageTabRect = current;
+    return previous === current;
+  });
+  await tab.tap();
 }
 
 async function footerPane(page, id, label) {
