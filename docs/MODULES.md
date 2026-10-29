@@ -153,7 +153,7 @@ Your Heinzelmännchen: durable agents that keep your team's documents true.
 | List your durable personal Heinzels, including new conversations without an approved contract. | `hz heinzel sessions` | `heinzel_sessions` | — | `GET /api/heinzel/sessions` |  |  |
 | Open one durable Heinzel and an ordered page of its accepted messages, even during an active turn. | `hz heinzel session` | `heinzel_session` | — | `GET /api/heinzel/session` |  |  |
 | Save this Heinzel's name or look against the exact profile revision you saw. | `hz heinzel profile` | `heinzel_profile` | — | `POST /api/heinzel/profile` | yes |  |
-| Propose local five-minute check-ins; the schedule stays inactive until activated. | `hz heinzel propose-check-in` | — | — | `POST /api/heinzel/propose-check-in` | yes |  |
+| Propose local five-minute check-ins; the schedule stays inactive until activated. | `hz heinzel propose-check-in` | `heinzel_propose_check_in` | — | `POST /api/heinzel/propose-check-in` | yes |  |
 | Pause a schedule; activation and resume require an exact-intent approval from a trusted issuer. | `hz heinzel schedule-control` | `heinzel_schedule_control` | — | `POST /api/heinzel/schedule-control` | yes |  |
 | Durably queue a message for this Heinzel; acceptance is distinct from a completed model answer. | `hz heinzel chat` | `heinzel_chat` | — | `POST /api/heinzel/chat` | yes |  |
 | List your Heinzelmännchen, one per contract: owner, schedule, state, last and next run. | `hz heinzel list` | `heinzel_list` | — | `GET /api/heinzel/list` |  |  |

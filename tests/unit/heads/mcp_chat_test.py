@@ -247,9 +247,28 @@ def test_schedule_approval_rejects_a_wrong_terminal_challenge_and_missing_tty(mo
     assert isinstance(errors[0], HeinzelError)
     assert "not confirmed" in str(errors[0])
 
-    monkeypatch.setattr(mcp.os, "open", lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("no tty")))
-    with pytest.raises(HeinzelError, match="controlling terminal"):
-        mcp._confirm_schedule_on_tty(arguments)
+    with monkeypatch.context() as patcher:
+        patcher.setattr(mcp.os, "open", lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("no tty")))
+        with pytest.raises(HeinzelError, match="controlling terminal"):
+            mcp._confirm_schedule_on_tty(arguments)
+
+    master, slave = pty.openpty()
+    real_open = os.open
+    with monkeypatch.context() as patcher:
+        patcher.setattr(
+            mcp.os,
+            "open",
+            lambda path, flags, *args, **kwargs: (
+                os.dup(slave) if path == "/dev/tty" else real_open(path, flags, *args, **kwargs)
+            ),
+        )
+        patcher.setattr(mcp.select, "select", lambda *_args, **_kwargs: ([], [], []))
+        with pytest.raises(HeinzelError, match="not confirmed"):
+            mcp._confirm_schedule_on_tty(arguments)
+    prompt = os.read(master, 4096).decode("utf-8")
+    os.close(master)
+    os.close(slave)
+    assert "Ctrl-D" in prompt
 
 
 def test_chat_server_fails_closed_for_non_stdio_transport_before_exposing_or_invoking_tools(kernel, ran):

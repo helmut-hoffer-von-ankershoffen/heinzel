@@ -889,6 +889,14 @@ def test_stdio_mcp_can_require_direct_human_terminal_approval_without_a_bearer( 
         for item in exposed(kernel, "mcp-http")
     )
 
+    _assert_mcp_schedule_fails_headless(kernel, arguments, monkeypatch)
+    with user.local("cli"):
+        assert crud.snapshot(created.session_id).schedule.status == "proposed"
+        assert not any(
+            event.kind in {"approval.issued", "schedule.activated"}
+            for event in PersonalSessionRepository(user).control_read(created.session_id).events
+        )
+
     def invoke_with_tty(call_arguments: dict[str, object], *, approve: bool):
         master, slave = pty.openpty()
         real_open = os.open
@@ -982,6 +990,25 @@ def test_stdio_mcp_can_require_direct_human_terminal_approval_without_a_bearer( 
         assert foreign_crud.snapshot(foreign_created.session_id).schedule.status == "proposed"
         foreign_events = PersonalSessionRepository(foreign).control_read(foreign_created.session_id).events
     assert not any(event.kind in {"approval.issued", "schedule.activated"} for event in foreign_events)
+
+
+def _assert_mcp_schedule_fails_headless(kernel, arguments, monkeypatch) -> None:
+    async def invoke():
+        async with Client(mcp.build(kernel)) as connected:
+            return await connected.call_tool("heinzel_schedule_control", arguments)
+
+    real_open = os.open
+
+    def no_controlling_tty(path: str, flags: int, *args, **kwargs):
+        if path == "/dev/tty":
+            raise OSError
+        return real_open(path, flags, *args, **kwargs)
+
+    with monkeypatch.context() as patcher:
+        patcher.setattr(mcp.os, "open", no_controlling_tty)
+        result = anyio.run(invoke)
+    assert result.is_error
+    assert "controlling terminal" in str(result.content)
 
 
 def test_mcp_handoff_crashes_fail_closed_before_and_after_the_schedule_commit(kernel, tmp_path, monkeypatch):

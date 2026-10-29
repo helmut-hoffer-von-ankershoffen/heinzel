@@ -267,6 +267,7 @@ def _confirm_schedule_on_tty(arguments: dict[str, Any]) -> None:
             with io.TextIOWrapper(raw, encoding="utf-8", errors="strict", line_buffering=True) as terminal:
                 terminal.write("Human approval requested for this exact schedule action:\n")
                 terminal.write(review)
+                terminal.write("\nPress Ctrl-D or enter any other text to cancel.\n")
                 terminal.write(f"\nType exactly: {challenge}\n> ")
                 terminal.flush()
                 ready, _, _ = select.select([descriptor], [], [], 60)
