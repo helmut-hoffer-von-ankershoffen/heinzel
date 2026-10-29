@@ -250,8 +250,10 @@ class ScheduledAgentProposal(BaseModel):
     permitted_tools: list[str] = Field(
         description="The tools the proposed turn may use; this slice permits none.", max_length=0
     )
-    max_usd: float = Field(
-        description="Proposed maximum USD cost per turn; enforcement is not yet available.", gt=0, allow_inf_nan=False
+    max_usd: float | None = Field(
+        description="Proposed API USD limit, or null for subscription plan limits and unknown cost; not yet enforced.",
+        gt=0,
+        allow_inf_nan=False,
     )
     timeout_seconds: int = Field(description="Proposed maximum duration per turn in seconds.", ge=1, le=300)
     status: Literal["proposed"] = Field(default="proposed", description="No execution approval has been granted.")

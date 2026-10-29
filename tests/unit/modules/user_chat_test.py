@@ -231,7 +231,6 @@ def test_fake_model_proposes_contract_in_owner_private_journal(tmp_path):
             arguments={
                 "expected_revision": 0,
                 "contract": "Review a document",
-                "max_usd": 0.2,
                 "timeout_seconds": 30,
             },
         )
@@ -241,6 +240,7 @@ def test_fake_model_proposes_contract_in_owner_private_journal(tmp_path):
         proposal = crud.latest_scheduled_agent_proposal(session)
         assert proposal.contract == "Review a document"
         assert proposal.status == "proposed"
+        assert proposal.max_usd is None
         assert crud.snapshot(session).schedule is None
         assert [(item.tool, item.status) for item in service.activity(session).items] == [
             ("agent:propose", "requested"),

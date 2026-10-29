@@ -1,7 +1,7 @@
 """User-requested durable chat on the selected Claude Code subscription.
 
 This invokes only the installed user-selected CLI with its documented restricted flags. Host tools are denied by
-default. Subscription usage remains unpriced; the user must explicitly select plan-unknown rather than a dollar cap.
+default, except for bounded private proposal operations. Subscription usage remains unpriced and uses plan limits.
 """
 
 import asyncio
