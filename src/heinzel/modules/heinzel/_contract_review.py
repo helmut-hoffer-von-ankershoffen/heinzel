@@ -137,9 +137,17 @@ class ContractReview:
             if len(matches) != 1:
                 msg = "The saved contract acceptance lacks its issuer evidence"
                 raise HeinzelError(msg)
-            record = ApprovalRecord.model_validate_json(json.dumps(matches[0].data))
+            try:
+                record = ApprovalRecord.model_validate_json(json.dumps(matches[0].data))
+            except ValueError:
+                msg = "The saved contract acceptance has invalid issuer evidence"
+                raise HeinzelError(msg) from None
             if (
-                record.intent != intent
+                record.model_dump(mode="json").get("decision") != "approve"
+                or not record.issued_at <= event.ts < record.expires_at
+                or matches[0].ts > event.ts
+                or record.expires_at <= record.issued_at
+                or record.intent != intent
                 or record.proof_hash != matches[0].key
                 or record.nonce != event.data.get("consumed_nonce")
                 or record.intent.model_dump(mode="json") != event.data.get("intent")

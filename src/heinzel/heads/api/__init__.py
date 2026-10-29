@@ -38,6 +38,7 @@ from heinzel.heads._presence import mark_authenticated_presence
 from heinzel.heads._stream import streamed
 from heinzel.heads.api._auth import ApiBearer
 from heinzel.kernel import CallIdentity, CurrentUser, HeinzelError, Kernel, boot
+from heinzel.kernel._errors import SubscriptionUsageLimitError
 from heinzel.kernel._identity import LOCAL_PERMISSIONS
 
 HEAD = "api"
@@ -52,6 +53,15 @@ WEB_HOST_HELP = (
     "For a private HTTPS proxy, add its exact HTTPS origin to [hz] ui_allowed_origins in your user configuration "
     "and restart hz ui. api_allowed_hosts configures the REST head only."
 )
+
+
+def _error_response(exc: HeinzelError, *, private: bool) -> JSONResponse:
+    if private and isinstance(exc, SubscriptionUsageLimitError):
+        return JSONResponse(
+            status_code=400,
+            content={"error": SubscriptionUsageLimitError.message, "code": "subscription_usage_limit"},
+        )
+    return JSONResponse(status_code=400, content={"error": str(exc)})
 
 
 def build(  # noqa: PLR0913 - the head, where it listens and its credential, all by keyword
@@ -141,7 +151,7 @@ def build(  # noqa: PLR0913 - the head, where it listens and its credential, all
 
     @app.exception_handler(HeinzelError)
     async def heinzel_error(request: object, exc: HeinzelError) -> JSONResponse:  # noqa: ARG001 - FastAPI signature
-        return JSONResponse(status_code=400, content={"error": str(exc)})
+        return _error_response(exc, private=head == "web" or selected == API_PRIVATE)
 
     for item in exposed(kernel, selected):
         returns = item.returns if item.returns is not inspect.Signature.empty else None

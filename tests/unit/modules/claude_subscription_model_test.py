@@ -55,6 +55,8 @@ assert sys.argv[sys.argv.index("--setting-sources") + 1] == ""
 assert "--json-schema" in sys.argv
 {extra}
 request = json.load(sys.stdin)
+assert "conversation transport" in request["protocol"]
+assert "listed output tool" in request["protocol"]
 if len(request["messages"]) == 1:
     wire = {{"kind":"tool", "name":"use_tool", "arguments":{{"name":"fixture:read", "arguments":{{}}}}, "text":None}}
 else:
@@ -234,3 +236,82 @@ def test_policy_revoked_during_slot_reservation_prevents_model_launch(tmp_path):
         asyncio.run(model.request([ModelRequest(parts=[UserPromptPart(content="private")])], None, parameters()))
     assert len(launches) == 1
     assert launches[0][-1] == "--version"
+
+
+def test_cli_reported_error_is_redacted_and_cannot_be_replayed(tmp_path):
+    from heinzel.modules.system.runner._process import Outcome
+
+    policy = admission()
+    calls = []
+
+    def fake(command, **_kwargs):
+        if command[-1] == "--version":
+            return Outcome(0, "2.1.312 (Claude Code)\n", "")
+        calls.append(1)
+        return Outcome(
+            1,
+            json.dumps(
+                {
+                    "type": "result",
+                    "subtype": "success",
+                    "is_error": True,
+                    "permission_denials": [],
+                    "result": "private provider details",
+                }
+            ),
+            "",
+        )
+
+    model = fixture_model(fake_cli(tmp_path), policy, FixtureVerifier(), lambda: policy, execute=fake)
+    messages = [ModelRequest(parts=[UserPromptPart(content="private prompt")])]
+    with pytest.raises(HeinzelError, match="reported an error") as error:
+        asyncio.run(model.request(messages, None, parameters()))
+    assert "private" not in str(error.value)
+    with pytest.raises(HeinzelError, match="safely admitted"):
+        asyncio.run(model.request(messages, None, parameters()))
+    assert calls == [1]
+
+
+@pytest.mark.parametrize(
+    ("status", "code", "is_limit"),
+    [
+        (429, "usage_limit_reached", True),
+        ("429", "usage_limit_reached", True),
+        (429, "other", False),
+        ("429.0", "usage_limit_reached", False),
+        (True, "usage_limit_reached", False),
+    ],
+    ids=["integer", "string", "other-code", "other-status", "boolean"],
+)
+def test_usage_limit_classification_is_exact_and_redacted(tmp_path, status, code, is_limit):
+    from heinzel.modules.heinzel._claude_subscription_model import SubscriptionUsageLimitError
+    from heinzel.modules.system.runner._process import Outcome
+
+    policy = admission()
+
+    def fake(command, **_kwargs):
+        if command[-1] == "--version":
+            return Outcome(0, "2.1.312 (Claude Code)\n", "")
+        return Outcome(
+            1,
+            json.dumps(
+                {
+                    "type": "result",
+                    "subtype": "success",
+                    "is_error": True,
+                    "api_error_status": status,
+                    "api_error": code,
+                    "result": "private details",
+                }
+            ),
+            "",
+        )
+
+    model = fixture_model(fake_cli(tmp_path), policy, FixtureVerifier(), lambda: policy, execute=fake)
+    with pytest.raises(HeinzelError) as error:
+        asyncio.run(model.request([ModelRequest(parts=[UserPromptPart(content="private")])], None, parameters()))
+    assert isinstance(error.value, SubscriptionUsageLimitError) is is_limit
+    assert "private" not in str(error.value)
+    if is_limit:
+        assert "provider settings" in str(error.value)
+        assert "will not retry automatically" in str(error.value)
