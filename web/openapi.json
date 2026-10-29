@@ -7746,6 +7746,87 @@
         "title": "Participant",
         "type": "object"
       },
+      "PersonalArtifact": {
+        "additionalProperties": false,
+        "description": "A principal-submitted association; neither access nor provider ownership has been verified.",
+        "properties": {
+          "kind": {
+            "description": "The declared Google file type.",
+            "enum": [
+              "document",
+              "spreadsheet",
+              "presentation"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "provenance": {
+            "const": "principal-submitted",
+            "default": "principal-submitted",
+            "description": "How this association was recorded; not provider ownership.",
+            "title": "Provenance",
+            "type": "string"
+          },
+          "provider": {
+            "const": "google",
+            "default": "google",
+            "description": "The user-supplied provider, not an access grant.",
+            "title": "Provider",
+            "type": "string"
+          },
+          "ref": {
+            "description": "Canonical Google editor URL supplied under the authenticated principal; not verified remotely.",
+            "maxLength": 256,
+            "title": "Ref",
+            "type": "string"
+          },
+          "request_id": {
+            "description": "The stable registration request identity.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "session_id": {
+            "description": "The personal session this association belongs to.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "request_id",
+          "kind",
+          "ref"
+        ],
+        "title": "PersonalArtifact",
+        "type": "object"
+      },
+      "PersonalArtifacts": {
+        "description": "Local associations, not a list of files the provider says are accessible.",
+        "properties": {
+          "artifacts": {
+            "description": "Locally recorded associations; provider access is not verified.",
+            "items": {
+              "$ref": "#/components/schemas/PersonalArtifact"
+            },
+            "title": "Artifacts",
+            "type": "array"
+          },
+          "session_id": {
+            "description": "The owning personal session.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "artifacts"
+        ],
+        "title": "PersonalArtifacts",
+        "type": "object"
+      },
       "PlaybookDoc": {
         "description": "A playbook a module brings (ADR 0037).",
         "properties": {
@@ -14528,6 +14609,47 @@
         "title": "heinzel_amend_scheduled_agent_Input",
         "type": "object"
       },
+      "heinzel_associate_artifact_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "description": "The claimed Google file type; not verified with the provider.",
+            "enum": [
+              "document",
+              "spreadsheet",
+              "presentation"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "ref": {
+            "description": "Canonical Google editor URL.",
+            "maxLength": 256,
+            "title": "Ref",
+            "type": "string"
+          },
+          "request_id": {
+            "description": "A stable client request id; reuse it only for an exact retry.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "session_id": {
+            "description": "The stable personal session id returned by new-chat or sessions.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "request_id",
+          "kind",
+          "ref"
+        ],
+        "title": "heinzel_associate_artifact_Input",
+        "type": "object"
+      },
       "heinzel_chat_Input": {
         "additionalProperties": false,
         "properties": {
@@ -15195,6 +15317,48 @@
         ]
       }
     },
+    "/heinzel/associate-artifact": {
+      "post": {
+        "description": "Associate a Google file locally; no access, provider ownership or permission is verified.",
+        "operationId": "heinzel_associate_artifact",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/heinzel_associate_artifact_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonalArtifact"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Associate a Google file locally; no access, provider ownership or permission is verified.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
     "/heinzel/chat": {
       "post": {
         "description": "Durably queue a message for this Heinzel; acceptance is distinct from a completed model answer.",
@@ -15580,6 +15744,49 @@
           }
         },
         "summary": "Create a durable personal Heinzel with an idempotent request, name and look.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/personal-artifacts": {
+      "get": {
+        "description": "List local principal-submitted file associations without accessing the provider.",
+        "operationId": "heinzel_personal_artifacts",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonalArtifacts"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List local principal-submitted file associations without accessing the provider.",
         "tags": [
           "heinzel"
         ]

@@ -638,6 +638,7 @@ $ hz heinzel [OPTIONS] COMMAND [ARGS]...
 **Commands**:
 
 * `amend-scheduled-agent`: Propose revised terms; an independent...
+* `associate-artifact`: Associate a Google file locally; no...
 * `chat`: Durably queue a message for this Heinzel;...
 * `check`: (expert) Check contracts and list every...
 * `discover`: (expert) Find candidates for each...
@@ -647,6 +648,7 @@ $ hz heinzel [OPTIONS] COMMAND [ARGS]...
 * `list`: List your Heinzelmännchen, one per...
 * `new`: Write a starter contract, or a playbook&#x27;s...
 * `new-chat`: Create a durable personal Heinzel with an...
+* `personal-artifacts`: List local principal-submitted file...
 * `playbooks`: (expert) List the playbooks plugins...
 * `profile`: Save this Heinzel&#x27;s name or look against...
 * `propose-check-in`: Propose local five-minute check-ins; the...
@@ -678,6 +680,29 @@ $ hz heinzel amend-scheduled-agent [OPTIONS] {session_id} {request_id} {expected
 * `contract`: Complete replacement instructions.  [required]
 * `max_usd`: Proposed per-turn USD limit; not yet enforced.  [required]
 * `timeout_seconds`: Proposed maximum seconds per turn.  [required]
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz heinzel associate-artifact`
+
+Associate a Google file locally; no access, provider ownership or permission is verified.
+
+**Usage**:
+
+```console
+$ hz heinzel associate-artifact [OPTIONS] {session_id} {request_id} {kind}:<document|spreadsheet|presentation> {ref}
+```
+
+**Arguments**:
+
+* `session_id`: [required]
+* `request_id`: [required]
+* `kind:<document|spreadsheet|presentation>`: The claimed Google file type; not verified with the provider.  [required]
+* `ref`: Canonical Google editor URL.  [required]
 
 **Options**:
 
@@ -857,6 +882,26 @@ $ hz heinzel new-chat [OPTIONS] {request_id}
 
 * `--name <str>`: Your personal display name for this Heinzel.  [default: New Heinzel]
 * `--appearance JSON`: The complete personal appearance overrides; null leaves the current look unchanged.
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz heinzel personal-artifacts`
+
+List local principal-submitted file associations without accessing the provider.
+
+**Usage**:
+
+```console
+$ hz heinzel personal-artifacts [OPTIONS] {session_id}
+```
+
+**Arguments**:
+
+* `session_id`: [required]
+
+**Options**:
+
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.

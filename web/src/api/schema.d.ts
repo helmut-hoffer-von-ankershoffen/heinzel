@@ -148,6 +148,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/heinzel/associate-artifact": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Associate a Google file locally; no access, provider ownership or permission is verified.
+         * @description Associate a Google file locally; no access, provider ownership or permission is verified.
+         */
+        post: operations["heinzel_associate_artifact"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/heinzel/chat": {
         parameters: {
             query?: never;
@@ -282,6 +302,26 @@ export interface paths {
          * @description Create a durable personal Heinzel with an idempotent request, name and look.
          */
         post: operations["heinzel_new_chat"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/heinzel/personal-artifacts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List local principal-submitted file associations without accessing the provider.
+         * @description List local principal-submitted file associations without accessing the provider.
+         */
+        get: operations["heinzel_personal_artifacts"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -6705,6 +6745,63 @@ export interface components {
             name?: string | null;
         };
         /**
+         * PersonalArtifact
+         * @description A principal-submitted association; neither access nor provider ownership has been verified.
+         */
+        PersonalArtifact: {
+            /**
+             * Kind
+             * @description The declared Google file type.
+             * @enum {string}
+             */
+            kind: "document" | "spreadsheet" | "presentation";
+            /**
+             * Provenance
+             * @description How this association was recorded; not provider ownership.
+             * @default principal-submitted
+             * @constant
+             */
+            provenance: "principal-submitted";
+            /**
+             * Provider
+             * @description The user-supplied provider, not an access grant.
+             * @default google
+             * @constant
+             */
+            provider: "google";
+            /**
+             * Ref
+             * @description Canonical Google editor URL supplied under the authenticated principal; not verified remotely.
+             */
+            ref: string;
+            /**
+             * Request Id
+             * @description The stable registration request identity.
+             */
+            request_id: string;
+            /**
+             * Session Id
+             * @description The personal session this association belongs to.
+             */
+            session_id: string;
+        };
+        /**
+         * PersonalArtifacts
+         * @description Local associations, not a list of files the provider says are accessible.
+         */
+        PersonalArtifacts: {
+            /**
+             * Artifacts
+             * @description Locally recorded associations; provider access is not verified.
+             */
+            artifacts: components["schemas"]["PersonalArtifact"][];
+            /**
+             * Session Id
+             * @description The owning personal session.
+             */
+            session_id: string;
+        };
+        /**
          * PlaybookDoc
          * @description A playbook a module brings (ADR 0037).
          */
@@ -10592,6 +10689,30 @@ export interface components {
              */
             timeout_seconds: number;
         };
+        /** heinzel_associate_artifact_Input */
+        heinzel_associate_artifact_Input: {
+            /**
+             * Kind
+             * @description The claimed Google file type; not verified with the provider.
+             * @enum {string}
+             */
+            kind: "document" | "spreadsheet" | "presentation";
+            /**
+             * Ref
+             * @description Canonical Google editor URL.
+             */
+            ref: string;
+            /**
+             * Request Id
+             * @description A stable client request id; reuse it only for an exact retry.
+             */
+            request_id: string;
+            /**
+             * Session Id
+             * @description The stable personal session id returned by new-chat or sessions.
+             */
+            session_id: string;
+        };
         /** heinzel_chat_Input */
         heinzel_chat_Input: {
             /**
@@ -10881,6 +11002,8 @@ export type SchemaOperationCall = components['schemas']['OperationCall'];
 export type SchemaOperationDoc = components['schemas']['OperationDoc'];
 export type SchemaParameterDoc = components['schemas']['ParameterDoc'];
 export type SchemaParticipant = components['schemas']['Participant'];
+export type SchemaPersonalArtifact = components['schemas']['PersonalArtifact'];
+export type SchemaPersonalArtifacts = components['schemas']['PersonalArtifacts'];
 export type SchemaPlaybookDoc = components['schemas']['PlaybookDoc'];
 export type SchemaPlaybookList = components['schemas']['PlaybookList'];
 export type SchemaPlaybookView = components['schemas']['PlaybookView'];
@@ -10979,6 +11102,7 @@ export type SchemaWeek = components['schemas']['Week'];
 export type SchemaWidgetAction = components['schemas']['WidgetAction'];
 export type SchemaWidgetEntry = components['schemas']['WidgetEntry'];
 export type SchemaHeinzelAmendScheduledAgentInput = components['schemas']['heinzel_amend_scheduled_agent_Input'];
+export type SchemaHeinzelAssociateArtifactInput = components['schemas']['heinzel_associate_artifact_Input'];
 export type SchemaHeinzelChatInput = components['schemas']['heinzel_chat_Input'];
 export type SchemaHeinzelNewChatInput = components['schemas']['heinzel_new_chat_Input'];
 export type SchemaHeinzelProfileInput = components['schemas']['heinzel_profile_Input'];
@@ -11185,6 +11309,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ScheduledAgentProposal"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    heinzel_associate_artifact: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["heinzel_associate_artifact_Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PersonalArtifact"];
                 };
             };
             /** @description Validation Error */
@@ -11423,6 +11580,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SessionSnapshot"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    heinzel_personal_artifacts: {
+        parameters: {
+            query: {
+                session_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PersonalArtifacts"];
                 };
             };
             /** @description Validation Error */
