@@ -155,6 +155,8 @@ async function assertContained(page, locator, name) {
 }
 
 async function dismissFooterPane(page) {
+  // A footer pane can cover arbitrary viewport corners, and its accessible region name is content-dependent.
+  // Focus its own expanded trigger so Escape reaches the component's close handler without a coordinate click.
   const footer = page.getByRole("contentinfo");
   const controls = footer.locator("[aria-controls]");
   for (let attempt = 0; attempt < 8; attempt++) {
@@ -449,7 +451,7 @@ try {
       const pane = await footerPane(page, id, label);
       await assertContained(page, pane, `${spec.name}: ${id}`);
       await page.screenshot({ path: join(shots, `mobile-${spec.name}-${id.slice(1)}.png`) });
-      await page.mouse.click(spec.width - 4, 4);
+      await dismissFooterPane(page);
     }
     const updatePane = await footerPane(page, "@updates", "Up to date");
     await assertContained(page, updatePane, `${spec.name}: update pane`);
@@ -457,7 +459,7 @@ try {
     await updatePane.getByText("Installed: hz 0.7.30").waitFor();
     await updatePane.getByText(/^Last installed:/).waitFor();
     await page.screenshot({ path: join(shots, `mobile-${spec.name}-updates.png`) });
-    await page.mouse.click(spec.width - 4, 4);
+    await dismissFooterPane(page);
     updateAvailable = true;
     await page.goto(url);
     await page.getByRole("heading", { name: "Today" }).waitFor();
@@ -471,6 +473,7 @@ try {
     );
     assert.equal(updateRequests, 0, `${spec.name}: inspecting the update must not start installation`);
     await page.screenshot({ path: join(shots, `mobile-${spec.name}-update-available.png`) });
+    await dismissFooterPane(page);
     updateAvailable = false;
     await page.goto(url);
     await page.getByRole("heading", { name: "Today" }).waitFor();
@@ -544,8 +547,7 @@ try {
     assert.ok(await topbar.isVisible(), `${spec.name}: header hidden with Chat selected`);
     const chatFooter = await footerPane(page, "@version", /^v/);
     await assertContained(page, chatFooter, `${spec.name}: footer in chat`);
-    await page.mouse.click(3, 3);
-    await chatFooter.waitFor({ state: "hidden" });
+    await dismissFooterPane(page);
     assert.equal(await page.getByRole("textbox", { name: "Your message" }).inputValue(), "A draft to keep.");
     await page
       .getByRole("tablist", { name: "Workspace panels" })
@@ -566,8 +568,7 @@ try {
     await terminal.getByRole("button", { name: "Leave full screen", exact: true }).click();
     const terminalFooter = await footerPane(page, "@version", /^v/);
     await assertContained(page, terminalFooter, `${spec.name}: footer after full screen`);
-    await page.mouse.click(3, 3);
-    await terminalFooter.waitFor({ state: "hidden" });
+    await dismissFooterPane(page);
     await terminal.getByRole("button", { name: "Close the terminal", exact: true }).click();
     await page.getByRole("button", { name: "Close the chat", exact: true }).first().click();
     await showPage(page);
@@ -612,6 +613,14 @@ try {
         : null,
     );
     assert.ok(visualViewportAfterFocus, `${spec.name}: visualViewport API is required for this emulation check`);
+    // Reproduce the hover/layout race: an already-open footer pane is repositioned after the safe-area update while
+    // the Page tab remains the next intended touch target.
+    if (spec.name === "short-landscape") {
+      const versionTrigger = page.locator('[data-footer-content="@version"] button').first();
+      if (!(await versionTrigger.isVisible())) await page.locator('[data-footer-content="@more"] button').click();
+      await versionTrigger.hover();
+      await page.getByRole("region", { name: /^v\d/ }).waitFor({ state: "visible" });
+    }
     // Simulate the reduced visual viewport a software keyboard creates, and inject a representative iPhone safe
     // area. Chromium does not expose iOS Safari's keyboard or hardware insets, so this verifies our layout response.
     await page.evaluate(() => {
@@ -627,6 +636,11 @@ try {
     });
     assert.equal(safePadding.top, "47px", `${spec.name}: shell must respect the top safe area`);
     assert.equal(safePadding.bottom, "34px", `${spec.name}: shell must respect the home-indicator safe area`);
+    if (spec.name === "short-landscape")
+      assert.ok(
+        await page.getByRole("region", { name: /^v\d/ }).isVisible(),
+        "hovered footer pane should remain open through the layout change",
+      );
     await showPage(page);
     await page.getByRole("button", { name: /^Notifications/ }).click();
     const safeNotices = page.getByRole("region", { name: "Notifications", exact: true });
