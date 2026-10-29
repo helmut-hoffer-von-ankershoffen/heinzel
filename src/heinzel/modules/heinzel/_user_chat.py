@@ -121,7 +121,7 @@ class UserChatService:
             raise HeinzelError(msg)
         return limits, runner
 
-    def _owner(self, session: str, request: str) -> None:
+    def _owner(self, session: str, request: str, *, allow_daemon_origin: bool = False) -> None:
         context = self._current.context()
         if (
             context.authentication not in _HEADS
@@ -133,7 +133,8 @@ class UserChatService:
             raise HeinzelError(msg)
         events = self._crud.repository.control_read(session).events
         matches = [event for event in events if event.kind == "message.accepted" and event.key == f"message-{request}"]
-        if len(matches) != 1 or matches[0].data.get("origin") not in _HEADS:
+        allowed_origins = _HEADS | ({"daemon"} if allow_daemon_origin else set())
+        if len(matches) != 1 or matches[0].data.get("origin") not in allowed_origins:
             msg = "This message has no authenticated user-chat origin"
             raise HeinzelError(msg)
 
@@ -179,7 +180,22 @@ class UserChatService:
         Raises:
             HeinzelError: If user origin, configured access, bounds, or the stored turn cannot be verified.
         """
-        self._owner(session, request)
+        return await self._answer(
+            session, request, lambda: self._owner(session, request), _MAX_REQUESTS, _TIMEOUT, user_proposals=True
+        )
+
+    async def _answer(  # noqa: PLR0913 - private dispatcher receives exact host policy
+        self,
+        session: str,
+        request: str,
+        verify: Callable[[], None],
+        max_requests: int,
+        duration: int,
+        *,
+        user_proposals: bool,
+        prepare: Callable[[], None] | None = None,
+    ) -> UserChatAnswer:
+        verify()
         events = self._crud.repository.control_read(session).events
         turn = _turn_id(request)
         prior = next((event for event in events if event.kind == "message.replied" and event.key == turn), None)
@@ -195,10 +211,10 @@ class UserChatService:
             raise HeinzelError(msg)
         executable, digest = await asyncio.to_thread(self._executable, found)
         await asyncio.to_thread(self._login, executable)
-        policy = SubscriptionAdmission(self._current.principal().id, session, 1, _MAX_REQUESTS, _TIMEOUT, _MAX_OUTPUT)
+        policy = SubscriptionAdmission(self._current.principal().id, session, 1, max_requests, duration, _MAX_OUTPUT)
 
         def unchanged() -> bool:
-            self._owner(session, request)
+            verify()
             current, selected = self._selected()
             resolved = self._which(selected.claude_executable)
             return (
@@ -222,9 +238,10 @@ class UserChatService:
             session,
             request,
             model,
-            limits=TurnLimits(requests=_MAX_REQUESTS, total_tokens=None, output_tokens=None, timeout_seconds=_TIMEOUT),
+            limits=TurnLimits(requests=max_requests, total_tokens=None, output_tokens=None, timeout_seconds=duration),
             allow_ungranted_tools=False,
-            user_proposal_policy=unchanged,
+            user_proposal_policy=unchanged if user_proposals else None,
+            prepare=prepare,
             backend_binding=BackendBinding(backend="claude-code", mode="cli-model", revision=1),
         )
         return UserChatAnswer(session_id=session, request_id=request, message=message)
@@ -235,7 +252,7 @@ class UserChatService:
         Raises:
             HeinzelError: If the journal contains an inconsistent resolution.
         """
-        self._owner(session, request)
+        self._owner(session, request, allow_daemon_origin=True)
         repo = self._crud.repository
         turn = _turn_id(request)
         events = repo.control_read(session).events
@@ -275,11 +292,11 @@ class UserChatService:
         Raises:
             HeinzelError: If the turn is active, unstarted, finished, or not owner-bound.
         """
-        self._owner(session, request)
+        self._owner(session, request, allow_daemon_origin=True)
         repo = self._crud.repository
         turn = _turn_id(request)
         with repo.main_writer(session):
-            self._owner(session, request)
+            self._owner(session, request, allow_daemon_origin=True)
             with repo.control_writer(session) as writer:
                 events = repo.control_read(session).events
                 starts = [e for e in events if e.kind == "interactive.started" and e.key == turn]

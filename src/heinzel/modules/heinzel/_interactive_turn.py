@@ -193,6 +193,7 @@ class InteractiveTurn:
         allow_ungranted_tools: bool = True,
         backend_binding: BackendBinding | None = None,
         user_proposal_policy: Callable[[], bool] | None = None,
+        prepare: Callable[[], None] | None = None,
     ) -> SessionMessage:
         """Execute one accepted message; an interrupted attempt never automatically re-executes.
 
@@ -207,6 +208,8 @@ class InteractiveTurn:
         turn = _turn_id(request_id)
         with repo.main_writer(session_id) as turn_writer:
             self._check_owner()
+            if prepare is not None:
+                prepare()
             if isinstance(model, (ReservedModel, ClaudeSubscriptionModel)):
                 model.bind_fence(TurnAuthorityFence(repo, session_id, turn_writer))
             events = repo.control_read(session_id).events
