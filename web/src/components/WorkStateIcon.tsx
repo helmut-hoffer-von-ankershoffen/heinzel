@@ -17,7 +17,9 @@ export function WorkStateIcon({ work }: { work: WorkingHours }) {
     <span
       role="img"
       aria-label={label}
-      title={`${label} · ${work.detail}`}
+      title={[label, work.summary, work.detail]
+        .filter((part, index, parts) => parts.indexOf(part) === index)
+        .join(" · ")}
       className="inline-flex shrink-0 text-muted-foreground"
     >
       <Icon aria-hidden className="size-4" />
