@@ -311,12 +311,11 @@ def test_docked_media_stays_below_every_overlay_in_mounted_chromium(environment,
         if ui.stderr is not None:
             ui.stderr.close()
 
-    assert len(result["panes"]) == 14
+    assert len(result["panes"]) == 12
     assert {
         "docked-settings",
         "docked-audio",
         "docked-account",
-        "docked-clock",
         "docked-daemon",
         "docked-version",
     } <= set(result["panes"])

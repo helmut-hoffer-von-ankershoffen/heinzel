@@ -85,7 +85,7 @@ def test_pypi_packages_and_https_git_repositories_are_taken(spec, kind, name, ur
     ],
 )
 def test_everything_else_is_refused_with_what_is_taken(spec, why):
-    with pytest.raises(HeinzelError, match="takes a first-party name") as refused:
+    with pytest.raises(HeinzelError, match="takes a catalog short name") as refused:
         _sources.parse(spec)
     assert why in str(refused.value)
 

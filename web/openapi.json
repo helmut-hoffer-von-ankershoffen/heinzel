@@ -3816,6 +3816,102 @@
         "additionalProperties": false,
         "description": "A line of an item's detail, shown on hover or focus.",
         "properties": {
+          "icon": {
+            "anyOf": [
+              {
+                "enum": [
+                  "activity",
+                  "alarm-clock",
+                  "bell",
+                  "bot",
+                  "calendar",
+                  "calendar-clock",
+                  "chart-line",
+                  "circle-alert",
+                  "circle-check",
+                  "clock",
+                  "cloud",
+                  "cloud-drizzle",
+                  "cloud-fog",
+                  "cloud-lightning",
+                  "cloud-rain",
+                  "cloud-snow",
+                  "cloud-sun",
+                  "code",
+                  "file-text",
+                  "git-pull-request",
+                  "globe",
+                  "heart",
+                  "inbox",
+                  "info",
+                  "link",
+                  "list-checks",
+                  "mail",
+                  "message-square",
+                  "play",
+                  "rocket",
+                  "star",
+                  "sun",
+                  "terminal",
+                  "timer",
+                  "users",
+                  "video",
+                  "wind",
+                  "zap"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional semantic state icon.",
+            "title": "Icon"
+          },
+          "live": {
+            "anyOf": [
+              {
+                "discriminator": {
+                  "mapping": {
+                    "clock": "#/components/schemas/LiveClock",
+                    "time": "#/components/schemas/LiveTime",
+                    "until": "#/components/schemas/LiveUntil"
+                  },
+                  "propertyName": "kind"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/LiveClock"
+                  },
+                  {
+                    "$ref": "#/components/schemas/LiveTime"
+                  },
+                  {
+                    "$ref": "#/components/schemas/LiveUntil"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional live value rendered after the text.",
+            "title": "Live"
+          },
+          "secondary": {
+            "anyOf": [
+              {
+                "maxLength": 80,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional supporting text.",
+            "title": "Secondary"
+          },
           "text": {
             "description": "One line, e.g. `New York 08:00, at work`.",
             "maxLength": 80,
@@ -3834,6 +3930,20 @@
             ],
             "title": "Tone",
             "type": "string"
+          },
+          "tooltip": {
+            "anyOf": [
+              {
+                "maxLength": 280,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional accessible explanation.",
+            "title": "Tooltip"
           }
         },
         "required": [
@@ -7276,6 +7386,7 @@
           "failed",
           "doctor",
           "release",
+          "plugin",
           "test",
           "heinzel"
         ],
@@ -8212,7 +8323,7 @@
           },
           "first_party": {
             "default": false,
-            "description": "Whether it is maintained and released with Heinzelmännchen (ADR 0017).",
+            "description": "Whether its recorded origin is an official maintainer repository (ADR 0094).",
             "title": "First Party",
             "type": "boolean"
           },
@@ -9485,96 +9596,6 @@
           "problem"
         ],
         "title": "RequirementStatus",
-        "type": "object"
-      },
-      "Resources": {
-        "additionalProperties": false,
-        "description": "A machine sample; unavailable values remain null with an explanation.",
-        "properties": {
-          "cpu_percent": {
-            "anyOf": [
-              {
-                "maximum": 100.0,
-                "minimum": 0.0,
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Machine CPU usage, 0 to 100 percent.",
-            "title": "Cpu Percent"
-          },
-          "hostname": {
-            "description": "Hostname of the machine running hz.",
-            "title": "Hostname",
-            "type": "string"
-          },
-          "load_1m": {
-            "anyOf": [
-              {
-                "minimum": 0.0,
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "One-minute load average; unavailable on unsupported platforms.",
-            "title": "Load 1M"
-          },
-          "logical_cores": {
-            "anyOf": [
-              {
-                "minimum": 1.0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Detected logical core count; null when unavailable.",
-            "title": "Logical Cores"
-          },
-          "memory_percent": {
-            "anyOf": [
-              {
-                "maximum": 100.0,
-                "minimum": 0.0,
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Machine memory usage, 0 to 100 percent.",
-            "title": "Memory Percent"
-          },
-          "problems": {
-            "description": "Why any measurement could not be read.",
-            "items": {
-              "type": "string"
-            },
-            "title": "Problems",
-            "type": "array"
-          },
-          "sampled_at": {
-            "description": "When the measurements were collected, in UTC.",
-            "format": "date-time",
-            "title": "Sampled At",
-            "type": "string"
-          }
-        },
-        "required": [
-          "hostname",
-          "sampled_at",
-          "cpu_percent",
-          "memory_percent",
-          "load_1m",
-          "logical_cores",
-          "problems"
-        ],
-        "title": "Resources",
         "type": "object"
       },
       "Restart": {
@@ -11475,11 +11496,11 @@
             "type": "array"
           },
           "detail": {
-            "description": "Up to eight lines shown on hover.",
+            "description": "Up to 64 detail lines shown on hover.",
             "items": {
               "$ref": "#/components/schemas/DetailLine"
             },
-            "maxItems": 8,
+            "maxItems": 64,
             "title": "Detail",
             "type": "array"
           },
@@ -11599,6 +11620,36 @@
             "description": "A time the app renders after `text` and keeps current.",
             "title": "Live"
           },
+          "meters": {
+            "description": "Up to eight compact, labelled percentage meters.",
+            "items": {
+              "$ref": "#/components/schemas/StatusMeter"
+            },
+            "maxItems": 8,
+            "title": "Meters",
+            "type": "array"
+          },
+          "presentation": {
+            "default": "icon",
+            "description": "Generic rendering style.",
+            "enum": [
+              "icon",
+              "text",
+              "value",
+              "ticker"
+            ],
+            "title": "Presentation",
+            "type": "string"
+          },
+          "segments": {
+            "description": "Ordered live ticker segments.",
+            "items": {
+              "$ref": "#/components/schemas/DetailLine"
+            },
+            "maxItems": 64,
+            "title": "Segments",
+            "type": "array"
+          },
           "text": {
             "description": "What it says, one line, e.g. `Standup until`.",
             "maxLength": 80,
@@ -11634,6 +11685,50 @@
           "text"
         ],
         "title": "StatusItem",
+        "type": "object"
+      },
+      "StatusMeter": {
+        "additionalProperties": false,
+        "description": "One bounded percentage bar, with provider-owned meaning and accessible text.",
+        "properties": {
+          "label": {
+            "description": "Accessible name of this measurement.",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "tone": {
+            "default": "neutral",
+            "description": "Semantic state of this measurement.",
+            "enum": [
+              "neutral",
+              "ok",
+              "warn",
+              "bad"
+            ],
+            "title": "Tone",
+            "type": "string"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "maximum": 100.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Percentage from zero to one hundred, or none if unavailable.",
+            "title": "Value"
+          }
+        },
+        "required": [
+          "label"
+        ],
+        "title": "StatusMeter",
         "type": "object"
       },
       "Step": {
@@ -13953,6 +14048,187 @@
           "type"
         ],
         "title": "ValidationError",
+        "type": "object"
+      },
+      "ViewEntry": {
+        "description": "One active module's checked local view and read-only data source.",
+        "properties": {
+          "abi": {
+            "description": "Required version of the view SDK ABI.",
+            "title": "Abi",
+            "type": "integer"
+          },
+          "actions": {
+            "additionalProperties": {
+              "discriminator": {
+                "mapping": {
+                  "command": "#/components/schemas/RunCommand",
+                  "navigate": "#/components/schemas/Navigate",
+                  "open": "#/components/schemas/OpenUrl",
+                  "operation": "#/components/schemas/RunOperation"
+                },
+                "propertyName": "kind"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/Navigate"
+                },
+                {
+                  "$ref": "#/components/schemas/OpenUrl"
+                },
+                {
+                  "$ref": "#/components/schemas/RunOperation"
+                },
+                {
+                  "$ref": "#/components/schemas/RunCommand"
+                }
+              ]
+            },
+            "description": "Named, resolved effects the view may request through the host gate.",
+            "title": "Actions",
+            "type": "object"
+          },
+          "bundle": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Local immutable module URL, or none if unavailable.",
+            "title": "Bundle"
+          },
+          "fallback": {
+            "description": "Useful text shown when the view is unavailable.",
+            "title": "Fallback",
+            "type": "string"
+          },
+          "id": {
+            "description": "Stable qualified module and view name.",
+            "title": "Id",
+            "type": "string"
+          },
+          "module": {
+            "description": "Qualified name of the declaring module.",
+            "title": "Module",
+            "type": "string"
+          },
+          "order": {
+            "description": "Lower order precedes higher order; identity breaks ties.",
+            "title": "Order",
+            "type": "integer"
+          },
+          "plugin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Owning distribution, or none for a built-in module.",
+            "title": "Plugin"
+          },
+          "problem": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Diagnostic explaining why this view cannot execute.",
+            "title": "Problem"
+          },
+          "refresh": {
+            "description": "Seconds between reads of the source operation.",
+            "title": "Refresh",
+            "type": "integer"
+          },
+          "route": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Fixed local path requested by a page view.",
+            "title": "Route"
+          },
+          "section": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Owned Settings section, when applicable.",
+            "title": "Section"
+          },
+          "slot": {
+            "description": "The host surface requested by this declaration.",
+            "enum": [
+              "page",
+              "panel",
+              "sidebar",
+              "settings",
+              "background"
+            ],
+            "title": "Slot",
+            "type": "string"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OperationCall"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Validated read-only source call; none for an unusable view."
+          },
+          "styles": {
+            "description": "Local stylesheets verified as part of the same bundle.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Styles",
+            "type": "array"
+          },
+          "title": {
+            "description": "Accessible display title supplied by the module.",
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "module",
+          "plugin",
+          "title",
+          "fallback",
+          "slot",
+          "order",
+          "refresh",
+          "abi",
+          "section",
+          "route",
+          "bundle",
+          "styles",
+          "actions",
+          "source",
+          "problem"
+        ],
+        "title": "ViewEntry",
         "type": "object"
       },
       "Waiting": {
@@ -17450,7 +17726,7 @@
     },
     "/system/plugin/search": {
       "get": {
-        "description": "Find plugins to install: first-party ones, and community ones by querying the GitHub API.\n\nCommunity plugins are GitHub repositories with the topic heinzel-plugin; GH_TOKEN or GITHUB_TOKEN raises the rate\nlimit. Offline, only first-party plugins are listed. PyPI has no keyword search, so it is not queried. Community\nplugins are not reviewed by the Heinzelmännchen maintainers, and every plugin runs with your rights.",
+        "description": "Find plugins to install: first-party ones, and community ones by querying the GitHub API.\n\nConfigured repositories are scanned for plugin projects; topic heinzel-plugin discovers external repositories.\nGH_TOKEN or GITHUB_TOKEN raises the rate limit. Catalog outages retain last successfully read metadata.\nPyPI has no keyword search, so it is not queried. Community\nplugins are not reviewed by the Heinzelmännchen maintainers, and every plugin runs with your rights.",
         "operationId": "system_plugin_search",
         "parameters": [
           {
@@ -17511,28 +17787,6 @@
           }
         },
         "summary": "Ask where Heinzelmännchen was installed from for its latest release, and whether to update.",
-        "tags": [
-          "system"
-        ]
-      }
-    },
-    "/system/resource": {
-      "get": {
-        "description": "Show machine CPU/memory usage, one-minute load and logical cores; cache each sample for one second.",
-        "operationId": "system_resource",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Resources"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Show machine CPU/memory usage, one-minute load and logical cores; cache each sample for one second.",
         "tags": [
           "system"
         ]
@@ -18944,6 +19198,32 @@
           }
         },
         "summary": "List the status items modules add to the web app's status bar, with what each shows now.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/ui/views": {
+      "get": {
+        "description": "List active installed views, their compatible bundles and read-only operation calls.",
+        "operationId": "system_ui_views",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ViewEntry"
+                  },
+                  "title": "Response System Ui Views",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List active installed views, their compatible bundles and read-only operation calls.",
         "tags": [
           "system"
         ]

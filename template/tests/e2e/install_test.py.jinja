@@ -14,13 +14,16 @@ import pytest
 pytestmark = [pytest.mark.e2e, pytest.mark.timeout(300)]
 
 REPO = Path(__file__).resolve().parents[2]
-HZ_SPEC = os.environ.get("HZ_SPEC", "git+https://github.com/[[ heinzel_owner ]]/heinzel@v[[ heinzel_version ]]")
+HZ_SPEC = os.environ.get("HZ_SPEC", "heinzel==[[ heinzel_version ]]")
 
 
 @pytest.fixture(scope="module")
 def hz(tmp_path_factory):
     root = tmp_path_factory.mktemp("uv-tools")
-    env = {**os.environ, "UV_TOOL_DIR": str(root / "tools"), "UV_TOOL_BIN_DIR": str(root / "bin")}
+    env = {key: value for key, value in os.environ.items() if not key.startswith("HZ_")}
+    env |= {"UV_TOOL_DIR": str(root / "tools"), "UV_TOOL_BIN_DIR": str(root / "bin"), "HZ_PLUGINS_ENABLED": "true"}
+    for name in ("CONFIG_HOME", "DATA_DIR", "CACHE_DIR", "STATE_DIR", "LOG_DIR"):
+        env[f"HZ_{name}"] = str(root / name.lower())
     env.pop("VIRTUAL_ENV", None)
     uv = shutil.which("uv")
     assert uv, "uv is not on PATH: https://docs.astral.sh/uv/"
@@ -33,7 +36,14 @@ def hz(tmp_path_factory):
         assert result.returncode == 0, f"hz {' '.join(args)} failed:\n{result.stdout}\n{result.stderr}"
         return result.stdout
 
-    run("system", "plugin", "add", str(REPO))
+    subprocess.run(
+        [uv, "build", "--wheel", "--project", str(REPO), "--out-dir", str(root / "dist")],
+        check=True,
+        env=env,
+        timeout=240,
+    )
+    wheel = next((root / "dist").glob("*.whl"))
+    subprocess.run([uv, "tool", "install", "--force", HZ_SPEC, "--with", str(wheel)], check=True, env=env, timeout=240)
     return run
 
 
@@ -49,3 +59,26 @@ def test_hello(hz):
 def test_listed_as_plugin(hz):
     plugins = json.loads(hz("system", "plugin", "list", "--json"))
     assert [p["distribution"] for p in plugins] == ["[[ project_name ]]"]
+
+
+def test_installed_wheel_contributes_all_common_surfaces(hz):
+    assert any(entry["module"] == "[[ plugin_name ]]" for entry in json.loads(hz("system", "ui", "status", "--json")))
+    assert any(entry["module"] == "[[ plugin_name ]]" for entry in json.loads(hz("system", "ui", "widgets", "--json")))
+    assert any(entry["module"] == "[[ plugin_name ]]" for entry in json.loads(hz("system", "ui", "actions", "--json")))
+    views = json.loads(hz("system", "ui", "views", "--json"))
+    view = next(entry for entry in views if entry["module"] == "[[ plugin_name ]]")
+    assert view["bundle"]
+    assert view["problem"] is None
+    assert json.loads(hz("[[ plugin_name ]]", "notify", "--json")) == "[[ plugin_name ]] is ready"
+
+
+def test_disable_enable_and_remove_affect_only_the_plugin(hz):
+    before = json.loads(hz("system", "info", "--json"))
+    hz("system", "plugin", "disable", "[[ project_name ]]", "--json")
+    assert not any(entry["module"] == "[[ plugin_name ]]" for entry in json.loads(hz("system", "ui", "views", "--json")))
+    hz("system", "plugin", "enable", "[[ project_name ]]", "--json")
+    assert any(entry["module"] == "[[ plugin_name ]]" for entry in json.loads(hz("system", "ui", "views", "--json")))
+    hz("system", "plugin", "remove", "[[ project_name ]]", "--json")
+    assert json.loads(hz("system", "plugin", "list", "--json")) == []
+    after = json.loads(hz("system", "info", "--json"))
+    assert before["version"] == after["version"]

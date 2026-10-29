@@ -85,7 +85,7 @@ preflight: ## What CI checks, before you push: check with coverage, template, bu
 	$(STEPS) $(GATE) $(LINT) $(WEB_LINT) $(TYPES) $(WEB_TYPES) $(WEB_TESTS) \
 		"&tests=$(COVERED) -x && uv run coverage combine --quiet && uv run coverage report --format=total --fail-under=90" \
 		"&template=TEMPLATE_AUDIT=$(if $(filter full,$(PREFLIGHT)),1) bash scripts/template-test.sh" \
-		"&build=uv build --all-packages --quiet --out-dir .preflight-dist && rm -rf .preflight-dist" \
+		"&build=uv build --quiet --out-dir .preflight-dist && rm -rf .preflight-dist" \
 		"&commits=$(MAKE) --no-print-directory commits" $(MANAGED_CHECK)
 	@if [ "$(PREFLIGHT)" = full ]; then $(MAKE) --no-print-directory audit test-e2e; fi
 
@@ -241,8 +241,8 @@ icons: ## Make every image of Heinzelmännchen from heinzel.svg: the web app's i
 terminal-art: ## Redraw Heinzelmännchen for the terminal from web/src/components/heinzel.ts (needs node, rsvg-convert, magick)
 	@uv run --quiet --script scripts/terminal_art.py && uv run --quiet ruff format --quiet src/heinzel/heads/cli/_art_data.py
 
-build: web-build ## Build wheels and sdists into dist/ (the core and every first-party plugin; the web app first)
-	uv build --all-packages
+build: web-build ## Build the core wheel and sdist into dist/ (the web app first)
+	uv build
 
 PYPI_DIST ?= dist
 pypi-clean-build-marker: ## Remove uv's generated ignore marker from the PyPI staging directory

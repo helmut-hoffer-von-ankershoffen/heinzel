@@ -1438,8 +1438,9 @@ export interface paths {
          * Find plugins to install: first-party ones, and community ones by querying the GitHub API.
          * @description Find plugins to install: first-party ones, and community ones by querying the GitHub API.
          *
-         *     Community plugins are GitHub repositories with the topic heinzel-plugin; GH_TOKEN or GITHUB_TOKEN raises the rate
-         *     limit. Offline, only first-party plugins are listed. PyPI has no keyword search, so it is not queried. Community
+         *     Configured repositories are scanned for plugin projects; topic heinzel-plugin discovers external repositories.
+         *     GH_TOKEN or GITHUB_TOKEN raises the rate limit. Catalog outages retain last successfully read metadata.
+         *     PyPI has no keyword search, so it is not queried. Community
          *     plugins are not reviewed by the Heinzelmännchen maintainers, and every plugin runs with your rights.
          */
         get: operations["system_plugin_search"];
@@ -1468,26 +1469,6 @@ export interface paths {
          *     cached for the update notice.
          */
         get: operations["system_release"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/system/resource": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Show machine CPU/memory usage, one-minute load and logical cores; cache each sample for one second.
-         * @description Show machine CPU/memory usage, one-minute load and logical cores; cache each sample for one second.
-         */
-        get: operations["system_resource"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2090,6 +2071,26 @@ export interface paths {
          *         HeinzelError: If `item` names no status item.
          */
         get: operations["system_ui_status"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/ui/views": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List active installed views, their compatible bundles and read-only operation calls.
+         * @description List active installed views, their compatible bundles and read-only operation calls.
+         */
+        get: operations["system_ui_views"];
         put?: never;
         post?: never;
         delete?: never;
@@ -4383,6 +4384,21 @@ export interface components {
          */
         DetailLine: {
             /**
+             * Icon
+             * @description Optional semantic state icon.
+             */
+            icon?: ("activity" | "alarm-clock" | "bell" | "bot" | "calendar" | "calendar-clock" | "chart-line" | "circle-alert" | "circle-check" | "clock" | "cloud" | "cloud-drizzle" | "cloud-fog" | "cloud-lightning" | "cloud-rain" | "cloud-snow" | "cloud-sun" | "code" | "file-text" | "git-pull-request" | "globe" | "heart" | "inbox" | "info" | "link" | "list-checks" | "mail" | "message-square" | "play" | "rocket" | "star" | "sun" | "terminal" | "timer" | "users" | "video" | "wind" | "zap") | null;
+            /**
+             * Live
+             * @description Optional live value rendered after the text.
+             */
+            live?: (components["schemas"]["LiveClock"] | components["schemas"]["LiveTime"] | components["schemas"]["LiveUntil"]) | null;
+            /**
+             * Secondary
+             * @description Optional supporting text.
+             */
+            secondary?: string | null;
+            /**
              * Text
              * @description One line, e.g. `New York 08:00, at work`.
              */
@@ -4394,6 +4410,11 @@ export interface components {
              * @enum {string}
              */
             tone: "neutral" | "ok" | "warn" | "bad";
+            /**
+             * Tooltip
+             * @description Optional accessible explanation.
+             */
+            tooltip?: string | null;
         };
         /**
          * Diagnostic
@@ -6335,7 +6356,7 @@ export interface components {
          * @description What a notice is about; each kind can be switched off in `[system.notify]`.
          * @enum {string}
          */
-        NoticeKind: "draft" | "failed" | "doctor" | "release" | "test" | "heinzel";
+        NoticeKind: "draft" | "failed" | "doctor" | "release" | "plugin" | "test" | "heinzel";
         /**
          * NoticeList
          * @description The latest notices, and how they reach you on this machine.
@@ -6887,7 +6908,7 @@ export interface components {
             error?: string | null;
             /**
              * First Party
-             * @description Whether it is maintained and released with Heinzelmännchen (ADR 0017).
+             * @description Whether its recorded origin is an official maintainer repository (ADR 0094).
              * @default false
              */
             first_party: boolean;
@@ -7626,48 +7647,6 @@ export interface components {
              * @description As required, e.g. `tracker:read`.
              */
             requirement: string;
-        };
-        /**
-         * Resources
-         * @description A machine sample; unavailable values remain null with an explanation.
-         */
-        Resources: {
-            /**
-             * Cpu Percent
-             * @description Machine CPU usage, 0 to 100 percent.
-             */
-            cpu_percent: number | null;
-            /**
-             * Hostname
-             * @description Hostname of the machine running hz.
-             */
-            hostname: string;
-            /**
-             * Load 1M
-             * @description One-minute load average; unavailable on unsupported platforms.
-             */
-            load_1m: number | null;
-            /**
-             * Logical Cores
-             * @description Detected logical core count; null when unavailable.
-             */
-            logical_cores: number | null;
-            /**
-             * Memory Percent
-             * @description Machine memory usage, 0 to 100 percent.
-             */
-            memory_percent: number | null;
-            /**
-             * Problems
-             * @description Why any measurement could not be read.
-             */
-            problems: string[];
-            /**
-             * Sampled At
-             * Format: date-time
-             * @description When the measurements were collected, in UTC.
-             */
-            sampled_at: string;
         };
         /**
          * Restart
@@ -8854,7 +8833,7 @@ export interface components {
             actions?: components["schemas"]["WidgetAction"][];
             /**
              * Detail
-             * @description Up to eight lines shown on hover.
+             * @description Up to 64 detail lines shown on hover.
              */
             detail?: components["schemas"]["DetailLine"][];
             /**
@@ -8873,6 +8852,23 @@ export interface components {
              */
             live?: (components["schemas"]["LiveClock"] | components["schemas"]["LiveTime"] | components["schemas"]["LiveUntil"]) | null;
             /**
+             * Meters
+             * @description Up to eight compact, labelled percentage meters.
+             */
+            meters?: components["schemas"]["StatusMeter"][];
+            /**
+             * Presentation
+             * @description Generic rendering style.
+             * @default icon
+             * @enum {string}
+             */
+            presentation: "icon" | "text" | "value" | "ticker";
+            /**
+             * Segments
+             * @description Ordered live ticker segments.
+             */
+            segments?: components["schemas"]["DetailLine"][];
+            /**
              * Text
              * @description What it says, one line, e.g. `Standup until`.
              */
@@ -8886,6 +8882,29 @@ export interface components {
              * @enum {string}
              */
             tone: "neutral" | "ok" | "warn" | "bad";
+        };
+        /**
+         * StatusMeter
+         * @description One bounded percentage bar, with provider-owned meaning and accessible text.
+         */
+        StatusMeter: {
+            /**
+             * Label
+             * @description Accessible name of this measurement.
+             */
+            label: string;
+            /**
+             * Tone
+             * @description Semantic state of this measurement.
+             * @default neutral
+             * @enum {string}
+             */
+            tone: "neutral" | "ok" | "warn" | "bad";
+            /**
+             * Value
+             * @description Percentage from zero to one hundred, or none if unavailable.
+             */
+            value?: number | null;
         };
         /**
          * Step
@@ -10224,6 +10243,92 @@ export interface components {
             type: string;
         };
         /**
+         * ViewEntry
+         * @description One active module's checked local view and read-only data source.
+         */
+        ViewEntry: {
+            /**
+             * Abi
+             * @description Required version of the view SDK ABI.
+             */
+            abi: number;
+            /**
+             * Actions
+             * @description Named, resolved effects the view may request through the host gate.
+             */
+            actions: {
+                [key: string]: components["schemas"]["Navigate"] | components["schemas"]["OpenUrl"] | components["schemas"]["RunOperation"] | components["schemas"]["RunCommand"];
+            };
+            /**
+             * Bundle
+             * @description Local immutable module URL, or none if unavailable.
+             */
+            bundle: string | null;
+            /**
+             * Fallback
+             * @description Useful text shown when the view is unavailable.
+             */
+            fallback: string;
+            /**
+             * Id
+             * @description Stable qualified module and view name.
+             */
+            id: string;
+            /**
+             * Module
+             * @description Qualified name of the declaring module.
+             */
+            module: string;
+            /**
+             * Order
+             * @description Lower order precedes higher order; identity breaks ties.
+             */
+            order: number;
+            /**
+             * Plugin
+             * @description Owning distribution, or none for a built-in module.
+             */
+            plugin: string | null;
+            /**
+             * Problem
+             * @description Diagnostic explaining why this view cannot execute.
+             */
+            problem: string | null;
+            /**
+             * Refresh
+             * @description Seconds between reads of the source operation.
+             */
+            refresh: number;
+            /**
+             * Route
+             * @description Fixed local path requested by a page view.
+             */
+            route: string | null;
+            /**
+             * Section
+             * @description Owned Settings section, when applicable.
+             */
+            section: string | null;
+            /**
+             * Slot
+             * @description The host surface requested by this declaration.
+             * @enum {string}
+             */
+            slot: "page" | "panel" | "sidebar" | "settings" | "background";
+            /** @description Validated read-only source call; none for an unusable view. */
+            source: components["schemas"]["OperationCall"] | null;
+            /**
+             * Styles
+             * @description Local stylesheets verified as part of the same bundle.
+             */
+            styles: string[];
+            /**
+             * Title
+             * @description Accessible display title supplied by the module.
+             */
+            title: string;
+        };
+        /**
          * Waiting
          * @description Where the flow waits now: an artifact whose current promise isn't kept yet, and what it waits on.
          */
@@ -10692,7 +10797,6 @@ export type SchemaReleaseCheck = components['schemas']['ReleaseCheck'];
 export type SchemaReleaseNotes = components['schemas']['ReleaseNotes'];
 export type SchemaRendererBlock = components['schemas']['RendererBlock'];
 export type SchemaRequirementStatus = components['schemas']['RequirementStatus'];
-export type SchemaResources = components['schemas']['Resources'];
 export type SchemaRestart = components['schemas']['Restart'];
 export type SchemaRestarted = components['schemas']['Restarted'];
 export type SchemaRunCommand = components['schemas']['RunCommand'];
@@ -10724,6 +10828,7 @@ export type SchemaStateStatus = components['schemas']['StateStatus'];
 export type SchemaStatus = components['schemas']['Status'];
 export type SchemaStatusEntry = components['schemas']['StatusEntry'];
 export type SchemaStatusItem = components['schemas']['StatusItem'];
+export type SchemaStatusMeter = components['schemas']['StatusMeter'];
 export type SchemaStep = components['schemas']['Step'];
 export type SchemaStreamStatus = components['schemas']['StreamStatus'];
 export type SchemaSystemInfo = components['schemas']['SystemInfo'];
@@ -10758,6 +10863,7 @@ export type SchemaUsageReport = components['schemas']['UsageReport'];
 export type SchemaUsageRow = components['schemas']['UsageRow'];
 export type SchemaUsageTotal = components['schemas']['UsageTotal'];
 export type SchemaValidationError = components['schemas']['ValidationError'];
+export type SchemaViewEntry = components['schemas']['ViewEntry'];
 export type SchemaWaiting = components['schemas']['Waiting'];
 export type SchemaWakeScheduleView = components['schemas']['WakeScheduleView'];
 export type SchemaWeek = components['schemas']['Week'];
@@ -12729,26 +12835,6 @@ export interface operations {
             };
         };
     };
-    system_resource: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Resources"];
-                };
-            };
-        };
-    };
     system_runner_ask: {
         parameters: {
             query: {
@@ -13587,6 +13673,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_ui_views: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ViewEntry"][];
                 };
             };
         };

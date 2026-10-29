@@ -1,11 +1,11 @@
 # Plugin extension guide
 
-A plugin extends hz through typed Python declarations. The running app supports data contributions today; rich
-React contributions are a proposed next step in [ADR 0065](adr/0065-plugins-may-ship-versioned-react-views.md).
-This guide distinguishes what you can ship now from contracts that still need implementation.
+A plugin owns its operations, interface, assets, tests and release. The host renders typed data contributions and
+versioned local views through public contracts, without imports or named branches for concrete plugins.
+[ADR 0094](adr/0094-plugins-own-features-and-independent-delivery.md) defines the 0.9 boundary and independent delivery.
 
 Start with `hz system plugin new --help`, then scaffold a plugin with the CLI. Use the generated repository's
-`make setup`, `make check` and `make test-e2e`. A distribution is named `heinzel-<name>`, its Python package
+`make setup`, `make preview`, `make check` and `make test-e2e`. These use an installed compatible core artifact. A distribution is named `heinzel-<name>`, its Python package
 `heinzel_<name>`, and its entry point belongs to `heinzel.modules`. See [the architecture](ARCHITECTURE.md#plugins).
 
 ## Choose the smallest extension
@@ -19,11 +19,11 @@ Start with `hz system plugin new --help`, then scaffold a plugin with the CLI. U
 | A Today card | `@module.widget` and a supported widget shape | Keep data shapes for common views |
 | A colour palette, logo or fonts | `module.theme` | Optional theme figure sets, with core fallbacks |
 | Background work | `@module.job` | Persisted triggers and wake scheduling need their own implementation |
-| A specialist interactive page | No plugin page slot yet | Versioned React view, hosted in a declared page slot |
+| A specialist interactive page | `module.view(..., abi=1, slot="page", route="/plugins/<module>/<view>")` | Local versioned bundle with fallback |
 | An interactive answer in chat | Text or structured tool output | A declared renderer, with text fallback and the same approval gate |
 
 The public Python API is exported from `heinzel` and `heinzel.kernel`. Plugins do not import private kernel files,
-heads, built-in modules or another plugin. [Import contracts](CODING_STANDARDS.md#architecture-rules) enforce this.
+heads, built-in modules or another plugin implementation. Shared interfaces belong in the public SDK or an implementation-free contract package. [Import contracts](CODING_STANDARDS.md#architecture-rules) enforce this.
 
 ## Navigation and Settings
 
@@ -46,11 +46,11 @@ are absent. An invalid declaration has a diagnostic and no executable target. Ex
 generic Settings compatibility entry, so the app needs no plugin-name map. [ADR 0072](adr/0072-plugins-declare-navigation-and-settings-as-data.md)
 records the ownership rules. Declare the core range that supplies this additive API when publishing a plugin.
 
-Repository badges describe the installed source: the core repository is **First-party**, the contrib repository is
+Repository badges describe the installed source: the official core and plugins repositories are **First-party**, the contrib repository is
 **Community**, and other repositories are **Custom** when public or **Private** when private. Package names and
 catalog routes do not establish provenance. When visibility was not reported, the app says so rather than guessing;
 repository visibility is recorded during installation or returned by the catalog, without a network request for each
-badge. Named reference-plugin install routes remain available independently of these labels.
+badge. Catalog metadata discovers configured repository directories and external repositories with the `heinzel-plugin` topic. No central plugin list is required.
 
 ## Python, CLI, MCP and REST
 
@@ -82,19 +82,19 @@ test the refusal paths as well as the successful call. Never put a private opera
 | Surface | Status | What a plugin can contribute |
 | --- | --- | --- |
 | Left sidebar top icons | Proposed | No general plugin slot; Home and Search are host controls |
-| Left navigation pages | Proposed | Named page contribution with a stable route and accessible title |
+| Left navigation pages | Available | `module.nav` links to an owned page route or registered panel |
 | Left sidebar bottom stack | Available, limited | Status contributions may name the `sidebar` slot; player and account layout remain host-owned |
 | Left sidebar account row | Host-owned | No plugin injection; identity and account actions stay consistent |
 | Header actions | Available | `ActionLet`, checked icons and effects; no independent left/right placement contract |
 | Header left and right placement | Proposed | Explicit slots, with responsive priorities and overflow; never position with arbitrary CSS |
 | Footer status icons and panes | Available | `StatusLet`; state uses colour plus shape, details are keyboard reachable, actions use the host gate |
 | Footer left and right placement | Proposed | Current ordering is not a stable left/right extension API |
-| Right sidebar panels | Proposed | A registered view alongside host chat and terminal, without overlapping the composer |
-| Full pages | Proposed | Versioned React renderer and a declared route; ordinary data pages can use host renderers |
+| Right sidebar panels | Available | `module.view(..., slot="panel")`; open `/?panel=<module>:<view>` |
+| Full pages | Available | `slot="page"` with the owned `/plugins/<module>/<view>` route |
 | Today | Available | Card, list, metric, progress and graphic widget shapes; ids identify contributions and avoid duplicates |
 | Settings fields | Available | JSON Schema chooses the control; slot switches belong with the contributing module |
 | Settings and sidebar metadata | Available | `module.nav`, `NavSettings`, checked `Icon` and existing effects; only active owned Settings sections |
-| Custom Settings panes | Proposed | Versioned React view, distinct from the existing schema-driven controls |
+| Custom Settings panes | Available | `slot="settings"`, claiming only the owning module section |
 | Connectors | Available, limited | Capability providers appear through the host's connector management; no arbitrary connector-card renderer |
 | Search | Available, limited | Host navigation, settings, contracts and artifact types are searched; generic operation search and plugin result providers are proposed |
 | Share and export | Proposed | Pages declare export data; design must exclude tokens, device links, private paths and secrets |
@@ -103,8 +103,8 @@ test the refusal paths as well as the successful call. Never put a private opera
 
 Existing UI contribution models, limits and exposure rules are specified in
 [ADR 0056](adr/0056-modules-contribute-status-items-actions-and-widgets-as-data.md). A richer view must not silently
-replace the generic footer, hide a confirmation or make a read operation write. Rich views are proposed in ADR 0065;
-installing a plugin does not currently load a React bundle.
+replace the generic footer, hide a confirmation or make a read operation write. Registered bundles load through
+the versioned SDK and the owning declaration; plugin browser code shares the trusted host realm.
 
 ## Theme, sound and character
 
@@ -142,27 +142,56 @@ The full asset-set contract remains proposed in ADR 0065. Semantic avatar layers
 | Skills and skill files | Available | Checked `module.skill` content; explicit exports and MCP representations; engine use is being built |
 | Skill scripts and coding handoffs | Proposed | Bounded runner handoff, separate from loading reference text |
 | Translations | Proposed | No general plugin translation-catalog API yet; supply plain labels and accessible fallback text |
-| Generated plugin documentation pages | Proposed | Draft automation is not a shipping API; current generated module/CLI/config references already include discovered declarations |
-| Documentation snippets | Available | Core and first-party snippets use a repository convention; external-plugin recording and site automation are proposed |
+| Generated plugin documentation pages | Available | `hz system plugin docs build`; the starter carries scoped page/site tooling |
+| Documentation snippets | Available | Own scenes and recordings, built with the generated project’s documentation commands |
 
-## Proposed React packaging
+## Local view packaging and independent work
 
-A future plugin wheel may contain a prebuilt ES module plus a versioned manifest. The host supplies React,
-react-dom and the hz UI kit through the plugin SDK; bundles must not carry a second React runtime. Every component
-names a supported slot, receives validated data and calls operations through host actions. The manifest declares
-the supported SDK range, assets and a text fallback. Incompatible plugins show an actionable error instead of loading.
+The generated starter has a small static view, SDK types, status, navigation, a Today widget and an explicit
+notification operation. It needs no JavaScript bundler. A richer plugin supplies its own frontend build and packages
+the resulting ES module and assets in its wheel. Export current SDK definitions with
+`hz system plugin sdk <new-directory>`. The host supplies one React runtime; bundles use the exported React bridges
+and must not bundle another copy.
 
-The SDK should expose query, navigation, approved-action, theme and accessibility hooks. It must not hand raw session
-tokens to components. This is an interface boundary, not a sandbox: code in the host's JavaScript realm is trusted
-code and can affect that realm. Install confirmation must explain this. Untrusted generated HTML must use a separate
-design, with an isolated origin and a restrictive sandbox; it cannot be imported as a trusted plugin module.
+```python
+from pathlib import Path
 
-Keep each component behind an error boundary, and keep CSP restrictive: no remote bundles, inline eval or permission
-expansion selected by a plugin. Every write still goes through the host's approval gate. CLI and MCP retain the same
-operation result and text fallback even when the web result has an interactive view.
+module.view(
+    Path(__file__).parent / "views",
+    abi=1,
+    name="inspector",
+    source="read",
+    title="Harbor",
+    fallback="Run hz harbor read.",
+    slot="panel",
+    order=500,
+)
+```
 
-The template will need a `web/` library build, SDK types, a wheel packaging check, accessibility tests, host-version
-compatibility tests and an offline fallback test. These are acceptance requirements, not commands available today.
+The source is an owned read-only operation requiring no user arguments. Slots include `panel`, `page`, `sidebar`,
+`settings` and `background`; a page owns `/plugins/harbor/inspector`, and a Settings view claims only its own module.
+Common representations use status, action and widget declarations with explicit priorities. Views receive source
+data, loading/visibility state and declared named actions through the host's ordinary confirmation gate. Missing or
+incompatible bundles show the declared fallback while Python operations remain usable. No remote bundles or eval
+are permitted. This is an interface boundary; installed JavaScript is trusted code in the host realm.
+
+`make preview` uses isolated configuration/state. Restart its backend after rebuilding already-loaded view assets.
+`make check` tests this plugin against an installed compatible core; `make build` packages only this plugin. The
+[public plugins repository](https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins) adds per-plugin
+hash-enforced locks, selected consumer checks, installed-wheel browser tests and independent release tags/provenance.
+Its release command previews artifacts; publishing is explicit through the protected release workflow.
+
+## Shared interfaces without provider dependencies
+
+A required injectable interface subclasses the public `ServiceContract` marker in the SDK or a neutral contract
+package. A provider implements it and registers `module.service(ReadingContract, Reading)`. A consumer imports only
+`ReadingContract`, then declares a parameter of that type. If no implementation is installed or it is disabled, only
+operations requiring it become unavailable, including dependencies through service factories. CLI/MCP/API still
+build and unrelated operations work. Ordinary user data models are never guessed to be injected services.
+
+For optional integration, inject `Kernel`, test `kernel.provides(ReadingContract)` and resolve it only when available.
+Existing capability protocols use `module.provides` and declared requirements/bindings. Declare versioned
+`requires`/`provides` identifiers in the owning project metadata to select affected consumer compatibility checks.
 
 ## Quality checklist for a change
 

@@ -62,7 +62,7 @@ never sees, stores or asks for a token, and no administrator has to register an 
 | --- | --- | --- |
 | [GitHub CLI](https://cli.github.com) `gh` | pull requests, issues, the team repository, the roster draft | `gh auth login` (or `gh auth login --hostname ghe.example.com`) |
 | [Atlassian CLI](https://developer.atlassian.com/cloud/acli/) `acli` | Jira issues, Confluence pages | `acli jira auth login --web` and `acli confluence auth login --web` |
-| [Google Workspace CLI](https://github.com/googleworkspace/cli) `gws` | Docs, Sheets, Drive, Calendar, Gmail | `npm install -g @googleworkspace/cli`, then `hz setup google` signs it in with read-only scopes ([README](../../plugins/heinzel-google/README.md)) |
+| [Google Workspace CLI](https://github.com/googleworkspace/cli) `gws` | Docs, Sheets, Drive, Calendar, Gmail | `npm install -g @googleworkspace/cli`, then `hz setup google` signs it in with read-only scopes ([README](https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/tree/main/plugins/heinzel-google/README.md)) |
 
 What you should see: `gh auth status` names your login; `hz system doctor` reports each CLI found, its version and
 its stored sign-in, without contacting the vendor.
@@ -117,12 +117,12 @@ hz system capability list                                 # every capability, it
 
 What you should see: `hz system plugin list` names the plugins and the modules they bring; `hz system doctor` has a
 line per plugin (`gh` found, its version and login; bindings in place). Each plugin's README has the details:
-[heinzel-github](../../plugins/heinzel-github/README.md), [heinzel-atlassian](../../plugins/heinzel-atlassian/README.md),
-[heinzel-google](../../plugins/heinzel-google/README.md), [heinzel-zoom](../../plugins/heinzel-zoom/README.md).
+[heinzel-github](https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/tree/main/plugins/heinzel-github/README.md), [heinzel-atlassian](https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/tree/main/plugins/heinzel-atlassian/README.md),
+[heinzel-google](https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/tree/main/plugins/heinzel-google/README.md), [heinzel-zoom](https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/tree/main/plugins/heinzel-zoom/README.md).
 
 **Your company's own plugins.** Anything specific to a company, org, site or team is a plugin, never part of the
 core ([INTENT: tenets](../../INTENT.md#tenets)). A company keeps its plugins in one private repository, laid out like
-this repository's [plugins/](../../plugins), and everyone installs from it:
+this repository's [plugins/](https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/tree/main/plugins), and everyone installs from it:
 
 ```bash
 hz system plugin new ../heinzel-acme               # scaffold one: tests, CI, release automation, agent setup

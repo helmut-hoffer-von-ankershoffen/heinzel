@@ -12,11 +12,6 @@ from pathlib import Path
 from types import ModuleType
 from typing import get_origin
 
-import heinzel_atlassian
-import heinzel_clock
-import heinzel_github
-import heinzel_google
-import heinzel_zoom
 import pytest
 from packaging.requirements import Requirement
 
@@ -27,7 +22,7 @@ pytestmark = pytest.mark.unit
 
 REPO = Path(__file__).resolve().parents[2]
 TEMPLATE = REPO / "template"
-CODE = [*REPO.glob("src/**/*.py"), *REPO.glob("plugins/*/src/**/*.py"), *REPO.glob("scripts/*.py"),
+CODE = [*REPO.glob("src/**/*.py"), *REPO.glob("scripts/*.py"),
         *REPO.glob("tests/**/*.py"), *REPO.glob(".claude/hooks/*.py"),
         *REPO.glob("template/**/*.py"), *REPO.glob("template/**/*.py.jinja")]  # fmt: skip
 BLOCKING = {"run", "check_call", "check_output", "call"}
@@ -84,7 +79,7 @@ def repository_files() -> list[str]:
         check=True,
         timeout=10,
     ).stdout.splitlines()
-    return [path for path in listed if (REPO / path).is_file()]
+    return [path for path in listed if not path.startswith("plugins/") and (REPO / path).is_file()]
 
 
 # Template parity: plugins get the same agents, hooks, skills, workflows and scripts, unless they are core-only.
@@ -211,11 +206,6 @@ def test_tests_and_template_use_only_variables_something_reads(make_kernel):
     code reads by name (HZ_CONFIG, HZ_CONFIG_HOME, HZ_SOURCE in install.sh, HZ_SPEC in the template's e2e test)."""
     kernel = make_kernel(
         builtins=True,
-        atlassian=heinzel_atlassian.module,
-        clock=heinzel_clock.module,
-        github=heinzel_github.module,
-        google=heinzel_google.module,
-        zoom=heinzel_zoom.module,
     )
     known = {
         f"{env_prefix(section)}{key.upper()}"
@@ -267,7 +257,6 @@ def test_claude_md_names_every_bash_guard_rule(root):
 LOWER_BOUNDS = {">=", ">", "==", "~=", "==="}
 PYPROJECTS = [
     REPO / "pyproject.toml",
-    *sorted(REPO.glob("plugins/*/pyproject.toml")),
     TEMPLATE / "pyproject.toml.jinja",
 ]
 
@@ -302,7 +291,7 @@ def test_every_dependency_has_a_lower_bound(pyproject):
 
 # Modules return results and heads present them: a module writing to the terminal breaks MCP and REST.
 
-MODULE_CODE = [*REPO.glob("src/heinzel/modules/**/*.py"), *REPO.glob("plugins/*/src/**/*.py")]
+MODULE_CODE = [*REPO.glob("src/heinzel/modules/**/*.py")]
 
 
 def terminal_writes(source: str) -> list[int]:
@@ -367,11 +356,6 @@ def test_injected_parameters_come_first(make_kernel):
         injected_after_exposed(
             make_kernel(
                 builtins=True,
-                atlassian=heinzel_atlassian.module,
-                clock=heinzel_clock.module,
-                github=heinzel_github.module,
-                google=heinzel_google.module,
-                zoom=heinzel_zoom.module,
             )
         )
         == []

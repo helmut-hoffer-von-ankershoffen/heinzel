@@ -15,7 +15,7 @@ import tempfile
 from datetime import timedelta
 from functools import partial
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal, get_origin
+from typing import TYPE_CHECKING, Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic_core import to_jsonable_python
@@ -215,7 +215,7 @@ def parameters(kernel: Kernel, operation: OperationLet) -> set[str]:
     return {
         name
         for name, parameter in operation.signature().parameters.items()
-        if not kernel.provides(get_origin(parameter.annotation) or parameter.annotation)
+        if not kernel.provides(parameter.annotation)
     }
 
 

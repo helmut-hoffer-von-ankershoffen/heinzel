@@ -6,6 +6,7 @@ import io
 import os
 import re
 import stat
+import subprocess
 import tomllib
 import zipfile
 from pathlib import Path
@@ -34,6 +35,7 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
         "uv run --script scripts/check_confidentiality.py --require": "the secret must be configured in this repo",
         "unzip -l ": "asserts what the built wheel contains",
         'changed="$(git diff --name-only': "decides from the changed paths whether a pull request builds the macOS app",
+        "if compgen -G ": "selects the built core candidate or an independently released artifact for source plugins",
         "for result in $RESULTS": "the CI OK gate aggregates the results of the other jobs",
         "tar -czf notifier.tar.gz": "packs the app the macOS job built, with its executable bit, for the build job",
         "tar -xzf notifier.tar.gz": "unpacks Heinzel Notifier into the package before the wheel is built",
@@ -124,6 +126,44 @@ def test_managed_backend_verification_gates_ci_without_leaking_into_plugin_templ
     assert runs.index("make managed-backend-setup managed-backend-check") < runs.index("make typecheck")
     for name in ("Makefile", ".github/workflows/ci.yml.jinja"):
         assert "managed-backend" not in (REPO / "template" / name).read_text()
+
+
+@pytest.mark.parametrize("event", ["pull_request", "push"])
+@pytest.mark.parametrize("path", ["plugins/heinzel-unforeseen/src/plugin.py", "src/heinzel/kernel/public.py"])
+def test_plugin_only_changes_skip_core_work_and_keep_required_plugin_checks(tmp_path, event, path):
+    workflow = yaml.safe_load((REPO / ".github/workflows/ci.yml").read_text())
+    jobs = workflow["jobs"]
+
+    def git(*args):
+        return subprocess.run(["git", *args], cwd=tmp_path, capture_output=True, text=True, check=True, timeout=30)
+
+    git("init", "--quiet")
+    (tmp_path / "README.md").write_text("fixture")
+    git("add", ".")
+    git("-c", "user.name=Fixture", "-c", "user.email=fixture@example.com", "commit", "--quiet", "-m", "chore: init")
+    base = git("rev-parse", "HEAD").stdout.strip()
+    source = tmp_path / path
+    source.parent.mkdir(parents=True)
+    source.write_text("# changed")
+    git("add", ".")
+    git("-c", "user.name=Fixture", "-c", "user.email=fixture@example.com", "commit", "--quiet", "-m", "feat: change")
+    output = tmp_path / "outputs"
+    script = jobs["changes"]["steps"][-1]["run"]
+    subprocess.run(
+        ["bash", "-euo", "pipefail", "-c", script], cwd=tmp_path,
+        env={**os.environ, "BASE": base, "EVENT": event, "GITHUB_OUTPUT": str(output)}, check=True, timeout=30,
+    )  # fmt: skip
+    values = dict(line.split("=", 1) for line in output.read_text().splitlines())
+    plugin_only = path.startswith("plugins/")
+    assert values["core"] == str(not plugin_only).lower()
+    assert values["plugins"] == str(plugin_only).lower()
+    assert values["contracts"] == str(not plugin_only).lower()
+    if plugin_only:
+        assert values["notifier"] == values["electron"] == "false"
+    for name in ("lint", "setup", "audit", "test", "coverage", "perf", "e2e", "build"):
+        assert "needs.changes.outputs.core == 'true'" in jobs[name]["if"]
+    assert "local-plugin-check" in jobs["ci-ok"]["needs"]
+    assert "needs.changes.outputs.plugins == 'true'" in jobs["local-plugin-plan"]["if"]
 
 
 def test_electron_sandbox_archive_hash_mismatch_is_rejected():

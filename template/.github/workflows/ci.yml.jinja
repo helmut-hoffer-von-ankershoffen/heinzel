@@ -233,6 +233,7 @@ jobs:
 
   build:
     name: Build
+    needs: []
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -247,6 +248,8 @@ jobs:
         with:
           name: dist
           path: dist/
+
+
 
   ci-ok:
     name: CI OK

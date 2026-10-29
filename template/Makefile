@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help install setup release-local doctor tools-verify check check-fast preflight fix lint format typecheck test test-parallel commits test-all-pythons test-unit test-integration test-perf test-e2e audit licenses secrets icons build pypi-clean-build-marker changelog ci-logs pr sync docs-plugins docs-record docs-site release clean update-template
+.PHONY: help install setup release-local doctor tools-verify check check-fast preflight fix lint format typecheck test test-parallel commits test-all-pythons test-unit test-integration test-perf test-e2e audit licenses secrets icons build pypi-clean-build-marker changelog ci-logs pr sync docs-plugins docs-record docs-site release clean update-template preview
 
 # Quiet by default: one line per passing step, the tail of a failing one. VERBOSE=1 streams everything.
 # A step starting with & runs concurrently with the one before it; the first failure cancels the rest.
@@ -135,7 +135,7 @@ docs-site: ## Build the documentation site (MkDocs Material) into site/ from doc
 icons: ## Make every image of Heinzelmännchen from heinzel.svg: the web app's icons, the favicon, the theme's logo (macOS 14+)
 	@uv run --quiet --script scripts/notifier.py icons
 
-build: ## Build wheels and sdists into dist/ (the core and every first-party plugin)
+build: ## Build this plugin's wheel and sdist into dist/
 	uv build
 
 PYPI_DIST ?= dist
@@ -174,6 +174,9 @@ release-local: ## Open a release pull request from this machine, from an up-to-d
 
 clean: ## Remove build and test artifacts
 	rm -rf dist build .coverage* coverage.xml htmlcov reports .pytest_cache .mypy_cache .ruff_cache site
+
+preview: ## Launch this plugin using isolated application state
+	uv run --no-project --script scripts/plugin_preview.py
 
 update-template: ## Update this plugin to the latest Heinzelmännchen template (needs a clean working tree)
 	uvx copier update --defaults

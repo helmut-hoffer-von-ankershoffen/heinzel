@@ -161,6 +161,17 @@ def new(
     return service.new(destination, template, ref, data or ())
 
 
+@module.operation(read_only=False, heads={"cli"})
+def sdk(
+    service: PluginService,
+    destination: Annotated[
+        Path, Field(description="New directory for the installed view SDK and TypeScript definitions.")
+    ],
+) -> list[Path]:
+    """Export the versioned plugin view SDK from this installation, without a core checkout."""
+    return service.sdk(destination)
+
+
 @module.operation(render=render_search)
 def search(
     service: PluginService,
@@ -174,8 +185,9 @@ def search(
 ) -> PluginSearch:
     """Find plugins to install: first-party ones, and community ones by querying the GitHub API.
 
-    Community plugins are GitHub repositories with the topic heinzel-plugin; GH_TOKEN or GITHUB_TOKEN raises the rate
-    limit. Offline, only first-party plugins are listed. PyPI has no keyword search, so it is not queried. Community
+    Configured repositories are scanned for plugin projects; topic heinzel-plugin discovers external repositories.
+    GH_TOKEN or GITHUB_TOKEN raises the rate limit. Catalog outages retain last successfully read metadata.
+    PyPI has no keyword search, so it is not queried. Community
     plugins are not reviewed by the Heinzelmännchen maintainers, and every plugin runs with your rights.
     """
     return service.search(text)

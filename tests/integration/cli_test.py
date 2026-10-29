@@ -9,10 +9,6 @@ from pathlib import Path
 from typing import Annotated
 
 import click
-import heinzel_atlassian
-import heinzel_clock
-import heinzel_github
-import heinzel_zoom
 import pytest
 import typer
 from pydantic import BaseModel, Field
@@ -335,21 +331,28 @@ def fake_github(monkeypatch, answer):
     from heinzel.modules.system.plugin import _service
 
     def get_json(url, token, timeout):
-        assert url.startswith(_service.GITHUB_SEARCH)
         assert token is None
         if isinstance(answer, Exception):
             raise answer
+        if "/contents/plugins" in url:
+            return []
+        if "/contents/pyproject.toml" in url:
+            import base64
+
+            content = '[project]\nname="heinzel-crm"\ndescription="Customers and [bold]deals[/bold]."\n'
+            content += '[project.entry-points."heinzel.modules"]\ncrm="heinzel_crm"\n'
+            return {"encoding": "base64", "content": base64.b64encode(content.encode()).decode()}
         return answer
 
     for name in ("GH_TOKEN", "GITHUB_TOKEN", "HZ_SYSTEM_PLUGIN__GITHUB_TOKEN"):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setattr(_service, "get_json", get_json)
-    # The heinzel-contrib listing is a second GitHub read (Discover source); fake it as an empty-but-readable listing.
-    monkeypatch.setattr(_service.PluginService, "_contrib_plugins", lambda *_args, **_kwargs: [])
+    monkeypatch.setenv("HZ_SYSTEM_PLUGIN__CATALOG_SOURCES", "[]")
 
 
 CRM = {
     "name": "heinzel-crm",
+    "full_name": "someone/heinzel-crm",
     "description": "Customers and [bold]deals[/bold].",
     "html_url": "https://github.com/someone/heinzel-crm",
     "stargazers_count": 7,
@@ -362,14 +365,7 @@ def test_plugin_search_lists_first_party_and_community_plugins(app, monkeypatch)
     assert result.exit_code == 0, result.output
     found = json.loads(result.output)
     assert [(p["name"], p["source"], p["community"], p["install_spec"]) for p in found["plugins"]] == [
-        ("heinzel-acme", "first-party", False, "acme"),
-        ("heinzel-atlassian", "first-party", False, "atlassian"),
-        ("heinzel-clock", "first-party", False, "clock"),
-        ("heinzel-github", "first-party", False, "github"),
-        ("heinzel-google", "first-party", False, "google"),
-        ("heinzel-tailscale", "first-party", False, "tailscale"),
-        ("heinzel-zoom", "first-party", False, "zoom"),
-        ("heinzel-crm", "github", True, "git+https://github.com/someone/heinzel-crm"),
+        ("heinzel-crm", "github", True, "heinzel-crm @ git+https://github.com/someone/heinzel-crm"),
     ]
     assert found["warnings"] == []
 
@@ -389,18 +385,8 @@ def test_plugin_search_offline_shows_first_party_plugins_and_a_warning(app, monk
     result = runner.invoke(app, ["system", "plugin", "search", "--json"])
     assert result.exit_code == 0, result.output
     found = json.loads(result.output)
-    assert [p["name"] for p in found["plugins"]] == [
-        "heinzel-acme",
-        "heinzel-atlassian",
-        "heinzel-clock",
-        "heinzel-github",
-        "heinzel-google",
-        "heinzel-tailscale",
-        "heinzel-zoom",
-    ]
-    assert found["warnings"] == [
-        "GitHub could not be searched (network is unreachable); showing first-party plugins only."
-    ]
+    assert found["plugins"] == []
+    assert found["warnings"] == ["Topic search is unavailable; showing configured catalogs and cached metadata."]
 
 
 def test_plugin_search_help_says_it_queries_github(app):
@@ -588,7 +574,6 @@ def test_commands_are_sorted(app):
         "notify",
         "plugin",
         "release",
-        "resource",
         "runner",
         "serve",
         "skill",
@@ -705,10 +690,6 @@ def test_every_operation_accepts_json(make_kernel):
     app = build(
         make_kernel(
             builtins=True,
-            atlassian=heinzel_atlassian.module,
-            clock=heinzel_clock.module,
-            github=heinzel_github.module,
-            zoom=heinzel_zoom.module,
             **example_modules(),
         )
     )

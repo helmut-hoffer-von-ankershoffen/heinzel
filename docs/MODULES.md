@@ -10,10 +10,6 @@ mode (`hz system expert on`); every one runs either way, and MCP and REST list t
 | --- | --- |
 | [`ai`](#ai) | How hz reaches AI, and what it spends: tokens and cost per run. |
 | [`ai.access`](#aiaccess) | Pick how hz reaches AI: Claude Code, your company's gateway, or an option a plugin adds. |
-| [`atlassian`](#atlassian) | Read Jira issues and Confluence pages through acli: the tracker and documents capabilities. |
-| [`clock`](#clock) | World clock: what time it is for everyone on the team. |
-| [`github`](#github) | Read pull requests and issues from GitHub: the code-host and tracker capabilities. |
-| [`google`](#google) | Google Docs, Sheets, Drive, Calendar and Gmail: the documents, calendar and mail capabilities. |
 | [`graph`](#graph) | Are your team's promises kept? Artifacts and Heinzelmännchen, and where the flow waits. |
 | [`heinzel`](#heinzel) | Your Heinzelmännchen: durable agents that keep your team's documents true. |
 | [`org`](#org) | Your profile, and the team, org and company you work with. |
@@ -34,7 +30,6 @@ mode (`hz system expert on`); every one runs either way, and MCP and REST list t
 | [`system.notify`](#systemnotify) | Pop up what deserves your attention: in the web app while it is open, else natively. |
 | [`system.plugin`](#systemplugin) | Find, add, remove, enable, disable, list and scaffold plugins. |
 | [`system.plugin.docs`](#systemplugindocs) | Document installed plugins: what each brings, as a model and as Markdown pages. |
-| [`system.resource`](#systemresource) | Show this computer's CPU, memory and load. |
 | [`system.runner`](#systemrunner) | Run bounded agent sessions with Claude Code or a configured command. |
 | [`system.runner.chat`](#systemrunnerchat) | Chat with the agent runner about where you are; it acts through hz once you confirm. |
 | [`system.skill`](#systemskill) | List the skills plugins ship for AI, and hand chosen ones to Claude Code. |
@@ -42,9 +37,7 @@ mode (`hz system expert on`); every one runs either way, and MCP and REST list t
 | [`system.state`](#systemstate) | Note how hz is used on this machine and push it to your own state repository. |
 | [`system.theme`](#systemtheme) | Pick how the web app looks: the built-in theme or one a plugin offers. |
 | [`system.ui`](#systemui) | List what modules add to the web app: status items, header actions and Today widgets. |
-| [`tailscale`](#tailscale) | Private web sharing through Tailscale Serve. |
 | [`team`](#team) | Your team's repository: create one (`hz team new`), join one by its URL (`hz team join`), add people to it. |
-| [`zoom`](#zoom) | Read meetings from Zoom's meeting-summary emails: the meetings capability. |
 
 ## `ai`
 
@@ -71,67 +64,6 @@ Pick how hz reaches AI: Claude Code, your company's gateway, or an option a plug
 Settings: [`[ai.access]`](CONFIGURATION.md#aiaccess).
 
 Health checks: reported by `hz system doctor`.
-
-## `atlassian`
-
-Read Jira issues and Confluence pages through acli: the tracker and documents capabilities.
-
-First-party plugin `heinzel-atlassian`: `hz system plugin add atlassian --confirm`.
-
-| Operation | CLI | MCP tool | REST | Web | Changes state | Expert |
-| --- | --- | --- | --- | --- | --- | --- |
-| Show this plugin's version, the Atlassian site and the acli commands it runs. | `hz atlassian info` | `atlassian_info` | `GET /atlassian/info` | `GET /api/atlassian/info` |  | expert |
-
-Settings: [`[atlassian]`](CONFIGURATION.md#atlassian).
-
-Health checks: reported by `hz system doctor`.
-
-## `clock`
-
-World clock: what time it is for everyone on the team.
-
-First-party plugin `heinzel-clock`: `hz system plugin add clock --confirm`.
-
-| Operation | CLI | MCP tool | REST | Web | Changes state | Expert |
-| --- | --- | --- | --- | --- | --- | --- |
-| Show the time in each of the team's time zones. | `hz clock` | `clock` | `GET /clock` | `GET /api/clock` |  |  |
-
-Settings: [`[clock]`](CONFIGURATION.md#clock).
-
-Health checks: reported by `hz system doctor`.
-
-Setup: `hz setup clock` (optional), also part of `hz setup`.
-
-## `github`
-
-Read pull requests and issues from GitHub: the code-host and tracker capabilities.
-
-First-party plugin `heinzel-github`: `hz system plugin add github --confirm`.
-
-| Operation | CLI | MCP tool | REST | Web | Changes state | Expert |
-| --- | --- | --- | --- | --- | --- | --- |
-| Show this plugin's version, the Heinzelmännchen it runs on and the GitHub host it reads. | `hz github info` | `github_info` | `GET /github/info` | `GET /api/github/info` |  | expert |
-
-Settings: [`[github]`](CONFIGURATION.md#github).
-
-Health checks: reported by `hz system doctor`.
-
-## `google`
-
-Google Docs, Sheets, Drive, Calendar and Gmail: the documents, calendar and mail capabilities.
-
-First-party plugin `heinzel-google`: `hz system plugin add google --confirm`.
-
-| Operation | CLI | MCP tool | REST | Web | Changes state | Expert |
-| --- | --- | --- | --- | --- | --- | --- |
-| Show this plugin's version, the Heinzelmännchen it runs on and the gws, scopes and APIs it uses. | `hz google info` | `google_info` | `GET /google/info` | `GET /api/google/info` |  | expert |
-| List the Google Docs and Sheets you can open that changed recently, newest first. | `hz google files` | `google_files` | `GET /google/files` | `GET /api/google/files` |  | expert |
-
-Settings: [`[google]`](CONFIGURATION.md#google).
-
-Health checks: reported by `hz system doctor`.
-
-Setup: `hz setup google` (optional), also part of `hz setup`.
 
 ## `graph`
 
@@ -383,6 +315,7 @@ Find, add, remove, enable, disable, list and scaffold plugins.
 | Switch a disabled plugin on again. | `hz system plugin enable` | `system_plugin_enable` | — | `POST /api/system/plugin/enable` | yes | expert |
 | List plugin changes made on this machine, oldest first: what was installed, from where, by whom. | `hz system plugin history` | `system_plugin_history` | — | `GET /api/system/plugin/history` |  | expert |
 | Scaffold a plugin repository from the Heinzelmännchen template, asking for answers not given. | `hz system plugin new` | — | — | — | yes | expert |
+| Export the versioned plugin view SDK from this installation, without a core checkout. | `hz system plugin sdk` | — | — | — | yes | expert |
 | Find plugins to install: first-party ones, and community ones by querying the GitHub API. | `hz system plugin search` | `system_plugin_search` | `GET /system/plugin/search` | `GET /api/system/plugin/search` |  | expert |
 
 Settings: [`[system.plugin]`](CONFIGURATION.md#systemplugin).
@@ -395,14 +328,6 @@ Document installed plugins: what each brings, as a model and as Markdown pages.
 | --- | --- | --- | --- | --- | --- | --- |
 | Show what each installed plugin brings; `--json` is the full model its page is built from. | `hz system plugin docs show` | `system_plugin_docs_show` | — | `GET /api/system/plugin/docs/show` |  | expert |
 | Write a Markdown page per installed plugin, with theme swatches and its recordings when they exist. | `hz system plugin docs build` | `system_plugin_docs_build` | — | — | yes | expert |
-
-## `system.resource`
-
-Show this computer's CPU, memory and load.
-
-| Operation | CLI | MCP tool | REST | Web | Changes state | Expert |
-| --- | --- | --- | --- | --- | --- | --- |
-| Show machine CPU/memory usage, one-minute load and logical cores; cache each sample for one second. | `hz system resource` | `system_resource` | `GET /system/resource` | `GET /api/system/resource` |  |  |
 
 ## `system.runner`
 
@@ -497,6 +422,7 @@ List what modules add to the web app: status items, header actions and Today wid
 | List the status items modules add to the web app's status bar, with what each shows now. | `hz system ui status` | `system_ui_status` | — | `GET /api/system/ui/status` |  | expert |
 | List the buttons modules add to the web app's header, with what each does and its badge. | `hz system ui actions` | `system_ui_actions` | — | `GET /api/system/ui/actions` |  | expert |
 | List the widgets modules add to the web app's Today screen, with what each shows now. | `hz system ui widgets` | `system_ui_widgets` | — | `GET /api/system/ui/widgets` |  | expert |
+| List active installed views, their compatible bundles and read-only operation calls. | `hz system ui views` | `system_ui_views` | — | `GET /api/system/ui/views` |  | expert |
 | List active providers' navigation and owned Settings metadata without running their operations. | `hz system ui navigation` | `system_ui_navigation` | — | `GET /api/system/ui/navigation` |  | expert |
 | List every contribution to the web app, where it may show and whether it does; nothing runs. | `hz system ui list` | `system_ui_list` | — | `GET /api/system/ui/list` |  | expert |
 | Show a contribution in a slot of the web app, such as the clock in the sidebar. | `hz system ui show` | `system_ui_show` | — | `POST /api/system/ui/show` | yes | expert |
@@ -505,20 +431,6 @@ List what modules add to the web app: status items, header actions and Today wid
 Settings: [`[system.ui]`](CONFIGURATION.md#systemui).
 
 Health checks: reported by `hz system doctor`.
-
-## `tailscale`
-
-Private web sharing through Tailscale Serve.
-
-First-party plugin `heinzel-tailscale`: `hz system plugin add tailscale --confirm`.
-
-| Operation | CLI | MCP tool | REST | Web | Changes state | Expert |
-| --- | --- | --- | --- | --- | --- | --- |
-| Show private sharing readiness without changing Tailscale or configuration. | `hz tailscale status` | `tailscale_status` | — | `GET /api/tailscale/status` |  | expert |
-| Share hz privately over Tailscale, preserving existing services and requiring authenticated readiness. | `hz tailscale enable` | `tailscale_enable` | — | `POST /api/tailscale/enable` | yes | expert |
-| Stop only hz's private Serve mapping and remove only the origin permission this plugin added. | `hz tailscale disable` | `tailscale_disable` | — | `POST /api/tailscale/disable` | yes | expert |
-
-Settings: [`[tailscale]`](CONFIGURATION.md#tailscale).
 
 ## `team`
 
@@ -533,19 +445,5 @@ Your team's repository: create one (`hz team new`), join one by its URL (`hz tea
 | Make an existing checkout your team repository; replaces the deprecated `heinzel.team_repository`. | `hz team adopt` | `team_adopt` | — | — | yes | expert |
 
 Settings: [`[team]`](CONFIGURATION.md#team).
-
-Health checks: reported by `hz system doctor`.
-
-## `zoom`
-
-Read meetings from Zoom's meeting-summary emails: the meetings capability.
-
-First-party plugin `heinzel-zoom`: `hz system plugin add zoom --confirm`.
-
-| Operation | CLI | MCP tool | REST | Web | Changes state | Expert |
-| --- | --- | --- | --- | --- | --- | --- |
-| Show this plugin's version, the Heinzelmännchen it runs on and where its meetings come from. | `hz zoom info` | `zoom_info` | `GET /zoom/info` | `GET /api/zoom/info` |  | expert |
-
-Settings: [`[zoom]`](CONFIGURATION.md#zoom).
 
 Health checks: reported by `hz system doctor`.

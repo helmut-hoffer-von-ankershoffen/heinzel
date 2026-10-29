@@ -51,9 +51,16 @@ the site the Docs workflow publishes on release.
 ```bash
 make setup     # everything the build needs, and the git hooks; you need only git, make and uv
 make doctor    # what is missing, and the command that fixes it
+make preview   # this plugin and its installed core, with isolated app state
 make check     # lint, types, unit + integration tests
 make test-e2e  # installs Heinzelmännchen with uv and adds this checkout as a plugin
 ```
+
+The starter contributes a status item, header action, sidebar item, Today widget, local panel and an explicit
+`hz [[ plugin_name ]] notify` operation. Their priorities live beside their declarations. The static view in
+`src/[[ package_name ]]/views/` needs no JavaScript build. `sdk/index.d.ts` describes its versioned host contract;
+`hz system plugin sdk <new-directory>` exports current SDK types and runtime bridges for a larger bundled view.
+Restart preview after changing built view assets. `make build` packages only this plugin.
 
 The modules live in `src/[[ package_name ]]/`. Read [AGENTS.md](AGENTS.md) and
 [docs/CODING_STANDARDS.md](docs/CODING_STANDARDS.md) before changing them; the reviewer agents and hooks in
