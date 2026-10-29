@@ -67,6 +67,10 @@ def test_separate_consent_daemon_occurrence_dedup_and_pause(tmp_path, monkeypatc
         for identity in (readonly, stranger):
             with current.using(identity), pytest.raises(HeinzelError):
                 schedules.pause(session, "schedule")
+        with current.using(stranger), pytest.raises(HeinzelError):
+            schedules.list_reviews(session)
+        with pytest.raises(HeinzelError, match="bounds"):
+            schedules.list_reviews(session, limit=0)
         other = schedules.propose(session, "second-schedule", "contract", 60, 4, 30)
         assert other.first_run == "current-slot-after-approval"
         page = schedules.list_reviews(session, limit=1)
