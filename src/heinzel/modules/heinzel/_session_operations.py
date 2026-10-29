@@ -255,11 +255,76 @@ def _register_skill_operations(module: Module) -> None:
         return service.skill_drafts(session_id, cursor, limit)
 
 
-def register_session_operations(module: Module) -> None:  # noqa: C901, PLR0915 - operation declarations define one shared head surface
+def _register_contract_review_operations(module: Module) -> None:
+    """Register exact inert contract review and trusted confirmation."""
+
+    @module.operation(private=True, heads={"web", "api-private"}, audience="everyday")
+    def agent_contract_review(service: SessionCrud, session_id: Identity, request_id: Request) -> ContractReviewView:
+        """Read an exact contract and its acceptance; this grants no execution or access."""
+        review = ContractReview(service)
+        proposal = service.scheduled_agent_proposal(session_id, request_id)
+        return ContractReviewView(proposal=proposal, accepted=review.applied(session_id, request_id))
+
+    @module.operation(private=True, read_only=False, heads={"web", "api-private"}, audience="everyday")
+    def accept_agent_contract(  # noqa: PLR0913, PLR0917 - exact trusted confirmation
+        service: SessionCrud,
+        confirmation: ApprovalConfirmation,
+        session_id: Identity,
+        request_id: Request,
+        review: dict[str, JsonValue],
+        approval_proof: str,
+    ) -> ScheduledAgentProposal:
+        """Record only exact contract acceptance through trusted confirmation.
+
+        Raises:
+            HeinzelError: If confirmation or exact review is invalid.
+        """
+        args: dict[str, JsonValue] = {
+            "session_id": session_id,
+            "request_id": request_id,
+            "review": review,
+            "approval_proof": approval_proof,
+        }
+        if not confirmation.matches("heinzel", "accept-agent-contract", args):
+            msg = "Approval is invalid or unavailable"
+            raise HeinzelError(msg)
+        contracts = ContractReview(service)
+        if contracts.current(session_id, request_id).model_dump(mode="json") != review:
+            msg = "The reviewed contract changed"
+            raise HeinzelError(msg)
+        return contracts.accept(session_id, request_id, approval_proof)
+
+
+def _register_user_chat_operations(module: Module) -> None:
+    """Register private chat, tool activity and profile proposal projections."""
+
+    @module.operation(private=True, heads={"cli", "web", "api-private"}, audience="everyday")
+    def latest_profile_proposal(service: SessionCrud, session_id: Identity) -> ProfileProposal | None:
+        """Inspect the latest suggested name and look; it has not been applied."""
+        return service.latest_profile_proposal(session_id)
+
+    @module.operation(private=True, read_only=False, heads={"cli", "web", "api-private"}, audience="everyday")
+    def answer_chat(service: UserChatService, session_id: Identity, request_id: Request) -> UserChatAnswer:
+        """Answer one authenticated user's accepted message; an interrupted request is never silently replayed."""
+        return asyncio.run(service.answer(session_id, request_id))
+
+    @module.operation(private=True, heads={"cli", "web", "api-private"}, audience="everyday")
+    def tool_activity(
+        service: UserChatService,
+        session_id: Identity,
+        limit: Annotated[int, Field(ge=1, le=100)] = 30,
+    ) -> UserToolActivity:
+        """Show owner-private host-observed tool decisions, without their arguments."""
+        return service.activity(session_id, limit)
+
+
+def register_session_operations(module: Module) -> None:  # noqa: C901 - operation declarations define one shared head surface
     """Register once on the owning module; constructing the service performs no private I/O."""
     module.service(SessionCrud, _crud)
     module.service(UserChatService)
     _register_skill_operations(module)
+    _register_contract_review_operations(module)
+    _register_user_chat_operations(module)
     register_model_policy_operations(module)
     module.service(ApprovalIssuer, _approval_issuer)
     module.service(ApprovalConfirmation, _approval_confirmation)
@@ -352,42 +417,6 @@ def register_session_operations(module: Module) -> None:  # noqa: C901, PLR0915 
     def personal_artifacts(service: SessionCrud, session_id: Identity) -> PersonalArtifacts:
         """List local principal-submitted file associations without accessing the provider."""
         return service.personal_artifacts(session_id)
-
-    @module.operation(private=True, heads={"web", "api-private"}, audience="everyday")
-    def agent_contract_review(service: SessionCrud, session_id: Identity, request_id: Request) -> ContractReviewView:
-        """Read an exact contract and its acceptance; this grants no execution or access."""
-        review = ContractReview(service)
-        proposal = service.scheduled_agent_proposal(session_id, request_id)
-        return ContractReviewView(proposal=proposal, accepted=review.applied(session_id, request_id))
-
-    @module.operation(private=True, read_only=False, heads={"web", "api-private"}, audience="everyday")
-    def accept_agent_contract(  # noqa: PLR0913, PLR0917 - exact trusted confirmation
-        service: SessionCrud,
-        confirmation: ApprovalConfirmation,
-        session_id: Identity,
-        request_id: Request,
-        review: dict[str, JsonValue],
-        approval_proof: str,
-    ) -> ScheduledAgentProposal:
-        """Record only exact contract acceptance through trusted confirmation.
-
-        Raises:
-            HeinzelError: If confirmation or exact review is invalid.
-        """
-        args: dict[str, JsonValue] = {
-            "session_id": session_id,
-            "request_id": request_id,
-            "review": review,
-            "approval_proof": approval_proof,
-        }
-        if not confirmation.matches("heinzel", "accept-agent-contract", args):
-            msg = "Approval is invalid or unavailable"
-            raise HeinzelError(msg)
-        contracts = ContractReview(service)
-        if contracts.current(session_id, request_id).model_dump(mode="json") != review:
-            msg = "The reviewed contract changed"
-            raise HeinzelError(msg)
-        return contracts.accept(session_id, request_id, approval_proof)
 
     @module.operation(private=True, read_only=False, audience="everyday")
     def propose_scheduled_agent(  # noqa: PLR0913, PLR0917 - flat private API
@@ -507,25 +536,6 @@ def register_session_operations(module: Module) -> None:  # noqa: C901, PLR0915 
             expected_contract_version,
             expected_preview_hash,
         )
-
-    @module.operation(private=True, heads={"cli", "web", "api-private"}, audience="everyday")
-    def latest_profile_proposal(service: SessionCrud, session_id: Identity) -> ProfileProposal | None:
-        """Inspect the latest suggested name and look; it has not been applied."""
-        return service.latest_profile_proposal(session_id)
-
-    @module.operation(private=True, read_only=False, heads={"cli", "web", "api-private"}, audience="everyday")
-    def answer_chat(service: UserChatService, session_id: Identity, request_id: Request) -> UserChatAnswer:
-        """Answer one authenticated user's accepted message; an interrupted request is never silently replayed."""
-        return asyncio.run(service.answer(session_id, request_id))
-
-    @module.operation(private=True, heads={"cli", "web", "api-private"}, audience="everyday")
-    def tool_activity(
-        service: UserChatService,
-        session_id: Identity,
-        limit: Annotated[int, Field(ge=1, le=100)] = 30,
-    ) -> UserToolActivity:
-        """Show owner-private host-observed tool decisions, without their arguments."""
-        return service.activity(session_id, limit)
 
     @module.operation(private=True, read_only=False, audience="everyday")
     def chat(

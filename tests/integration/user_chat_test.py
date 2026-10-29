@@ -75,3 +75,54 @@ def test_profile_suggestion_is_owner_private_and_never_applied_by_model(make_ker
     assert unchanged.json()["name"] == "Original"
     assert unchanged.json()["profile_revision"] == 1
     assert client.get("/api/heinzel/latest-profile-proposal", params={"session_id": session}).status_code == 401
+
+
+def test_subscription_quota_error_has_safe_code_and_is_not_replayed(make_kernel, tmp_path):
+    import json
+
+    from heinzel.modules.system.runner._process import Outcome
+
+    kernel = make_kernel(builtins=True)
+    current = kernel.resolve(CurrentUser)
+    crud = kernel.resolve(SessionCrud)
+    executable = fake_claude(tmp_path)
+    calls = []
+
+    def execute(command, **_kwargs):
+        if command[1:] == ["auth", "status", "--json"]:
+            return Outcome(
+                0, json.dumps({"loggedIn": True, "authMethod": "claude.ai", "apiProvider": "firstParty"}), ""
+            )
+        if command[1:] == ["--version"]:
+            return Outcome(0, "2.1.312 (Claude Code)\n", "")
+        calls.append(1)
+        return Outcome(
+            1,
+            json.dumps(
+                {
+                    "type": "result",
+                    "subtype": "success",
+                    "is_error": True,
+                    "api_error_status": 429,
+                    "api_error": "usage_limit_reached",
+                    "result": "sensitive provider details",
+                }
+            ),
+            "",
+        )
+
+    kernel.bind(
+        UserChatService, UserChatService(crud, current, load=lambda: FixtureConfig(executable), execute=execute)
+    )
+    client = web_client(kernel, tmp_path)
+    session = client.post("/api/heinzel/new-chat", headers=AUTH, json={"request_id": "quota"}).json()["session_id"]
+    client.post("/api/heinzel/chat", headers=AUTH, json={"session_id": session, "request_id": "hello", "message": "Hi"})
+    body = {"session_id": session, "request_id": "hello"}
+    response = client.post("/api/heinzel/answer-chat", headers=AUTH, json=body)
+    assert response.status_code == 400
+    assert response.json()["code"] == "subscription_usage_limit"
+    assert "provider settings" in response.json()["error"]
+    assert "sensitive" not in response.text
+    retry = client.post("/api/heinzel/answer-chat", headers=AUTH, json=body)
+    assert retry.status_code == 400
+    assert calls == [1]

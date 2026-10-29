@@ -38,6 +38,7 @@ from pydantic_ai.settings import ModelSettings
 from pydantic_ai.usage import RequestUsage
 
 from heinzel import HeinzelError
+from heinzel.kernel._errors import SubscriptionUsageLimitError
 from heinzel.modules.heinzel._subscription_slots import SubscriptionSlots
 from heinzel.modules.heinzel._turn_authority_fence import TurnAuthorityFence
 from heinzel.modules.system.runner._process import Outcome, run_bounded
@@ -144,10 +145,6 @@ class SubscriptionVerifier(Protocol):
     ) -> bool:
         """Admit exact identity, subscription billing, isolation and current owner authority."""
         ...
-
-
-class SubscriptionUsageLimitError(HeinzelError):
-    """The selected CLI reported its subscription usage limit; the turn remains uncertain."""
 
 
 class _Wire(BaseModel):
@@ -416,11 +413,7 @@ class ClaudeSubscriptionModel(Model):
         except Exception:  # noqa: BLE001 - verifier, process and response errors can contain private data
             self._blocked = True
             if usage_limit:
-                msg = (
-                    "Claude Code reported its subscription usage limit. Check your provider settings; "
-                    "this turn remains uncertain and will not retry automatically."
-                )
-                raise SubscriptionUsageLimitError(msg) from None
+                raise SubscriptionUsageLimitError from None
             if reported_error:
                 msg = "Claude Code reported an error; the turn outcome is uncertain"
                 raise HeinzelError(msg) from None
