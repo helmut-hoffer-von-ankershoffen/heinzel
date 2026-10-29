@@ -661,6 +661,9 @@ def test_a_person_can_pause_and_resume_one_schedule_through_chat_confirmation(ke
     pause = {**activation, "request_id": "chat-pause", "expected_revision": 2, "action": "pause"}
     pause_chat = stage_schedule(client, session_id, pause)
     assert pause_chat.status_code == 200, pause_chat.text
+    pause_detail = pause_chat.json()["context"]["detail"].lower()
+    assert "paused" in pause_detail
+    assert "run" not in pause_detail
     pause_action = pause_chat.json()["actions"][0]
     assert pause_action["status"] == "pending"
     assert pause_action["arguments"]["action"] == "pause"

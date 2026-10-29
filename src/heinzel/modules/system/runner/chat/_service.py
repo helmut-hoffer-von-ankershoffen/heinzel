@@ -293,7 +293,11 @@ class ChatService:
                 ChatContext(
                     kind="text",
                     ref=f"five-minute check-in for {durable_session}",
-                    detail="Review the exact schedule action below. Confirm only if you want this schedule to run.",
+                    detail={
+                        "activate": "Confirm only if you want this schedule to run every five minutes.",
+                        "pause": "Confirm only if you want this schedule paused.",
+                        "resume": "Confirm only if you want this schedule to resume.",
+                    }[action],
                 )
             )
             call = ProposedCall(
