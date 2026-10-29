@@ -231,21 +231,5 @@ it("keeps a meeting-reminder request in workshop chat without silently creating 
       (request) => request.url.includes("/heinzel/new-chat") || request.url.includes("/heinzel/propose-check-in"),
     ),
   ).toBe(false);
-  expect(screen.getByText(/Creating an agent through conversation/)).toBeInTheDocument();
-});
-
-it("offers accessible examples as editable ideas without sending or creating anything", async () => {
-  const { calls } = mockApi(base);
-  const user = userEvent.setup();
-  const { container } = renderAt("/doctor");
-  const idea = await screen.findByRole("button", { name: /watches for important email from VIPs/ });
-  expect(screen.getByRole("button", { name: /daily diary and action list for my review/ })).toBeInTheDocument();
-  await user.click(idea);
-  expect(screen.getByLabelText("Your message")).toHaveValue(
-    "Help me prepare an agent that watches for important email from VIPs in my Google Sheet.",
-  );
-  expect(screen.getByLabelText("Your message")).toHaveFocus();
-  expect(calls.some((call) => call.url.includes("/heinzel/new-chat") || call.url.includes("/chat/send"))).toBe(false);
-  expect(screen.getByText(/meeting-note diary automation are not available yet/)).toBeInTheDocument();
-  await expectAccessible(container);
+  expect(screen.getByText(/Creating one through conversation is not available yet/)).toBeInTheDocument();
 });

@@ -817,10 +817,6 @@ const en = {
   "chat.cost":
     "Runs your agent runner and may cost money: at most {message} per message, {session} per chat; this chat has cost {spent}. It reads with hz and asks you before it changes anything.",
   "chat.context": "About: {about}",
-  "chat.exampleIdeas": "Example ideas",
-  "chat.ideaMeetings": "Help me prepare an agent that checks upcoming meetings every five minutes and reminds me.",
-  "chat.ideaVip": "Help me prepare an agent that watches for important email from VIPs in my Google Sheet.",
-  "chat.ideaDiary": "Help me turn notes from meetings I attended into a daily diary and action list for my review.",
   "chat.placeholder": "Ask about this screen, a contract, a command…",
   "chat.label": "Your message",
   "chat.send": "Send",
