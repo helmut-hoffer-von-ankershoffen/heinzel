@@ -175,7 +175,7 @@ const en = {
   "resource.failed": "System resources could not be refreshed.",
   "resource.summary": "CPU {cpu}, mem {memory}, load {load}",
   "resource.sampled": "Sampled {at}",
-  "resource.host": "These readings describe the machine running hz.",
+  "resource.host": "Machine running hz: {hostname}",
   "resource.partial": "Some readings are unavailable.",
   "resource.refresh": "Refresh resources",
   "health.title": "System health",

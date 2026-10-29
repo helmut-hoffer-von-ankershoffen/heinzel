@@ -7638,6 +7638,11 @@ export interface components {
              */
             cpu_percent: number | null;
             /**
+             * Hostname
+             * @description Hostname of the machine running hz.
+             */
+            hostname: string;
+            /**
              * Load 1M
              * @description One-minute load average; unavailable on unsupported platforms.
              */
