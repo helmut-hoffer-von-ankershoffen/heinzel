@@ -60,6 +60,80 @@ const approvedChat = {
 afterEach(() => sessionStorage.clear());
 
 describe("personal conversation links", () => {
+  it("pauses and resumes one schedule through the exact human-confirmed action flow", async () => {
+    let stored = { ...snapshot, schedule: { ...proposedSchedule, status: "active", revision: 2 } };
+    const chats = new Map<string, typeof reviewChat>();
+    const requestedActions: string[] = [];
+    let nextChat = 0;
+    const templateAction = reviewChat.actions[0];
+    if (!templateAction) throw new Error("The schedule action fixture is required");
+    mockApi({
+      ...shell,
+      "/api/heinzel/session": () => stored,
+      "/api/system/runner/chat/propose-schedule-control": (request: Request) => {
+        const query = new URL(request.url).searchParams;
+        const action = query.get("action") ?? "";
+        requestedActions.push(action);
+        const id = `000000000000000${++nextChat}`;
+        const review = {
+          ...reviewChat,
+          id,
+          actions: [
+            {
+              ...templateAction,
+              arguments: {
+                ...templateAction.arguments,
+                request_id: query.get("request_id") ?? "",
+                expected_revision: Number(query.get("expected_revision")),
+                action,
+                expected_contract_version: Number(query.get("expected_contract_version")),
+                expected_preview_hash: query.get("expected_preview_hash") ?? "",
+              },
+            },
+          ],
+        };
+        chats.set(id, review);
+        return review;
+      },
+      "/api/system/runner/chat/show": (request: Request) =>
+        chats.get(new URL(request.url).searchParams.get("session") ?? "") ?? reviewChat,
+      "/api/system/runner/chat/confirm": (request: Request) => {
+        const query = new URL(request.url).searchParams;
+        const chat = chats.get(query.get("session") ?? "") ?? reviewChat;
+        const selected = chat.actions[0];
+        if (!selected) throw new Error("The reviewed schedule action is required");
+        const action = selected.arguments.action;
+        stored = {
+          ...stored,
+          schedule: {
+            ...stored.schedule,
+            status: action === "pause" ? "paused" : "active",
+            revision: stored.schedule.revision + 1,
+          },
+        };
+        return {
+          ...chat,
+          actions: [{ ...selected, status: "done", result: `schedule ${action}d` }],
+        };
+      },
+    });
+    renderAt(`/heinzel?chat=${sessionId}`);
+    const panel = within(await screen.findByRole("complementary", { name: "Chat" }));
+
+    fireEvent.click(await panel.findByRole("button", { name: "Review pause in chat" }));
+    expect(await panel.findByRole("heading", { name: "Review this schedule change" })).toBeInTheDocument();
+    expect(panel.queryByRole("button", { name: "Authorize MCP to run once" })).not.toBeInTheDocument();
+    fireEvent.click(panel.getByRole("button", { name: "Confirm" }));
+    await waitFor(() => expect(panel.getByText("paused")).toBeInTheDocument());
+
+    fireEvent.click(await panel.findByRole("button", { name: "Review resume in chat" }));
+    expect(await panel.findByRole("heading", { name: "Review this schedule change" })).toBeInTheDocument();
+    expect(await panel.findByRole("button", { name: "Authorize MCP to run once" })).toBeInTheDocument();
+    fireEvent.click(panel.getByRole("button", { name: "Confirm" }));
+    await waitFor(() => expect(panel.getByText("active")).toBeInTheDocument());
+    expect(requestedActions).toEqual(["pause", "resume"]);
+  });
+
   it.each([
     "Please schedule a check-in every five minutes.",
     "Notify me every 5 minutes.",

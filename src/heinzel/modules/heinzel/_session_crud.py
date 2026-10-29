@@ -1069,21 +1069,25 @@ class SessionCrud(ApprovalIssuer):
             raise HeinzelError(invalid) from None
         if (
             not isinstance(action, str)
-            or action not in {"activate", "resume"}
+            or action not in {"activate", "pause", "resume"}
             or type(revision) is not int
+            or revision < 1
             or type(contract_version) is not int
+            or contract_version < 1
             or not isinstance(preview_hash, str)
         ):
             raise HeinzelError(invalid)
         request_hash = _digest(
-            {
+            {"expected_revision": revision, "action": action}
+            if action == "pause"
+            else {
                 "expected_revision": revision,
                 "action": action,
                 "expected_contract_version": contract_version,
                 "expected_preview_hash": preview_hash,
             }
         )
-        event_kind = "schedule.activated" if action == "activate" else "schedule.resume"
+        event_kind = {"activate": "schedule.activated", "pause": "schedule.pause", "resume": "schedule.resume"}[action]
         with self.repository.control_writer(session_id):
             events = self.repository.control_read(session_id).events
             matching = [event for event in events if event.key == f"schedule-control-{request_id}"]

@@ -4,7 +4,7 @@ import { useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import { api, problem, type SchemaHeinzelAppearance, type SchemaSessionSnapshot } from "@/api/client";
 import { HeinzelAvatar } from "@/components/HeinzelAvatar";
-import { AGES, BEARDS, BUILDS, HATS, SHIRTS } from "@/components/heinzel";
+import { ACCESSORIES, AGES, BEARDS, BUILDS, HATS, SHIRTS } from "@/components/heinzel";
 import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
 
@@ -301,6 +301,24 @@ function ProfileEditor({ initial, onLock }: { initial: SchemaSessionSnapshot; on
             ))}
           </select>
         </label>
+        <fieldset className="space-y-2 rounded border border-border p-2">
+          <legend className="px-1 text-sm">{t("personal.accessories")}</legend>
+          {ACCESSORIES.map((accessory) => (
+            <label key={accessory} className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={(look.accessories ?? []).includes(accessory)}
+                onChange={(event) => {
+                  const selected = new Set(look.accessories ?? []);
+                  if (event.target.checked) selected.add(accessory);
+                  else selected.delete(accessory);
+                  setLook({ ...look, accessories: ACCESSORIES.filter((item) => selected.has(item)) });
+                }}
+              />
+              {t(`personal.accessory.${accessory}`)}
+            </label>
+          ))}
+        </fieldset>
       </fieldset>
       {error && <p role="alert">{t("personal.saveError")}</p>}
       <div className="flex flex-wrap gap-2">

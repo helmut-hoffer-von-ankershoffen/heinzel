@@ -116,7 +116,9 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
       action.module === "heinzel" &&
       action.operation === "schedule-control" &&
       action.arguments?.session_id === sessionId &&
-      (action.arguments?.action === "activate" || action.arguments?.action === "resume") &&
+      (action.arguments?.action === "activate" ||
+        action.arguments?.action === "pause" ||
+        action.arguments?.action === "resume") &&
       !Object.hasOwn(action.arguments ?? {}, "approval_proof"),
   );
   const matchesCurrentSchedule = (action: (typeof approvalActions)[number]) => {
@@ -129,7 +131,7 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
       schedule.revision === args.expected_revision &&
       schedule.contract_version === args.expected_contract_version &&
       schedule.preview_hash === args.expected_preview_hash &&
-      schedule.status === (args.action === "activate" ? "proposed" : "paused")
+      schedule.status === (args.action === "activate" ? "proposed" : args.action === "resume" ? "paused" : "active")
     );
   };
   const pendingApprovalActions = approvalActions.filter(
@@ -353,7 +355,12 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
 
   const reviewSchedule = async (scheduleOverride?: SchemaSessionSnapshot["schedule"]) => {
     const schedule = scheduleOverride ?? query.data?.schedule;
-    if (scheduleBusy || !schedule || (schedule.status !== "proposed" && schedule.status !== "paused")) return;
+    if (
+      scheduleBusy ||
+      !schedule ||
+      (schedule.status !== "proposed" && schedule.status !== "paused" && schedule.status !== "active")
+    )
+      return;
     controlRequest.current ??= params.get("approval-request") ?? crypto.randomUUID();
     const requestId = controlRequest.current;
     setParams(
@@ -374,7 +381,7 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
               durable_session: sessionId,
               request_id: requestId,
               expected_revision: schedule.revision,
-              action: schedule.status === "proposed" ? "activate" : "resume",
+              action: schedule.status === "proposed" ? "activate" : schedule.status === "paused" ? "resume" : "pause",
               expected_contract_version: schedule.contract_version,
               expected_preview_hash: schedule.preview_hash,
             },
@@ -619,11 +626,15 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
                 </Link>
               </p>
             )}
-            {(query.data.schedule?.status === "proposed" || query.data.schedule?.status === "paused") &&
-            !scheduleApprovalNeedsAttention &&
-            uncertainApprovalActions.length === 0 ? (
+            {query.data.schedule && !scheduleApprovalNeedsAttention && uncertainApprovalActions.length === 0 ? (
               <Button type="button" size="sm" disabled={scheduleBusy} onClick={() => void reviewSchedule()}>
-                {scheduleBusy ? t("durable.scheduleWorking") : t("durable.scheduleReview")}
+                {scheduleBusy
+                  ? t("durable.scheduleWorking")
+                  : query.data.schedule.status === "active"
+                    ? t("durable.schedulePauseReview")
+                    : query.data.schedule.status === "paused"
+                      ? t("durable.scheduleResumeReview")
+                      : t("durable.scheduleReview")}
               </Button>
             ) : !query.data.schedule ? (
               <Button
@@ -652,7 +663,9 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
                     busy={scheduleBusy}
                     proposalTitle={t("durable.scheduleActionTitle")}
                     onDecide={(confirm) => void decideSchedule(action.id, confirm)}
-                    onAuthorizeMcp={() => void authorizeScheduleForMcp(action.id)}
+                    onAuthorizeMcp={
+                      action.arguments?.action === "pause" ? undefined : () => void authorizeScheduleForMcp(action.id)
+                    }
                   />
                 ))}
               </ol>

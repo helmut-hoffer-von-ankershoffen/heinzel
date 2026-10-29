@@ -12985,7 +12985,7 @@ export interface operations {
                 /** @description The schedule revision you inspected. */
                 expected_revision: number;
                 /** @description The exact schedule change to review. */
-                action: "activate" | "resume";
+                action: "activate" | "pause" | "resume";
                 /** @description The contract version shown in the preview. */
                 expected_contract_version: number;
                 /** @description The preview hash shown in the schedule details. */

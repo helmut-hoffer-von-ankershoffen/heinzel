@@ -67,6 +67,36 @@ describe("personal identities", () => {
     expect(section.getByLabelText("Hat colour")).toHaveValue("blue");
   });
 
+  it("lets a person choose and save the closed-set accessories shown in the preview", async () => {
+    const saved: Record<string, unknown>[] = [];
+    mockApi({
+      ...shell,
+      "/api/heinzel/sessions": { sessions },
+      "/api/heinzel/session": snapshot(first, "Alpha"),
+      "/api/heinzel/profile": async (request: Request) => {
+        const profile = (await request.json()) as Record<string, unknown>;
+        saved.push(profile);
+        return {
+          ...snapshot(first, "Alpha"),
+          appearance: profile.appearance,
+          profile_revision: 2,
+        };
+      },
+    });
+    renderAt("/heinzel");
+    const section = within(await screen.findByRole("region", { name: "Personal Heinzels" }));
+    fireEvent.change(await section.findByLabelText("Personal Heinzel"), { target: { value: first } });
+    const scarf = await section.findByLabelText("Scarf");
+    expect(scarf).toBeChecked();
+    fireEvent.click(scarf);
+    fireEvent.click(section.getByLabelText("Umbrella"));
+    fireEvent.click(section.getByLabelText("Sunglasses"));
+    expect(section.getByRole("img", { name: /with an umbrella, wearing sunglasses/ })).toBeInTheDocument();
+    fireEvent.click(section.getByRole("button", { name: "Save name and look" }));
+    await waitFor(() => expect(saved).toHaveLength(1));
+    expect(saved[0]?.appearance).toMatchObject({ accessories: ["umbrella", "sunglasses"] });
+  });
+
   it("continues to schedule setup only after the selected profile is saved", async () => {
     let stored = { ...snapshot(first, "Alpha"), messages: [], schedule: null };
     mockApi({

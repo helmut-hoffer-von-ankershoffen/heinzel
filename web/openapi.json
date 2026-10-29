@@ -17979,6 +17979,7 @@
               "description": "The exact schedule change to review.",
               "enum": [
                 "activate",
+                "pause",
                 "resume"
               ],
               "title": "Action",

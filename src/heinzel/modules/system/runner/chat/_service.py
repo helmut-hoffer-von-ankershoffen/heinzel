@@ -264,7 +264,7 @@ class ChatService:
         durable_session: str,
         request_id: str,
         expected_revision: int,
-        action: Literal["activate", "resume"],
+        action: Literal["activate", "pause", "resume"],
         expected_contract_version: int,
         expected_preview_hash: str,
     ) -> ChatSession:
@@ -604,7 +604,7 @@ class ChatService:
         return (
             found.module == "heinzel"
             and found.operation == "schedule-control"
-            and found.arguments.get("action") in {"activate", "resume"}
+            and found.arguments.get("action") in {"activate", "pause", "resume"}
         )
 
     def _reconcile_schedule_confirmation(self, found: ChatAction) -> None:

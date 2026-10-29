@@ -14,6 +14,10 @@ const en = {
   "personal.build": "Build",
   "personal.hat": "Hat colour",
   "personal.shirt": "Shirt colour",
+  "personal.accessories": "Accessories",
+  "personal.accessory.umbrella": "Umbrella",
+  "personal.accessory.sunglasses": "Sunglasses",
+  "personal.accessory.scarf": "Scarf",
   "personal.ageDefault": "Age default",
   "personal.themeDefault": "Follow theme",
   "personal.preview": "Appearance preview",
@@ -60,6 +64,8 @@ const en = {
   "durable.scheduleIntentPrepared":
     "The agent prepared a five-minute schedule proposal. Confirm its action above to create an inactive proposal, then review activation separately.",
   "durable.scheduleReview": "Review activation in chat",
+  "durable.schedulePauseReview": "Review pause in chat",
+  "durable.scheduleResumeReview": "Review resume in chat",
   "durable.scheduleActionTitle": "Review this schedule change",
   "durable.scheduleReviewStale":
     "The schedule changed after this review was created. This saved action cannot be confirmed against the current schedule.",
