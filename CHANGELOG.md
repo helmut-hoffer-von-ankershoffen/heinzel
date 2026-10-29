@@ -4,7 +4,7 @@ All notable changes to Heinzelmännchen, newest first. Versions follow [Semantic
 
 ## [0.7.31](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/releases/tag/v0.7.31) - 2026-10-29
 
-On mobile, the header and footer stay visible while you scroll, and the World Clock, terminal, chat and Page controls move smoothly to the content you choose. The update pane now shows when Heinzel was last installed, and iPhone audio, notifications and World Clock labels are clearer.
+On mobile, the header and footer stay visible while you scroll, and the World Clock, terminal, chat and Page controls move smoothly to the content you choose. The World Clock now shows time since work ended and until it starts on hover. The update pane shows when Heinzel was last installed, and iPhone audio and notifications are clearer.
 
 ### 🐛 Bug fixes
 
@@ -14,6 +14,7 @@ On mobile, the header and footer stay visible while you scroll, and the World Cl
 - **web:** Improve update pane details ([#256](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/256)) ([bce8e89](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/bce8e89e2232ca049a7ffa30d55a990c4f632aae))
 - **web:** Scroll to selected mobile workspace ([#257](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/257)) ([3fab870](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/3fab8708bf437f4d9e301b9509ea9f4b5472e76b))
 - **ci:** Stabilize mobile clock gesture check ([#258](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/258)) ([6d5c343](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/6d5c3436543adadbd7ddbfbcb990c2efa671613e))
+- **clock:** Show work timing on status hover ([#260](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/260)) ([893f97d](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/893f97d8e30233d7eb4d251ef3027283f74c3d03))
 
 ## [0.7.30](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/releases/tag/v0.7.30) - 2026-10-28
 
