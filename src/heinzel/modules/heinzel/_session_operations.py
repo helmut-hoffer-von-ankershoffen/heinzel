@@ -17,6 +17,7 @@ from heinzel.kernel import (
 )
 from heinzel.kernel._approval import ApprovalConfirmation, ApprovalIssuer
 from heinzel.modules.heinzel._model_grants import ModelGrants
+from heinzel.modules.heinzel._model_policy_operations import register_model_policy_operations
 from heinzel.modules.heinzel._models import HeinzelSettings
 from heinzel.modules.heinzel._session_crud import SessionCrud
 from heinzel.modules.heinzel._session_models import (
@@ -232,6 +233,7 @@ def register_session_operations(module: Module) -> None:  # noqa: C901 - operati
     """Register once on the owning module; constructing the service performs no private I/O."""
     module.service(SessionCrud, _crud)
     _register_skill_operations(module)
+    register_model_policy_operations(module)
     module.service(ApprovalIssuer, _approval_issuer)
     module.service(ApprovalConfirmation, _approval_confirmation)
     module.service(CheckInChatContextSource, _check_in_context_source)

@@ -1607,3 +1607,44 @@ def test_ambiguous_personal_chat_associations_fail_closed(kernel):
         service._store.create(context, personal_session_id=session.session_id)
         with pytest.raises(HeinzelError, match="multiple bound chats"):
             service.open_check_in(session.session_id, "new-open", "UTC", "")
+
+
+def test_model_policy_heads_cannot_self_approve(kernel, tmp_path):
+    from heinzel.modules.heinzel._priced_model import MODEL
+
+    client = web_client(kernel, tmp_path)
+    created = client.post("/api/heinzel/new-chat", headers=AUTH, json={"request_id": "policy-session"})
+    assert created.status_code == 200
+    session_id = created.json()["session_id"]
+    grant = {
+        "request_id": "policy-request",
+        "revision": 1,
+        "access": "pydantic-ai",
+        "model": MODEL,
+        "requests": 1,
+        "total_tokens": 100,
+        "output_tokens": 10,
+        "timeout_seconds": 10,
+        "message_cap_usd": "1",
+        "session_cap_usd": "2",
+        "owner_cap_usd": "3",
+        "allowed_tools": {},
+        "allowed_skill_tools": [],
+    }
+    body = {"session_id": session_id, "billing": "api-priced", "proposal": grant}
+    assert client.post("/api/heinzel/propose-model-policy", json=body).status_code == 401
+    proposed = client.post("/api/heinzel/propose-model-policy", headers=AUTH, json=body)
+    assert proposed.status_code == 200, proposed.text
+    assert proposed.json()["proposal"] == grant
+    read = client.get(
+        "/api/heinzel/model-policy", headers=AUTH, params={"session_id": session_id, "request_id": "policy-request"}
+    )
+    assert read.status_code == 200
+    assert read.json()["status"] == "proposed"
+    denied = client.post(
+        "/api/heinzel/approve-model-grant",
+        headers=AUTH,
+        json={"session_id": session_id, "request_id": "policy-request", "approval_proof": "fake"},
+    )
+    assert denied.status_code == 400
+    assert "heinzel_approve_model_grant" not in {item.name for item in exposed(kernel, "mcp-stdio")}
