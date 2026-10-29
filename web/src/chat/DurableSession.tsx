@@ -6,6 +6,7 @@ import { chatKey, sendChat } from "@/api/chat";
 import { ApiError, api, problem, type SchemaChatSession, type SchemaSessionSnapshot } from "@/api/client";
 import { useDaemonStatus } from "@/api/daemon";
 import { AgentProposal } from "@/chat/AgentProposal";
+import { AgentProposalSummary } from "@/chat/AgentProposalSummary";
 import { ContractHistory } from "@/chat/ContractHistory";
 import { ActionCard } from "@/chat/Conversation";
 import { useDurableDraft } from "@/chat/durableDraft";
@@ -47,13 +48,6 @@ function rejectedBeforeAcceptance(reason: unknown): boolean {
     reason instanceof ApiError &&
     reason.status === 400 &&
     reason.message === "This personal agent cannot run until its runner isolation and grants are verified"
-  );
-}
-
-/** Recognize only the fixed five-minute request supported by this local scheduling flow. */
-function asksForFiveMinuteCheckIn(message: string): boolean {
-  return /^(?:please\s+)?(?:(?:schedule|set up)\s+(?:a\s+)?check[ -]?in|(?:remind me to )?check[ -]?in|notify me|send me (?:a )?notification)\s+every\s+(?:5|five)\s+minutes?[.!]?$/i.test(
-    message.trim(),
   );
 }
 
@@ -101,6 +95,17 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
     },
     retry: false,
     placeholderData: (previous) => previous,
+  });
+  const activity = useQuery({
+    queryKey: ["heinzel", "tool-activity", sessionId],
+    queryFn: async () => {
+      const page = await result(
+        api.GET("/heinzel/tool-activity", { params: { query: { session_id: sessionId, limit: 20 } } }),
+      );
+      if (page.session_id !== sessionId) throw new Error("Unexpected activity session");
+      return page;
+    },
+    retry: false,
   });
   const daemonStatus = useDaemonStatus(query.data?.schedule?.status === "active");
   const approvalChatId = params.get("approval-chat");
@@ -175,7 +180,6 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
   const pendingAgentActions = agentActions.filter((action) => action.status === "pending");
   const runningAgentActions = agentActions.filter((action) => action.status === "running");
   const uncertainAgentActions = agentActions.filter((action) => action.status === "uncertain");
-  const preparingSchedule = !pending && query.data?.schedule === null && asksForFiveMinuteCheckIn(text);
   const approvalActions = (approvalChat?.actions ?? []).filter(
     (action) =>
       action.module === "heinzel" &&
@@ -233,12 +237,7 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
     }
     if (running.current || (!pending && !agentPending && !text.trim())) return;
     const requestedMessage = agentPending?.message ?? pending?.message ?? text;
-    if (
-      !pending &&
-      agentChatId === null &&
-      asksForFiveMinuteCheckIn(requestedMessage) &&
-      query.data?.schedule === null
-    ) {
+    if (!pending && agentPending !== null && agentChatId === null) {
       running.current = true;
       setBusy(true);
       setError(false);
@@ -317,7 +316,7 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
       }
       return;
     }
-    if (agentChatId !== null) {
+    if (agentChatId !== null && agentPending !== null) {
       running.current = true;
       setBusy(true);
       setError(false);
@@ -371,15 +370,38 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
     setBusy(true);
     setError(false);
     try {
-      const accepted = await result(
-        api.POST("/heinzel/chat", { body: { ...request, session_id: sessionId, when_busy: "follow_up" } }),
+      if (!request.accepted) {
+        const accepted = await result(
+          api.POST("/heinzel/chat", {
+            body: {
+              request_id: request.request_id,
+              message: request.message,
+              session_id: sessionId,
+              when_busy: "follow_up",
+            },
+          }),
+        );
+        if (accepted.session_id !== sessionId || accepted.request_id !== request.request_id)
+          throw new Error("Invalid acknowledgement");
+        if (!updateComposer({ pending: { ...request, accepted: true } }))
+          throw new Error("The accepted request could not be preserved in this tab.");
+      }
+      const answered = await result(
+        api.POST("/heinzel/answer-chat", { body: { session_id: sessionId, request_id: request.request_id } }),
       );
-      if (accepted.session_id !== sessionId || accepted.request_id !== request.request_id)
-        throw new Error("Invalid acknowledgement");
+      if (
+        answered.session_id !== sessionId ||
+        answered.request_id !== request.request_id ||
+        answered.message.role !== "assistant"
+      )
+        throw new Error("Invalid answer acknowledgement");
       updateComposer({ pending: null, text: "" });
       await client.invalidateQueries({ queryKey: ["heinzel", "session", sessionId] });
+      await client.invalidateQueries({ queryKey: ["heinzel", "tool-activity", sessionId] });
+      await client.invalidateQueries({ queryKey: ["heinzel", "agent-proposal", sessionId] });
     } catch {
       setError(true);
+      await client.invalidateQueries({ queryKey: ["heinzel", "session", sessionId] });
     } finally {
       running.current = false;
       setBusy(false);
@@ -604,6 +626,7 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
         {query.data?.session_id === sessionId && (
           <PersonalArtifactLinks key={`artifacts:${sessionId}`} sessionId={sessionId} compact />
         )}
+        {query.data?.session_id === sessionId && <AgentProposalSummary sessionId={sessionId} />}
         {query.data?.session_id === sessionId && <ContractHistory contracts={query.data.contracts ?? []} />}
         {query.data?.session_id === sessionId && <SkillDraftPanel key={`skills:${sessionId}`} sessionId={sessionId} />}
         {(historyCursors.length > 1 || query.data?.has_more) && (
@@ -651,8 +674,31 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
             <strong>{message.role === "tool" ? "Tool activity" : message.role}:</strong>{" "}
             {message.role === "tool" ? "A tool event was recorded." : message.text}
             {message.status && message.status !== "completed" && <span> ({message.status})</span>}
+            {message.billing === "plan" && (
+              <span className="block text-xs text-muted-foreground">Subscription usage · cost unknown</span>
+            )}
+            {message.billing === "api" && message.cost_usd != null && (
+              <span className="block text-xs text-muted-foreground">API cost: ${message.cost_usd.toFixed(4)}</span>
+            )}
           </p>
         ))}
+        {activity.isError && (
+          <p role="status" className="text-sm">
+            Recorded tool activity is unavailable.
+          </p>
+        )}
+        {activity.data?.session_id === sessionId && activity.data.items.length > 0 && (
+          <section aria-label="Recorded tool activity" className="space-y-1 rounded border border-border p-3 text-sm">
+            <h3 className="font-medium">Recorded tool activity</h3>
+            <ol className="space-y-1">
+              {activity.data.items.map((item) => (
+                <li key={item.seq} className="break-words">
+                  {item.tool} · {item.status}
+                </li>
+              ))}
+            </ol>
+          </section>
+        )}
         {(query.data?.pending_actions ?? []).map((action) => (
           <section
             key={action.id}
@@ -952,19 +998,24 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
           />
         </label>
         {error && <p role="alert">{t("durable.failed")}</p>}
+        {pending?.accepted && (
+          <p role="status" className="text-sm">
+            Your message was saved. Its answer is not confirmed; retrying uses the same request and an interrupted turn
+            will not be run again automatically.
+          </p>
+        )}
         <Button
           type="submit"
           disabled={
-            busy || storageError || recoveryBlocked || agentChatUnavailable || !query.data || (!pending && !text.trim())
+            busy ||
+            storageError ||
+            recoveryBlocked ||
+            agentChatUnavailable ||
+            !query.data ||
+            (!pending && !agentPending && !text.trim())
           }
         >
-          {busy
-            ? t("durable.scheduleWorking")
-            : pending || agentPending
-              ? t("durable.retry")
-              : preparingSchedule
-                ? t("durable.schedulePrepare")
-                : t("durable.send")}
+          {busy ? t("durable.scheduleWorking") : pending || agentPending ? t("durable.retry") : t("durable.send")}
         </Button>
       </form>
     </div>

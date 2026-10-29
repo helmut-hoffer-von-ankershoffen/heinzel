@@ -148,6 +148,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/heinzel/answer-chat": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Answer one authenticated user's accepted message; an interrupted request is never silently replayed.
+         * @description Answer one authenticated user's accepted message; an interrupted request is never silently replayed.
+         */
+        post: operations["heinzel_answer_chat"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/heinzel/approve-model-grant": {
         parameters: {
             query?: never;
@@ -683,6 +703,26 @@ export interface paths {
          * @description Discover owner-private pending sharing request references.
          */
         get: operations["heinzel_skill_sharing_proposals"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/heinzel/tool-activity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Show owner-private host-observed tool decisions, without their arguments.
+         * @description Show owner-private host-observed tool decisions, without their arguments.
+         */
+        get: operations["heinzel_tool_activity"];
         put?: never;
         post?: never;
         delete?: never;
@@ -10639,6 +10679,28 @@ export interface components {
             summary: string;
         };
         /**
+         * ToolActivity
+         * @description A redacted host-observed tool invocation or denial.
+         */
+        ToolActivity: {
+            /**
+             * At
+             * Format: date-time
+             */
+            at: string;
+            /** Seq */
+            seq: number;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "requested" | "completed" | "failed" | "denied";
+            /** Tool */
+            tool: string;
+            /** Turn Id */
+            turn_id: string;
+        };
+        /**
          * Uninstalled
          * @description What `uninstall` removed.
          */
@@ -10848,6 +10910,27 @@ export interface components {
              * @description Runs that reported no cost.
              */
             unpriced: number;
+        };
+        /**
+         * UserChatAnswer
+         * @description A persisted answer for exactly the accepted request; not a schedule or approval.
+         */
+        UserChatAnswer: {
+            message: components["schemas"]["SessionMessage"];
+            /** Request Id */
+            request_id: string;
+            /** Session Id */
+            session_id: string;
+        };
+        /**
+         * UserToolActivity
+         * @description Owner-private, host-observed tool decisions without arguments or secrets.
+         */
+        UserToolActivity: {
+            /** Items */
+            items: components["schemas"]["ToolActivity"][];
+            /** Session Id */
+            session_id: string;
         };
         /** ValidationError */
         ValidationError: {
@@ -11077,6 +11160,19 @@ export interface components {
              * @description Proposed maximum seconds per turn.
              */
             timeout_seconds: number;
+        };
+        /** heinzel_answer_chat_Input */
+        heinzel_answer_chat_Input: {
+            /**
+             * Request Id
+             * @description A stable client request id; reuse it only for an exact retry.
+             */
+            request_id: string;
+            /**
+             * Session Id
+             * @description The stable personal session id returned by new-chat or sessions.
+             */
+            session_id: string;
         };
         /** heinzel_approve_model_grant_Input */
         heinzel_approve_model_grant_Input: {
@@ -11588,12 +11684,15 @@ export type SchemaToggleControl = components['schemas']['ToggleControl'];
 export type SchemaToggled = components['schemas']['Toggled'];
 export type SchemaTokenUsage = components['schemas']['TokenUsage'];
 export type SchemaTool = components['schemas']['Tool'];
+export type SchemaToolActivity = components['schemas']['ToolActivity'];
 export type SchemaUninstalled = components['schemas']['Uninstalled'];
 export type SchemaUnmaintained = components['schemas']['Unmaintained'];
 export type SchemaUpdateResult = components['schemas']['UpdateResult'];
 export type SchemaUsageReport = components['schemas']['UsageReport'];
 export type SchemaUsageRow = components['schemas']['UsageRow'];
 export type SchemaUsageTotal = components['schemas']['UsageTotal'];
+export type SchemaUserChatAnswer = components['schemas']['UserChatAnswer'];
+export type SchemaUserToolActivity = components['schemas']['UserToolActivity'];
 export type SchemaValidationError = components['schemas']['ValidationError'];
 export type SchemaWaiting = components['schemas']['Waiting'];
 export type SchemaWakeScheduleView = components['schemas']['WakeScheduleView'];
@@ -11601,6 +11700,7 @@ export type SchemaWeek = components['schemas']['Week'];
 export type SchemaWidgetAction = components['schemas']['WidgetAction'];
 export type SchemaWidgetEntry = components['schemas']['WidgetEntry'];
 export type SchemaHeinzelAmendScheduledAgentInput = components['schemas']['heinzel_amend_scheduled_agent_Input'];
+export type SchemaHeinzelAnswerChatInput = components['schemas']['heinzel_answer_chat_Input'];
 export type SchemaHeinzelApproveModelGrantInput = components['schemas']['heinzel_approve_model_grant_Input'];
 export type SchemaHeinzelAssociateArtifactInput = components['schemas']['heinzel_associate_artifact_Input'];
 export type SchemaHeinzelChatInput = components['schemas']['heinzel_chat_Input'];
@@ -11812,6 +11912,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ScheduledAgentProposal"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    heinzel_answer_chat: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["heinzel_answer_chat_Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserChatAnswer"];
                 };
             };
             /** @description Validation Error */
@@ -12683,6 +12816,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SkillSharingPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    heinzel_tool_activity: {
+        parameters: {
+            query: {
+                session_id: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserToolActivity"];
                 };
             };
             /** @description Validation Error */

@@ -160,8 +160,7 @@ export function AgentProposal({ sessionId }: { sessionId: string }) {
       <h3 className="font-medium">Scheduled agent proposal</h3>
       <p>
         You write these terms for later review. They do not start an agent or grant approval; limits are not enforced.
-        This preview cannot yet describe MCP, shell, or CLI permissions. Scheduled calendar checks and meeting
-        notifications are not available yet.
+        This preview cannot yet describe MCP, shell, or CLI permissions.
       </p>
       {loading ? (
         <p role="status">Loading proposal…</p>

@@ -14087,6 +14087,47 @@
         "title": "Tool",
         "type": "object"
       },
+      "ToolActivity": {
+        "description": "A redacted host-observed tool invocation or denial.",
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "seq": {
+            "title": "Seq",
+            "type": "integer"
+          },
+          "status": {
+            "enum": [
+              "requested",
+              "completed",
+              "failed",
+              "denied"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "tool": {
+            "title": "Tool",
+            "type": "string"
+          },
+          "turn_id": {
+            "title": "Turn Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "seq",
+          "at",
+          "turn_id",
+          "tool",
+          "status"
+        ],
+        "title": "ToolActivity",
+        "type": "object"
+      },
       "Uninstalled": {
         "description": "What `uninstall` removed.",
         "properties": {
@@ -14406,6 +14447,55 @@
           "unpriced"
         ],
         "title": "UsageTotal",
+        "type": "object"
+      },
+      "UserChatAnswer": {
+        "description": "A persisted answer for exactly the accepted request; not a schedule or approval.",
+        "properties": {
+          "message": {
+            "$ref": "#/components/schemas/SessionMessage"
+          },
+          "request_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "session_id": {
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "request_id",
+          "message"
+        ],
+        "title": "UserChatAnswer",
+        "type": "object"
+      },
+      "UserToolActivity": {
+        "description": "Owner-private, host-observed tool decisions without arguments or secrets.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ToolActivity"
+            },
+            "maxItems": 100,
+            "title": "Items",
+            "type": "array"
+          },
+          "session_id": {
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "items"
+        ],
+        "title": "UserToolActivity",
         "type": "object"
       },
       "ValidationError": {
@@ -14899,6 +14989,29 @@
           "timeout_seconds"
         ],
         "title": "heinzel_amend_scheduled_agent_Input",
+        "type": "object"
+      },
+      "heinzel_answer_chat_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "request_id": {
+            "description": "A stable client request id; reuse it only for an exact retry.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "session_id": {
+            "description": "The stable personal session id returned by new-chat or sessions.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "request_id"
+        ],
+        "title": "heinzel_answer_chat_Input",
         "type": "object"
       },
       "heinzel_approve_model_grant_Input": {
@@ -15777,6 +15890,48 @@
           }
         },
         "summary": "Propose revised terms; an independent human review and approval is still required.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/answer-chat": {
+      "post": {
+        "description": "Answer one authenticated user's accepted message; an interrupted request is never silently replayed.",
+        "operationId": "heinzel_answer_chat",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/heinzel_answer_chat_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserChatAnswer"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Answer one authenticated user's accepted message; an interrupted request is never silently replayed.",
         "tags": [
           "heinzel"
         ]
@@ -17092,6 +17247,59 @@
           }
         },
         "summary": "Discover owner-private pending sharing request references.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/tool-activity": {
+      "get": {
+        "description": "Show owner-private host-observed tool decisions, without their arguments.",
+        "operationId": "heinzel_tool_activity",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 30,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserToolActivity"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Show owner-private host-observed tool decisions, without their arguments.",
         "tags": [
           "heinzel"
         ]

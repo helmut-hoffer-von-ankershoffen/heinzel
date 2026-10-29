@@ -22,8 +22,9 @@ it("shows persisted proposed and approved versions without implying a decision",
     />,
   );
   const panel = within(screen.getByRole("region", { name: "Agent contract" }));
-  expect(panel.getByText("Contract v1: approved")).toBeInTheDocument();
-  expect(panel.getByText("Contract v2: proposed · amends version 1")).toBeInTheDocument();
+  expect(panel.getByText(/Contract v1: approved/)).toBeInTheDocument();
+  expect(panel.getByText(/Contract v2: proposed · amends version 1/)).toBeInTheDocument();
   expect(panel.getByText("New terms.")).toBeInTheDocument();
+  expect(panel.getAllByText("Review terms")).toHaveLength(2);
   expect(panel.queryByRole("button")).not.toBeInTheDocument();
 });
