@@ -349,9 +349,34 @@ describe("personal identities", () => {
     expect(await section.findByRole("alert")).toHaveTextContent(/profile changed while this save was unresolved/i);
     expect(section.getByRole("button", { name: "Retry save" })).toBeEnabled();
     expect(attempts).toHaveLength(0);
-    fireEvent.click(section.getByRole("button", { name: "Discard pending save and reload profile" }));
+    fireEvent.click(section.getByRole("button", { name: "Check saved profile" }));
     await waitFor(() => expect(section.getByLabelText("Name")).toHaveValue("Updated elsewhere"));
     expect(sessionStorage.getItem(key)).toBeNull();
+  });
+
+  it("keeps a pending save when a reload sees the original revision", async () => {
+    const key = `hz.personal-heinzel.profile-save.${first}`;
+    const request = { request_id: "delayed-save", name: "Delayed", appearance: look, expected_revision: 1 };
+    sessionStorage.setItem(key, JSON.stringify(request));
+    let attempts = 0;
+    mockApi({
+      ...shell,
+      "/api/heinzel/sessions": { sessions },
+      "/api/heinzel/session": snapshot(first, "Alpha"),
+      "/api/heinzel/profile": () => {
+        attempts += 1;
+        return { status: 503, body: {} };
+      },
+    });
+    renderAt("/heinzel");
+    const section = within(await screen.findByRole("region", { name: "Personal Heinzels" }));
+    fireEvent.change(await section.findByLabelText("Personal Heinzel"), { target: { value: first } });
+    fireEvent.click(await section.findByRole("button", { name: "Check saved profile" }));
+    await section.findByText(/could not confirm the save/i);
+    expect(JSON.parse(sessionStorage.getItem(key) ?? "null")).toEqual(request);
+    expect(section.getByLabelText("Name")).toHaveValue("Delayed");
+    expect(section.getByLabelText("Personal Heinzel")).toBeDisabled();
+    expect(attempts).toBe(0);
   });
 
   it("keeps the creation request id when a response is lost", async () => {
@@ -395,7 +420,7 @@ describe("personal identities", () => {
     fireEvent.change(await section.findByLabelText("Personal Heinzel"), { target: { value: first } });
     fireEvent.change(await section.findByLabelText("Name"), { target: { value: "My draft" } });
     fireEvent.click(section.getByRole("button", { name: "Save name and look" }));
-    fireEvent.click(await section.findByRole("button", { name: "Discard pending save and reload profile" }));
+    fireEvent.click(await section.findByRole("button", { name: "Check saved profile" }));
     await waitFor(() => expect(section.getByLabelText("Name")).toHaveValue("Updated elsewhere"));
     await expectAccessible(container);
   });

@@ -333,6 +333,15 @@ export function ProfileEditor({
         api.GET("/heinzel/session", { params: { query: { session_id: snapshot.session_id } } }),
       );
       if (saved.session_id !== snapshot.session_id) throw new Error("Invalid profile response");
+      // A read at the original revision cannot rule out a delayed POST committing later.
+      // Once the revision advances, the old compare-and-swap can no longer newly apply.
+      if (
+        pendingStorageInvalid ||
+        !pending ||
+        !Number.isInteger(saved.profile_revision) ||
+        saved.profile_revision <= pending.expected_revision
+      )
+        throw new Error("Profile save remains uncertain");
       setSnapshot(saved);
       setName(saved.name);
       setLook(saved.appearance ?? { age: "grown", build: "regular" });
