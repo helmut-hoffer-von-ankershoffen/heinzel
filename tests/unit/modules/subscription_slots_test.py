@@ -1,6 +1,7 @@
 """Slots fence uncertain subscription launches; fake CLI only, never a paid call."""
 
 import asyncio
+import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 
@@ -84,7 +85,13 @@ def test_cancelled_fake_cli_keeps_slot_and_never_replays(tmp_path):
         )
         policy = replace(admission(), owner=repo.principal_id, session=session)
         marker = tmp_path / "launched"
-        executable = fake_cli(tmp_path, extra=f"import time\nopen({str(marker)!r}, 'a').write('x')\ntime.sleep(0.3)")
+        executable = fake_cli(
+            tmp_path,
+            extra=(
+                f"import time\nopen({str(marker)!r}, 'a').write('x')\ntime.sleep(5)\n"
+                f"open({str(marker)!r}, 'a').write('late')"
+            ),
+        )
         first = [ModelRequest(parts=[UserPromptPart(content="hello")])]
 
         def model():
@@ -104,9 +111,11 @@ def test_cancelled_fake_cli_keeps_slot_and_never_replays(tmp_path):
                     break
                 await asyncio.sleep(0.01)
             assert marker.exists()
+            start = time.monotonic()
             task.cancel()
             with pytest.raises(asyncio.CancelledError):
                 await task
+            assert time.monotonic() - start < 2
 
         asyncio.run(cancel())
         with pytest.raises(HeinzelError):
@@ -140,9 +149,9 @@ def test_timed_out_fake_cli_keeps_slot(tmp_path):
         session = (
             SessionCrud(repo, lambda: SessionCosts(session_max_usd=2, message_max_usd=1)).new_chat("new").session_id
         )
-        policy = replace(admission(), owner=repo.principal_id, session=session, timeout_seconds=0.1)
+        policy = replace(admission(), owner=repo.principal_id, session=session, timeout_seconds=0.5)
         marker = tmp_path / "launched"
-        executable = fake_cli(tmp_path, extra=f"import time\nopen({str(marker)!r}, 'a').write('x')\ntime.sleep(1)")
+        executable = fake_cli(tmp_path, extra=f"import time\nopen({str(marker)!r}, 'a').write('x')\ntime.sleep(3)")
         first = [ModelRequest(parts=[UserPromptPart(content="hello")])]
 
         def model():

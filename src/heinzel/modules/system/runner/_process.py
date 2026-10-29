@@ -5,10 +5,11 @@ import os
 import signal
 import subprocess
 import threading
+import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import IO, cast
+from typing import IO, NoReturn, cast
 
 MAX_OUTPUT = 8 * 1024 * 1024
 """Bytes kept of stdout and of stderr each; the rest is drained and dropped, so a runaway agent can't fill memory."""
@@ -92,6 +93,15 @@ def _signal_group(pid: int, signum: signal.Signals) -> None:
         os.killpg(pid, signum)
 
 
+def _timeout(command: list[str], timeout: float) -> NoReturn:
+    """Signal that the wait must stop.
+
+    Raises:
+        subprocess.TimeoutExpired: Always, for the caller to handle.
+    """
+    raise subprocess.TimeoutExpired(command, timeout)
+
+
 def run_bounded(  # noqa: PLR0913 - the process's whole contract
     command: list[str],
     *,
@@ -101,6 +111,7 @@ def run_bounded(  # noqa: PLR0913 - the process's whole contract
     timeout: float,
     limit: int = MAX_OUTPUT,
     on_line: Callable[[str], None] | None = None,
+    cancel: threading.Event | None = None,
 ) -> Outcome:
     """Run `command` in a new session; past `timeout` its whole process group gets SIGTERM, then SIGKILL.
 
@@ -108,6 +119,8 @@ def run_bounded(  # noqa: PLR0913 - the process's whole contract
     killed too, so no tool process outlives the run. `on_line` is called with each line of stdout as it arrives, from
     another thread; a listener that raises is dropped.
     """
+    if cancel is not None and cancel.is_set():
+        return Outcome(returncode=None, stdout="", stderr="")
     process = subprocess.Popen(  # noqa: S603 - an argument list built by the runner, executable resolved to a path
         command,
         stdin=subprocess.PIPE if input is not None else subprocess.DEVNULL,
@@ -123,7 +136,18 @@ def run_bounded(  # noqa: PLR0913 - the process's whole contract
         threading.Thread(target=_write, args=(process.stdin, input.encode()), daemon=True).start()
     returncode: int | None
     try:
-        returncode = process.wait(timeout)
+        if cancel is None:
+            returncode = process.wait(timeout)
+        else:
+            deadline = time.monotonic() + timeout
+            while True:
+                if cancel.is_set() or time.monotonic() >= deadline:
+                    _timeout(command, timeout)
+                try:
+                    returncode = process.wait(min(0.05, max(0.001, deadline - time.monotonic())))
+                    break
+                except subprocess.TimeoutExpired:
+                    continue
     except subprocess.TimeoutExpired:
         returncode = None
         _signal_group(process.pid, signal.SIGTERM)

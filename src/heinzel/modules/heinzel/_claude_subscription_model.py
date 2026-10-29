@@ -1,16 +1,18 @@
 """Internal Claude Code structured-response bridge; no native tool is an authorized action.
 
-No production verifier, subscription grant, durable request reservation or product wiring is provided here.
+No production verifier, subscription grant or product wiring is provided here.
 The verifier is a trusted host boundary, not an assertion from the CLI, model, user prompt or adapter.
 """
 
 import asyncio
+import contextlib
 import hashlib
 import json
 import math
 import os
 import re
 import tempfile
+import threading
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -107,6 +109,18 @@ _WIRE_SCHEMA = {
     "required": ["kind", "name", "arguments", "text"],
 }
 _COMMAND_FLAGS = (*_FLAGS, "--json-schema", json.dumps(_WIRE_SCHEMA, separators=(",", ":")))
+
+
+async def _run_cancelable(execute: Callable[..., Outcome], command: list[str], **kwargs: object) -> Outcome:
+    cancel = threading.Event()
+    worker = asyncio.create_task(asyncio.to_thread(execute, command, **kwargs, cancel=cancel))
+    try:
+        return await asyncio.shield(worker)
+    except asyncio.CancelledError:
+        cancel.set()
+        with contextlib.suppress(Exception):  # Process details remain private.
+            await asyncio.shield(worker)
+        raise
 
 
 class ClaudeSubscriptionModel(Model):
@@ -233,7 +247,7 @@ class ClaudeSubscriptionModel(Model):
             environment["PATH"] = "/usr/bin:/bin"
             environment.update({"CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1", "DISABLE_AUTOUPDATER": "1"})
             with tempfile.TemporaryDirectory(prefix="hz-model-") as directory:
-                version = await asyncio.to_thread(
+                version = await _run_cancelable(
                     self._execute,
                     [str(executable), "--version"],
                     input=None,
@@ -247,7 +261,7 @@ class ClaudeSubscriptionModel(Model):
                     or version.truncated
                     or version.stdout.strip() != f"{_VERSION} (Claude Code)"
                 ):
-                    raise HeinzelError(denied)  # noqa: TRY301 - all process failures are redacted at this boundary
+                    raise HeinzelError(denied)  # noqa: TRY301
                 if (
                     self._current_policy() != self._policy
                     or hashlib.sha256(executable.read_bytes()).hexdigest() != digest
@@ -262,7 +276,7 @@ class ClaudeSubscriptionModel(Model):
                     self._policy.max_requests,
                     ordinal,
                 )
-                outcome = await asyncio.to_thread(
+                outcome = await _run_cancelable(
                     self._execute,
                     [str(executable), *_COMMAND_FLAGS],
                     input=payload,
