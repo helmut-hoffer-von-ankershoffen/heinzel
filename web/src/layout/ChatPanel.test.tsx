@@ -65,6 +65,60 @@ describe("ChatPanel", () => {
     );
   });
 
+  it("takes a request from workshop into an agent and shows its saved proposal", async () => {
+    const id = "hz-01ARZ3NDEKTSV4RRFFQ69G5FAV";
+    let messages: object[] = [];
+    let proposed: object | null = null;
+    const session = () => ({ session_id: id, heinzel_id: id, name: "New personal helper", messages });
+    const { calls } = mockApi({
+      ...base,
+      "/api/heinzel/new-chat": session,
+      "/api/heinzel/session": session,
+      "/api/heinzel/sessions": { sessions: [] },
+      "/api/heinzel/latest-scheduled-agent-proposal": () => proposed,
+      "/api/heinzel/chat": async (request: Request) => {
+        const body = await request.json();
+        messages = [{ id: body.request_id, seq: 1, role: "user", text: body.message, status: "pending" }];
+        return { session_id: id, request_id: body.request_id, disposition: "queued", inbox_position: 1 };
+      },
+      "/api/heinzel/answer-chat": async (request: Request) => {
+        const body = await request.json();
+        const message = {
+          id: "reply",
+          seq: 2,
+          role: "assistant",
+          text: "I prepared terms for review.",
+          status: "completed",
+        };
+        messages = [...messages, message];
+        proposed = {
+          session_id: id,
+          request_id: "proposal",
+          revision: 1,
+          contract: "Keep the chosen artifact current.",
+          max_usd: 0.1,
+          timeout_seconds: 30,
+          permitted_tools: [],
+          status: "proposed",
+          preview_sha256: "a".repeat(64),
+        };
+        return { session_id: id, request_id: body.request_id, message };
+      },
+    });
+    const user = userEvent.setup();
+    renderAt("/doctor");
+    await user.type(screen.getByLabelText("Your message"), "Keep the chosen artifact current");
+    await user.click(screen.getByRole("button", { name: "Create Heinzel and take this message" }));
+    const panel = within(await screen.findByRole("complementary", { name: "Chat" }));
+    expect(await panel.findByLabelText("Message your Heinzel")).toHaveValue("Keep the chosen artifact current");
+    await user.click(panel.getByRole("button", { name: "Queue message" }));
+    expect(await panel.findByText("I prepared terms for review.")).toBeInTheDocument();
+    const review = within(await panel.findByRole("region", { name: "Proposed agent terms" }));
+    expect(review.getByText("Revision 1 · awaiting review")).toBeInTheDocument();
+    expect(review.getByText(/does not activate the agent/)).toBeInTheDocument();
+    expect(calls.some((request) => new URL(request.url).pathname.endsWith("/confirm"))).toBe(false);
+  });
+
   it("does not overwrite a recovered agent draft when taking a workshop sentence", async () => {
     const id = "hz-01ARZ3NDEKTSV4RRFFQ69G5FAV";
     const key = `hz.durable.composer.${id}`;
