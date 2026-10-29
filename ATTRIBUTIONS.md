@@ -6,7 +6,7 @@ Heinzelmännchen stands on the shoulders of giants. Every package below is open 
 people who chose to share their work with all of us, and `hz` would not exist without them. **Thank you.**
 
 This is every package `hz` ships to its users, with its license and the license text it comes with:
-60 Python packages that install with `hz` and its first-party plugins on macOS and Linux, and 145
+61 Python packages that install with `hz` and its first-party plugins on macOS and Linux, and 145
 JavaScript packages bundled into its web app. Tools that only build or test `hz` are not distributed, so they are not
 listed, though we are just as grateful for them. Licenses are checked against
 [.license-allowlist](.license-allowlist) by `make audit`.
@@ -49,6 +49,7 @@ Installed with `hz`: the runtime dependencies of the core and of every first-par
 | [packaging](#packaging-263) | 26.3 | Apache-2.0 OR BSD-2-Clause |
 | [platformdirs](#platformdirs-4135) | 4.13.5 | MIT |
 | [pluggy](#pluggy-170) | 1.7.0 | MIT |
+| [psutil](#psutil-722) | 7.2.2 | BSD-3-Clause |
 | [pycparser](#pycparser-312) | 3.12 | BSD-3-Clause |
 | [pydantic](#pydantic-2141) | 2.14.1 | MIT |
 | [pydantic-ai-slim](#pydantic-ai-slim-2610) | 2.61.0 | MIT |
@@ -1761,6 +1762,48 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+```
+
+</details>
+
+### psutil 7.2.2
+
+- License: BSD-3-Clause
+- Homepage: <https://github.com/giampaolo/psutil>
+
+<details>
+<summary>License text</summary>
+
+```text
+BSD 3-Clause License
+
+Copyright (c) 2009, Jay Loden, Dave Daeschler, Giampaolo Rodola
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without modification,
+are permitted provided that the following conditions are met:
+
+ * Redistributions of source code must retain the above copyright notice, this
+   list of conditions and the following disclaimer.
+
+ * Redistributions in binary form must reproduce the above copyright notice,
+   this list of conditions and the following disclaimer in the documentation
+   and/or other materials provided with the distribution.
+
+ * Neither the name of the psutil authors nor the names of its contributors
+   may be used to endorse or promote products derived from this software without
+   specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR
+ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
+ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ```
 
 </details>

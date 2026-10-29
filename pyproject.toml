@@ -22,7 +22,7 @@ classifiers = [
     "Programming Language :: Python :: 3.15",
     "Typing :: Typed",
 ]
-dependencies = ["croniter>=6.2.4", "fastapi>=0.161", "keyring>=25.6", "mcp>=2.3", "packaging>=25.0", "platformdirs>=4.5", "pluggy>=1.6.0,<2", "pydantic>=2.12.0,<3", "pydantic-ai-slim==2.61.0", "pydantic-settings>=2.11.0,<3", "pyyaml>=6.0.2,<7", "rich>=14.2.0", "tomlkit>=0.13", "typer>=0.23.0", "uvicorn>=0.54", "wsproto>=1.3"]
+dependencies = ["croniter>=6.2.4", "fastapi>=0.161", "keyring>=25.6", "mcp>=2.3", "packaging>=25.0", "platformdirs>=4.5", "pluggy>=1.6.0,<2", "psutil==7.2.2", "pydantic>=2.12.0,<3", "pydantic-ai-slim==2.61.0", "pydantic-settings>=2.11.0,<3", "pyyaml>=6.0.2,<7", "rich>=14.2.0", "tomlkit>=0.13", "typer>=0.23.0", "uvicorn>=0.54", "wsproto>=1.3"]
 
 [project.optional-dependencies]
 # A vendor's client for the `pydantic-ai` AI access option (ADR 0050, 0057); the core imports only pydantic_ai.
@@ -45,7 +45,7 @@ Issues = "https://github.com/helmut-hoffer-von-ankershoffen/heinzel/issues"
 
 [dependency-groups]
 # What the unit, integration and e2e tests need, and no more: CI installs only this group for the test matrix.
-test = ["coverage>=7.12", "httpx>=0.28", "hypothesis>=6.140", "jsonschema>=4.26", "pydantic-ai-slim[openai]==2.61.0", "prek>=0.2", "pytest>=9.0.3,<10", "pytest-timeout>=2.4.0,<3", "pytest-xdist>=3.8"]
+test = ["coverage>=7.12", "httpx>=0.28", "hypothesis>=6.140", "jsonschema>=4.26", "pydantic-ai-slim[openai]==2.61.0", "prek>=0.2", "pytest>=9.0.3,<10", "pytest-timeout>=2.4.0,<3", "pytest-xdist>=3.8", "types-psutil>=7.2.2.20260906"]
 # Fuzzing the contract parser (`make fuzz`, weekly in CI); atheris has wheels for x86_64 Linux, Python 3.12 to 3.14.
 fuzz = ["atheris>=3.1; sys_platform == 'linux' and platform_machine == 'x86_64' and python_version < '3.15'"]
 dev = [
