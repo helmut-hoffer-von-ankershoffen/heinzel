@@ -171,3 +171,30 @@ def test_timed_out_fake_cli_keeps_slot(tmp_path):
         assert marker.read_text() == "x"
         assert len(repo.subscription_read(session).events) == 1
         assert repo.budget_read(session).events == []
+
+
+def test_released_real_turn_fence_prevents_subscription_launch(tmp_path):
+    from heinzel.modules.heinzel._turn_authority_fence import TurnAuthorityFence
+
+    current = CurrentUser(tmp_path / "identity")
+    with current.local("cli"):
+        repo = PersonalSessionRepository(current)
+        session = (
+            SessionCrud(repo, lambda: SessionCosts(session_max_usd=2, message_max_usd=1)).new_chat("new").session_id
+        )
+        policy = replace(admission(), owner=repo.principal_id, session=session)
+        marker = tmp_path / "launched"
+        model = ClaudeSubscriptionModel(
+            fake_cli(tmp_path, extra=f"open({str(marker)!r}, 'w').write('x')"),
+            policy,
+            FixtureVerifier(),
+            lambda: policy,
+            slots=SubscriptionSlots(repo),
+            turn_id="turn",
+        )
+        with repo.main_writer(session) as writer:
+            model.bind_fence(TurnAuthorityFence(repo, session, writer))
+        with pytest.raises(HeinzelError):
+            asyncio.run(model.request([ModelRequest(parts=[UserPromptPart(content="hello")])], None, parameters()))
+        assert not marker.exists()
+        assert not repo.subscription_read(session).events

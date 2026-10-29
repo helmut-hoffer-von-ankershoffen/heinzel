@@ -38,6 +38,7 @@ from pydantic_ai.usage import RequestUsage
 
 from heinzel import HeinzelError
 from heinzel.modules.heinzel._subscription_slots import SubscriptionSlots
+from heinzel.modules.heinzel._turn_authority_fence import TurnAuthorityFence
 from heinzel.modules.system.runner._process import Outcome, run_bounded
 
 _VERSION = "2.1.312"
@@ -138,6 +139,7 @@ class ClaudeSubscriptionModel(Model):
         execute: Callable[..., Outcome] = run_bounded,
     ) -> None:
         super().__init__()
+        self._fence: TurnAuthorityFence | None = None
         self._executable = executable
         self._policy = policy
         self._verifier = verifier
@@ -166,6 +168,18 @@ class ClaudeSubscriptionModel(Model):
         ):
             msg = "This subscription policy cannot be enforced by the bridge"
             raise HeinzelError(msg)
+
+    def bind_fence(self, fence: TurnAuthorityFence) -> None:
+        """Bind the owner-bound turn lease; this does not supply subscription authorization.
+
+        Raises:
+            HeinzelError: If the policy or lease does not belong to this owner and session.
+        """
+        fence.bind(self._slots.repository, self._policy.session)
+        if self._slots.repository.principal_id != self._policy.owner:
+            msg = "The subscription policy belongs to another owner"
+            raise HeinzelError(msg)
+        self._fence = fence
 
     @property
     def model_name(self) -> str:
@@ -197,6 +211,8 @@ class ClaudeSubscriptionModel(Model):
             or self._calls >= self._policy.max_requests
         ):
             raise HeinzelError(denied)
+        if self._fence is not None:
+            self._fence.check()
         self._calls += 1
         ordinal = self._calls  # Capture before any await; concurrent calls must not share an ordinal.
         tools = [*model_request_parameters.function_tools, *model_request_parameters.output_tools]
@@ -276,6 +292,8 @@ class ClaudeSubscriptionModel(Model):
                     self._policy.max_requests,
                     ordinal,
                 )
+                if self._fence is not None:
+                    self._fence.check()
                 # The ledger lock can block; do not launch on a policy revoked while waiting.
                 if self._current_policy() != self._policy:
                     raise HeinzelError(denied)  # noqa: TRY301

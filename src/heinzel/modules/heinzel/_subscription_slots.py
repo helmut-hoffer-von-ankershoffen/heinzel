@@ -31,6 +31,11 @@ class SubscriptionSlots:
     def __init__(self, repository: SessionRepository) -> None:
         self._repository = repository
 
+    @property
+    def repository(self) -> SessionRepository:
+        """The owner-bound repository used for slot reservations."""
+        return self._repository
+
     def reserve(self, owner: str, session: str, turn: str, revision: int, limit: int, ordinal: int) -> None:  # noqa: PLR0913, PLR0917 - exact host binding
         """Reserve one unique slot before launch; all existing or uncertain slots refuse replay.
 

@@ -27,6 +27,7 @@ from pydantic_ai.settings import ModelSettings
 from heinzel import HeinzelError
 from heinzel.modules.heinzel._budget_reservation import PriceEnvelope, reserve_model_spend
 from heinzel.modules.heinzel._session_protocol import SessionRepository
+from heinzel.modules.heinzel._turn_authority_fence import TurnAuthorityFence
 
 MODEL = "openai:gpt-4.1-mini-2025-04-14"
 REVISION = "openai-gpt-4.1-mini-standard-2026-10-29"
@@ -74,6 +75,7 @@ class ReservedModel(WrapperModel):
         verify_authority: Callable[[], None] | None = None,
     ) -> None:
         super().__init__(model)
+        self._fence: TurnAuthorityFence | None = None
         self._verify_authority = verify_authority
         self._require_initialized = require_initialized
         self._repository = repository
@@ -139,6 +141,11 @@ class ReservedModel(WrapperModel):
             verify_authority=verify_authority,
         )
 
+    def bind_fence(self, fence: TurnAuthorityFence) -> None:
+        """Bind the caller's active turn lease before an approved turn runs."""
+        fence.bind(self._repository, self._session)
+        self._fence = fence
+
     async def request(  # noqa: C901, PLR0912 - one request passes every limit before dispatch
         self,
         messages: list[ModelMessage],
@@ -153,7 +160,9 @@ class ReservedModel(WrapperModel):
         if self._repository.principal_id != self._owner:
             msg = "The model reservation belongs to a different owner"
             raise HeinzelError(msg)
-        if self._verify_authority is not None:
+        if self._fence is not None:
+            self._fence.check(self._verify_authority)
+        elif self._verify_authority is not None:
             self._verify_authority()
         input_rate, output_rate = resolve_pricing(MODEL, "standard", self._now())
         if self._calls >= self._max_requests:
@@ -216,6 +225,8 @@ class ReservedModel(WrapperModel):
             msg = "A prior reservation cannot authorize another model request"
             raise HeinzelError(msg)
         resolve_pricing(MODEL, "standard", self._now())
-        if self._verify_authority is not None:
+        if self._fence is not None:
+            self._fence.check(self._verify_authority)
+        elif self._verify_authority is not None:
             self._verify_authority()
         return await self.wrapped.request(messages, settings, model_request_parameters)  # type: ignore[arg-type]

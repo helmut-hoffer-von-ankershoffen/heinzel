@@ -18,6 +18,7 @@ from pydantic_ai.models import Model
 from heinzel import CurrentUser, HeinzelError, SessionEvent
 from heinzel.modules.ai.access._pydantic import PydanticAiAccess
 from heinzel.modules.heinzel._budget_reservation import initialize_budget
+from heinzel.modules.heinzel._claude_subscription_model import ClaudeSubscriptionModel
 from heinzel.modules.heinzel._engine import EngineCheckpoint, TurnAuthority, TurnDeps, TurnLimits, run_turn
 from heinzel.modules.heinzel._host_tools import HostToolCatalog, OperationFailedError
 from heinzel.modules.heinzel._model_admission import ConnectedModelFactory, connected_model
@@ -26,6 +27,7 @@ from heinzel.modules.heinzel._priced_model import ReservedModel
 from heinzel.modules.heinzel._session_bodies import immutable_body
 from heinzel.modules.heinzel._session_crud import SessionCrud
 from heinzel.modules.heinzel._session_models import SessionMessage
+from heinzel.modules.heinzel._turn_authority_fence import TurnAuthorityFence
 from heinzel.modules.heinzel._turn_skill_adapter import TurnSkillAdapter, skill_tool_schemas
 
 _MAX_ARGUMENT_BYTES = 16000
@@ -188,6 +190,8 @@ class InteractiveTurn:
         turn = _turn_id(request_id)
         with repo.main_writer(session_id) as turn_writer:
             self._check_owner()
+            if isinstance(model, (ReservedModel, ClaudeSubscriptionModel)):
+                model.bind_fence(TurnAuthorityFence(repo, session_id, turn_writer))
             events = repo.control_read(session_id).events
             if expected_grant is not None and ModelGrants(self._crud).approved(session_id) != expected_grant:
                 msg = "The approved model grant changed before the turn started"
