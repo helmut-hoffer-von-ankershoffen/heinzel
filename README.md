@@ -198,7 +198,7 @@ rights; `hz system daemon pause` and `uninstall` stop them (see [SECURITY.md](SE
 - [`system.runner`](docs/MODULES.md#systemrunner) — Run bounded agent sessions with Claude Code or a configured command.
 - [`system.runner.chat`](docs/MODULES.md#systemrunnerchat) — Chat with the agent runner about where you are; it acts through hz once you confirm.
 - [`system.skill`](docs/MODULES.md#systemskill) — List the skills plugins ship for AI, and hand chosen ones to Claude Code.
-- [`system.sound`](docs/MODULES.md#systemsound) — Pick the web app's soundscape: off, a built-in one or one a plugin offers.
+- [`system.sound`](docs/MODULES.md#systemsound) — Pick the web app's soundscape: off or one an installed plugin offers.
 - [`system.state`](docs/MODULES.md#systemstate) — Note how hz is used on this machine and push it to your own state repository.
 - [`system.theme`](docs/MODULES.md#systemtheme) — Pick how the web app looks: the built-in theme or one a plugin offers.
 - [`system.ui`](docs/MODULES.md#systemui) — List what modules add to the web app: status items, header actions and Today widgets.
@@ -210,8 +210,9 @@ Details for each, in every head: [docs/MODULES.md](docs/MODULES.md). Plugins add
 ### First-party plugins
 
 Maintained in [heinzel-plugins](https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/tree/main/plugins),
-with independent versions, checks and releases. The standard installation includes Clock, Resource and Tailscale;
-sharing remains off until explicitly configured. A minimal core installation includes no plugins.
+with independent versions, checks and releases. The standard installation includes Clock, Resource, Tailscale and
+the Heinzelmännchen theme. Sharing remains off until explicitly configured, and sound starts only after Play.
+A minimal core installation includes no plugins.
 `hz system plugin add <name>` shows the compatible distribution and `--confirm` installs it;
 `hz system plugin search` discovers the catalog from repository metadata.
 
@@ -220,6 +221,7 @@ sharing remains off until explicitly configured. A minimal core installation inc
 | [heinzel-clock](https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/tree/main/plugins/heinzel-clock) | What time it is for everyone on the team | `hz system plugin add clock --confirm` |
 | [heinzel-resource](https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/tree/main/plugins/heinzel-resource) | CPU, memory and load meters and a Today widget | `hz system plugin add resource --confirm` |
 | [heinzel-tailscale](https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/tree/main/plugins/heinzel-tailscale) | Opt-in private sharing over Tailscale | `hz system plugin add tailscale --confirm` |
+| [heinzel-theme](https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/tree/main/plugins/heinzel-theme) | Heinzelmännchen theme and its three soundscapes | `hz system plugin add theme --confirm` |
 | [heinzel-github](https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/tree/main/plugins/heinzel-github) | Pull requests and issues from GitHub: the `code-host` and `tracker` capabilities | `hz system plugin add github --confirm` |
 | [heinzel-atlassian](https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/tree/main/plugins/heinzel-atlassian) | Jira issues and Confluence pages: the `tracker` and `documents` capabilities | `hz system plugin add atlassian --confirm` |
 | [heinzel-google](https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/tree/main/plugins/heinzel-google) | Google Docs, Sheets, Drive, Calendar and Gmail through the Google Workspace CLI: the `documents`, `calendar` and `mail` capabilities | `hz system plugin add google --confirm` |

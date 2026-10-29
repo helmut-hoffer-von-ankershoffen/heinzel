@@ -2657,7 +2657,7 @@ $ hz system skill unexport [OPTIONS]
 
 ### `hz system sound`
 
-(expert) Pick the web app&#x27;s soundscape: off, a built-in one or one a plugin offers.
+(expert) Pick the web app&#x27;s soundscape: off or one an installed plugin offers.
 
 **Usage**:
 
@@ -2702,7 +2702,7 @@ $ hz system sound use [OPTIONS] {name}
 
 **Arguments**:
 
-* `name`: The soundscape to play, one `hz system sound list` shows, e.g. `claude-fm`, or `off`.  [required]
+* `name`: The soundscape to play, one `hz system sound list` shows, or `off`.  [required]
 
 **Options**:
 

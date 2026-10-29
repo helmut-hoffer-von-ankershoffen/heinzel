@@ -203,8 +203,10 @@ root package `heinzel_<name>`, entry point `<name>` in the `heinzel.modules` gro
 resolves a catalog name from project metadata. Public implementations live in
 [heinzel-plugins](https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins), with independent locks, environments,
 versions and releases. External/private repositories use the same SDK and discovery rules. The standard app profile
-includes Clock, Resource and Tailscale; minimal core has no plugin dependencies. Resource is the only built-in module
-extracted in 0.9. See [ADR 0094](adr/0094-plugins-own-features-and-independent-delivery.md).
+includes Clock, Resource, Tailscale and the Heinzelmännchen theme; minimal core has no plugin dependencies. Resource
+is the only built-in module extracted in 0.9; the theme plugin also owns the former bundled soundscape content.
+See [ADR 0094](adr/0094-plugins-own-features-and-independent-delivery.md) and
+[ADR 0095](adr/0095-standard-heinzel-theme-owns-bundled-soundscapes.md).
 
 ## Layering
 

@@ -33,7 +33,7 @@ mode (`hz system expert on`); every one runs either way, and MCP and REST list t
 | [`system.runner`](#systemrunner) | Run bounded agent sessions with Claude Code or a configured command. |
 | [`system.runner.chat`](#systemrunnerchat) | Chat with the agent runner about where you are; it acts through hz once you confirm. |
 | [`system.skill`](#systemskill) | List the skills plugins ship for AI, and hand chosen ones to Claude Code. |
-| [`system.sound`](#systemsound) | Pick the web app's soundscape: off, a built-in one or one a plugin offers. |
+| [`system.sound`](#systemsound) | Pick the web app's soundscape: off or one an installed plugin offers. |
 | [`system.state`](#systemstate) | Note how hz is used on this machine and push it to your own state repository. |
 | [`system.theme`](#systemtheme) | Pick how the web app looks: the built-in theme or one a plugin offers. |
 | [`system.ui`](#systemui) | List what modules add to the web app: status items, header actions and Today widgets. |
@@ -378,7 +378,7 @@ Health checks: reported by `hz system doctor`.
 
 ## `system.sound`
 
-Pick the web app's soundscape: off, a built-in one or one a plugin offers.
+Pick the web app's soundscape: off or one an installed plugin offers.
 
 | Operation | CLI | MCP tool | REST | Web | Changes state | Expert |
 | --- | --- | --- | --- | --- | --- | --- |

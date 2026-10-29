@@ -11052,7 +11052,7 @@
             "type": "string"
           },
           "video": {
-            "description": "The video's id, e.g. `tRsQsTMvPNg`.",
+            "description": "The video's id, e.g. `abcdefghijk`.",
             "title": "Video",
             "type": "string"
           },
@@ -11125,7 +11125,7 @@
             "title": "Module"
           },
           "name": {
-            "description": "What `hz system sound use` takes, e.g. `claude-fm`; `off` is no sound.",
+            "description": "The installed soundscape's name; `off` is no sound.",
             "title": "Name",
             "type": "string"
           },
@@ -18671,12 +18671,12 @@
         "operationId": "system_sound_use",
         "parameters": [
           {
-            "description": "The soundscape to play, one `hz system sound list` shows, e.g. `claude-fm`, or `off`.",
+            "description": "The soundscape to play, one `hz system sound list` shows, or `off`.",
             "in": "query",
             "name": "name",
             "required": true,
             "schema": {
-              "description": "The soundscape to play, one `hz system sound list` shows, e.g. `claude-fm`, or `off`.",
+              "description": "The soundscape to play, one `hz system sound list` shows, or `off`.",
               "title": "Name",
               "type": "string"
             }

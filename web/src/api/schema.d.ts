@@ -8582,7 +8582,7 @@ export interface components {
             provider: string;
             /**
              * Video
-             * @description The video's id, e.g. `tRsQsTMvPNg`.
+             * @description The video's id, e.g. `abcdefghijk`.
              */
             video: string;
             /**
@@ -8630,7 +8630,7 @@ export interface components {
             module: string | null;
             /**
              * Name
-             * @description What `hz system sound use` takes, e.g. `claude-fm`; `off` is no sound.
+             * @description The installed soundscape's name; `off` is no sound.
              */
             name: string;
             /**
@@ -13318,7 +13318,7 @@ export interface operations {
     system_sound_use: {
         parameters: {
             query: {
-                /** @description The soundscape to play, one `hz system sound list` shows, e.g. `claude-fm`, or `off`. */
+                /** @description The soundscape to play, one `hz system sound list` shows, or `off`. */
                 name: string;
             };
             header?: never;

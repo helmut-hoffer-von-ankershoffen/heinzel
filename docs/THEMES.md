@@ -7,7 +7,10 @@ use <name>` picks one. Every value passes a grammar at import, so a theme can't 
 
 Soundscapes work the same way ([ADR 0058](adr/0058-soundscapes-are-data-a-plugin-ships-chosen-like-a-theme.md)): a plugin
 offers its own with `module.soundscape(Path(__file__).parent / "soundscapes")`, and they appear in `hz system sound
-list` and the web app's picker beside the built-in soundscapes.
+list` and the web app's picker. The standard app automatically installs and enables the Heinzelmännchen theme
+plugin, which owns Claude FM, Die Heinzelmännchen and Hyper Focus. Minimal core contains no soundscape content;
+it keeps a fallback appearance and Off. Installation does not change the selected theme or start playback
+([ADR 0095](adr/0095-standard-heinzel-theme-owns-bundled-soundscapes.md)).
 
 A theme plugin can declare both themes and soundscapes in its own module, ship their TOML and audio/font/logo
 assets, and set a soundscape's `pairs_with` to its theme names. No core edit or central theme/soundscape registry

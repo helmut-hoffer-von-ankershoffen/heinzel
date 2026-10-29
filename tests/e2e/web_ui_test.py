@@ -75,6 +75,25 @@ def demo_workflows(directory: Path) -> None:
         (directory / f"{name}.prose.md").write_text(text, encoding="utf-8")
 
 
+def verify_fixture_plugins(env: dict[str, str]) -> None:
+    """Refuse real providers before a core browser test can import their code."""
+    subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "from importlib.metadata import entry_points; "
+                "actual={(item.name,item.value) for item in entry_points(group='heinzel.modules')}; "
+                "assert actual=={('sound-demo','heinzel_sound_demo')}, 'Browser tests require a core-only environment'"
+            ),
+        ],
+        env=env,
+        capture_output=True,
+        check=True,
+        timeout=30,
+    )
+
+
 @pytest.fixture
 def environment(tmp_path):
     """Made-up configuration in temporary directories; a BROWSER that records the URL instead of opening it."""
@@ -84,6 +103,11 @@ def environment(tmp_path):
         f"import sys, pathlib\npathlib.Path({str(recorded)!r}).write_text(sys.argv[1])\n", encoding="utf-8"
     )
     demo_workflows(tmp_path / "workflows")
+    # Only a synthetic fixture provides stream content; no real plugin or bundled core catalog is installed.
+    metadata = tmp_path / "plugins/heinzel_sound_demo-1.0.0.dist-info"
+    metadata.mkdir(parents=True)
+    (metadata / "METADATA").write_text("Metadata-Version: 2.1\nName: heinzel-sound-demo\nVersion: 1.0.0\n")
+    (metadata / "entry_points.txt").write_text("[heinzel.modules]\nsound-demo = heinzel_sound_demo\n")
     env = {key: value for key, value in os.environ.items() if not key.startswith("HZ_")}
     env |= {
         "HZ_CONFIG_HOME": str(tmp_path / "config"),
@@ -93,9 +117,10 @@ def environment(tmp_path):
         "HZ_LOG_DIR": str(tmp_path / "log"),
         "HZ_SYSTEM_DAEMON__UNIT_DIR": str(tmp_path / "units"),
         "HZ_SYSTEM_CREDENTIAL__BACKEND": "environment",
-        "HZ_PLUGINS_ENABLED": "false",
+        "HZ_PLUGINS_ENABLED": "true",
+        "PYTHONPATH": os.pathsep.join((str(metadata.parent), str(REPO / "tests/fixtures/sound"))),
         # Let the real server admit the stream origin before the offline iframe layer/playback probe runs.
-        "HZ_SYSTEM_SOUND__NAME": "claude-fm",
+        "HZ_SYSTEM_SOUND__NAME": "fixture-radio",
         "HZ_SYSTEM_SOUND__FOLLOW_THEME": "false",
         "HZ_HEINZEL__USER_DIR": str(tmp_path / "workflows"),
         "HZ_ORG__HANDLE": "mira",
@@ -105,7 +130,19 @@ def environment(tmp_path):
         "HZ_ORG__EMAIL": "mira@example.com",
         "BROWSER": f"{sys.executable} {browser} %s",
     }
+    verify_fixture_plugins(env)
     return env, recorded
+
+
+def test_browser_fixture_refuses_unrelated_providers_before_import(environment, tmp_path):
+    env, _ = environment
+    metadata = tmp_path / "plugins/heinzel_unrelated-1.0.0.dist-info"
+    metadata.mkdir()
+    (metadata / "METADATA").write_text("Metadata-Version: 2.1\nName: heinzel-unrelated\nVersion: 1.0.0\n")
+    (metadata / "entry_points.txt").write_text("[heinzel.modules]\nunrelated = never_import_this_provider\n")
+    with pytest.raises(subprocess.CalledProcessError) as refused:
+        verify_fixture_plugins(env)
+    assert b"Browser tests require a core-only environment" in refused.value.stderr
 
 
 @pytest.mark.timeout(600)
@@ -118,7 +155,11 @@ def test_hz_ui_opens_the_app_and_it_shows_the_doctor_report(environment, tmp_pat
     shots = Path(os.environ.get("HZ_SCREENSHOTS", tmp_path / "screenshots"))
 
     ui = subprocess.Popen(
-        ["uv", "run", "hz", "ui", "--port", "0"], cwd=REPO, env=env, stderr=subprocess.PIPE, text=True
+        [sys.executable, "-m", "heinzel", "ui", "--port", "0"],
+        cwd=REPO,
+        env=env,
+        stderr=subprocess.PIPE,
+        text=True,
     )
     try:
         assert ui.stderr is not None
