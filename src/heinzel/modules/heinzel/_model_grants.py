@@ -4,11 +4,12 @@ This internal service is not a head operation. Neither a model nor an API client
 """
 
 import json
+import re
 import secrets
 from datetime import timedelta
 from decimal import Decimal
 
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, model_validator
 
 from heinzel import HeinzelError, SessionEvent, SessionWriter
 from heinzel.kernel._approval import (
@@ -36,12 +37,29 @@ class ModelGrant(BaseModel):
     access: str = Field(min_length=1, max_length=100)
     model: str = Field(min_length=1, max_length=128)
     requests: int = Field(ge=1, le=100)
-    total_tokens: int = Field(ge=1, le=1_000_000)
+    total_tokens: int = Field(ge=1, le=100_000_000)
     output_tokens: int = Field(ge=1, le=32_768)
     timeout_seconds: float = Field(gt=0, le=7200, allow_inf_nan=False)
     message_cap_usd: Decimal = Field(gt=0, allow_inf_nan=False)
     session_cap_usd: Decimal = Field(gt=0, allow_inf_nan=False)
     owner_cap_usd: Decimal = Field(gt=0, allow_inf_nan=False)
+    allowed_tools: dict[str, str] = Field(default_factory=dict, max_length=32)
+
+    @model_validator(mode="after")
+    def valid_tools(self) -> "ModelGrant":
+        """Bind approved operation IDs to fingerprints of schema and registered distribution revision.
+
+        Raises:
+            ValueError: If a tool identity or fingerprint is malformed.
+        """
+        if any(
+            re.fullmatch(r"[a-z][a-z0-9_.-]{0,127}:[a-z][a-z0-9-]{0,127}", name) is None
+            or re.fullmatch(r"[a-f0-9]{64}", digest) is None
+            for name, digest in self.allowed_tools.items()
+        ):
+            msg = "The model grant contains an invalid operation or schema fingerprint"
+            raise ValueError(msg)
+        return self
 
 
 class ModelGrants:
@@ -141,7 +159,9 @@ class ModelGrants:
             session=session,
             action="approve-model-grant",
             resource=grant.model,
-            arguments_hash=arguments_hash(grant.model_dump(mode="json")),
+            arguments_hash=arguments_hash(
+                grant.model_dump(mode="json", exclude={"allowed_tools"} if not grant.allowed_tools else set())
+            ),
             contract_revision=0,
             grant_revision=grant.revision,
             policy_revision=0,

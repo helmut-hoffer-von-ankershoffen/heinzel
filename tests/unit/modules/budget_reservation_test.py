@@ -86,6 +86,35 @@ def test_concurrent_cross_session_reservations_cannot_exceed_owner_cap(tmp_path)
         assert sorted(pool.map(attempt, sessions)) == ["denied", "reserved"]
 
 
+def test_concurrent_requests_cannot_exceed_one_turn_token_cap(tmp_path):
+    current = CurrentUser(tmp_path / "identity")
+    with current.local("cli"):
+        repo = PersonalSessionRepository(current)
+        session = (
+            SessionCrud(repo, lambda: SessionCosts(session_max_usd=2, message_max_usd=1)).new_chat("one").session_id
+        )
+
+    def attempt(request):
+        with current.local("cli"):
+            try:
+                return reserve_model_spend(
+                    PersonalSessionRepository(current),
+                    session,
+                    request,
+                    envelope(),
+                    turn_id="same-turn",
+                    max_turn_tokens=22_000,
+                    message_cap=Decimal(2),
+                    session_cap=Decimal(2),
+                    owner_cap=Decimal(2),
+                ).disposition
+            except HeinzelError:
+                return "denied"
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        assert sorted(pool.map(attempt, ["request-one", "request-two"])) == ["denied", "reserved"]
+
+
 def test_owner_cannot_reserve_against_another_owners_session(tmp_path):
     current = CurrentUser(tmp_path / "identity")
     with current.local("cli"):

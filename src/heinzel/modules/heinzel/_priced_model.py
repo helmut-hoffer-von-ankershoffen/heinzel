@@ -8,7 +8,17 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from decimal import Decimal
 
-from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, UserPromptPart
+from pydantic_ai.messages import (
+    ModelMessage,
+    ModelRequest,
+    ModelResponse,
+    RetryPromptPart,
+    SystemPromptPart,
+    TextPart,
+    ToolCallPart,
+    ToolReturnPart,
+    UserPromptPart,
+)
 from pydantic_ai.models import Model, ModelRequestParameters
 from pydantic_ai.models.openai import OpenAIResponsesModel
 from pydantic_ai.models.wrapper import WrapperModel
@@ -40,7 +50,7 @@ def resolve_pricing(model: str, mode: str, now: datetime) -> tuple[Decimal, Deci
 
 
 class ReservedModel(WrapperModel):
-    """Count the actual Pydantic request, then reserve before each generation request.
+    """Reserve the model's full context and bounded output before each generation request.
 
     Only a trusted caller may construct this internal wrapper; it must validate provider identity, exact endpoint,
     model snapshot, credential, policy revisions and grants. Fake transports are used solely in offline tests.
@@ -55,6 +65,8 @@ class ReservedModel(WrapperModel):
         *,
         message_cap: Decimal,
         max_requests: int,
+        max_turn_tokens: int,
+        max_turn_output_tokens: int,
         session_cap: Decimal,
         owner_cap: Decimal,
         now: Callable[[], datetime],
@@ -72,6 +84,8 @@ class ReservedModel(WrapperModel):
             msg = "The model requires a bounded request count"
             raise HeinzelError(msg)
         self._max_requests = max_requests
+        self._max_turn_tokens = max_turn_tokens
+        self._max_turn_output_tokens = max_turn_output_tokens
         self._message_cap = message_cap
         self._session_cap = session_cap
         self._owner_cap = owner_cap
@@ -89,6 +103,8 @@ class ReservedModel(WrapperModel):
         *,
         message_cap: Decimal,
         max_requests: int,
+        max_turn_tokens: int,
+        max_turn_output_tokens: int,
         session_cap: Decimal,
         owner_cap: Decimal,
         now: Callable[[], datetime],
@@ -114,6 +130,8 @@ class ReservedModel(WrapperModel):
             turn,
             message_cap=message_cap,
             max_requests=max_requests,
+            max_turn_tokens=max_turn_tokens,
+            max_turn_output_tokens=max_turn_output_tokens,
             session_cap=session_cap,
             owner_cap=owner_cap,
             now=now,
@@ -127,7 +145,7 @@ class ReservedModel(WrapperModel):
         model_settings: ModelSettings | None,
         model_request_parameters: ModelRequestParameters,
     ) -> ModelResponse:
-        """Check and count each actual payload; reserve before dispatch and never automatically retry it.
+        """Validate text-only requests; reserve worst-case context and output before every provider dispatch.
 
         Raises:
             HeinzelError: If policy, request shape, counting or reservation cannot be verified.
@@ -149,29 +167,33 @@ class ReservedModel(WrapperModel):
         if type(output) is not int or not 1 <= output <= MAX_OUTPUT:
             msg = "The model requires an explicit supported output-token bound"
             raise HeinzelError(msg)
+        # Divide the approved turn-wide output ceiling among permitted requests. The owner ledger still
+        # atomically enforces the aggregate, including prior reservations and interrupted attempts.
+        output = min(output, max(1, self._max_turn_output_tokens // self._max_requests))
         for message in messages:
             if isinstance(message, ModelRequest):
                 for part in message.parts:
-                    if isinstance(part, UserPromptPart) and not isinstance(part.content, str):
+                    if not isinstance(
+                        part, (SystemPromptPart, UserPromptPart, ToolReturnPart, RetryPromptPart)
+                    ) or not isinstance(part.content, str):
                         msg = "This pricing policy supports text-only input"
                         raise HeinzelError(msg)
-        # No SDK retries and no alternate service tier; request uses the same parameters as counting.
-        settings.update({"openai_service_tier": "default", "max_retries": 0})
-        usage = await self.wrapped.count_tokens(messages, settings, model_request_parameters)  # type: ignore[arg-type]
-        input_tokens = usage.input_tokens
-        if type(input_tokens) is not int or not 1 <= input_tokens <= CONTEXT:
-            msg = "The provider did not return a valid bounded input-token count"
-            raise HeinzelError(msg)
-        if input_tokens + output > CONTEXT:
-            msg = "The request exceeds the model context limit"
-            raise HeinzelError(msg)
+            elif isinstance(message, ModelResponse):
+                if any(not isinstance(part, (TextPart, ToolCallPart)) for part in message.parts):
+                    msg = "This pricing policy supports text-only input"
+                    raise HeinzelError(msg)
+            else:
+                msg = "This pricing policy supports text-only input"  # type: ignore[unreachable]  # runtime guard
+                raise HeinzelError(msg)
+        # Counting is a remote provider call. Reserve the full supported context without contacting the provider.
+        settings.update({"max_tokens": output, "openai_service_tier": "default", "max_retries": 0})
         resolve_pricing(MODEL, "standard", self._now())
         self._calls += 1
         request = f"{self._turn}-{self._calls}"
         envelope = PriceEnvelope(
             model=MODEL,
             price_revision=REVISION,
-            max_input_tokens=input_tokens,
+            max_input_tokens=CONTEXT,
             max_output_tokens=output,
             max_requests=1,
             input_usd_per_million=input_rate,
@@ -183,6 +205,8 @@ class ReservedModel(WrapperModel):
             request,
             envelope,
             turn_id=self._turn,
+            max_turn_tokens=self._max_turn_tokens,
+            max_turn_output_tokens=self._max_turn_output_tokens,
             message_cap=self._message_cap,
             require_initialized=self._require_initialized,
             session_cap=self._session_cap,
@@ -191,6 +215,7 @@ class ReservedModel(WrapperModel):
         if reserved.disposition != "reserved":
             msg = "A prior reservation cannot authorize another model request"
             raise HeinzelError(msg)
+        resolve_pricing(MODEL, "standard", self._now())
         if self._verify_authority is not None:
             self._verify_authority()
         return await self.wrapped.request(messages, settings, model_request_parameters)  # type: ignore[arg-type]
