@@ -333,16 +333,22 @@ class ChatService:
             raise HeinzelError(msg)
         issuer = self._kernel.resolve(ApprovalIssuer)
         base: dict[str, JsonValue] = {"session_id": durable_session, "request_id": request_id}
-        preview = issuer.review("heinzel", "approve-model-grant", base)
-        arguments: dict[str, JsonValue] = {**base, "review": preview}
         with self._store.proposal_request_lock():
             prior = self._store.find_proposal("heinzel", "approve-model-grant", durable_session, request_id)
             if prior is not None:
                 chat, found = prior
-                if found.arguments != arguments:
+                # Returning the original owner-bound action does not reissue or consume a proof. The issuer
+                # still rechecks current intent when a pending action is confirmed.
+                if (
+                    chat.personal_session_id != durable_session
+                    or set(found.arguments) != {"session_id", "request_id", "review"}
+                    or not isinstance(found.arguments.get("review"), dict)
+                ):
                     msg = "This policy review no longer matches its original action"
                     raise HeinzelError(msg)
                 return chat
+            preview = issuer.review("heinzel", "approve-model-grant", base)
+            arguments: dict[str, JsonValue] = {**base, "review": preview}
             personal_chat = self._store.find_personal_chat(durable_session)
             if personal_chat is None:
                 personal_chat = self._store.create(

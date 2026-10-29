@@ -1650,7 +1650,7 @@ def test_model_policy_heads_cannot_self_approve(kernel, tmp_path):
     assert "heinzel_approve_model_grant" not in {item.name for item in exposed(kernel, "mcp-stdio")}
 
 
-def test_model_policy_action_card_requires_human_and_never_runs_model(kernel, tmp_path, ran):
+def test_model_policy_action_card_requires_human_and_never_runs_model(kernel, tmp_path, ran):  # noqa: PLR0915 - one complete decision and replay journey
     from heinzel.modules.heinzel._priced_model import MODEL
 
     client = web_client(kernel, tmp_path)
@@ -1730,6 +1730,19 @@ def test_model_policy_action_card_requires_human_and_never_runs_model(kernel, tm
     assert finished["status"] == "done"
     assert "approval_proof" not in json.dumps(confirmed.json())
     assert client.post("/api/system/runner/chat/confirm", headers=AUTH, params=decision).status_code == 400
+    # A lost staging acknowledgement can be recovered even after this exact action is decided.
+    recovered = client.post("/api/system/runner/chat/propose-model-policy", headers=AUTH, params=params)
+    assert recovered.status_code == 200, recovered.text
+    recovered_action = next(item for item in recovered.json()["actions"] if item["id"] == action["id"])
+    assert recovered_action["status"] == "done"
+    assert recovered_action["arguments"] == action["arguments"]
+    # A previously staged but now stale competing action is observable, not newly authorized.
+    recovered_stale = client.post(
+        "/api/system/runner/chat/propose-model-policy",
+        headers=AUTH,
+        params={"durable_session": session_id, "request_id": "competing"},
+    )
+    assert recovered_stale.status_code == 200, recovered_stale.text
     stale_action = next(item for item in confirmed.json()["actions"] if item["arguments"]["request_id"] == "competing")
     assert (
         client.post(
