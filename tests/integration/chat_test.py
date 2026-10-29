@@ -1033,6 +1033,55 @@ def _assert_mcp_schedule_retry_reconciles(kernel, arguments, monkeypatch) -> Non
     assert prompts == []
 
 
+def test_mcp_exact_schedule_retry_reconciliation_is_owner_scoped(kernel, make_kernel, tmp_path, monkeypatch):
+    owner = kernel.resolve(CurrentUser)
+    with owner.local("cli"):
+        crud = _crud(owner)
+        created = crud.new_chat("mcp-owner-reconcile-create", "Owner only")
+        proposed = crud.propose_check_in(created.session_id, "mcp-owner-reconcile-proposal", "UTC")
+        assert proposed.schedule is not None
+        arguments = {
+            "session_id": created.session_id,
+            "request_id": "mcp-owner-reconcile-activate",
+            "expected_revision": proposed.schedule.revision,
+            "action": "activate",
+            "expected_contract_version": proposed.schedule.contract_version,
+            "expected_preview_hash": proposed.schedule.preview_hash,
+        }
+        proof = crud.issue("heinzel", "schedule-control", arguments, "test-owner-reconciliation")
+        crud.schedule_control(
+            created.session_id,
+            arguments["request_id"],
+            arguments["expected_revision"],
+            "activate",
+            proof,
+            arguments["expected_contract_version"],
+            arguments["expected_preview_hash"],
+        )
+
+    prompts: list[dict[str, object]] = []
+
+    def unexpected_prompt(review: dict[str, object]) -> None:
+        prompts.append(review)
+        msg = "foreign owner must not reach terminal review"
+        raise HeinzelError(msg)
+
+    monkeypatch.setattr(mcp, "_confirm_schedule_on_tty", unexpected_prompt)
+    foreign = CurrentUser(tmp_path / "foreign-reconcile-owner" / "identity")
+    foreign_kernel = make_kernel(builtins=True, settings_=kernel.settings)
+    foreign_kernel.bind(CurrentUser, foreign)
+
+    async def replay_foreign_request():
+        async with Client(mcp.build(foreign_kernel)) as connected:
+            return await connected.call_tool("heinzel_schedule_control", arguments)
+
+    result = anyio.run(replay_foreign_request)
+    assert result.is_error
+    assert prompts == []
+    with foreign.local("cli"):
+        assert _crud(foreign).listing().sessions == []
+
+
 def test_mcp_handoff_crashes_fail_closed_before_and_after_the_schedule_commit(kernel, tmp_path, monkeypatch):
     client = web_client(kernel, tmp_path)
     created = client.post(
