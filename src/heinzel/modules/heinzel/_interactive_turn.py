@@ -15,6 +15,7 @@ from pydantic import BaseModel, JsonValue, TypeAdapter
 from pydantic_ai.models import Model
 
 from heinzel import CurrentUser, HeinzelError, SessionEvent
+from heinzel.modules.ai.access._pydantic import PydanticAiAccess
 from heinzel.modules.heinzel._budget_reservation import initialize_budget
 from heinzel.modules.heinzel._engine import EngineCheckpoint, TurnAuthority, TurnDeps, TurnLimits, run_turn
 from heinzel.modules.heinzel._model_admission import ConnectedModelFactory, connected_model
@@ -114,17 +115,15 @@ class InteractiveTurn:
             output_tokens=grant.output_tokens,
             timeout_seconds=grant.timeout_seconds,
         )
-        model = connected_model(
-            self._crud.repository,
-            current,
-            factory,
-            session_id=session_id,
-            owner=self._owner,
-            selected_access=grant.access,
-            approved_access=grant.access,
-            approved_model=grant.model,
-            limits=limits,
-        )
+        self._check_owner()
+        if (
+            current.principal().id != self._owner
+            or type(factory) is not PydanticAiAccess
+            or grant.access != "pydantic-ai"
+        ):
+            msg = "The reserved model binding cannot be verified"
+            raise HeinzelError(msg)
+        model = factory.priced_turn_model(current, grant.model)
         costs = self._crud.costs()
         if costs.unknown_turns or costs.spent_usd:
             msg = "Existing model usage requires reconciliation before a reserved turn"
@@ -142,6 +141,8 @@ class InteractiveTurn:
             session_id,
             _turn_id(request_id),
             max_requests=limits.requests,
+            max_turn_tokens=limits.total_tokens,
+            max_turn_output_tokens=limits.output_tokens,
             message_cap=min(grant.message_cap_usd, Decimal(str(costs.message_max_usd))),
             session_cap=min(grant.session_cap_usd, Decimal(str(costs.session_max_usd))),
             owner_cap=grant.owner_cap_usd,

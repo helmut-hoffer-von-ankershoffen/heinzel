@@ -17,6 +17,7 @@ from heinzel.modules.heinzel._session_protocol import SessionRepository
 _MAX_REQUEST_ID = 128
 _MAX_CAP = Decimal(1000000000000)
 _MAX_RATE = Decimal(1000000)
+_MAX_TURN_TOKENS = 100_000_000
 
 
 class PriceEnvelope(BaseModel):
@@ -124,6 +125,8 @@ def reserve_model_spend(  # noqa: PLR0913, PLR0912, PLR0915, C901 - one atomic p
     message_cap: Decimal,
     require_initialized: bool = False,
     turn_id: str | None = None,
+    max_turn_tokens: int | None = None,
+    max_turn_output_tokens: int | None = None,
     session_cap: Decimal,
     owner_cap: Decimal,
 ) -> ReservationResult:
@@ -145,6 +148,16 @@ def reserve_model_spend(  # noqa: PLR0913, PLR0912, PLR0915, C901 - one atomic p
             msg = "Budget caps must be finite and positive"
             raise HeinzelError(msg)
     turn_id = turn_id or request_id
+    if max_turn_tokens is not None and (
+        type(max_turn_tokens) is not int or not 1 <= max_turn_tokens <= _MAX_TURN_TOKENS
+    ):
+        msg = "The approved turn token cap is invalid"
+        raise HeinzelError(msg)
+    if max_turn_output_tokens is not None and (
+        type(max_turn_output_tokens) is not int or not 1 <= max_turn_output_tokens <= _MAX_TURN_TOKENS
+    ):
+        msg = "The approved turn output token cap is invalid"
+        raise HeinzelError(msg)
     if len(turn_id) > _MAX_REQUEST_ID:
         msg = "The reservation turn identity is invalid"
         raise HeinzelError(msg)
@@ -203,6 +216,25 @@ def reserve_model_spend(  # noqa: PLR0913, PLR0912, PLR0915, C901 - one atomic p
             return ReservationResult(
                 disposition="existing", amount=amount, session_reserved=session_total, owner_reserved=owner_total
             )
+        reserved_tokens = sum(
+            record.envelope.max_requests * (record.envelope.max_input_tokens + record.envelope.max_output_tokens)
+            for record in records
+            if record.session == session_id and record.turn_id == turn_id
+        )
+        requested_tokens = envelope.max_requests * (envelope.max_input_tokens + envelope.max_output_tokens)
+        if max_turn_tokens is not None and reserved_tokens + requested_tokens > max_turn_tokens:
+            msg = "The worst-case model reservation exceeds the approved turn token cap"
+            raise HeinzelError(msg)
+        reserved_output = sum(
+            record.envelope.max_requests * record.envelope.max_output_tokens
+            for record in records
+            if record.session == session_id and record.turn_id == turn_id
+        )
+        if max_turn_output_tokens is not None and (
+            reserved_output + envelope.max_requests * envelope.max_output_tokens > max_turn_output_tokens
+        ):
+            msg = "The worst-case model reservation exceeds the approved turn output token cap"
+            raise HeinzelError(msg)
         if turn_with_new > message_cap or session_with_new > session_cap or owner_with_new > owner_cap:
             msg = "The worst-case model reservation exceeds an approved budget cap"
             raise HeinzelError(msg)

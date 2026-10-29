@@ -86,6 +86,29 @@ def build_model(model: str, key: str | None, base_url: str | None = None) -> Any
     return infer_model(model, provider_factory=provider)
 
 
+def build_reserved_openai(key: str) -> Any:  # noqa: ANN401 - optional provider
+    """Construct the pinned direct client without ambient proxies, redirects, retries or custom headers.
+
+    Raises:
+        HeinzelError: If ambient SDK headers could alter the approved request.
+    """
+    if os.environ.get("OPENAI_CUSTOM_HEADERS"):
+        msg = "Custom OpenAI headers are not supported for reserved turns"
+        raise HeinzelError(msg)
+    import httpx2  # noqa: PLC0415
+    from openai import AsyncOpenAI  # noqa: PLC0415
+    from pydantic_ai.models.openai import OpenAIResponsesModel  # noqa: PLC0415
+    from pydantic_ai.providers.openai import OpenAIProvider  # noqa: PLC0415
+
+    client = AsyncOpenAI(
+        api_key=key,
+        base_url="https://api.openai.com/v1",
+        max_retries=0,
+        http_client=httpx2.AsyncClient(trust_env=False, follow_redirects=False),
+    )
+    return OpenAIResponsesModel("gpt-4.1-mini-2025-04-14", provider=OpenAIProvider(openai_client=client))
+
+
 VENDOR_HOSTS = {
     "anthropic": "api.anthropic.com",
     "openai": "api.openai.com",
@@ -223,6 +246,22 @@ class PydanticAiAccess:
         Raises:
             HeinzelError: If identity, model configuration or credentials cannot be established safely.
         """
+        key = self._turn_key(current, expected_model)
+        return self._build(expected_model, key, self._settings.base_url)
+
+    def priced_turn_model(self, current: CurrentUser, expected_model: str) -> Any:  # noqa: ANN401 - optional provider
+        """Build the host-owned pinned direct client for the internal reserved path.
+
+        Raises:
+            HeinzelError: If the configured binding is not the pinned direct model.
+        """
+        key = self._turn_key(current, expected_model)
+        if expected_model != "openai:gpt-4.1-mini-2025-04-14" or self._settings.base_url is not None or not key:
+            msg = "This model binding is not supported for reserved turns"
+            raise HeinzelError(msg)
+        return build_reserved_openai(key)
+
+    def _turn_key(self, current: CurrentUser, expected_model: str) -> str | None:
         if current.principal() != current.owner():
             msg = "This AI credential belongs to the installation owner"
             raise HeinzelError(msg)
@@ -252,7 +291,7 @@ class PydanticAiAccess:
         elif key is None:
             msg = "The configured model credential is unavailable"
             raise HeinzelError(msg)
-        return self._build(settings.model, key, settings.base_url)
+        return key
 
     def _discover(self, key: str | None) -> str:
         """List the API's models and keep them; a note on what happened, empty when they were listed."""

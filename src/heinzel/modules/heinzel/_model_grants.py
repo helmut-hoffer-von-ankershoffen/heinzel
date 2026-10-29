@@ -36,7 +36,7 @@ class ModelGrant(BaseModel):
     access: str = Field(min_length=1, max_length=100)
     model: str = Field(min_length=1, max_length=128)
     requests: int = Field(ge=1, le=100)
-    total_tokens: int = Field(ge=1, le=1_000_000)
+    total_tokens: int = Field(ge=1, le=100_000_000)
     output_tokens: int = Field(ge=1, le=32_768)
     timeout_seconds: float = Field(gt=0, le=7200, allow_inf_nan=False)
     message_cap_usd: Decimal = Field(gt=0, allow_inf_nan=False)

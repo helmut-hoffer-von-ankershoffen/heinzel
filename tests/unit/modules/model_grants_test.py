@@ -75,6 +75,7 @@ def test_approved_owner_binding_drives_fake_transport_and_survives_restart(tmp_p
     model = OpenAIResponsesModel(
         "gpt-4.1-mini-2025-04-14", provider=OpenAIProvider(api_key="test-only", http_client=client)
     )
+    monkeypatch.setattr("heinzel.modules.ai.access._pydantic.build_reserved_openai", lambda _key: model)
 
     access = PydanticAiAccess(
         AccessSettings(model="openai:gpt-4.1-mini-2025-04-14"),
@@ -87,7 +88,7 @@ def test_approved_owner_binding_drives_fake_transport_and_survives_restart(tmp_p
     )
     with current.local("cli"):
         repo = PersonalSessionRepository(current)
-        crud = SessionCrud(repo, lambda: SessionCosts(session_max_usd=2, message_max_usd=0.2))
+        crud = SessionCrud(repo, lambda: SessionCosts(session_max_usd=2, message_max_usd=0.6))
         session = crud.new_chat("create").session_id
         crud.accept(session, MessageRequest(request_id="one", text="Hello"))
         grants = ModelGrants(crud)
@@ -97,10 +98,10 @@ def test_approved_owner_binding_drives_fake_transport_and_survives_restart(tmp_p
             access="pydantic-ai",
             model="openai:gpt-4.1-mini-2025-04-14",
             requests=2,
-            total_tokens=2000,
+            total_tokens=2_000_000,
             output_tokens=200,
             timeout_seconds=30,
-            message_cap_usd="0.2",
+            message_cap_usd="0.6",
             session_cap_usd="2",
             owner_cap_usd="3",
         )
@@ -114,15 +115,15 @@ def test_approved_owner_binding_drives_fake_transport_and_survives_restart(tmp_p
         assert grants.approve(session, "grant-one", proof) == grant
         assert grants.approve(session, "grant-one", proof) == grant
         reopened = SessionCrud(
-            PersonalSessionRepository(current), lambda: SessionCosts(session_max_usd=2, message_max_usd=0.2)
+            PersonalSessionRepository(current), lambda: SessionCosts(session_max_usd=2, message_max_usd=0.6)
         )
         assert ModelGrants(reopened).approved(session) == grant
         result = asyncio.run(InteractiveTurn(reopened).run_granted(session, "one", current, access))
         assert result.text == "A durable answer"
-        assert calls == ["/v1/responses/input_tokens", "/v1/responses"]
+        assert calls == ["/v1/responses"]
         replay = asyncio.run(InteractiveTurn(reopened).run_granted(session, "one", current, access))
         assert replay == result
-        assert calls == ["/v1/responses/input_tokens", "/v1/responses"]
+        assert calls == ["/v1/responses"]
         stranger = CallIdentity(
             Principal("u-" + "a" * 32), "api-bearer", "other", "private", frozenset({"private:read"})
         )

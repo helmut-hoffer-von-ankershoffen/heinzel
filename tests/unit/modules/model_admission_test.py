@@ -20,6 +20,23 @@ from heinzel.modules.heinzel._session_repository import PersonalSessionRepositor
 pytestmark = pytest.mark.unit
 
 
+def test_reserved_direct_client_ignores_proxy_and_endpoint_environment(monkeypatch):
+    from heinzel.modules.ai.access._pydantic import build_reserved_openai
+
+    monkeypatch.setenv("HTTPS_PROXY", "http://127.0.0.1:1")
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://example.invalid/v1")
+    monkeypatch.delenv("OPENAI_CUSTOM_HEADERS", raising=False)
+    model = build_reserved_openai("test-only")
+    assert str(model.client.base_url) == "https://api.openai.com/v1/"
+    assert model.client.max_retries == 0
+    assert model.client._client.trust_env is False
+    assert model.client._client.follow_redirects is False
+    asyncio.run(model.client.close())
+    monkeypatch.setenv("OPENAI_CUSTOM_HEADERS", "Authorization: unsafe")
+    with pytest.raises(HeinzelError, match="Custom OpenAI headers"):
+        build_reserved_openai("test-only")
+
+
 def test_configured_owner_credential_drives_real_bounded_turn_without_live_billing(tmp_path, monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "example-private-key")
     current = CurrentUser(tmp_path / "state" / "identity")
