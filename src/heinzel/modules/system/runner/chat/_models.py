@@ -159,6 +159,10 @@ class ChatSession(BaseModel):
     created: datetime = Field(description="When it was opened.")
     updated: datetime = Field(description="When it last changed.")
     context: ChatContext | None = Field(default=None, description="What it was opened about, if anything.")
+    personal_session_id: str | None = Field(default=None, description="Owner-bound durable personal session, if any.")
+    personal_owner_id: str | None = Field(
+        default=None, description="Authenticated owner of the personal session, if any."
+    )
     messages: list[ChatMessage] = Field(
         default_factory=list[ChatMessage], description="The conversation, oldest first."
     )

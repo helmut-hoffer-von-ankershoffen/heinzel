@@ -264,7 +264,7 @@ class ChatService:
                     msg = "This check-in chat request id already identifies a different time zone"
                     raise HeinzelError(msg)
                 return prior
-            return self._store.create(context)
+            return self._store.create(context, personal_session_id=session_id)
 
     def propose_schedule_control(  # noqa: PLR0913, PLR0917 - one reviewed parameter per exact schedule revision
         self,
@@ -280,6 +280,7 @@ class ChatService:
         Raises:
             HeinzelError: If this request id already identifies another exact schedule review.
         """
+        self._kernel.resolve(CheckInChatContextSource).get(durable_session)
         arguments: dict[str, JsonValue] = {
             "session_id": durable_session,
             "request_id": request_id,
@@ -296,12 +297,13 @@ class ChatService:
                     msg = "This request id already identifies a different schedule review"
                     raise HeinzelError(msg)
                 return chat
-            chat = self.open(
+            chat = self._store.create(
                 ChatContext(
                     kind="text",
                     ref=f"five-minute check-in for {durable_session}",
                     detail="Review the exact schedule action below. Confirm only if you want this schedule to run.",
-                )
+                ),
+                personal_session_id=durable_session,
             )
             call = ProposedCall(
                 session=chat.id,

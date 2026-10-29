@@ -120,15 +120,23 @@ class ChatStore(McpChatSessions):
             raise HeinzelError(msg)
         return path
 
-    def create(self, context: ChatContext | None) -> ChatSession:
+    def create(self, context: ChatContext | None, *, personal_session_id: str | None = None) -> ChatSession:
         """A new, empty session, saved; then sessions beyond the retention are removed."""
+        owner_id = self.personal_owner() if personal_session_id is not None else None
         session = secrets.token_hex(8)
         _private_dir(self.root)
         _private_dir(self.root / session)
         created = now()
         title = f"{context.kind} {context.ref}".strip() if context else "New chat"
         chat = ChatSession(
-            id=session, title=title, created=created, updated=created, context=context, costs=self.costs([])
+            id=session,
+            title=title,
+            created=created,
+            updated=created,
+            context=context,
+            costs=self.costs([]),
+            personal_session_id=personal_session_id,
+            personal_owner_id=owner_id,
         )
         self.save(chat)
         self.prune()
@@ -149,19 +157,45 @@ class ChatStore(McpChatSessions):
         if chat.id != session:
             msg = f"Chat session {session} holds another session's file; `hz chat remove {session}`."
             raise HeinzelError(msg)
-        if chat.context is not None and chat.context.kind == "check-in":
-            if self._current is None or chat.context.owner_id is None:
+        personal = chat.personal_session_id is not None or chat.personal_owner_id is not None
+        if personal or (chat.context is not None and chat.context.kind == "check-in"):
+            if self._current is None or chat.personal_session_id is None or chat.personal_owner_id is None:
                 msg = "This personal chat has no verified owner binding"
                 raise HeinzelError(msg)
-            if chat.context.owner_id != self._current.principal().id:
+            if chat.personal_owner_id != self._current.principal().id:
                 msg = "This personal chat is not available to this owner"
+                raise HeinzelError(msg)
+            if (
+                chat.context is not None
+                and chat.context.kind == "check-in"
+                and (chat.context.owner_id != chat.personal_owner_id or chat.context.ref != chat.personal_session_id)
+            ):
+                msg = "This personal chat has an inconsistent session binding"
                 raise HeinzelError(msg)
         known = {action.id for action in chat.actions}
         chat.actions += [action for action in self.proposals(session) if action.id not in known]
         for action in chat.actions:  # what the person reads is derived from what runs, never stored text
+            self._check_personal_action(chat, action.module, action.operation, action.arguments)
             action.command = describe(action.module, action.operation, action.arguments)
         chat.costs = self.costs(chat.messages)
         return chat
+
+    def _check_personal_action(
+        self, chat: ChatSession, module: str, operation: str, arguments: dict[str, JsonValue]
+    ) -> None:
+        if chat.personal_session_id is not None and (
+            module != "heinzel" or operation not in {"schedule-control", "propose-check-in"}
+        ):
+            msg = "This personal chat cannot authorize that action"
+            raise HeinzelError(msg)
+        if module != "heinzel" or ("session_id" not in arguments and operation != "schedule-control"):
+            return
+        if chat.personal_session_id is None or chat.personal_owner_id is None:
+            msg = "This personal action has no verified owner binding"
+            raise HeinzelError(msg)
+        if arguments.get("session_id") != chat.personal_session_id:
+            msg = "This personal action does not match its bound session"
+            raise HeinzelError(msg)
 
     def require(self, session_id: str) -> None:
         """Validate existence without exposing this head's private chat model."""
@@ -302,7 +336,8 @@ class ChatStore(McpChatSessions):
         Raises:
             HeinzelError: If there is no such session, or it has too many proposals.
         """
-        self.load(call.session)  # Verify a personal chat owner before opening its proposal file.
+        chat = self.load(call.session)  # Verify a personal chat owner before opening its proposal file.
+        self._check_personal_action(chat, call.module, call.operation, call.arguments)
         path = self.directory(call.session) / PROPOSALS
         descriptor = os.open(path, os.O_RDWR | os.O_CREAT | os.O_APPEND, PRIVATE_FILE)
         with os.fdopen(descriptor, "r+", encoding="utf-8") as handle:
