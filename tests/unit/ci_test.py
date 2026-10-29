@@ -130,12 +130,18 @@ def test_managed_backend_verification_gates_ci_without_leaking_into_plugin_templ
 
 @pytest.mark.parametrize("event", ["pull_request", "push"])
 @pytest.mark.parametrize("path", ["plugins/heinzel-unforeseen/src/plugin.py", "src/heinzel/kernel/public.py"])
-def test_plugin_only_changes_skip_core_work_and_keep_required_plugin_checks(tmp_path, event, path):
+def test_plugin_only_changes_skip_core_work_and_keep_required_plugin_checks(tmp_path, monkeypatch, event, path):
     workflow = yaml.safe_load((REPO / ".github/workflows/ci.yml").read_text())
     jobs = workflow["jobs"]
+    foreign_index = tmp_path / "foreign-index"
+    monkeypatch.setenv("GIT_INDEX_FILE", str(foreign_index))
+    monkeypatch.setenv("GIT_DIR", str(tmp_path / "foreign.git"))
+    environment = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
 
     def git(*args):
-        return subprocess.run(["git", *args], cwd=tmp_path, capture_output=True, text=True, check=True, timeout=30)
+        return subprocess.run(
+            ["git", *args], cwd=tmp_path, env=environment, capture_output=True, text=True, check=True, timeout=30
+        )
 
     git("init", "--quiet")
     (tmp_path / "README.md").write_text("fixture")
@@ -151,9 +157,10 @@ def test_plugin_only_changes_skip_core_work_and_keep_required_plugin_checks(tmp_
     script = jobs["changes"]["steps"][-1]["run"]
     subprocess.run(
         ["bash", "-euo", "pipefail", "-c", script], cwd=tmp_path,
-        env={**os.environ, "BASE": base, "EVENT": event, "GITHUB_OUTPUT": str(output)}, check=True, timeout=30,
+        env={**environment, "BASE": base, "EVENT": event, "GITHUB_OUTPUT": str(output)}, check=True, timeout=30,
     )  # fmt: skip
     values = dict(line.split("=", 1) for line in output.read_text().splitlines())
+    assert not foreign_index.exists()
     plugin_only = path.startswith("plugins/")
     assert values["core"] == str(not plugin_only).lower()
     assert values["plugins"] == str(plugin_only).lower()
