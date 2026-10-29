@@ -764,6 +764,11 @@ describe("personal conversation links", () => {
   it.each([
     ["paused", { paused: true }, /background daemon is paused, so check-ins are dormant/i],
     ["version mismatch", { version_mismatch: true }, /not verified running the installed Heinzel version/i],
+    [
+      "version mismatch with unknown cadence",
+      { version_mismatch: true, interval_minutes: null },
+      /not verified running the installed Heinzel version/i,
+    ],
     ["slow cadence", { interval_minutes: 10 }, /cadence is unknown or slower than five minutes/i],
     ["unknown cadence", { interval_minutes: null }, /cadence is unknown or slower than five minutes/i],
     ["stale tick", { last_tick: "2000-01-01T00:00:00Z" }, /has not reported a recent valid tick/i],

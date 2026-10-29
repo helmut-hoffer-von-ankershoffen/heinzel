@@ -90,13 +90,13 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
       ? t("durable.daemonAbsent")
       : activeDaemon.paused
         ? t("durable.daemonPaused")
-        : activeDaemon.interval_minutes === null || activeDaemon.interval_minutes > 5
-          ? t("durable.daemonCadence")
-          : !activeDaemon.loaded ||
-              !activeDaemon.version ||
-              !activeDaemon.installed_version ||
-              activeDaemon.version_mismatch
-            ? t("durable.daemonVersionNeedsCheck")
+        : !activeDaemon.loaded ||
+            !activeDaemon.version ||
+            !activeDaemon.installed_version ||
+            activeDaemon.version_mismatch
+          ? t("durable.daemonVersionNeedsCheck")
+          : activeDaemon.interval_minutes === null || activeDaemon.interval_minutes > 5
+            ? t("durable.daemonCadence")
             : activeDaemon.failing.length > 0 || staleDaemonTick
               ? t("durable.daemonNeedsCheck")
               : null
