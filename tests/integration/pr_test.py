@@ -16,7 +16,10 @@ URL = "https://github.com/example/widget/pull/7"
 # Each stub logs its arguments to $LOG/<name>; gh answers `pr list` with $PR_URL when set, as if the PR existed.
 STUBS = {
     "uv": 'printf "%s\\n" "$*" >> "$LOG/uv"',
-    "make": 'printf "%s\\n" "$*" >> "$LOG/make"',
+    "make": (
+        'printf "%s\\n" "$*" >> "$LOG/make"; git rev-parse HEAD >> "$LOG/preflight-head"; '
+        'if [ "${FAIL_MAKE:-0}" = 1 ]; then exit 1; fi'
+    ),
     "gh": f"""printf '%s\\n' "$@" > "$LOG/gh-$1-$2"
 case "$1 $2" in
   "pr list") echo "${{PR_URL:-}}" ;;
@@ -266,11 +269,13 @@ def test_builds_on_a_merge_of_main_the_branch_does_not_have(repo):
     done = repo.pr()
 
     assert done.returncode == 0, done.stderr
-    assert repo.git("rev-parse", "HEAD^") == merged, "bolt is replayed onto the remote's merge of main"
+    assert repo.git("merge-base", "--is-ancestor", merged, "HEAD") == ""
+    assert repo.git("merge-base", "--is-ancestor", "origin/main", "HEAD") == ""
+    assert repo.log("preflight-head") == [repo.git("rev-parse", "HEAD")]
     assert repo.remote() == repo.git("rev-parse", "HEAD")
 
 
-def test_rebases_onto_commits_someone_else_pushed(repo):
+def test_merges_commits_someone_else_pushed_before_preflight(repo):
     repo.commit("widget")
     repo.push()
     repo.on_remote_only(lambda: repo.commit("nut"))
@@ -280,8 +285,51 @@ def test_rebases_onto_commits_someone_else_pushed(repo):
     done = repo.pr()
 
     assert done.returncode == 0, done.stderr
-    assert repo.git("rev-parse", "HEAD^") == theirs
+    assert repo.git("merge-base", "--is-ancestor", theirs, "HEAD") == ""
+    assert repo.log("preflight-head") == [repo.git("rev-parse", "HEAD")]
     assert repo.remote() == repo.git("rev-parse", "HEAD")
+
+
+def test_preserves_local_merge_of_main_when_remote_is_already_an_ancestor(repo):
+    repo.commit("widget")
+    repo.push()
+    repo.on_main("gear")
+    merge_main(repo)
+    head = repo.git("rev-parse", "HEAD")
+
+    done = repo.pr()
+
+    assert done.returncode == 0, done.stderr
+    assert repo.remote() == head, "the existing merge must not be flattened"
+    assert repo.git("merge-base", "--is-ancestor", "origin/main", "HEAD") == ""
+
+
+def test_merge_conflict_stops_before_preflight_and_push(repo):
+    repo.commit("widget")
+    repo.push()
+    repo.on_remote_only(lambda: repo.commit("widget", "remote edit"))
+    remote = repo.remote()
+    repo.commit("widget", "local edit")
+
+    done = repo.pr()
+
+    assert done.returncode != 0
+    assert repo.remote() == remote
+    assert repo.log("make") == []
+    assert repo.log("gh-pr-create") == []
+
+
+def test_failed_preflight_stops_before_push(repo):
+    repo.commit("widget")
+    repo.push()
+    remote = repo.remote()
+    repo.commit("bolt")
+
+    done = repo.pr(FAIL_MAKE="1")
+
+    assert done.returncode != 0
+    assert repo.remote() == remote
+    assert repo.log("gh-pr-create") == []
 
 
 def test_pushes_a_branch_that_fast_forwards_after_preflight(repo):
@@ -294,7 +342,8 @@ def test_pushes_a_branch_that_fast_forwards_after_preflight(repo):
     assert done.returncode == 0, done.stderr
     assert repo.remote() == head
     assert repo.log("make") == ["--no-print-directory preflight BASE=origin/main"]
-    assert f"✓ {URL} (squash auto-merge on)" in done.stdout
+    assert f"✓ {URL} (review and checks required before merging)" in done.stdout
+    assert repo.log("gh-pr-merge") == [], "the script must not turn on auto-merge"
 
 
 @pytest.mark.parametrize(

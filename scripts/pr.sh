@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Open (or update) the pull request for this branch: preflight, push, PR to main, squash auto-merge.
+# Open (or update) the pull request for this branch: preflight, push, PR to main for review.
 # Usage: bash scripts/pr.sh "feat(scope): title"   BODY="..." or BODY_FILE=path sets the description of a new pull
 # request (default: the commit subjects); NO_PREFLIGHT=1 skips make preflight;
-# DRAFT=1 opens a draft pull request and leaves auto-merge off, for proposals a maintainer decides on.
+# DRAFT=1 opens a draft pull request for proposals a maintainer decides on.
 # Pull requests always target main: stacked pull requests merge into their base branch, not into main.
 # From a fork (a remote named `upstream` next to your `origin`), the branch goes to your fork and the pull request
-# to upstream's main; a maintainer turns on auto-merge after review.
+# to upstream's main. A maintainer reviews checks and merges after review.
 # Exit 2: nothing was pushed, and the message says what to do.
 set -euo pipefail
 
@@ -69,13 +69,17 @@ if git fetch --quiet origin "$branch" 2>/dev/null; then
     exit 2
   fi
 fi
+# Preserve merges of main and test the exact resulting tree before pushing. Rebasing an already-up-to-date
+# remote branch flattens local merges and can silently leave the pull request behind main.
+if [ -n "$remote_branch" ] && ! git merge-base --is-ancestor "$remote_branch" HEAD; then
+  git merge --quiet --no-edit "$remote_branch"
+fi
 [ -n "${NO_PREFLIGHT:-}" ] || make --no-print-directory preflight BASE="$base/main"
 
 if [ -n "${BODY_FILE:-}" ]; then body="$(cat "$BODY_FILE")"; else body="${BODY:-}"; fi
 [ -n "$body" ] || body="$(git log --reverse --format='- %s' "$base/main..HEAD")"
 uv run --quiet --script scripts/check_confidentiality.py --text "$body"
 
-[ -z "$remote_branch" ] || git rebase --quiet "$remote_branch"
 git push --quiet --set-upstream origin HEAD
 url="$(gh pr list --repo "$repo" --head "$branch" --state open --json url,headRepositoryOwner \
   --jq "map(select(.headRepositoryOwner.login == \"$owner\"))[0].url // empty")"
@@ -88,6 +92,4 @@ else
   fi
 fi
 if [ -n "${DRAFT:-}" ]; then echo "✓ $url (draft, auto-merge off)"; exit 0; fi
-if [ "$base" = upstream ]; then echo "✓ $url (from your fork; a maintainer reviews it and merges)"; exit 0; fi
-gh pr merge "$url" --squash --auto >/dev/null
-echo "✓ $url (squash auto-merge on)"
+echo "✓ $url (review and checks required before merging)"
