@@ -3,7 +3,7 @@ import { type ReactNode, useId, useLayoutEffect, useRef } from "react";
 import { t } from "@/i18n";
 import { cn } from "@/lib/utils";
 
-export type WorkspacePanel = { id: string; title: string; content: ReactNode };
+export type WorkspacePanel = { id: string; title: string; content: ReactNode; scrollable?: boolean };
 
 type Props = { panels: WorkspacePanel[]; active: string; onSelect: (id: string) => void; flowing?: boolean };
 
@@ -96,7 +96,7 @@ export function WorkspacePanels({ panels, active, onSelect, flowing = false }: P
           className={cn(
             "min-w-0",
             flowing
-              ? panel.id === "world-clock" || panel.id === "page"
+              ? panel.scrollable || panel.id === "page"
                 ? "shrink-0"
                 : "h-[min(36rem,75dvh)] shrink-0 overflow-hidden"
               : "min-h-0 flex-1 overflow-hidden",

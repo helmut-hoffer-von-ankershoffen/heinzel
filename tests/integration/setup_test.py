@@ -3,7 +3,6 @@
 import tomllib
 
 import anyio
-import heinzel_clock
 import pytest
 from fastapi.testclient import TestClient
 from mcp import Client
@@ -19,7 +18,6 @@ from heinzel.testing import MemoryBackend
 pytestmark = pytest.mark.integration
 
 runner = CliRunner()
-AT = "2026-10-23T12:00:00Z"
 
 
 class GreetSettings(ModuleSettings):
@@ -72,7 +70,7 @@ def terminal(monkeypatch, tmp_path):
 
 @pytest.fixture
 def kernel(make_kernel):
-    kernel = make_kernel(builtins=True, clock=heinzel_clock.module, greet=greet(), vault=vault())
+    kernel = make_kernel(builtins=True, greet=greet(), vault=vault())
     kernel.bind(Credentials, Credentials(MemoryBackend(), [(r.qualname, let) for r, let in _credentials(kernel)]))
     return kernel
 
@@ -86,51 +84,36 @@ def user_config() -> dict:
 
 
 def test_setup_runs_every_step_writes_through_the_services_and_ends_with_doctor(kernel, terminal):
-    answers = [
-        "",  # Set up clock now?
-        "1",  # keep Europe/Berlin only
-        "tokyo",  # add a zone
-        "",  # done adding
-        "",  # Berlin starts at 9
-        "17",  # Berlin ends at 17
-        "10",  # Tokyo starts at 10
-        "19",  # Tokyo ends at 19
-        "",  # save
-        "",  # Set up greet now?
-        "Moin",  # greeting
-        "s3cret",  # vault token, required: no skip question
-    ]
+    answers = ["", "Moin", "s3cret"]  # optional greeting, required vault token
     result = runner.invoke(build(kernel), ["setup"], input="\n".join(answers) + "\n")
     assert result.exit_code == 0, result.output
     assert user_config() == {
-        "clock": {"zones": [{"name": "Europe/Berlin", "hours": [9, 17]}, {"name": "Asia/Tokyo", "hours": [10, 19]}]},
         "greet": {"greeting": "Moin"},
     }
     assert kernel.resolve(Credentials).backend.values == {("vault", "api-token"): "s3cret"}
     output = result.output
-    assert "Still to do: clock (optional), greet (optional), vault (required)." in output
+    assert "Still to do: greet (optional), vault (required)." in output
     assert "Set up vault now?" not in output
     assert "s3cret" not in output
-    assert "Asia/Tokyo 10-19" in output
     assert output.index("Setup") < output.index("Heinzelmännchen is")  # the summary, then doctor
-    doctor = output[output.index("Heinzelmännchen is") :]
-    assert "Tokyo" in doctor  # doctor sees what was just written, not the defaults hz started with
-    assert "Los_Angeles" not in doctor
 
 
 def test_optional_steps_can_be_skipped_and_configured_ones_kept(make_kernel, terminal):
-    configured = Config(files=(), data={"greet": {"greeting": "Servus"}})
-    kernel = make_kernel(builtins=True, config=configured, clock=heinzel_clock.module, greet=greet(), vault=vault())
+    kernel = make_kernel(builtins=True, greet=greet(), vault=vault())
     kernel.bind(Credentials, Credentials(MemoryBackend(), [(r.qualname, let) for r, let in _credentials(kernel)]))
-    result = runner.invoke(build(kernel), ["setup"], input="n\n\ns3cret\n")
+    result = runner.invoke(build(kernel), ["setup"], input="n\ns3cret\n")
+    assert result.exit_code == 0, result.output
+    assert " skipped " in result.output
+    configured = Config(files=(), data={"greet": {"greeting": "Servus"}})
+    kept = make_kernel(builtins=True, config=configured, greet=greet())
+    result = runner.invoke(build(kept), ["setup"], input="\n")
     assert result.exit_code == 0, result.output
     assert "greet is already set up. Change it? [y/N]" in result.output
-    assert " skipped " in result.output
     assert " kept " in result.output
 
 
 def test_ctrl_c_keeps_finished_steps(kernel, terminal):
-    result = runner.invoke(build(kernel), ["setup"], input="n\n\nHi\n")  # input ends at the vault token
+    result = runner.invoke(build(kernel), ["setup"], input="\nHi\n")  # input ends at the vault token
     assert result.exit_code == 130
     assert user_config() == {"greet": {"greeting": "Hi"}}
     assert "interrupted" in result.output
@@ -145,20 +128,6 @@ def test_setup_with_a_module_runs_only_its_step(kernel, terminal):
     assert user_config() == {"greet": {"greeting": "Hej"}}
 
 
-def test_a_collapsed_module_keeps_its_command_and_runs_its_step_under_setup(kernel, terminal):
-    app = build(kernel)
-    times = runner.invoke(app, ["clock", "--at", AT, "--json"])
-    assert times.exit_code == 0, times.output
-    assert times.stdout.startswith("[")
-    help_text = runner.invoke(app, ["clock", "--help"]).output
-    assert "--at" in help_text
-    assert "setup" not in help_text  # the step is `hz setup clock`, never part of the module's commands
-    assert "Commands" not in help_text
-    result = runner.invoke(app, ["setup", "clock"], input="\n\n" + "\n" * 6 + "n\n")
-    assert result.exit_code == 0, result.output
-    assert "Nothing was saved." in result.output
-
-
 @pytest.mark.parametrize(
     ("name", "problem"),
     [("nope", "No module is named 'nope'."), ("system", "Module 'system' has no setup step.")],
@@ -167,7 +136,7 @@ def test_setup_names_the_modules_that_have_a_step_when_given_another(kernel, ter
     result = runner.invoke(build(kernel), ["setup", name])
     assert result.exit_code == 2
     text = " ".join(result.stderr.replace("│", " ").split())  # the error is boxed
-    assert f"{problem} Modules with one: clock, greet, vault." in text
+    assert f"{problem} Modules with one: greet, vault." in text
     assert "Usage: hz setup [OPTIONS] [MODULE]" in text
 
 
@@ -209,10 +178,6 @@ def test_without_a_terminal_setup_refuses_with_the_equivalent_commands(kernel):
     assert result.exit_code == 1
     text = " ".join(result.stderr.split())
     assert "needs a terminal" in text
-    assert (
-        """hz system config set clock.zones '[{ name = "Europe/Berlin", hours = [9, 18] }, """
-        """{ name = "America/New_York", hours = [9, 18] }, { name = "America/Los_Angeles", hours = [9, 18] }]'"""
-    ) in text
     assert "hz system config set greet.greeting '\"Hello\"'" in text
     assert "hz system credential set api-token --service vault" in text
     assert runner.invoke(build(kernel), ["setup", "greet"]).exit_code == 1
@@ -238,30 +203,11 @@ def test_mcp_and_rest_expose_no_setup(kernel):
             return {tool.name for tool in (await client.list_tools()).tools}
 
     names = anyio.run(tools)
-    assert "clock" in names
+    assert "greet_hello" in names
     assert not [name for name in names if "setup" in name]
     paths = TestClient(api.build(kernel), base_url="http://localhost").get("/openapi.json").json()["paths"]
-    assert "/clock" in paths
+    assert "/greet/hello" in paths
     assert not [path for path in paths if "setup" in path]
-
-
-INVALID_CLOCK = Config(files=(), data={"clock": {"zones": [{"name": "Asia/Tokyo", "hours": [19, 10]}]}})
-
-
-def test_invalid_settings_fail_the_step_with_a_message_not_a_traceback(make_kernel, terminal):
-    kernel = make_kernel(builtins=True, config=INVALID_CLOCK, clock=heinzel_clock.module)
-    result = runner.invoke(build(kernel), ["setup", "clock"])
-    assert result.exit_code == 1
-    assert "clock failed: its configuration is invalid: ClockSettings zones.0" in " ".join(result.output.split())
-    assert "hz system config show" in result.output
-
-
-def test_invalid_settings_without_a_terminal_are_a_configuration_error(make_kernel):
-    kernel = make_kernel(builtins=True, config=INVALID_CLOCK, clock=heinzel_clock.module)
-    result = runner.invoke(build(kernel), ["setup"])
-    assert result.exit_code == 1
-    assert "Configuration error:" in result.stderr
-    assert "Traceback" not in result.output
 
 
 def test_a_broken_configuration_file_is_an_error_line(make_kernel, terminal):

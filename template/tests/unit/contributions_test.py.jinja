@@ -1,0 +1,23 @@
+"""The starter contributes through public contracts and keeps notification policy explicit."""
+
+from unittest.mock import Mock
+
+import pytest
+from heinzel import Kernel, Notifications
+
+from [[ package_name ]] import [[ class_prefix ]]Service, [[ class_prefix ]]Settings, notify, status, today
+
+pytestmark = pytest.mark.unit
+
+
+def test_status_and_today_use_the_owning_read_operation():
+    about = [[ class_prefix ]]Service(Kernel(), [[ class_prefix ]]Settings()).about()
+    assert about.version in status(about).text
+    assert today(about).value == about.version
+
+
+@pytest.mark.parametrize("enabled", [True, False])
+def test_notification_respects_the_delivery_policy(enabled):
+    notifications = Mock(spec=Notifications)
+    notifications.emit.return_value = Mock(title="[[ plugin_name ]] is ready") if enabled else None
+    assert notify(notifications) == ("[[ plugin_name ]] is ready" if enabled else "Notifications are off")

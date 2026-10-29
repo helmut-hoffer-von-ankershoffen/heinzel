@@ -122,17 +122,6 @@ try {
     if (response.status() >= 400) result.errors.push(`${response.status()} ${new URL(response.url()).pathname}`);
   });
 
-  // This test server runs with plugins disabled. Give the optional clock a stable capability fixture so the
-  // shared-layer test can exercise its overlay without depending on installed plugins on the test machine.
-  await page.route("**/api/system/info", (route) =>
-    route.fulfill({ json: { version: "0.7.2", modules: [{ qualname: "clock" }] } }),
-  );
-  await page.route("**/api/clock", (route) =>
-    route.fulfill({
-      json: [{ zone: "Europe/Berlin", hours: [9, 18], working: true, time: "12:00:00" }],
-    }),
-  );
-
   async function audit(name) {
     // The splash fades over the app after every load; audited mid-fade, the app's text is measured through it.
     await page.locator("#splash").waitFor({ state: "hidden" });

@@ -4,7 +4,6 @@
 Output docs/assets/demo.gif
 
 Require hz
-Require jq
 
 Set Shell bash
 Set Theme "Catppuccin Mocha"
@@ -35,31 +34,6 @@ Type "clear"
 Enter
 Show
 Type "hz system info"
-Enter
-Wait
-Sleep 3s
-
-# --- plugins/heinzel-clock/src/heinzel_clock ---
-Hide
-Type "clear"
-Enter
-Show
-
-Type "hz system plugin list"
-Enter
-Wait@60s
-Sleep 1.5s
-
-Type "hz clock"
-Enter
-Wait
-Sleep 2.5s
-
-Hide
-Type "clear"
-Enter
-Show
-Type "hz clock --json | jq"
 Enter
 Wait
 Sleep 3s

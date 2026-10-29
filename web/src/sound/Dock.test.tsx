@@ -14,15 +14,15 @@ const base = { module: null, plugin: null, selected: false, effective: false, fa
 const off: SchemaSoundscapeView = { ...base, name: "off", title: "Off", kind: "off" };
 const fm: SchemaSoundscapeView = {
   ...base,
-  name: "claude-fm",
-  title: "Claude FM",
+  name: "fixture-radio",
+  title: "Fixture radio",
   kind: "stream",
   stream: {
     provider: "youtube",
-    video: "tRsQsTMvPNg",
-    embed_url: `${ORIGIN}/embed/tRsQsTMvPNg`,
+    video: "abcdefghijk",
+    embed_url: `${ORIGIN}/embed/abcdefghijk`,
     frame_origin: ORIGIN,
-    watch_url: "https://www.youtube.com/watch?v=tRsQsTMvPNg",
+    watch_url: "https://www.youtube.com/watch?v=abcdefghijk",
   },
 };
 const focus: SchemaSoundscapeView = {
@@ -46,10 +46,10 @@ function list(selected: string): SchemaSoundList {
   };
 }
 
-const api = (selected = "claude-fm") =>
+const api = (selected = "fixture-radio") =>
   mockApi({ ...shell, "/api/system/sound/list": list(selected), "/api/system/sound/use": list("off") });
 
-const player = () => screen.findByRole("region", { name: "Claude FM player" });
+const player = () => screen.findByRole("region", { name: "Fixture radio player" });
 const dockSlot = () => document.querySelector("[data-sound-dock]") as HTMLElement;
 
 async function play() {
@@ -57,7 +57,7 @@ async function play() {
   renderAt("/");
   await user.click(await screen.findByRole("button", { name: /^Choose a soundscape$/ }));
   const dialog = await screen.findByRole("dialog", { name: "Sound" });
-  await user.click(within(dialog).getByRole("button", { name: "Play Claude FM" }));
+  await user.click(within(dialog).getByRole("button", { name: "Play Fixture radio" }));
   return { user, card: await player() };
 }
 
@@ -124,14 +124,17 @@ describe("the mini-player docked in the sidebar", () => {
   it("keeps playing: the very same frame stays mounted when it docks and undocks", async () => {
     api();
     const { user, card } = await play();
-    const frame = within(card).getByTitle("Claude FM player") as HTMLIFrameElement;
+    const frame = within(card).getByTitle("Fixture radio player") as HTMLIFrameElement;
     const mounted = vi.fn();
     const watch = new MutationObserver((records) => {
       for (const record of records) for (const node of record.removedNodes) if (node.contains(frame)) mounted();
     });
     watch.observe(document.body, { childList: true, subtree: true });
     await user.click(within(card).getByRole("button", { name: "Pop the player out of the sidebar" }));
-    expect(await screen.findByRole("region", { name: "Claude FM player" })).toHaveAttribute("data-dock", "floating");
+    expect(await screen.findByRole("region", { name: "Fixture radio player" })).toHaveAttribute(
+      "data-dock",
+      "floating",
+    );
     await user.click(screen.getByRole("button", { name: "Dock the player in the sidebar" }));
     await waitFor(() => expect(card).toHaveAttribute("data-dock", "docked"));
     await user.click(screen.getByRole("button", { name: "Collapse navigation" }));
@@ -141,7 +144,7 @@ describe("the mini-player docked in the sidebar", () => {
     watch.disconnect();
     expect(mounted).not.toHaveBeenCalled(); // never removed from the page, not even for a moment
     expect(frame.isConnected).toBe(true);
-    expect(within(card).getByTitle("Claude FM player")).toBe(frame);
+    expect(within(card).getByTitle("Fixture radio player")).toBe(frame);
     expect(document.querySelectorAll("iframe")).toHaveLength(1);
   });
 
@@ -154,7 +157,7 @@ describe("the mini-player docked in the sidebar", () => {
     fireEvent.pointerDown(header, { clientX: 20, clientY: 510, pointerId: 1 });
     fireEvent.pointerMove(header, { clientX: 420, clientY: 310, pointerId: 1 });
     fireEvent.pointerUp(header, { clientX: 420, clientY: 310, pointerId: 1 });
-    const floating = await screen.findByRole("region", { name: "Claude FM player" });
+    const floating = await screen.findByRole("region", { name: "Fixture radio player" });
     await waitFor(() => expect(floating).toHaveAttribute("data-dock", "floating"));
     expect(floating.style.left).toBe("400px");
     expect(floating.style.top).toBe("300px");
@@ -182,14 +185,14 @@ describe("the mini-player docked in the sidebar", () => {
   it("keeps a docked stream in micro form with working play and pause when collapsed", async () => {
     api();
     const { user, card } = await play();
-    const frame = within(card).getByTitle("Claude FM player");
+    const frame = within(card).getByTitle("Fixture radio player");
     await user.click(screen.getByRole("button", { name: "Collapse navigation" }));
     expect(card).toHaveAttribute("data-dock", "docked");
     expect(card).not.toBeVisible();
     expect(dockSlot().style.height).toBe("");
-    await user.click(screen.getByRole("button", { name: "Pause Claude FM" }));
+    await user.click(screen.getByRole("button", { name: "Pause Fixture radio" }));
     expect(soundState().playing).toBe(false);
-    await user.click(screen.getByRole("button", { name: "Play Claude FM" }));
+    await user.click(screen.getByRole("button", { name: "Play Fixture radio" }));
     expect(soundState().playing).toBe(true);
     expect(frame.isConnected).toBe(true);
     await user.click(screen.getByRole("button", { name: "Choose a soundscape" }));
@@ -197,7 +200,7 @@ describe("the mini-player docked in the sidebar", () => {
     await user.keyboard("{Escape}");
     await user.click(screen.getByRole("button", { name: "Expand navigation" }));
     expect(await player()).toBeVisible();
-    expect(within(card).getByTitle("Claude FM player")).toBe(frame);
+    expect(within(card).getByTitle("Fixture radio player")).toBe(frame);
   });
 
   it("can start playback directly from the collapsed sidebar", async () => {
@@ -206,7 +209,7 @@ describe("the mini-player docked in the sidebar", () => {
     renderAt("/");
     await user.click(await screen.findByRole("button", { name: "Collapse navigation" }));
     expect(document.querySelector("iframe")).toBeNull();
-    await user.click(await screen.findByRole("button", { name: "Play Claude FM" }));
+    await user.click(await screen.findByRole("button", { name: "Play Fixture radio" }));
     expect(soundState().playing).toBe(true);
     expect(document.querySelector("iframe")).toBeInTheDocument();
     expect(document.querySelector("[data-dock='docked']")).not.toBeVisible();
@@ -264,7 +267,7 @@ describe("the sound popover", () => {
       within(dialog)
         .getAllByRole("radio")
         .map((r) => r.textContent),
-    ).toEqual(["Claude FMPlays from YouTube", "Die Heinzelmännchen"]);
+    ).toEqual(["Fixture radioPlays from YouTube", "Die Heinzelmännchen"]);
     expect(within(dialog).queryByRole("radio", { name: /^Off/ })).not.toBeInTheDocument();
     const settingsShortcut = within(dialog).getByRole("link", { name: "More in Settings" });
     expect(settingsShortcut).toHaveAttribute("href", "/?settings=hz");
@@ -284,8 +287,8 @@ describe("the sound popover", () => {
     renderAt("/");
     await user.click(await screen.findByRole("button", { name: "Choose a soundscape" }));
     const dialog = await screen.findByRole("dialog", { name: "Sound" });
-    await user.click(within(dialog).getByRole("radio", { name: /^Claude FM/ }));
-    await waitFor(() => expect(calls.some((c) => c.url.includes("/system/sound/use?name=claude-fm"))).toBe(true));
+    await user.click(within(dialog).getByRole("radio", { name: /^Fixture radio/ }));
+    await waitFor(() => expect(calls.some((c) => c.url.includes("/system/sound/use?name=fixture-radio"))).toBe(true));
   });
 });
 

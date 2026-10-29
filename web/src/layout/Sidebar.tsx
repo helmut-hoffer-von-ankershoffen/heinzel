@@ -23,13 +23,15 @@ import {
 } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { NavLink } from "react-router";
+import { NavLink, useLocation } from "react-router";
 import { useContracts, useExpert, useNavigation, useProfile, useSetExpert } from "@/api/queries";
 import { ICONS, StatusItems, useEffectRunner } from "@/components/Contributions";
 import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
+import { contributionPath } from "@/lib/navigation";
 import { placePopover } from "@/lib/placement";
 import { cn } from "@/lib/utils";
+import { ViewSlot } from "@/plugins/Views";
 import { InstallApp } from "@/pwa/InstallApp";
 import { registerSlot } from "@/sound/dock";
 import { SoundButton } from "@/sound/SoundControls";
@@ -38,7 +40,6 @@ import { BellButton } from "./NotificationCenter";
 import { CONTRACTS_SECTION, contractPath, railItems, sections, visibleSections } from "./navigation";
 import { useDark, useSelectedTheme } from "./ThemeTokens";
 import { useTheme } from "./theme";
-import { NATIVE_SIDEBAR, ZoneTicker } from "./ZoneTicker";
 
 const link = ({ isActive }: { isActive: boolean }) =>
   cn(
@@ -167,8 +168,8 @@ function Full({ onToggle, onSearch, onNotifications }: Omit<Props, "collapsed">)
         </ul>
         <ProviderNavigation />
       </nav>
-      <ZoneTicker />
-      <StatusItems slot="sidebar" className="pb-1" except={NATIVE_SIDEBAR} />
+      <ViewSlot slot="sidebar" />
+      <StatusItems slot="sidebar" className="pb-1" />
       {/* The docked sound player sits here, in the flow between the clock line and the account row: the full width of
           the column, never over its neighbours. Empty (and invisible) when the player isn't docked. */}
       <div ref={registerSlot} data-sound-dock className="-mx-2 shrink-0" />
@@ -254,6 +255,7 @@ function Rail({ onToggle, onSearch, onNotifications }: Omit<Props, "collapsed">)
 function ProviderNavigation({ compact = false }: { compact?: boolean }) {
   const navigation = useNavigation();
   const { run, dialog } = useEffectRunner();
+  const location = useLocation();
   const entries = (navigation.data ?? []).filter((entry) => entry.sidebar && !entry.problem);
   if (!entries.length) return null;
   return (
@@ -273,7 +275,7 @@ function ProviderNavigation({ compact = false }: { compact?: boolean }) {
             <li key={entry.id}>
               {effect.kind === "navigate" ? (
                 <NavLink
-                  to={effect.path}
+                  to={contributionPath(effect.path, location)}
                   end
                   className={compact ? railLink : link}
                   title={entry.title}

@@ -265,15 +265,6 @@ export async function verifyLayers(page, shots, screenshot) {
     await versionPane.waitFor({ state: "hidden" });
     await page.mouse.move(0, 0);
     await park();
-    const clock = page.getByRole("button", { description: "World Clock: time for the team and stakeholders" });
-    await clock.click();
-    await front(`${mode}-clock`, page.getByRole("region", { name: "World Clock: time for the team and stakeholders" }));
-    await page.keyboard.press("Escape");
-    await page.mouse.move(0, 0);
-    await park();
-    await page
-      .getByRole("region", { name: "World Clock: time for the team and stakeholders" })
-      .waitFor({ state: "hidden" });
     await page.getByRole("button", { name: "Daemon running, OK" }).click();
     await front(`${mode}-daemon`, page.getByRole("region", { name: "Daemon running" }));
     await page.keyboard.press("Escape");

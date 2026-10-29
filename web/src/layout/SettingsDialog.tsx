@@ -12,6 +12,7 @@ import { SearchField } from "@/components/ui/search-field";
 import { type MessageKey, t } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { NotificationSettings } from "@/notifications/NotificationSettings";
+import { ViewSlot } from "@/plugins/Views";
 import { SoundSettings } from "@/sound/SoundControls";
 import { AiAccessSetting } from "./AiAccessSetting";
 import { ConnectorsSection } from "./ConnectorsSection";
@@ -146,7 +147,7 @@ function Body({ report, query, setQuery, searchRef, section, onSection }: BodyPr
       type="button"
       onClick={() => go(entry.id)}
       aria-current={current === entry.id && !needle ? "page" : undefined}
-      className={cn(item(current === entry.id), entry.module === "clock" && "mt-2")}
+      className={item(current === entry.id)}
     >
       <entry.icon aria-hidden />
       {entry.title}
@@ -283,6 +284,7 @@ function Body({ report, query, setQuery, searchRef, section, onSection }: BodyPr
                 summary={page.plugin?.summary ? plainSummary(page.plugin.summary) : undefined}
               />
             )}
+            <ViewSlot slot="settings" section={page.module ?? current} />
             {(page.module || TOGGLES[current]) && (
               <>
                 <ContributionControls module={page.module ?? TOGGLES[current] ?? ""} />

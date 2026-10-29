@@ -123,7 +123,7 @@ def _view(name: str, offered: Offered, choice: Choice) -> SoundscapeView:
 
 
 class SoundService(SoundAssets):
-    """The soundscapes of the web app (ADR 0058): no sound, core soundscapes and every one a plugin offers."""
+    """The soundscapes of the web app (ADR 0058): no sound and every one a plugin offers."""
 
     def __init__(self, kernel: Kernel, editor: ConfigEditor) -> None:
         """Create the service; the kernel and the configuration editor are injected."""

@@ -1,0 +1,78 @@
+# [[ project_name ]]
+
+[[ plugin_summary ]]
+
+## First useful change
+
+[% if preset == 'minimal' %]
+The starter has one typed operation in `src/[[ package_name ]]/__init__.py` and one behavior test. Change them
+together. The same declaration becomes a CLI command, MCP tool and REST operation; services, models and UI
+contributions can be added when needed. Start with [AGENTS.md](AGENTS.md) if you are using an agent.
+[% else %]
+The contributions example demonstrates a service, settings, submodule, status/actions, navigation, a Today widget,
+notifications and a local view. Each declaration stays beside its owning feature. Start with
+[AGENTS.md](AGENTS.md); use the minimal preset when you need only one operation and test.
+[% endif %]
+
+You need Python 3.12+, git, make and uv. From this directory:
+
+```sh
+make setup
+make check-fast
+make check
+make preview
+make build
+make acceptance
+```
+
+`setup` creates the owning lock and isolated environment. The versioned developer toolkit is installed from its
+immutable official GitHub wheel; no core checkout is needed.
+[% if layout == 'collection' %]
+This directory is the complete plugin, including its small owning command wrapper. Setup creates no nested Git
+repository or workflows. Collection roots providing shortcuts also accept `NAME=[[ project_name ]]`; otherwise
+use the owning commands above. Core, contrib and the official collection provide one generic plugin release
+workflow, so adding a plugin requires no parent registration or workflow edit.
+[% else %]
+Setup initializes this standalone Git repository. Its own CI and protected release workflow are included.
+[% endif %]
+
+`check-fast` runs this plugin's lint and unit tests. `check` also runs strict types, integration tests and coverage.
+`acceptance` installs and tests the built wheel outside its source directory. Preview uses isolated application
+state; Ctrl-C stops it. Rebuild/restart preview after changing view assets. No core or unrelated plugin tests run.
+
+## Dependencies and candidate SDKs
+
+Add ordinary runtime dependencies to `project.dependencies` and development dependencies to the test group, then
+run the owning `make lock` command. It selects a compatible released core automatically. To use a candidate,
+append `CORE=/absolute/path/to/heinzel.whl` to setup, lock, check, preview or acceptance. Candidate metadata is
+validated; the local wheel path is not stored in the dependency lock.
+
+Minimal functionality needs no JavaScript. Use `hz system plugin new <directory> --preset contributions` to
+explore the complete status/action, navigation, Today widget, notification and local-view example. SDK definitions
+can be exported with `hz system plugin sdk <new-directory>`.
+
+## Release
+
+1. Run the owning checks and installed-wheel acceptance above. From this directory, advance this project's version with
+   `uv version --bump minor --frozen`
+   for its first release; later choose the appropriate patch/minor/major bump.
+2. Run `make release`. It checks/builds this plugin
+   and previews its tag and artifacts; it uploads nothing.
+3. Commit the project and lock files using a conventional commit and merge a reviewed pull request. A standalone
+   project needs its own GitHub repository with the `heinzel-plugin` topic so the catalog discovers it.
+4. For public PyPI publication, configure a protected `pypi` environment for main and a trusted publisher for this
+   distribution, repository, `release.yml` and environment. Private plugins publish to their own GitHub releases;
+   no PyPI grant is needed. `gh auth login` provides private repository access. PyPI is public.
+5. From clean, current main, run `make publish` in this directory.
+   It selects GitHub for private sources and PyPI for public sources. `REGISTRY=github` selects a public GitHub-only
+   release. The workflow verifies and publishes this plugin's exact artifacts. An existing public GitHub release
+   can later be sent to PyPI with
+   `make publish REGISTRY=pypi TAG=[[ project_name ]]/v<version>`;
+   this verifies the original provenance and uploads the same bytes without a rebuild.
+
+For a local publishing rehearsal, `uv publish --dry-run dist/*` validates artifacts without uploading. For a
+collection, point it at this project's `dist/` instead. Every published version is immutable.
+
+The [custom plugin guide](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/blob/main/docs/PLUGIN_AUTHORING.md)
+covers separate public/private repositories, catalog discovery, authenticated installation and optional private
+attestations/internal audits. No changes in core or the official plugin repository are needed.

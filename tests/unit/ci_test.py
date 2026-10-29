@@ -6,6 +6,7 @@ import io
 import os
 import re
 import stat
+import subprocess
 import tomllib
 import zipfile
 from pathlib import Path
@@ -34,6 +35,7 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
         "uv run --script scripts/check_confidentiality.py --require": "the secret must be configured in this repo",
         "unzip -l ": "asserts what the built wheel contains",
         'changed="$(git diff --name-only': "decides from the changed paths whether a pull request builds the macOS app",
+        "if compgen -G ": "selects the built core candidate or an independently released artifact for source plugins",
         "for result in $RESULTS": "the CI OK gate aggregates the results of the other jobs",
         "tar -czf notifier.tar.gz": "packs the app the macOS job built, with its executable bit, for the build job",
         "tar -xzf notifier.tar.gz": "unpacks Heinzel Notifier into the package before the wheel is built",
@@ -61,6 +63,15 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
         "uv build --package heinzel": "builds only the registered core project, never unpublished workspace plugins",
         "uv run --script scripts/pypi_release.py artifacts": "checks core metadata and complete packaged payloads",
         "python3 - <<'PY'": "rechecks hashes without checking out or running project code in the OIDC job",
+    },
+    "release.yml": {
+        'test "$REF" = refs/heads/main': "restores an original plugin artifact set with the pinned toolkit",
+        'test "$PUBLISH" != true || test "$REF" = refs/heads/main': (
+            "runs the owning Make commands' same toolkit checks, build, audit and acceptance without core work"
+        ),
+        'uv run --no-project --with "$TOOLING" python -m heinzel_plugin_tools.publishing': (
+            "publishes the original verified plugin bytes through its protected generic host workflow"
+        ),
     },
     "prepare-release.yml": {
         'if [[ ! "$INTRO"': "rejects blank dispatch input before checkout or release work",
@@ -114,6 +125,11 @@ def test_workflows_run_checks_through_make(workflow):
     assert not_through_make(workflow) == [], "run these through a make target, or add them to NOT_MAKE with a reason"
 
 
+def test_source_plugin_audits_receive_authoritative_repository_visibility():
+    workflow = yaml.safe_load((REPO / ".github/workflows/ci.yml").read_text())
+    assert workflow["jobs"]["local-plugin-check"]["env"]["PLUGIN_PRIVATE"] == "${{ github.event.repository.private }}"
+
+
 def test_managed_backend_verification_gates_ci_without_leaking_into_plugin_templates():
     """The source-only native owner is checked by required CI; plugins never install its private Node toolchain."""
     workflow = yaml.safe_load((REPO / ".github/workflows/ci.yml").read_text())
@@ -124,6 +140,63 @@ def test_managed_backend_verification_gates_ci_without_leaking_into_plugin_templ
     assert runs.index("make managed-backend-setup managed-backend-check") < runs.index("make typecheck")
     for name in ("Makefile", ".github/workflows/ci.yml.jinja"):
         assert "managed-backend" not in (REPO / "template" / name).read_text()
+
+
+@pytest.mark.parametrize("event", ["pull_request", "push"])
+@pytest.mark.parametrize("path", ["plugins/heinzel-unforeseen/src/plugin.py", "src/heinzel/kernel/public.py"])
+def test_plugin_only_changes_skip_core_work_and_keep_required_plugin_checks(tmp_path, monkeypatch, event, path):
+    workflow = yaml.safe_load((REPO / ".github/workflows/ci.yml").read_text())
+    jobs = workflow["jobs"]
+    foreign_index = tmp_path / "foreign-index"
+    monkeypatch.setenv("GIT_INDEX_FILE", str(foreign_index))
+    monkeypatch.setenv("GIT_DIR", str(tmp_path / "foreign.git"))
+    environment = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+
+    def git(*args):
+        return subprocess.run(
+            ["git", *args], cwd=tmp_path, env=environment, capture_output=True, text=True, check=True, timeout=30
+        )
+
+    git("init", "--quiet")
+    (tmp_path / "README.md").write_text("fixture")
+    git("add", ".")
+    git("-c", "user.name=Fixture", "-c", "user.email=fixture@example.com", "commit", "--quiet", "-m", "chore: init")
+    base = git("rev-parse", "HEAD").stdout.strip()
+    source = tmp_path / path
+    source.parent.mkdir(parents=True)
+    source.write_text("# changed")
+    git("add", ".")
+    git("-c", "user.name=Fixture", "-c", "user.email=fixture@example.com", "commit", "--quiet", "-m", "feat: change")
+    output = tmp_path / "outputs"
+    script = jobs["changes"]["steps"][-1]["run"]
+    subprocess.run(
+        ["bash", "-euo", "pipefail", "-c", script], cwd=tmp_path,
+        env={**environment, "BASE": base, "EVENT": event, "GITHUB_OUTPUT": str(output)}, check=True, timeout=30,
+    )  # fmt: skip
+    values = dict(line.split("=", 1) for line in output.read_text().splitlines())
+    assert not foreign_index.exists()
+    plugin_only = path.startswith("plugins/")
+    assert values["core"] == str(not plugin_only).lower()
+    assert values["plugins"] == str(plugin_only).lower()
+    assert values["contracts"] == str(not plugin_only).lower()
+    if plugin_only:
+        assert values["notifier"] == values["electron"] == "false"
+    for name in ("lint", "setup", "audit", "test", "coverage", "perf", "e2e", "build", "core-wheel"):
+        assert "needs.changes.outputs.core == 'true'" in jobs[name]["if"]
+    assert "local-plugin-check" in jobs["ci-ok"]["needs"]
+    assert "needs.changes.outputs.plugins == 'true'" in jobs["local-plugin-plan"]["if"]
+
+
+def test_plugin_compatibility_does_not_wait_for_core_native_packaging_or_test_matrix():
+    jobs = yaml.safe_load((REPO / ".github/workflows/ci.yml").read_text())["jobs"]
+    assert jobs["core-wheel"]["needs"] == "changes"
+    assert jobs["consumer-plan"]["needs"] == ["changes", "core-wheel"]
+    assert "build" not in jobs["local-plugin-check"]["needs"]
+    assert {"build", "notifier", "core-wheel", "consumer-check"} <= set(jobs["ci-ok"]["needs"])
+    upload = next(
+        step for step in jobs["core-wheel"]["steps"] if step.get("uses", "").startswith("actions/upload-artifact")
+    )
+    assert upload["with"]["name"] == "plugin-core"
 
 
 def test_electron_sandbox_archive_hash_mismatch_is_rejected():
@@ -755,6 +828,7 @@ def test_plugin_ci_has_no_core_only_jobs_and_every_need_exists():
     jobs = _generated_plugin_ci()["jobs"]
     for name, job in jobs.items():
         needs = job.get("needs", [])
+        assert "needs" not in job or needs, f"{name} has an empty needs list"
         for need in [needs] if isinstance(needs, str) else needs:
             assert need in jobs, f"{name} needs {need}"
     assert jobs["setup"]["strategy"]["matrix"]["os"] == ["ubuntu-latest", "macos-latest"]

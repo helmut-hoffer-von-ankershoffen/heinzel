@@ -80,10 +80,10 @@ jobs:
         if: needs.notifier.result == 'success'
         run: unzip -l dist/heinzel-[0-9]*.whl | grep -q 'HeinzelNotifier.app/Contents/MacOS/notifier'
       - name: Software bill of materials (CycloneDX) of the runtime dependencies
-        # --all-packages: workspace members, such as Heinzelmännchen's first-party plugins, are listed too.
+        #: workspace members, such as Heinzelmännchen's first-party plugins, are listed too.
         run: |
           name="$(uv version --color never | cut -d' ' -f1)"
-          uv export --quiet --frozen --no-dev --all-packages --format cyclonedx1.5 \
+          uv export --quiet --frozen --no-dev --format cyclonedx1.5 \
             --output-file "dist/${name}-${TAG#v}.cdx.json"
       - id: attest
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2

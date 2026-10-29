@@ -5,7 +5,7 @@ from typing import ClassVar, Literal
 from pydantic import BaseModel, Field
 
 from heinzel import Icon, ModuleSettings, NavSettings, Slot, StatusItem, Widget
-from heinzel.kernel import Badge, Effect
+from heinzel.kernel import Badge, Effect, OperationCall, ViewSlot
 
 Kind = Literal["status", "action", "widget"]
 
@@ -99,3 +99,26 @@ class NavEntry(BaseModel):
         default=None, description="The canonical sidebar effect; no new route is registered."
     )
     problem: str | None = Field(default=None, description="Why this declaration has no executable target.")
+
+
+class ViewEntry(BaseModel):
+    """One active module's checked local view and read-only data source."""
+
+    id: str = Field(description="Stable qualified module and view name.")
+    module: str = Field(description="Qualified name of the declaring module.")
+    plugin: str | None = Field(description="Owning distribution, or none for a built-in module.")
+    title: str = Field(description="Accessible display title supplied by the module.")
+    fallback: str = Field(description="Useful text shown when the view is unavailable.")
+    slot: ViewSlot = Field(description="The host surface requested by this declaration.")
+    order: int = Field(description="Lower order precedes higher order; identity breaks ties.")
+    refresh: int = Field(description="Seconds between reads of the source operation.")
+    abi: int = Field(description="Required version of the view SDK ABI.")
+    section: str | None = Field(description="Owned Settings section, when applicable.")
+    route: str | None = Field(description="Fixed local path requested by a page view.")
+    bundle: str | None = Field(description="Local immutable module URL, or none if unavailable.")
+    styles: list[str] = Field(description="Local stylesheets verified as part of the same bundle.")
+    actions: dict[str, Effect] = Field(
+        description="Named, resolved effects the view may request through the host gate."
+    )
+    source: OperationCall | None = Field(description="Validated read-only source call; none for an unusable view.")
+    problem: str | None = Field(description="Diagnostic explaining why this view cannot execute.")

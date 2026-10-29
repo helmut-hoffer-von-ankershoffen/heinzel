@@ -17,7 +17,7 @@ classifiers = [
     "Typing :: Typed",
 ]
 # Heinzelmännchen resolves to the installed Heinzelmännchen when the plugin is added with `hz system plugin add`.
-dependencies = ["heinzel>=[[ heinzel_version ]],<1"]
+dependencies = ["heinzel>=[[ heinzel_version ]],<[[ heinzel_upper_bound ]]"]
 
 [project.entry-points."heinzel.modules"]
 [[ plugin_name ]] = "[[ package_name ]]"
@@ -37,3 +37,7 @@ packages = ["src/[[ package_name ]]"]
 
 [tool.uv]
 required-version = ">=0.13.0"
+
+[tool.heinzel.plugin]
+requires = ["core:plugin-api@1"]
+provides = []

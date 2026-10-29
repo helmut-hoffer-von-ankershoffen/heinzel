@@ -1,10 +1,13 @@
-"""The README's PyPI install, use and uninstall instructions work, run verbatim on macOS and Linux.
+"""The README's install, use and uninstall instructions work against the candidate core artifact.
 
 Every fenced block right after a `<!-- docs-test -->` marker is run with bash in a sandbox, in order, except that the
-block that uninstalls runs last. Needs network (PyPI) and `uv`. `hz system changelog --newer` asks GitHub: CI passes its
+block that uninstalls runs last. A local core-only profile exercises the installer without real plugins.
+Needs network (PyPI dependencies) and `uv`. `hz system changelog --newer` asks GitHub: CI passes its
 read-only `GITHUB_TOKEN`; without a token a rate-limited answer skips the test with the reason instead of failing it.
 """
 
+import hashlib
+import json
 import os
 import re
 import subprocess
@@ -29,15 +32,45 @@ def documented_blocks(path: Path) -> list[str]:
 def test_the_readme_has_tested_blocks():
     blocks = documented_blocks(REPO / "README.md")
     assert len(blocks) == 3
-    assert "uv tool install heinzel" in blocks[0]
+    assert "uvx --from heinzel hz-install" in blocks[0]
     assert "git+https://github.com/helmut-hoffer-von-ankershoffen/heinzel" not in blocks[0]
-    assert "hz system plugin add clock" in blocks[1]
+    assert "hz system info" in blocks[1]
+    assert "hz system plugin add" not in blocks[1]
     assert UNINSTALL in blocks[-1]
 
 
 def test_readme_instructions(tmp_path):
+    artifacts = tmp_path / "artifacts"
+    subprocess.run(["uv", "build", "--wheel", "--out-dir", str(artifacts)], cwd=REPO, check=True, timeout=120)
+    [wheel] = artifacts.glob("heinzel-*.whl")
+    from heinzel import __version__
+
+    profile = tmp_path / "standard.json"
+    profile.write_text(
+        json.dumps(
+            {
+                "format": 1,
+                "core_version": __version__,
+                "sdk": 1,
+                "artifacts": [
+                    {
+                        "name": "heinzel",
+                        "version": __version__,
+                        "filename": wheel.name,
+                        "sha256": hashlib.sha256(wheel.read_bytes()).hexdigest(),
+                        "url": str(wheel),
+                    }
+                ],
+            }
+        )
+    )
+    overrides = tmp_path / "candidate.txt"
+    overrides.write_text(f"heinzel @ {wheel.as_uri()}\n")
     env = {
-        **os.environ,
+        **{key: value for key, value in os.environ.items() if not key.startswith("HZ_")},
+        "UV_OVERRIDE": str(overrides),
+        "HZ_APP_PROFILE": str(profile),
+        "HZ_SYSTEM_CREDENTIAL__BACKEND": "environment",
         "UV_TOOL_DIR": str(tmp_path / "tools"),
         "UV_TOOL_BIN_DIR": str(tmp_path / "bin"),
         "PATH": f"{tmp_path / 'bin'}{os.pathsep}{os.environ['PATH']}",
