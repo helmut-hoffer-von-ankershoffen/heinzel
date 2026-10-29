@@ -1,6 +1,6 @@
 """Install Heinzelmännchen with `uv tool install`, add this plugin from the checkout, use it. Needs network.
 
-Set HZ_SPEC to test against another Heinzelmännchen, e.g. `HZ_SPEC=git+https://github.com/[[ heinzel_owner ]]/heinzel@main`.
+Set HZ_SPEC to a compatible built Heinzelmännchen wheel. Shared tooling supplies PLUGIN_TEST_CORE/PLUGIN_TEST_WHEEL.
 """
 
 import json
@@ -14,7 +14,7 @@ import pytest
 pytestmark = [pytest.mark.e2e, pytest.mark.timeout(300)]
 
 REPO = Path(__file__).resolve().parents[2]
-HZ_SPEC = os.environ.get("HZ_SPEC", "heinzel==[[ heinzel_version ]]")
+HZ_SPEC = os.environ.get("PLUGIN_TEST_CORE") or os.environ.get("HZ_SPEC", "heinzel==[[ heinzel_version ]]")
 
 
 @pytest.fixture(scope="module")
@@ -36,13 +36,14 @@ def hz(tmp_path_factory):
         assert result.returncode == 0, f"hz {' '.join(args)} failed:\n{result.stdout}\n{result.stderr}"
         return result.stdout
 
-    subprocess.run(
-        [uv, "build", "--wheel", "--project", str(REPO), "--out-dir", str(root / "dist")],
-        check=True,
-        env=env,
-        timeout=240,
-    )
-    wheel = next((root / "dist").glob("*.whl"))
+    if selected := os.environ.get("PLUGIN_TEST_WHEEL"):
+        wheel = Path(selected)
+    else:
+        subprocess.run(
+            [uv, "build", "--wheel", "--project", str(REPO), "--out-dir", str(root / "dist")],
+            check=True, env=env, timeout=240,
+        )
+        wheel = next((root / "dist").glob("*.whl"))
     subprocess.run([uv, "tool", "install", "--force", HZ_SPEC, "--with", str(wheel)], check=True, env=env, timeout=240)
     return run
 

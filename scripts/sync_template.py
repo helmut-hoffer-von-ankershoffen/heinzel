@@ -176,6 +176,7 @@ def ci_workflow() -> str:
         text,
     )
     # The core's CI covers every platform of the shared scripts/tools.toml; a plugin, possibly private and paying for
+    text = text.replace("    needs: []\n", "")
     # its minutes, sets up on the two most contributors use.
     text = re.sub(
         r"(\n  setup:\n.*?\n        os: )\$\{\{ fromJSON[^\n]*",

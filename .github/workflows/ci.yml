@@ -494,7 +494,7 @@ jobs:
           make --no-print-directory -C .plugin-tooling check NAME="$PLUGIN" CORE="$CORE"
           make --no-print-directory -C .plugin-tooling audit NAME="$PLUGIN" CORE="$CORE"
           make --no-print-directory -C .plugin-tooling build NAME="$PLUGIN"
-          if [ -d "$DIRECTORY/tests/browser" ] || [ -d "$DIRECTORY/tests/acceptance" ]; then
+          if [ -d "$DIRECTORY/tests/browser" ] || [ -d "$DIRECTORY/tests/acceptance" ] || [ -d "$DIRECTORY/tests/e2e" ]; then
             make --no-print-directory -C .plugin-tooling acceptance NAME="$PLUGIN" CORE="$CORE"
           fi
 

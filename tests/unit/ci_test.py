@@ -795,6 +795,7 @@ def test_plugin_ci_has_no_core_only_jobs_and_every_need_exists():
     jobs = _generated_plugin_ci()["jobs"]
     for name, job in jobs.items():
         needs = job.get("needs", [])
+        assert "needs" not in job or needs, f"{name} has an empty needs list"
         for need in [needs] if isinstance(needs, str) else needs:
             assert need in jobs, f"{name} needs {need}"
     assert jobs["setup"]["strategy"]["matrix"]["os"] == ["ubuntu-latest", "macos-latest"]
