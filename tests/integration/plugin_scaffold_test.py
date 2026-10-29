@@ -49,6 +49,7 @@ def test_dependency_validator_refuses_stale_metadata_without_rewriting_its_lock(
     project = tmp_path / "pyproject.toml"
     source = '[project]\nname="harbor-fixture"\nversion="0.1.0"\nrequires-python=">=3.12"\n'
     project.write_text(source)
+    # This new, synthetic project must create its own lock; the repository stays frozen in CI.
     created = subprocess.run(
         [uv, "lock", "--offline"],
         cwd=tmp_path,
