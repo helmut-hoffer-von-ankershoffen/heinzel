@@ -4,6 +4,7 @@ import os
 import shutil
 import sys
 from pathlib import Path
+from socket import gethostname
 
 from pydantic import BaseModel, Field
 from rich.console import RenderableType
@@ -67,6 +68,7 @@ def doctor(kernel: Kernel) -> HealthReport:
 def core(kernel: Kernel, settings: Settings) -> list[Check]:
     """Heinzelmännchen's own checks: Python, uv, the installation, plugins and its directories."""
     checks = [
+        Check(name="hostname", status=Status.UP, detail=gethostname()),
         Check(name="python", status=Status.UP, detail=sys.version.split()[0])
         if sys.version_info >= MINIMUM_PYTHON
         else Check(name="python", status=Status.DOWN, detail=f"{sys.version.split()[0]} is too old", fix="Use 3.12+"),

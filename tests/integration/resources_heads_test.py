@@ -22,10 +22,12 @@ def test_resource_sample_is_shared_by_all_heads(make_kernel, monkeypatch):
     monkeypatch.setattr("heinzel.modules.system.resource.psutil.virtual_memory", lambda: SimpleNamespace(percent=40))
     monkeypatch.setattr("heinzel.modules.system.resource.psutil.getloadavg", lambda: (21.0, 19.0, 18.0))
     monkeypatch.setattr("heinzel.modules.system.resource.psutil.cpu_count", lambda: 10)
+    monkeypatch.setattr("heinzel.modules.system.resource.gethostname", lambda: "workshop")
     kernel = make_kernel(builtins=True)
     result = CliRunner().invoke(build(kernel), ["system", "resource", "--json"])
     assert result.exit_code == 0, result.output
     expected = json.loads(result.stdout)
+    assert expected["hostname"] == "workshop"
     client = TestClient(api.build(kernel), base_url="http://localhost")
     assert client.get("/system/resource").json() == expected
     token = "t" * 43
@@ -43,3 +45,14 @@ def test_resource_sample_is_shared_by_all_heads(make_kernel, monkeypatch):
 
     assert anyio.run(read) == expected
     assert expected["load_1m"] > 2 * expected["logical_cores"]
+
+
+def test_doctor_reports_the_server_hostname_in_json_and_text(make_kernel, monkeypatch):
+    monkeypatch.setattr("heinzel.modules.system.doctor.gethostname", lambda: "workshop")
+    kernel = make_kernel(builtins=True)
+    app = build(kernel)
+    report = CliRunner().invoke(app, ["system", "doctor", "--json"])
+    checks = json.loads(report.stdout)["checks"]["system.doctor"]
+    assert {"name": "hostname", "status": "up", "detail": "workshop", "fix": ""} in checks
+    report = CliRunner().invoke(app, ["system", "doctor"])
+    assert "workshop" in report.stdout
