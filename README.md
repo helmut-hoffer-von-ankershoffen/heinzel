@@ -324,7 +324,9 @@ and runs as `hz setup greet` and as part of `hz setup`
 
 That is `hz greet hello --name Ada` in the CLI, with `--json`, help text, argument validation and
 `HZ_GREET__GREETING` — and the same operation is an MCP tool and a REST endpoint. Scaffold a plugin repository
-with all the tooling, CI/CD and agent setup: `hz system plugin new ../heinzel-mine`. A complete plugin to copy from:
+with a minimal operation, behavior test and owning delivery commands: `hz system plugin new ../heinzel-mine`.
+The [author guide](docs/PLUGIN_AUTHORING.md) covers separate public/private repositories, dependencies, testing and
+publishing; `--preset contributions` adds the complete UI and notification example. A complete plugin to learn from:
 [plugins/heinzel-clock](https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/tree/main/plugins/heinzel-clock) (one module, settings, an operation, a health check and a setup step). See
 [ARCHITECTURE.md](docs/ARCHITECTURE.md).
 

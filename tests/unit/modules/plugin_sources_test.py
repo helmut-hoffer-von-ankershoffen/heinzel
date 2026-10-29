@@ -151,6 +151,19 @@ def test_gh_timing_out_is_unreachable(monkeypatch):
         _sources.github_getter(None)("repos/o/x")
 
 
+def test_an_installed_but_unsigned_gh_falls_back_to_public_https(monkeypatch):
+    monkeypatch.setattr(_sources.shutil, "which", lambda name: "/opt/bin/gh")
+    monkeypatch.setattr(
+        _sources.subprocess,
+        "run",
+        lambda command, **_: subprocess.CompletedProcess(command, 4, "", "To get started, run: gh auth login"),
+    )
+    requests = []
+    monkeypatch.setattr(_sources, "get_json", lambda url, *_: requests.append(url) or {"public": True})
+    assert _sources.github_getter(None)("repos/example/heinzel-harbor") == {"public": True}
+    assert requests == ["https://api.github.com/repos/example/heinzel-harbor"]
+
+
 def test_without_gh_public_repositories_are_read_over_https(monkeypatch):
     requests = []
 

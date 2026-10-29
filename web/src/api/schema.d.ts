@@ -1439,7 +1439,8 @@ export interface paths {
          * @description Find plugins to install: first-party ones, and community ones by querying the GitHub API.
          *
          *     Configured repositories are scanned for plugin projects; topic heinzel-plugin discovers external repositories.
-         *     GH_TOKEN or GITHUB_TOKEN raises the rate limit. Catalog outages retain last successfully read metadata.
+         *     Your GitHub login also reads private catalogs; authenticated heads only. GH_TOKEN or GITHUB_TOKEN raises the
+         *     rate limit. Catalog outages retain last successfully read metadata.
          *     PyPI has no keyword search, so it is not queried. Community
          *     plugins are not reviewed by the Heinzelmännchen maintainers, and every plugin runs with your rights.
          */

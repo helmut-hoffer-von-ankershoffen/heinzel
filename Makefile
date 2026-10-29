@@ -98,7 +98,8 @@ fix: ## Fix what tools can fix: lockfile, formatting, lint autofixes, generated 
 		"&demo=uv run --script scripts/demo_tape.py" \
 		"&attributions=uv run --quiet --script scripts/attributions.py" \
 		"format=uv run ruff format --quiet ." \
-		"ruff=uv run ruff check --fix --quiet --exit-zero ."
+		"ruff=uv run ruff check --fix --quiet --exit-zero ." \
+		"format-final=uv run ruff format --quiet ."
 	@git status --short
 
 lint: ## Check formatting, lint, architecture contracts and workflows
@@ -107,6 +108,7 @@ lint: ## Check formatting, lint, architecture contracts and workflows
 format: ## Format and autofix
 	uv run ruff format .
 	uv run ruff check --fix .
+	uv run ruff format .
 
 typecheck: ## Type-check with mypy and pyright (both strict)
 	$(STEPS) "mypy=uv run mypy" "&pyright=uv run pyright" $(WEB_TYPES) $(MANAGED_TYPES)

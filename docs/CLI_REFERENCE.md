@@ -2349,6 +2349,9 @@ $ hz system plugin new [OPTIONS] {destination}
 * `--data <str>`: Answer a template question as key=value, e.g. plugin_name=crm; repeat for each.
 * `--template <str>`: Copier template: a git URL, gh:owner/repo or a local path.  [default: gh:helmut-hoffer-von-ankershoffen/heinzel]
 * `--ref <str>`: Template version; defaults to this Heinzelmännchen&#x27;s release tag.
+* `--defaults / --no-defaults`: Use template defaults without interactive questions.  [default: no-defaults]
+* `--layout <standalone|collection>`: A standalone repository, or only owning files inside a plugin collection.  [default: standalone]
+* `--preset <minimal|contributions>`: One operation and test, or the complete UI and notification example.  [default: minimal]
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.

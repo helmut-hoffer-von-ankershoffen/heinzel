@@ -316,7 +316,7 @@ Find, add, remove, enable, disable, list and scaffold plugins.
 | List plugin changes made on this machine, oldest first: what was installed, from where, by whom. | `hz system plugin history` | `system_plugin_history` | — | `GET /api/system/plugin/history` |  | expert |
 | Scaffold a plugin repository from the Heinzelmännchen template, asking for answers not given. | `hz system plugin new` | — | — | — | yes | expert |
 | Export the versioned plugin view SDK from this installation, without a core checkout. | `hz system plugin sdk` | — | — | — | yes | expert |
-| Find plugins to install: first-party ones, and community ones by querying the GitHub API. | `hz system plugin search` | `system_plugin_search` | `GET /system/plugin/search` | `GET /api/system/plugin/search` |  | expert |
+| Find plugins to install: first-party ones, and community ones by querying the GitHub API. | `hz system plugin search` | `system_plugin_search` | — | `GET /api/system/plugin/search` |  | expert |
 
 Settings: [`[system.plugin]`](CONFIGURATION.md#systemplugin).
 

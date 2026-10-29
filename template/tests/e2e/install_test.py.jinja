@@ -27,10 +27,10 @@ def hz(tmp_path_factory):
     env.pop("VIRTUAL_ENV", None)
     uv = shutil.which("uv")
     assert uv, "uv is not on PATH: https://docs.astral.sh/uv/"
-    subprocess.run([uv, "tool", "install", HZ_SPEC], check=True, env=env, timeout=240)
+    subprocess.run([uv, "tool", "install", HZ_SPEC], check=True, env=env, timeout=240)  # noqa: S603 - resolved uv, explicit candidate artifact
 
     def run(*args: str) -> str:
-        result = subprocess.run(
+        result = subprocess.run(  # noqa: S603 - isolated installed hz, test-controlled arguments
             [str(root / "bin" / "hz"), *args], capture_output=True, text=True, check=False, env=env, timeout=240
         )
         assert result.returncode == 0, f"hz {' '.join(args)} failed:\n{result.stdout}\n{result.stderr}"
@@ -39,14 +39,16 @@ def hz(tmp_path_factory):
     if selected := os.environ.get("PLUGIN_TEST_WHEEL"):
         wheel = Path(selected)
     else:
-        subprocess.run(
+        subprocess.run(  # noqa: S603 - resolved uv, owning source and output paths
             [uv, "build", "--wheel", "--project", str(REPO), "--out-dir", str(root / "dist")],
             check=True,
             env=env,
             timeout=240,
         )
         wheel = next((root / "dist").glob("*.whl"))
-    subprocess.run([uv, "tool", "install", "--force", HZ_SPEC, "--with", str(wheel)], check=True, env=env, timeout=240)
+    subprocess.run(  # noqa: S603 - resolved uv, explicit core and owning wheel
+        [uv, "tool", "install", "--force", HZ_SPEC, "--with", str(wheel)], check=True, env=env, timeout=240
+    )
     return run
 
 

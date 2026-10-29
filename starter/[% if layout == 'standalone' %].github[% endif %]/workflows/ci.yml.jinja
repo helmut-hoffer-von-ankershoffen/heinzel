@@ -1,0 +1,31 @@
+name: Plugin CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions: {}
+concurrency:
+  group: plugin-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  plugin:
+    name: CI OK
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    env:
+      PLUGIN_PRIVATE: ${{ github.event.repository.private }}
+      TOOLING: heinzel-plugin-tools @ https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/releases/download/tools-v0.1.1/heinzel_plugin_tools-0.1.1-py3-none-any.whl#sha256=a76e8891faf91ce59964d02870ce32c894a4492518453c27aa6a7c5f91c40647
+      CORE: ${{ vars.CORE_ARTIFACT }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - name: Check and test only this plugin's built artifact
+        run: uv run --no-project --with "$TOOLING" hz-plugin verify-release --core "$CORE" --output release-dist
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: plugin-artifacts
+          path: release-dist/*

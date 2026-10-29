@@ -1,0 +1,11 @@
+"""The operation's behavior, without a head or a core checkout."""
+
+import pytest
+
+from [[ package_name ]] import hello
+
+pytestmark = pytest.mark.unit
+
+
+def test_hello_uses_the_supplied_name():
+    assert hello("Ada") == "Hello, Ada!"

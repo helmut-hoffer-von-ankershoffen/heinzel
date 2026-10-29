@@ -4,8 +4,9 @@ A plugin owns its operations, interface, assets, tests and release. The host ren
 versioned local views through public contracts, without imports or named branches for concrete plugins.
 [ADR 0094](adr/0094-plugins-own-features-and-independent-delivery.md) defines the 0.9 boundary and independent delivery.
 
-Start with `hz system plugin new --help`, then scaffold a plugin with the CLI. Use the generated repository's
-`make setup`, `make preview`, `make check` and `make test-e2e`. These use an installed compatible core artifact. A distribution is named `heinzel-<name>`, its Python package
+Follow [Create and ship a custom plugin](PLUGIN_AUTHORING.md) for the complete standalone public/private or
+collection workflow. Start with `hz system plugin new --help`, then scaffold a plugin with the CLI. Use the generated
+repository's `make setup`, `make preview`, `make check` and `make acceptance`. These use an installed compatible core artifact. A distribution is named `heinzel-<name>`, its Python package
 `heinzel_<name>`, and its entry point belongs to `heinzel.modules`. See [the architecture](ARCHITECTURE.md#plugins).
 
 ## Choose the smallest extension
@@ -147,7 +148,7 @@ The full asset-set contract remains proposed in ADR 0065. Semantic avatar layers
 
 ## Local view packaging and independent work
 
-The generated starter has a small static view, SDK types, status, navigation, a Today widget and an explicit
+The `--preset contributions` starter has a small static view, SDK types, status, navigation, a Today widget and an explicit
 notification operation. It needs no JavaScript bundler. A richer plugin supplies its own frontend build and packages
 the resulting ES module and assets in its wheel. Export current SDK definitions with
 `hz system plugin sdk <new-directory>`. The host supplies one React runtime; bundles use the exported React bridges

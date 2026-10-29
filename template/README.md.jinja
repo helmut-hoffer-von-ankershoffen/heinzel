@@ -49,7 +49,9 @@ the site the Docs workflow publishes on release.
 ## Develop
 
 ```bash
+git init -b main # only for this standalone repository, never inside a plugin collection
 make setup     # everything the build needs, and the git hooks; you need only git, make and uv
+make fix       # create the lock and generated plugin reference
 make doctor    # what is missing, and the command that fixes it
 make preview   # this plugin and its installed core, with isolated app state
 make check     # lint, types, unit + integration tests
@@ -68,7 +70,7 @@ The modules live in `src/[[ package_name ]]/`. Read [AGENTS.md](AGENTS.md) and
 
 ## Release
 
-`make release` (or Actions → **Prepare release** → Run workflow) opens a release pull request on GitHub that merges itself
+`make release INTRO="Describe this plugin release."` (or Actions → **Prepare release** → Run workflow) opens a release pull request on GitHub that merges itself
 once CI is green; merging tags and publishes. The version comes
 from conventional commits, the changelog from git-cliff; the GitHub release carries the wheel, the sdist and
 provenance attestations. `main` changes only through pull requests.

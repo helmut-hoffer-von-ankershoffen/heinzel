@@ -56,7 +56,10 @@ def service_for(make_kernel, prefix, runner=None, kernel=None, settings=None):
     if kernel is None:
         old = ModuleRecord("old", Module("old", "An old plugin."), Origin("heinzel-old", "1.0.0", builtin=False))
         kernel = Kernel(make_kernel().settings, [old])
-    return PluginService(kernel, installation, settings or PluginSettings(github_token=None, catalog_sources=[]))
+    configured = settings or PluginSettings(github_token=None, catalog_sources=[])
+    service = PluginService(kernel, installation, configured)
+    service.github_api = lambda path: _sources.get_json(f"https://api.github.com/{path}", configured.github_token, 10)
+    return service
 
 
 def test_installed_plugins_keep_repository_visibility_from_install_history(make_kernel, tmp_path):
@@ -198,11 +201,26 @@ def test_new_pins_the_template_and_passes_answers(make_kernel, tmp_path, monkeyp
     assert service.new(tmp_path / "p", data=["plugin_name=crm"], ref="v1.2.3") == tmp_path / "p"
     [(command, env)] = calls
     assert command == [
-        "uv", "tool", "run", "copier", "copy", "--vcs-ref", "v1.2.3", "--data", "plugin_name=crm",
+        "uv", "tool", "run", "copier", "copy", "--vcs-ref", "v1.2.3",
+        "--data", "layout=standalone", "--data", "preset=minimal", "--data", "plugin_name=crm",
         "gh:helmut-hoffer-von-ankershoffen/heinzel", str(tmp_path / "p"),
     ]  # fmt: skip
     assert "HZ_CREDENTIAL_EXAMPLE_API_TOKEN" not in env  # copier never needs a module's credentials
     assert env["PATH"] == os.environ["PATH"]
+
+
+def test_new_can_scaffold_a_collection_for_an_unattended_agent(make_kernel, tmp_path, monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        "subprocess.run",
+        lambda command, check, env: calls.append(command) or subprocess.CompletedProcess(command, 0),
+    )
+    service_for(make_kernel, tmp_path).new(tmp_path / "p", defaults=True, layout="collection", preset="contributions")
+    [command] = calls
+    assert "--defaults" in command
+    assert "layout=collection" in command
+    assert "preset=contributions" in command
+    assert "git" not in command
 
 
 def test_new_reports_copier_failures(make_kernel, tmp_path, monkeypatch):
@@ -211,10 +229,19 @@ def test_new_reports_copier_failures(make_kernel, tmp_path, monkeypatch):
         service_for(make_kernel, tmp_path).new(tmp_path / "p")
 
 
+def test_collection_governance_stays_in_the_parent_repository(make_kernel, tmp_path):
+    with pytest.raises(HeinzelError, match="reuse repository governance"):
+        service_for(make_kernel, tmp_path).new(tmp_path / "p", layout="collection", preset="governed")
+    assert not (tmp_path / "p").exists()
+
+
 def test_short_names_resolve_only_through_catalog_metadata(make_kernel, tmp_path, github):
     github.answer = {"items": [repository("heinzel-unforeseen", 1)]}
     service = service_for(make_kernel, tmp_path)
-    service.github_api = raising(OSError("offline"))
+    catalog = service.github_api
+    service.github_api = lambda path: (
+        catalog(path) if "search/" in path or "/contents/" in path else raising(OSError("offline"))(path)
+    )
     # Catalog membership selects a source, independent of the core checkout or core version.
     candidate = service.candidate("unforeseen")
     assert candidate.requirement.startswith("heinzel-unforeseen @ git+https://github.com/someone/heinzel-unforeseen")
@@ -270,7 +297,7 @@ class FakeGitHub:
 @pytest.fixture
 def github(monkeypatch):
     fake = FakeGitHub()
-    monkeypatch.setattr(_service, "get_json", fake.get_json)
+    monkeypatch.setattr(_sources, "get_json", fake.get_json)
     for name in ("GH_TOKEN", "GITHUB_TOKEN", "HZ_SYSTEM_PLUGIN__GITHUB_TOKEN"):
         monkeypatch.delenv(name, raising=False)
     return fake
@@ -1014,7 +1041,7 @@ class MonorepoGitHub(FakeGitHub):
 def monorepo(monkeypatch, files):
     repo = repository("heinzel-contrib", 4) | {"full_name": "someone/heinzel-contrib", "default_branch": "main"}
     fake = MonorepoGitHub(repo, files)
-    monkeypatch.setattr(_service, "get_json", fake.get_json)
+    monkeypatch.setattr(_sources, "get_json", fake.get_json)
     return fake
 
 
@@ -1033,6 +1060,40 @@ def test_stale_manifest_cannot_hide_new_plugin_directories(make_kernel, tmp_path
     [plugin] = service_for(make_kernel, tmp_path).search().plugins
     assert plugin.name == "heinzel-unforeseen"
     assert plugin.install_spec.endswith("#subdirectory=plugins/unforeseen")
+
+
+def test_private_external_catalog_uses_the_authenticated_github_gateway(make_kernel, tmp_path, monkeypatch):
+    service = service_for(make_kernel, tmp_path)
+    paths = []
+    repo = repository("heinzel-harbor", 0) | {"full_name": "someone/heinzel-harbor", "private": True}
+
+    def authenticated(path):
+        paths.append(path)
+        if path.startswith("search/repositories?"):
+            return {"items": [repo]}
+        if path.endswith("/plugins"):
+            msg = "No collection directory"
+            raise LookupError(msg)
+        assert path == "repos/someone/heinzel-harbor/contents/pyproject.toml"
+        return plugin_project("heinzel-harbor")
+
+    service.github_api = authenticated
+    monkeypatch.setattr(_sources, "get_json", lambda *_: pytest.fail("Do not bypass the authenticated gateway"))
+    [plugin] = service.search().plugins
+    assert plugin.private_repository is True
+    assert plugin.install_spec == "heinzel-harbor @ git+https://github.com/someone/heinzel-harbor"
+    assert len(paths) == 3
+    with pytest.raises(ValueError, match="GitHub API"):
+        service._catalog_json("https://other.example/repos/someone/heinzel-harbor")
+
+
+def test_malformed_file_retains_cached_metadata_instead_of_reporting_a_removed_file(make_kernel, tmp_path):
+    service = service_for(make_kernel, tmp_path)
+    service.github_api = lambda _: {"encoding": "base64"}
+    assert (
+        service._file("https://api.github.com/repos/example/plugins/contents/pyproject.toml", missing_is_empty=True)
+        is None
+    )
 
 
 def test_search_discovers_monorepo_plugins_without_a_manifest(make_kernel, tmp_path, monkeypatch):
@@ -1116,7 +1177,7 @@ def test_new_catalog_directory_needs_no_core_registration(make_kernel, tmp_path,
         },
     )
     fake.answer = {"items": []}  # configured sources work without the topic
-    monkeypatch.setattr(_service, "get_json", fake.get_json)
+    monkeypatch.setattr(_sources, "get_json", fake.get_json)
     service = service_for(
         make_kernel, tmp_path, settings=PluginSettings(github_token=None, catalog_sources=[full_name])
     )

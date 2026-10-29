@@ -75,7 +75,9 @@ src/heinzel/modules/  built-in modules: a package declaring `module = Module(nam
 plugins/              optional local plugin source directory, discovered from project metadata only; public
                       plugins live in heinzel-plugins and build/test/release independently (ADR 0094).
                       Core never imports, installs or tests concrete plugin implementations.
-template/             copier template for plugins. Shared files are symlinks into this repo; its Makefile, CI,
+starter/              minimal/contributions plugin templates; docs/PLUGIN_AUTHORING.md covers standalone public
+                      and private repos and collection authors. Test against installed SDK/toolkit artifacts.
+template/             retained governed copier template. Shared files are symlinks into this repo; its Makefile, CI,
                       pyproject, SECURITY.md and badges are generated (`make fix`), so edit the originals.
 agent-skills/         the user-facing Claude Code plugin (skills hz-init, hz, hz-uninstall)
 docs/                 MODULES.md, CLI_REFERENCE.md, CONFIGURATION.md and plugins/ (a page per plugin, ADR 0082) are

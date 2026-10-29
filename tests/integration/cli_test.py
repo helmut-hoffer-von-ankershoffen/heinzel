@@ -346,7 +346,9 @@ def fake_github(monkeypatch, answer):
 
     for name in ("GH_TOKEN", "GITHUB_TOKEN", "HZ_SYSTEM_PLUGIN__GITHUB_TOKEN"):
         monkeypatch.delenv(name, raising=False)
-    monkeypatch.setattr(_service, "get_json", get_json)
+    monkeypatch.setattr(
+        _service, "github_getter", lambda token: lambda path: get_json(f"https://api.github.com/{path}", token, 10)
+    )
     monkeypatch.setenv("HZ_SYSTEM_PLUGIN__CATALOG_SOURCES", "[]")
 
 

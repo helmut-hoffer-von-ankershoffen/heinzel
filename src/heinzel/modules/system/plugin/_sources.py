@@ -287,6 +287,8 @@ def github_getter(token: SecretStr | None) -> JsonGetter:
             raise OSError(msg) from exc
         if result.returncode != 0:
             problem = result.stderr.strip() or f"gh api {path} failed"
+            if "gh auth login" in problem or "not logged" in problem.lower():
+                return through_https(path)
             if "404" in problem or "Not Found" in problem:
                 raise LookupError(problem)
             raise OSError(problem)

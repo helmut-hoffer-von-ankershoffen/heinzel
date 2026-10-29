@@ -21,10 +21,13 @@ PYPROJECT_HEAD = ROOT / "scripts" / "template_pyproject_head.toml.tmpl"
 def makefile() -> str:
     """The Makefile without Heinzelmännchen-only targets, plus `update-template`."""
     text = (ROOT / "Makefile").read_text(encoding="utf-8")
+    # Hook runner is repository tooling, not a plugin test dependency or part of its runtime closure.
+    text = text.replace("uv run --quiet prek install", "uv tool run --from prek==0.5.7 prek install")
     text = text.replace(" template-test template-sync docs attributions fuzz demo", "")
     text = text.replace(" release clean\n", " release clean update-template preview\n", 1)
     text = text.replace(" (KEEP=dir keeps it)", "")
-    text = re.sub(r"\n(template-test|template-sync|docs|attributions|fuzz|demo):.*?\n(?:\t.*\n)+", "\n", text)
+    text = re.sub(r"\n(template-test|template-sync|docs|attributions|fuzz|demo|icons):.*?\n(?:\t.*\n)+", "\n", text)
+    text = re.sub(r"(?m)^(\.PHONY:.*?) icons\b", r"\1", text)
     # The core's generate_docs.py writes the plugin pages with everything else; a plugin runs the builder (ADR 0082).
     text = text.replace(
         '"&docs=env -u HZ_SYSTEM_AGENT__SKILL_DIRS uv run python scripts/generate_docs.py --check"',
@@ -99,6 +102,8 @@ def makefile() -> str:
         "Build this plugin's wheel and sdist into dist/",
     )
     text += (
+        "\n.PHONY: docs\n"
+        "\ndocs: docs-plugins ## Regenerate this plugin's documentation\n"
         "\npreview: ## Launch this plugin using isolated application state\n"
         "\tuv run --no-project --script scripts/plugin_preview.py\n"
     )

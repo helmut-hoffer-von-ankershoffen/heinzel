@@ -75,12 +75,13 @@ def client(kernel):
     return TestClient(web.build(kernel, port=8000, token=TOKEN, static=None), base_url=BASE)
 
 
-def test_the_web_head_manages_plugins_and_the_rest_head_only_lists_and_searches(kernel):
+def test_the_web_head_manages_plugins_and_the_public_rest_head_only_lists(kernel):
     on_the_web = {item.name for item in exposed(kernel, web.HEAD)}
     on_rest = {item.name for item in exposed(kernel, api.HEAD)}
     assert {"system_plugin_list", "system_plugin_search", "system_plugin_operation", *CHANGES} <= on_the_web
     assert not on_rest & CHANGES
-    assert {"system_plugin_list", "system_plugin_search"} <= on_rest
+    assert "system_plugin_list" in on_rest
+    assert "system_plugin_search" not in on_rest  # authenticated GitHub search can return private repositories
     assert not {"system_plugin_develop", "system_plugin_new"} & (on_the_web | on_rest)  # paths, terminals: CLI only
     rest = TestClient(api.build(kernel, port=8000), base_url=BASE)
     assert rest.post("/system/plugin/add", params={"spec": "heinzel-crm", "confirm": True}).status_code == 404
@@ -419,7 +420,8 @@ def test_mcp_over_stdio_manages_plugins_and_unauthenticated_http_mcp_cannot(kern
     http = {tool.name for tool in asyncio.run(mcp.build(kernel, "streamable-http").list_tools())}
     assert stdio >= CHANGES
     assert not CHANGES & http
-    assert {"system_plugin_list", "system_plugin_search", "heinzel_wake"} <= http  # the rest stays as it was
+    assert {"system_plugin_list", "heinzel_wake"} <= http
+    assert "system_plugin_search" not in http
 
 
 def test_a_handed_over_socket_that_isnt_a_loopback_listener_starts_a_fresh_session(monkeypatch):

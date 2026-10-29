@@ -1,7 +1,7 @@
 """The plugin module: find, add, remove, enable, disable, list and scaffold plugins."""
 
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import Field
 
@@ -143,9 +143,10 @@ def history(service: PluginService) -> list[PluginEvent]:
 
 
 @module.operation(read_only=False, heads={"cli"})  # copier asks questions on the terminal
-def new(
+def new(  # noqa: PLR0913 - each option is independently exposed and documented by the CLI
     service: PluginService,
     destination: Annotated[Path, Field(description="Directory for the new plugin repository.")],
+    *,
     data: Annotated[
         list[str] | None,
         Field(description="Answer a template question as key=value, e.g. plugin_name=crm; repeat for each."),
@@ -156,9 +157,18 @@ def new(
     ref: Annotated[
         str | None, Field(description="Template version; defaults to this Heinzelmännchen's release tag.")
     ] = None,
+    defaults: Annotated[bool, Field(description="Use template defaults without interactive questions.")] = False,
+    layout: Annotated[
+        Literal["standalone", "collection"],
+        Field(description="A standalone repository, or only owning files inside a plugin collection."),
+    ] = "standalone",
+    preset: Annotated[
+        Literal["minimal", "contributions"],
+        Field(description="One operation and test, or the complete UI and notification example."),
+    ] = "minimal",
 ) -> Path:
     """Scaffold a plugin repository from the Heinzelmännchen template, asking for answers not given."""
-    return service.new(destination, template, ref, data or ())
+    return service.new(destination, template, ref, data or (), defaults=defaults, layout=layout, preset=preset)
 
 
 @module.operation(read_only=False, heads={"cli"})
@@ -172,7 +182,7 @@ def sdk(
     return service.sdk(destination)
 
 
-@module.operation(render=render_search)
+@module.operation(render=render_search, private=True)
 def search(
     service: PluginService,
     text: Annotated[
@@ -186,7 +196,8 @@ def search(
     """Find plugins to install: first-party ones, and community ones by querying the GitHub API.
 
     Configured repositories are scanned for plugin projects; topic heinzel-plugin discovers external repositories.
-    GH_TOKEN or GITHUB_TOKEN raises the rate limit. Catalog outages retain last successfully read metadata.
+    Your GitHub login also reads private catalogs; authenticated heads only. GH_TOKEN or GITHUB_TOKEN raises the
+    rate limit. Catalog outages retain last successfully read metadata.
     PyPI has no keyword search, so it is not queried. Community
     plugins are not reviewed by the Heinzelmännchen maintainers, and every plugin runs with your rights.
     """

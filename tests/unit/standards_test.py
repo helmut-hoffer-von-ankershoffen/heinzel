@@ -13,6 +13,7 @@ from types import ModuleType
 from typing import get_origin
 
 import pytest
+import yaml
 from packaging.requirements import Requirement
 
 from heinzel import Kernel, Module, OperationLet
@@ -101,6 +102,7 @@ CORE_ONLY = {  # path: why plugins don't get it
     "scripts/terminal_art.py": "draws Heinzelmännchen for the terminal from the web app's drawing; plugins bring none",
     "scripts/sync_template.py": "generates the template from Heinzelmännchen's files",
     "scripts/template-test.sh": "renders and checks the template",
+    "scripts/starter-test.py": "core SDK compatibility job exercises fresh standalone and collection authors",
     "scripts/template_pyproject_head.toml.tmpl": "input of sync_template.py",
     "scripts/web.py": "the web head's typed client and dev server (web/, ADR 0039); plugins bring no UI",
     "scripts/web_build.py": "runs and builds the web head's app (web/, ADR 0039); plugins bring no UI",
@@ -408,6 +410,12 @@ def test_markdown_names_only_make_targets_that_exist(makefile):
     targets = {target for target, _ in TARGET.findall(makefile.read_text(encoding="utf-8"))}
     if makefile == REPO / "Makefile":
         targets |= {target for target, _ in TARGET.findall((TEMPLATE / "Makefile").read_text(encoding="utf-8"))}
+        starter = next((REPO / "starter").glob("*Makefile*.jinja")).read_text(encoding="utf-8")
+        targets |= {
+            name
+            for group in re.findall(r"(?m)^([a-z][\w-]*(?:[ \t]+[a-z][\w-]*)*):(?!=)", starter)
+            for name in group.split()
+        }
     missing = [
         f"{p.relative_to(REPO)}: make {target}"
         for p in _markdown(MAKEFILES[makefile])
@@ -419,6 +427,65 @@ def test_markdown_names_only_make_targets_that_exist(makefile):
 
 def test_finds_make_targets_in_markdown():
     assert MAKE_IN_MARKDOWN.findall("run `make check`, `make pr TITLE=x`; make sense of `uv run`") == ["check", "pr"]
+
+
+def lock_policy_valid(configuration):
+    """A generated lock exception needs a required resolver check; ordinary file limits stay unchanged."""
+    hooks = {hook["id"]: hook for repo in configuration["repos"] for hook in repo["hooks"]}
+    large, lock = hooks["check-added-large-files"], hooks.get("uv-lock", {})
+    return (
+        large.get("exclude") == r"^uv\.lock$"
+        and not large.get("args")
+        and lock.get("entry") == "uv lock --check"
+        and lock.get("files") == r"^(pyproject\.toml|uv\.lock)$"
+        and lock.get("pass_filenames") is False
+        and lock.get("language") == "system"
+    )
+
+
+def test_large_generated_locks_require_resolver_validation_without_relaxing_other_file_limits():
+    configuration = yaml.safe_load((REPO / ".pre-commit-config.yaml").read_text())
+    assert lock_policy_valid(configuration)
+    validator = next(repo for repo in configuration["repos"] if repo["repo"] == "local")["hooks"]
+    validator[:] = [hook for hook in validator if hook["id"] != "uv-lock"]
+    assert not lock_policy_valid(configuration)
+    configuration = yaml.safe_load((REPO / ".pre-commit-config.yaml").read_text())
+    configuration["repos"][0]["hooks"][0]["exclude"] = ".*"
+    assert not lock_policy_valid(configuration)
+
+
+def matching_toolkit_pins(pins):
+    """Every authoring entry point must use the same final wheel version and exact digest."""
+    pattern = (
+        r"https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/releases/download/"
+        r"tools-v(?P<version>\d+\.\d+\.\d+)/heinzel_plugin_tools-(?P=version)-py3-none-any.whl"
+        r"#sha256=[a-f0-9]{64}"
+    )
+    return bool(pins) and len(set(pins)) == 1 and all(re.fullmatch(pattern, pin) for pin in pins)
+
+
+def test_standalone_commands_workflows_and_journey_pin_one_immutable_toolkit():
+    starter = REPO / "starter"
+    paths = [next(starter.glob("*Makefile*.jinja")), *starter.glob("*github*/workflows/*.yml.jinja")]
+    pins = [_load(REPO / "scripts/starter-test.py").TOOLKIT.rsplit(" ", 1)[-1]]
+    for path in paths:
+        text = path.read_text().replace(r"\#", "#")
+        match = re.search(r"https://github\.com/\S+?\.whl(?:#sha256=[a-f0-9]{64})?", text)
+        assert match, path
+        pins.append(match.group())
+    assert len(pins) == 4
+    assert matching_toolkit_pins(pins)
+
+
+def test_unhashed_or_drifting_toolkit_pins_are_refused():
+    base = (
+        "https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/releases/download/"
+        "tools-v0.1.1/heinzel_plugin_tools-0.1.1-py3-none-any.whl"
+    )
+    pinned = base + "#sha256=" + "a" * 64
+    assert matching_toolkit_pins([pinned, pinned])
+    assert not matching_toolkit_pins([base, base])
+    assert not matching_toolkit_pins([pinned, pinned.replace("a" * 64, "b" * 64)])
 
 
 # The working title is gone; only the ADR that chose the name and the changelog remember it.

@@ -43,7 +43,7 @@ from heinzel.kernel import (
     ThemeLet,
     subprocess_environment,
 )
-from heinzel.modules.system._github import get_json
+from heinzel.modules.system._github import GITHUB_API
 from heinzel.modules.system.plugin._models import (
     Action,
     AvailablePlugin,
@@ -536,8 +536,16 @@ class PluginService:
 
     # Searching and scaffolding.
 
-    def new(
-        self, destination: Path, template: str = TEMPLATE, ref: str | None = None, data: Sequence[str] = ()
+    def new(  # noqa: PLR0913 - mirrors the independently selectable Copier options
+        self,
+        destination: Path,
+        template: str = TEMPLATE,
+        ref: str | None = None,
+        data: Sequence[str] = (),
+        *,
+        defaults: bool = False,
+        layout: str = "standalone",
+        preset: str = "minimal",
     ) -> Path:
         """Scaffold a plugin repository from the Heinzelmännchen copier template.
 
@@ -548,7 +556,14 @@ class PluginService:
             HeinzelError: If copier fails.
         """
         ref = ref or (f"v{__version__}" if __version__ != "0.0.0" else "HEAD")
+        if layout == "collection" and preset == "governed":
+            msg = "Collection plugins reuse repository governance; choose --preset contributions."
+            raise HeinzelError(msg)
         command = [self._installation.uv, "tool", "run", "copier", "copy", "--vcs-ref", ref]
+        if defaults:
+            command.append("--defaults")
+        for answer in (f"layout={layout}", f"preset={preset}"):
+            command += ["--data", answer]
         for answer in data:
             command += ["--data", answer]
         command += [template, str(destination)]
@@ -628,7 +643,7 @@ class PluginService:
             query = urlencode(
                 {"q": f"topic:{TOPIC} {text}".strip(), "sort": "stars", "per_page": PAGE_SIZE, "page": page}
             )
-            items = get_json(f"{GITHUB_SEARCH}?{query}", self._settings.github_token, TIMEOUT)["items"]
+            items = self._catalog_json(f"{GITHUB_SEARCH}?{query}")["items"]
             if not isinstance(items, list):
                 msg = "Expected a list of plugin repositories"
                 raise TypeError(msg)
@@ -699,9 +714,18 @@ class PluginService:
         self._save_catalog(str(full_name), found)
         return found
 
+    def _catalog_json(self, url: str) -> Any:  # noqa: ANN401 - GitHub's free-form metadata
+        prefix = f"{GITHUB_API}/"
+        if not url.startswith(prefix):
+            msg = "Catalog metadata must come from the GitHub API"
+            raise ValueError(msg)
+        return self.github_api(url.removeprefix(prefix))
+
     def _catalog_listing(self, repository: str, api: str) -> object:
         try:
-            listing: object = get_json(f"{api}/plugins", self._settings.github_token, TIMEOUT)
+            listing: object = self._catalog_json(f"{api}/plugins")
+        except LookupError:
+            return []
         except (OSError, ValueError) as exc:
             if isinstance(exc, urllib.error.HTTPError) and exc.code == HTTPStatus.NOT_FOUND:
                 return []
@@ -738,13 +762,18 @@ class PluginService:
     def _file(self, url: str, *, missing_is_empty: bool = False) -> str | None:
         """The text of a file from GitHub's contents API; None if it is not there or not readable."""
         try:
-            answer: object = get_json(url, self._settings.github_token, TIMEOUT)
+            answer: object = self._catalog_json(url)
             if isinstance(answer, dict):
                 fields = cast("dict[str, object]", answer)
                 if fields.get("encoding") == "base64":
                     return base64.b64decode(str(fields["content"])).decode()
-        except (OSError, ValueError, KeyError) as exc:
-            if missing_is_empty and isinstance(exc, urllib.error.HTTPError) and exc.code == HTTPStatus.NOT_FOUND:
+        except KeyError:
+            return None
+        except (LookupError, OSError, ValueError) as exc:
+            if missing_is_empty and (
+                isinstance(exc, LookupError)
+                or (isinstance(exc, urllib.error.HTTPError) and exc.code == HTTPStatus.NOT_FOUND)
+            ):
                 return ""
             return None
         return None

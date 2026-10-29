@@ -1,5 +1,7 @@
 # Documentation
 
+Build a custom plugin in its own public or private repository with the [plugin author guide](PLUGIN_AUTHORING.md).
+
 Find what you need by who you are. Files marked *generated* are written by `make docs` from the code, and CI fails when
 they are out of date, so they can't drift.
 
