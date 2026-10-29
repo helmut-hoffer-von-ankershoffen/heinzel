@@ -154,14 +154,36 @@ async function assertContained(page, locator, name) {
   return box;
 }
 
-async function showPage(page) {
-  // A hovered footer pane can cover the tabs after a viewport resize; dismiss it as a person would.
-  const releaseNotes = page.getByRole("region", { name: /^v\d/ });
-  if (await releaseNotes.isVisible()) {
-    await page.mouse.move(3, 3);
-    await page.mouse.click(3, 3);
-    await releaseNotes.waitFor({ state: "hidden" });
+async function dismissFooterPane(page) {
+  // A footer pane can cover arbitrary viewport corners, and its accessible region name is content-dependent.
+  // Focus its own expanded trigger so Escape reaches the component's close handler without a coordinate click.
+  const footer = page.getByRole("contentinfo");
+  const controls = footer.locator("[aria-controls]");
+  for (let attempt = 0; attempt < 8; attempt++) {
+    let trigger;
+    let pane;
+    for (let index = 0; index < (await controls.count()); index++) {
+      const candidate = controls.nth(index);
+      const paneId = await candidate.getAttribute("aria-controls");
+      if (!paneId) continue;
+      const candidatePane = page.locator(`[id="${paneId}"]`);
+      if (await candidatePane.isVisible()) {
+        trigger = candidate;
+        pane = candidatePane;
+        break;
+      }
+    }
+    if (!trigger || !pane) return;
+    await trigger.focus();
+    await page.keyboard.press("Escape");
+    await pane.waitFor({ state: "hidden", timeout: 5000 });
   }
+  assert.fail("Escape did not collapse every visible footer pane");
+}
+
+async function showPage(page) {
+  // A hovered footer pane can cover the tabs after a viewport resize.
+  await dismissFooterPane(page);
   const tab = page.getByRole("tab", { name: "Page", exact: true });
   if (await tab.isVisible()) await tab.click();
 }
@@ -407,7 +429,7 @@ try {
       const pane = await footerPane(page, id, label);
       await assertContained(page, pane, `${spec.name}: ${id}`);
       await page.screenshot({ path: join(shots, `mobile-${spec.name}-${id.slice(1)}.png`) });
-      await page.mouse.click(spec.width - 4, 4);
+      await dismissFooterPane(page);
     }
     const updatePane = await footerPane(page, "@updates", "Up to date");
     await assertContained(page, updatePane, `${spec.name}: update pane`);
@@ -415,7 +437,7 @@ try {
     await updatePane.getByText("Installed: hz 0.7.30").waitFor();
     await updatePane.getByText(/^Last installed:/).waitFor();
     await page.screenshot({ path: join(shots, `mobile-${spec.name}-updates.png`) });
-    await page.mouse.click(spec.width - 4, 4);
+    await dismissFooterPane(page);
     updateAvailable = true;
     await page.goto(url);
     await page.getByRole("heading", { name: "Today" }).waitFor();
@@ -429,6 +451,7 @@ try {
     );
     assert.equal(updateRequests, 0, `${spec.name}: inspecting the update must not start installation`);
     await page.screenshot({ path: join(shots, `mobile-${spec.name}-update-available.png`) });
+    await dismissFooterPane(page);
     updateAvailable = false;
     await page.goto(url);
     await page.getByRole("heading", { name: "Today" }).waitFor();
