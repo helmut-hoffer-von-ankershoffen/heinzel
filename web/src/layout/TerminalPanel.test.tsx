@@ -73,11 +73,11 @@ describe("terminal tabs", () => {
       "\x1b]7501;?:states=idle,working,done,blocked,error:kinds=permission,question,auth\x1b\\",
     );
     act(() => {
-      terminals[0]?.osc.get(7501)?.("state=working:app=codex");
+      terminals[0]?.osc.get(7501)?.("state=working:app=claude");
     });
     expect(screen.getByRole("tab", { name: /Investigate issue.*Working/ })).toBeInTheDocument();
     act(() => {
-      terminals[0]?.osc.get(7501)?.("state=blocked:kind=permission:app=codex");
+      terminals[0]?.osc.get(7501)?.("state=blocked:kind=permission:app=claude");
     });
     expect(screen.getByLabelText("New terminal notification")).toHaveAttribute("title", "Waiting for input");
     act(() => {
@@ -101,10 +101,10 @@ describe("terminal tabs", () => {
       act(() => {
         terminals[0]?.osc.get(7501)?.(value);
       });
-    send("state=working:app=codex");
-    send("state=blocked:id=child:kind=question:app=codex");
+    send("state=working:app=claude");
+    send("state=blocked:id=child:kind=question:app=claude");
     expect(screen.getByRole("tab", { name: /Waiting for input/ })).toBeInTheDocument();
-    send("state=working:app=codex");
+    send("state=working:app=claude");
     expect(screen.getByRole("tab", { name: /Waiting for input/ })).toBeInTheDocument();
     send("state=clear:id=child");
     expect(screen.getByRole("tab", { name: /Working/ })).toBeInTheDocument();
@@ -145,8 +145,8 @@ describe("terminal tabs", () => {
     desktopState.mockReturnValue("on");
     render(<TerminalPanel onClose={vi.fn()} full={false} onToggleFull={vi.fn()} onActivate={onActivate} />);
     act(() => {
-      terminals[0]?.osc.get(7501)?.("state=blocked:kind=permission:app=codex");
-      terminals[0]?.osc.get(7501)?.("state=blocked:kind=permission:app=codex");
+      terminals[0]?.osc.get(7501)?.("state=blocked:kind=permission:app=claude");
+      terminals[0]?.osc.get(7501)?.("state=blocked:kind=permission:app=claude");
     });
     expect(notify).toHaveBeenCalledTimes(1);
     expect(notify).toHaveBeenCalledWith("Terminal", { body: "Waiting for input" });
