@@ -1,55 +1,59 @@
-"""Fail-closed admission checks for a connected AI model before a durable personal turn.
+"""Internal model admission for bounded, owner-bound direct-API research turns.
 
-This internal preflight cannot issue authority: AiAccess has no owner-bound model factory or hard spending contract.
-No configured provider is admitted until those capabilities are implemented and verified.
+This is not registered as a product operation or a human approval boundary. Callers must supply trusted binding
+state. Dollar-capped policies are refused until a hard pre-request cost ceiling can be enforced.
 """
 
-from decimal import Decimal
-from typing import Never
+from typing import Any, Protocol
 
-from heinzel import HeinzelError
-from heinzel.kernel._ai import AiAccess
+from pydantic_ai.models import Model
+
+from heinzel import CurrentUser, HeinzelError
+from heinzel.modules.heinzel._engine import TurnLimits
 from heinzel.modules.heinzel._session_protocol import SessionRepository
 
 
-def require_connected_model(  # noqa: PLR0913 - trusted caller pins each distinct authority dimension
+class ConnectedModelFactory(Protocol):
+    """An installed model provider owns credential resolution and constructs its model for the current owner."""
+
+    def turn_model(self, current: CurrentUser, expected_model: str) -> Any:  # noqa: ANN401 - provider-specific model
+        """Build the exactly configured model after checking its credential and authenticated owner."""
+        ...
+
+
+def connected_model(  # noqa: PLR0913 - each policy dimension must be checked separately
     repository: SessionRepository,
-    access: AiAccess,
+    current: CurrentUser,
+    factory: ConnectedModelFactory,
     *,
     session_id: str,
     owner: str,
     selected_access: str | None,
     approved_access: str,
     approved_model: str,
-    budget_usd: Decimal | None,
-) -> Never:
-    """Check a proposed binding and refuse execution until a hard spend ceiling can be guaranteed.
+    limits: TurnLimits,
+) -> Model:
+    """Resolve a model for a request/token/time-bounded turn; never represent token limits as a dollar cap.
 
-    This is not a grant issuer and its inputs must come from trusted persisted policy, not the model or a client.
-    The access status is offline and never sends a request. `status.models` is discovery information, not proof
-    that a model has been approved or a credential belongs to this owner.
+    Binding and grant values must be trusted, independently persisted authority, not client or model input. The
+    returned model is for internal integration only. The current product session also advertises dollar caps, so
+    a real product path cannot use this until it enforces those caps and associated cumulative session accounting.
 
     Raises:
-        HeinzelError: Always, including when owner, configured access, credentials, model or cost policy is invalid.
+        HeinzelError: If ownership, binding, limits or the provider's model are unavailable.
     """
-    if repository.principal_id != owner:
+    if repository.principal_id != owner or current.principal().id != owner:
         msg = "The model binding belongs to a different authenticated owner"
         raise HeinzelError(msg)
     repository.control_read(session_id)
-    if not selected_access or selected_access != approved_access:
+    if not selected_access or selected_access != approved_access or selected_access != "pydantic-ai":
         msg = "The selected AI access does not match the approved model binding"
         raise HeinzelError(msg)
-    status = access.status()
-    if not status.installed or status.signed_in is not True:
-        msg = "The selected AI access or its credential is unavailable"
+    if limits.cost_usd is not None:
+        msg = "This model cannot enforce the requested hard dollar cap before execution"
         raise HeinzelError(msg)
-    if not approved_model or approved_model not in status.models:
-        msg = "The approved model is unavailable from the selected AI access"
+    model = factory.turn_model(current, approved_model)
+    if not isinstance(model, Model):
+        msg = "The configured model factory returned an unsupported model"
         raise HeinzelError(msg)
-    if budget_usd is None or not budget_usd.is_finite() or budget_usd <= 0:
-        msg = "The turn needs an explicit finite spending limit"
-        raise HeinzelError(msg)
-    # The current AiAccess interface supplies neither credential ownership nor a provider-enforced
-    # pre-request spend ceiling. Post-response accounting cannot stop the first call exceeding the budget.
-    msg = "The connected model cannot prove owner-bound credentials and a pre-execution spending ceiling"
-    raise HeinzelError(msg)
+    return model

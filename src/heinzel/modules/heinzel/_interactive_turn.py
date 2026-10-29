@@ -8,16 +8,14 @@ import hashlib
 import json
 from collections.abc import Callable
 from datetime import UTC, datetime
-from decimal import Decimal
-from typing import Literal, Never, cast
+from typing import Literal, cast
 
 from pydantic import BaseModel, JsonValue, TypeAdapter
 from pydantic_ai.models import Model
 
-from heinzel import HeinzelError, SessionEvent
-from heinzel.kernel._ai import AiAccess
+from heinzel import CurrentUser, HeinzelError, SessionEvent
 from heinzel.modules.heinzel._engine import EngineCheckpoint, TurnAuthority, TurnDeps, TurnLimits, run_turn
-from heinzel.modules.heinzel._model_admission import require_connected_model
+from heinzel.modules.heinzel._model_admission import ConnectedModelFactory, connected_model
 from heinzel.modules.heinzel._session_bodies import immutable_body
 from heinzel.modules.heinzel._session_crud import SessionCrud
 from heinzel.modules.heinzel._session_models import SessionMessage
@@ -64,32 +62,38 @@ class InteractiveTurn:
             msg = "This turn belongs to a different authenticated owner"
             raise HeinzelError(msg)
 
-    def run_connected(  # noqa: PLR0913 - approved bindings are separate policy dimensions
+    async def run_connected(  # noqa: PLR0913 - distinct trusted binding and turn policy values
         self,
         session_id: str,
-        access: AiAccess,
+        request_id: str,
+        current: CurrentUser,
+        factory: ConnectedModelFactory,
         *,
         selected_access: str | None,
         approved_access: str,
         approved_model: str,
-        budget_usd: Decimal | None,
-    ) -> Never:
-        """Refuse a connected-model turn until the admission boundary can prove owner and spending authority.
+        limits: TurnLimits,
+    ) -> SessionMessage:
+        """Run a token-bounded configured model after internal owner and binding checks.
+
+        This is not a human grant or product endpoint; existing product dollar caps cannot yet be enforced here.
 
         Raises:
-            HeinzelError: Always while connected model admission cannot establish both guarantees.
+            HeinzelError: If model admission or durable execution is unavailable.
         """
         self._check_owner()
-        require_connected_model(
+        model = connected_model(
             self._crud.repository,
-            access,
+            current,
+            factory,
             session_id=session_id,
             owner=self._owner,
             selected_access=selected_access,
             approved_access=approved_access,
             approved_model=approved_model,
-            budget_usd=budget_usd,
+            limits=limits,
         )
+        return await self.run(session_id, request_id, model, limits=limits)
 
     async def run(  # noqa: C901, PLR0915 - one lock and state boundary for the entire turn
         self, session_id: str, request_id: str, model: Model, *, limits: TurnLimits
