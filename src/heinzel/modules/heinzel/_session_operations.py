@@ -17,7 +17,12 @@ from heinzel.kernel import (
     Kernel,
 )
 from heinzel.kernel._approval import ApprovalConfirmation, ApprovalIssuer
-from heinzel.modules.heinzel._autonomous_schedule import AutonomousSchedules, ScheduleBinding, ScheduleReviewView
+from heinzel.modules.heinzel._autonomous_schedule import (
+    AutonomousSchedules,
+    ScheduleBinding,
+    ScheduleReviewPage,
+    ScheduleReviewView,
+)
 from heinzel.modules.heinzel._configured_api_binding import ConfiguredApiBinding
 from heinzel.modules.heinzel._contract_review import ContractReview, ContractReviewView
 from heinzel.modules.heinzel._model_grants import ModelGrants
@@ -344,6 +349,16 @@ def _register_autonomous_schedule_operations(module: Module) -> None:
     def agent_schedule(service: AutonomousSchedules, session_id: Identity, request_id: Request) -> ScheduleReviewView:
         """Inspect the exact proposed schedule and its recorded state."""
         return service.review(session_id, request_id)
+
+    @module.operation(private=True, heads={"web", "api-private"}, audience="everyday")
+    def agent_schedules(
+        service: AutonomousSchedules,
+        session_id: Identity,
+        cursor: Annotated[int, Field(strict=True, ge=0)] = 0,
+        limit: Annotated[int, Field(strict=True, ge=1, le=100)] = 20,
+    ) -> ScheduleReviewPage:
+        """List bounded owner-private schedule proposals and recorded decisions."""
+        return service.list_reviews(session_id, cursor, limit)
 
     @module.operation(private=True, read_only=False, heads={"web", "api-private"}, audience="everyday")
     def pause_agent_schedule(

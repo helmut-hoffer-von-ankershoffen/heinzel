@@ -69,6 +69,13 @@ def test_separate_consent_daemon_occurrence_dedup_and_pause(tmp_path, monkeypatc
                 schedules.pause(session, "schedule")
         other = schedules.propose(session, "second-schedule", "contract", 60, 4, 30)
         assert other.first_run == "current-slot-after-approval"
+        page = schedules.list_reviews(session, limit=1)
+        assert page.items[0].binding.request_id == "schedule"
+        assert page.next_cursor is not None
+        assert (
+            schedules.list_reviews(session, cursor=page.next_cursor, limit=1).items[0].binding.request_id
+            == "second-schedule"
+        )
         with pytest.raises(HeinzelError, match="already been approved"):
             schedules.issue(session, "second-schedule", "test-confirm")
         with pytest.raises(HeinzelError, match="daemon"):
@@ -88,6 +95,7 @@ def test_separate_consent_daemon_occurrence_dedup_and_pause(tmp_path, monkeypatc
         activity = chat.activity(session).items
         assert [(event.tool, event.status) for event in activity] == [("unavailable", "denied")]
         schedules.pause(session, "schedule")
+        assert schedules.list_reviews(session).items[0].status == "paused"
         assert schedules.issue(session, "second-schedule", "test-confirm")
         with current.local("daemon"), pytest.raises(HeinzelError, match="paused"):
             asyncio.run(schedules.tick(session, "schedule", now))
@@ -295,3 +303,32 @@ def test_failure_after_acceptance_before_start_can_be_resolved(tmp_path, monkeyp
         monkeypatch.setattr(ClaudeSubscriptionModel, "bind_fence", original)
         crud.accept(session, MessageRequest(request_id="continue", text="Continue"))
         assert asyncio.run(chat.answer(session, "continue")).message.text == "A real recorded reply"
+
+
+def test_unstarted_resolution_must_follow_accepted_daemon_message(tmp_path, monkeypatch):
+    from pydantic_ai.models.function import FunctionModel
+
+    from heinzel.modules.heinzel._engine import TurnLimits
+    from heinzel.modules.heinzel._interactive_turn import InteractiveTurn
+    from heinzel.modules.heinzel._session_models import MessageRequest
+
+    current = CurrentUser(tmp_path / "identity")
+    with current.local("cli"):
+        repo = PersonalSessionRepository(current)
+        crud = SessionCrud(repo, lambda: SessionCosts(session_max_usd=2, message_max_usd=0.2))
+        session = crud.new_chat("resolution-order").session_id
+        chat = UserChatService(crud, current, load=lambda: FixtureConfig(fake_claude(tmp_path)))
+        with current.local("daemon"):
+            crud.accept(session, MessageRequest(request_id="scheduled", text="Scheduled"))
+        chat.abandon(session, "scheduled")
+        crud.accept(session, MessageRequest(request_id="next", text="Next"))
+        snapshot = repo.control_read(session)
+        accepted = next(e for e in snapshot.events if e.kind == "message.accepted" and e.key == "message-scheduled")
+        abandoned = next(e for e in snapshot.events if e.kind == "interactive.abandoned")
+        altered = abandoned.model_copy(update={"seq": accepted.seq})
+        events = [altered if e is abandoned else e for e in snapshot.events]
+        monkeypatch.setattr(repo, "control_read", lambda _session: snapshot.model_copy(update={"events": events}))
+        with pytest.raises(HeinzelError, match="invalid resolution"):
+            chat.turn_state(session, "scheduled")
+        with pytest.raises(HeinzelError, match="invalid resolution"):
+            asyncio.run(InteractiveTurn(crud).run(session, "next", FunctionModel(lambda *_: None), limits=TurnLimits()))

@@ -214,6 +214,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/heinzel/agent-schedules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List bounded owner-private schedule proposals and recorded decisions.
+         * @description List bounded owner-private schedule proposals and recorded decisions.
+         */
+        get: operations["heinzel_agent_schedules"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/heinzel/amend-scheduled-agent": {
         parameters: {
             query?: never;
@@ -8646,6 +8666,18 @@ export interface components {
             timeout_seconds: number;
         };
         /**
+         * ScheduleReviewPage
+         * @description Bounded owner-private schedule references, including paused and stale decisions.
+         */
+        ScheduleReviewPage: {
+            /** Items */
+            items: components["schemas"]["ScheduleReviewView"][];
+            /** Next Cursor */
+            next_cursor?: number | null;
+            /** Session Id */
+            session_id: string;
+        };
+        /**
          * ScheduleReviewView
          * @description Owner-private schedule proposal or its recorded decision and current eligibility.
          */
@@ -12177,6 +12209,7 @@ export type SchemaRunOperation = components['schemas']['RunOperation'];
 export type SchemaScene = components['schemas']['Scene'];
 export type SchemaSceneStep = components['schemas']['SceneStep'];
 export type SchemaScheduleBinding = components['schemas']['ScheduleBinding'];
+export type SchemaScheduleReviewPage = components['schemas']['ScheduleReviewPage'];
 export type SchemaScheduleReviewView = components['schemas']['ScheduleReviewView'];
 export type SchemaScheduledAgentProposal = components['schemas']['ScheduledAgentProposal'];
 export type SchemaSessionCosts = components['schemas']['SessionCosts'];
@@ -12569,6 +12602,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ScheduleReviewView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    heinzel_agent_schedules: {
+        parameters: {
+            query: {
+                session_id: string;
+                cursor?: number;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScheduleReviewPage"];
                 };
             };
             /** @description Validation Error */

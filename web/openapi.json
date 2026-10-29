@@ -10260,6 +10260,42 @@
         "title": "ScheduleBinding",
         "type": "object"
       },
+      "ScheduleReviewPage": {
+        "description": "Bounded owner-private schedule references, including paused and stale decisions.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ScheduleReviewView"
+            },
+            "maxItems": 100,
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "session_id": {
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "items"
+        ],
+        "title": "ScheduleReviewPage",
+        "type": "object"
+      },
       "ScheduleReviewView": {
         "description": "Owner-private schedule proposal or its recorded decision and current eligibility.",
         "properties": {
@@ -16740,6 +16776,69 @@
           }
         },
         "summary": "Inspect the exact proposed schedule and its recorded state.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/agent-schedules": {
+      "get": {
+        "description": "List bounded owner-private schedule proposals and recorded decisions.",
+        "operationId": "heinzel_agent_schedules",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "title": "Cursor",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduleReviewPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List bounded owner-private schedule proposals and recorded decisions.",
         "tags": [
           "heinzel"
         ]

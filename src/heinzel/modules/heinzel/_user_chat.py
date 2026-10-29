@@ -271,7 +271,7 @@ class UserChatService:
             unstarted = event.data.get("unstarted") is True
             accepted = next(e for e in events if e.kind == "message.accepted" and e.key == f"message-{request}")
             if (
-                (unstarted and (starts or accepted.data.get("origin") != "daemon"))
+                (unstarted and (starts or accepted.data.get("origin") != "daemon" or event.seq <= accepted.seq))
                 or (
                     not unstarted
                     and (len(starts) != 1 or event.seq <= starts[0].seq or starts[0].data.get("message_id") != request)
@@ -323,6 +323,7 @@ class UserChatService:
                         or resolutions[0].data.get("owner") != repo.principal_id
                         or resolutions[0].data.get("origin") not in _HEADS
                         or resolutions[0].data.get("unstarted", False) != unstarted
+                        or resolutions[0].seq <= accepted.seq
                         or (not unstarted and resolutions[0].seq <= starts[0].seq)
                     ):
                         msg = "This turn has an invalid resolution record"

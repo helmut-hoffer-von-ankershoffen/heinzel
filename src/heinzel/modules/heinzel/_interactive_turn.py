@@ -267,6 +267,7 @@ class InteractiveTurn:
                                 (
                                     abandoned[0].data.get("unstarted") is True
                                     and incoming.data.get("origin") == "daemon"
+                                    and abandoned[0].seq > incoming.seq
                                     and not any(
                                         e.kind == "interactive.started" and e.key == _turn_id(incoming_id)
                                         for e in events

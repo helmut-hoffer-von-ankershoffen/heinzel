@@ -30,6 +30,8 @@ from heinzel.modules.heinzel._session_crud import SessionCrud
 from heinzel.modules.heinzel._session_models import MessageRequest, RequestId, SessionId
 from heinzel.modules.heinzel._user_chat import _TIMEOUT, UserChatService
 
+_MAX_PAGE = 100
+
 
 class ScheduleBinding(BaseModel):
     """Exact reviewed private schedule; no external tools or account permissions are granted."""
@@ -68,6 +70,14 @@ class ScheduleReviewView(BaseModel):
 
     binding: ScheduleBinding
     status: Literal["proposed", "approved", "paused", "stale"]
+
+
+class ScheduleReviewPage(BaseModel):
+    """Bounded owner-private schedule references, including paused and stale decisions."""
+
+    session_id: SessionId
+    items: list[ScheduleReviewView] = Field(max_length=100)
+    next_cursor: int | None = Field(default=None, ge=0)
 
 
 def _fingerprint(chat: UserChatService) -> str:
@@ -390,6 +400,28 @@ class AutonomousSchedules:
             except HeinzelError:
                 status = "stale"
         return ScheduleReviewView(binding=binding, status=status)
+
+    def list_reviews(self, session: str, cursor: int = 0, limit: int = 20) -> ScheduleReviewPage:
+        """List owner-private schedule records after an exclusive journal position.
+
+        Raises:
+            HeinzelError: If the requested bounds or journal references are invalid.
+        """
+        if type(cursor) is not int or cursor < 0 or type(limit) is not int or not 1 <= limit <= _MAX_PAGE:
+            msg = "The schedule page bounds are invalid"
+            raise HeinzelError(msg)
+        events = self.crud.repository.control_read(session).events
+        proposals = [e for e in events if e.kind == "agent.schedule-proposed" and e.seq > cursor]
+        chosen = proposals[:limit]
+        items: list[ScheduleReviewView] = []
+        for event in chosen:
+            if event.key is None:
+                msg = "The schedule proposal has an invalid identity"
+                raise HeinzelError(msg)
+            items.append(self.review(session, event.key))
+        return ScheduleReviewPage(
+            session_id=session, items=items, next_cursor=chosen[-1].seq if len(proposals) > limit else None
+        )
 
     def pause(self, session: str, request: str) -> None:
         """Stop future launches; resumption requires a new exact schedule approval.

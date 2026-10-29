@@ -563,6 +563,7 @@ $ hz heinzel [OPTIONS] COMMAND [ARGS]...
 * `accept-agent-contract`: Record only exact contract acceptance...
 * `agent-contract-review`: Read an exact contract and its acceptance;...
 * `agent-schedule`: Inspect the exact proposed schedule and...
+* `agent-schedules`: List bounded owner-private schedule...
 * `amend-scheduled-agent`: Propose revised terms; an independent...
 * `answer-chat`: Answer one authenticated user&#x27;s accepted...
 * `approve-agent-schedule`: Record exact human-confirmed autonomous...
@@ -687,6 +688,28 @@ $ hz heinzel agent-schedule [OPTIONS] {session_id} {request_id}
 
 **Options**:
 
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz heinzel agent-schedules`
+
+List bounded owner-private schedule proposals and recorded decisions.
+
+**Usage**:
+
+```console
+$ hz heinzel agent-schedules [OPTIONS] {session_id}
+```
+
+**Arguments**:
+
+* `session_id`: [required]
+
+**Options**:
+
+* `--cursor <int>`: [default: 0]
+* `--limit <int>`: [default: 20]
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.

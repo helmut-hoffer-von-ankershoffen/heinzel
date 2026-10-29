@@ -284,4 +284,8 @@ def test_schedule_card_and_daemon_registry_run_one_owner_bound_fake_turn(make_ke
     )
     assert paused.status_code == 200, paused.text
     assert paused.json()["status"] == "paused"
+    listed = client.get("/api/heinzel/agent-schedules", headers=AUTH, params={"session_id": session})
+    assert listed.status_code == 200
+    assert listed.json()["items"][0]["status"] == "paused"
+    assert client.get("/api/heinzel/agent-schedules", params={"session_id": session}).status_code == 401
     assert client.get("/api/heinzel/session", headers=AUTH, params={"session_id": session}).json()["schedule"] is None
