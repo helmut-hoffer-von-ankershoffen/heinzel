@@ -129,20 +129,10 @@ export function ChatPanel({ onCollapse }: { onCollapse: () => void }) {
       </div>
       <div className="chat-panel-composer border-t border-border p-3">
         <p className="mb-1 text-xs text-muted-foreground">
-          To start a personal Heinzel, say “Create a Heinzelmännchen”.
+          To create a personal Heinzel, choose “Create a personal Heinzel” in the chat switcher. Creating one through
+          conversation is not available yet.
         </p>
-        <Composer
-          chat={chat}
-          context={`route:${location.pathname}`}
-          inputRef={inputRef}
-          onPersonalSentence={(text) =>
-            /^(?:please\s+)?(?:create|make)(?:\s+me)?\s+(?:a\s+)?(?:new\s+)?(?:personal\s+)?heinzel(?:männchen|maennchen)?[.!]?$/i.test(
-              text.trim(),
-            )
-              ? createPersonal()
-              : null
-          }
-        />
+        <Composer chat={chat} context={`route:${location.pathname}`} inputRef={inputRef} />
         <Costs chat={chat} className="chat-panel-costs mt-1.5" />
       </div>
     </div>

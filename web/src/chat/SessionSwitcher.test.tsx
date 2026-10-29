@@ -141,27 +141,6 @@ it("creates a personal Heinzel from the chat and opens its durable session", asy
   expect(localStorage.getItem("hz.personal-heinzel.creation")).toBeNull();
 });
 
-it("creates a personal Heinzel from an explicit sentence in workshop chat", async () => {
-  const id = "hz-01ARZ3NDEKTSV4RRFFQ69G5FAV";
-  const saved = {
-    session_id: id,
-    heinzel_id: id,
-    name: "New Heinzel",
-    messages: [],
-    schedule: null,
-    contracts: [],
-    appearance: { age: "grown", build: "regular" },
-    profile_revision: 1,
-  };
-  const { calls } = mockApi({ ...base, "/api/heinzel/new-chat": saved, "/api/heinzel/session": saved });
-  const user = userEvent.setup();
-  renderAt("/doctor");
-  await user.type(await screen.findByLabelText("Your message"), "Create a Heinzelmännchen{Enter}");
-  expect(await screen.findByText("New Heinzel")).toBeInTheDocument();
-  expect(calls.filter((call) => new URL(call.url).pathname === "/api/heinzel/new-chat")).toHaveLength(1);
-  expect(calls.some((call) => new URL(call.url).pathname === "/api/stream/system/runner/chat/send")).toBe(false);
-});
-
 it("opens an existing personal Heinzel's continuous chat from the switcher", async () => {
   const id = "hz-01ARZ3NDEKTSV4RRFFQ69G5FAV";
   const saved = {
