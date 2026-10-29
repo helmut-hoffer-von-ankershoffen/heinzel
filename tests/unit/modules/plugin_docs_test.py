@@ -223,7 +223,9 @@ def test_theme_backdrops_are_preserved_as_typed_data_without_becoming_colour_swa
 def test_paths_and_parameters_are_the_exposure_rule(kernel):
     """The same rule the heads use, from the kernel: every CLI command the docs name is one the CLI exposes."""
     docs = kernel.resolve(DocsService).documentation(builtin=True, plugin="heinzel")
-    documented = {op.command for page in docs.pages for module in page.modules for op in module.operations}
+    operations = [op for page in docs.pages for module in page.modules for op in module.operations]
+    documented = {op.command for op in operations if op.command}
+    assert all(op.command or "cli" not in op.heads for op in operations)
     cli = {
         " ".join(("hz", *_service.cli_words(item.path)))
         for item in exposed(kernel, "cli")

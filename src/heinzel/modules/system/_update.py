@@ -308,16 +308,17 @@ class UpdateService:
         )
 
     def _restart_daemon(self, message: str) -> str:
-        """`message` and a line on the daemon: restarted with the new hz, or how to do it if that failed.
+        """`message` and the service-manager reload result; a later tick reports the code it actually ran.
 
-        An installed daemon keeps running the hz it was started with; the new hz restarts it, so the versions match.
-        Nothing is said when no daemon is installed.
+        The reload result is not process attestation. Nothing is said when no daemon is installed.
         """
         try:
             restarted = json.loads(self._installation.hz("system", "daemon", "restart", "--json")).get("restarted")
         except (HeinzelError, ValueError, AttributeError):
             return f"{message}\nThe daemon could not be restarted; run: hz system daemon restart"
-        return f"{message}\nThe daemon was restarted with the new hz." if restarted else message
+        if restarted:
+            return f"{message}\nThe daemon service manager accepted a reload request for the new hz."
+        return message
 
     def _with_plugins(self, result: UpdateResult, pin: CorePin, plugins: list[CorePin]) -> UpdateResult:
         """`result` of an update that leaves hz as it is, with the plugins asked again.

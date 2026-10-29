@@ -288,6 +288,12 @@ class JobLet(Let):
     catch_up: CatchUp = CatchUp.LATEST
     idempotency: Callable[[datetime], str] | None = None
     """The key of the run for a schedule slot; `<job>@<slot>` when None. A slot with a rendered key never reruns."""
+    run_for_slot: Callable[[datetime], Any] | None = None
+    """Optional slot-aware execution for compiled jobs; the daemon passes the intended scheduled time."""
+    scheduled_only: bool = False
+    """Refuse a manual wake when a job is authorized only for its scheduled slots."""
+    max_tick_interval: timedelta | None = None
+    """Reject scheduled dispatch if the actual daemon cadence is too slow for this job."""
     requires: tuple[Requirement, ...] = ()
     """Capabilities the job asks for by type, besides its module's (ADR 0028); always read-only."""
 
@@ -302,6 +308,9 @@ class JobLet(Let):
             raise ValueError(msg)
         if problem := schedule_problem(self.schedule):
             msg = f"Job {self.name!r}: {problem}"
+            raise ValueError(msg)
+        if self.max_tick_interval is not None and self.max_tick_interval <= timedelta(0):
+            msg = f"Job {self.name!r}: maximum tick interval must be positive"
             raise ValueError(msg)
         if self.timeout <= timedelta(0):
             msg = f"Job {self.name!r}: timeout must be positive, not {self.timeout}"

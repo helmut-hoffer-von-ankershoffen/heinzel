@@ -65,6 +65,35 @@ def test_a_checkpoint_key_is_idempotent_and_conflicting_data_is_refused(tmp_path
     assert len(sessions.read("one").events) == 2
 
 
+def test_atomic_checkpoint_replacement_is_bounded_private_and_durable(tmp_path):
+    sessions = store(tmp_path)
+    with sessions.writer("one") as writer:
+        for value in range(100):
+            writer.replace_checkpoint("outbox", {"version": 1, "watermark": value})
+        assert writer.checkpoint("outbox") == {"version": 1, "watermark": 99}
+    path = sessions.root / "one/checkpoint-outbox.json"
+    assert path.stat().st_mode & 0o777 == 0o600
+    assert len(path.read_bytes()) < 128
+    assert sessions.read("one").events == []
+    assert sessions.writer("one")
+
+
+def test_checkpoint_rejects_partial_content_and_symlink(tmp_path):
+    sessions = store(tmp_path)
+    with sessions.writer("one") as writer:
+        writer.replace_checkpoint("outbox", {"version": 1})
+    path = sessions.root / "one/checkpoint-outbox.json"
+    path.write_bytes(b'{"version":')
+    with sessions.writer("one") as writer, pytest.raises(HeinzelError, match="checkpoint"):
+        writer.checkpoint("outbox")
+    path.unlink()
+    target = tmp_path / "outside.json"
+    target.write_text('{"version":1}\n')
+    path.symlink_to(target)
+    with sessions.writer("one") as writer, pytest.raises(OSError, match="symbolic link"):
+        writer.checkpoint("outbox")
+
+
 @pytest.mark.parametrize(
     ("first", "second"), [({"enabled": True}, {"enabled": 1}), ({"nested": [False]}, {"nested": [0]})]
 )

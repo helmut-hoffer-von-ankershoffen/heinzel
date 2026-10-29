@@ -37,10 +37,11 @@ export async function sendChat(
   message: string,
   onEvent: (event: StreamEvent) => void,
   choice: ModelChoice = {},
+  requestId?: string,
 ): Promise<SchemaChatSession> {
   return stream<SchemaChatSession>(
     "/system/runner/chat/send",
-    { session, message, model: choice.model, effort: choice.effort },
+    { session, message, model: choice.model, effort: choice.effort, request_id: requestId },
     onEvent,
   );
 }

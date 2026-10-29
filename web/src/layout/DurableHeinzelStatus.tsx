@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Bot, RefreshCw } from "lucide-react";
-import { Link } from "react-router";
+import { useRef, useState } from "react";
+import { Link, useNavigate } from "react-router";
 import { api, unwrap } from "@/api/client";
 import { FooterItem, type State } from "@/components/FooterItem";
 import { t } from "@/i18n";
@@ -16,6 +17,10 @@ const useDurableHeinzels = () =>
 
 export function DurableHeinzelStatus() {
   const query = useDurableHeinzels();
+  const navigate = useNavigate();
+  const createRequest = useRef<string | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [createFailed, setCreateFailed] = useState(false);
   const sessions = query.isError ? undefined : query.data?.sessions;
   const count = sessions?.length;
   const active = sessions?.filter((session) => session.state === "awake").length;
@@ -26,6 +31,24 @@ export function DurableHeinzelStatus() {
   const retired = sessions?.filter((session) => session.state === "retired").length;
   const state: State = query.isError ? "bad" : "off";
   const label = t("nav.heinzelmaennchen");
+
+  const create = async () => {
+    if (creating) return;
+    createRequest.current ??= crypto.randomUUID();
+    setCreating(true);
+    setCreateFailed(false);
+    try {
+      const created = await unwrap(
+        api.POST("/heinzel/new-chat", { body: { request_id: createRequest.current, name: "Personal helper" } }),
+      );
+      createRequest.current = null;
+      navigate(`/heinzel?chat=${created.session_id}`);
+    } catch {
+      setCreateFailed(true);
+    } finally {
+      setCreating(false);
+    }
+  };
 
   return (
     <FooterItem
@@ -74,7 +97,18 @@ export function DurableHeinzelStatus() {
             </dl>
           </>
         ) : (
-          <p>No persisted Heinzels yet.</p>
+          <>
+            <p>No persisted Heinzels yet.</p>
+            <button
+              type="button"
+              disabled={creating}
+              onClick={() => void create()}
+              className="inline-flex min-h-7 items-center rounded px-2 text-sm underline hover:bg-accent disabled:opacity-50"
+            >
+              {creating ? t("durable.scheduleWorking") : t("durable.create")}
+            </button>
+            {createFailed && <p role="alert">{t("durable.createFailed")}</p>}
+          </>
         )}
         <Link to="/" className="block border-t border-border pt-2 underline">
           {t("status.open")} chat

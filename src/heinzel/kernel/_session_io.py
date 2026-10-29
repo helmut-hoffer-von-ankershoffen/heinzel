@@ -1,5 +1,6 @@
 """Private descriptor-relative session files and their hash chains (ADR 0049)."""
 
+import contextlib
 import hashlib
 import json
 import os
@@ -135,6 +136,67 @@ def append_line(parent: int, name: str, line: bytes) -> None:
         handle.flush()
         os.fsync(handle.fileno())
     os.fsync(parent)
+
+
+def read_checkpoint(parent: int, name: str) -> dict[str, JsonValue] | None:
+    """Read one bounded atomic session checkpoint, or None before its first write.
+
+    Raises:
+        HeinzelError: If the checkpoint name, file or content is unsafe.
+    """
+    identifier(name)
+    filename = f"checkpoint-{name}.json"
+    try:
+        descriptor = open_file(parent, filename, os.O_RDONLY)
+    except FileNotFoundError:
+        return None
+    with os.fdopen(descriptor, "rb") as handle:
+        content = handle.read(MAX_LINE + 1)
+    if len(content) > MAX_LINE or not content.endswith(b"\n"):
+        msg = "The session checkpoint is oversized or incomplete; repair it before continuing"
+        raise HeinzelError(msg)
+    try:
+        value = JSON_VALUE.validate_json(content)
+    except ValidationError:
+        msg = "The session checkpoint is invalid; repair it before continuing"
+        raise HeinzelError(msg) from None
+    if not isinstance(value, dict):
+        msg = "The session checkpoint is invalid; repair it before continuing"
+        raise HeinzelError(msg)
+    return value
+
+
+def replace_checkpoint(parent: int, name: str, value: dict[str, JsonValue]) -> None:
+    """Atomically replace one bounded private checkpoint and fsync its directory.
+
+    Raises:
+        HeinzelError: If the checkpoint name, file or content is unsafe.
+    """
+    identifier(name)
+    filename = f"checkpoint-{name}.json"
+    payload = encoded(value)
+    if len(payload) > MAX_LINE:
+        msg = "The session checkpoint exceeds the storage limit"
+        raise HeinzelError(msg)
+    try:
+        descriptor = open_file(parent, filename, os.O_RDONLY)
+    except FileNotFoundError:
+        pass
+    else:
+        os.close(descriptor)
+    temporary = f".checkpoint-{name}-{secrets.token_hex(12)}"
+    descriptor = open_file(parent, temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL)
+    try:
+        with os.fdopen(descriptor, "wb") as handle:
+            handle.write(payload)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, filename, src_dir_fd=parent, dst_dir_fd=parent)
+        os.fsync(parent)
+    except BaseException:
+        with contextlib.suppress(OSError):
+            os.unlink(temporary, dir_fd=parent)
+        raise
 
 
 def scan(parent: int) -> SessionRead:

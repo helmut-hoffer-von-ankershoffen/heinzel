@@ -6,6 +6,7 @@ import { Outlet, useLocation, useSearchParams } from "react-router";
 import { useConfig } from "@/api/queries";
 import { AudioVisualizer } from "@/audio/AudioVisualizer";
 import { ChatProvider } from "@/chat/ChatContext";
+import { isDurableSession } from "@/chat/useChat";
 import { AvatarThemeProvider } from "@/components/AvatarTheme";
 import { FOOTER_RELOCATED } from "@/components/FooterLayout";
 import { t } from "@/i18n";
@@ -171,6 +172,13 @@ function Layout() {
   useLayoutEffect(() => () => footerHost.remove(), [footerHost]);
   // Settings is a dialog over the screen, open while the URL has `?settings=<section>`, so links can point into it.
   const [params, setParams] = useSearchParams();
+  const durableChat = params.get("chat");
+  useEffect(() => {
+    if (durableChat && isDurableSession(durableChat)) {
+      setChatOpen(true);
+      setTerminalFull(false);
+    }
+  }, [durableChat, setChatOpen]);
   const settings = params.get("settings");
   const clockOpen = params.get("panel") === "world-clock";
   useEffect(() => {

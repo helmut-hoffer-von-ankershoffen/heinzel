@@ -5,6 +5,7 @@ whatever the umask, and every file is written to a temporary name, flushed to di
 disk never leaves half a file.
 """
 
+import contextvars
 import fcntl
 import io
 import json
@@ -79,7 +80,8 @@ def within(func: Callable[[], object], seconds: float) -> Outcome:
         except BaseException as exc:  # noqa: BLE001 - a job's failure is recorded in its receipt, never raised
             results.append(Outcome(error=describe(exc)))
 
-    thread = threading.Thread(target=target, name="hz-job", daemon=True)
+    context = contextvars.copy_context()
+    thread = threading.Thread(target=context.run, args=(target,), name="hz-job", daemon=True)
     thread.start()
     thread.join(seconds)
     if thread.is_alive():

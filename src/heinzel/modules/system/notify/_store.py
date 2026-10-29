@@ -6,6 +6,7 @@ Notices name contracts and what failed, so the directory is 0700 and the files 0
 """
 
 import fcntl
+import hashlib
 import json
 import logging
 import os
@@ -15,7 +16,7 @@ from contextlib import contextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from pydantic import TypeAdapter, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
 
 from heinzel import Notice
 
@@ -29,6 +30,16 @@ PRIVATE_FILE = 0o600
 _NOTICES = TypeAdapter(list[Notice])
 
 
+def _empty_notices() -> list[Notice]:
+    return []
+
+
+class _State(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    notices: list[Notice] = Field(default_factory=_empty_notices)
+    durable_keys: set[str] = Field(default_factory=set)
+
+
 class Store:
     """The notices on this machine, oldest first, and when a head last said it shows them."""
 
@@ -40,34 +51,120 @@ class Store:
         self._lock = directory / "notices.lock"
         self._native = directory / "native.json"
         self._looked = directory / "looked.json"
+        self._durable = directory / "durable-notices"
+
+    def _read_state(self, *, strict: bool = False) -> _State:
+        try:
+            text = self.path.read_text(encoding="utf-8")
+            value = json.loads(text)
+        except (OSError, ValueError, ValidationError) as exc:
+            return self._damaged_state(strict, exc)
+        if isinstance(value, list):
+            if strict:
+                return self._damaged_state(strict, ValueError("legacy notification list lost replay keys"))
+            try:
+                return _State(notices=_NOTICES.validate_python(value))
+            except ValidationError as exc:
+                return self._damaged_state(strict, exc)
+        try:
+            return _State.model_validate(value)
+        except ValidationError as exc:
+            return self._damaged_state(strict, exc)
+
+    def _damaged_state(self, strict: bool, exc: Exception) -> _State:
+        if strict:
+            msg = (
+                "The durable notification store is unavailable or lost replay keys; restore it before recording notices"
+            )
+            raise OSError(msg) from exc
+        if not isinstance(exc, FileNotFoundError):
+            logger.warning("%s cannot be read (%s); showing no notices", self.path, exc)
+        return _State()
 
     def read(self) -> list[Notice]:
         """Every notice kept, oldest first; a missing or damaged file is no notices (and is logged)."""
-        try:
-            text = self.path.read_text(encoding="utf-8")
-        except FileNotFoundError:
-            return []
-        except OSError:
-            logger.warning("can't read %s; showing no notices", self.path, exc_info=True)
-            return []
-        try:
-            return _NOTICES.validate_json(text)
-        except ValidationError:
-            logger.warning("%s is damaged; it is replaced on the next notice", self.path)
-            return []
+        return self._read_state().notices
+
+    def _write_state(self, now: datetime, state: _State, *, durable: bool = False) -> None:
+        state.notices = [notice for notice in state.notices if now - notice.at <= MAX_AGE][-MAX_NOTICES:]
+        payload = (
+            state.model_dump_json(indent=1)
+            if durable or self._durable.exists() or state.durable_keys
+            else _NOTICES.dump_json(state.notices, indent=1).decode()
+        )
+        _write_private(self.path, payload + "\n")
 
     def change[T](self, now: datetime, change: Callable[[list[Notice]], T]) -> T:
-        """Apply `change` to the notices under the lock, prune them and write them back; returns what it returned.
+        """Apply a display-state change under the lock, preserving durable keys.
 
         Raises:
-            OSError: If the state directory can't be written.
+            OSError: If the store cannot be safely read or written.
         """
         with self._locked():
-            notices = self.read()
-            result = change(notices)
-            kept = [notice for notice in notices if now - notice.at <= MAX_AGE][-MAX_NOTICES:]
-            _write_private(self.path, _NOTICES.dump_json(kept, indent=1).decode() + "\n")
+            state = self._read_state(strict=self._durable.exists())
+            result = change(state.notices)
+            self._write_state(now, state)
         return result
+
+    def change_once(self, now: datetime, key: str, change: Callable[[list[Notice]], None]) -> bool:
+        """Commit the notice and its owner-scoped key together, or recognize a previous commit.
+
+        Raises:
+            OSError: If the store cannot be safely read or written.
+        """
+        digest = hashlib.sha256(key.encode()).hexdigest()
+        with self._locked():
+            state = self._read_state(strict=self._durable.exists())
+            if not self._durable.exists():
+                # Persist the key-bearing shape first, so a crash cannot leave a marker beside a legacy list.
+                self._write_state(now, state, durable=True)
+                _write_private(self._durable, "1\n")
+            if digest in state.durable_keys:
+                return True
+            change(state.notices)
+            state.durable_keys.add(digest)
+            self._write_state(now, state)
+        return True
+
+    def forget_once(self, now: datetime, key: str) -> bool:
+        """Remove a replay key after its authoritative outbox has recorded completion.
+
+        The notice itself stays in the bounded display history. A failed forget only leaves a harmless stale key;
+        a later outbox sweep can retry it.
+
+        Raises:
+            OSError: If a versioned durable store is damaged or its replay keys are unavailable.
+        """
+        return self.forget_completed(now, {key})
+
+    def forget_completed(self, now: datetime, keys: set[str]) -> bool:
+        """Remove completed replay keys in one durable write; leave all notices intact."""
+        if not keys:
+            return True
+        digests = {hashlib.sha256(key.encode()).hexdigest() for key in keys}
+        with self._locked():
+            state = self._read_state(strict=self._durable.exists())
+            if state.durable_keys.isdisjoint(digests):
+                return True
+            state.durable_keys.difference_update(digests)
+            self._write_state(now, state)
+        return True
+
+    def has_once(self, key: str) -> bool:
+        """Check the durable replay set and retained notices under the notification lock.
+
+        Raises:
+            OSError: If the marker exists without state or the private store is damaged.
+        """
+        digest = hashlib.sha256(key.encode()).hexdigest()
+        with self._locked():
+            if not self.path.exists():
+                if self._durable.exists():
+                    msg = "The durable notification receipt marker has no notification state"
+                    raise OSError(msg)
+                return False
+            state = self._read_state(strict=True)
+            return digest in state.durable_keys or any(notice.key == key for notice in state.notices)
 
     def watched(self, now: datetime) -> None:
         """Remember that a head shows notices now."""
@@ -141,3 +238,8 @@ def _write_private(path: Path, text: str) -> None:
         handle.flush()
         os.fsync(handle.fileno())
     partial.replace(path)
+    directory = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.fsync(directory)
+    finally:
+        os.close(directory)
