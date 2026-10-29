@@ -15,11 +15,45 @@ import { isDurableSession } from "@/chat/useChat";
 import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
 
+const PERSONAL_HANDOFF = "hz.personal-heinzel.handoff";
+type PersonalHandoff = { request_id: string; message: string };
+
+function readPersonalHandoff(): PersonalHandoff | null {
+  try {
+    const raw = sessionStorage.getItem(PERSONAL_HANDOFF);
+    if (raw === null) return null;
+    const value: unknown = JSON.parse(raw);
+    if (
+      !value ||
+      typeof value !== "object" ||
+      !("request_id" in value) ||
+      !("message" in value) ||
+      typeof value.request_id !== "string" ||
+      !/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(value.request_id) ||
+      typeof value.message !== "string" ||
+      !value.message.trim() ||
+      value.message.length > 4000
+    )
+      return null;
+    return { request_id: value.request_id, message: value.message };
+  } catch {
+    return null;
+  }
+}
+
 export function ChatPanel({ onCollapse }: { onCollapse: () => void }) {
   const location = useLocation();
   const client = useQueryClient();
   const creating = useRef(false);
   const [createError, setCreateError] = useState(false);
+  const [handoff, setHandoff] = useState(readPersonalHandoff);
+  const [handoffUnreadable] = useState(() => {
+    try {
+      return sessionStorage.getItem(PERSONAL_HANDOFF) !== null && !readPersonalHandoff();
+    } catch {
+      return true;
+    }
+  });
   const [params, setParams] = useSearchParams();
   const durableId = params.get("chat");
   const { chat, inputRef, focus } = useSharedChat();
@@ -47,8 +81,21 @@ export function ChatPanel({ onCollapse }: { onCollapse: () => void }) {
     setCreateError(false);
     try {
       const key = "hz.personal-heinzel.creation";
-      const request_id = localStorage.getItem(key) || crypto.randomUUID();
+      const priorRaw = sessionStorage.getItem(PERSONAL_HANDOFF);
+      const prior = readPersonalHandoff();
+      if (priorRaw !== null && (!prior || !initialMessage || prior.message !== initialMessage))
+        throw new Error("An earlier creation request needs recovery.");
+      const storedId = localStorage.getItem(key);
+      if (prior && storedId && storedId !== prior.request_id) throw new Error("The creation request changed.");
+      const request_id = prior?.request_id ?? storedId ?? crypto.randomUUID();
       localStorage.setItem(key, request_id);
+      if (initialMessage) {
+        const encoded = JSON.stringify({ request_id, message: initialMessage });
+        sessionStorage.setItem(PERSONAL_HANDOFF, encoded);
+        if (sessionStorage.getItem(PERSONAL_HANDOFF) !== encoded)
+          throw new Error("The request could not be preserved.");
+        setHandoff({ request_id, message: initialMessage });
+      }
       const { data, error, response } = await api.POST("/heinzel/new-chat", {
         body: { request_id, name: "New Heinzel" },
       });
@@ -73,6 +120,11 @@ export function ChatPanel({ onCollapse }: { onCollapse: () => void }) {
         if (sessionStorage.getItem(draftKey) !== encoded) throw new Error("The message could not be preserved.");
       }
       localStorage.removeItem(key);
+      if (initialMessage) {
+        sessionStorage.removeItem(PERSONAL_HANDOFF);
+        if (sessionStorage.getItem(PERSONAL_HANDOFF) !== null) throw new Error("The request could not be cleared.");
+        setHandoff(null);
+      }
       client.setQueryData(["heinzel", "session", data.session_id], data);
       void client.invalidateQueries({ queryKey: ["heinzel", "sessions"] });
       setParams((current) => {
@@ -137,6 +189,11 @@ export function ChatPanel({ onCollapse }: { onCollapse: () => void }) {
           {t("personal.createError")}
         </p>
       )}
+      {handoffUnreadable && (
+        <p role="alert" className="px-3 text-sm">
+          An earlier agent creation request could not be read. It has not been cleared or retried.
+        </p>
+      )}
       <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto p-3">
         {context && (
           <p className="mb-3 text-xs text-muted-foreground">
@@ -152,6 +209,7 @@ export function ChatPanel({ onCollapse }: { onCollapse: () => void }) {
           context={`route:${location.pathname}`}
           inputRef={inputRef}
           onCreatePersonal={createPersonal}
+          initialPersonalMessage={handoff?.message}
         />
         <Costs chat={chat} className="chat-panel-costs mt-1.5" />
       </div>

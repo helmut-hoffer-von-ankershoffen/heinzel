@@ -144,6 +144,42 @@ describe("ChatPanel", () => {
     expect(await screen.findByLabelText("Message your Heinzel")).toHaveValue("First request");
   });
 
+  it("recovers a workshop sentence and creation ID after a reload before acknowledgement", async () => {
+    const id = "hz-01ARZ3NDEKTSV4RRFFQ69G5FAV";
+    const requests: string[] = [];
+    mockApi({
+      ...base,
+      "/api/heinzel/new-chat": async (request: Request) => {
+        requests.push((await request.json()).request_id);
+        return new Promise(() => {});
+      },
+    });
+    const user = userEvent.setup();
+    const first = renderAt("/doctor");
+    await user.type(screen.getByLabelText("Your message"), "Preserve across reload");
+    await user.click(screen.getByRole("button", { name: "Create Heinzel and take this message" }));
+    await waitFor(() => expect(requests).toHaveLength(1));
+    first.unmount();
+    mockApi({
+      ...base,
+      "/api/heinzel/new-chat": async (request: Request) => {
+        requests.push((await request.json()).request_id);
+        return { session_id: id, heinzel_id: id, name: "New personal helper", messages: [] };
+      },
+      "/api/heinzel/session": { session_id: id, heinzel_id: id, name: "New personal helper", messages: [] },
+      "/api/heinzel/sessions": { sessions: [] },
+    });
+    renderAt("/doctor");
+    await waitFor(() => expect(screen.getByLabelText("Your message")).toHaveValue("Preserve across reload"));
+    expect(screen.getByLabelText("Your message")).toHaveAttribute("readonly");
+    expect(screen.getByText(/earlier creation is unresolved/)).toBeInTheDocument();
+    expect(requests).toHaveLength(1);
+    await user.click(screen.getByRole("button", { name: "Create Heinzel and take this message" }));
+    expect(await screen.findByLabelText("Message your Heinzel")).toHaveValue("Preserve across reload");
+    expect(requests).toEqual([requests[0], requests[0]]);
+    expect(sessionStorage.getItem("hz.personal-heinzel.handoff")).toBeNull();
+  });
+
   it("keeps the sentence and creation identity when local draft storage fails", async () => {
     const id = "hz-01ARZ3NDEKTSV4RRFFQ69G5FAV";
     const requests: string[] = [];

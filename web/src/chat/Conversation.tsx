@@ -1,7 +1,7 @@
 // What a chat shows wherever it is (Home, the right sidebar): the messages, the answer as it streams with the tools
 // it calls, every proposed action as a card that runs only on Confirm, the costs, and the composer.
 import { Check, Info, Plus, Send, X } from "lucide-react";
-import { type FormEvent, type RefObject, useId, useState } from "react";
+import { type FormEvent, type RefObject, useEffect, useId, useState } from "react";
 import type { ModelChoice } from "@/api/chat";
 import type { SchemaChatAction, SchemaChatMessage } from "@/api/client";
 import { useConfig } from "@/api/queries";
@@ -198,12 +198,14 @@ export function Composer({
   inputRef,
   className,
   onCreatePersonal,
+  initialPersonalMessage,
 }: {
   chat: Chat;
   context: string;
   inputRef?: RefObject<HTMLTextAreaElement | null>;
   className?: string;
   onCreatePersonal?: (message: string) => Promise<boolean>;
+  initialPersonalMessage?: string;
 }) {
   const [creating, setCreating] = useState(false);
   const sessionId = chat.session?.id;
@@ -212,6 +214,9 @@ export function Composer({
     sessionId ?? null,
     chat.live != null || chat.deciding || chat.loading,
   );
+  useEffect(() => {
+    if (initialPersonalMessage) setMessage((current) => current || initialPersonalMessage);
+  }, [initialPersonalMessage, setMessage]);
   const choice: ModelChoice = picked ?? { model: chat.session?.model ?? null, effort: chat.session?.effort ?? null };
   const inputId = useId();
   const createPersonal = async () => {
@@ -227,7 +232,7 @@ export function Composer({
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     const text = message.trim();
-    if (!text || chat.live || chat.loading || creating) return;
+    if (!text || chat.live || chat.loading || creating || initialPersonalMessage) return;
     setMessage("");
     if (!(await chat.send(text, context, picked ?? {})))
       setMessage((current) => current || text); // nothing lost
@@ -246,6 +251,7 @@ export function Composer({
           value={message}
           maxLength={MESSAGE_LIMIT}
           disabled={creating}
+          readOnly={Boolean(initialPersonalMessage)}
           onChange={(event) => {
             setMessage(event.target.value);
             typed(); // a soundscape plays softer while you type (ADR 0058)
@@ -272,7 +278,7 @@ export function Composer({
         <Button
           type="submit"
           size="icon"
-          disabled={!message.trim() || chat.live != null || chat.loading || creating}
+          disabled={!message.trim() || chat.live != null || chat.loading || creating || Boolean(initialPersonalMessage)}
           aria-label={t("chat.send")}
         >
           <Send aria-hidden />
@@ -282,6 +288,11 @@ export function Composer({
         <span role="status" className="sr-only">
           Creating your Heinzel…
         </span>
+      )}
+      {initialPersonalMessage && !creating && (
+        <p role="status" className="text-xs text-muted-foreground">
+          An earlier creation is unresolved. Retry it with the preserved message.
+        </p>
       )}
       <ModelPicker value={choice} onChange={setPicked} disabled={chat.live != null || creating} />
     </div>
