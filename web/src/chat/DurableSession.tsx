@@ -5,9 +5,11 @@ import { Link, useSearchParams } from "react-router";
 import { chatKey, sendChat } from "@/api/chat";
 import { api, problem, type SchemaSessionSnapshot } from "@/api/client";
 import { useDaemonStatus } from "@/api/daemon";
+import { AgentProposal } from "@/chat/AgentProposal";
 import { ActionCard } from "@/chat/Conversation";
 import { useDurableDraft } from "@/chat/durableDraft";
 import { Button } from "@/components/ui/button";
+import { ProfileEditor } from "@/heinzel/PersonalHeinzels";
 import { t } from "@/i18n";
 
 async function result<T>(call: Promise<{ data?: T; error?: unknown; response: Response }>): Promise<T> {
@@ -37,6 +39,8 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
   } = useDurableDraft(sessionId);
   const { text, pending, agentPending, checkInRequest } = composer;
   const [error, setError] = useState(false);
+  const [profileLocked, setProfileLocked] = useState(false);
+  const [showProposal, setShowProposal] = useState(false);
   const [busy, setBusy] = useState(false);
   const [scheduleBusy, setScheduleBusy] = useState(false);
   const [scheduleError, setScheduleError] = useState(false);
@@ -509,23 +513,66 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
     <div className="flex h-full flex-col">
       <div className="flex h-12 shrink-0 items-center justify-between gap-2 border-b border-border px-3">
         <h2 className="min-w-0 truncate font-medium">{query.data?.name ?? t("durable.title")}</h2>
-        <Button type="button" variant="ghost" size="sm" disabled={busy} onClick={onClose}>
+        <Button type="button" variant="ghost" size="sm" disabled={busy || profileLocked} onClick={onClose}>
           {t("durable.close")}
         </Button>
       </div>
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
         {query.isPending && <p role="status">{t("state.loading")}</p>}
         {query.isError && <p role="alert">{t("durable.unavailable")}</p>}
+        {query.data && (
+          <details className="rounded-lg border border-border p-3">
+            <summary className="cursor-pointer text-sm font-medium">{t("personal.customize")}</summary>
+            <ProfileEditor initial={query.data} onLock={setProfileLocked} inChat />
+          </details>
+        )}
+        {query.data && (
+          <details
+            className="rounded-lg border border-border p-3"
+            onToggle={(event) => {
+              if (event.currentTarget.open) setShowProposal(true);
+            }}
+          >
+            <summary className="cursor-pointer text-sm font-medium">Scheduled agent terms</summary>
+            {showProposal && <AgentProposal sessionId={sessionId} />}
+          </details>
+        )}
         {query.data?.messages?.map((message) => (
           <p key={`${message.seq}-${message.id}`} className="whitespace-pre-wrap text-sm">
-            <strong>{message.role}:</strong> {message.text}
+            <strong>{message.role === "tool" ? "Tool activity" : message.role}:</strong>{" "}
+            {message.role === "tool" ? "A tool event was recorded." : message.text}
+            {message.status && message.status !== "completed" && <span> ({message.status})</span>}
           </p>
+        ))}
+        {(query.data?.pending_actions ?? []).map((action) => (
+          <section
+            key={action.id}
+            aria-label="Action awaiting review"
+            className="space-y-1 rounded border border-border p-3 text-sm"
+          >
+            <h3 className="font-medium">{action.preview?.title || "Action proposal"}</h3>
+            <p>Status: {action.status === "pending" ? "Waiting for approval" : action.status}</p>
+            {action.preview?.target && <p>Target: {action.preview.target}</p>}
+            {action.preview?.before && <p className="whitespace-pre-wrap">Before: {action.preview.before}</p>}
+            {action.preview?.after && <p className="whitespace-pre-wrap">Draft: {action.preview.after}</p>}
+            {action.preview?.diff && <p className="whitespace-pre-wrap">Changes: {action.preview.diff}</p>}
+            <p>Approval for this durable action is not available here yet.</p>
+          </section>
         ))}
         {agentChatId && agentChatQuery.isPending && <p role="status">{t("durable.agentLoading")}</p>}
         {agentChatId && agentChatQuery.isError && <p role="alert">{t("durable.agentUnavailable")}</p>}
         {agentChat?.messages?.map((message) => (
           <p key={`${message.role}-${message.request_id ?? message.at}`} className="whitespace-pre-wrap text-sm">
             <strong>{message.role}:</strong> {message.text || message.detail}
+            {message.status && message.status !== "completed" && <span> ({message.status})</span>}
+            {message.tools && Object.keys(message.tools).length > 0 && (
+              <span className="block">
+                Tools used:{" "}
+                {Object.entries(message.tools)
+                  .map(([name, count]) => `${name} (${count})`)
+                  .join(", ")}
+              </span>
+            )}
           </p>
         ))}
         {pendingAgentActions.length > 0 && (

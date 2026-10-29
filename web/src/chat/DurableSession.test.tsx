@@ -884,3 +884,27 @@ describe("personal conversation links", () => {
     }
   });
 });
+
+it("shows recorded activity and stored drafts without exposing tool bodies or inventing approval", async () => {
+  mockApi({
+    ...shell,
+    "/api/heinzel/session": {
+      ...snapshot,
+      appearance: { age: "grown", build: "regular", hat: "red", shirt: "blue", accessories: ["scarf"] },
+      profile_revision: 1,
+      messages: [{ id: "tool1", seq: 1, role: "tool", text: "private tool payload", status: "failed" }],
+      pending_actions: [
+        { id: "p1", status: "pending", preview: { title: "Review draft", target: "Report", after: "A draft" } },
+      ],
+      schedule: null,
+    },
+  });
+  renderAt(`/?chat=${sessionId}`);
+  expect((await screen.findByText(/Tool activity:/)).parentElement).toHaveTextContent("failed");
+  expect(screen.queryByText("private tool payload")).not.toBeInTheDocument();
+  expect(screen.getByText("Waiting for approval", { exact: false })).toBeInTheDocument();
+  expect(screen.getByText("Draft: A draft")).toBeInTheDocument();
+  expect(screen.getByText("Approval for this durable action is not available here yet.")).toBeInTheDocument();
+  fireEvent.click(screen.getByText("Customize your Heinzel"));
+  expect(screen.getByRole("checkbox", { name: "scarf" })).toBeChecked();
+});

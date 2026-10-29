@@ -4,6 +4,8 @@ const en = {
   "personal.intro": "Give each personal Heinzel a name and look. Creating one does not start a schedule.",
   "personal.choose": "Personal Heinzel",
   "personal.select": "Choose a Heinzel",
+  "personal.customize": "Customize your Heinzel",
+  "personal.accessories": "Accessories",
   "personal.create": "Create a personal Heinzel",
   "personal.retryCreate": "Retry creation",
   "personal.createError": "Could not confirm creation. Retry to recover the same Heinzel.",

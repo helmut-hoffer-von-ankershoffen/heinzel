@@ -55,7 +55,15 @@ export function ago(iso: string, now = Date.now()): string {
   return relative.format(0, "minute");
 }
 
-export function SessionSwitcher({ chat, onNew }: { chat: Chat; onNew: () => void }) {
+export function SessionSwitcher({
+  chat,
+  onNew,
+  onCreatePersonal,
+}: {
+  chat: Chat;
+  onNew: () => void;
+  onCreatePersonal: () => void;
+}) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const sessions = useChatSessions(open);
@@ -131,6 +139,17 @@ export function SessionSwitcher({ chat, onNew }: { chat: Chat; onNew: () => void
           >
             <Plus aria-hidden />
             {t("chat.new")}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setOpen(false);
+              onCreatePersonal();
+            }}
+            className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-ui hover:bg-accent [&_svg]:size-4 [&_svg]:text-icon"
+          >
+            <Plus aria-hidden />
+            {t("personal.create")}
           </button>
           <div id={listId} className="mt-1 max-h-80 overflow-y-auto">
             {sessions.isLoading && (

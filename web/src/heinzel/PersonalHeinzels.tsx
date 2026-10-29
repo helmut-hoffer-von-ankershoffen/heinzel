@@ -1,10 +1,10 @@
 // Personal identities use the durable private session API; they are distinct from the existing workflow list and chat.
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import { api, problem, type SchemaHeinzelAppearance, type SchemaSessionSnapshot } from "@/api/client";
 import { HeinzelAvatar } from "@/components/HeinzelAvatar";
-import { AGES, BEARDS, BUILDS, HATS, SHIRTS } from "@/components/heinzel";
+import { ACCESSORIES, AGES, BEARDS, BUILDS, HATS, SHIRTS } from "@/components/heinzel";
 import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
 
@@ -109,7 +109,15 @@ export function PersonalHeinzels() {
   );
 }
 
-function ProfileEditor({ initial, onLock }: { initial: SchemaSessionSnapshot; onLock: (locked: boolean) => void }) {
+export function ProfileEditor({
+  initial,
+  onLock,
+  inChat = false,
+}: {
+  initial: SchemaSessionSnapshot;
+  onLock: (locked: boolean) => void;
+  inChat?: boolean;
+}) {
   const client = useQueryClient();
   const navigate = useNavigate();
   const [snapshot, setSnapshot] = useState(initial);
@@ -190,6 +198,9 @@ function ProfileEditor({ initial, onLock }: { initial: SchemaSessionSnapshot; on
   const disabled = busy || pending !== null;
   const savedLook = snapshot.appearance ?? { age: "grown" as const, build: "regular" as const };
   const hasUncommittedChanges = name !== snapshot.name || JSON.stringify(look) !== JSON.stringify(savedLook);
+  useEffect(() => {
+    onLock(hasUncommittedChanges || pending !== null || busy);
+  }, [hasUncommittedChanges, pending, busy, onLock]);
   return (
     <form
       className="space-y-3 border-t border-border pt-4"
@@ -301,6 +312,26 @@ function ProfileEditor({ initial, onLock }: { initial: SchemaSessionSnapshot; on
             ))}
           </select>
         </label>
+        <fieldset className="space-y-1 text-sm">
+          <legend>{t("personal.accessories")}</legend>
+          {ACCESSORIES.map((accessory) => (
+            <label key={accessory} className="mr-3 inline-flex items-center gap-1">
+              <input
+                type="checkbox"
+                checked={(look.accessories ?? []).includes(accessory)}
+                onChange={(event) =>
+                  setLook({
+                    ...look,
+                    accessories: event.target.checked
+                      ? [...(look.accessories ?? []), accessory]
+                      : (look.accessories ?? []).filter((item) => item !== accessory),
+                  })
+                }
+              />
+              {accessory}
+            </label>
+          ))}
+        </fieldset>
       </fieldset>
       {error && <p role="alert">{t("personal.saveError")}</p>}
       <div className="flex flex-wrap gap-2">
@@ -314,14 +345,16 @@ function ProfileEditor({ initial, onLock }: { initial: SchemaSessionSnapshot; on
         )}
       </div>
       {hasUncommittedChanges && <p className="text-sm text-muted-foreground">{t("personal.saveBeforeSchedule")}</p>}
-      <Button
-        type="button"
-        variant="outline"
-        disabled={busy || pending !== null || hasUncommittedChanges}
-        onClick={() => navigate(`/heinzel?chat=${encodeURIComponent(snapshot.session_id)}`)}
-      >
-        {t("personal.openSchedule")}
-      </Button>
+      {!inChat && (
+        <Button
+          type="button"
+          variant="outline"
+          disabled={busy || pending !== null || hasUncommittedChanges}
+          onClick={() => navigate(`/heinzel?chat=${encodeURIComponent(snapshot.session_id)}`)}
+        >
+          {t("personal.openSchedule")}
+        </Button>
+      )}
     </form>
   );
 }
