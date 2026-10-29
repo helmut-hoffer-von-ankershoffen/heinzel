@@ -1626,6 +1626,7 @@ class SessionCrud(ApprovalIssuer):
             encoded = _Cursor(v=1, session_id=session_id, after=page[-1].seq).model_dump_json().encode()
             next_cursor = base64.urlsafe_b64encode(encoded).decode().rstrip("=")
         costs = self.costs()
+        costs = self.costs()
         return SessionSnapshot(
             session_id=session_id,
             heinzel_id=session_id,

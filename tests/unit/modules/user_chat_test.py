@@ -33,6 +33,7 @@ assert sys.argv[sys.argv.index('--tools')+1] == '' and sys.argv[sys.argv.index('
 open({str(marker)!r},'a').write('x')
 if {pause!r}: time.sleep(10)
 payload=json.load(sys.stdin)
+open({str(directory / "prompt-input")!r},'w').write(json.dumps(payload))
 if len(payload['messages']) == 1:
  wire={{'kind':'tool','name':'use_tool','arguments':{{'name':'text.word_count','arguments':{{'text':'private'}}}},'text':None}}
 else:
@@ -71,6 +72,7 @@ def setup_chat(current):
 
 
 def test_fake_cli_reply_tool_denial_unknown_usage_and_restart(tmp_path):
+    assert HeinzelSettings().subscription_budget_mode == "plan-unknown"
     current = CurrentUser(tmp_path / "identity")
     with current.local("cli"):
         current, crud, session = setup_chat(current)
@@ -101,7 +103,7 @@ def test_fake_cli_reply_tool_denial_unknown_usage_and_restart(tmp_path):
             asyncio.run(service.answer(session, "hello"))
 
 
-def test_default_usd_cap_refuses_before_start_or_model_call(tmp_path):
+def test_explicit_usd_cap_refuses_before_start_or_model_call(tmp_path):
     current = CurrentUser(tmp_path / "identity")
     with current.local("cli"):
         current, crud, session = setup_chat(current)
@@ -137,3 +139,80 @@ def test_cancelled_cli_keeps_started_turn_and_will_not_relaunch(tmp_path):
             asyncio.run(service.answer(session, "hello"))
         assert marker.read_text() == "x"
         assert crud.snapshot(session).costs.unknown_turns == 1
+
+
+def test_full_current_message_is_retained(tmp_path):
+    current = CurrentUser(tmp_path / "identity")
+    with current.local("cli"):
+        crud = SessionCrud(
+            PersonalSessionRepository(current), lambda: SessionCosts(session_max_usd=2, message_max_usd=0.2)
+        )
+        session = crud.new_chat("new").session_id
+        text = "long-current-" + "z" * 7000
+        crud.accept(session, MessageRequest(request_id="long", text=text))
+        executable = fake_claude(tmp_path)
+        service = UserChatService(crud, current, load=lambda: FixtureConfig(executable))
+        answer = asyncio.run(service.answer(session, "long"))
+        assert answer.message.text == "A real recorded reply"
+        payload = (tmp_path / "prompt-input").read_text()
+        assert text in payload
+
+
+def test_earlier_started_uncertain_turn_blocks_later_without_launch(tmp_path):
+    from heinzel.modules.heinzel._interactive_turn import _turn_id
+
+    current = CurrentUser(tmp_path / "identity")
+    with current.local("cli"):
+        current, crud, session = setup_chat(current)
+        with crud.repository.control_writer(session) as writer:
+            turn = _turn_id("hello")
+            writer.append("interactive.started", key=turn, turn=turn, data={"message_id": "hello"})
+        crud.accept(session, MessageRequest(request_id="later", text="Hello again"))
+        executable = fake_claude(tmp_path)
+        service = UserChatService(crud, current, load=lambda: FixtureConfig(executable))
+        with pytest.raises(HeinzelError, match="uncertain"):
+            asyncio.run(service.answer(session, "later"))
+        assert not (tmp_path / "model-calls").exists()
+
+
+def test_fifo_executable_is_refused_without_blocking(tmp_path):
+    import os
+
+    fifo = tmp_path / "fifo"
+    os.mkfifo(fifo)
+    with pytest.raises(HeinzelError, match="executable"):
+        UserChatService._executable(str(fifo))
+
+
+@pytest.mark.parametrize("status", ["pending", "done"])
+def test_existing_legacy_personal_action_does_not_block_new_generic_turn(tmp_path, status):
+    from datetime import UTC, datetime
+
+    from heinzel import Settings
+    from heinzel.modules.system.runner.chat._models import ChatAction, ChatContext, ChatMessage, ChatSettings
+    from heinzel.modules.system.runner.chat._store import ChatStore
+
+    current = CurrentUser(tmp_path / "identity")
+    with current.local("cli"):
+        current, crud, session = setup_chat(current)
+        store = ChatStore(Settings(state_dir=tmp_path / "legacy"), ChatSettings(), RunnerSettings(), current)
+        chat = store.create(ChatContext(kind="text", ref=session), personal_session_id=session)
+        chat.messages.append(ChatMessage(role="user", text="Earlier legacy message", at=datetime.now(UTC)))
+        chat.actions.append(
+            ChatAction(
+                id="a1",
+                tool="heinzel_schedule_control",
+                module="heinzel",
+                operation="schedule-control",
+                command="review",
+                status=status,
+                proposed=datetime.now(UTC),
+                arguments={"session_id": session, "action": "activate"},
+            )
+        )
+        store.save(chat)
+        executable = fake_claude(tmp_path)
+        service = UserChatService(crud, current, load=lambda: FixtureConfig(executable))
+        answer = asyncio.run(service.answer(session, "hello"))
+        assert answer.message.text == "A real recorded reply"
+        assert store.load(chat.id).actions[0].status == status

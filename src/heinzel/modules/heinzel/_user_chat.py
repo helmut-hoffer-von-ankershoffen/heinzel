@@ -5,7 +5,6 @@ default. Subscription usage remains unpriced; the user must explicitly select pl
 """
 
 import asyncio
-import hashlib
 import json
 import os
 import shutil
@@ -24,6 +23,7 @@ from heinzel.modules.heinzel._claude_subscription_model import (
     _VERSION,
     ClaudeSubscriptionModel,
     SubscriptionAdmission,
+    executable_digest,
 )
 from heinzel.modules.heinzel._engine import TurnLimits
 from heinzel.modules.heinzel._interactive_turn import InteractiveTurn, ToolActivity, _turn_id
@@ -153,8 +153,7 @@ class UserChatService:
     def _executable(found: str) -> tuple[Path, str]:
         try:
             executable = Path(found).resolve(strict=True)
-            if executable.stat().st_size <= 256 * 1024 * 1024:
-                return executable, hashlib.sha256(executable.read_bytes()).hexdigest()
+            return executable, executable_digest(executable)
         except OSError:
             pass
         msg = "The selected Claude Code executable is unavailable"

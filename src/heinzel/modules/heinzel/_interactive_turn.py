@@ -33,6 +33,8 @@ from heinzel.modules.heinzel._turn_skill_adapter import TurnSkillAdapter, skill_
 
 _MAX_ARGUMENT_BYTES = 16000
 _MAX_ACTIVITY = 100
+_MAX_CURRENT_JSON_BYTES = 24_000
+_MAX_HISTORY_JSON_BYTES = 12_000
 _JSON = TypeAdapter(dict[str, JsonValue])
 
 
@@ -178,7 +180,7 @@ class InteractiveTurn:
         )
         return await self.run(session_id, request_id, wrapped, limits=limits, expected_grant=grant, catalog=catalog)
 
-    async def run(  # noqa: C901, PLR0913, PLR0915 - one lock and state boundary for the entire turn
+    async def run(  # noqa: C901, PLR0912, PLR0913, PLR0915 - one lock and state boundary for the entire turn
         self,
         session_id: str,
         request_id: str,
@@ -244,7 +246,12 @@ class InteractiveTurn:
                     None,
                 )
                 if prior_reply is None:
-                    msg = "An earlier accepted message must finish or be resolved first"
+                    if any(
+                        event.kind == "interactive.started" and event.key == _turn_id(incoming_id) for event in events
+                    ):
+                        msg = "An earlier started turn has an uncertain outcome and must be inspected first"
+                    else:
+                        msg = "An earlier accepted message must finish or be resolved first"
                     raise HeinzelError(msg)
                 ordered.extend((incoming, prior_reply))
             ordered.append(accepted)
@@ -252,6 +259,28 @@ class InteractiveTurn:
             if message.status == "expired":
                 msg = "This accepted message is no longer retained"
                 raise HeinzelError(msg)
+            current_item = {"role": message.role, "text": message.text}
+            if len(json.dumps(current_item, ensure_ascii=True).encode()) > _MAX_CURRENT_JSON_BYTES:
+                msg = "This message is too large for the selected chat bridge; shorten it before sending"
+                raise HeinzelError(msg)
+            previous = [self._crud._message(session_id, event) for event in ordered[:-1]]  # noqa: SLF001
+            history: list[dict[str, str]] = []
+            remaining = _MAX_HISTORY_JSON_BYTES
+            omitted = False
+            for item in reversed(previous):
+                if item.status == "expired":
+                    omitted = True
+                    continue
+                entry = {"role": item.role, "text": item.text}
+                size = len(json.dumps(entry, ensure_ascii=True).encode()) + 2
+                if size > remaining:
+                    omitted = True
+                    break
+                history.insert(0, entry)
+                remaining -= size
+            if omitted:
+                history.insert(0, {"role": "system", "text": "Some earlier conversation is omitted from this turn."})
+            prompt = json.dumps([*history, current_item], ensure_ascii=True)
             with repo.control_writer(session_id) as writer:
                 writer.append(
                     "interactive.started",
@@ -320,11 +349,6 @@ class InteractiveTurn:
                         data=body.model_dump(mode="json"),
                     )
 
-            history = [self._crud._message(session_id, event) for event in ordered[-20:]]  # noqa: SLF001
-            prompt = json.dumps(
-                [{"role": item.role, "text": item.text[:4000]} for item in history if item.status != "expired"],
-                ensure_ascii=False,
-            )
             deps = TurnDeps(
                 session_id,
                 turn,

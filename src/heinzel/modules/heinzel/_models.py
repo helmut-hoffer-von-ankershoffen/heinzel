@@ -497,7 +497,7 @@ class HeinzelSettings(ModuleSettings):
         gt=0,
         allow_inf_nan=False,
         title="Most per durable chat",
-        description="The most one durable Heinzel conversation may cost in US dollars, across its model turns.",
+        description="The most one durable Heinzel conversation may cost in US dollars on direct API model turns.",
         json_schema_extra={"x-unit": "usd"},
     )
     message_max_usd: float = Field(
@@ -505,15 +505,15 @@ class HeinzelSettings(ModuleSettings):
         ge=0,
         allow_inf_nan=False,
         title="Most per message",
-        description="The most one model turn in a durable Heinzel conversation may cost in US dollars.",
+        description="The most one direct API model turn in a durable Heinzel conversation may cost in US dollars.",
         json_schema_extra={"x-unit": "usd"},
     )
 
     subscription_budget_mode: Literal["usd-cap", "plan-unknown"] = Field(
-        default="usd-cap",
+        default="plan-unknown",
         title="Subscription chat budget",
-        description="USD caps remain required by default. Plan-unknown explicitly uses subscription usage with "
-        "unknown dollar cost; USD caps apply to direct APIs instead.",
+        description="Subscription plans use provider limits and report unknown dollar cost; USD caps govern APIs. "
+        "Select usd-cap to require a dollar limit, which currently blocks subscription turns.",
     )
 
     retention_days: int = Field(
