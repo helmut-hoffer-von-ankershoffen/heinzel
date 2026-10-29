@@ -6,6 +6,7 @@ import { token } from "./token";
 
 /** Resource sampling is server-owned; null means that reading is unavailable. */
 export type Resources = {
+  hostname: string;
   sampled_at: string;
   cpu_percent: number | null;
   memory_percent: number | null;
@@ -41,6 +42,7 @@ async function resources(signal: AbortSignal): Promise<Resources> {
     return value === null || (typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= max);
   };
   if (
+    typeof report.hostname !== "string" ||
     typeof report.sampled_at !== "string" ||
     !Number.isFinite(Date.parse(report.sampled_at)) ||
     !reading("cpu_percent", 100) ||
