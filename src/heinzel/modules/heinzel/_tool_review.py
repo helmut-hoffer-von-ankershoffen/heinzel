@@ -31,6 +31,7 @@ class ToolReviewItem(BaseModel):
     builtin: bool
     fixed_arguments: dict[str, str | int | bool | None]
     policy_sha256: str
+    implementation_sha256: str
     code_evidence: str
     scope_evidence: str
     executable: bool = Field(description="Currently eligible under this internal catalog, not an approval or grant.")

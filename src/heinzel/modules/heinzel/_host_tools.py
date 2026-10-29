@@ -88,6 +88,7 @@ class ToolDescriptor:
     builtin: bool
     fixed_arguments: dict[str, Scalar]
     policy_sha256: str
+    implementation_sha256: str
     code_evidence: str
     scope_evidence: str
     executable: bool
@@ -110,6 +111,7 @@ class HostToolCatalog:
         *,
         verified_code: Callable[[Exposed], str] | None = None,
         argument_policies: Mapping[str, ExactArgumentPolicy] | None = None,
+        code_evidence: str = "Implementation identity asserted by host verifier; independently unverified here.",
     ) -> None:
         self._kernel = kernel
         self._current = current
@@ -118,6 +120,7 @@ class HostToolCatalog:
         self._owner = crud.repository.principal_id
         self._host_reads = frozenset(host_reads)
         self._verified_code = verified_code
+        self._code_evidence = code_evidence
         self._argument_policies = dict(argument_policies or {})
         if kernel.resolve(CurrentUser) is not current or current.principal().id != self._owner:
             msg = "The operation catalog owner cannot be verified"
@@ -138,7 +141,7 @@ class HostToolCatalog:
         # The fixed argument policy does not verify provider identity or non-parameter ambient resources.
         return item if item is not None and not item.parameters else None
 
-    def _binding(self, item: Exposed) -> tuple[dict[str, Any], str]:
+    def _implementation(self, item: Exposed) -> str:
         if self._verified_code is None:
             msg = "This operation has no verified implementation identity"
             raise HeinzelError(msg)
@@ -154,7 +157,10 @@ class HostToolCatalog:
         ):
             msg = "This operation has no verified implementation identity"
             raise HeinzelError(msg)
-        return _schema(item, identity)
+        return identity
+
+    def _binding(self, item: Exposed) -> tuple[dict[str, Any], str]:
+        return _schema(item, self._implementation(item))
 
     def preview(self) -> list[ToolPreview]:
         """Show only independently host-allowed read operations, without running them."""
@@ -188,6 +194,10 @@ class HostToolCatalog:
                 policy = ExactArgumentPolicy(name, digest, ())
             declared = tuple(parameter.name for parameter in item.parameters)
             fixed = policy.apply(name, digest, declared, {})
+            implementation = self._implementation(item)
+            if _schema(item, implementation)[1] != digest:
+                msg = "This operation changed during review"
+                raise HeinzelError(msg)
             origin = item.record.origin
             descriptors.append(
                 ToolDescriptor(
@@ -200,7 +210,8 @@ class HostToolCatalog:
                     origin.builtin,
                     fixed,
                     policy.fingerprint(),
-                    "Implementation identity asserted by host verifier; independently unverified here.",
+                    implementation,
+                    self._code_evidence,
                     "Ambient account and resource authority not verified."
                     if declared
                     else "No model arguments; host read allowlist applies.",
