@@ -148,7 +148,7 @@ export function SkillSharingPanel({ draft }: { draft: SchemaSkillDraft }) {
   return (
     <section aria-label="Skill sharing request" className="space-y-2 rounded border p-3 text-sm">
       <h4 className="font-medium">Request sharing review</h4>
-      <p>
+      <p className="break-all">
         Target: {draft.requested_scope} · {draft.scope_ref}
       </p>
       <p>
@@ -160,7 +160,9 @@ export function SkillSharingPanel({ draft }: { draft: SchemaSkillDraft }) {
       )}
       {error && <p role="alert">{error}</p>}
       {proposal && (
-        <p role="status">Request {proposal.request_id}: awaiting review; authority unverified. Not shared.</p>
+        <p role="status" className="break-all">
+          Request {proposal.request_id}: awaiting review; authority unverified. Not shared.
+        </p>
       )}
       <Button type="button" disabled={busy || recovery.blocked} onClick={() => void submit()}>
         {pending ? "Retry same sharing request" : "Request review of sharing"}

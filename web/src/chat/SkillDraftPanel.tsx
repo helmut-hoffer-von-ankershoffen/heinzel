@@ -239,8 +239,8 @@ export function SkillDraftPanel({ sessionId }: { sessionId: string }) {
       )}
       {saved ? (
         <section className="mt-3 space-y-2">
-          <h3>Saved private draft: {saved.name}</h3>
-          <p>
+          <h3 className="break-all">Saved private draft: {saved.name}</h3>
+          <p className="break-all">
             Requested scope: {saved.requested_scope}
             {saved.scope_ref ? ` · ${saved.scope_ref}` : ""} (not shared)
           </p>
@@ -248,10 +248,8 @@ export function SkillDraftPanel({ sessionId }: { sessionId: string }) {
           <p className="break-all text-xs">Draft fingerprint: {saved.preview_sha256}</p>
           {Object.entries(saved.files).map(([path, content]) => (
             <div key={path}>
-              <h4 className="font-medium">{path}</h4>
-              <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-all rounded border p-2 text-xs">
-                {content}
-              </pre>
+              <h4 className="break-all font-medium">{path}</h4>
+              <pre className="whitespace-pre-wrap break-all rounded border p-2 text-xs">{content}</pre>
             </div>
           ))}
           {saved.requested_scope !== "personal" && <SkillSharingPanel key={saved.request_id} draft={saved} />}
@@ -273,17 +271,15 @@ export function SkillDraftPanel({ sessionId }: { sessionId: string }) {
       ) : review ? (
         <section className="mt-3 space-y-2" aria-label="Review skill draft">
           <h3 className="font-medium">Review exact draft</h3>
-          <p>Name: {review.name}</p>
-          <p>
+          <p className="break-all">Name: {review.name}</p>
+          <p className="break-all">
             Requested scope: {review.requested_scope}
             {review.scope_ref ? ` · ${review.scope_ref}` : ""} (not shared)
           </p>
           {Object.entries(review.files).map(([path, content]) => (
             <div key={path}>
-              <h4 className="font-medium">{path}</h4>
-              <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-all rounded border p-2 text-xs">
-                {content}
-              </pre>
+              <h4 className="break-all font-medium">{path}</h4>
+              <pre className="whitespace-pre-wrap break-all rounded border p-2 text-xs">{content}</pre>
             </div>
           ))}
           <div className="flex flex-wrap gap-2">
