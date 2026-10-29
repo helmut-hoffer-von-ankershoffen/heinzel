@@ -617,3 +617,91 @@ def test_queued_user_text_cannot_impersonate_an_agent_tool_event(services):
     assert snapshot.messages[0].role == "user"
     assert snapshot.messages[0].status == "pending"
     assert snapshot.messages[0].text == text
+
+
+@pytest.mark.parametrize(
+    ("kind", "ref"),
+    [
+        ("document", "https://docs.google.com/document/d/abc123_DEF456/edit"),
+        ("spreadsheet", "https://docs.google.com/spreadsheets/d/abc123_DEF456/edit"),
+        ("presentation", "https://docs.google.com/presentation/d/abc123_DEF456/edit"),
+    ],
+)
+def test_personal_artifact_association_is_private_local_idempotent_and_owner_scoped(services, kind, ref):
+    service, repository, current = services
+    session_id = service.new_chat("artifact-owner").session_id
+    saved = service.associate_artifact(session_id, "add-file", kind, ref)
+    assert saved.provider == "google"
+    assert saved.provenance == "principal-submitted"
+    assert service.associate_artifact(session_id, "add-file", kind, ref) == saved
+    assert service.personal_artifacts(session_id).artifacts == [saved]
+    assert ref not in json.dumps(
+        [event.model_dump(mode="json") for event in repository.control_read(session_id).events]
+    )
+    with pytest.raises(HeinzelError, match="already associated"):
+        service.associate_artifact(session_id, "another-request", kind, ref)
+    with pytest.raises(HeinzelError, match="different artifact"):
+        service.associate_artifact(session_id, "add-file", kind, ref.replace("abc123", "xyz987"))
+    stranger = CallIdentity(
+        Principal("u-" + "a" * 32), "api-bearer", "other", "private", frozenset({"private:read", "private:write"})
+    )
+    with current.using(stranger), pytest.raises(HeinzelError, match="No such personal"):
+        service.personal_artifacts(session_id)
+    with current.using(stranger), pytest.raises(HeinzelError, match="No such personal"):
+        service.associate_artifact(session_id, "attacker", kind, ref)
+
+
+@pytest.mark.parametrize(
+    ("kind", "ref"),
+    [
+        ("document", "https://docs.google.com/spreadsheets/d/abc123_DEF456/edit"),
+        ("presentation", "https://docs.google.com.evil.example/presentation/d/abc123_DEF456/edit"),
+        ("document", "https://user@docs.google.com/document/d/abc123_DEF456/edit"),
+        ("document", "https://docs.google.com/document/d/abc123_DEF456/edit?token=secret"),
+        ("document", "https://docs.google.com/document/d/abc123_DEF456/edit#secret"),
+        ("document", "http://docs.google.com/document/d/abc123_DEF456/edit"),
+        ("pdf", "https://docs.google.com/document/d/abc123_DEF456/edit"),
+    ],
+)
+def test_personal_artifact_rejects_invalid_links_and_kinds(services, kind, ref):
+    service, _, _ = services
+    session_id = service.new_chat("artifact-invalid").session_id
+    with pytest.raises(ValidationError):
+        service.associate_artifact(session_id, "invalid", kind, ref)
+    assert service.personal_artifacts(session_id).artifacts == []
+
+
+def test_artifact_association_is_scoped_to_each_personal_session(services):
+    service, _, _ = services
+    first = service.new_chat("artifact-first").session_id
+    second = service.new_chat("artifact-second").session_id
+    ref = "https://docs.google.com/document/d/abc123_DEF456/edit"
+    one = service.associate_artifact(first, "same-request", "document", ref)
+    assert service.personal_artifacts(second).artifacts == []
+    two = service.associate_artifact(second, "same-request", "document", ref)
+    assert one.session_id != two.session_id
+    assert service.personal_artifacts(first).artifacts == [one]
+    assert service.personal_artifacts(second).artifacts == [two]
+
+
+def test_artifact_request_id_does_not_collide_with_other_event_kinds(services):
+    service, _, _ = services
+    ref = "https://docs.google.com/document/d/abc123_DEF456/edit"
+    first = service.new_chat("artifact-event-first").session_id
+    service.propose_check_in(first, "artifact-association-one")
+    saved = service.associate_artifact(first, "one", "document", ref)
+    assert service.associate_artifact(first, "one", "document", ref) == saved
+    second = service.new_chat("artifact-event-second").session_id
+    service.associate_artifact(second, "one", "document", ref)
+    service.propose_check_in(second, "artifact-association-one")
+    assert service.personal_artifacts(second).artifacts[0].ref == ref
+
+
+def test_artifact_duplicate_file_id_cannot_claim_different_types(services):
+    service, _, _ = services
+    session_id = service.new_chat("artifact-type-conflict").session_id
+    service.associate_artifact(session_id, "doc", "document", "https://docs.google.com/document/d/abc123_DEF456/edit")
+    with pytest.raises(HeinzelError, match="already associated"):
+        service.associate_artifact(
+            session_id, "sheet", "spreadsheet", "https://docs.google.com/spreadsheets/d/abc123_DEF456/edit"
+        )

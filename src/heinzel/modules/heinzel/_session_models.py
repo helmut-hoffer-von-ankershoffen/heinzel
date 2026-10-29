@@ -4,6 +4,7 @@ These are private application models, not kernel primitives. Heads render the sa
 the public session identity, pending decisions or contract versions.
 """
 
+import re
 from datetime import datetime
 from typing import Annotated, Literal
 
@@ -75,6 +76,47 @@ class ReferenceBlock(BaseModel):
 
 
 ResultBlock = Annotated[TextBlock | RendererBlock | ReferenceBlock, Field(discriminator="kind")]
+
+
+class PersonalArtifact(BaseModel):
+    """A principal-submitted association; neither access nor provider ownership has been verified."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    session_id: SessionId = Field(description="The personal session this association belongs to.")
+    request_id: RequestId = Field(description="The stable registration request identity.")
+    provider: Literal["google"] = Field(
+        default="google", description="The user-supplied provider, not an access grant."
+    )
+    kind: Literal["document", "spreadsheet", "presentation"] = Field(description="The declared Google file type.")
+    ref: str = Field(
+        description="Canonical Google editor URL supplied under the authenticated principal; not verified remotely.",
+        max_length=256,
+    )
+    provenance: Literal["principal-submitted"] = Field(
+        default="principal-submitted", description="How this association was recorded; not provider ownership."
+    )
+
+    @model_validator(mode="after")
+    def validate_ref(self) -> "PersonalArtifact":
+        """Reject noncanonical URLs, credentials, query strings and mismatched file types.
+
+        Raises:
+            ValueError: If the declared type and canonical editor URL do not match.
+        """
+        path = {"document": "document", "spreadsheet": "spreadsheets", "presentation": "presentation"}[self.kind]
+        if not re.fullmatch(rf"https://docs\.google\.com/{path}/d/[A-Za-z0-9_-]{{10,128}}/edit", self.ref):
+            msg = "Provide a canonical Google editor link matching the declared file type"
+            raise ValueError(msg)
+        return self
+
+
+class PersonalArtifacts(BaseModel):
+    """Local associations, not a list of files the provider says are accessible."""
+
+    session_id: SessionId = Field(description="The owning personal session.")
+    artifacts: list[PersonalArtifact] = Field(
+        description="Locally recorded associations; provider access is not verified."
+    )
 
 
 class ScheduledAgentProposal(BaseModel):

@@ -37,6 +37,8 @@ from heinzel.modules.heinzel._session_models import (
     HeinzelAppearance,
     MessageAccepted,
     MessageRequest,
+    PersonalArtifact,
+    PersonalArtifacts,
     RequestId,
     ScheduledAgentProposal,
     SessionCosts,
@@ -665,6 +667,63 @@ class SessionCrud(ApprovalIssuer):
     @staticmethod
     def _schedule_revision(events: list[SessionEvent]) -> int:
         return sum(event.kind == "contract.proposed" or event.kind.startswith("schedule.") for event in events)
+
+    def associate_artifact(self, session_id: str, request_id: str, kind: str, ref: str) -> PersonalArtifact:
+        """Store a local principal-submitted association; never contact Google or confer access.
+
+        Raises:
+            HeinzelError: If the request conflicts or this file was already associated.
+        """
+        artifact = PersonalArtifact.model_validate(
+            {"session_id": session_id, "request_id": request_id, "kind": kind, "ref": ref}
+        )
+        key = f"artifact-association-{request_id}"
+        with self.repository.control_writer(session_id) as writer:
+            events = self.repository.control_read(session_id).events
+            prior = next((event for event in events if event.kind == "artifact.associated" and event.key == key), None)
+            if prior is not None:
+                saved = self._read_artifact(session_id, prior)
+                if saved != artifact:
+                    msg = "This request already identifies a different artifact association"
+                    raise HeinzelError(msg)
+                return saved
+            for event in events:
+                if event.kind == "artifact.associated" and (
+                    self._read_artifact(session_id, event).ref.split("/")[5] == artifact.ref.split("/")[5]
+                ):
+                    msg = "This artifact is already associated with this personal session"
+                    raise HeinzelError(msg)
+            body = immutable_body(writer, "artifact-association", artifact.model_dump(mode="json"), control=True)
+            writer.append("artifact.associated", key=key, data=body.model_dump(mode="json"))
+        return artifact
+
+    def personal_artifacts(self, session_id: str) -> PersonalArtifacts:
+        """Read the owner's local associations; no provider access is checked.
+
+        Raises:
+            HeinzelError: If an association is malformed or duplicated.
+        """
+        events = self.repository.control_read(session_id).events
+        artifacts = [self._read_artifact(session_id, event) for event in events if event.kind == "artifact.associated"]
+        if len({artifact.ref.split("/")[5] for artifact in artifacts}) != len(artifacts):
+            msg = "This session's artifact associations are invalid"
+            raise HeinzelError(msg)
+        return PersonalArtifacts(session_id=session_id, artifacts=artifacts)
+
+    def _read_artifact(self, session_id: str, event: SessionEvent) -> PersonalArtifact:
+        try:
+            artifact = PersonalArtifact.model_validate(self._body(session_id, event))
+        except (ValidationError, TypeError, ValueError):
+            msg = "This artifact association is invalid; restore its private snapshot"
+            raise HeinzelError(msg) from None
+        if (
+            event.kind != "artifact.associated"
+            or artifact.session_id != session_id
+            or event.key != f"artifact-association-{artifact.request_id}"
+        ):
+            msg = "This artifact association is invalid; restore its private snapshot"
+            raise HeinzelError(msg)
+        return artifact
 
     def propose_scheduled_agent(
         self, session_id: str, request_id: str, contract: str, max_usd: float, timeout_seconds: int

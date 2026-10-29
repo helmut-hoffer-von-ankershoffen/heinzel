@@ -461,3 +461,34 @@ def test_agent_execution_revision_http_replay_and_stale_amendment(kernel):
         client.get("/heinzel/session", headers=auth, params={"session_id": session["session_id"]}).json()["schedule"]
         is None
     )
+
+
+def test_personal_artifact_associations_are_private_local_and_owner_scoped(kernel):
+    from heinzel import Principal
+
+    client, auth = protected(kernel)
+    session_id = client.post("/heinzel/new-chat", headers=auth, json={"request_id": "artifact-chat"}).json()[
+        "session_id"
+    ]
+    payload = {
+        "session_id": session_id,
+        "request_id": "artifact-one",
+        "kind": "presentation",
+        "ref": "https://docs.google.com/presentation/d/abc123_DEF456/edit",
+    }
+    assert client.post("/heinzel/associate-artifact", json=payload).status_code == 401
+    response = client.post("/heinzel/associate-artifact", headers=auth, json=payload)
+    assert response.status_code == 200, response.text
+    assert response.json()["provenance"] == "principal-submitted"
+    assert client.post("/heinzel/associate-artifact", headers=auth, json=payload).json() == response.json()
+    assert client.get("/heinzel/personal-artifacts", headers=auth, params={"session_id": session_id}).json()[
+        "artifacts"
+    ] == [response.json()]
+    stranger = ApiBearer.issue(Principal("u-" + "a" * 32), "sessions", now=NOW)
+    other = TestClient(api.build(kernel, credentials=stranger, audience="sessions", clock=lambda: NOW), base_url=BASE)
+    stranger_auth = {"Authorization": f"Bearer {stranger.secret}"}
+    assert (
+        other.get("/heinzel/personal-artifacts", headers=stranger_auth, params={"session_id": session_id}).status_code
+        != 200
+    )
+    assert other.post("/heinzel/associate-artifact", headers=stranger_auth, json=payload).status_code != 200

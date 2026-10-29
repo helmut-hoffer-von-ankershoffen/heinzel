@@ -154,6 +154,8 @@ Your Heinzelmännchen: durable agents that keep your team's documents true.
 | Open one durable Heinzel and an ordered page of its accepted messages, even during an active turn. | `hz heinzel session` | `heinzel_session` | — | `GET /api/heinzel/session` |  |  |
 | Save this Heinzel's name or look against the exact profile revision you saw. | `hz heinzel profile` | `heinzel_profile` | — | `POST /api/heinzel/profile` | yes |  |
 | Propose local five-minute check-ins; the schedule stays inactive until activated. | `hz heinzel propose-check-in` | `heinzel_propose_check_in` | — | `POST /api/heinzel/propose-check-in` | yes |  |
+| Associate a Google file locally; no access, provider ownership or permission is verified. | `hz heinzel associate-artifact` | `heinzel_associate_artifact` | — | `POST /api/heinzel/associate-artifact` | yes |  |
+| List local principal-submitted file associations without accessing the provider. | `hz heinzel personal-artifacts` | `heinzel_personal_artifacts` | — | `GET /api/heinzel/personal-artifacts` |  |  |
 | Save an inert agent execution proposal; it neither approves nor starts a model turn. | `hz heinzel propose-scheduled-agent` | `heinzel_propose_scheduled_agent` | — | `POST /api/heinzel/propose-scheduled-agent` | yes |  |
 | Propose revised terms; an independent human review and approval is still required. | `hz heinzel amend-scheduled-agent` | `heinzel_amend_scheduled_agent` | — | `POST /api/heinzel/amend-scheduled-agent` | yes |  |
 | Read the current inert proposal for the personal session, if one exists. | `hz heinzel latest-scheduled-agent-proposal` | `heinzel_latest_scheduled_agent_proposal` | — | `GET /api/heinzel/latest-scheduled-agent-proposal` |  |  |

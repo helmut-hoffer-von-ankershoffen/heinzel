@@ -22,6 +22,8 @@ from heinzel.modules.heinzel._session_models import (
     HeinzelAppearance,
     MessageAccepted,
     MessageRequest,
+    PersonalArtifact,
+    PersonalArtifacts,
     RequestId,
     ScheduledAgentProposal,
     SessionCosts,
@@ -198,6 +200,28 @@ def register_session_operations(module: Module) -> None:  # noqa: C901 - operati
     ) -> SessionSnapshot:
         """Propose local five-minute check-ins; the schedule stays inactive until activated."""
         return service.propose_check_in(session_id, request_id, timezone)
+
+    @module.operation(private=True, read_only=False, audience="everyday")
+    def associate_artifact(
+        service: SessionCrud,
+        session_id: Identity,
+        request_id: Request,
+        kind: Annotated[
+            Literal["document", "spreadsheet", "presentation"],
+            Field(description="The claimed Google file type; not verified with the provider."),
+        ],
+        ref: Annotated[
+            str,
+            Field(description="Canonical Google editor URL.", max_length=256),
+        ],
+    ) -> PersonalArtifact:
+        """Associate a Google file locally; no access, provider ownership or permission is verified."""
+        return service.associate_artifact(session_id, request_id, kind, ref)
+
+    @module.operation(private=True, audience="everyday")
+    def personal_artifacts(service: SessionCrud, session_id: Identity) -> PersonalArtifacts:
+        """List local principal-submitted file associations without accessing the provider."""
+        return service.personal_artifacts(session_id)
 
     @module.operation(private=True, read_only=False, audience="everyday")
     def propose_scheduled_agent(  # noqa: PLR0913, PLR0917 - flat private API
