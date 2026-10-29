@@ -92,7 +92,7 @@ def test_core_project_has_no_plugin_install_or_delivery_dependencies():
     assert not any(name.startswith("heinzel-") for name in root["dependency-groups"]["test"])
     assert root["tool"]["pytest"]["testpaths"] == ["tests"]
     assert root["tool"]["coverage"]["run"]["source"] == ["heinzel"]
-    assert "plugins" in root["tool"]["hatch"]["build"]["targets"]["sdist"]["exclude"]
+    assert "/plugins" in root["tool"]["hatch"]["build"]["targets"]["sdist"]["exclude"]
     assert "plugins" in root["tool"]["ruff"]["extend-exclude"]
     assert "plugins" in root["tool"]["typos"]["files"]["extend-exclude"]
     assert all(not item["filename"].startswith("plugins/") for item in root["tool"]["bumpversion"]["files"])
