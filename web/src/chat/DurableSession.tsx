@@ -715,7 +715,9 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
         )}
         {query.data?.messages?.map((message) => (
           <p key={`${message.seq}-${message.id}`} className="whitespace-pre-wrap text-sm">
-            <strong>{message.role === "tool" ? "Tool activity" : message.role}:</strong>{" "}
+            <strong>
+              {message.role === "tool" ? "Tool activity" : message.origin === "daemon" ? "Daemon" : message.role}:
+            </strong>{" "}
             {message.role === "tool" ? "A tool event was recorded." : message.text}
             {message.status && message.status !== "completed" && <span> ({message.status})</span>}
             {message.billing === "plan" && (

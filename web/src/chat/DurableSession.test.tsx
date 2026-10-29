@@ -829,6 +829,19 @@ describe("personal conversation links", () => {
     expect(await screen.findByLabelText("Message your Heinzel")).toBeEnabled();
   });
 
+  it("identifies a daemon-origin message without presenting it as a user message", async () => {
+    mockApi({
+      ...shell,
+      "/api/heinzel/session": {
+        ...snapshot,
+        messages: [{ id: "wake", seq: 1, role: "user", origin: "daemon", text: "Stored trigger", status: "pending" }],
+      },
+    });
+    renderAt(`/heinzel?chat=${sessionId}`);
+    expect(await screen.findByText("Daemon:")).toBeInTheDocument();
+    expect(screen.queryByText("user:")).not.toBeInTheDocument();
+  });
+
   it("retains the accepted request when an answer acknowledgement belongs to another session", async () => {
     const { calls } = mockApi({
       ...shell,
