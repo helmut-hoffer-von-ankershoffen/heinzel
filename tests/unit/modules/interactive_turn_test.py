@@ -58,6 +58,11 @@ def test_real_model_loop_tool_dispatch_reply_and_retry_after_reopen(tmp_path):
         assert len(activity) == 1
         assert activity[0].data == {"tool": "text.word_count", "status": "completed"}
         assert "one secret three" not in json.dumps(activity[0].data)
+        projected = InteractiveTurn(reopened).activity(session)
+        assert len(projected) == 1
+        assert projected[0].tool == "text.word_count"
+        assert projected[0].status == "completed"
+        assert "one secret three" not in projected[0].model_dump_json()
         assert [message.text for message in crud.snapshot(session).messages] == ["How many words?", "Three words."]
 
 
@@ -96,6 +101,8 @@ def test_unknown_tool_and_write_proposal_never_execute_and_owner_is_checked(tmp_
         )
         with current.using(stranger), pytest.raises(HeinzelError, match="different authenticated owner"):
             asyncio.run(runner.run(session, "request", FunctionModel(model), limits=TurnLimits()))
+        with current.using(stranger), pytest.raises(HeinzelError, match="different authenticated owner"):
+            runner.activity(session)
 
 
 def test_interrupted_model_is_not_reexecuted_after_reopen(tmp_path):
@@ -122,3 +129,41 @@ def test_interrupted_model_is_not_reexecuted_after_reopen(tmp_path):
         with pytest.raises(HeinzelError, match="uncertain outcome"):
             asyncio.run(InteractiveTurn(reopened).run(session, "request", FunctionModel(failing), limits=TurnLimits()))
         assert attempts == 1
+
+
+def test_turn_queue_is_processed_in_order_and_history_contains_prior_reply(tmp_path):
+    current = CurrentUser(tmp_path / "state" / "identity")
+    with current.local("cli"):
+        repo = PersonalSessionRepository(current)
+        crud = SessionCrud(repo, lambda: SessionCosts(session_max_usd=2, message_max_usd=0.2))
+        session = crud.new_chat("create").session_id
+        crud.accept(session, MessageRequest(request_id="one", text="first message"))
+        crud.accept(session, MessageRequest(request_id="two", text="second message"))
+        prompts = []
+
+        def model(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+            prompts.append(str(messages))
+            return ModelResponse([ToolCallPart(info.output_tools[0].name, {"report": f"reply {len(prompts)}"})])
+
+        runner = InteractiveTurn(crud)
+        with pytest.raises(HeinzelError, match="earlier accepted message"):
+            asyncio.run(runner.run(session, "two", FunctionModel(model), limits=TurnLimits()))
+        asyncio.run(runner.run(session, "one", FunctionModel(model), limits=TurnLimits()))
+        asyncio.run(runner.run(session, "two", FunctionModel(model), limits=TurnLimits()))
+        assert "second message" not in prompts[0]
+        assert all(text in prompts[1] for text in ("first message", "reply 1", "second message"))
+        assert prompts[1].index("first message") < prompts[1].index("reply 1") < prompts[1].index("second message")
+
+
+def test_activity_refuses_tool_record_without_matching_prior_turn(tmp_path):
+    current = CurrentUser(tmp_path / "state" / "identity")
+    with current.local("cli"):
+        repo = PersonalSessionRepository(current)
+        crud = SessionCrud(repo, lambda: SessionCosts(session_max_usd=2, message_max_usd=0.2))
+        session = crud.new_chat("create").session_id
+        with repo.control_writer(session) as writer:
+            writer.append(
+                "interactive.tool", turn="untrusted-turn", data={"tool": "text.word_count", "status": "completed"}
+            )
+        with pytest.raises(HeinzelError, match="invalid provenance"):
+            InteractiveTurn(crud).activity(session)

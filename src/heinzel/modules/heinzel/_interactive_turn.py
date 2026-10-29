@@ -8,17 +8,19 @@ import hashlib
 import json
 from collections.abc import Callable
 from datetime import UTC, datetime
+from typing import Literal, cast
 
-from pydantic import JsonValue, TypeAdapter
+from pydantic import BaseModel, JsonValue, TypeAdapter
 from pydantic_ai.models import Model
 
-from heinzel import HeinzelError
+from heinzel import HeinzelError, SessionEvent
 from heinzel.modules.heinzel._engine import EngineCheckpoint, TurnAuthority, TurnDeps, TurnLimits, run_turn
 from heinzel.modules.heinzel._session_bodies import immutable_body
 from heinzel.modules.heinzel._session_crud import SessionCrud
 from heinzel.modules.heinzel._session_models import SessionMessage
 
 _MAX_ARGUMENT_BYTES = 16000
+_MAX_ACTIVITY = 100
 _JSON = TypeAdapter(dict[str, JsonValue])
 
 
@@ -31,6 +33,20 @@ def _word_count(arguments: dict[str, JsonValue]) -> str:
 
 # Host-owned implementations only. External adapters require separately enforced grants before registration.
 _READ_TOOLS: dict[str, Callable[[dict[str, JsonValue]], str]] = {"text.word_count": _word_count}
+
+
+def _turn_id(request_id: str) -> str:
+    return "interactive-" + hashlib.sha256(request_id.encode()).hexdigest()
+
+
+class ToolActivity(BaseModel):
+    """A redacted host-observed tool invocation or denial."""
+
+    seq: int
+    at: datetime
+    turn_id: str
+    tool: str
+    status: Literal["completed", "denied"]
 
 
 class InteractiveTurn:
@@ -58,7 +74,7 @@ class InteractiveTurn:
         """
         self._check_owner()
         repo = self._crud.repository
-        turn = "interactive-" + hashlib.sha256(request_id.encode()).hexdigest()
+        turn = _turn_id(request_id)
         with repo.main_writer(session_id):
             self._check_owner()
             events = repo.control_read(session_id).events
@@ -74,6 +90,26 @@ class InteractiveTurn:
             if any(e.kind == "interactive.started" and e.key == turn for e in events):
                 msg = "This interrupted turn has an uncertain outcome and cannot be retried automatically"
                 raise HeinzelError(msg)
+            earlier = [event for event in events if event.kind == "message.accepted" and event.seq < accepted.seq]
+            ordered: list[SessionEvent] = []
+            for incoming in earlier:
+                incoming_id = incoming.data.get("message_id")
+                if not isinstance(incoming_id, str):
+                    msg = "An earlier accepted message has an invalid identity"
+                    raise HeinzelError(msg)
+                prior_reply = next(
+                    (
+                        event
+                        for event in events
+                        if event.kind == "message.replied" and event.key == _turn_id(incoming_id)
+                    ),
+                    None,
+                )
+                if prior_reply is None:
+                    msg = "An earlier accepted message must finish or be resolved first"
+                    raise HeinzelError(msg)
+                ordered.extend((incoming, prior_reply))
+            ordered.append(accepted)
             message = self._crud._message(session_id, accepted)  # noqa: SLF001 - verify accepted body
             if message.status == "expired":
                 msg = "This accepted message is no longer retained"
@@ -122,12 +158,7 @@ class InteractiveTurn:
                         data=body.model_dump(mode="json"),
                     )
 
-            history_events = [
-                event
-                for event in events
-                if event.seq <= accepted.seq and event.kind in {"message.accepted", "message.replied"}
-            ][-20:]
-            history = [self._crud._message(session_id, event) for event in history_events]  # noqa: SLF001
+            history = [self._crud._message(session_id, event) for event in ordered[-20:]]  # noqa: SLF001
             prompt = json.dumps(
                 [{"role": item.role, "text": item.text[:4000]} for item in history if item.status != "expired"],
                 ensure_ascii=False,
@@ -178,6 +209,50 @@ class InteractiveTurn:
                     data={"message_id": reply.id, **body.model_dump(mode="json")},
                 )
             return self._crud._message(session_id, event)  # noqa: SLF001 - use the same projection as future reads
+
+    def activity(self, session_id: str, *, limit: int = 30) -> list[ToolActivity]:
+        """Project only host-recorded, redacted tool events for the current owner.
+
+        Raises:
+            HeinzelError: If the owner, limit or event provenance is invalid.
+        """
+        self._check_owner()
+        if type(limit) is not int or not 1 <= limit <= _MAX_ACTIVITY:
+            msg = "Choose between 1 and 100 tool activity items"
+            raise HeinzelError(msg)
+        events = self._crud.repository.control_read(session_id).events
+        starts = {
+            event.turn: event.seq
+            for event in events
+            if event.kind == "interactive.started"
+            and isinstance(event.data.get("message_id"), str)
+            and event.turn == _turn_id(cast("str", event.data["message_id"]))
+        }
+        selected = [event for event in events if event.kind == "interactive.tool"][-limit:]
+        projected = []
+        for event in selected:
+            name = event.data.get("tool")
+            status = event.data.get("status")
+            if (
+                event.turn not in starts
+                or starts[event.turn] >= event.seq
+                or not isinstance(name, str)
+                or (name not in _READ_TOOLS and name != "unavailable")
+                or status not in {"completed", "denied"}
+                or (name == "unavailable" and status != "denied")
+            ):
+                msg = "A tool activity event has invalid provenance"
+                raise HeinzelError(msg)
+            projected.append(
+                ToolActivity(
+                    seq=event.seq,
+                    at=event.ts,
+                    turn_id=event.turn,
+                    tool=name,
+                    status=cast("Literal['completed', 'denied']", status),
+                )
+            )
+        return projected
 
     def _event(self, session: str, turn: str, call: int, name: str, status: str) -> None:
         """Record only host-selected tool name and disposition, never arguments or results."""
