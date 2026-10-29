@@ -8,6 +8,7 @@ import { useDaemonStatus } from "@/api/daemon";
 import { AgentProposal } from "@/chat/AgentProposal";
 import { ActionCard } from "@/chat/Conversation";
 import { useDurableDraft } from "@/chat/durableDraft";
+import { ModelPolicyReviewCard } from "@/chat/ModelPolicyReviewCard";
 import { SkillDraftPanel } from "@/chat/SkillDraftPanel";
 import { Button } from "@/components/ui/button";
 import { ProfileEditor } from "@/heinzel/PersonalHeinzels";
@@ -685,6 +686,13 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
             )}
           </p>
         ))}
+        {[agentChat, approvalChat]
+          .filter((chat, index, all) => chat && all.findIndex((item) => item?.id === chat.id) === index)
+          .flatMap((chat) =>
+            (chat?.actions ?? []).map((action) => (
+              <ModelPolicyReviewCard key={`${chat?.id}-${action.id}`} action={action} sessionId={sessionId} />
+            )),
+          )}
         {pendingAgentActions.length > 0 && (
           <ol className="space-y-2">
             {pendingAgentActions.map((action) => (

@@ -61,6 +61,67 @@ const approvedChat = {
 afterEach(() => sessionStorage.clear());
 
 describe("personal conversation links", () => {
+  it("shows the exact owner-bound model policy as review only without issuing approval", async () => {
+    const review = {
+      request_id: "policy-one",
+      revision: 1,
+      access: "pydantic-ai",
+      model: "openai:example",
+      requests: 1,
+      total_tokens: 100,
+      output_tokens: 10,
+      timeout_seconds: 10,
+      message_cap_usd: "1",
+      session_cap_usd: "2",
+      owner_cap_usd: "3",
+      allowed_tools: {},
+      allowed_skill_tools: [],
+    };
+    const chat = {
+      ...reviewChat,
+      actions: [
+        {
+          ...reviewChat.actions[0],
+          operation: "approve-model-grant",
+          status: "pending",
+          arguments: { session_id: sessionId, request_id: "policy-one", review },
+        },
+      ],
+    };
+    const { calls } = mockApi({ ...shell, "/api/heinzel/session": snapshot, "/api/system/runner/chat/show": chat });
+    renderAt(`/heinzel?chat=${sessionId}&agent-chat=${chat.id}&approval-chat=${chat.id}`);
+    const panel = within(await screen.findByRole("complementary", { name: "Chat" }));
+    const card = within(await panel.findByRole("region", { name: "Model policy review" }));
+    expect(panel.getAllByRole("region", { name: "Model policy review" })).toHaveLength(1);
+    expect(card.getByText(/selected access and account binding/)).toBeInTheDocument();
+    expect(card.getByText(/openai:example/)).toHaveTextContent('"request_id": "policy-one"');
+    expect(card.queryByRole("button")).not.toBeInTheDocument();
+    expect(calls.filter((request) => request.method === "POST")).toHaveLength(0);
+  });
+
+  it("does not show another agent's policy action in an otherwise bound chat", async () => {
+    const chat = {
+      ...reviewChat,
+      actions: [
+        {
+          ...reviewChat.actions[0],
+          operation: "approve-model-grant",
+          status: "pending",
+          arguments: {
+            session_id: "hz-01ARZ3NDEKTSV4RRFFQ69G5FAW",
+            request_id: "foreign",
+            review: { request_id: "foreign" },
+          },
+        },
+      ],
+    };
+    mockApi({ ...shell, "/api/heinzel/session": snapshot, "/api/system/runner/chat/show": chat });
+    renderAt(`/heinzel?chat=${sessionId}&agent-chat=${chat.id}`);
+    const panel = within(await screen.findByRole("complementary", { name: "Chat" }));
+    await panel.findByText("Hello");
+    await waitFor(() => expect(panel.queryByRole("region", { name: "Model policy review" })).not.toBeInTheDocument());
+  });
+
   it("pages to newer queued messages and back without presenting the first page as complete", async () => {
     const { calls } = mockApi({
       ...shell,
