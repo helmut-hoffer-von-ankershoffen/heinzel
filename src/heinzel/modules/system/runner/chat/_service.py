@@ -322,6 +322,50 @@ class ChatService:
             self._store.propose(call)  # Trusted review staging; the agent-facing gate cannot stage this action.
             return self._store.load(personal_chat.id)
 
+    def propose_model_policy(self, durable_session: str, request_id: str) -> ChatSession:
+        """Stage the exact owner-private model policy for a human decision, without granting it.
+
+        Raises:
+            HeinzelError: If the owner, current proposal or existing action cannot be verified.
+        """
+        if not self._kernel.provides(ApprovalIssuer):
+            msg = "Model policy review is unavailable"
+            raise HeinzelError(msg)
+        issuer = self._kernel.resolve(ApprovalIssuer)
+        base: dict[str, JsonValue] = {"session_id": durable_session, "request_id": request_id}
+        preview = issuer.review("heinzel", "approve-model-grant", base)
+        arguments: dict[str, JsonValue] = {**base, "review": preview}
+        with self._store.proposal_request_lock():
+            prior = self._store.find_proposal("heinzel", "approve-model-grant", durable_session, request_id)
+            if prior is not None:
+                chat, found = prior
+                if found.arguments != arguments:
+                    msg = "This policy review no longer matches its original action"
+                    raise HeinzelError(msg)
+                return chat
+            personal_chat = self._store.find_personal_chat(durable_session)
+            if personal_chat is None:
+                personal_chat = self._store.create(
+                    ChatContext(
+                        kind="text",
+                        ref=durable_session,
+                        owner_id=self._store.personal_owner(),
+                        detail="Review model policy for this personal agent.",
+                    ),
+                    personal_session_id=durable_session,
+                )
+            self._store.propose(
+                ProposedCall(
+                    session=personal_chat.id,
+                    module="heinzel",
+                    operation="approve-model-grant",
+                    tool="heinzel_approve_model_grant",
+                    arguments=arguments,
+                    command="Review model policy",
+                )
+            )
+            return self._store.load(personal_chat.id)
+
     def _notice(self, event: str) -> str:
         """What the notice `event` says, from the notifications every head reads (ADR 0043); empty if unknown."""
         if not self._kernel.provides(Notifications):
@@ -577,10 +621,9 @@ class ChatService:
         allowed = parameters(self._kernel, operation)
         arguments = {k: v for k, v in found.arguments.items() if k in allowed}
         confirmation: ApprovalConfirmation | None = None
-        if (
-            found.module == "heinzel"
-            and found.operation == "schedule-control"
-            and found.arguments.get("action") in {"activate", "resume"}
+        if found.module == "heinzel" and (
+            (found.operation == "schedule-control" and found.arguments.get("action") in {"activate", "resume"})
+            or found.operation == "approve-model-grant"
         ):
             if "approval_proof" in found.arguments or not self._kernel.provides(ApprovalIssuer):
                 msg = "Approval is invalid or unavailable"
@@ -605,13 +648,13 @@ class ChatService:
             text = redact_emails(dumps(to_jsonable_python(value, fallback=str)))  # it goes into prompts
             found.status, found.result = "done", text[:RESULT_LIMIT]
         except HeinzelError as exc:
-            if self._is_schedule_confirmation(found):
+            if self._is_reconciled_confirmation(found):
                 self._reconcile_schedule_confirmation(found)
             else:
                 found.status, found.result = "failed", str(exc)
         except Exception as exc:
             log.exception("Confirmed action %s of chat %s failed", found.id, session)
-            if self._is_schedule_confirmation(found):
+            if self._is_reconciled_confirmation(found):
                 self._reconcile_schedule_confirmation(found)
             else:
                 found.status, found.result = "failed", f"{type(exc).__name__}: failed with a bug; the log says why"
@@ -623,11 +666,10 @@ class ChatService:
         return chat
 
     @staticmethod
-    def _is_schedule_confirmation(found: ChatAction) -> bool:
-        return (
-            found.module == "heinzel"
-            and found.operation == "schedule-control"
-            and found.arguments.get("action") in {"activate", "resume"}
+    def _is_reconciled_confirmation(found: ChatAction) -> bool:
+        return found.module == "heinzel" and (
+            (found.operation == "schedule-control" and found.arguments.get("action") in {"activate", "resume"})
+            or found.operation == "approve-model-grant"
         )
 
     def _reconcile_schedule_confirmation(self, found: ChatAction) -> None:
@@ -644,11 +686,15 @@ class ChatService:
             log.exception("Could not reconcile schedule action %s after confirmation failed", found.id)
         if applied:
             found.status = "done"
-            found.result = "The exact schedule change is recorded. It was not run again."
+            found.result = (
+                "The exact schedule change is recorded. It was not run again."
+                if found.operation == "schedule-control"
+                else "The exact model policy approval is recorded. It was not run again."
+            )
         else:
             found.status = "uncertain"
             found.result = (
-                "The schedule change could not be confirmed. It was not repeated. Inspect the current schedule "
+                "The approved action could not be confirmed. It was not repeated. Inspect the current state "
                 "before making a new proposal."
             )
 
@@ -672,14 +718,18 @@ class ChatService:
                 self._store.remove_mcp_approval(session, found.id)
                 found.mcp_authorized = False
                 applied = False
-                if self._is_schedule_confirmation(found) and self._kernel.provides(ApprovalIssuer):
+                if self._is_reconciled_confirmation(found) and self._kernel.provides(ApprovalIssuer):
                     with contextlib.suppress(HeinzelError):
                         applied = self._kernel.resolve(ApprovalIssuer).applied(
                             found.module, found.operation, found.arguments
                         )
                 if applied:
                     found.status = "done"
-                    found.result = "The exact schedule change is recorded. It was not run again."
+                    found.result = (
+                        "The exact schedule change is recorded. It was not run again."
+                        if found.operation == "schedule-control"
+                        else "The exact model policy approval is recorded. It was not run again."
+                    )
                 else:
                     found.status = "uncertain"
                     found.result = (
@@ -726,7 +776,13 @@ class ChatService:
                 allowed_heads = (
                     {"mcp-check-in"} if chat.context and chat.context.kind == "check-in" else {"mcp", "mcp-stdio"}
                 )
-                if operation.heads is not None and not allowed_heads & operation.heads:
+                trusted_policy = (
+                    action.module == "heinzel"
+                    and action.operation == "approve-model-grant"
+                    and chat.personal_session_id == action.arguments.get("session_id")
+                    and chat.personal_owner_id is not None
+                )
+                if operation.heads is not None and not allowed_heads & operation.heads and not trusted_policy:
                     break
                 if not self._kernel.available(operation.func):
                     break

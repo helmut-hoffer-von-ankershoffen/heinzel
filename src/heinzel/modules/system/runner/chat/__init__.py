@@ -259,6 +259,20 @@ def propose_schedule_control(  # noqa: PLR0913, PLR0917 - each argument binds th
     )
 
 
+@module.operation(read_only=False, heads=HEADS, audience="everyday")
+def propose_model_policy(
+    service: ChatService,
+    durable_session: Annotated[
+        str, Field(pattern=r"^hz-[0-9A-HJKMNP-TV-Z]{26}$", description="The personal agent session.")
+    ],
+    request_id: Annotated[
+        str, Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$", description="The policy proposal request id.")
+    ],
+) -> ChatSession:
+    """Stage the exact current model policy for human review; no grant or model call is made."""
+    return service.propose_model_policy(durable_session, request_id)
+
+
 @module.operation(heads=HEADS)
 def show(store: ChatStore, session: Session) -> ChatSession:
     """Show a chat session: its context, messages, actions and costs.

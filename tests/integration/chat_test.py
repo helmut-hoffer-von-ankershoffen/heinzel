@@ -1644,7 +1644,99 @@ def test_model_policy_heads_cannot_self_approve(kernel, tmp_path):
     denied = client.post(
         "/api/heinzel/approve-model-grant",
         headers=AUTH,
-        json={"session_id": session_id, "request_id": "policy-request", "approval_proof": "fake"},
+        json={"session_id": session_id, "request_id": "policy-request", "review": grant, "approval_proof": "fake"},
     )
     assert denied.status_code == 400
     assert "heinzel_approve_model_grant" not in {item.name for item in exposed(kernel, "mcp-stdio")}
+
+
+def test_model_policy_action_card_requires_human_and_never_runs_model(kernel, tmp_path, ran):
+    from heinzel.modules.heinzel._priced_model import MODEL
+
+    client = web_client(kernel, tmp_path)
+    session_id = client.post("/api/heinzel/new-chat", headers=AUTH, json={"request_id": "policy-card"}).json()[
+        "session_id"
+    ]
+    grant = {
+        "request_id": "policy-review",
+        "revision": 1,
+        "access": "pydantic-ai",
+        "model": MODEL,
+        "requests": 1,
+        "total_tokens": 100,
+        "output_tokens": 10,
+        "timeout_seconds": 10,
+        "message_cap_usd": "1",
+        "session_cap_usd": "2",
+        "owner_cap_usd": "3",
+        "allowed_tools": {},
+        "allowed_skill_tools": [],
+    }
+    proposed = client.post(
+        "/api/heinzel/propose-model-policy",
+        headers=AUTH,
+        json={"session_id": session_id, "billing": "api-priced", "proposal": grant},
+    )
+    assert proposed.status_code == 200, proposed.text
+    competing = {**grant, "request_id": "competing"}
+    other = client.post(
+        "/api/heinzel/propose-model-policy",
+        headers=AUTH,
+        json={"session_id": session_id, "billing": "api-priced", "proposal": competing},
+    )
+    assert other.status_code == 200, other.text
+    stale = client.post(
+        "/api/system/runner/chat/propose-model-policy",
+        headers=AUTH,
+        params={"durable_session": session_id, "request_id": "competing"},
+    )
+    assert stale.status_code == 200, stale.text
+    params = {"durable_session": session_id, "request_id": "policy-review"}
+    assert client.post("/api/system/runner/chat/propose-model-policy", params=params).status_code == 401
+    staged = client.post("/api/system/runner/chat/propose-model-policy", headers=AUTH, params=params)
+    assert staged.status_code == 200, staged.text
+    chat = staged.json()
+    action = next(item for item in chat["actions"] if item["arguments"]["request_id"] == "policy-review")
+    assert action["status"] == "pending"
+    assert action["arguments"]["review"] == grant
+    assert "approval_proof" not in action["arguments"]
+    again = client.post("/api/system/runner/chat/propose-model-policy", headers=AUTH, params=params)
+    assert again.json()["id"] == chat["id"]
+    assert len(again.json()["actions"]) == 2
+
+    from heinzel import CallIdentity, Principal
+
+    stranger = CallIdentity(Principal("u-" + "a" * 32), "api-bearer", "other", "private", frozenset({"private:read"}))
+    current = kernel.resolve(CurrentUser)
+    with current.using(stranger):
+        with pytest.raises(HeinzelError):
+            kernel.resolve(ChatService).propose_model_policy(session_id, "policy-review")
+        with pytest.raises(HeinzelError):
+            kernel.resolve(ChatService).confirm(chat["id"], action["id"])
+
+    async def no_model_authority():
+        async with Client(mcp.build(kernel, chat=chat["id"])) as agent:
+            names = {tool.name for tool in (await agent.list_tools()).tools}
+            assert "heinzel_approve_model_grant" not in names
+            assert "system_runner_chat_propose_model_policy" not in names
+            assert "system_runner_chat_confirm" not in names
+
+    anyio.run(no_model_authority)
+    decision = {"session": chat["id"], "action": action["id"]}
+    assert client.post("/api/system/runner/chat/confirm", params=decision).status_code == 401
+    confirmed = client.post("/api/system/runner/chat/confirm", headers=AUTH, params=decision)
+    assert confirmed.status_code == 200, confirmed.text
+    finished = next(item for item in confirmed.json()["actions"] if item["id"] == action["id"])
+    assert finished["status"] == "done"
+    assert "approval_proof" not in json.dumps(confirmed.json())
+    assert client.post("/api/system/runner/chat/confirm", headers=AUTH, params=decision).status_code == 400
+    stale_action = next(item for item in confirmed.json()["actions"] if item["arguments"]["request_id"] == "competing")
+    assert (
+        client.post(
+            "/api/system/runner/chat/confirm",
+            headers=AUTH,
+            params={"session": chat["id"], "action": stale_action["id"]},
+        ).status_code
+        == 400
+    )
+    assert ran == []

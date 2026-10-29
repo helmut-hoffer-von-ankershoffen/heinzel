@@ -47,21 +47,21 @@ def test_exact_owner_confirmation_and_stale_replay(tmp_path):
             ModelGrants(crud).approved(session)
         proof = ModelGrants(crud).issue(session, "policy", "trusted-test-confirmation")
         with pytest.raises(HeinzelError):
-            service.confirm(confirmation, session, "policy", proof)
+            service.confirm(confirmation, session, "policy", payload, proof)
         with (
             confirmation.using(
                 "heinzel",
                 "approve-model-grant",
-                {"session_id": session, "request_id": "other", "approval_proof": proof},
+                {"session_id": session, "request_id": "other", "review": payload, "approval_proof": proof},
             ),
             pytest.raises(HeinzelError),
         ):
-            service.confirm(confirmation, session, "policy", proof)
-        args = {"session_id": session, "request_id": "policy", "approval_proof": proof}
+            service.confirm(confirmation, session, "policy", payload, proof)
+        args = {"session_id": session, "request_id": "policy", "review": payload, "approval_proof": proof}
         with confirmation.using("heinzel", "approve-model-grant", args):
-            assert service.confirm(confirmation, session, "policy", proof).status == "approved"
+            assert service.confirm(confirmation, session, "policy", payload, proof).status == "approved"
             with pytest.raises(HeinzelError):
-                service.confirm(confirmation, session, "policy", proof)
+                service.confirm(confirmation, session, "policy", payload, proof)
         assert ModelGrants(crud).approved(session) == grant
         with pytest.raises(HeinzelError):
             service.review(session, "policy")

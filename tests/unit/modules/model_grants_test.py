@@ -111,7 +111,12 @@ def test_approved_owner_binding_drives_fake_transport_and_survives_restart(tmp_p
         issuer = _SessionApprovalIssuer(crud, None)
         arguments = {"session_id": session, "request_id": "grant-one"}
         assert issuer.review("heinzel", "approve-model-grant", arguments) == grant.model_dump(mode="json")
-        proof = issuer.issue("heinzel", "approve-model-grant", arguments, "test-human-decision")
+        proof = issuer.issue(
+            "heinzel",
+            "approve-model-grant",
+            {**arguments, "review": grant.model_dump(mode="json")},
+            "test-human-decision",
+        )
         assert grants.approve(session, "grant-one", proof) == grant
         assert grants.approve(session, "grant-one", proof) == grant
         reopened = SessionCrud(

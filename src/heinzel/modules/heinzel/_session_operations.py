@@ -91,7 +91,7 @@ class _SessionApprovalIssuer(ApprovalIssuer):
     def _model_args(arguments: dict[str, JsonValue]) -> tuple[str, str]:
         session, request = arguments.get("session_id"), arguments.get("request_id")
         if (
-            set(arguments) != {"session_id", "request_id"}
+            set(arguments) not in ({"session_id", "request_id"}, {"session_id", "request_id", "review"})
             or not isinstance(session, str)
             or not isinstance(request, str)
         ):
@@ -108,6 +108,9 @@ class _SessionApprovalIssuer(ApprovalIssuer):
     def issue(self, module: str, operation: str, arguments: dict[str, JsonValue], provenance: str) -> str:
         if module == "heinzel" and operation == "approve-model-grant":
             session, request = self._model_args(arguments)
+            if arguments.get("review") != ModelGrants(self.service).review(session, request).model_dump(mode="json"):
+                msg = "The reviewed model policy changed"
+                raise HeinzelError(msg)
             return ModelGrants(self.service).issue(session, request, provenance)
         self._check_daemon(module, operation, arguments)
         return self.service.issue(module, operation, arguments, provenance)

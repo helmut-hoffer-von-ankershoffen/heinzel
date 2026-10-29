@@ -184,7 +184,7 @@ class ChatStore(McpChatSessions):
         self, chat: ChatSession, module: str, operation: str, arguments: dict[str, JsonValue]
     ) -> None:
         if chat.personal_session_id is not None and (
-            module != "heinzel" or operation not in {"schedule-control", "propose-check-in"}
+            module != "heinzel" or operation not in {"schedule-control", "propose-check-in", "approve-model-grant"}
         ):
             msg = "This personal chat cannot authorize that action"
             raise HeinzelError(msg)
@@ -540,6 +540,9 @@ class StoreGate(ActionGate):
             HeinzelError: If a chat may never run it, there is no such session, or it has too many proposals.
         """
         chat = self._store.load(call.session)
+        if call.module == "heinzel" and call.operation == "approve-model-grant":
+            msg = "Only the human review surface can stage a model policy approval"
+            raise HeinzelError(msg)
         if chat.context is not None and chat.context.kind == "check-in":
             arguments = dict(call.arguments)
             arguments.setdefault("timezone", chat.context.timezone)

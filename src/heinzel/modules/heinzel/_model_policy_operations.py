@@ -64,17 +64,26 @@ class ModelPolicyService:
         self._supported(grant, "api-priced")
         return ModelPolicyReview(session_id=session, proposal=grant.model_dump(mode="json"))
 
-    def confirm(self, confirmation: ApprovalConfirmation, session: str, request: str, proof: str) -> ModelPolicyReview:
+    def confirm(
+        self, confirmation: ApprovalConfirmation, session: str, request: str, review: dict[str, JsonValue], proof: str
+    ) -> ModelPolicyReview:
         """Consume proof only inside the exact trusted action-card confirmation context.
 
         Raises:
             HeinzelError: If the caller is not the trusted confirmation boundary or the grant is stale.
         """
-        args: dict[str, JsonValue] = {"session_id": session, "request_id": request, "approval_proof": proof}
+        args: dict[str, JsonValue] = {
+            "session_id": session,
+            "request_id": request,
+            "review": review,
+            "approval_proof": proof,
+        }
         if not confirmation.matches("heinzel", "approve-model-grant", args):
             msg = "Approval is invalid or unavailable"
             raise HeinzelError(msg)
-        self.review(session, request)
+        if self.review(session, request).proposal != review:
+            msg = "The reviewed model policy changed"
+            raise HeinzelError(msg)
         grant = ModelGrants(self.crud).approve(session, request, proof)
         return ModelPolicyReview(session_id=session, status="approved", proposal=grant.model_dump(mode="json"))
 
@@ -102,14 +111,15 @@ def register_model_policy_operations(module: Module) -> None:
         return ModelPolicyService(service).review(session_id, request_id)
 
     @module.operation(private=True, read_only=False, heads={"web", "api-private"}, audience="everyday")
-    def approve_model_grant(
+    def approve_model_grant(  # noqa: PLR0913, PLR0917 - exact reviewed terms and trusted proof
         service: SessionCrud,
         confirmation: ApprovalConfirmation,
         session_id: Annotated[SessionId, Field(description="Owner-bound durable agent session.")],
         request_id: Annotated[RequestId, Field(description="The exact proposed policy request id.")],
+        review: Annotated[dict[str, JsonValue], Field(description="Exact policy terms displayed in the action card.")],
         approval_proof: Annotated[
             str, Field(description="In-process proof issued only by trusted human confirmation.")
         ],
     ) -> ModelPolicyReview:
         """Apply an exact human-confirmed policy; direct callers cannot issue or consume approval."""
-        return ModelPolicyService(service).confirm(confirmation, session_id, request_id, approval_proof)
+        return ModelPolicyService(service).confirm(confirmation, session_id, request_id, review, approval_proof)
