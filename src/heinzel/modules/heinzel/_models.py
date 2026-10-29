@@ -509,6 +509,13 @@ class HeinzelSettings(ModuleSettings):
         json_schema_extra={"x-unit": "usd"},
     )
 
+    subscription_budget_mode: Literal["usd-cap", "plan-unknown"] = Field(
+        default="usd-cap",
+        title="Subscription chat budget",
+        description="USD caps remain required by default. Plan-unknown explicitly uses subscription usage with "
+        "unknown dollar cost; USD caps apply to direct APIs instead.",
+    )
+
     retention_days: int = Field(
         default=90,
         ge=0,
@@ -528,6 +535,7 @@ class HeinzelSettings(ModuleSettings):
             "max_usd",
             "session_max_usd",
             "message_max_usd",
+            "subscription_budget_mode",
             "retention_days",
         }
     )

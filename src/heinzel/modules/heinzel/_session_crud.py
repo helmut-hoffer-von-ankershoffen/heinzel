@@ -1625,6 +1625,7 @@ class SessionCrud(ApprovalIssuer):
         if more:
             encoded = _Cursor(v=1, session_id=session_id, after=page[-1].seq).model_dump_json().encode()
             next_cursor = base64.urlsafe_b64encode(encoded).decode().rstrip("=")
+        costs = self.costs()
         return SessionSnapshot(
             session_id=session_id,
             heinzel_id=session_id,
@@ -1637,7 +1638,14 @@ class SessionCrud(ApprovalIssuer):
             schedule=schedule,
             last_seq=events[-1].seq if events else 0,
             messages=[self._message(session_id, event) for event in page],
-            costs=self.costs(),
+            costs=costs.model_copy(
+                update={
+                    "unknown_turns": costs.unknown_turns
+                    + sum(
+                        event.kind == "interactive.started" and event.data.get("billing") == "plan" for event in events
+                    ),
+                }
+            ),
             has_more=more,
             next_cursor=next_cursor,
             next_after_seq=page[-1].seq if more else None,
