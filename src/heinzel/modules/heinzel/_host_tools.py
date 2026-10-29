@@ -14,6 +14,7 @@ from heinzel import CurrentUser, HeinzelError, Kernel, SessionWriter
 from heinzel.kernel._exposure import Exposed, exposed, input_schema
 from heinzel.modules.heinzel._model_grants import ModelGrant, ModelGrants
 from heinzel.modules.heinzel._session_crud import SessionCrud
+from heinzel.modules.heinzel._tool_argument_policy import ExactArgumentPolicy, Scalar
 
 _MAX_SCHEMA = 16_000
 _MAX_RESULT = 16_000
@@ -73,6 +74,23 @@ class ToolPreview:
     builtin: bool
 
 
+@dataclass(frozen=True, slots=True)
+class ToolDescriptor:
+    """Human-reviewable registration and fixed argument constraints, not an authority attestation."""
+
+    identity: str
+    schema: dict[str, Any]
+    binding_sha256: str
+    distribution: str
+    version: str
+    builtin: bool
+    fixed_arguments: dict[str, Scalar]
+    policy_sha256: str
+    code_evidence: str
+    scope_evidence: str
+    executable: bool
+
+
 class HostToolCatalog:
     """An owner-bound catalog requiring both a reviewed grant and independent host read policy.
 
@@ -89,6 +107,7 @@ class HostToolCatalog:
         host_reads: frozenset[str],
         *,
         verified_code: Callable[[Exposed], str] | None = None,
+        argument_policies: Mapping[str, ExactArgumentPolicy] | None = None,
     ) -> None:
         self._kernel = kernel
         self._current = current
@@ -97,20 +116,25 @@ class HostToolCatalog:
         self._owner = crud.repository.principal_id
         self._host_reads = frozenset(host_reads)
         self._verified_code = verified_code
+        self._argument_policies = dict(argument_policies or {})
         if kernel.resolve(CurrentUser) is not current or current.principal().id != self._owner:
             msg = "The operation catalog owner cannot be verified"
             raise HeinzelError(msg)
         crud.repository.control_read(session)
 
-    def _find(self, name: str) -> Exposed | None:
+    def _candidate(self, name: str) -> Exposed | None:
         candidates = [item for item in exposed(self._kernel, "mcp") if _identity(item) == name]
         if len(candidates) != 1:
             return None
         item = candidates[0]
-        # Until scoped resource policies exist, only argument-free operations can be granted.
-        if name not in self._host_reads or not item.operation.read_only or item.operation.private or item.parameters:
+        if name not in self._host_reads or not item.operation.read_only or item.operation.private:
             return None
         return item
+
+    def _find(self, name: str) -> Exposed | None:
+        item = self._candidate(name)
+        # The fixed argument policy does not verify provider identity or non-parameter ambient resources.
+        return item if item is not None and not item.parameters else None
 
     def _binding(self, item: Exposed) -> tuple[dict[str, Any], str]:
         if self._verified_code is None:
@@ -141,6 +165,46 @@ class HostToolCatalog:
                 origin = item.record.origin
                 previews.append(ToolPreview(name, schema, digest, origin.distribution, origin.version, origin.builtin))
         return previews
+
+    def review_descriptors(self) -> list[ToolDescriptor]:
+        """Describe configured read constraints without asserting scope authority or running operations.
+
+        Raises:
+            HeinzelError: If a supplied policy or implementation identity is stale or incomplete.
+        """
+        self._check_owner()
+        descriptors = []
+        for name in sorted(self._host_reads):
+            item = self._candidate(name)
+            if item is None:
+                continue
+            schema, digest = self._binding(item)
+            policy = self._argument_policies.get(name)
+            if policy is None:
+                if item.parameters:
+                    continue
+                policy = ExactArgumentPolicy(name, digest, ())
+            declared = tuple(parameter.name for parameter in item.parameters)
+            fixed = policy.apply(name, digest, declared, {})
+            origin = item.record.origin
+            descriptors.append(
+                ToolDescriptor(
+                    name,
+                    schema,
+                    digest,
+                    origin.distribution,
+                    origin.version,
+                    origin.builtin,
+                    fixed,
+                    policy.fingerprint(),
+                    "Implementation identity asserted by host verifier; independently unverified here.",
+                    "Ambient account and resource authority not verified."
+                    if declared
+                    else "No model arguments; host read allowlist applies.",
+                    not declared,
+                )
+            )
+        return descriptors
 
     def _check_owner(self) -> None:
         if self._crud.repository.principal_id != self._owner or self._current.principal().id != self._owner:
@@ -194,6 +258,14 @@ class HostToolCatalog:
         if grant.allowed_tools[name] != fingerprint:
             msg = "The operation schema changed; review a new grant"
             raise HeinzelError(msg)
+        policy = self._argument_policies.get(name) or ExactArgumentPolicy(name, fingerprint, ())
+        try:
+            constrained = policy.apply(
+                name, fingerprint, tuple(parameter.name for parameter in item.parameters), dict(arguments)
+            )
+        except HeinzelError:
+            msg = "Invalid operation arguments"
+            raise HeinzelError(msg) from None
         try:
             fields: dict[str, Any] = {
                 parameter.name: (
@@ -203,7 +275,7 @@ class HostToolCatalog:
                 for parameter in item.parameters
             }
             model = create_model(item.name, __config__=ConfigDict(extra="forbid", strict=True), **fields)
-            validated = model.model_validate(dict(arguments)).model_dump()
+            validated = model.model_validate(constrained).model_dump()
         except Exception:  # noqa: BLE001 - schema diagnostics may contain private input
             msg = "Invalid operation arguments"
             raise HeinzelError(msg) from None

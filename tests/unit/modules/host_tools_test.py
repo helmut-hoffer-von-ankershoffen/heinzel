@@ -17,6 +17,7 @@ from heinzel.modules.heinzel._model_grants import ModelGrant, ModelGrants
 from heinzel.modules.heinzel._session_crud import SessionCrud
 from heinzel.modules.heinzel._session_models import MessageRequest, SessionCosts
 from heinzel.modules.heinzel._session_repository import PersonalSessionRepository
+from heinzel.modules.heinzel._tool_argument_policy import ExactArgumentPolicy
 
 pytestmark = pytest.mark.unit
 
@@ -59,6 +60,13 @@ def test_granted_read_fences_code_owner_turn_and_model_arguments(make_kernel, tm
         catalog = HostToolCatalog(kernel, current, crud, session, allowed, verified_code=lambda _item: code_identity[0])
         preview = catalog.preview()
         assert [item.identity for item in preview] == ["fixture:inspect"]
+        descriptor = catalog.review_descriptors()[0]
+        assert descriptor.identity == preview[0].identity
+        assert descriptor.schema == preview[0].schema
+        assert descriptor.binding_sha256 == preview[0].binding_sha256
+        assert descriptor.fixed_arguments == {}
+        assert descriptor.executable
+        assert "independently unverified" in descriptor.code_evidence
         registered = next(item for item in exposed(kernel, "mcp") if item.operation.name == "inspect")
         newer = replace(
             registered, record=replace(registered.record, origin=replace(registered.record.origin, version="10.0.0"))
@@ -128,6 +136,8 @@ def test_granted_read_fences_code_owner_turn_and_model_arguments(make_kernel, tm
         )
         with current.using(stranger), pytest.raises(HeinzelError, match="different owner"):
             catalog.preview()
+        with current.using(stranger), pytest.raises(HeinzelError, match="different owner"):
+            catalog.review_descriptors()
 
 
 def test_invoked_failure_is_not_recorded_as_denial_and_does_not_leak(make_kernel, tmp_path):
@@ -292,3 +302,58 @@ def test_granted_turn_does_not_run_ungranted_local_tool(make_kernel, tmp_path):
         assert [(item.tool, item.status) for item in InteractiveTurn(crud).activity(session)] == [
             ("text.word_count", "denied")
         ]
+
+
+def test_parameterized_descriptor_is_reviewable_but_never_authorizes_execution(make_kernel, tmp_path):
+    module = Module("fixture", "Scoped read fixture")
+    calls = []
+
+    @module.operation()
+    def fetch(account: str, resource: str, limit: int = 10) -> str:
+        """Read a fixture resource, not a verified provider."""
+        calls.append((account, resource, limit))
+        return resource
+
+    kernel = make_kernel(fixture=module)
+    current = CurrentUser(tmp_path / "identity")
+    kernel.bind(CurrentUser, current)
+    with current.local("cli"):
+        repo = PersonalSessionRepository(current)
+        crud = SessionCrud(repo, lambda: SessionCosts(session_max_usd=2, message_max_usd=1))
+        session = crud.new_chat("create").session_id
+        item = next(item for item in exposed(kernel, "mcp") if item.operation.name == "fetch")
+        _, binding = _schema(item, "a" * 64)
+        policy = ExactArgumentPolicy(
+            "fixture:fetch", binding, (("account", "reviewed"), ("resource", "one"), ("limit", 10))
+        )
+        catalog = HostToolCatalog(
+            kernel,
+            current,
+            crud,
+            session,
+            frozenset({"fixture:fetch"}),
+            verified_code=lambda _: "a" * 64,
+            argument_policies={"fixture:fetch": policy},
+        )
+        descriptor = catalog.review_descriptors()[0]
+        assert descriptor.identity == "fixture:fetch"
+        assert descriptor.binding_sha256 == binding
+        assert descriptor.fixed_arguments == {"account": "reviewed", "resource": "one", "limit": 10}
+        assert descriptor.policy_sha256 == policy.fingerprint()
+        assert "not verified" in descriptor.scope_evidence
+        assert not descriptor.executable
+        assert catalog.preview() == []
+        with pytest.raises(HeinzelError):
+            policy.apply("fixture:fetch", binding, ("account", "resource", "limit"), {"resource": "another"})
+        changed = HostToolCatalog(
+            kernel,
+            current,
+            crud,
+            session,
+            frozenset({"fixture:fetch"}),
+            verified_code=lambda _: "b" * 64,
+            argument_policies={"fixture:fetch": policy},
+        )
+        with pytest.raises(HeinzelError, match="argument policy"):
+            changed.review_descriptors()
+        assert calls == []
