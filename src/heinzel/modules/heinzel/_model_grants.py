@@ -8,6 +8,7 @@ import re
 import secrets
 from datetime import timedelta
 from decimal import Decimal
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, model_validator
 
@@ -44,6 +45,9 @@ class ModelGrant(BaseModel):
     session_cap_usd: Decimal = Field(gt=0, allow_inf_nan=False)
     owner_cap_usd: Decimal = Field(gt=0, allow_inf_nan=False)
     allowed_tools: dict[str, str] = Field(default_factory=dict, max_length=32)
+    allowed_skill_tools: tuple[Literal["skill.propose_draft", "skill.propose_sharing"], ...] = Field(
+        default=(), max_length=2
+    )
 
     @model_validator(mode="after")
     def valid_tools(self) -> "ModelGrant":
@@ -52,6 +56,9 @@ class ModelGrant(BaseModel):
         Raises:
             ValueError: If a tool identity or fingerprint is malformed.
         """
+        if len(set(self.allowed_skill_tools)) != len(self.allowed_skill_tools):
+            msg = "The model grant contains a duplicate skill tool"
+            raise ValueError(msg)
         if any(
             re.fullmatch(r"[a-z][a-z0-9_.-]{0,127}:[a-z][a-z0-9-]{0,127}", name) is None
             or re.fullmatch(r"[a-f0-9]{64}", digest) is None
@@ -160,7 +167,13 @@ class ModelGrants:
             action="approve-model-grant",
             resource=grant.model,
             arguments_hash=arguments_hash(
-                grant.model_dump(mode="json", exclude={"allowed_tools"} if not grant.allowed_tools else set())
+                grant.model_dump(
+                    mode="json",
+                    exclude=(
+                        ({"allowed_tools"} if not grant.allowed_tools else set())
+                        | ({"allowed_skill_tools"} if not grant.allowed_skill_tools else set())
+                    ),
+                )
             ),
             contract_revision=0,
             grant_revision=grant.revision,

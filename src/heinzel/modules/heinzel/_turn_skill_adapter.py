@@ -7,13 +7,14 @@ must derive TurnDeps from trusted authority, not a model or client. Draft bodies
 import hashlib
 import json
 import re
-from typing import Any, Literal, Protocol
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
-from heinzel import HeinzelError
+from heinzel import HeinzelError, SessionWriter
 from heinzel.modules.heinzel._engine import TurnDeps
-from heinzel.modules.heinzel._session_protocol import SessionRepository
+from heinzel.modules.heinzel._model_grants import ModelGrant, ModelGrants
+from heinzel.modules.heinzel._session_crud import SessionCrud
 
 _REQUEST = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,127}\Z", re.ASCII)
 
@@ -34,43 +35,37 @@ class _ShareRequest(BaseModel):
     draft_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
 
 
-class SkillDraftService(Protocol):
-    """Existing private owner-bound skill service; validation and immutable draft bodies remain its responsibility."""
-
-    repository: SessionRepository
-
-    def propose_skill_draft(  # noqa: PLR0913, PLR0917 - existing service signature
-        self,
-        session_id: str,
-        request_id: str,
-        name: str,
-        requested_scope: str,
-        scope_ref: str | None,
-        files: dict[str, str],
-    ) -> Any:  # noqa: ANN401 - real service returns its private typed draft
-        """Stage one private draft, with no sharing or execution."""
-        ...
-
-    def propose_skill_sharing(self, session_id: str, request_id: str, draft_request_id: str, draft_sha256: str) -> Any:  # noqa: ANN401 - real service returns its private typed proposal
-        """Stage one unverified sharing review, with no publication or approval."""
-        ...
+def skill_tool_schemas(grant: ModelGrant) -> list[dict[str, JsonValue]]:
+    """Describe only the inert private tools explicitly approved in this model grant."""
+    schemas: dict[str, type[BaseModel]] = {"skill.propose_draft": _DraftRequest, "skill.propose_sharing": _ShareRequest}
+    return [{"name": name, "schema": schemas[name].model_json_schema()} for name in grant.allowed_skill_tools]
 
 
 class TurnSkillAdapter:
     """Only private skill operations, scoped by trusted turn identity and rechecked at each invocation."""
 
-    def __init__(self, service: SkillDraftService, deps: TurnDeps) -> None:
+    def __init__(self, service: SessionCrud, deps: TurnDeps, grant: ModelGrant, writer: SessionWriter) -> None:
         self._service = service
         self._session = deps.session_id
         self._turn = deps.turn_id
         self._owner = deps.authority.principal_id
+        self._grant = grant
+        self._writer = writer
+        if deps.authority.grant_revision != grant.revision:
+            msg = "The skill tool grant does not match this turn"
+            raise HeinzelError(msg)
         self._check_owner()
 
     def _check_owner(self) -> None:
         if self._service.repository.principal_id != self._owner:
             msg = "The skill tool is unavailable for this personal turn"
             raise HeinzelError(msg)
-        self._service.repository.control_read(self._session)
+        if not self._service.repository.is_main_writer(self._session, self._writer):
+            msg = "The skill tool requires its owning turn lock"
+            raise HeinzelError(msg)
+        if ModelGrants(self._service).approved(self._session) != self._grant:
+            msg = "The skill tool grant changed"
+            raise HeinzelError(msg)
 
     def _reference(self, name: str, request: str) -> str:
         if _REQUEST.fullmatch(request) is None:
@@ -86,8 +81,8 @@ class TurnSkillAdapter:
             HeinzelError: If the turn owner or private journal cannot be verified.
         """
         self._check_owner()
-        if name not in {"skill.propose_draft", "skill.propose_sharing"}:
-            return "Tool unavailable."
+        if name not in self._grant.allowed_skill_tools:
+            return "Tool unavailable under this grant."
         try:
             if name == "skill.propose_draft":
                 request = _DraftRequest.model_validate(arguments)
@@ -99,10 +94,10 @@ class TurnSkillAdapter:
             else:
                 share = _ShareRequest.model_validate(arguments)
                 reference = self._reference(name, share.request_id)
-                result = self._service.propose_skill_sharing(
+                proposal = self._service.propose_skill_sharing(
                     self._session, reference, share.draft_request_id, share.draft_sha256
                 )
-                response = {"request_id": result.request_id, "status": "awaiting_review", "authority": "unverified"}
+                response = {"request_id": proposal.request_id, "status": "awaiting_review", "authority": "unverified"}
         except Exception:  # noqa: BLE001 - validation/storage errors can contain private draft bytes
             return "Could not confirm the private skill proposal; retry the same request or check its content."
         self._check_owner()
