@@ -613,12 +613,11 @@ try {
         : null,
     );
     assert.ok(visualViewportAfterFocus, `${spec.name}: visualViewport API is required for this emulation check`);
-    // Exercise an open hover pane across the safe-area change: it is repositioned while the Page tab remains the
-    // the Page tab remains the next intended touch target.
+    // Pin a footer pane through the safe-area change so its open state is deterministic while the Page tab is next.
     if (spec.name === "short-landscape") {
       const versionTrigger = page.locator('[data-footer-content="@version"] button').first();
       if (!(await versionTrigger.isVisible())) await page.locator('[data-footer-content="@more"] button').click();
-      await versionTrigger.hover();
+      await versionTrigger.tap();
       await page.getByRole("region", { name: /^v\d/ }).waitFor({ state: "visible" });
     }
     // Simulate the reduced visual viewport a software keyboard creates, and inject a representative iPhone safe
@@ -639,7 +638,7 @@ try {
     if (spec.name === "short-landscape")
       assert.ok(
         await page.getByRole("region", { name: /^v\d/ }).isVisible(),
-        "hovered footer pane should remain open through the layout change",
+        "pinned footer pane should remain open through the layout change",
       );
     await showPage(page);
     await page.getByRole("button", { name: /^Notifications/ }).click();
