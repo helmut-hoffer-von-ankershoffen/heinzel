@@ -27,7 +27,8 @@ git fetch --tags --quiet origin 2>/dev/null || true
 current="$(uv run --frozen bump-my-version show current_version)"
 if [[ "$bump" == "auto" ]]; then
   next="$(uv run --frozen git-cliff --offline --bumped-version)"
-  next="$(uv run --script scripts/release_version.py "$current" "${next#v}")"
+  released="$(git tag --merged HEAD --list 'v[0-9]*')"
+  next="$(uv run --script scripts/release_version.py "$current" "${next#v}" "$released")"
 else
   next="$(uv run --frozen bump-my-version show --increment "$bump" new_version)"
 fi
