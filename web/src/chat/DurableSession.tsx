@@ -12,6 +12,7 @@ import { ActionCard } from "@/chat/Conversation";
 import { useDurableDraft } from "@/chat/durableDraft";
 import { ModelPolicyReviewCard, supportedPolicy } from "@/chat/ModelPolicyReviewCard";
 import { SkillDraftPanel } from "@/chat/SkillDraftPanel";
+import { UncertainTurnRecovery } from "@/chat/UncertainTurnRecovery";
 import { Button } from "@/components/ui/button";
 import { ProfileEditor } from "@/heinzel/PersonalHeinzels";
 import { t } from "@/i18n";
@@ -1053,6 +1054,20 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
               turn will not be run again automatically.
             </p>
           )
+        )}
+        {pending?.accepted && !busy && (
+          <UncertainTurnRecovery
+            key={`${sessionId}:${pending.request_id}`}
+            sessionId={sessionId}
+            requestId={pending.request_id}
+            onResolved={() => {
+              updateComposer({ pending: null, text: "" });
+              void client.invalidateQueries({ queryKey: ["heinzel", "session", sessionId] });
+              void client.invalidateQueries({ queryKey: ["heinzel", "tool-activity", sessionId] });
+              void client.invalidateQueries({ queryKey: ["heinzel", "agent-proposal", sessionId] });
+              void client.invalidateQueries({ queryKey: ["heinzel", "profile-proposal", sessionId] });
+            }}
+          />
         )}
         <Button
           type="submit"

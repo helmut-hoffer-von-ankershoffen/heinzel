@@ -42,6 +42,9 @@ payload=json.load(sys.stdin)
 try: n=len(open({str(marker)!r}).read())
 except FileNotFoundError: n=0
 open({str(marker)!r},'a').write('x')
+if n == 3:
+ print(json.dumps({{'type':'result','subtype':'success','is_error':True,'api_error_status':429,
+  'api_error':'usage_limit_reached','result':'private provider details'}})); raise SystemExit
 if n == 0:
  name='agent:propose'
  args={{'expected_revision':0,'contract':'Prepare a private draft from my context.','timeout_seconds':30}}
@@ -112,7 +115,7 @@ print(json.dumps({{'type':'result','subtype':'success','is_error':False,'permiss
         if run.returncode:
             pytest.fail((run.stderr + "\n" + run.stdout).replace(token, "<redacted-session>"))
         assert json.loads(run.stdout.strip().splitlines()[-1])["accepted"] is True
-        assert marker.read_text() == "xxx"
+        assert marker.read_text() == "xxxxx"
     finally:
         if RecordedServer.instances:
             RecordedServer.instances[0].should_exit = True

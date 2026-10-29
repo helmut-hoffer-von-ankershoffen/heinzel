@@ -772,6 +772,8 @@ describe("personal conversation links", () => {
 
   it("keeps a reported subscription limit across reload without retrying the uncertain turn", async () => {
     const turns: unknown[] = [];
+    let abandoned = false;
+    let resolutions = 0;
     const answers = {
       ...shell,
       "/api/heinzel/session": snapshot,
@@ -783,6 +785,18 @@ describe("personal conversation links", () => {
         turns.push(await request.json());
         return { status: 400, body: { code: "subscription_usage_limit", error: "redacted status" } };
       },
+      "/api/heinzel/chat-turn-state": (request: Request) => ({
+        session_id: sessionId,
+        request_id: new URL(request.url).searchParams.get("request_id"),
+        status: abandoned ? "abandoned" : "unresolved",
+      }),
+      "/api/heinzel/abandon-chat-turn": async (request: Request) => {
+        const body = await request.json();
+        expect(body.acknowledge_uncertain).toBe(true);
+        resolutions += 1;
+        abandoned = true;
+        return { status: 503, body: { error: "acknowledgement lost" } };
+      },
     };
     mockApi(answers);
     const first = renderAt(`/heinzel?chat=${sessionId}`);
@@ -793,12 +807,26 @@ describe("personal conversation links", () => {
     expect(turns).toHaveLength(1);
     first.unmount();
     mockApi(answers);
-    renderAt(`/heinzel?chat=${sessionId}`);
+    const second = renderAt(`/heinzel?chat=${sessionId}`);
     expect(await screen.findByText(/reported its subscription usage limit/)).toBeInTheDocument();
     expect(turns).toHaveLength(1);
     expect(screen.queryByRole("button", { name: "Start a new message" })).not.toBeInTheDocument();
     expect(screen.getByLabelText("Message your Heinzel")).toBeDisabled();
+    expect(await screen.findByText(/may still be running/)).toBeInTheDocument();
+    const setAside = screen.getByRole("button", { name: "Set aside this turn" });
+    expect(setAside).toBeDisabled();
+    fireEvent.click(screen.getByRole("checkbox", { name: /will not retry it or undo/ }));
+    fireEvent.click(setAside);
+    expect(await screen.findByText(/This turn was set aside/)).toBeInTheDocument();
+    expect(resolutions).toBe(1);
     expect(turns).toHaveLength(1);
+    second.unmount();
+    mockApi(answers);
+    renderAt(`/heinzel?chat=${sessionId}`);
+    expect(await screen.findByText(/This turn was set aside/)).toBeInTheDocument();
+    expect(resolutions).toBe(1);
+    fireEvent.click(await screen.findByRole("button", { name: "Continue conversation" }));
+    expect(await screen.findByLabelText("Message your Heinzel")).toBeEnabled();
   });
 
   it("retains the accepted request when an answer acknowledgement belongs to another session", async () => {

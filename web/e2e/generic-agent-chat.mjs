@@ -57,6 +57,23 @@ try {
       ["profile:propose", "completed"],
     ],
   );
+  await page.getByLabel("Message your Heinzel").fill("Continue after the interruption.");
+  await page.getByRole("button", { name: "Queue message" }).click();
+  await page.getByText(/reported its subscription usage limit/).waitFor();
+  assert.equal(await page.getByRole("button", { name: "Retry the same message" }).isDisabled(), true);
+  await page.reload();
+  await page.getByRole("tab", { name: "Chat", exact: true }).click();
+  await page.getByText(/may still be running/).waitFor();
+  await page.getByRole("checkbox", { name: /will not retry it or undo/ }).check();
+  await page.getByRole("button", { name: "Set aside this turn" }).click();
+  await page.getByText(/This turn was set aside/).waitFor();
+  await page.reload();
+  await page.getByRole("tab", { name: "Chat", exact: true }).click();
+  await page.getByText(/This turn was set aside/).waitFor();
+  await page.getByRole("button", { name: "Continue conversation" }).click();
+  await page.getByLabel("Message your Heinzel").fill("Please continue with the draft.");
+  await page.getByRole("button", { name: "Queue message" }).click();
+  await page.getByText("I prepared proposals for your review.").nth(1).waitFor({ timeout: 30000 });
   console.log(JSON.stringify({ accepted: true }));
 } catch (error) {
   const message = error instanceof Error ? (error.stack ?? error.message) : String(error);
