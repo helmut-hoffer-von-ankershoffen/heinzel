@@ -30,7 +30,7 @@ const en = {
   "durable.close": "Back to chat",
   "durable.unavailable": "This personal conversation could not be loaded.",
   "durable.queued":
-    "Ask about the five-minute check-in. Its chat can suggest only an unconditional notification; it cannot check your calendar or remind you about meetings yet. Other personal chat replies are not available here yet.",
+    "Messages are queued here. Personal agent replies are not available yet.",
   "durable.message": "Message your Heinzel",
   "durable.send": "Queue message",
   "durable.retry": "Retry the same message",
