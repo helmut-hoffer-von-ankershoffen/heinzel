@@ -37,3 +37,41 @@ def test_private_answer_and_activity_operations_use_durable_request(make_kernel,
     assert activity.status_code == 200
     assert activity.json()["items"][0]["status"] == "denied"
     assert (tmp_path / "model-calls").read_text() == "xx"
+
+
+def test_profile_suggestion_is_owner_private_and_never_applied_by_model(make_kernel, tmp_path):
+    kernel = make_kernel(builtins=True)
+    current = kernel.resolve(CurrentUser)
+    crud = kernel.resolve(SessionCrud)
+    executable = fake_claude(
+        tmp_path,
+        tool="profile:propose",
+        arguments={
+            "expected_revision": 1,
+            "name": "Suggested",
+            "appearance": {"age": "grown", "build": "round"},
+        },
+    )
+    kernel.bind(UserChatService, UserChatService(crud, current, load=lambda: FixtureConfig(executable)))
+    client = web_client(kernel, tmp_path)
+    created = client.post("/api/heinzel/new-chat", headers=AUTH, json={"request_id": "new", "name": "Original"})
+    assert created.status_code == 200, created.text
+    session = created.json()["session_id"]
+    accepted = client.post(
+        "/api/heinzel/chat",
+        headers=AUTH,
+        json={"session_id": session, "request_id": "change-look", "message": "Suggest a different look"},
+    )
+    assert accepted.status_code == 200, accepted.text
+    answered = client.post(
+        "/api/heinzel/answer-chat", headers=AUTH, json={"session_id": session, "request_id": "change-look"}
+    )
+    assert answered.status_code == 200, answered.text
+    suggestion = client.get("/api/heinzel/latest-profile-proposal", headers=AUTH, params={"session_id": session})
+    assert suggestion.status_code == 200, suggestion.text
+    assert suggestion.json()["name"] == "Suggested"
+    assert suggestion.json()["status"] == "proposed"
+    unchanged = client.get("/api/heinzel/session", headers=AUTH, params={"session_id": session})
+    assert unchanged.json()["name"] == "Original"
+    assert unchanged.json()["profile_revision"] == 1
+    assert client.get("/api/heinzel/latest-profile-proposal", params={"session_id": session}).status_code == 401
