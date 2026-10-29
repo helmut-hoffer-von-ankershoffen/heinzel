@@ -41,7 +41,7 @@ export function ChatPanel({ onCollapse }: { onCollapse: () => void }) {
     if (!empty) chat.fresh();
     focus();
   };
-  const createPersonal = async () => {
+  const createPersonal = async (initialMessage?: string) => {
     if (creating.current) return false;
     creating.current = true;
     setCreateError(false);
@@ -55,6 +55,22 @@ export function ChatPanel({ onCollapse }: { onCollapse: () => void }) {
       if (!response.ok || !data) throw problem(response.status, error);
       if (!/^hz-[0-9A-HJKMNP-TV-Z]{26}$/.test(data.session_id) || data.heinzel_id !== data.session_id) {
         throw new Error("Invalid creation acknowledgement");
+      }
+      if (initialMessage) {
+        const draftKey = `hz.durable.composer.${data.session_id}`;
+        const raw = sessionStorage.getItem(draftKey);
+        const draft = {
+          version: 1,
+          session_id: data.session_id,
+          text: initialMessage,
+          pending: null,
+          agentPending: null,
+          checkInRequest: null,
+        };
+        const encoded = JSON.stringify(draft);
+        if (raw !== null && raw !== encoded) throw new Error("This agent already has unsent work in this tab.");
+        sessionStorage.setItem(draftKey, encoded);
+        if (sessionStorage.getItem(draftKey) !== encoded) throw new Error("The message could not be preserved.");
       }
       localStorage.removeItem(key);
       client.setQueryData(["heinzel", "session", data.session_id], data);
@@ -132,10 +148,14 @@ export function ChatPanel({ onCollapse }: { onCollapse: () => void }) {
       </div>
       <div className="chat-panel-composer border-t border-border p-3">
         <p className="mb-1 text-xs text-muted-foreground">
-          To create a personal Heinzel, choose “Create a personal Heinzel” in the chat switcher. Creating one through
-          conversation is not available yet.
+          Write what your new Heinzel should do. Create it to review and send your message in its chat.
         </p>
-        <Composer chat={chat} context={`route:${location.pathname}`} inputRef={inputRef} />
+        <Composer
+          chat={chat}
+          context={`route:${location.pathname}`}
+          inputRef={inputRef}
+          onCreatePersonal={createPersonal}
+        />
         <Costs chat={chat} className="chat-panel-costs mt-1.5" />
       </div>
     </div>

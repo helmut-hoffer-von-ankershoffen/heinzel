@@ -1,7 +1,7 @@
 // What a chat shows wherever it is (Home, the right sidebar): the messages, the answer as it streams with the tools
 // it calls, every proposed action as a card that runs only on Confirm, the costs, and the composer.
 import { Check, Info, Send, X } from "lucide-react";
-import { type FormEvent, type RefObject, useId } from "react";
+import { type FormEvent, type RefObject, useId, useState } from "react";
 import type { ModelChoice } from "@/api/chat";
 import type { SchemaChatAction, SchemaChatMessage } from "@/api/client";
 import { useConfig } from "@/api/queries";
@@ -197,12 +197,15 @@ export function Composer({
   context,
   inputRef,
   className,
+  onCreatePersonal,
 }: {
   chat: Chat;
   context: string;
   inputRef?: RefObject<HTMLTextAreaElement | null>;
   className?: string;
+  onCreatePersonal?: (message: string) => Promise<boolean>;
 }) {
+  const [creating, setCreating] = useState(false);
   const sessionId = chat.session?.id;
   const { message, setMessage, picked, setPicked } = useUpdateDraft(
     context,
@@ -211,10 +214,20 @@ export function Composer({
   );
   const choice: ModelChoice = picked ?? { model: chat.session?.model ?? null, effort: chat.session?.effort ?? null };
   const inputId = useId();
+  const createPersonal = async () => {
+    const text = message;
+    if (!text.trim() || !onCreatePersonal || creating || chat.live || chat.loading) return;
+    setCreating(true);
+    try {
+      if (await onCreatePersonal(text)) setMessage("");
+    } finally {
+      setCreating(false);
+    }
+  };
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     const text = message.trim();
-    if (!text || chat.live || chat.loading) return;
+    if (!text || chat.live || chat.loading || creating) return;
     setMessage("");
     if (!(await chat.send(text, context, picked ?? {})))
       setMessage((current) => current || text); // nothing lost
@@ -245,13 +258,24 @@ export function Composer({
         <Button
           type="submit"
           size="icon"
-          disabled={!message.trim() || chat.live != null || chat.loading}
+          disabled={!message.trim() || chat.live != null || chat.loading || creating}
           aria-label={t("chat.send")}
         >
           <Send aria-hidden />
         </Button>
       </form>
-      <ModelPicker value={choice} onChange={setPicked} disabled={chat.live != null} />
+      {onCreatePersonal && (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={!message.trim() || creating || chat.live != null || chat.loading}
+          onClick={() => void createPersonal()}
+        >
+          Create Heinzel and take this message
+        </Button>
+      )}
+      <ModelPicker value={choice} onChange={setPicked} disabled={chat.live != null || creating} />
     </div>
   );
 }

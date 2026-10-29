@@ -44,6 +44,54 @@ describe("ChatPanel", () => {
     ).toBe(false);
   });
 
+  it("takes a workshop sentence into a new agent chat without sending or losing it", async () => {
+    const id = "hz-01ARZ3NDEKTSV4RRFFQ69G5FAV";
+    const { calls } = mockApi({
+      ...base,
+      "/api/heinzel/new-chat": { session_id: id, heinzel_id: id, name: "New personal helper", messages: [] },
+      "/api/heinzel/session": { session_id: id, heinzel_id: id, name: "New personal helper", messages: [] },
+      "/api/heinzel/sessions": { sessions: [] },
+    });
+    const user = userEvent.setup();
+    renderAt("/doctor");
+    await user.type(screen.getByLabelText("Your message"), "Keep my notes current");
+    await user.click(screen.getByRole("button", { name: "Create Heinzel and take this message" }));
+    const panel = within(await screen.findByRole("complementary", { name: "Chat" }));
+    expect(await panel.findByLabelText("Message your Heinzel")).toHaveValue("Keep my notes current");
+    expect(panel.getByRole("button", { name: "Queue message" })).toBeEnabled();
+    expect(calls.some((request) => new URL(request.url).pathname === "/api/heinzel/chat")).toBe(false);
+    expect(JSON.parse(sessionStorage.getItem(`hz.durable.composer.${id}`) ?? "null").text).toBe(
+      "Keep my notes current",
+    );
+  });
+
+  it("does not overwrite a recovered agent draft when taking a workshop sentence", async () => {
+    const id = "hz-01ARZ3NDEKTSV4RRFFQ69G5FAV";
+    const key = `hz.durable.composer.${id}`;
+    const saved = JSON.stringify({
+      version: 1,
+      session_id: id,
+      text: "Earlier unsent work",
+      pending: null,
+      agentPending: null,
+      checkInRequest: null,
+    });
+    sessionStorage.setItem(key, saved);
+    mockApi({
+      ...base,
+      "/api/heinzel/new-chat": { session_id: id, heinzel_id: id, name: "New personal helper", messages: [] },
+    });
+    const user = userEvent.setup();
+    renderAt("/doctor");
+    const box = screen.getByLabelText("Your message");
+    await user.type(box, "A different request");
+    await user.click(screen.getByRole("button", { name: "Create Heinzel and take this message" }));
+    expect(await screen.findByRole("alert")).toBeInTheDocument();
+    expect(box).toHaveValue("A different request");
+    expect(sessionStorage.getItem(key)).toBe(saved);
+    localStorage.removeItem("hz.personal-heinzel.creation");
+  });
+
   it("names the per-message and per-chat caps before anything is sent", async () => {
     mockApi(base);
     renderAt("/doctor");
@@ -267,5 +315,5 @@ it("keeps a meeting-reminder request in workshop chat without silently creating 
       (request) => request.url.includes("/heinzel/new-chat") || request.url.includes("/heinzel/propose-check-in"),
     ),
   ).toBe(false);
-  expect(screen.getByText(/Creating one through conversation is not available yet/)).toBeInTheDocument();
+  expect(screen.getByText(/Create it to review and send your message in its chat/)).toBeInTheDocument();
 });
