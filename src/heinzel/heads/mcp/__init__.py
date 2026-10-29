@@ -16,7 +16,6 @@ exposure, so what a UI hides from beginners is still a tool here.
 from __future__ import annotations
 
 import inspect
-import io
 import json
 import logging
 import os
@@ -265,7 +264,6 @@ def _confirm_schedule_on_tty(arguments: dict[str, Any]) -> None:
         msg = "MCP schedule approval was not confirmed before its deadline"
         raise HeinzelError(msg)
     descriptor = -1
-    terminal_fd = -1
     try:
         challenge = f"approve schedule {secrets.token_hex(3)}"
         # ASCII JSON escapes C1, bidi and other non-ASCII code points so profile text cannot reorder or control
@@ -273,35 +271,53 @@ def _confirm_schedule_on_tty(arguments: dict[str, Any]) -> None:
         review = json.dumps(arguments, ensure_ascii=True, sort_keys=True, indent=2)
         descriptor = os.open("/dev/tty", os.O_RDWR | os.O_NOCTTY | os.O_CLOEXEC)
         _require_controlling_tty(descriptor)
-        terminal_fd = os.dup(descriptor)
-        raw = io.FileIO(terminal_fd, "r+")
-        terminal_fd = -1
-        with io.TextIOWrapper(raw, encoding="ascii", errors="strict", line_buffering=True) as terminal:
-            terminal.write("Human approval requested for this exact schedule action:\n")
-            terminal.write(review)
-            terminal.write("\nPress Ctrl-D or enter any other text to cancel.\n")
-            terminal.write(f"\nType exactly: {challenge}\n> ")
-            terminal.flush()
-        # Do not use TextIOWrapper.readline(): select readiness can mean only one byte is available on a raw TTY.
-        # Nonblocking os.read plus a monotonic deadline keeps partial input from extending this prompt indefinitely.
+        # Output can also block on a full or flow-controlled terminal queue. Make the descriptor nonblocking before
+        # writing, then wait for writability and write bounded chunks against the same absolute deadline as reading.
         os.set_blocking(descriptor, False)
-        confirmed = _read_tty_challenge(descriptor, challenge, deadline)
+        prompt = (
+            "Human approval requested for this exact schedule action:\n"
+            f"{review}\nPress Ctrl-D or enter any other text to cancel.\n\nType exactly: {challenge}\n> "
+        )
+        confirmed = _write_tty_text(descriptor, prompt, deadline) and _read_tty_challenge(
+            descriptor, challenge, deadline
+        )
     except (OSError, UnicodeError):
         msg = "MCP schedule approval needs a controlling terminal; use the paired web review instead"
         raise HeinzelError(msg) from None
     finally:
         try:
-            if terminal_fd >= 0:
-                os.close(terminal_fd)
+            if descriptor >= 0:
+                os.close(descriptor)
         finally:
-            try:
-                if descriptor >= 0:
-                    os.close(descriptor)
-            finally:
-                _SCHEDULE_APPROVAL_LOCK.release()
+            _SCHEDULE_APPROVAL_LOCK.release()
     if not confirmed:
         msg = "MCP schedule approval was not confirmed"
         raise HeinzelError(msg)
+
+
+def _write_tty_text(descriptor: int, text: str, deadline: float) -> bool:
+    """Write terminal text incrementally, returning false once the shared deadline expires.
+
+    Raises:
+        OSError: If writing the controlling terminal fails.
+    """
+    encoded = text.encode("ascii")
+    offset = 0
+    while offset < len(encoded):
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return False
+        _, writable, _ = select.select([], [descriptor], [], remaining)
+        if not writable:
+            return False
+        try:
+            written = os.write(descriptor, encoded[offset:])
+        except BlockingIOError:
+            continue
+        if written <= 0:
+            return False
+        offset += written
+    return True
 
 
 def _read_tty_challenge(descriptor: int, challenge: str, deadline: float) -> bool:

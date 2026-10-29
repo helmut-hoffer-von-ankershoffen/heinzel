@@ -236,6 +236,37 @@ def test_schedule_approval_partial_raw_terminal_input_respects_the_remaining_dea
     assert timeouts == [10.0, 6.0]
 
 
+def test_schedule_approval_full_terminal_output_queue_respects_the_deadline(monkeypatch):
+    master, slave = pty.openpty()
+    os.set_blocking(slave, False)
+    filled = 0
+    while True:
+        try:
+            filled += os.write(slave, b"x" * 4096)
+        except BlockingIOError:
+            break
+    real_open = os.open
+    with monkeypatch.context() as patcher:
+        patcher.setattr(
+            mcp.os,
+            "open",
+            lambda path, flags, *args, **kwargs: (
+                os.dup(slave) if path == "/dev/tty" else real_open(path, flags, *args, **kwargs)
+            ),
+        )
+        patcher.setattr(mcp, "_SCHEDULE_APPROVAL_TIMEOUT_SECONDS", 0.02)
+        started = time.monotonic()
+        with pytest.raises(HeinzelError, match="not confirmed"):
+            mcp._confirm_schedule_on_tty({"action": "activate"})
+        elapsed = time.monotonic() - started
+    os.close(master)
+    os.close(slave)
+    assert filled > 0
+    assert elapsed < 1
+    assert mcp._SCHEDULE_APPROVAL_LOCK.acquire(blocking=False)
+    mcp._SCHEDULE_APPROVAL_LOCK.release()
+
+
 def test_schedule_approval_lock_wait_is_bounded(monkeypatch):
     assert mcp._SCHEDULE_APPROVAL_LOCK.acquire(blocking=False)
     monkeypatch.setattr(mcp, "_SCHEDULE_APPROVAL_TIMEOUT_SECONDS", 0.01)
@@ -248,6 +279,11 @@ def test_schedule_approval_lock_wait_is_bounded(monkeypatch):
 
 def test_schedule_approval_rejects_a_wrong_terminal_challenge_and_missing_tty(monkeypatch):
     master, slave = pty.openpty()
+    real_select = select.select
+
+    def withhold_tty_input(reads, writes, errors, timeout):
+        return real_select(reads, writes, errors, timeout) if writes else ([], [], [])
+
     real_open = os.open
     monkeypatch.setattr(
         mcp.os,
@@ -300,7 +336,7 @@ def test_schedule_approval_rejects_a_wrong_terminal_challenge_and_missing_tty(mo
                 os.dup(slave) if path == "/dev/tty" else real_open(path, flags, *args, **kwargs)
             ),
         )
-        patcher.setattr(mcp.select, "select", lambda *_args, **_kwargs: ([], [], []))
+        patcher.setattr(mcp.select, "select", withhold_tty_input)
         with pytest.raises(HeinzelError, match="not confirmed"):
             mcp._confirm_schedule_on_tty(arguments)
     prompt = os.read(master, 4096).decode("utf-8")
