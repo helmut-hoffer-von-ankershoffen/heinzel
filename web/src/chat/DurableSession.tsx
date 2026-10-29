@@ -6,6 +6,7 @@ import { chatKey, sendChat } from "@/api/chat";
 import { ApiError, api, problem, type SchemaChatSession, type SchemaSessionSnapshot } from "@/api/client";
 import { useDaemonStatus } from "@/api/daemon";
 import { AgentProposal } from "@/chat/AgentProposal";
+import { ContractHistory } from "@/chat/ContractHistory";
 import { ActionCard } from "@/chat/Conversation";
 import { useDurableDraft } from "@/chat/durableDraft";
 import { ModelPolicyReviewCard, supportedPolicy } from "@/chat/ModelPolicyReviewCard";
@@ -603,19 +604,7 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
         {query.data?.session_id === sessionId && (
           <PersonalArtifactLinks key={`artifacts:${sessionId}`} sessionId={sessionId} compact />
         )}
-        {query.data?.session_id === sessionId &&
-          (query.data.contracts ?? []).some((contract) => contract.status === "approved") && (
-            <section aria-label="Approval records" className="space-y-1 rounded border border-border p-2 text-sm">
-              <h3 className="font-medium">Approval records</h3>
-              {(query.data.contracts ?? [])
-                .filter((contract) => contract.status === "approved")
-                .map((contract) => (
-                  <p key={`${contract.id}-${contract.version}`}>
-                    {contract.title} · Contract v{contract.version}: approved
-                  </p>
-                ))}
-            </section>
-          )}
+        {query.data?.session_id === sessionId && <ContractHistory contracts={query.data.contracts ?? []} />}
         {query.data?.session_id === sessionId && <SkillDraftPanel key={`skills:${sessionId}`} sessionId={sessionId} />}
         {(historyCursors.length > 1 || query.data?.has_more) && (
           <nav aria-label="Conversation history" className="space-y-2 rounded border border-border p-2 text-sm">
