@@ -61,7 +61,7 @@ const approvedChat = {
 afterEach(() => sessionStorage.clear());
 
 describe("personal conversation links", () => {
-  it("shows the exact owner-bound model policy as review only without issuing approval", async () => {
+  it("shows an unsupported owner-bound model policy without permitting approval", async () => {
     const review = {
       request_id: "policy-one",
       revision: 1,
@@ -93,9 +93,110 @@ describe("personal conversation links", () => {
     const panel = within(await screen.findByRole("complementary", { name: "Chat" }));
     const card = within(await panel.findByRole("region", { name: "Model policy review" }));
     expect(panel.getAllByRole("region", { name: "Model policy review" })).toHaveLength(1);
-    expect(card.getByText(/selected access and credential binding/)).toBeInTheDocument();
+    expect(card.getByText(/Confirmation is unavailable for this model policy/)).toBeInTheDocument();
     expect(card.getByText(/openai:example/)).toHaveTextContent('"request_id": "policy-one"');
     expect(card.queryByRole("button")).not.toBeInTheDocument();
+    expect(calls.filter((request) => request.method === "POST")).toHaveLength(0);
+  });
+
+  it("confirms only the exact current bound policy after explicit review", async () => {
+    const review = {
+      request_id: "policy-one",
+      revision: 1,
+      access: "pydantic-ai",
+      model: "openai:gpt-4.1-mini-2025-04-14",
+      binding: {
+        owner: `u-${"a".repeat(32)}`,
+        access: "pydantic-ai",
+        model: "openai:gpt-4.1-mini-2025-04-14",
+        endpoint: "https://api.openai.com/v1",
+        credential_fingerprint: "b".repeat(64),
+      },
+      requests: 1,
+      total_tokens: 100,
+      output_tokens: 10,
+      timeout_seconds: 10,
+      message_cap_usd: "1",
+      session_cap_usd: "2",
+      owner_cap_usd: "3",
+      allowed_tools: {},
+      allowed_skill_tools: [],
+    };
+    const action = {
+      ...reviewChat.actions[0],
+      operation: "approve-model-grant",
+      status: "pending",
+      arguments: { session_id: sessionId, request_id: "policy-one", review },
+    };
+    const chat = { ...reviewChat, actions: [action] };
+    const confirmed = { ...chat, actions: [{ ...action, status: "done" }] };
+    const { calls } = mockApi({
+      ...shell,
+      "/api/heinzel/session": snapshot,
+      "/api/system/runner/chat/show": chat,
+      "/api/heinzel/model-policy": {
+        session_id: sessionId,
+        status: "proposed",
+        billing: "api-priced",
+        proposal: review,
+      },
+      "/api/system/runner/chat/confirm": confirmed,
+    });
+    renderAt(`/heinzel?chat=${sessionId}&agent-chat=${chat.id}`);
+    const panel = within(await screen.findByRole("complementary", { name: "Chat" }));
+    const card = within(await panel.findByRole("region", { name: "Model policy review" }));
+    expect(card.getByText(/not a provider account/)).toBeInTheDocument();
+    expect(calls.filter((request) => request.method === "POST")).toHaveLength(0);
+    fireEvent.click(card.getByRole("button", { name: "Confirm model policy" }));
+    await waitFor(() => expect(calls.filter((request) => request.method === "POST")).toHaveLength(1));
+    const post = calls.find((request) => request.method === "POST");
+    expect(new URL(post?.url ?? "").pathname).toBe("/api/system/runner/chat/confirm");
+    await waitFor(() => expect(panel.queryByRole("region", { name: "Model policy review" })).not.toBeInTheDocument());
+  });
+
+  it("does not confirm if the reviewed binding changed", async () => {
+    const review = {
+      request_id: "policy-one",
+      revision: 1,
+      access: "pydantic-ai",
+      model: "openai:gpt-4.1-mini-2025-04-14",
+      binding: {
+        owner: `u-${"a".repeat(32)}`,
+        access: "pydantic-ai",
+        model: "openai:gpt-4.1-mini-2025-04-14",
+        endpoint: "https://api.openai.com/v1",
+        credential_fingerprint: "b".repeat(64),
+      },
+      allowed_tools: {},
+      allowed_skill_tools: [],
+    };
+    const action = {
+      ...reviewChat.actions[0],
+      operation: "approve-model-grant",
+      status: "pending",
+      arguments: { session_id: sessionId, request_id: "policy-one", review },
+    };
+    const chat = { ...reviewChat, actions: [action] };
+    const changed = { ...review, binding: { ...review.binding, credential_fingerprint: "c".repeat(64) } };
+    const { calls } = mockApi({
+      ...shell,
+      "/api/heinzel/session": snapshot,
+      "/api/system/runner/chat/show": chat,
+      "/api/heinzel/model-policy": {
+        session_id: sessionId,
+        status: "proposed",
+        billing: "api-priced",
+        proposal: changed,
+      },
+    });
+    renderAt(`/heinzel?chat=${sessionId}&agent-chat=${chat.id}`);
+    const panel = within(await screen.findByRole("complementary", { name: "Chat" }));
+    const card = within(await panel.findByRole("region", { name: "Model policy review" }));
+    fireEvent.click(card.getByRole("button", { name: "Confirm model policy" }));
+    await waitFor(() =>
+      expect(calls.some((request) => new URL(request.url).pathname === "/api/heinzel/model-policy")).toBe(true),
+    );
+    await waitFor(() => expect(panel.getAllByRole("alert").length).toBeGreaterThan(0));
     expect(calls.filter((request) => request.method === "POST")).toHaveLength(0);
   });
 

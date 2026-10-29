@@ -155,6 +155,8 @@ class InteractiveTurn:
         initialize_budget(self._crud.repository, session_id)
 
         def verify_grant() -> None:
+            # The owner/session main writer fences grant changes for this turn. Access changes are
+            # observed before each provider request; an already admitted request may still finish.
             binding.recheck(approved_binding)
             if ModelGrants(self._crud).approved(session_id) != grant:
                 msg = "The approved model grant changed during this turn"

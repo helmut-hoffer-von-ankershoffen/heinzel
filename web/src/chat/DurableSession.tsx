@@ -8,7 +8,7 @@ import { useDaemonStatus } from "@/api/daemon";
 import { AgentProposal } from "@/chat/AgentProposal";
 import { ActionCard } from "@/chat/Conversation";
 import { useDurableDraft } from "@/chat/durableDraft";
-import { ModelPolicyReviewCard } from "@/chat/ModelPolicyReviewCard";
+import { ModelPolicyReviewCard, supportedPolicy } from "@/chat/ModelPolicyReviewCard";
 import { SkillDraftPanel } from "@/chat/SkillDraftPanel";
 import { Button } from "@/components/ui/button";
 import { ProfileEditor } from "@/heinzel/PersonalHeinzels";
@@ -22,6 +22,17 @@ async function result<T>(call: Promise<{ data?: T; error?: unknown; response: Re
 }
 
 const DAEMON_TICK_CLOCK_SKEW_MS = 60_000;
+
+function canonical(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
+  if (value && typeof value === "object") {
+    return `{${Object.entries(value)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, item]) => `${JSON.stringify(key)}:${canonical(item)}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
 
 function requirePersonalChat(chat: SchemaChatSession, sessionId: string, chatId?: string): SchemaChatSession {
   if (chat.personal_session_id !== sessionId || (chatId !== undefined && chat.id !== chatId)) {
@@ -690,7 +701,56 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
           .filter((chat, index, all) => chat && all.findIndex((item) => item?.id === chat.id) === index)
           .flatMap((chat) =>
             (chat?.actions ?? []).map((action) => (
-              <ModelPolicyReviewCard key={`${chat?.id}-${action.id}`} action={action} sessionId={sessionId} />
+              <ModelPolicyReviewCard
+                key={`${chat?.id}-${action.id}`}
+                action={action}
+                sessionId={sessionId}
+                busy={busy}
+                onConfirm={() => {
+                  if (!chat || busy) return;
+                  void (async () => {
+                    setBusy(true);
+                    setError(false);
+                    try {
+                      const args = action.arguments;
+                      if (!args || typeof args.request_id !== "string" || !supportedPolicy(args.review))
+                        throw new Error("This model policy cannot be confirmed.");
+                      const current = await result(
+                        api.GET("/heinzel/model-policy", {
+                          params: { query: { session_id: sessionId, request_id: args.request_id } },
+                        }),
+                      );
+                      if (
+                        current.session_id !== sessionId ||
+                        current.status !== "proposed" ||
+                        canonical(current.proposal) !== canonical(args.review) ||
+                        !supportedPolicy(current.proposal)
+                      )
+                        throw new Error("The model policy changed; review it again.");
+                      const updated = await result(
+                        api.POST("/system/runner/chat/confirm", {
+                          params: { query: { session: chat.id, action: action.id } },
+                        }),
+                      );
+                      rememberChat(updated, chat.id);
+                    } catch {
+                      setError(true);
+                      try {
+                        const updated = await result(
+                          api.GET("/system/runner/chat/show", {
+                            params: { query: { session: chat.id } },
+                          }),
+                        );
+                        rememberChat(updated, chat.id);
+                      } catch {
+                        // Keep the action available for an explicit later inspection, without retrying confirmation.
+                      }
+                    } finally {
+                      setBusy(false);
+                    }
+                  })();
+                }}
+              />
             )),
           )}
         {pendingAgentActions.length > 0 && (

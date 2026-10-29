@@ -6682,6 +6682,48 @@
         "title": "ModelList",
         "type": "object"
       },
+      "ModelPolicyReview": {
+        "description": "The exact inert proposal, with explicit billing semantics.",
+        "properties": {
+          "billing": {
+            "const": "api-priced",
+            "default": "api-priced",
+            "description": "Bounded standard API pricing policy.",
+            "title": "Billing",
+            "type": "string"
+          },
+          "proposal": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "description": "Exact model, request, revision, limits and tool fingerprints.",
+            "title": "Proposal",
+            "type": "object"
+          },
+          "session_id": {
+            "description": "Owner-bound durable session receiving the proposal.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "status": {
+            "default": "proposed",
+            "description": "The policy proposal or approval state.",
+            "enum": [
+              "proposed",
+              "approved"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "proposal"
+        ],
+        "title": "ModelPolicyReview",
+        "type": "object"
+      },
       "ModuleDoc": {
         "description": "One module of a plugin with everything it advertises.",
         "properties": {
@@ -14844,6 +14886,44 @@
         "title": "heinzel_amend_scheduled_agent_Input",
         "type": "object"
       },
+      "heinzel_approve_model_grant_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "approval_proof": {
+            "description": "In-process proof issued only by trusted human confirmation.",
+            "title": "Approval Proof",
+            "type": "string"
+          },
+          "request_id": {
+            "description": "The exact proposed policy request id.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "review": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "description": "Exact policy terms displayed in the action card.",
+            "title": "Review",
+            "type": "object"
+          },
+          "session_id": {
+            "description": "Owner-bound durable agent session.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "request_id",
+          "review",
+          "approval_proof"
+        ],
+        "title": "heinzel_approve_model_grant_Input",
+        "type": "object"
+      },
       "heinzel_associate_artifact_Input": {
         "additionalProperties": false,
         "properties": {
@@ -15045,6 +15125,37 @@
           "request_id"
         ],
         "title": "heinzel_propose_check_in_Input",
+        "type": "object"
+      },
+      "heinzel_propose_model_policy_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "billing": {
+            "description": "Billing policy; only api-priced is currently supported.",
+            "title": "Billing",
+            "type": "string"
+          },
+          "proposal": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "description": "Exact model grant terms and request identity.",
+            "title": "Proposal",
+            "type": "object"
+          },
+          "session_id": {
+            "description": "Owner-bound durable agent session.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "billing",
+          "proposal"
+        ],
+        "title": "heinzel_propose_model_policy_Input",
         "type": "object"
       },
       "heinzel_propose_scheduled_agent_Input": {
@@ -15656,6 +15767,48 @@
         ]
       }
     },
+    "/heinzel/approve-model-grant": {
+      "post": {
+        "description": "Apply an exact human-confirmed policy; direct callers cannot issue or consume approval.",
+        "operationId": "heinzel_approve_model_grant",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/heinzel_approve_model_grant_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelPolicyReview"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Apply an exact human-confirmed policy; direct callers cannot issue or consume approval.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
     "/heinzel/associate-artifact": {
       "post": {
         "description": "Associate a Google file locally; no access, provider ownership or permission is verified.",
@@ -16046,6 +16199,58 @@
         ]
       }
     },
+    "/heinzel/model-policy": {
+      "get": {
+        "description": "Read the current exact proposed policy; no permission is granted.",
+        "operationId": "heinzel_model_policy",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelPolicyReview"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read the current exact proposed policy; no permission is granted.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
     "/heinzel/new-chat": {
       "post": {
         "description": "Create a durable personal Heinzel with an idempotent request, name and look.",
@@ -16232,6 +16437,48 @@
           }
         },
         "summary": "Propose local five-minute check-ins; the schedule stays inactive until activated.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/propose-model-policy": {
+      "post": {
+        "description": "Stage an inert model policy for independent human review.",
+        "operationId": "heinzel_propose_model_policy",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/heinzel_propose_model_policy_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelPolicyReview"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Stage an inert model policy for independent human review.",
         "tags": [
           "heinzel"
         ]
@@ -19201,6 +19448,62 @@
           }
         },
         "summary": "Open a runner chat bound to this owner's durable session and current conversation history.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/runner/chat/propose-model-policy": {
+      "post": {
+        "description": "Stage the exact current model policy for human review; no grant or model call is made.",
+        "operationId": "system_runner_chat_propose_model_policy",
+        "parameters": [
+          {
+            "description": "The personal agent session.",
+            "in": "query",
+            "name": "durable_session",
+            "required": true,
+            "schema": {
+              "description": "The personal agent session.",
+              "title": "Durable Session",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The policy proposal request id.",
+            "in": "query",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "description": "The policy proposal request id.",
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatSession"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Stage the exact current model policy for human review; no grant or model call is made.",
         "tags": [
           "system"
         ]

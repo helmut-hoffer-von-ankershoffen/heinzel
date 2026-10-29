@@ -148,6 +148,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/heinzel/approve-model-grant": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Apply an exact human-confirmed policy; direct callers cannot issue or consume approval.
+         * @description Apply an exact human-confirmed policy; direct callers cannot issue or consume approval.
+         */
+        post: operations["heinzel_approve_model_grant"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/heinzel/associate-artifact": {
         parameters: {
             query?: never;
@@ -288,6 +308,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/heinzel/model-policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read the current exact proposed policy; no permission is granted.
+         * @description Read the current exact proposed policy; no permission is granted.
+         */
+        get: operations["heinzel_model_policy"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/heinzel/new-chat": {
         parameters: {
             query?: never;
@@ -382,6 +422,26 @@ export interface paths {
          * @description Propose local five-minute check-ins; the schedule stays inactive until activated.
          */
         post: operations["heinzel_propose_check_in"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/heinzel/propose-model-policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Stage an inert model policy for independent human review.
+         * @description Stage an inert model policy for independent human review.
+         */
+        post: operations["heinzel_propose_model_policy"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1888,6 +1948,26 @@ export interface paths {
          * @description Open a runner chat bound to this owner's durable session and current conversation history.
          */
         post: operations["system_runner_chat_open_check_in"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/runner/chat/propose-model-policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Stage the exact current model policy for human review; no grant or model call is made.
+         * @description Stage the exact current model policy for human review; no grant or model call is made.
+         */
+        post: operations["system_runner_chat_propose_model_policy"];
         delete?: never;
         options?: never;
         head?: never;
@@ -6267,6 +6347,38 @@ export interface components {
              * @description Its title, e.g. `Claude Code`.
              */
             title: string;
+        };
+        /**
+         * ModelPolicyReview
+         * @description The exact inert proposal, with explicit billing semantics.
+         */
+        ModelPolicyReview: {
+            /**
+             * Billing
+             * @description Bounded standard API pricing policy.
+             * @default api-priced
+             * @constant
+             */
+            billing: "api-priced";
+            /**
+             * Proposal
+             * @description Exact model, request, revision, limits and tool fingerprints.
+             */
+            proposal: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            /**
+             * Session Id
+             * @description Owner-bound durable session receiving the proposal.
+             */
+            session_id: string;
+            /**
+             * Status
+             * @description The policy proposal or approval state.
+             * @default proposed
+             * @enum {string}
+             */
+            status: "proposed" | "approved";
         };
         /**
          * ModuleDoc
@@ -10959,6 +11071,31 @@ export interface components {
              */
             timeout_seconds: number;
         };
+        /** heinzel_approve_model_grant_Input */
+        heinzel_approve_model_grant_Input: {
+            /**
+             * Approval Proof
+             * @description In-process proof issued only by trusted human confirmation.
+             */
+            approval_proof: string;
+            /**
+             * Request Id
+             * @description The exact proposed policy request id.
+             */
+            request_id: string;
+            /**
+             * Review
+             * @description Exact policy terms displayed in the action card.
+             */
+            review: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            /**
+             * Session Id
+             * @description Owner-bound durable agent session.
+             */
+            session_id: string;
+        };
         /** heinzel_associate_artifact_Input */
         heinzel_associate_artifact_Input: {
             /**
@@ -11067,6 +11204,26 @@ export interface components {
              * @default UTC
              */
             timezone: string;
+        };
+        /** heinzel_propose_model_policy_Input */
+        heinzel_propose_model_policy_Input: {
+            /**
+             * Billing
+             * @description Billing policy; only api-priced is currently supported.
+             */
+            billing: string;
+            /**
+             * Proposal
+             * @description Exact model grant terms and request identity.
+             */
+            proposal: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            /**
+             * Session Id
+             * @description Owner-bound durable agent session.
+             */
+            session_id: string;
         };
         /** heinzel_propose_scheduled_agent_Input */
         heinzel_propose_scheduled_agent_Input: {
@@ -11314,6 +11471,7 @@ export type SchemaMessageAccepted = components['schemas']['MessageAccepted'];
 export type SchemaMetricWidget = components['schemas']['MetricWidget'];
 export type SchemaModelChoice = components['schemas']['ModelChoice'];
 export type SchemaModelList = components['schemas']['ModelList'];
+export type SchemaModelPolicyReview = components['schemas']['ModelPolicyReview'];
 export type SchemaModuleDoc = components['schemas']['ModuleDoc'];
 export type SchemaModuleInfo = components['schemas']['ModuleInfo'];
 export type SchemaNavEntry = components['schemas']['NavEntry'];
@@ -11436,11 +11594,13 @@ export type SchemaWeek = components['schemas']['Week'];
 export type SchemaWidgetAction = components['schemas']['WidgetAction'];
 export type SchemaWidgetEntry = components['schemas']['WidgetEntry'];
 export type SchemaHeinzelAmendScheduledAgentInput = components['schemas']['heinzel_amend_scheduled_agent_Input'];
+export type SchemaHeinzelApproveModelGrantInput = components['schemas']['heinzel_approve_model_grant_Input'];
 export type SchemaHeinzelAssociateArtifactInput = components['schemas']['heinzel_associate_artifact_Input'];
 export type SchemaHeinzelChatInput = components['schemas']['heinzel_chat_Input'];
 export type SchemaHeinzelNewChatInput = components['schemas']['heinzel_new_chat_Input'];
 export type SchemaHeinzelProfileInput = components['schemas']['heinzel_profile_Input'];
 export type SchemaHeinzelProposeCheckInInput = components['schemas']['heinzel_propose_check_in_Input'];
+export type SchemaHeinzelProposeModelPolicyInput = components['schemas']['heinzel_propose_model_policy_Input'];
 export type SchemaHeinzelProposeScheduledAgentInput = components['schemas']['heinzel_propose_scheduled_agent_Input'];
 export type SchemaHeinzelProposeSkillDraftInput = components['schemas']['heinzel_propose_skill_draft_Input'];
 export type SchemaHeinzelProposeSkillSharingInput = components['schemas']['heinzel_propose_skill_sharing_Input'];
@@ -11645,6 +11805,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ScheduledAgentProposal"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    heinzel_approve_model_grant: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["heinzel_approve_model_grant_Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelPolicyReview"];
                 };
             };
             /** @description Validation Error */
@@ -11896,6 +12089,38 @@ export interface operations {
             };
         };
     };
+    heinzel_model_policy: {
+        parameters: {
+            query: {
+                session_id: string;
+                request_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelPolicyReview"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     heinzel_new_chat: {
         parameters: {
             query?: never;
@@ -12033,6 +12258,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SessionSnapshot"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    heinzel_propose_model_policy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["heinzel_propose_model_policy_Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelPolicyReview"];
                 };
             };
             /** @description Validation Error */
@@ -14018,6 +14276,40 @@ export interface operations {
                 request_id: string;
                 /** @description The IANA time zone to use for this schedule preview. */
                 timezone: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatSession"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_runner_chat_propose_model_policy: {
+        parameters: {
+            query: {
+                /** @description The personal agent session. */
+                durable_session: string;
+                /** @description The policy proposal request id. */
+                request_id: string;
             };
             header?: never;
             path?: never;
