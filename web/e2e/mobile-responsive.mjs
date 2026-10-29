@@ -613,7 +613,7 @@ try {
         : null,
     );
     assert.ok(visualViewportAfterFocus, `${spec.name}: visualViewport API is required for this emulation check`);
-    // Reproduce the hover/layout race: an already-open footer pane is repositioned after the safe-area update while
+    // Exercise an open hover pane across the safe-area change: it is repositioned while the Page tab remains the
     // the Page tab remains the next intended touch target.
     if (spec.name === "short-landscape") {
       const versionTrigger = page.locator('[data-footer-content="@version"] button').first();
