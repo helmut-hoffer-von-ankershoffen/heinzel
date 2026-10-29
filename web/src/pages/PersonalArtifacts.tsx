@@ -1,5 +1,5 @@
 // Local references only: the registry does not contact Google or verify access or ownership.
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { api, type SchemaPersonalArtifact, type SchemaSessionSummary } from "@/api/client";
 
 function safeGoogleLink(item: SchemaPersonalArtifact, sessionId: string): boolean {
@@ -15,14 +15,79 @@ function safeGoogleLink(item: SchemaPersonalArtifact, sessionId: string): boolea
 
 const names = { document: "Google Doc", spreadsheet: "Google Sheet", presentation: "Google Slides" } as const;
 
+/** The current owner's local links, not provider-verified files or evidence of agent edits. */
+export function PersonalArtifactLinks({ sessionId, compact = false }: { sessionId: string; compact?: boolean }) {
+  const headingId = useId();
+  const [result, setResult] = useState<{ sessionId: string; artifacts: SchemaPersonalArtifact[] } | null>(null);
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    setResult(null);
+    setError(false);
+    void api
+      .GET("/heinzel/personal-artifacts", { params: { query: { session_id: sessionId } } })
+      .then(({ data, response }) => {
+        if (
+          !response.ok ||
+          !data ||
+          data.session_id !== sessionId ||
+          !Array.isArray(data.artifacts) ||
+          data.artifacts.some((item) => !safeGoogleLink(item, sessionId))
+        )
+          throw new Error("Invalid associations");
+        if (active) setResult({ sessionId, artifacts: data.artifacts });
+      })
+      .catch(() => {
+        if (active) setError(true);
+      });
+    return () => {
+      active = false;
+    };
+  }, [sessionId]);
+
+  const artifacts = result?.sessionId === sessionId ? result.artifacts : null;
+  return (
+    <section
+      aria-labelledby={headingId}
+      className={compact ? "space-y-1 rounded border border-border p-2 text-sm" : "space-y-2"}
+    >
+      <h3 id={headingId} className="font-medium">
+        {compact ? "Associated files" : "Local associations"}
+      </h3>
+      {compact && (
+        <p className="text-xs text-muted-foreground">
+          Association only: Google access and agent management are unverified. Recent agent edits are not available.
+        </p>
+      )}
+      {error ? (
+        <p role="alert">Associations could not be loaded or validated.</p>
+      ) : artifacts === null ? (
+        <p role="status">Loading associations…</p>
+      ) : artifacts.length === 0 ? (
+        <p>No local file associations for this Heinzel.</p>
+      ) : (
+        <ul className="space-y-1">
+          {artifacts.map((item) => (
+            <li key={item.request_id} className="rounded border border-border p-2">
+              <a href={item.ref} target="_blank" rel="noopener noreferrer" className="break-all text-primary underline">
+                {names[item.kind]} · {item.ref.split("/")[5]}
+              </a>
+              <p className="text-xs text-muted-foreground">
+                Principal-submitted · Association only · Google access and agent management unverified
+              </p>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
 export function PersonalArtifacts() {
   const [sessions, setSessions] = useState<SchemaSessionSummary[] | null>(null);
   const [sessionError, setSessionError] = useState(false);
   const [selected, setSelected] = useState("");
-  const [artifacts, setArtifacts] = useState<SchemaPersonalArtifact[] | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(false);
-
   useEffect(() => {
     let active = true;
     void api
@@ -38,40 +103,6 @@ export function PersonalArtifacts() {
       active = false;
     };
   }, []);
-
-  useEffect(() => {
-    let active = true;
-    setArtifacts(null);
-    setError(false);
-    if (!selected)
-      return () => {
-        active = false;
-      };
-    setLoading(true);
-    void api
-      .GET("/heinzel/personal-artifacts", { params: { query: { session_id: selected } } })
-      .then(({ data, response }) => {
-        if (
-          !response.ok ||
-          !data ||
-          data.session_id !== selected ||
-          !Array.isArray(data.artifacts) ||
-          data.artifacts.some((item) => !safeGoogleLink(item, selected))
-        )
-          throw new Error("Invalid associations");
-        if (active) setArtifacts(data.artifacts);
-      })
-      .catch(() => {
-        if (active) setError(true);
-      })
-      .finally(() => {
-        if (active) setLoading(false);
-      });
-    return () => {
-      active = false;
-    };
-  }, [selected]);
-
   return (
     <section aria-labelledby="personal-artifacts" className="space-y-3 rounded-lg border border-border p-4">
       <h2 id="personal-artifacts" className="font-semibold">
@@ -91,12 +122,7 @@ export function PersonalArtifacts() {
           <select
             className="block w-full rounded border border-border bg-background p-2"
             value={selected}
-            onChange={(event) => {
-              setArtifacts(null);
-              setLoading(false);
-              setError(false);
-              setSelected(event.target.value);
-            }}
+            onChange={(event) => setSelected(event.target.value)}
           >
             <option value="">Choose a Heinzel</option>
             {sessions.map((session) => (
@@ -107,25 +133,7 @@ export function PersonalArtifacts() {
           </select>
         </label>
       )}
-      {loading && <p role="status">Loading associations…</p>}
-      {error && <p role="alert">Associations could not be loaded or validated.</p>}
-      {artifacts &&
-        (artifacts.length === 0 ? (
-          <p>No local file associations for this Heinzel.</p>
-        ) : (
-          <ul className="space-y-2">
-            {artifacts.map((item) => (
-              <li key={item.request_id} className="rounded border border-border p-2">
-                <a href={item.ref} target="_blank" rel="noopener noreferrer" className="text-primary underline">
-                  {names[item.kind]} · {item.ref.split("/")[5]}
-                </a>
-                <p className="text-xs text-muted-foreground">
-                  Association only · Google access and agent management unverified
-                </p>
-              </li>
-            ))}
-          </ul>
-        ))}
+      {selected && <PersonalArtifactLinks key={selected} sessionId={selected} />}
     </section>
   );
 }

@@ -535,7 +535,7 @@ describe("personal conversation links", () => {
     const panel = within(await screen.findByRole("complementary", { name: "Chat" }));
     expect(await panel.findByText("*/5 * * * * · Europe/Berlin")).toBeInTheDocument();
     fireEvent.click(panel.getByRole("button", { name: "Review activation in chat" }));
-    expect(await panel.findByRole("alert")).toHaveTextContent("The schedule request could not be confirmed");
+    expect(await panel.findByText(/The schedule request could not be confirmed/)).toBeInTheDocument();
     fireEvent.click(panel.getByRole("button", { name: "Review activation in chat" }));
     await waitFor(() =>
       expect(calls.some((request) => new URL(request.url).pathname.endsWith("/propose-schedule-control"))).toBe(true),
@@ -662,7 +662,7 @@ describe("personal conversation links", () => {
     renderAt(`/heinzel?chat=${sessionId}&approval-chat=${reviewChat.id}`);
     const panel = within(await screen.findByRole("complementary", { name: "Chat" }));
     fireEvent.click(await panel.findByRole("button", { name: "Authorize MCP to run once" }));
-    expect(await panel.findByRole("alert")).toHaveTextContent("hz system daemon restart");
+    expect(await panel.findByText(/hz system daemon restart/)).toBeInTheDocument();
     expect(calls.some((request) => new URL(request.url).pathname.endsWith("/chat/confirm"))).toBe(false);
   });
 
@@ -907,4 +907,66 @@ it("shows recorded activity and stored drafts without exposing tool bodies or in
   expect(screen.getByText("Approval for this durable action is not available here yet.")).toBeInTheDocument();
   fireEvent.click(screen.getByText("Customize your Heinzel"));
   expect(screen.getByRole("checkbox", { name: "scarf" })).toBeChecked();
+});
+
+it("shows only owner-session associations and recorded review states in the agent chat", async () => {
+  const ref = "https://docs.google.com/document/d/abc123_DEF456/edit";
+  const { calls } = mockApi({
+    ...shell,
+    "/api/heinzel/session": {
+      ...snapshot,
+      pending_actions: [
+        {
+          id: "draft-1",
+          operation: "publish",
+          status: "pending",
+          preview: { title: "Weekly notes", after: "Proposed draft" },
+        },
+        { id: "draft-2", operation: "send", status: "uncertain" },
+      ],
+      contracts: [{ id: "contract-1", version: 1, title: "Check-in", status: "approved" }],
+    },
+    "/api/heinzel/personal-artifacts": {
+      session_id: sessionId,
+      artifacts: [
+        {
+          session_id: sessionId,
+          request_id: "file-1",
+          provider: "google",
+          kind: "document",
+          ref,
+          provenance: "principal-submitted",
+        },
+      ],
+    },
+  });
+  renderAt(`/?chat=${sessionId}`);
+  const link = await screen.findByRole("link", { name: /Google Doc/ });
+  expect(link).toHaveAttribute("href", ref);
+  expect(screen.getByText(/agent management are unverified/)).toBeInTheDocument();
+  expect(screen.getByText(/Recent agent edits are not available/)).toBeInTheDocument();
+  expect(screen.getByText("Weekly notes")).toBeInTheDocument();
+  expect(screen.getByText("Status: Waiting for approval")).toBeInTheDocument();
+  expect(screen.getByText("Draft: Proposed draft")).toBeInTheDocument();
+  expect(screen.getByText("Status: uncertain")).toBeInTheDocument();
+  expect(screen.getByText(/Contract v1: approved/)).toBeInTheDocument();
+  const request = calls.find((call) => new URL(call.url).pathname.endsWith("/personal-artifacts"));
+  expect(new URL(request?.url ?? "").searchParams.get("session_id")).toBe(sessionId);
+});
+
+it("does not display another session's action or request its associations", async () => {
+  const other = "hz-01ARZ3NDEKTSV4RRFFQ69G5FAW";
+  const { calls } = mockApi({
+    ...shell,
+    "/api/heinzel/session": {
+      ...snapshot,
+      session_id: other,
+      pending_actions: [{ id: "foreign", operation: "private-action", status: "pending" }],
+    },
+  });
+  renderAt(`/?chat=${sessionId}`);
+  expect(await screen.findByText("This personal conversation could not be loaded.")).toBeInTheDocument();
+  expect(screen.queryByRole("heading", { name: "Personal helper" })).not.toBeInTheDocument();
+  expect(screen.queryByText(/private-action/)).not.toBeInTheDocument();
+  expect(calls.some((call) => new URL(call.url).pathname.endsWith("/personal-artifacts"))).toBe(false);
 });

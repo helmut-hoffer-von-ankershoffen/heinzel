@@ -11,6 +11,7 @@ import { useDurableDraft } from "@/chat/durableDraft";
 import { Button } from "@/components/ui/button";
 import { ProfileEditor } from "@/heinzel/PersonalHeinzels";
 import { t } from "@/i18n";
+import { PersonalArtifactLinks } from "@/pages/PersonalArtifacts";
 
 async function result<T>(call: Promise<{ data?: T; error?: unknown; response: Response }>): Promise<T> {
   const { data, error, response } = await call;
@@ -58,7 +59,11 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
   const running = useRef(false);
   const query = useQuery({
     queryKey: ["heinzel", "session", sessionId],
-    queryFn: () => result(api.GET("/heinzel/session", { params: { query: { session_id: sessionId } } })),
+    queryFn: async () => {
+      const snapshot = await result(api.GET("/heinzel/session", { params: { query: { session_id: sessionId } } }));
+      if (snapshot.session_id !== sessionId) throw new Error("Unexpected personal session");
+      return snapshot;
+    },
     retry: false,
   });
   const daemonStatus = useDaemonStatus(query.data?.schedule?.status === "active");
@@ -537,6 +542,22 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
             {showProposal && <AgentProposal sessionId={sessionId} />}
           </details>
         )}
+        {query.data?.session_id === sessionId && (
+          <PersonalArtifactLinks key={sessionId} sessionId={sessionId} compact />
+        )}
+        {query.data?.session_id === sessionId &&
+          (query.data.contracts ?? []).some((contract) => contract.status === "approved") && (
+            <section aria-label="Approval records" className="space-y-1 rounded border border-border p-2 text-sm">
+              <h3 className="font-medium">Approval records</h3>
+              {(query.data.contracts ?? [])
+                .filter((contract) => contract.status === "approved")
+                .map((contract) => (
+                  <p key={`${contract.id}-${contract.version}`}>
+                    {contract.title} · Contract v{contract.version}: approved
+                  </p>
+                ))}
+            </section>
+          )}
         {query.data?.messages?.map((message) => (
           <p key={`${message.seq}-${message.id}`} className="whitespace-pre-wrap text-sm">
             <strong>{message.role === "tool" ? "Tool activity" : message.role}:</strong>{" "}
