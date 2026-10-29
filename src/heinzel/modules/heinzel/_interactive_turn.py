@@ -27,7 +27,7 @@ from heinzel.modules.heinzel._model_grants import ModelGrant, ModelGrants
 from heinzel.modules.heinzel._priced_model import ReservedModel
 from heinzel.modules.heinzel._session_bodies import immutable_body
 from heinzel.modules.heinzel._session_crud import SessionCrud
-from heinzel.modules.heinzel._session_models import SessionMessage
+from heinzel.modules.heinzel._session_models import BackendBinding, SessionMessage
 from heinzel.modules.heinzel._turn_authority_fence import TurnAuthorityFence
 from heinzel.modules.heinzel._turn_skill_adapter import TurnSkillAdapter, skill_tool_schemas
 
@@ -168,8 +168,8 @@ class InteractiveTurn:
             session_id,
             _turn_id(request_id),
             max_requests=limits.requests,
-            max_turn_tokens=limits.total_tokens,
-            max_turn_output_tokens=limits.output_tokens,
+            max_turn_tokens=grant.total_tokens,
+            max_turn_output_tokens=grant.output_tokens,
             message_cap=min(grant.message_cap_usd, Decimal(str(costs.message_max_usd))),
             session_cap=min(grant.session_cap_usd, Decimal(str(costs.session_max_usd))),
             owner_cap=grant.owner_cap_usd,
@@ -187,6 +187,8 @@ class InteractiveTurn:
         limits: TurnLimits,
         expected_grant: ModelGrant | None = None,
         catalog: HostToolCatalog | None = None,
+        allow_ungranted_tools: bool = True,
+        backend_binding: BackendBinding | None = None,
     ) -> SessionMessage:
         """Execute one accepted message; an interrupted attempt never automatically re-executes.
 
@@ -251,7 +253,12 @@ class InteractiveTurn:
                 msg = "This accepted message is no longer retained"
                 raise HeinzelError(msg)
             with repo.control_writer(session_id) as writer:
-                writer.append("interactive.started", key=turn, turn=turn, data={"message_id": request_id})
+                writer.append(
+                    "interactive.started",
+                    key=turn,
+                    turn=turn,
+                    data={"message_id": request_id, **({"billing": "plan"} if backend_binding else {})},
+                )
 
             calls = 0
 
@@ -262,7 +269,7 @@ class InteractiveTurn:
                 args = _JSON.validate_python(arguments, strict=True)
                 if len(json.dumps(args, ensure_ascii=False).encode()) > _MAX_ARGUMENT_BYTES:
                     return "Tool request is too large."
-                if name in _READ_TOOLS:
+                if name in _READ_TOOLS and allow_ungranted_tools:
                     # The prototype's pure local tool is not part of the reviewed registered catalog.
                     if expected_grant is not None:
                         self._event(session_id, turn, calls, name, "denied")
@@ -289,7 +296,7 @@ class InteractiveTurn:
                 if expected_grant is not None and name in expected_grant.allowed_skill_tools:
                     adapter = TurnSkillAdapter(self._crud, deps, expected_grant, turn_writer)
                     return adapter.dispatch(name, args)
-                if name == "propose_action":
+                if name == "propose_action" and allow_ungranted_tools:
                     with repo.control_writer(session_id) as writer:
                         body = immutable_body(writer, "tool-proposal", args, control=True)
                         writer.append(
@@ -358,6 +365,8 @@ class InteractiveTurn:
                 role="assistant",
                 text=text,
                 at=datetime.now(UTC),
+                backend_binding=backend_binding,
+                billing="plan" if backend_binding else None,
             )
             self._check_owner()
             with repo.control_writer(session_id) as writer:

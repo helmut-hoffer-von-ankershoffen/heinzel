@@ -1,5 +1,6 @@
 """Private durable-session operations: one declared surface for CLI, stdio MCP, paired web and private API."""
 
+import asyncio
 import getpass
 import sys
 from pathlib import Path
@@ -39,6 +40,7 @@ from heinzel.modules.heinzel._session_models import (
     SkillSharingProposal,
 )
 from heinzel.modules.heinzel._session_repository import PersonalSessionRepository
+from heinzel.modules.heinzel._user_chat import UserChatAnswer, UserChatService, UserToolActivity
 
 Request = Annotated[RequestId, Field(description="A stable client request id; reuse it only for an exact retry.")]
 Identity = Annotated[SessionId, Field(description="The stable personal session id returned by new-chat or sessions.")]
@@ -244,6 +246,7 @@ def _register_skill_operations(module: Module) -> None:
 def register_session_operations(module: Module) -> None:  # noqa: C901 - operation declarations define one shared head surface
     """Register once on the owning module; constructing the service performs no private I/O."""
     module.service(SessionCrud, _crud)
+    module.service(UserChatService)
     _register_skill_operations(module)
     register_model_policy_operations(module)
     module.service(ApprovalIssuer, _approval_issuer)
@@ -456,6 +459,20 @@ def register_session_operations(module: Module) -> None:  # noqa: C901 - operati
             expected_contract_version,
             expected_preview_hash,
         )
+
+    @module.operation(private=True, read_only=False, heads={"cli", "web", "api-private"}, audience="everyday")
+    def answer_chat(service: UserChatService, session_id: Identity, request_id: Request) -> UserChatAnswer:
+        """Answer one authenticated user's accepted message; an interrupted request is never silently replayed."""
+        return asyncio.run(service.answer(session_id, request_id))
+
+    @module.operation(private=True, heads={"cli", "web", "api-private"}, audience="everyday")
+    def tool_activity(
+        service: UserChatService,
+        session_id: Identity,
+        limit: Annotated[int, Field(ge=1, le=100)] = 30,
+    ) -> UserToolActivity:
+        """Show owner-private host-observed tool decisions, without their arguments."""
+        return service.activity(session_id, limit)
 
     @module.operation(private=True, read_only=False, audience="everyday")
     def chat(

@@ -115,8 +115,8 @@ class TurnLimits(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     requests: int = Field(default=20, ge=1, le=100)
     tool_calls: int = Field(default=50, ge=1, le=1000)
-    total_tokens: int = Field(default=32_000, ge=1)
-    output_tokens: int = Field(default=8000, ge=1)
+    total_tokens: int | None = Field(default=32_000, ge=1)
+    output_tokens: int | None = Field(default=8000, ge=1)
     timeout_seconds: float = Field(default=120, gt=0, le=7200, allow_inf_nan=False)
     cost_usd: Decimal | None = Field(default=None, gt=0, allow_inf_nan=False)
 
@@ -410,7 +410,7 @@ async def run_turn(  # noqa: PLR0913 - explicit inputs and persistence policy fo
             usage_limits=limits.usage_limits(),
             timeout=limits.timeout_seconds,
             capabilities=[accounting],
-            model_settings={"max_tokens": limits.output_tokens},
+            model_settings={"max_tokens": limits.output_tokens} if limits.output_tokens is not None else None,
         ) as run:
             return await _drive(run, deps, progress)
     except _SinkFailureError as exc:
