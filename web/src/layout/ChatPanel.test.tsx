@@ -212,3 +212,24 @@ describe("parseEvents", () => {
     expect(rest).toBe('event: result\ndata: {"da');
   });
 });
+
+it("keeps a meeting-reminder request in workshop chat without silently creating a fixed check-in", async () => {
+  const { calls } = mockWithStream({ ...base, "/api/system/runner/chat/open": empty }, [
+    frame("result", { data: answered }),
+  ]);
+  const user = userEvent.setup();
+  renderAt("/doctor");
+  const message = "Create an agent that checks my upcoming meetings every five minutes and reminds me";
+  await user.type(await screen.findByLabelText("Your message"), `${message}{Enter}`);
+  await waitFor(() =>
+    expect(calls.some((request) => request.url.includes("/api/stream/system/runner/chat/send"))).toBe(true),
+  );
+  const sent = calls.find((request) => request.url.includes("/api/stream/system/runner/chat/send"));
+  expect(new URL(sent?.url ?? "").searchParams.get("message")).toBe(message);
+  expect(
+    calls.some(
+      (request) => request.url.includes("/heinzel/new-chat") || request.url.includes("/heinzel/propose-check-in"),
+    ),
+  ).toBe(false);
+  expect(screen.getByText(/Creating one through conversation is not available yet/)).toBeInTheDocument();
+});

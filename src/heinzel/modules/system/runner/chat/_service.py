@@ -21,7 +21,6 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from pydantic_core import to_jsonable_python
 
 from heinzel import (
-    ActionGate,
     AgentResult,
     AgentRunner,
     Budget,
@@ -34,7 +33,7 @@ from heinzel import (
     ToolProfile,
     redact_emails,
 )
-from heinzel.kernel import CapabilityView, UsageEntry, record_usage
+from heinzel.kernel import CapabilityView, CheckInChatContextSource, UsageEntry, record_usage
 from heinzel.kernel._approval import ApprovalConfirmation, ApprovalIssuer
 from heinzel.modules.system.runner.chat._models import ChatAction, ChatContext, ChatMessage, ChatSession, ChatSettings
 from heinzel.modules.system.runner.chat._policy import guarded_settings, refusal
@@ -247,17 +246,24 @@ class ChatService:
         except (ValueError, ZoneInfoNotFoundError):
             msg = f"Unknown IANA time zone {timezone!r}"
             raise HeinzelError(msg) from None
+        self._kernel.resolve(CheckInChatContextSource).get(session_id)
+        owner_id = self._store.personal_owner()
         context = ChatContext(
-            kind="check-in", ref=session_id, request_id=request_id, timezone=timezone, detail=detail[:4000]
+            kind="check-in",
+            ref=session_id,
+            request_id=request_id,
+            timezone=timezone,
+            detail=detail[:4000],
+            owner_id=owner_id,
         )
         with self._store.proposal_request_lock():
-            prior = self._store.find_context("check-in", session_id, request_id)
+            prior = self._store.find_personal_chat(session_id)
             if prior is not None:
-                if prior.context is None or prior.context.timezone != timezone:
-                    msg = "This check-in chat request id already identifies a different time zone"
+                if prior.context is None or prior.context.kind != "check-in" or prior.context.timezone != timezone:
+                    msg = "This personal chat has a different time zone or context; inspect it before continuing"
                     raise HeinzelError(msg)
                 return prior
-            return self._store.create(context)
+            return self._store.create(context, personal_session_id=session_id)
 
     def propose_schedule_control(  # noqa: PLR0913, PLR0917 - one reviewed parameter per exact schedule revision
         self,
@@ -273,6 +279,7 @@ class ChatService:
         Raises:
             HeinzelError: If this request id already identifies another exact schedule review.
         """
+        durable_context = self._kernel.resolve(CheckInChatContextSource).get(durable_session)
         arguments: dict[str, JsonValue] = {
             "session_id": durable_session,
             "request_id": request_id,
@@ -289,23 +296,31 @@ class ChatService:
                     msg = "This request id already identifies a different schedule review"
                     raise HeinzelError(msg)
                 return chat
-            chat = self.open(
-                ChatContext(
-                    kind="text",
-                    ref=f"five-minute check-in for {durable_session}",
-                    detail="Review the exact schedule action below. Confirm only if you want this schedule to run.",
+            personal_chat = self._store.find_personal_chat(durable_session)
+            if personal_chat is None:
+                owner_id = self._store.personal_owner()
+                context = ChatContext(
+                    kind="check-in",
+                    ref=durable_session,
+                    request_id=request_id,
+                    timezone=durable_context.timezone or "UTC",
+                    owner_id=owner_id,
+                    detail="Review proposed schedule changes before confirming them.",
                 )
-            )
+                personal_chat = self._store.create(context, personal_session_id=durable_session)
+            if personal_chat.context is None or personal_chat.context.kind != "check-in":
+                msg = "This personal chat has an incompatible legacy context; inspect it before continuing"
+                raise HeinzelError(msg)
             call = ProposedCall(
-                session=chat.id,
+                session=personal_chat.id,
                 module="heinzel",
                 operation="schedule-control",
                 tool="heinzel_schedule_control",
                 arguments=arguments,
                 command="hz heinzel schedule-control",
             )
-            self._kernel.resolve(ActionGate).propose(call)
-            return self._store.load(chat.id)
+            self._store.propose(call)  # Trusted review staging; the agent-facing gate cannot stage this action.
+            return self._store.load(personal_chat.id)
 
     def _notice(self, event: str) -> str:
         """What the notice `event` says, from the notifications every head reads (ADR 0043); empty if unknown."""
@@ -321,7 +336,7 @@ class ChatService:
         lines = [found.title, found.body, f"Shown at {found.route}; in a terminal: {found.command}"]
         return "\n".join(line for line in lines if line)[:4000]
 
-    def send(  # noqa: PLR0913 - a message and how to answer it
+    def send(  # noqa: C901, PLR0913 - a message and how to answer it
         self,
         runner: AgentRunner,
         session: str,
@@ -348,6 +363,11 @@ class ChatService:
             _guard_check_in_retry(chat)
             if retried := _completed_retry(chat, text, request_id):
                 return retried
+            if chat.personal_session_id is not None:
+                # A tool profile is only an adapter request, not proof that ambient tools, writes, budget and
+                # timeout are enforced. No trusted verifier and owner-bound grant are wired to this path yet.
+                msg = "This personal agent cannot run until its runner isolation and grants are verified"
+                raise HeinzelError(msg)
             if len(chat.messages) >= MAX_MESSAGES:
                 msg = f"This chat has {len(chat.messages)} messages, the most it keeps; open a new one."
                 raise HeinzelError(msg)
@@ -381,6 +401,9 @@ class ChatService:
             )  # with what the agent proposed
 
     def _run(self, runner: AgentRunner, chat: ChatSession, cap: float) -> AgentResult:
+        if chat.personal_session_id is not None:
+            msg = "This personal agent cannot run until its runner isolation and grants are verified"
+            raise HeinzelError(msg)
         # No files of yours: an empty working directory and no built-in tools, only hz's, through the gate.
         with tempfile.TemporaryDirectory(prefix="hz-chat-") as directory:
             tools_set = (

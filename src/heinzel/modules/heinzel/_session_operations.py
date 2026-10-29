@@ -23,11 +23,18 @@ from heinzel.modules.heinzel._session_models import (
     HeinzelAppearance,
     MessageAccepted,
     MessageRequest,
+    PersonalArtifact,
+    PersonalArtifacts,
     RequestId,
+    ScheduledAgentProposal,
     SessionCosts,
     SessionId,
     SessionList,
     SessionSnapshot,
+    SkillDraft,
+    SkillDraftPage,
+    SkillSharingPage,
+    SkillSharingProposal,
 )
 from heinzel.modules.heinzel._session_repository import PersonalSessionRepository
 
@@ -145,9 +152,86 @@ def _check_in_context_source(service: SessionCrud) -> CheckInChatContextSource:
     return _CheckInContextSource(service)
 
 
+def _register_skill_operations(module: Module) -> None:
+    """Declare private draft and sharing-review operations; no sharing authority is issued."""
+
+    @module.operation(private=True, read_only=False, heads={"web", "api-private", "mcp-stdio"}, audience="everyday")
+    def propose_skill_draft(  # noqa: PLR0913, PLR0917 - complete private draft and intended scope
+        service: SessionCrud,
+        session_id: Identity,
+        request_id: Request,
+        name: Annotated[str, Field(description="Proposed skill name.", min_length=1, max_length=64)],
+        requested_scope: Annotated[
+            Literal["personal", "team", "org", "site", "company"],
+            Field(description="Requested scope; no grant is created."),
+        ],
+        files: Annotated[
+            dict[str, str], Field(description="Exact SKILL.md, supporting text and optional Python script drafts.")
+        ],
+        scope_ref: Annotated[
+            str | None,
+            Field(
+                description="Opaque target for a requested shared scope; not verified.",
+                max_length=128,
+                pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            ),
+        ] = None,
+    ) -> SkillDraft:
+        """Store a private skill draft; no file is published, executed or shared."""
+        return service.propose_skill_draft(session_id, request_id, name, requested_scope, scope_ref, files)
+
+    @module.operation(private=True, audience="everyday")
+    def skill_draft(service: SessionCrud, session_id: Identity, request_id: Request) -> SkillDraft:
+        """Read exact private skill draft files and requested sharing scope."""
+        return service.skill_draft(session_id, request_id)
+
+    @module.operation(private=True, read_only=False, heads={"web", "api-private"}, audience="everyday")
+    def propose_skill_sharing(
+        service: SessionCrud,
+        session_id: Identity,
+        request_id: Request,
+        draft_request_id: Request,
+        draft_sha256: Annotated[
+            str, Field(description="The exact immutable draft fingerprint.", pattern=r"^[0-9a-f]{64}$")
+        ],
+    ) -> SkillSharingProposal:
+        """Request review of exact private draft and target; membership and authority are unverified."""
+        return service.propose_skill_sharing(session_id, request_id, draft_request_id, draft_sha256)
+
+    @module.operation(private=True, heads={"web", "api-private"}, audience="everyday")
+    def skill_sharing(service: SessionCrud, session_id: Identity, request_id: Request) -> SkillSharingProposal:
+        """Read a private sharing request; it is neither approved nor published."""
+        return service.skill_sharing(session_id, request_id)
+
+    @module.operation(private=True, heads={"web", "api-private"}, audience="everyday")
+    def skill_sharing_proposals(
+        service: SessionCrud,
+        session_id: Identity,
+        cursor: Annotated[int, Field(description="Resume after this session journal position.", ge=0)] = 0,
+        limit: Annotated[
+            int, Field(description="The most private sharing references returned in this page.", ge=1, le=100)
+        ] = 20,
+    ) -> SkillSharingPage:
+        """Discover owner-private pending sharing request references."""
+        return service.skill_sharing_proposals(session_id, cursor, limit)
+
+    @module.operation(private=True, audience="everyday")
+    def skill_drafts(
+        service: SessionCrud,
+        session_id: Identity,
+        cursor: Annotated[int, Field(description="Resume after this session journal position.", ge=0)] = 0,
+        limit: Annotated[
+            int, Field(description="The most private draft references returned in this page.", ge=1, le=100)
+        ] = 20,
+    ) -> SkillDraftPage:
+        """List private draft references without file contents."""
+        return service.skill_drafts(session_id, cursor, limit)
+
+
 def register_session_operations(module: Module) -> None:  # noqa: C901 - operation declarations define one shared head surface
     """Register once on the owning module; constructing the service performs no private I/O."""
     module.service(SessionCrud, _crud)
+    _register_skill_operations(module)
     module.service(ApprovalIssuer, _approval_issuer)
     module.service(ApprovalConfirmation, _approval_confirmation)
     module.service(CheckInChatContextSource, _check_in_context_source)
@@ -217,6 +301,78 @@ def register_session_operations(module: Module) -> None:  # noqa: C901 - operati
     ) -> SessionSnapshot:
         """Propose local five-minute check-ins; the schedule stays inactive until activated."""
         return service.propose_check_in(session_id, request_id, timezone)
+
+    @module.operation(private=True, read_only=False, audience="everyday")
+    def associate_artifact(
+        service: SessionCrud,
+        session_id: Identity,
+        request_id: Request,
+        kind: Annotated[
+            Literal["document", "spreadsheet", "presentation"],
+            Field(description="The claimed Google file type; not verified with the provider."),
+        ],
+        ref: Annotated[
+            str,
+            Field(description="Canonical Google editor URL.", max_length=256),
+        ],
+    ) -> PersonalArtifact:
+        """Associate a Google file locally; no access, provider ownership or permission is verified."""
+        return service.associate_artifact(session_id, request_id, kind, ref)
+
+    @module.operation(private=True, audience="everyday")
+    def personal_artifacts(service: SessionCrud, session_id: Identity) -> PersonalArtifacts:
+        """List local principal-submitted file associations without accessing the provider."""
+        return service.personal_artifacts(session_id)
+
+    @module.operation(private=True, read_only=False, audience="everyday")
+    def propose_scheduled_agent(  # noqa: PLR0913, PLR0917 - flat private API
+        service: SessionCrud,
+        session_id: Identity,
+        request_id: Request,
+        contract: Annotated[
+            str,
+            Field(description="Exact instructions to preview for a future agent turn.", min_length=1, max_length=4000),
+        ],
+        max_usd: Annotated[
+            float, Field(description="Proposed per-turn USD limit; not yet enforced.", gt=0, allow_inf_nan=False)
+        ],
+        timeout_seconds: Annotated[int, Field(description="Proposed maximum seconds per turn.", ge=1, le=300)],
+    ) -> ScheduledAgentProposal:
+        """Save an inert agent execution proposal; it neither approves nor starts a model turn."""
+        return service.propose_scheduled_agent(session_id, request_id, contract, max_usd, timeout_seconds)
+
+    @module.operation(private=True, read_only=False, audience="everyday")
+    def amend_scheduled_agent(  # noqa: PLR0913, PLR0917 - exact revision and complete flat private API terms
+        service: SessionCrud,
+        session_id: Identity,
+        request_id: Request,
+        expected_revision: Annotated[
+            int, Field(description="The exact proposal revision inspected.", strict=True, ge=1)
+        ],
+        contract: Annotated[
+            str, Field(description="Complete replacement instructions.", min_length=1, max_length=4000)
+        ],
+        max_usd: Annotated[
+            float, Field(description="Proposed per-turn USD limit; not yet enforced.", gt=0, allow_inf_nan=False)
+        ],
+        timeout_seconds: Annotated[int, Field(description="Proposed maximum seconds per turn.", ge=1, le=300)],
+    ) -> ScheduledAgentProposal:
+        """Propose revised terms; an independent human review and approval is still required."""
+        return service.amend_scheduled_agent(
+            session_id, request_id, expected_revision, contract, max_usd, timeout_seconds
+        )
+
+    @module.operation(private=True, audience="everyday")
+    def latest_scheduled_agent_proposal(service: SessionCrud, session_id: Identity) -> ScheduledAgentProposal | None:
+        """Read the current inert proposal for the personal session, if one exists."""
+        return service.latest_scheduled_agent_proposal(session_id)
+
+    @module.operation(private=True, audience="everyday")
+    def scheduled_agent_proposal(
+        service: SessionCrud, session_id: Identity, request_id: Request
+    ) -> ScheduledAgentProposal:
+        """Inspect the exact inert proposal; a separate future human approval is required to run it."""
+        return service.scheduled_agent_proposal(session_id, request_id)
 
     @module.operation(private=True, read_only=False, audience="everyday")
     def schedule_control(  # noqa: PLR0913, PLR0917 - flat private HTTP input binds the approval to its preview

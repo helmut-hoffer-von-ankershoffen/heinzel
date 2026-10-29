@@ -37,13 +37,21 @@ from heinzel.modules.heinzel._session_models import (
     HeinzelAppearance,
     MessageAccepted,
     MessageRequest,
+    PersonalArtifact,
+    PersonalArtifacts,
     RequestId,
+    ScheduledAgentProposal,
     SessionCosts,
     SessionId,
     SessionList,
     SessionMessage,
     SessionSnapshot,
     SessionSummary,
+    SkillDraft,
+    SkillDraftPage,
+    SkillDraftReference,
+    SkillSharingPage,
+    SkillSharingProposal,
     WakeScheduleView,
 )
 from heinzel.modules.heinzel._session_protocol import SessionRepository
@@ -664,6 +672,386 @@ class SessionCrud(ApprovalIssuer):
     @staticmethod
     def _schedule_revision(events: list[SessionEvent]) -> int:
         return sum(event.kind == "contract.proposed" or event.kind.startswith("schedule.") for event in events)
+
+    def associate_artifact(self, session_id: str, request_id: str, kind: str, ref: str) -> PersonalArtifact:
+        """Store a local principal-submitted association; never contact Google or confer access.
+
+        Raises:
+            HeinzelError: If the request conflicts or this file was already associated.
+        """
+        artifact = PersonalArtifact.model_validate(
+            {"session_id": session_id, "request_id": request_id, "kind": kind, "ref": ref}
+        )
+        key = f"artifact-association-{request_id}"
+        with self.repository.control_writer(session_id) as writer:
+            events = self.repository.control_read(session_id).events
+            prior = next((event for event in events if event.kind == "artifact.associated" and event.key == key), None)
+            if prior is not None:
+                saved = self._read_artifact(session_id, prior)
+                if saved != artifact:
+                    msg = "This request already identifies a different artifact association"
+                    raise HeinzelError(msg)
+                return saved
+            for event in events:
+                if event.kind == "artifact.associated" and (
+                    self._read_artifact(session_id, event).ref.split("/")[5] == artifact.ref.split("/")[5]
+                ):
+                    msg = "This artifact is already associated with this personal session"
+                    raise HeinzelError(msg)
+            body = immutable_body(writer, "artifact-association", artifact.model_dump(mode="json"), control=True)
+            writer.append("artifact.associated", key=key, data=body.model_dump(mode="json"))
+        return artifact
+
+    def personal_artifacts(self, session_id: str) -> PersonalArtifacts:
+        """Read the owner's local associations; no provider access is checked.
+
+        Raises:
+            HeinzelError: If an association is malformed or duplicated.
+        """
+        events = self.repository.control_read(session_id).events
+        artifacts = [self._read_artifact(session_id, event) for event in events if event.kind == "artifact.associated"]
+        if len({artifact.ref.split("/")[5] for artifact in artifacts}) != len(artifacts):
+            msg = "This session's artifact associations are invalid"
+            raise HeinzelError(msg)
+        return PersonalArtifacts(session_id=session_id, artifacts=artifacts)
+
+    def _read_artifact(self, session_id: str, event: SessionEvent) -> PersonalArtifact:
+        try:
+            artifact = PersonalArtifact.model_validate(self._body(session_id, event))
+        except (ValidationError, TypeError, ValueError):
+            msg = "This artifact association is invalid; restore its private snapshot"
+            raise HeinzelError(msg) from None
+        if (
+            event.kind != "artifact.associated"
+            or artifact.session_id != session_id
+            or event.key != f"artifact-association-{artifact.request_id}"
+        ):
+            msg = "This artifact association is invalid; restore its private snapshot"
+            raise HeinzelError(msg)
+        return artifact
+
+    def propose_skill_draft(  # noqa: PLR0913, PLR0917 - complete scoped private draft
+        self,
+        session_id: str,
+        request_id: str,
+        name: str,
+        requested_scope: str,
+        scope_ref: str | None,
+        files: dict[str, str],
+    ) -> SkillDraft:
+        """Store exact inert draft files and sharing intent without publishing, granting or executing.
+
+        Raises:
+            HeinzelError: If the request identifies different draft terms.
+        """
+        validated = SkillDraft.model_validate(
+            {
+                "session_id": session_id,
+                "request_id": request_id,
+                "name": name,
+                "requested_scope": requested_scope,
+                "scope_ref": scope_ref,
+                "files": files,
+                "preview_sha256": "0" * 64,
+            }
+        )
+        terms = validated.model_dump(mode="json", exclude={"preview_sha256"})
+        draft = validated.model_copy(update={"preview_sha256": _digest(terms)})
+        key = f"skill-draft-{request_id}"
+        with self.repository.control_writer(session_id) as writer:
+            events = self.repository.control_read(session_id).events
+            prior = next((event for event in events if event.kind == "skill.draft" and event.key == key), None)
+            if prior is not None:
+                saved = self._read_skill_draft(session_id, request_id, prior)
+                if saved != draft:
+                    msg = "This request already identifies different skill draft terms"
+                    raise HeinzelError(msg)
+                return saved
+            body = immutable_body(writer, "skill-draft", draft.model_dump(mode="json"), control=True)
+            writer.append("skill.draft", key=key, data=body.model_dump(mode="json"))
+        return draft
+
+    def skill_draft(self, session_id: str, request_id: str) -> SkillDraft:
+        """Read the owner's exact private draft; it remains unpublished and unapproved.
+
+        Raises:
+            HeinzelError: If the draft is missing or invalid.
+        """
+        _REQUEST.validate_python(request_id)
+        events = self.repository.control_read(session_id).events
+        prior = next(
+            (event for event in events if event.kind == "skill.draft" and event.key == f"skill-draft-{request_id}"),
+            None,
+        )
+        if prior is None:
+            msg = "This skill draft does not exist"
+            raise HeinzelError(msg)
+        return self._read_skill_draft(session_id, request_id, prior)
+
+    def propose_skill_sharing(
+        self, session_id: str, request_id: str, draft_request_id: str, draft_sha256: str
+    ) -> SkillSharingProposal:
+        """Record only an exact private sharing request; never authorize an effect.
+
+        Raises:
+            HeinzelError: If the draft differs, is personal, or the request is reused differently.
+        """
+        _REQUEST.validate_python(request_id)
+        draft = self.skill_draft(session_id, draft_request_id)
+        if draft.preview_sha256 != draft_sha256 or draft.requested_scope == "personal" or draft.scope_ref is None:
+            msg = "This sharing request does not match a shared-scope private draft"
+            raise HeinzelError(msg)
+        proposal = SkillSharingProposal(
+            session_id=session_id,
+            request_id=request_id,
+            draft_request_id=draft_request_id,
+            draft_sha256=draft_sha256,
+            requested_scope=draft.requested_scope,
+            scope_ref=draft.scope_ref,
+        )
+        key = f"skill-sharing-{request_id}"
+        with self.repository.control_writer(session_id) as writer:
+            events = self.repository.control_read(session_id).events
+            prior = next((event for event in events if event.kind == "skill.sharing" and event.key == key), None)
+            if prior:
+                saved = self._read_skill_sharing(session_id, request_id, prior)
+                if saved != proposal:
+                    msg = "This request already identifies a different sharing proposal"
+                    raise HeinzelError(msg)
+                return saved
+            body = immutable_body(writer, "skill-sharing", proposal.model_dump(mode="json"), control=True)
+            writer.append("skill.sharing", key=key, data=body.model_dump(mode="json"))
+        return proposal
+
+    def skill_sharing(self, session_id: str, request_id: str) -> SkillSharingProposal:
+        """Read one owned pending proposal and verify its immutable draft.
+
+        Raises:
+            HeinzelError: If the proposal or its draft is unavailable or invalid.
+        """
+        _REQUEST.validate_python(request_id)
+        events = self.repository.control_read(session_id).events
+        event = next(
+            (event for event in events if event.kind == "skill.sharing" and event.key == f"skill-sharing-{request_id}"),
+            None,
+        )
+        if event is None:
+            msg = "This private sharing proposal does not exist"
+            raise HeinzelError(msg)
+        return self._read_skill_sharing(session_id, request_id, event)
+
+    def _read_skill_sharing(self, session_id: str, request_id: str, event: SessionEvent) -> SkillSharingProposal:
+        try:
+            proposal = SkillSharingProposal.model_validate(self._body(session_id, event))
+            draft = self.skill_draft(session_id, proposal.draft_request_id)
+        except (ValidationError, TypeError, ValueError):
+            msg = "This private sharing proposal is invalid"
+            raise HeinzelError(msg) from None
+        if (
+            proposal.session_id != session_id
+            or proposal.request_id != request_id
+            or proposal.draft_sha256 != draft.preview_sha256
+            or proposal.requested_scope != draft.requested_scope
+            or proposal.scope_ref != draft.scope_ref
+        ):
+            msg = "This private sharing proposal does not match its draft"
+            raise HeinzelError(msg)
+        return proposal
+
+    def skill_sharing_proposals(self, session_id: str, cursor: int = 0, limit: int = 20) -> SkillSharingPage:
+        """List owner-private proposal references in stable journal order.
+
+        Raises:
+            HeinzelError: If ownership or pagination bounds are invalid.
+        """
+        max_page = 100
+        if isinstance(cursor, bool) or cursor < 0 or isinstance(limit, bool) or not 1 <= limit <= max_page:
+            msg = "Invalid sharing proposal page"
+            raise HeinzelError(msg)
+        events = self.repository.control_read(session_id).events
+        refs = [
+            SkillDraftReference(
+                request_id=_REQUEST.validate_python(event.key.removeprefix("skill-sharing-")), seq=event.seq
+            )
+            for event in events
+            if event.seq > cursor
+            and event.kind == "skill.sharing"
+            and event.key
+            and event.key.startswith("skill-sharing-")
+        ]
+        page = refs[:limit]
+        return SkillSharingPage(items=page, next_cursor=page[-1].seq if len(refs) > limit else None)
+
+    def skill_drafts(self, session_id: str, cursor: int = 0, limit: int = 20) -> SkillDraftPage:
+        """List private draft references in append order; never return their contents.
+
+        Raises:
+            HeinzelError: If the page bounds or ownership are invalid.
+        """
+        if isinstance(cursor, bool) or cursor < 0:
+            msg = "Invalid draft cursor"
+            raise HeinzelError(msg)
+        max_page = 100
+        if isinstance(limit, bool) or not 1 <= limit <= max_page:
+            msg = "Invalid draft page size"
+            raise HeinzelError(msg)
+        events = self.repository.control_read(session_id).events
+        refs = [
+            SkillDraftReference(
+                request_id=_REQUEST.validate_python(event.key.removeprefix("skill-draft-")), seq=event.seq
+            )
+            for event in events
+            if event.seq > cursor and event.kind == "skill.draft" and event.key and event.key.startswith("skill-draft-")
+        ]
+        page = refs[:limit]
+        return SkillDraftPage(items=page, next_cursor=page[-1].seq if len(refs) > limit else None)
+
+    def _read_skill_draft(self, session_id: str, request_id: str, event: SessionEvent) -> SkillDraft:
+        try:
+            draft = SkillDraft.model_validate(self._body(session_id, event))
+            terms = draft.model_dump(mode="json", exclude={"preview_sha256"})
+        except (ValidationError, TypeError, ValueError):
+            msg = "This skill draft is invalid; restore its private snapshot"
+            raise HeinzelError(msg) from None
+        if (
+            event.kind != "skill.draft"
+            or draft.session_id != session_id
+            or draft.request_id != request_id
+            or draft.preview_sha256 != _digest(terms)
+        ):
+            msg = "This skill draft is invalid; restore its private snapshot"
+            raise HeinzelError(msg)
+        return draft
+
+    def propose_scheduled_agent(
+        self, session_id: str, request_id: str, contract: str, max_usd: float, timeout_seconds: int
+    ) -> ScheduledAgentProposal:
+        """Store the first inert execution proposal; no approval or model turn occurs."""
+        return self._propose_agent_revision(session_id, request_id, 0, contract, max_usd, timeout_seconds)
+
+    def amend_scheduled_agent(  # noqa: PLR0913, PLR0917 - exact revision and complete proposed terms
+        self,
+        session_id: str,
+        request_id: str,
+        expected_revision: int,
+        contract: str,
+        max_usd: float,
+        timeout_seconds: int,
+    ) -> ScheduledAgentProposal:
+        """Propose a complete replacement against an inspected revision; it never activates a turn.
+
+        Raises:
+            HeinzelError: If the revision is missing, stale, or the request conflicts.
+        """
+        if type(expected_revision) is not int or expected_revision < 1:
+            msg = "Reload the agent execution proposal before amending it"
+            raise HeinzelError(msg)
+        return self._propose_agent_revision(
+            session_id, request_id, expected_revision, contract, max_usd, timeout_seconds
+        )
+
+    def _propose_agent_revision(  # noqa: PLR0913, PLR0917 - complete immutable proposal terms
+        self,
+        session_id: str,
+        request_id: str,
+        expected_revision: int,
+        contract: str,
+        max_usd: float,
+        timeout_seconds: int,
+    ) -> ScheduledAgentProposal:
+        _REQUEST.validate_python(request_id)
+        terms: dict[str, JsonValue] = {
+            "session_id": session_id,
+            "request_id": request_id,
+            "revision": expected_revision + 1,
+            "based_on_revision": expected_revision,
+            "contract": contract,
+            "permitted_tools": [],
+            "max_usd": max_usd,
+            "timeout_seconds": timeout_seconds,
+            "status": "proposed",
+        }
+        validated = ScheduledAgentProposal.model_validate({**terms, "preview_sha256": "0" * 64})
+        terms = validated.model_dump(mode="json", exclude={"preview_sha256"})
+        proposal = validated.model_copy(update={"preview_sha256": _digest(terms)})
+        key = f"agent-proposal-{request_id}"
+        with self.repository.control_writer(session_id) as writer:
+            events = self.repository.control_read(session_id).events
+            prior = next((event for event in events if event.key == key), None)
+            if prior is not None:
+                saved = self._read_agent_proposal(session_id, request_id, prior)
+                if saved != proposal:
+                    msg = "This request already identifies a different agent execution proposal"
+                    raise HeinzelError(msg)
+                return saved
+            revisions = [event for event in events if event.kind == "agent.proposed"]
+            if revisions:
+                latest_event = revisions[-1]
+                latest_request = latest_event.key.removeprefix("agent-proposal-") if latest_event.key else ""
+                latest = self._read_agent_proposal(session_id, latest_request, latest_event)
+                current_revision = latest.revision
+            else:
+                current_revision = 0
+            if current_revision != expected_revision:
+                msg = "The agent execution proposal changed; reload it before proposing new terms"
+                raise HeinzelError(msg)
+            body = immutable_body(writer, "agent-proposal", proposal.model_dump(mode="json"), control=True)
+            writer.append("agent.proposed", key=key, data=body.model_dump(mode="json"))
+        return proposal
+
+    def latest_scheduled_agent_proposal(self, session_id: str) -> ScheduledAgentProposal | None:
+        """Read the current inert proposal for this owner and session, or none if not proposed.
+
+        Raises:
+            HeinzelError: If the proposal journal is invalid.
+        """
+        events = self.repository.control_read(session_id).events
+        event = next((item for item in reversed(events) if item.kind == "agent.proposed"), None)
+        if event is None:
+            return None
+        if event.key is None or not event.key.startswith("agent-proposal-"):
+            msg = "This agent execution proposal is invalid; restore its private snapshot"
+            raise HeinzelError(msg)
+        return self._read_agent_proposal(session_id, event.key.removeprefix("agent-proposal-"), event)
+
+    def scheduled_agent_proposal(self, session_id: str, request_id: str) -> ScheduledAgentProposal:
+        """Read the owner's exact inert execution proposal for human review.
+
+        Raises:
+            HeinzelError: If the proposal does not exist.
+        """
+        _REQUEST.validate_python(request_id)
+        events = self.repository.control_read(session_id).events
+        prior = next(
+            (
+                event
+                for event in events
+                if event.kind == "agent.proposed" and event.key == f"agent-proposal-{request_id}"
+            ),
+            None,
+        )
+        if prior is None:
+            msg = "This agent execution proposal does not exist"
+            raise HeinzelError(msg)
+        return self._read_agent_proposal(session_id, request_id, prior)
+
+    def _read_agent_proposal(self, session_id: str, request_id: str, event: SessionEvent) -> ScheduledAgentProposal:
+        try:
+            proposal = ScheduledAgentProposal.model_validate(self._body(session_id, event))
+            terms = proposal.model_dump(mode="json", exclude={"preview_sha256"})
+        except (ValidationError, TypeError, ValueError):
+            msg = "This agent execution proposal is invalid; restore its private snapshot"
+            raise HeinzelError(msg) from None
+        if (
+            event.kind != "agent.proposed"
+            or proposal.session_id != session_id
+            or proposal.request_id != request_id
+            or proposal.revision != proposal.based_on_revision + 1
+            or proposal.preview_sha256 != _digest(terms)
+        ):
+            msg = "This agent execution proposal is invalid; restore its private snapshot"
+            raise HeinzelError(msg)
+        return proposal
 
     def propose_check_in(self, session_id: str, request_id: str, timezone: str = "UTC") -> "SessionSnapshot":
         """Store a proposal for one local five-minute check-in; it remains inert until activated by the person.

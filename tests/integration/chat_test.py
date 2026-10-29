@@ -316,47 +316,21 @@ def test_runner_chat_can_only_propose_the_bound_inactive_check_in(kernel, script
             "message-checkin-001",
             "--json",
         )
-        assert sent.exit_code == 0, sent.output
-        answer = json.loads(sent.output)
-        assert "Keep our notes local." in script.contracts[-1]
-        assert "only prepare the standard local five-minute check-in" in script.contracts[-1]
-        assert answer["actions"][0]["status"] == "pending"
-        assert answer["actions"][0]["module"] == "heinzel"
-        assert answer["actions"][0]["operation"] == "propose-check-in"
-        assert answer["actions"][0]["arguments"] == {
-            "session_id": durable.session_id,
-            "request_id": "runner-checkin-001",
-            "timezone": timezone,
-        }
-        prompt_count = len(script.prompts)
-        retried = hz(
-            kernel,
-            "chat",
-            "send",
-            chat["id"],
-            "notify me every 5 minutes",
-            "--request-id",
-            "message-checkin-001",
-            "--json",
-        )
-        assert retried.exit_code == 0, retried.output
-        assert len(script.prompts) == prompt_count
-        changed = hz(
-            kernel,
-            "chat",
-            "send",
-            chat["id"],
-            "notify me every ten minutes",
-            "--request-id",
-            "message-checkin-001",
-            "--json",
-        )
-        assert changed.exit_code == 1
-        assert "already identifies different message text" in changed.output
-        assert len(script.prompts) == prompt_count
-        confirmed = service.confirm(chat["id"], answer["actions"][0]["id"])
-        assert confirmed.actions[0].status == "done"
-        assert crud.snapshot(durable.session_id).schedule.status == "proposed"
+        assert sent.exit_code == 1
+        assert "runner isolation and grants are verified" in sent.output
+        assert script.prompts == []
+        unchanged = service._store.load(chat["id"])
+        assert not unchanged.messages
+        assert not unchanged.actions
+        assert unchanged.costs.spent_usd == 0
+        with pytest.raises(HeinzelError, match="runner isolation and grants"):
+            service._run(None, unchanged, 1.0)  # type: ignore[arg-type]  # direct internal launch is also blocked
+        # A retry stays blocked without recording or sending the private prompt.
+        retried = hz(kernel, "chat", "send", chat["id"], "private prompt", "--request-id", "retry-001")
+        assert retried.exit_code == 1
+        assert "private prompt" not in retried.output
+        assert not service._store.load(chat["id"]).messages
+        assert script.prompts == []
 
 
 def test_unanswered_check_in_runner_turn_cannot_be_replayed_after_reload(kernel, script):
@@ -621,9 +595,10 @@ def test_personal_schedule_approval_uses_the_existing_human_chat_gate(kernel, tm
 
     # Simulate a crash after the journal effect committed but before chat.confirm saved its result.
     chat_store = kernel.resolve(ChatService)._store
-    interrupted = chat_store.load(proposal["id"])
-    interrupted.actions[0].status = "running"
-    chat_store.save(interrupted)
+    with kernel.resolve(CurrentUser).local("cli"):
+        interrupted = chat_store.load(proposal["id"])
+        interrupted.actions[0].status = "running"
+        chat_store.save(interrupted)
     reconciled = client.post(
         "/api/system/runner/chat/recover", headers=AUTH, params={"session": proposal["id"], "action": "a1"}
     )
@@ -804,7 +779,8 @@ def test_human_web_approval_is_consumed_by_mcp_without_crossing_the_tool_protoco
             assert response.is_error
 
     anyio.run(reject_expired)
-    still_pending = kernel.resolve(ChatService)._store.load(chat_id)
+    with kernel.resolve(CurrentUser).local("cli"):
+        still_pending = kernel.resolve(ChatService)._store.load(chat_id)
     assert still_pending.actions[0].status == "pending"
     assert still_pending.actions[0].mcp_authorized is False
     reauthorized = client.post(
@@ -1109,7 +1085,8 @@ def test_mcp_handoff_crashes_fail_closed_before_and_after_the_schedule_commit(ke
     assert service._store.take_mcp_approval(chat_id, action) is not None
     with user.local("mcp-stdio"), pytest.raises(HeinzelError):
         service.confirm_authorized_mcp(chat_id, action)
-    pending = service._store.load(chat_id).actions[0]
+    with user.local("cli"):
+        pending = service._store.load(chat_id).actions[0]
     assert pending.status == "pending"
     assert not pending.mcp_authorized
 
@@ -1127,7 +1104,8 @@ def test_mcp_handoff_crashes_fail_closed_before_and_after_the_schedule_commit(ke
     monkeypatch.setattr(kernel, "invoke", crash_before_owner_commit)
     with user.local("mcp-stdio"), pytest.raises(SystemExit, match="simulated process death"):
         service.confirm_authorized_mcp(chat_id, action)
-    interrupted = service._store.load(chat_id).actions[0]
+    with user.local("cli"):
+        interrupted = service._store.load(chat_id).actions[0]
     assert interrupted.status == "running"
     assert not interrupted.mcp_authorized
     assert not (service._store.root / chat_id / "mcp-approvals" / f"{action}.proof").exists()
@@ -1245,7 +1223,8 @@ def test_approval_refuses_a_mismatched_or_unobserved_daemon_version_with_a_recov
     assert direct_confirmation.status_code == 400
     assert "hz system daemon restart" in direct_confirmation.json()["error"]
 
-    pending = kernel.resolve(ChatService)._store.load(proposal["id"]).actions[0]
+    with kernel.resolve(CurrentUser).local("cli"):
+        pending = kernel.resolve(ChatService)._store.load(proposal["id"]).actions[0]
     assert pending.status == "pending"
     assert not pending.mcp_authorized
     with kernel.resolve(CurrentUser).local("cli"):
@@ -1307,9 +1286,10 @@ def test_interrupted_schedule_confirmation_without_a_journal_effect_is_blocked(k
     assert staged.status_code == 200, staged.text
     chat = staged.json()
     store = kernel.resolve(ChatService)._store
-    interrupted = store.load(chat["id"])
-    interrupted.actions[0].status = "running"
-    store.save(interrupted)
+    with kernel.resolve(CurrentUser).local("cli"):
+        interrupted = store.load(chat["id"])
+        interrupted.actions[0].status = "running"
+        store.save(interrupted)
 
     recovered = client.post(
         "/api/system/runner/chat/recover", headers=AUTH, params={"session": chat["id"], "action": "a1"}
@@ -1362,9 +1342,10 @@ def test_cli_chat_confirmation_issues_and_consumes_the_exact_schedule_intent(ker
     assert snapshot.schedule is not None
     assert snapshot.schedule.status == "active"
     store = kernel.resolve(ChatService)._store
-    interrupted = store.load(staged["id"])
-    interrupted.actions[0].status = "running"
-    store.save(interrupted)
+    with kernel.resolve(CurrentUser).local("cli"):
+        interrupted = store.load(staged["id"])
+        interrupted.actions[0].status = "running"
+        store.save(interrupted)
     recovered = call("chat", "recover", staged["id"], "a1")
     assert recovered["actions"][0]["status"] == "done"
     with kernel.resolve(CurrentUser).local("cli"):
@@ -1422,3 +1403,207 @@ def test_a_quiet_long_operation_stream_sends_keepalives(make_kernel, tmp_path, m
 def test_the_unauthenticated_rest_head_has_no_chat(kernel):
     paths = {route.path for route in api.build(kernel).routes}  # type: ignore[attr-defined]
     assert not any("chat" in path or path.startswith("/stream") for path in paths)
+
+
+def test_personal_chat_binding_is_owner_scoped_durable_and_rejects_legacy_unbound(kernel):
+    from heinzel import CallIdentity, Principal
+    from heinzel.modules.system.runner.chat._models import ChatContext
+
+    current = kernel.resolve(CurrentUser)
+    service = kernel.resolve(ChatService)
+    with current.local("cli"):
+        durable = kernel.resolve(SessionCrud).new_chat("owner-bound-chat", "Owner's helper")
+        chat = service.open_check_in(durable.session_id, "owner-open", "UTC", "Owner data")
+        assert chat.context is not None
+        assert chat.context.owner_id == current.principal().id
+        assert chat.context.ref == durable.session_id
+        assert service.open_check_in(durable.session_id, "owner-open", "UTC", "Owner data").id == chat.id
+        assert service._store.load(chat.id).id == chat.id
+        from heinzel.modules.system.runner.chat._store import ChatStore
+
+        reopened = ChatStore(kernel.settings, service._store._chat, service._store._runner, current)
+        assert reopened.load(chat.id).context == chat.context
+        legacy = service._store.create(ChatContext(kind="check-in", ref=durable.session_id, timezone="UTC"))
+        with pytest.raises(HeinzelError, match="no verified owner"):
+            service._store.load(legacy.id)
+    stranger = CallIdentity(
+        Principal("u-" + "a" * 32), "api-bearer", "stranger", "private", frozenset({"private:read", "private:write"})
+    )
+    with current.using(stranger):
+        with pytest.raises(HeinzelError, match="not available to this owner"):
+            service._store.load(chat.id)
+        with pytest.raises(HeinzelError, match="No such personal"):
+            service.open_check_in(durable.session_id, "owner-open", "UTC", "")
+        with pytest.raises(HeinzelError, match="not available to this owner"):
+            service._store.remove(chat.id)
+        with pytest.raises(HeinzelError, match="not available to this owner"):
+            service.confirm(chat.id, "a1")
+        assert chat.id not in [item.id for item in service._store.sessions()]
+    with current.local("cli"):
+        assert service._store.load(chat.id).id == chat.id
+
+
+def test_schedule_review_chat_and_action_are_bound_to_personal_owner(kernel):
+    from heinzel import CallIdentity, Principal, ProposedCall
+
+    current = kernel.resolve(CurrentUser)
+    service = kernel.resolve(ChatService)
+    with current.local("cli"):
+        crud = kernel.resolve(SessionCrud)
+        session = crud.new_chat("schedule-review-owner")
+        proposed = crud.propose_check_in(session.session_id, "notice-contract")
+        assert proposed.schedule is not None
+        review = service.propose_schedule_control(
+            session.session_id,
+            "review-action",
+            proposed.schedule.revision,
+            "activate",
+            proposed.schedule.contract_version,
+            proposed.schedule.preview_hash,
+        )
+        assert review.personal_session_id == session.session_id
+        assert review.personal_owner_id == current.principal().id
+        assert review.context is not None
+        assert review.context.kind == "check-in"
+        action = review.actions[0]
+        assert action.status == "pending"
+        assert (
+            service.propose_schedule_control(
+                session.session_id,
+                "review-action",
+                proposed.schedule.revision,
+                "activate",
+                proposed.schedule.contract_version,
+                proposed.schedule.preview_hash,
+            ).id
+            == review.id
+        )
+        other = crud.new_chat("different-personal-session")
+        forged = ProposedCall(
+            session=review.id,
+            module="heinzel",
+            operation="schedule-control",
+            tool="heinzel_schedule_control",
+            arguments={"session_id": other.session_id, "request_id": "forged", "action": "activate"},
+            command="",
+        )
+        with pytest.raises(HeinzelError, match="only propose"):
+            kernel.resolve(ActionGate).propose(forged)
+        with pytest.raises(HeinzelError, match="does not match its bound session"):
+            service._store.propose(forged)
+        unrelated_action = ProposedCall(
+            session=review.id,
+            module="system.notify",
+            operation="send",
+            tool="notify_send",
+            arguments={},
+            command="",
+        )
+        with pytest.raises(HeinzelError, match="only propose"):
+            kernel.resolve(ActionGate).propose(unrelated_action)
+        with pytest.raises(HeinzelError, match="cannot authorize that action"):
+            service._store.propose(unrelated_action)
+    stranger = CallIdentity(
+        Principal("u-" + "a" * 32), "api-bearer", "stranger", "private", frozenset({"private:read", "private:write"})
+    )
+    with current.using(stranger):
+        with pytest.raises(HeinzelError, match="not available to this owner"):
+            service._store.load(review.id)
+        with pytest.raises(HeinzelError, match="not available to this owner"):
+            service.confirm(review.id, action.id)
+        with pytest.raises(HeinzelError, match="not available to this owner"):
+            service.authorize_for_mcp(review.id, action.id)
+        with pytest.raises(HeinzelError, match="No such personal"):
+            service.propose_schedule_control(
+                session.session_id,
+                "review-action",
+                proposed.schedule.revision,
+                "activate",
+                proposed.schedule.contract_version,
+                proposed.schedule.preview_hash,
+            )
+        assert review.id not in [item.id for item in service._store.sessions()]
+    with current.local("cli"):
+        assert service._store.load(review.id).actions[0].status == "pending"
+        assert crud.snapshot(session.session_id).schedule.status == "proposed"
+
+
+def test_unbound_legacy_schedule_action_is_not_accepted_as_an_owner_binding(kernel):
+    from heinzel.modules.system.runner.chat._models import ChatAction, ChatContext
+
+    current = kernel.resolve(CurrentUser)
+    service = kernel.resolve(ChatService)
+    with current.local("cli"):
+        session = kernel.resolve(SessionCrud).new_chat("legacy-schedule-owner")
+        unbound = service._store.create(ChatContext(kind="text", ref=f"five-minute check-in for {session.session_id}"))
+        unbound.actions.append(
+            ChatAction(
+                id="a1",
+                tool="heinzel_schedule_control",
+                module="heinzel",
+                operation="schedule-control",
+                command="",
+                arguments={"session_id": session.session_id, "action": "activate"},
+                proposed=datetime.now(UTC),
+            )
+        )
+        service._store.save(unbound)
+        with pytest.raises(HeinzelError, match="no verified owner binding"):
+            service._store.load(unbound.id)
+        with pytest.raises(HeinzelError, match="no verified owner binding"):
+            service.confirm(unbound.id, "a1")
+
+
+def test_personal_chat_is_reused_for_new_requests_review_restart_and_retention(kernel):
+    current = kernel.resolve(CurrentUser)
+    service = kernel.resolve(ChatService)
+    with current.local("cli"):
+        crud = kernel.resolve(SessionCrud)
+        personal = crud.new_chat("one-continuous-agent")
+        first = service.open_check_in(personal.session_id, "first-open", "UTC", "Initial context")
+        first.messages.append(ChatMessage(role="user", text="Remember this", at=datetime.now(UTC)))
+        service._store.save(first)
+        reopened = service.open_check_in(personal.session_id, "second-open", "UTC", "Later context")
+        assert reopened.id == first.id
+        assert reopened.messages[0].text == "Remember this"
+        schedule = crud.propose_check_in(personal.session_id, "personal-notice").schedule
+        assert schedule is not None
+        review = service.propose_schedule_control(
+            personal.session_id,
+            "review-on-existing-chat",
+            schedule.revision,
+            "activate",
+            schedule.contract_version,
+            schedule.preview_hash,
+        )
+        assert review.id == first.id
+        assert review.messages[0].text == "Remember this"
+        assert review.actions[0].status == "pending"
+        assert service.open_check_in(personal.session_id, "third-open", "UTC", "").id == first.id
+        service._store._chat = service._store._chat.model_copy(update={"keep_sessions": 1})
+        service.open(None)
+        service.open(None)
+        assert first.id not in service._store.prune()
+        assert service._store.load(first.id).messages[0].text == "Remember this"
+        with pytest.raises(HeinzelError, match="cannot be removed separately"):
+            service._store.remove(first.id)
+        from heinzel.modules.system.runner.chat._store import ChatStore
+
+        restarted_store = ChatStore(kernel.settings, service._store._chat, service._store._runner, current)
+        restarted = ChatService(restarted_store, kernel)
+        assert restarted.open_check_in(personal.session_id, "restart-open", "UTC", "").id == first.id
+        assert restarted_store.load(first.id).messages[0].text == "Remember this"
+
+
+def test_ambiguous_personal_chat_associations_fail_closed(kernel):
+    from heinzel.modules.system.runner.chat._models import ChatContext
+
+    current = kernel.resolve(CurrentUser)
+    service = kernel.resolve(ChatService)
+    with current.local("cli"):
+        session = kernel.resolve(SessionCrud).new_chat("ambiguous-agent")
+        context = ChatContext(kind="check-in", ref=session.session_id, timezone="UTC", owner_id=current.principal().id)
+        service._store.create(context, personal_session_id=session.session_id)
+        service._store.create(context, personal_session_id=session.session_id)
+        with pytest.raises(HeinzelError, match="multiple bound chats"):
+            service.open_check_in(session.session_id, "new-open", "UTC", "")

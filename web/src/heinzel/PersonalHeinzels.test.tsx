@@ -106,6 +106,7 @@ describe("personal identities", () => {
     };
     const review = {
       id: "0123456789abcdef",
+      personal_session_id: first,
       title: "Check-in approval",
       messages: [],
       actions: [
