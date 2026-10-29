@@ -22,8 +22,12 @@ const en = {
   "personal.previewHelp": "Colours follow your theme until you choose your own.",
   "personal.save": "Save name and look",
   "personal.retrySave": "Retry save",
-  "personal.reload": "Reload saved profile",
-  "personal.saveError": "Could not confirm the save. Retry the same request or reload the saved profile.",
+  "personal.reload": "Check saved profile",
+  "personal.saveError":
+    "Could not confirm the save. Retry the same request or check the saved profile; the pending save cannot be cleared until its outcome is safe.",
+  "personal.saveOutcomeChanged":
+    "The profile changed while this save was unresolved. Retry the exact request or check the saved profile.",
+  "personal.draftStorageFailed": "This tab could not preserve your unsaved name and look after a reload.",
   "personal.openSchedule": "Continue to schedule setup",
   "personal.saveBeforeSchedule": "Save the name and look before continuing to schedule setup.",
   "durable.title": "Personal conversation",
