@@ -1998,6 +1998,18 @@
             "title": "Kind",
             "type": "string"
           },
+          "owner_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Authenticated owner of a durable personal chat.",
+            "title": "Owner Id"
+          },
           "ref": {
             "default": "",
             "description": "Which one: a route such as `/contracts/weekly`, a contract name, an id.",
@@ -2376,6 +2388,30 @@
             ],
             "description": "The model this chat asks for; none: the runner's default.",
             "title": "Model"
+          },
+          "personal_owner_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Authenticated owner of the personal session, if any.",
+            "title": "Personal Owner Id"
+          },
+          "personal_session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Owner-bound durable personal session, if any.",
+            "title": "Personal Session Id"
           },
           "title": {
             "description": "Its first message, shortened, or its context.",
@@ -9921,6 +9957,12 @@
       "ScheduledAgentProposal": {
         "description": "An inert execution proposal; creating or reading it never authorizes a run.",
         "properties": {
+          "based_on_revision": {
+            "description": "The previous revision inspected for this proposal; zero for the first.",
+            "minimum": 0.0,
+            "title": "Based On Revision",
+            "type": "integer"
+          },
           "contract": {
             "description": "Exact instructions proposed for each scheduled model turn.",
             "maxLength": 4000,
@@ -9955,6 +9997,12 @@
             "title": "Request Id",
             "type": "string"
           },
+          "revision": {
+            "description": "The sequential execution proposal revision.",
+            "minimum": 1.0,
+            "title": "Revision",
+            "type": "integer"
+          },
           "session_id": {
             "description": "The owner-scoped personal session.",
             "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
@@ -9979,6 +10027,8 @@
         "required": [
           "session_id",
           "request_id",
+          "revision",
+          "based_on_revision",
           "contract",
           "permitted_tools",
           "max_usd",
@@ -14425,6 +14475,59 @@
         "title": "WidgetEntry",
         "type": "object"
       },
+      "heinzel_amend_scheduled_agent_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "contract": {
+            "description": "Complete replacement instructions.",
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Contract",
+            "type": "string"
+          },
+          "expected_revision": {
+            "description": "The exact proposal revision inspected.",
+            "minimum": 1.0,
+            "title": "Expected Revision",
+            "type": "integer"
+          },
+          "max_usd": {
+            "description": "Proposed per-turn USD limit; not yet enforced.",
+            "exclusiveMinimum": 0.0,
+            "title": "Max Usd",
+            "type": "number"
+          },
+          "request_id": {
+            "description": "A stable client request id; reuse it only for an exact retry.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "session_id": {
+            "description": "The stable personal session id returned by new-chat or sessions.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "timeout_seconds": {
+            "description": "Proposed maximum seconds per turn.",
+            "maximum": 300.0,
+            "minimum": 1.0,
+            "title": "Timeout Seconds",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "session_id",
+          "request_id",
+          "expected_revision",
+          "contract",
+          "max_usd",
+          "timeout_seconds"
+        ],
+        "title": "heinzel_amend_scheduled_agent_Input",
+        "type": "object"
+      },
       "heinzel_chat_Input": {
         "additionalProperties": false,
         "properties": {
@@ -15050,6 +15153,48 @@
         ]
       }
     },
+    "/heinzel/amend-scheduled-agent": {
+      "post": {
+        "description": "Propose revised terms; an independent human review and approval is still required.",
+        "operationId": "heinzel_amend_scheduled_agent",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/heinzel_amend_scheduled_agent_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduledAgentProposal"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Propose revised terms; an independent human review and approval is still required.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
     "/heinzel/chat": {
       "post": {
         "description": "Durably queue a message for this Heinzel; acceptance is distinct from a completed model answer.",
@@ -15248,6 +15393,57 @@
           }
         },
         "summary": "Show the workflow your contracts make: what each maintains and reads, cycles, unmaintained inputs.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/latest-scheduled-agent-proposal": {
+      "get": {
+        "description": "Read the current inert proposal for the personal session, if one exists.",
+        "operationId": "heinzel_latest_scheduled_agent_proposal",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ScheduledAgentProposal"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Response Heinzel Latest Scheduled Agent Proposal"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read the current inert proposal for the personal session, if one exists.",
         "tags": [
           "heinzel"
         ]

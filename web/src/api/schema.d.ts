@@ -128,6 +128,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/heinzel/amend-scheduled-agent": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Propose revised terms; an independent human review and approval is still required.
+         * @description Propose revised terms; an independent human review and approval is still required.
+         */
+        post: operations["heinzel_amend_scheduled_agent"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/heinzel/chat": {
         parameters: {
             query?: never;
@@ -200,6 +220,26 @@ export interface paths {
          * @description Show the workflow your contracts make: what each maintains and reads, cycles, unmaintained inputs.
          */
         get: operations["heinzel_graph"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/heinzel/latest-scheduled-agent-proposal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read the current inert proposal for the personal session, if one exists.
+         * @description Read the current inert proposal for the personal session, if one exists.
+         */
+        get: operations["heinzel_latest_scheduled_agent_proposal"];
         put?: never;
         post?: never;
         delete?: never;
@@ -3340,6 +3380,11 @@ export interface components {
              */
             kind: "route" | "contract" | "draft" | "event" | "text" | "check-in";
             /**
+             * Owner Id
+             * @description Authenticated owner of a durable personal chat.
+             */
+            owner_id?: string | null;
+            /**
              * Ref
              * @description Which one: a route such as `/contracts/weekly`, a contract name, an id.
              * @default
@@ -3541,6 +3586,16 @@ export interface components {
              * @description The model this chat asks for; none: the runner's default.
              */
             model?: string | null;
+            /**
+             * Personal Owner Id
+             * @description Authenticated owner of the personal session, if any.
+             */
+            personal_owner_id?: string | null;
+            /**
+             * Personal Session Id
+             * @description Owner-bound durable personal session, if any.
+             */
+            personal_session_id?: string | null;
             /**
              * Title
              * @description Its first message, shortened, or its context.
@@ -7941,6 +7996,11 @@ export interface components {
          */
         ScheduledAgentProposal: {
             /**
+             * Based On Revision
+             * @description The previous revision inspected for this proposal; zero for the first.
+             */
+            based_on_revision: number;
+            /**
              * Contract
              * @description Exact instructions proposed for each scheduled model turn.
              */
@@ -7965,6 +8025,11 @@ export interface components {
              * @description The proposal's stable request identity.
              */
             request_id: string;
+            /**
+             * Revision
+             * @description The sequential execution proposal revision.
+             */
+            revision: number;
             /**
              * Session Id
              * @description The owner-scoped personal session.
@@ -10494,6 +10559,39 @@ export interface components {
              */
             widget?: (components["schemas"]["CardWidget"] | components["schemas"]["ListWidget"] | components["schemas"]["MetricWidget"] | components["schemas"]["ProgressWidget"] | components["schemas"]["GraphicWidget"]) | null;
         };
+        /** heinzel_amend_scheduled_agent_Input */
+        heinzel_amend_scheduled_agent_Input: {
+            /**
+             * Contract
+             * @description Complete replacement instructions.
+             */
+            contract: string;
+            /**
+             * Expected Revision
+             * @description The exact proposal revision inspected.
+             */
+            expected_revision: number;
+            /**
+             * Max Usd
+             * @description Proposed per-turn USD limit; not yet enforced.
+             */
+            max_usd: number;
+            /**
+             * Request Id
+             * @description A stable client request id; reuse it only for an exact retry.
+             */
+            request_id: string;
+            /**
+             * Session Id
+             * @description The stable personal session id returned by new-chat or sessions.
+             */
+            session_id: string;
+            /**
+             * Timeout Seconds
+             * @description Proposed maximum seconds per turn.
+             */
+            timeout_seconds: number;
+        };
         /** heinzel_chat_Input */
         heinzel_chat_Input: {
             /**
@@ -10880,6 +10978,7 @@ export type SchemaWakeScheduleView = components['schemas']['WakeScheduleView'];
 export type SchemaWeek = components['schemas']['Week'];
 export type SchemaWidgetAction = components['schemas']['WidgetAction'];
 export type SchemaWidgetEntry = components['schemas']['WidgetEntry'];
+export type SchemaHeinzelAmendScheduledAgentInput = components['schemas']['heinzel_amend_scheduled_agent_Input'];
 export type SchemaHeinzelChatInput = components['schemas']['heinzel_chat_Input'];
 export type SchemaHeinzelNewChatInput = components['schemas']['heinzel_new_chat_Input'];
 export type SchemaHeinzelProfileInput = components['schemas']['heinzel_profile_Input'];
@@ -11066,6 +11165,39 @@ export interface operations {
             };
         };
     };
+    heinzel_amend_scheduled_agent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["heinzel_amend_scheduled_agent_Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScheduledAgentProposal"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     heinzel_chat: {
         parameters: {
             query?: never;
@@ -11191,6 +11323,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ContractGraph"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    heinzel_latest_scheduled_agent_proposal: {
+        parameters: {
+            query: {
+                session_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScheduledAgentProposal"] | null;
                 };
             };
             /** @description Validation Error */

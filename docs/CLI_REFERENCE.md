@@ -637,11 +637,13 @@ $ hz heinzel [OPTIONS] COMMAND [ARGS]...
 
 **Commands**:
 
+* `amend-scheduled-agent`: Propose revised terms; an independent...
 * `chat`: Durably queue a message for this Heinzel;...
 * `check`: (expert) Check contracts and list every...
 * `discover`: (expert) Find candidates for each...
 * `drafts`: List the drafts runs saved locally, newest...
 * `graph`: (expert) Show the workflow your contracts...
+* `latest-scheduled-agent-proposal`: Read the current inert proposal for the...
 * `list`: List your Heinzelmännchen, one per...
 * `new`: Write a starter contract, or a playbook&#x27;s...
 * `new-chat`: Create a durable personal Heinzel with an...
@@ -657,6 +659,31 @@ $ hz heinzel [OPTIONS] COMMAND [ARGS]...
 * `sessions`: List your durable personal Heinzels,...
 * `show`: Show a contract as the daemon runs it:...
 * `wake`: Wake a Heinzelmännchen now: fetch its...
+
+### `hz heinzel amend-scheduled-agent`
+
+Propose revised terms; an independent human review and approval is still required.
+
+**Usage**:
+
+```console
+$ hz heinzel amend-scheduled-agent [OPTIONS] {session_id} {request_id} {expected_revision} {contract} {max_usd} {timeout_seconds}
+```
+
+**Arguments**:
+
+* `session_id`: [required]
+* `request_id`: [required]
+* `expected_revision`: The exact proposal revision inspected.  [required]
+* `contract`: Complete replacement instructions.  [required]
+* `max_usd`: Proposed per-turn USD limit; not yet enforced.  [required]
+* `timeout_seconds`: Proposed maximum seconds per turn.  [required]
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
 
 ### `hz heinzel chat`
 
@@ -746,6 +773,26 @@ $ hz heinzel graph [OPTIONS]
 **Options**:
 
 * `--mermaid / --no-mermaid`: Print only the Mermaid flowchart, to paste into a document or a pull request.  [default: no-mermaid]
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz heinzel latest-scheduled-agent-proposal`
+
+Read the current inert proposal for the personal session, if one exists.
+
+**Usage**:
+
+```console
+$ hz heinzel latest-scheduled-agent-proposal [OPTIONS] {session_id}
+```
+
+**Arguments**:
+
+* `session_id`: [required]
+
+**Options**:
+
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.

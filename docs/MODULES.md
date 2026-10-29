@@ -155,6 +155,8 @@ Your Heinzelmännchen: durable agents that keep your team's documents true.
 | Save this Heinzel's name or look against the exact profile revision you saw. | `hz heinzel profile` | `heinzel_profile` | — | `POST /api/heinzel/profile` | yes |  |
 | Propose local five-minute check-ins; the schedule stays inactive until activated. | `hz heinzel propose-check-in` | `heinzel_propose_check_in` | — | `POST /api/heinzel/propose-check-in` | yes |  |
 | Save an inert agent execution proposal; it neither approves nor starts a model turn. | `hz heinzel propose-scheduled-agent` | `heinzel_propose_scheduled_agent` | — | `POST /api/heinzel/propose-scheduled-agent` | yes |  |
+| Propose revised terms; an independent human review and approval is still required. | `hz heinzel amend-scheduled-agent` | `heinzel_amend_scheduled_agent` | — | `POST /api/heinzel/amend-scheduled-agent` | yes |  |
+| Read the current inert proposal for the personal session, if one exists. | `hz heinzel latest-scheduled-agent-proposal` | `heinzel_latest_scheduled_agent_proposal` | — | `GET /api/heinzel/latest-scheduled-agent-proposal` |  |  |
 | Inspect the exact inert proposal; a separate future human approval is required to run it. | `hz heinzel scheduled-agent-proposal` | `heinzel_scheduled_agent_proposal` | — | `GET /api/heinzel/scheduled-agent-proposal` |  |  |
 | Pause a schedule; activation and resume require an exact-intent approval from a trusted issuer. | `hz heinzel schedule-control` | `heinzel_schedule_control` | — | `POST /api/heinzel/schedule-control` | yes |  |
 | Durably queue a message for this Heinzel; acceptance is distinct from a completed model answer. | `hz heinzel chat` | `heinzel_chat` | — | `POST /api/heinzel/chat` | yes |  |
