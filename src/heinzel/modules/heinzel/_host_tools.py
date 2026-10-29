@@ -3,27 +3,28 @@
 import hashlib
 import inspect
 import json
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
 from pydantic import ConfigDict, JsonValue, create_model
 from pydantic_core import to_jsonable_python
 
-from heinzel import CurrentUser, HeinzelError, Kernel
+from heinzel import CurrentUser, HeinzelError, Kernel, SessionWriter
 from heinzel.kernel._exposure import Exposed, exposed, input_schema
 from heinzel.modules.heinzel._model_grants import ModelGrant, ModelGrants
 from heinzel.modules.heinzel._session_crud import SessionCrud
 
 _MAX_SCHEMA = 16_000
 _MAX_RESULT = 16_000
+_DIGEST_LENGTH = 64
 
 
 def _identity(item: Exposed) -> str:
     return f"{item.record.qualname}:{item.operation.name}"
 
 
-def _schema(item: Exposed) -> tuple[dict[str, Any], str]:
+def _schema(item: Exposed, implementation: str) -> tuple[dict[str, Any], str]:
     schema = input_schema(item)
     schema["additionalProperties"] = False
 
@@ -43,6 +44,7 @@ def _schema(item: Exposed) -> tuple[dict[str, Any], str]:
     binding = json.dumps(
         {
             "identity": _identity(item),
+            "implementation": implementation,
             "schema": schema,
             "distribution": origin.distribution,
             "version": origin.version,
@@ -53,6 +55,10 @@ def _schema(item: Exposed) -> tuple[dict[str, Any], str]:
         separators=(",", ":"),
     )
     return schema, hashlib.sha256(binding.encode()).hexdigest()
+
+
+class OperationFailedError(HeinzelError):
+    """The operation was invoked but did not produce a usable result."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -74,8 +80,15 @@ class HostToolCatalog:
     so approval changes cannot interleave with an operation call. No operation marked write is ever invoked here.
     """
 
-    def __init__(
-        self, kernel: Kernel, current: CurrentUser, crud: SessionCrud, session: str, host_reads: frozenset[str]
+    def __init__(  # noqa: PLR0913 - dependencies and trusted policy are independently supplied
+        self,
+        kernel: Kernel,
+        current: CurrentUser,
+        crud: SessionCrud,
+        session: str,
+        host_reads: frozenset[str],
+        *,
+        verified_code: Callable[[Exposed], str] | None = None,
     ) -> None:
         self._kernel = kernel
         self._current = current
@@ -83,6 +96,7 @@ class HostToolCatalog:
         self._session = session
         self._owner = crud.repository.principal_id
         self._host_reads = frozenset(host_reads)
+        self._verified_code = verified_code
         if kernel.resolve(CurrentUser) is not current or current.principal().id != self._owner:
             msg = "The operation catalog owner cannot be verified"
             raise HeinzelError(msg)
@@ -93,9 +107,28 @@ class HostToolCatalog:
         if len(candidates) != 1:
             return None
         item = candidates[0]
-        if name not in self._host_reads or not item.operation.read_only or item.operation.private:
+        # Until scoped resource policies exist, only argument-free operations can be granted.
+        if name not in self._host_reads or not item.operation.read_only or item.operation.private or item.parameters:
             return None
         return item
+
+    def _binding(self, item: Exposed) -> tuple[dict[str, Any], str]:
+        if self._verified_code is None:
+            msg = "This operation has no verified implementation identity"
+            raise HeinzelError(msg)
+        try:
+            identity: object = self._verified_code(item)
+        except Exception:  # noqa: BLE001 - verifier details may contain private state
+            msg = "This operation has no verified implementation identity"
+            raise HeinzelError(msg) from None
+        if (
+            not isinstance(identity, str)
+            or len(identity) != _DIGEST_LENGTH
+            or any(c not in "0123456789abcdef" for c in identity)
+        ):
+            msg = "This operation has no verified implementation identity"
+            raise HeinzelError(msg)
+        return _schema(item, identity)
 
     def preview(self) -> list[ToolPreview]:
         """Show only independently host-allowed read operations, without running them."""
@@ -104,7 +137,7 @@ class HostToolCatalog:
         for name in sorted(self._host_reads):
             item = self._find(name)
             if item is not None:
-                schema, digest = _schema(item)
+                schema, digest = self._binding(item)
                 origin = item.record.origin
                 previews.append(ToolPreview(name, schema, digest, origin.distribution, origin.version, origin.builtin))
         return previews
@@ -137,13 +170,19 @@ class HostToolCatalog:
             raise HeinzelError(msg)
         return selected
 
-    def invoke(self, grant: ModelGrant, name: str, arguments: Mapping[str, JsonValue]) -> str:
+    def invoke(
+        self, grant: ModelGrant, name: str, arguments: Mapping[str, JsonValue], *, turn_writer: SessionWriter
+    ) -> str:
         """Execute a registered read only if the current approved grant and host policy both allow it.
 
         Raises:
             HeinzelError: If owner, grant, schema, operation or arguments do not match.
+            OperationFailedError: If an invoked operation does not produce a usable result.
         """
         self._check_owner()
+        if not self._crud.repository.is_main_writer(self._session, turn_writer):
+            msg = "The operation requires its owning turn lock"
+            raise HeinzelError(msg)
         if ModelGrants(self._crud).approved(self._session) != grant:
             msg = "The operation grant changed"
             raise HeinzelError(msg)
@@ -151,7 +190,7 @@ class HostToolCatalog:
         if item is None or name not in grant.allowed_tools:
             msg = "The operation is unavailable"
             raise HeinzelError(msg)
-        _, fingerprint = _schema(item)
+        _, fingerprint = self._binding(item)
         if grant.allowed_tools[name] != fingerprint:
             msg = "The operation schema changed; review a new grant"
             raise HeinzelError(msg)
@@ -174,17 +213,17 @@ class HostToolCatalog:
             ModelGrants(self._crud).approved(self._session) != grant
             or latest is None
             or latest != item
-            or _schema(latest)[1] != fingerprint
+            or self._binding(latest)[1] != fingerprint
         ):
             msg = "The operation grant or registration changed"
             raise HeinzelError(msg)
         try:
             result = self._kernel.invoke(item.operation, **validated)
+            text = json.dumps(to_jsonable_python(result, fallback=str), ensure_ascii=False)
+            if len(text.encode()) > _MAX_RESULT:
+                msg = "The operation result exceeds the safe limit"
+                raise OperationFailedError(msg)  # noqa: TRY301 - an invoked operation failed to produce usable output
         except Exception:  # noqa: BLE001 - never expose operation diagnostics to the model
-            msg = "The operation could not be completed"
-            raise HeinzelError(msg) from None
-        text = json.dumps(to_jsonable_python(result, fallback=str), ensure_ascii=False)
-        if len(text.encode()) > _MAX_RESULT:
-            msg = "The operation result exceeds the safe limit"
-            raise HeinzelError(msg)
+            msg = "The operation was invoked but did not produce a usable result"
+            raise OperationFailedError(msg) from None
         return text

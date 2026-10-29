@@ -44,6 +44,10 @@ class SessionRepository(Protocol):
         """Own the active turn; wait is reserved for short creation repair, before taking the control writer."""
         ...
 
+    def is_main_writer(self, session_id: str, writer: SessionWriter) -> bool:
+        """Verify an active writer is scoped to this principal's main journal."""
+        ...
+
     def control_writer(self, session_id: str) -> AbstractContextManager[SessionWriter]:
         """Own only the short control append; never acquire or wait for the main writer here."""
         ...

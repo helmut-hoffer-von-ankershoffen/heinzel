@@ -1,12 +1,10 @@
-"""Only host-selected registered reads with an exact owner-approved grant can run."""
+"""Only explicitly reviewed, owner-bound and host-verified argument-free reads may run."""
 
 import asyncio
 import json
 from dataclasses import replace
-from typing import Annotated
 
 import pytest
-from pydantic import Field
 from pydantic_ai.messages import ModelMessage, ModelResponse, ToolCallPart, ToolReturnPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
@@ -23,39 +21,50 @@ from heinzel.modules.heinzel._session_repository import PersonalSessionRepositor
 pytestmark = pytest.mark.unit
 
 
-def test_granted_registered_read_executes_with_owner_and_writes_never_execute(make_kernel, tmp_path):  # noqa: PLR0915
-    module = Module("fixture", "A local test service")
+def test_granted_read_fences_code_owner_turn_and_model_arguments(make_kernel, tmp_path):  # noqa: PLR0915
+    module = Module("fixture", "Local read tests")
     calls = []
 
     @module.operation()
-    def inspect(current: CurrentUser, amount: Annotated[int, Field(ge=1, le=3)]) -> dict[str, object]:
+    def inspect(current: CurrentUser) -> dict[str, object]:
         """Read a harmless local value."""
-        calls.append((current.principal().id, amount))
-        return {"count": amount}
+        calls.append(current.principal().id)
+        return {"count": 2}
+
+    @module.operation()
+    def fetch(path: str) -> str:
+        """A parameterized read without a resource policy."""
+        calls.append(path)
+        return path
 
     @module.operation(read_only=False)
-    def change(amount: int) -> str:
+    def change() -> str:
         """A write which must never run."""
-        calls.append(("write", amount))
+        calls.append("write")
         return "changed"
 
     kernel = make_kernel(fixture=module)
     current = CurrentUser(tmp_path / "identity")
     kernel.bind(CurrentUser, current)
     with current.local("cli"):
-        crud = SessionCrud(
-            PersonalSessionRepository(current), lambda: SessionCosts(session_max_usd=2, message_max_usd=1)
-        )
+        repo = PersonalSessionRepository(current)
+        crud = SessionCrud(repo, lambda: SessionCosts(session_max_usd=2, message_max_usd=1))
         session = crud.new_chat("create").session_id
         crud.accept(session, MessageRequest(request_id="one", text="Read the number"))
-        catalog = HostToolCatalog(kernel, current, crud, session, frozenset({"fixture:inspect", "fixture:change"}))
+        allowed = frozenset({"fixture:inspect", "fixture:fetch", "fixture:change"})
+        no_verifier = HostToolCatalog(kernel, current, crud, session, allowed)
+        with pytest.raises(HeinzelError, match="verified implementation"):
+            no_verifier.preview()
+        code_identity = ["a" * 64]
+        catalog = HostToolCatalog(kernel, current, crud, session, allowed, verified_code=lambda _item: code_identity[0])
         preview = catalog.preview()
         assert [item.identity for item in preview] == ["fixture:inspect"]
         registered = next(item for item in exposed(kernel, "mcp") if item.operation.name == "inspect")
         newer = replace(
             registered, record=replace(registered.record, origin=replace(registered.record.origin, version="10.0.0"))
         )
-        assert _schema(registered)[1] != _schema(newer)[1]
+        assert _schema(registered, "a" * 64)[1] != _schema(newer, "a" * 64)[1]
+        assert _schema(registered, "a" * 64)[1] != _schema(registered, "b" * 64)[1]
         grant = ModelGrant(
             request_id="grant",
             revision=1,
@@ -73,29 +82,31 @@ def test_granted_registered_read_executes_with_owner_and_writes_never_execute(ma
         grants = ModelGrants(crud)
         grants.propose(session, grant)
         grants.approve(session, "grant", grants.issue(session, "grant", "fixture-human-review"))
-        assert catalog.approved_preview(session, grant) == preview
-        with pytest.raises(HeinzelError, match="unavailable"):
-            catalog.invoke(grant, "fixture:change", {"amount": 1})
-        with pytest.raises(HeinzelError, match="unavailable"):
-            catalog.invoke(grant, "unknown:read", {})
-        with pytest.raises(HeinzelError, match="Invalid operation"):
-            catalog.invoke(grant, "fixture:inspect", {"amount": 9})
-        with pytest.raises(HeinzelError, match="Invalid operation"):
-            catalog.invoke(grant, "fixture:inspect", {"amount": 1, "current": "injected"})
+        with repo.main_writer(session) as writer:
+            with pytest.raises(HeinzelError, match="unavailable"):
+                catalog.invoke(grant, "fixture:fetch", {"path": "/private"}, turn_writer=writer)
+            with pytest.raises(HeinzelError, match="Invalid operation"):
+                catalog.invoke(grant, "fixture:inspect", {"current": "injected"}, turn_writer=writer)
+            code_identity[0] = "b" * 64
+            with pytest.raises(HeinzelError, match="schema changed"):
+                catalog.invoke(grant, "fixture:inspect", {}, turn_writer=writer)
+            code_identity[0] = "a" * 64
+        with pytest.raises(HeinzelError, match="turn lock"):
+            catalog.invoke(grant, "fixture:inspect", {}, turn_writer=writer)
+        other = crud.new_chat("other").session_id
+        with repo.main_writer(other) as wrong_writer, pytest.raises(HeinzelError, match="turn lock"):
+            catalog.invoke(grant, "fixture:inspect", {}, turn_writer=wrong_writer)
         assert calls == []
-        requests = []
+        rounds = []
 
         def model(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
-            requests.append(1)
-            if len(requests) == 1:
-                assert "fixture:inspect" in str(info.instructions)
-                return ModelResponse(
-                    [ToolCallPart("use_tool", {"name": "fixture:inspect", "arguments": {"amount": 2}})]
-                )
+            rounds.append(1)
+            if len(rounds) == 1:
+                return ModelResponse([ToolCallPart("use_tool", {"name": "fixture:inspect", "arguments": {}})])
             assert any(
                 isinstance(part, ToolReturnPart) and json.loads(part.content)["count"] == 2
-                for msg in messages
-                for part in msg.parts
+                for message in messages
+                for part in message.parts
                 if isinstance(part, ToolReturnPart)
             )
             return ModelResponse([ToolCallPart(info.output_tools[0].name, {"report": "Read complete"})])
@@ -106,31 +117,83 @@ def test_granted_registered_read_executes_with_owner_and_writes_never_execute(ma
             )
         )
         assert result.text == "Read complete"
-        assert calls == [(current.principal().id, 2)]
+        assert calls == [current.principal().id]
         activity = InteractiveTurn(crud).activity(session)
-        assert activity[-1].tool == "hz.read"
-        assert activity[-1].status == "completed"
-        next_grant = grant.model_copy(update={"request_id": "next", "revision": 2, "allowed_tools": {}})
-        grants.propose(session, next_grant)
-        grants.approve(session, "next", grants.issue(session, "next", "fixture-human-review"))
-        with pytest.raises(HeinzelError, match="grant changed"):
-            catalog.invoke(grant, "fixture:inspect", {"amount": 1})
-        assert catalog.approved_preview(session, next_grant) == []
-        with pytest.raises(HeinzelError, match="unavailable"):
-            catalog.invoke(next_grant, "fixture:inspect", {"amount": 1})
-        changed_schema = next_grant.model_copy(
-            update={"request_id": "third", "revision": 3, "allowed_tools": {"fixture:inspect": "0" * 64}}
-        )
-        grants.propose(session, changed_schema)
-        grants.approve(session, "third", grants.issue(session, "third", "fixture-human-review"))
-        with pytest.raises(HeinzelError, match="unavailable or has changed"):
-            catalog.approved_preview(session, changed_schema)
+        assert [(event.tool, event.status) for event in activity] == [
+            ("fixture:inspect", "requested"),
+            ("fixture:inspect", "completed"),
+        ]
         stranger = CallIdentity(
             Principal("u-" + "a" * 32), "api-bearer", "other", "private", frozenset({"private:read"})
         )
         with current.using(stranger), pytest.raises(HeinzelError, match="different owner"):
             catalog.preview()
-        assert len(calls) == 1
+
+
+def test_invoked_failure_is_not_recorded_as_denial_and_does_not_leak(make_kernel, tmp_path):
+    module = Module("fixture", "Local read test")
+    calls = []
+
+    @module.operation()
+    def broken() -> str:
+        """Fail after the host invokes the read."""
+        calls.append(1)
+        msg = "PRIVATE_OPERATION_SECRET"
+        raise RuntimeError(msg)
+
+    kernel = make_kernel(fixture=module)
+    current = CurrentUser(tmp_path / "identity")
+    kernel.bind(CurrentUser, current)
+    with current.local("cli"):
+        repo = PersonalSessionRepository(current)
+        crud = SessionCrud(repo, lambda: SessionCosts(session_max_usd=2, message_max_usd=1))
+        session = crud.new_chat("create").session_id
+        crud.accept(session, MessageRequest(request_id="one", text="Try the read"))
+        catalog = HostToolCatalog(
+            kernel, current, crud, session, frozenset({"fixture:broken"}), verified_code=lambda _: "a" * 64
+        )
+        preview = catalog.preview()[0]
+        grant = ModelGrant(
+            request_id="grant",
+            revision=1,
+            access="pydantic-ai",
+            model="openai:model",
+            requests=2,
+            total_tokens=1000,
+            output_tokens=100,
+            timeout_seconds=10,
+            message_cap_usd="1",
+            session_cap_usd="2",
+            owner_cap_usd="3",
+            allowed_tools={preview.identity: preview.binding_sha256},
+        )
+        grants = ModelGrants(crud)
+        grants.propose(session, grant)
+        grants.approve(session, "grant", grants.issue(session, "grant", "fixture-human-review"))
+        rounds = []
+
+        def model(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+            rounds.append(1)
+            if len(rounds) == 1:
+                return ModelResponse([ToolCallPart("use_tool", {"name": "fixture:broken", "arguments": {}})])
+            assert "PRIVATE_OPERATION_SECRET" not in str(messages)
+            return ModelResponse([ToolCallPart(info.output_tools[0].name, {"report": "Read failed"})])
+
+        result = asyncio.run(
+            InteractiveTurn(crud).run(
+                session, "one", FunctionModel(model), limits=TurnLimits(), expected_grant=grant, catalog=catalog
+            )
+        )
+        assert result.text == "Read failed"
+        assert calls == [1]
+        activity = InteractiveTurn(crud).activity(session)
+        assert [(item.tool, item.status) for item in activity] == [
+            ("fixture:broken", "requested"),
+            ("fixture:broken", "failed"),
+        ]
+        assert "PRIVATE_OPERATION_SECRET" not in json.dumps(
+            [e.model_dump(mode="json") for e in repo.control_read(session).events]
+        )
 
 
 def test_granted_builtin_hz_service_read_from_fake_model(make_kernel, tmp_path):
@@ -145,7 +208,9 @@ def test_granted_builtin_hz_service_read_from_fake_model(make_kernel, tmp_path):
         )
         session = crud.new_chat("builtin").session_id
         crud.accept(session, MessageRequest(request_id="one", text="List installed modules"))
-        catalog = HostToolCatalog(kernel, current, crud, session, frozenset({"system:modules"}))
+        catalog = HostToolCatalog(
+            kernel, current, crud, session, frozenset({"system:modules"}), verified_code=lambda _: "a" * 64
+        )
         preview = catalog.preview()
         assert len(preview) == 1
         assert preview[0].identity == "system:modules"
@@ -183,3 +248,47 @@ def test_granted_builtin_hz_service_read_from_fake_model(make_kernel, tmp_path):
         )
         assert result.text == "Modules read"
         assert len(calls) == 2
+
+
+def test_granted_turn_does_not_run_ungranted_local_tool(make_kernel, tmp_path):
+    kernel = make_kernel(fixture=Module("fixture", "Fixture"))
+    current = CurrentUser(tmp_path / "identity")
+    kernel.bind(CurrentUser, current)
+    with current.local("cli"):
+        repo = PersonalSessionRepository(current)
+        crud = SessionCrud(repo, lambda: SessionCosts(session_max_usd=2, message_max_usd=1))
+        session = crud.new_chat("create").session_id
+        crud.accept(session, MessageRequest(request_id="one", text="Test ungranted tool"))
+        grant = ModelGrant(
+            request_id="grant",
+            revision=1,
+            access="pydantic-ai",
+            model="openai:model",
+            requests=2,
+            total_tokens=1000,
+            output_tokens=100,
+            timeout_seconds=10,
+            message_cap_usd="1",
+            session_cap_usd="2",
+            owner_cap_usd="3",
+        )
+        grants = ModelGrants(crud)
+        grants.propose(session, grant)
+        grants.approve(session, "grant", grants.issue(session, "grant", "fixture-human-review"))
+        rounds = []
+
+        def model(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+            rounds.append(1)
+            if len(rounds) == 1:
+                return ModelResponse(
+                    [ToolCallPart("use_tool", {"name": "text.word_count", "arguments": {"text": "x"}})]
+                )
+            assert "unavailable under this grant" in str(messages)
+            return ModelResponse([ToolCallPart(info.output_tools[0].name, {"report": "Not available"})])
+
+        asyncio.run(
+            InteractiveTurn(crud).run(session, "one", FunctionModel(model), limits=TurnLimits(), expected_grant=grant)
+        )
+        assert [(item.tool, item.status) for item in InteractiveTurn(crud).activity(session)] == [
+            ("text.word_count", "denied")
+        ]
