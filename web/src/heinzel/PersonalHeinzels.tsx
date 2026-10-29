@@ -2,7 +2,13 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router";
-import { api, problem, type SchemaHeinzelAppearance, type SchemaSessionSnapshot } from "@/api/client";
+import {
+  api,
+  problem,
+  type SchemaHeinzelAppearance,
+  type SchemaProfileProposal,
+  type SchemaSessionSnapshot,
+} from "@/api/client";
 import { HeinzelAvatar } from "@/components/HeinzelAvatar";
 import { ACCESSORIES, AGES, BEARDS, BUILDS, HATS, SHIRTS } from "@/components/heinzel";
 import { Button } from "@/components/ui/button";
@@ -235,10 +241,12 @@ export function ProfileEditor({
   initial,
   onLock,
   inChat = false,
+  suggestion = null,
 }: {
   initial: SchemaSessionSnapshot;
   onLock: (locked: boolean) => void;
   inChat?: boolean;
+  suggestion?: SchemaProfileProposal | null;
 }) {
   const client = useQueryClient();
   const navigate = useNavigate();
@@ -370,6 +378,8 @@ export function ProfileEditor({
   const disabled = busy || pending !== null || pendingStorageInvalid;
   const savedLook = snapshot.appearance ?? { age: "grown" as const, build: "regular" as const };
   const hasUncommittedChanges = name !== snapshot.name || JSON.stringify(look) !== JSON.stringify(savedLook);
+  const suggestionSelected =
+    suggestion !== null && name === suggestion.name && JSON.stringify(look) === JSON.stringify(suggestion.appearance);
   useEffect(() => {
     onLock(hasUncommittedChanges || pending !== null || pendingStorageInvalid || busy);
   }, [hasUncommittedChanges, pending, pendingStorageInvalid, busy, onLock]);
@@ -381,6 +391,43 @@ export function ProfileEditor({
         void save();
       }}
     >
+      {suggestion?.session_id === snapshot.session_id && suggestion.status === "proposed" && (
+        <section aria-label="Suggested identity" className="space-y-2 rounded border border-border p-2 text-sm">
+          <h3 className="font-medium">Suggested identity</h3>
+          <p>{suggestion.name} · Proposed</p>
+          <HeinzelAvatar
+            label="Suggested appearance"
+            age={suggestion.appearance.age}
+            build={suggestion.appearance.build}
+            beard={suggestion.appearance.beard ?? undefined}
+            hat={suggestion.appearance.hat ?? undefined}
+            shirt={suggestion.appearance.shirt ?? undefined}
+            accessories={suggestion.appearance.accessories}
+            className="h-24 w-16"
+          />
+          <p>Review the suggestion, then save it if you want to apply it.</p>
+          {suggestion.expected_revision !== snapshot.profile_revision && (
+            <p role="status">The saved profile changed; this suggestion is out of date.</p>
+          )}
+          {hasUncommittedChanges && !pending && suggestionSelected && (
+            <p role="status">Suggested identity is ready to save.</p>
+          )}
+          {hasUncommittedChanges && !pending && !suggestionSelected && (
+            <p role="status">Finish or discard your current profile edits before using this suggestion.</p>
+          )}
+          <Button
+            type="button"
+            variant="outline"
+            disabled={disabled || hasUncommittedChanges || suggestion.expected_revision !== snapshot.profile_revision}
+            onClick={() => {
+              setName(suggestion.name);
+              setLook(suggestion.appearance);
+            }}
+          >
+            Use suggested identity
+          </Button>
+        </section>
+      )}
       <div className="flex items-center gap-4">
         <HeinzelAvatar
           label={t("personal.preview")}
@@ -512,6 +559,19 @@ export function ProfileEditor({
         <Button type="submit" disabled={busy || pendingStorageInvalid || (!pending && !name.trim())}>
           {pending ? t("personal.retrySave") : t("personal.save")}
         </Button>
+        {hasUncommittedChanges && !pending && !pendingStorageInvalid && (
+          <Button
+            type="button"
+            variant="outline"
+            disabled={busy}
+            onClick={() => {
+              setName(snapshot.name);
+              setLook(savedLook);
+            }}
+          >
+            Discard unsaved name and look
+          </Button>
+        )}
         {(pending || pendingStorageInvalid) && (
           <Button type="button" variant="outline" disabled={busy} onClick={() => void reload()}>
             {t("personal.reload")}

@@ -288,6 +288,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/heinzel/latest-profile-proposal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Inspect the latest suggested name and look; it has not been applied.
+         * @description Inspect the latest suggested name and look; it has not been applied.
+         */
+        get: operations["heinzel_latest_profile_proposal"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/heinzel/latest-scheduled-agent-proposal": {
         parameters: {
             query?: never;
@@ -7696,6 +7716,29 @@ export interface components {
             working_hours_set: boolean;
         };
         /**
+         * ProfileProposal
+         * @description Private suggested identity and appearance; applying it requires a separate user save.
+         */
+        ProfileProposal: {
+            appearance: components["schemas"]["HeinzelAppearance"];
+            /** Expected Revision */
+            expected_revision: number;
+            /** Name */
+            name: string;
+            /** Preview Sha256 */
+            preview_sha256: string;
+            /** Request Id */
+            request_id: string;
+            /** Session Id */
+            session_id: string;
+            /**
+             * Status
+             * @default proposed
+             * @constant
+             */
+            status: "proposed";
+        };
+        /**
          * ProgressWidget
          * @description How much of something is done.
          */
@@ -8376,9 +8419,9 @@ export interface components {
             contract: string;
             /**
              * Max Usd
-             * @description Proposed maximum USD cost per turn; enforcement is not yet available.
+             * @description Proposed API USD limit, or null for subscription plan limits and unknown cost; not yet enforced.
              */
-            max_usd: number;
+            max_usd: number | null;
             /**
              * Permitted Tools
              * @description The tools the proposed turn may use; this slice permits none.
@@ -11607,6 +11650,7 @@ export type SchemaPluginPage = components['schemas']['PluginPage'];
 export type SchemaPluginSearch = components['schemas']['PluginSearch'];
 export type SchemaPluginUpdate = components['schemas']['PluginUpdate'];
 export type SchemaProfile = components['schemas']['Profile'];
+export type SchemaProfileProposal = components['schemas']['ProfileProposal'];
 export type SchemaProgressWidget = components['schemas']['ProgressWidget'];
 export type SchemaPublishStatus = components['schemas']['PublishStatus'];
 export type SchemaPushed = components['schemas']['Pushed'];
@@ -12149,6 +12193,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ContractGraph"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    heinzel_latest_profile_proposal: {
+        parameters: {
+            query: {
+                session_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProfileProposal"] | null;
                 };
             };
             /** @description Validation Error */

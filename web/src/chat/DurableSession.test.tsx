@@ -506,7 +506,7 @@ describe("personal conversation links", () => {
           request_id: "proposal-one",
           revision: 1,
           contract: "Use the user's context.",
-          max_usd: 0.1,
+          max_usd: null,
           timeout_seconds: 30,
           permitted_tools: [],
           status: "proposed",
@@ -562,10 +562,89 @@ describe("personal conversation links", () => {
     expect(panel.getByText("Keep notes current.")).toBeInTheDocument();
     const proposed = within(await panel.findByRole("region", { name: "Proposed agent terms" }));
     expect(proposed.getByText("Revision 1 · awaiting review")).toBeInTheDocument();
+    expect(proposed.getByText(/Subscription plan · cost unknown/)).toBeInTheDocument();
     expect(proposed.getByText("Use the user's context.")).toBeInTheDocument();
     expect(proposed.getByText(/does not activate the agent/)).toBeInTheDocument();
     expect(calls.some((request) => new URL(request.url).pathname.includes("open-check-in"))).toBe(false);
     expect(calls.some((request) => new URL(request.url).pathname.endsWith("/confirm"))).toBe(false);
+  });
+
+  it("lets the person review a suggested identity before an explicit profile save", async () => {
+    const look = { age: "grown", build: "regular", accessories: [] };
+    const proposedLook = { age: "grown", build: "regular", shirt: "teal", accessories: [] };
+    const suggestion = {
+      session_id: sessionId,
+      request_id: "look-1",
+      expected_revision: 1,
+      name: "Mira",
+      appearance: proposedLook,
+      status: "proposed",
+      preview_sha256: "a".repeat(64),
+    };
+    const saved: unknown[] = [];
+    mockApi({
+      ...shell,
+      "/api/heinzel/session": { ...snapshot, profile_revision: 1, appearance: look },
+      "/api/heinzel/latest-profile-proposal": suggestion,
+      "/api/heinzel/profile": async (request: Request) => {
+        const body = await request.json();
+        saved.push(body);
+        return {
+          ...snapshot,
+          session_id: sessionId,
+          profile_revision: 2,
+          name: body.name,
+          appearance: body.appearance,
+        };
+      },
+    });
+    renderAt(`/heinzel?chat=${sessionId}`);
+    const panel = within(await screen.findByRole("complementary", { name: "Chat" }));
+    fireEvent.click(await panel.findByText(/Customize.*suggested look/));
+    const proposal = within(await panel.findByRole("region", { name: "Suggested identity" }));
+    expect(proposal.getByText("Mira · Proposed")).toBeInTheDocument();
+    expect(saved).toHaveLength(0);
+    fireEvent.click(proposal.getByRole("button", { name: "Use suggested identity" }));
+    expect(panel.getByLabelText("Name")).toHaveValue("Mira");
+    expect(saved).toHaveLength(0);
+    fireEvent.click(panel.getByRole("button", { name: "Save name and look" }));
+    await waitFor(() => expect(saved).toHaveLength(1));
+    expect(saved[0]).toMatchObject({
+      session_id: sessionId,
+      expected_revision: 1,
+      name: "Mira",
+      appearance: proposedLook,
+    });
+  });
+
+  it("does not replace unsaved personal edits or apply a stale suggested identity", async () => {
+    const look = { age: "grown", build: "regular", accessories: [] };
+    const suggestion = {
+      session_id: sessionId,
+      request_id: "look-2",
+      expected_revision: 2,
+      name: "Mira",
+      appearance: look,
+      status: "proposed",
+      preview_sha256: "a".repeat(64),
+    };
+    mockApi({
+      ...shell,
+      "/api/heinzel/session": { ...snapshot, profile_revision: 1, appearance: look },
+      "/api/heinzel/latest-profile-proposal": suggestion,
+    });
+    renderAt(`/heinzel?chat=${sessionId}`);
+    const panel = within(await screen.findByRole("complementary", { name: "Chat" }));
+    fireEvent.click(await panel.findByText(/Customize.*suggested look/));
+    const proposal = within(await panel.findByRole("region", { name: "Suggested identity" }));
+    expect(proposal.getByText(/out of date/)).toBeInTheDocument();
+    expect(proposal.getByRole("button", { name: "Use suggested identity" })).toBeDisabled();
+    fireEvent.change(panel.getByLabelText("Name"), { target: { value: "My own edit" } });
+    expect(proposal.getByText(/current profile edits/)).toBeInTheDocument();
+    expect(panel.getByLabelText("Name")).toHaveValue("My own edit");
+    fireEvent.click(panel.getByRole("button", { name: "Discard unsaved name and look" }));
+    expect(panel.getByLabelText("Name")).toHaveValue("Personal helper");
+    expect(proposal.getByRole("button", { name: "Use suggested identity" })).toBeDisabled();
   });
 
   it("shows only owner-bound recorded tool activity without inputs", async () => {

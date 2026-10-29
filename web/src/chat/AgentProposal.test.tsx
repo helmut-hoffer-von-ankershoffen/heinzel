@@ -82,3 +82,24 @@ it("recovers a lost acknowledgement after reload by retrying the same request", 
   expect(await firstAttempt.clone().json()).toEqual(await secondAttempt.clone().json());
   expect(screen.getByText("Revision 1 · Proposed")).toBeInTheDocument();
 });
+
+it("labels subscription terms honestly and does not convert them to an API budget", async () => {
+  mockApi({
+    "/api/heinzel/latest-scheduled-agent-proposal": {
+      session_id: sessionId,
+      request_id: "plan-proposal",
+      revision: 1,
+      based_on_revision: 0,
+      contract: "Keep the selected artifact current.",
+      max_usd: null,
+      timeout_seconds: 30,
+      permitted_tools: [],
+      status: "proposed",
+      preview_sha256: "a".repeat(64),
+    },
+  });
+  render(<AgentProposal sessionId={sessionId} />);
+  expect(await screen.findByText(/Subscription plan · cost unknown/)).toBeInTheDocument();
+  expect(screen.getByText(/Ask your Heinzel in chat to revise/)).toBeInTheDocument();
+  expect(screen.queryByLabelText("Maximum USD per turn")).not.toBeInTheDocument();
+});

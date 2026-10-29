@@ -96,6 +96,20 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
     retry: false,
     placeholderData: (previous) => previous,
   });
+  const profileProposal = useQuery({
+    queryKey: ["heinzel", "profile-proposal", sessionId],
+    queryFn: async () => {
+      const suggestion = await result(
+        api.GET("/heinzel/latest-profile-proposal", {
+          params: { query: { session_id: sessionId } },
+        }),
+      );
+      if (suggestion && (suggestion.session_id !== sessionId || suggestion.status !== "proposed"))
+        throw new Error("Unexpected profile proposal");
+      return suggestion;
+    },
+    retry: false,
+  });
   const activity = useQuery({
     queryKey: ["heinzel", "tool-activity", sessionId],
     queryFn: async () => {
@@ -399,6 +413,7 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
       await client.invalidateQueries({ queryKey: ["heinzel", "session", sessionId] });
       await client.invalidateQueries({ queryKey: ["heinzel", "tool-activity", sessionId] });
       await client.invalidateQueries({ queryKey: ["heinzel", "agent-proposal", sessionId] });
+      await client.invalidateQueries({ queryKey: ["heinzel", "profile-proposal", sessionId] });
     } catch {
       setError(true);
       await client.invalidateQueries({ queryKey: ["heinzel", "session", sessionId] });
@@ -608,8 +623,16 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
         {query.isError && <p role="alert">{t("durable.unavailable")}</p>}
         {query.data && (
           <details className="rounded-lg border border-border p-3">
-            <summary className="cursor-pointer text-sm font-medium">{t("personal.customize")}</summary>
-            <ProfileEditor initial={query.data} onLock={setProfileLocked} inChat />
+            <summary className="cursor-pointer text-sm font-medium">
+              {t("personal.customize")}
+              {profileProposal.data?.session_id === sessionId && " · suggested look"}
+            </summary>
+            <ProfileEditor
+              initial={query.data}
+              onLock={setProfileLocked}
+              inChat
+              suggestion={profileProposal.data ?? null}
+            />
           </details>
         )}
         {query.data && (

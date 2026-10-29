@@ -1,6 +1,6 @@
 // What a chat shows wherever it is (Home, the right sidebar): the messages, the answer as it streams with the tools
 // it calls, every proposed action as a card that runs only on Confirm, the costs, and the composer.
-import { Check, Info, Send, X } from "lucide-react";
+import { Check, Info, Plus, Send, X } from "lucide-react";
 import { type FormEvent, type RefObject, useId, useState } from "react";
 import type { ModelChoice } from "@/api/chat";
 import type { SchemaChatAction, SchemaChatMessage } from "@/api/client";
@@ -219,7 +219,7 @@ export function Composer({
     if (!text.trim() || !onCreatePersonal || creating || chat.live || chat.loading) return;
     setCreating(true);
     try {
-      if (await onCreatePersonal(text)) setMessage("");
+      if (await onCreatePersonal(text)) setMessage((current) => (current === text ? "" : current));
     } finally {
       setCreating(false);
     }
@@ -245,6 +245,7 @@ export function Composer({
           rows={2}
           value={message}
           maxLength={MESSAGE_LIMIT}
+          disabled={creating}
           onChange={(event) => {
             setMessage(event.target.value);
             typed(); // a soundscape plays softer while you type (ADR 0058)
@@ -253,8 +254,21 @@ export function Composer({
             if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) void submit(event);
           }}
           placeholder={t("chat.placeholder")}
-          className="min-h-9 flex-1 resize-none rounded-lg border border-border bg-input px-2 py-1 text-sm"
+          className="min-h-9 min-w-0 flex-1 resize-none rounded-lg border border-border bg-input px-2 py-1 text-sm"
         />
+        {onCreatePersonal && (
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            aria-label="Create Heinzel and take this message"
+            title="Create Heinzel and take this message"
+            disabled={!message.trim() || creating || chat.live != null || chat.loading}
+            onClick={() => void createPersonal()}
+          >
+            <Plus aria-hidden />
+          </Button>
+        )}
         <Button
           type="submit"
           size="icon"
@@ -264,16 +278,10 @@ export function Composer({
           <Send aria-hidden />
         </Button>
       </form>
-      {onCreatePersonal && (
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          disabled={!message.trim() || creating || chat.live != null || chat.loading}
-          onClick={() => void createPersonal()}
-        >
-          Create Heinzel and take this message
-        </Button>
+      {creating && (
+        <span role="status" className="sr-only">
+          Creating your Heinzel…
+        </span>
       )}
       <ModelPicker value={choice} onChange={setPicked} disabled={chat.live != null || creating} />
     </div>

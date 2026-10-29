@@ -9019,6 +9019,57 @@
         "title": "Profile",
         "type": "object"
       },
+      "ProfileProposal": {
+        "additionalProperties": false,
+        "description": "Private suggested identity and appearance; applying it requires a separate user save.",
+        "properties": {
+          "appearance": {
+            "$ref": "#/components/schemas/HeinzelAppearance"
+          },
+          "expected_revision": {
+            "minimum": 1.0,
+            "title": "Expected Revision",
+            "type": "integer"
+          },
+          "name": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "preview_sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Preview Sha256",
+            "type": "string"
+          },
+          "request_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "session_id": {
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "status": {
+            "const": "proposed",
+            "default": "proposed",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "request_id",
+          "expected_revision",
+          "name",
+          "appearance",
+          "preview_sha256"
+        ],
+        "title": "ProfileProposal",
+        "type": "object"
+      },
       "ProgressWidget": {
         "additionalProperties": false,
         "description": "How much of something is done.",
@@ -10094,10 +10145,17 @@
             "type": "string"
           },
           "max_usd": {
-            "description": "Proposed maximum USD cost per turn; enforcement is not yet available.",
-            "exclusiveMinimum": 0.0,
-            "title": "Max Usd",
-            "type": "number"
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Proposed API USD limit, or null for subscription plan limits and unknown cost; not yet enforced.",
+            "title": "Max Usd"
           },
           "permitted_tools": {
             "description": "The tools the proposed turn may use; this slice permits none.",
@@ -16219,6 +16277,57 @@
           }
         },
         "summary": "Show the workflow your contracts make: what each maintains and reads, cycles, unmaintained inputs.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/latest-profile-proposal": {
+      "get": {
+        "description": "Inspect the latest suggested name and look; it has not been applied.",
+        "operationId": "heinzel_latest_profile_proposal",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ProfileProposal"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Response Heinzel Latest Profile Proposal"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Inspect the latest suggested name and look; it has not been applied.",
         "tags": [
           "heinzel"
         ]

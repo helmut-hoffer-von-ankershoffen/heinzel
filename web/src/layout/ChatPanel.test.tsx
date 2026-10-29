@@ -1,6 +1,6 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { parseEvents } from "@/api/stream";
 import { answered, base, empty, frame, mockWithHeldStream, mockWithStream, msg, proposal } from "@/test/chat";
 import { expectAccessible, mockApi, renderAt } from "@/test/render";
@@ -96,7 +96,7 @@ describe("ChatPanel", () => {
           request_id: "proposal",
           revision: 1,
           contract: "Keep the chosen artifact current.",
-          max_usd: 0.1,
+          max_usd: null,
           timeout_seconds: 30,
           permitted_tools: [],
           status: "proposed",
@@ -117,6 +117,64 @@ describe("ChatPanel", () => {
     expect(review.getByText("Revision 1 · awaiting review")).toBeInTheDocument();
     expect(review.getByText(/does not activate the agent/)).toBeInTheDocument();
     expect(calls.some((request) => new URL(request.url).pathname.endsWith("/confirm"))).toBe(false);
+  });
+
+  it("locks workshop text during creation so it cannot erase a later edit", async () => {
+    const id = "hz-01ARZ3NDEKTSV4RRFFQ69G5FAV";
+    let finish: ((value: object) => void) | undefined;
+    mockApi({
+      ...base,
+      "/api/heinzel/new-chat": () =>
+        new Promise<object>((resolve) => {
+          finish = resolve;
+        }),
+      "/api/heinzel/session": { session_id: id, heinzel_id: id, name: "New personal helper", messages: [] },
+      "/api/heinzel/sessions": { sessions: [] },
+    });
+    const user = userEvent.setup();
+    renderAt("/doctor");
+    const box = screen.getByLabelText("Your message");
+    await user.type(box, "First request");
+    await user.click(screen.getByRole("button", { name: "Create Heinzel and take this message" }));
+    expect(await screen.findByText("Creating your Heinzel…")).toBeInTheDocument();
+    expect(box).toBeDisabled();
+    await user.type(box, " later edit");
+    expect(box).toHaveValue("First request");
+    finish?.({ session_id: id, heinzel_id: id, name: "New personal helper", messages: [] });
+    expect(await screen.findByLabelText("Message your Heinzel")).toHaveValue("First request");
+  });
+
+  it("keeps the sentence and creation identity when local draft storage fails", async () => {
+    const id = "hz-01ARZ3NDEKTSV4RRFFQ69G5FAV";
+    const requests: string[] = [];
+    const original = Storage.prototype.setItem;
+    let fail = true;
+    const setter = vi.spyOn(Storage.prototype, "setItem").mockImplementation(function (this: Storage, key, value) {
+      if (fail && key === `hz.durable.composer.${id}`) throw new Error("storage unavailable");
+      return original.call(this, key, value);
+    });
+    mockApi({
+      ...base,
+      "/api/heinzel/new-chat": async (request: Request) => {
+        requests.push((await request.json()).request_id);
+        return { session_id: id, heinzel_id: id, name: "New personal helper", messages: [] };
+      },
+      "/api/heinzel/session": { session_id: id, heinzel_id: id, name: "New personal helper", messages: [] },
+      "/api/heinzel/sessions": { sessions: [] },
+    });
+    const user = userEvent.setup();
+    renderAt("/doctor");
+    const box = screen.getByLabelText("Your message");
+    await user.type(box, "Preserve this request");
+    await user.click(screen.getByRole("button", { name: "Create Heinzel and take this message" }));
+    expect(await screen.findByRole("alert")).toBeInTheDocument();
+    expect(box).toHaveValue("Preserve this request");
+    fail = false;
+    await user.click(screen.getByRole("button", { name: "Create Heinzel and take this message" }));
+    expect(await screen.findByLabelText("Message your Heinzel")).toHaveValue("Preserve this request");
+    expect(requests).toHaveLength(2);
+    expect(requests[1]).toBe(requests[0]);
+    setter.mockRestore();
   });
 
   it("does not overwrite a recovered agent draft when taking a workshop sentence", async () => {
@@ -369,5 +427,5 @@ it("keeps a meeting-reminder request in workshop chat without silently creating 
       (request) => request.url.includes("/heinzel/new-chat") || request.url.includes("/heinzel/propose-check-in"),
     ),
   ).toBe(false);
-  expect(screen.getByText(/Create it to review and send your message in its chat/)).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Create Heinzel and take this message" })).toBeInTheDocument();
 });

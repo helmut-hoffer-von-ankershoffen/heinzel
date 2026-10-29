@@ -17,10 +17,6 @@ try {
   if (await setup.isVisible().catch(() => false)) await setup.getByRole("button", { name: "Close setup" }).click();
   await page.getByRole("button", { name: "Create a personal Heinzel" }).click();
   await page.getByRole("button", { name: "Continue to schedule setup" }).click();
-  await page.getByLabel("Message your Heinzel").fill("notify me every 5 minutes");
-  await page.getByRole("button", { name: "Prepare schedule review" }).click();
-  await page.getByText(/configured agent runner could not answer/i).waitFor();
-
   const readSchedule = async () =>
     await page.evaluate(async () => {
       const session = new URLSearchParams(location.search).get("chat");

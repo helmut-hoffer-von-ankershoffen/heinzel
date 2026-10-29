@@ -78,7 +78,7 @@ export function AgentProposal({ sessionId }: { sessionId: string }) {
     setProposal(current);
     if (current) {
       setContract(current.contract);
-      setBudget(String(current.max_usd));
+      setBudget(current.max_usd === null ? "" : String(current.max_usd));
       setTimeoutSeconds(String(current.timeout_seconds));
     }
     return current;
@@ -97,7 +97,7 @@ export function AgentProposal({ sessionId }: { sessionId: string }) {
         const draft = recovery.request ?? current;
         if (draft) {
           setContract(draft.contract);
-          setBudget(String(draft.max_usd));
+          setBudget(draft.max_usd === null ? "" : String(draft.max_usd));
           setTimeoutSeconds(String(draft.timeout_seconds));
         }
       })
@@ -171,60 +171,67 @@ export function AgentProposal({ sessionId }: { sessionId: string }) {
               <p>Revision {proposal.revision} · Proposed</p>
               <p className="whitespace-pre-wrap">{proposal.contract}</p>
               <p>
-                Per turn: ${proposal.max_usd}, {proposal.timeout_seconds} seconds. This proposal grants no tools.
+                {proposal.max_usd === null
+                  ? "Subscription plan · cost unknown"
+                  : `Proposed API limit: $${proposal.max_usd} per turn`}
+                {` · ${proposal.timeout_seconds} seconds. This proposal grants no tools.`}
               </p>
               <p className="break-all">Preview: {proposal.preview_sha256}</p>
             </div>
           )}
-          <form
-            onSubmit={(event) => {
-              event.preventDefault();
-              void save();
-            }}
-            className="space-y-2"
-          >
-            <label className="block">
-              Instructions
-              <textarea
-                className="block w-full rounded border bg-background p-2"
-                required
-                maxLength={4000}
-                value={contract}
-                disabled={pending !== null}
-                onChange={(event) => setContract(event.target.value)}
-              />
-            </label>
-            <label className="block">
-              Maximum USD per turn
-              <input
-                className="ml-2 rounded border bg-background p-1"
-                type="number"
-                min="0.01"
-                step="any"
-                required
-                value={budget}
-                disabled={pending !== null}
-                onChange={(event) => setBudget(event.target.value)}
-              />
-            </label>
-            <label className="block">
-              Timeout in seconds
-              <input
-                className="ml-2 rounded border bg-background p-1"
-                type="number"
-                min="1"
-                max="300"
-                step="1"
-                required
-                value={timeout}
-                disabled={pending !== null}
-                onChange={(event) => setTimeoutSeconds(event.target.value)}
-              />
-            </label>
-            <Button type="submit" disabled={saving || recovery.blocked || (error && !pending)}>
-              {pending ? "Retry same proposal" : proposal ? "Propose revised terms" : "Propose terms"}
-            </Button>
-          </form>
+          {proposal?.max_usd === null && !pending ? (
+            <p>Ask your Heinzel in chat to revise these subscription terms.</p>
+          ) : (
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                void save();
+              }}
+              className="space-y-2"
+            >
+              <label className="block">
+                Instructions
+                <textarea
+                  className="block w-full rounded border bg-background p-2"
+                  required
+                  maxLength={4000}
+                  value={contract}
+                  disabled={pending !== null}
+                  onChange={(event) => setContract(event.target.value)}
+                />
+              </label>
+              <label className="block">
+                Maximum USD per turn
+                <input
+                  className="ml-2 rounded border bg-background p-1"
+                  type="number"
+                  min="0.01"
+                  step="any"
+                  required
+                  value={budget}
+                  disabled={pending !== null}
+                  onChange={(event) => setBudget(event.target.value)}
+                />
+              </label>
+              <label className="block">
+                Timeout in seconds
+                <input
+                  className="ml-2 rounded border bg-background p-1"
+                  type="number"
+                  min="1"
+                  max="300"
+                  step="1"
+                  required
+                  value={timeout}
+                  disabled={pending !== null}
+                  onChange={(event) => setTimeoutSeconds(event.target.value)}
+                />
+              </label>
+              <Button type="submit" disabled={saving || recovery.blocked || (error && !pending)}>
+                {pending ? "Retry same proposal" : proposal ? "Propose revised terms" : "Propose terms"}
+              </Button>
+            </form>
+          )}
         </>
       )}
       {recovery.blocked && <p role="alert">The pending proposal could not be recovered; no new proposal was sent.</p>}

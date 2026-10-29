@@ -147,9 +147,6 @@ export function ChatPanel({ onCollapse }: { onCollapse: () => void }) {
         <div ref={end} />
       </div>
       <div className="chat-panel-composer border-t border-border p-3">
-        <p className="mb-1 text-xs text-muted-foreground">
-          Write what your new Heinzel should do. Create it to review and send your message in its chat.
-        </p>
         <Composer
           chat={chat}
           context={`route:${location.pathname}`}

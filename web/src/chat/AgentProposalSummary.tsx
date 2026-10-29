@@ -24,8 +24,10 @@ export function AgentProposalSummary({ sessionId }: { sessionId: string }) {
         <summary className="cursor-pointer">Review proposed terms</summary>
         <p className="whitespace-pre-wrap break-words">{query.data.contract}</p>
         <p>
-          Proposed limit: ${query.data.max_usd} per turn · {query.data.timeout_seconds} seconds. These limits are not
-          enforced yet.
+          {query.data.max_usd === null
+            ? "Subscription plan · cost unknown"
+            : `Proposed API limit: $${query.data.max_usd} per turn`}
+          {` · ${query.data.timeout_seconds} seconds. These terms are not enforced yet.`}
         </p>
         <p>This proposal does not activate the agent or grant tool permissions.</p>
       </details>
