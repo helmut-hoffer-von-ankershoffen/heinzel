@@ -291,9 +291,19 @@ class _Progress:
         return EngineResult(status, self.current, self.steps, problem=f"The turn was {status}")
 
 
-def build_agent(model: Model, instructions: str) -> Agent[TurnDeps, Outcome]:
-    """Build one turn with closed structured output; tools are added through checked factories later."""
-    return Agent(model, output_type=Outcome, deps_type=TurnDeps, instructions=instructions, retries=2)
+def build_agent(
+    model: Model, instructions: str, dispatch: Callable[[str, dict[str, JsonValue]], str] | None = None
+) -> Agent[TurnDeps, Outcome]:
+    """Build a typed turn; only an explicitly supplied host dispatcher can execute a tool."""
+    agent = Agent(model, output_type=Outcome, deps_type=TurnDeps, instructions=instructions, retries=2)
+    if dispatch is not None:
+
+        def use_tool(name: str, arguments: dict[str, JsonValue]) -> str:
+            """Request one host-controlled tool by name with JSON arguments."""
+            return dispatch(name, arguments)
+
+        agent.tool_plain(use_tool)
+    return agent
 
 
 def new_conversation_turn(previous: Conversation) -> Conversation:
@@ -366,6 +376,7 @@ async def run_turn(  # noqa: PLR0913 - explicit inputs and persistence policy fo
     checkpoint: Callable[[EngineCheckpoint], None],
     conversation: Conversation | None = None,
     resume_from: EngineCheckpoint | None = None,
+    dispatch: Callable[[str, dict[str, JsonValue]], str] | None = None,
 ) -> EngineResult:
     """Drive and checkpoint every node, retaining completed state when a cap or model validation fails.
 
@@ -374,7 +385,11 @@ async def run_turn(  # noqa: PLR0913 - explicit inputs and persistence policy fo
 
     Raises:
         asyncio.CancelledError: If the caller cancels the task; a completed partial snapshot is retained first.
+        ValueError: If a dispatched turn attempts an unsupported resume.
     """
+    if dispatch is not None and resume_from is not None:
+        msg = "Tool-dispatched turns cannot resume until tool authority can be revalidated"
+        raise ValueError(msg)
     context_hash = _context_hash(model, deps, instructions, limits)
     restored = _restore(resume_from, context_hash, conversation, prompt, deps.cause)
     if isinstance(restored, EngineResult):
@@ -386,7 +401,7 @@ async def run_turn(  # noqa: PLR0913 - explicit inputs and persistence policy fo
         terminal = EngineResult("budget", current, progress.steps + 1, problem="Saved usage has no priced cost")
         progress.save("UnpricedUsage", current.messages, current.usage, current.conversation_id, terminal)
         return EngineResult("budget", progress.current, progress.steps, problem=terminal.problem)
-    agent = build_agent(model, instructions)
+    agent = build_agent(model, instructions, dispatch)
     try:
         async with agent.iter(
             prompt,
