@@ -1,5 +1,5 @@
 # Die Heinzelmännchen, a stream on YouTube (ADR 0058), never on by default.
-# Played in YouTube's privacy-enhanced player (youtube-nocookie.com); nothing of YouTube loads until you press Play.
+# By default, played in YouTube's privacy-enhanced player; nothing of YouTube loads until you press Play.
 name = "focus"
 title = "Die Heinzelmännchen"
 kind = "stream"

@@ -25,6 +25,7 @@ IDENTITY_LIMIT = 128
 PRIVATE_READ = "private:read"
 PRIVATE_WRITE = "private:write"
 LOCAL_PERMISSIONS = frozenset({PRIVATE_READ, PRIVATE_WRITE})
+LOCAL_READ_PERMISSIONS = frozenset({PRIVATE_READ})
 Authentication = Literal["cli", "mcp-stdio", "daemon", "api-bearer", "web-session", "web-device"]
 
 
@@ -112,6 +113,17 @@ class CurrentUser:
             HeinzelError: If local identity storage is unsafe or unreadable.
         """
         identity = CallIdentity(self.owner(), authentication, "local", "hz-local", LOCAL_PERMISSIONS)
+        with self.using(identity):
+            yield
+
+    @contextlib.contextmanager
+    def local_read(self, authentication: Literal["cli", "mcp-stdio", "daemon"]) -> Generator[None]:
+        """Authenticate a trusted local read as the owner, without granting private writes.
+
+        Raises:
+            HeinzelError: If local identity storage is unsafe or unreadable.
+        """
+        identity = CallIdentity(self.owner(), authentication, "local", "hz-local", LOCAL_READ_PERMISSIONS)
         with self.using(identity):
             yield
 

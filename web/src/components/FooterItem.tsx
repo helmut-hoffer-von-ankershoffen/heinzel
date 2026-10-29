@@ -5,8 +5,9 @@ import type { LucideIcon } from "lucide-react";
 import { type ReactNode, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { t } from "@/i18n";
+import { placePopover, popoverHeight } from "@/lib/placement";
 import { cn } from "@/lib/utils";
-import { placePopover } from "@/sound/dock";
+import { watchViewport } from "@/lib/viewport";
 import { FOOTER_RELOCATED, useFooterVisibility } from "./FooterLayout";
 
 export type State = "ok" | "warn" | "bad" | "off";
@@ -94,7 +95,7 @@ export function FooterItem({
     const place = () => {
       const box = element.getBoundingClientRect(),
         trigger = anchor.getBoundingClientRect();
-      const maxHeight = Math.max(1, window.innerHeight - 16);
+      const maxHeight = popoverHeight(trigger);
       const target =
         align === "left"
           ? { left: trigger.left, right: trigger.left + box.width, top: trigger.top, bottom: trigger.bottom }
@@ -114,13 +115,13 @@ export function FooterItem({
     const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(place);
     observer?.observe(anchor);
     observer?.observe(element);
-    window.addEventListener("resize", place);
+    const unwatchViewport = watchViewport(place);
     window.addEventListener(FOOTER_RELOCATED, place);
     window.addEventListener("scroll", place, true);
     return () => {
       position.current = null;
       observer?.disconnect();
-      window.removeEventListener("resize", place);
+      unwatchViewport();
       window.removeEventListener(FOOTER_RELOCATED, place);
       window.removeEventListener("scroll", place, true);
     };
@@ -148,7 +149,7 @@ export function FooterItem({
     // biome-ignore lint/a11y/noStaticElementInteractions: hover and focus only show what the button opens on click
     <span
       ref={wrapper}
-      className="relative shrink-0"
+      className="relative inline-flex shrink-0"
       data-state={state}
       onMouseEnter={() => {
         window.clearTimeout(timer.current);
@@ -213,7 +214,7 @@ export function FooterItem({
           <div
             ref={pane}
             id={id}
-            className="fixed z-[var(--layer-popover,40)] overflow-y-auto rounded-xl"
+            className="viewport-popover fixed z-[var(--layer-popover,40)] overflow-y-auto rounded-xl"
             style={at ?? { left: 0, top: 0, visibility: "hidden" }}
             onMouseEnter={() => {
               window.clearTimeout(timer.current);
@@ -228,7 +229,7 @@ export function FooterItem({
             <section
               aria-label={label}
               className={cn(
-                "w-72 max-w-[calc(100vw-2rem)] rounded-xl border border-border bg-popover p-2 text-sm text-foreground shadow-xl",
+                "w-72 max-w-full rounded-xl border border-border bg-popover p-2 text-sm text-foreground shadow-xl",
                 popoverClassName,
               )}
             >

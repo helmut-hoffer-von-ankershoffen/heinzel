@@ -23,6 +23,7 @@ type Props = {
   /** Save a confirmed change for the next manual launch when this server cannot restart itself. */
   onUnsupported?: () => Promise<void> | void;
   deferredMessage?: string;
+  initialObservation?: RestartObservation;
   options?: ApplyOptions;
 };
 
@@ -36,12 +37,15 @@ export function RestartAndApply({
   onApplied,
   onUnsupported,
   deferredMessage,
+  initialObservation,
   options,
 }: Props) {
   const [confirming, setConfirming] = useState(false);
   const [phase, setPhase] = useState<ApplyPhase | null>(null);
-  const [error, setError] = useState<Error | null>(null);
-  const [observation, setObservation] = useState<RestartObservation | undefined>();
+  const [error, setError] = useState<Error | null>(() =>
+    initialObservation ? new Error(t("lifecycle.restartOutcomeUnknown")) : null,
+  );
+  const [observation, setObservation] = useState<RestartObservation | undefined>(initialObservation);
   const [pending, setPending] = useState(false);
   const [deferred, setDeferred] = useState(false);
   const controller = useRef<AbortController | null>(null);
@@ -65,6 +69,10 @@ export function RestartAndApply({
     const settingsOptions: ApplyOptions = {
       ...options,
       signal: options?.signal ? AbortSignal.any([options.signal, active.signal]) : active.signal,
+      onObservation: (next) => {
+        options?.onObservation?.(next);
+        if (mounted.current) setObservation(next);
+      },
       onPhase: (next) => {
         options?.onPhase?.(next);
         if (mounted.current && next !== "applied") setPhase(next);
@@ -78,6 +86,7 @@ export function RestartAndApply({
       if (mounted.current) {
         setPhase("applied");
         setObservation(undefined);
+        setError(null);
       }
     } catch (error) {
       let failure: unknown = error;
@@ -106,7 +115,7 @@ export function RestartAndApply({
 
   return (
     <div className="space-y-2 text-sm">
-      {!deferred && (
+      {!deferred && !observation && (
         <Button size="sm" variant="outline" disabled={pending} onClick={() => setConfirming(true)}>
           {t("lifecycle.action")}
         </Button>

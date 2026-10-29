@@ -2,8 +2,9 @@
 // model and effort, the tokens and the cost (ADR 0057). The cost is labelled honestly: a subscription CLI reports what
 // the run would cost at API prices, which the plan covers; only API-key access is real spend.
 import { Info } from "lucide-react";
-import { useId, useState } from "react";
+import { useId, useRef, useState } from "react";
 import type { SchemaChatMessage } from "@/api/client";
+import { AnchoredPopover } from "@/components/AnchoredPopover";
 import { format, t } from "@/i18n";
 
 const tokens = new Intl.NumberFormat("en");
@@ -26,6 +27,7 @@ function seconds(value: number): string {
 export function MessageInfo({ message, first }: { message: SchemaChatMessage; first: boolean }) {
   const [open, setOpen] = useState(false);
   const panelId = useId();
+  const trigger = useRef<HTMLButtonElement>(null);
   const via = [
     message.access || message.runner || t("chat.agent"),
     message.model,
@@ -44,6 +46,7 @@ export function MessageInfo({ message, first }: { message: SchemaChatMessage; fi
   return (
     <span className="relative inline-flex">
       <button
+        ref={trigger}
         type="button"
         aria-label={t("chat.aboutAnswer")}
         aria-describedby={panelId}
@@ -57,11 +60,13 @@ export function MessageInfo({ message, first }: { message: SchemaChatMessage; fi
       >
         <Info aria-hidden />
       </button>
-      <span
+      <AnchoredPopover
+        anchor={trigger}
+        side="above"
         id={panelId}
         role="tooltip"
         hidden={!open}
-        className="absolute bottom-6 left-0 z-(--layer-popover) w-72 rounded-lg border border-border bg-popover p-3 text-xs text-foreground shadow-md"
+        className="w-72 p-3 text-xs text-foreground"
       >
         <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
           <dt className="text-muted-foreground">{t("chat.generated")}</dt>
@@ -84,7 +89,7 @@ export function MessageInfo({ message, first }: { message: SchemaChatMessage; fi
           <dd>{costLabel(message)}</dd>
         </dl>
         {explain && <span className="mt-2 block text-muted-foreground">{t("chat.whyCost")}</span>}
-      </span>
+      </AnchoredPopover>
     </span>
   );
 }

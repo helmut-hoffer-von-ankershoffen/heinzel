@@ -11,16 +11,13 @@ const tone = (value: number | null | undefined): State =>
   value == null ? "off" : value >= 90 ? "bad" : value >= 75 ? "warn" : "ok";
 const COLOUR: Record<State, string> = { off: "bg-muted-foreground", ok: "bg-ok", warn: "bg-warn", bad: "bg-bad" };
 
-function Bar({ label, value, state }: { label: string; value: number | null | undefined; state: State }) {
+function Bar({ value, state }: { value: number | null | undefined; state: State }) {
   return (
-    <span data-state={state} className="flex items-center gap-0.5">
-      <span>{label} </span>
-      <span className="h-2.5 w-3 overflow-hidden rounded-sm border border-current/30">
-        <span
-          className={cn("block h-full", COLOUR[state], value == null && "opacity-30")}
-          style={{ width: `${value == null ? 100 : Math.min(100, Math.max(0, value))}%` }}
-        />
-      </span>
+    <span data-state={state} className="flex h-4 w-1 items-end overflow-hidden rounded-sm bg-muted-foreground/15">
+      <span
+        className={cn("block w-full", COLOUR[state], value == null && "opacity-30")}
+        style={{ height: `${value == null ? 100 : Math.min(100, Math.max(8, value))}%` }}
+      />
     </span>
   );
 }
@@ -49,19 +46,17 @@ export function ResourceStatus() {
       triggerLabel={t("resource.trigger", { summary })}
       state={state}
       content={
-        <span aria-hidden className="flex items-center gap-1 font-mono text-[10px] tabular-nums">
-          <Bar label={t("resource.cpu")} value={cpu} state={tone(cpu)} />
-          <Bar label={t("resource.memory")} value={memory} state={tone(memory)} />
-          <Bar
-            label={t("resource.load")}
-            value={load == null || cores == null ? null : (load / (2 * cores)) * 100}
-            state={loadState}
-          />
+        <span aria-hidden className="flex h-4 items-end gap-px">
+          <Bar value={cpu} state={tone(cpu)} />
+          <Bar value={memory} state={tone(memory)} />
+          <Bar value={load == null || cores == null ? null : (load / (2 * cores)) * 100} state={loadState} />
         </span>
       }
     >
       <div className="space-y-2 px-1.5 pb-1.5">
-        <p className="text-xs text-muted-foreground">{t("resource.host")}</p>
+        <p className="break-words text-xs text-muted-foreground">
+          {t("resource.host", { hostname: report?.hostname ?? t("resource.unknown") })}
+        </p>
         <dl className="grid grid-cols-2 gap-x-2 gap-y-1 tabular-nums">
           <dt>{t("resource.cpu")}</dt>
           <dd>{percent(cpu)}</dd>

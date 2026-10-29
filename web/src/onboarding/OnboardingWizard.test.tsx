@@ -31,7 +31,10 @@ const answers = {
 
 const newcomer = { ...profile, role: null, timezone: null };
 
-afterEach(() => localStorage.clear());
+afterEach(() => {
+  localStorage.clear();
+  vi.restoreAllMocks();
+});
 
 describe("progress", () => {
   it("asks while role or time zone is unknown, and names a contract from a sentence", () => {
@@ -197,6 +200,17 @@ describe("Onboarding notifications step", { timeout: 20_000 }, () => {
     await user.click(within(dialog).getByRole("button", { name: /Notifications/ }));
     return { user, dialog };
   };
+
+  it("guides iPhone tabs to the Home Screen without offering server installation or an ineffective permission button", async () => {
+    vi.spyOn(navigator, "userAgent", "get").mockReturnValue("Mozilla/5.0 (iPhone) AppleWebKit/605.1.15");
+    const { user, dialog } = await open({ "/api/system/notify/test": blocked });
+    expect(within(dialog).getByRole("button", { name: "Allow notifications" })).toBeDisabled();
+    expect(within(dialog).getByText(/Add to Home Screen/)).toBeInTheDocument();
+    expect(within(dialog).queryByRole("button", { name: "Install the daemon" })).not.toBeInTheDocument();
+    await user.click(within(dialog).getByRole("button", { name: "Send a test notice" }));
+    const result = await within(dialog).findByRole("region", { name: "How the test went" });
+    expect(result).not.toHaveTextContent(/macOS|native detail/);
+  });
 
   it("shows how each way of reaching you stands after the test notice, with its fix", async () => {
     const { user, dialog } = await open({

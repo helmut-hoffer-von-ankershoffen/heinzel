@@ -350,3 +350,109 @@ body {
     display: none;
   }
 }
+
+/* Dialogs stay within Safari's visible area as browser chrome, zoom and the keyboard change it. */
+.viewport-overlay {
+  left: var(--hz-viewport-left, 0px);
+  top: var(--hz-viewport-top, 0px);
+  width: var(--hz-viewport-width, 100vw);
+  height: var(--hz-viewport-height, 100dvh);
+  padding-top: max(1rem, var(--hz-safe-area-top, env(safe-area-inset-top, 0px)));
+  padding-right: max(1rem, var(--hz-safe-area-right, env(safe-area-inset-right, 0px)));
+  padding-bottom: max(1rem, var(--hz-safe-area-bottom, env(safe-area-inset-bottom, 0px)));
+  padding-left: max(1rem, var(--hz-safe-area-left, env(safe-area-inset-left, 0px)));
+}
+
+/* Small form text makes iOS zoom the entire page on focus, stranding fixed controls off screen. */
+@media (pointer: coarse) {
+  :root input,
+  :root textarea,
+  :root select {
+    font-size: max(16px, 1em);
+  }
+}
+
+:root {
+  --hz-viewport-safe-top: var(--hz-safe-area-top, env(safe-area-inset-top, 0px));
+  --hz-viewport-safe-right: var(--hz-safe-area-right, env(safe-area-inset-right, 0px));
+  --hz-viewport-safe-bottom: var(--hz-safe-area-bottom, env(safe-area-inset-bottom, 0px));
+  --hz-viewport-safe-left: var(--hz-safe-area-left, env(safe-area-inset-left, 0px));
+}
+
+.search-dialog,
+.confirmation-dialog {
+  left: calc(var(--hz-viewport-left, 0px) + var(--hz-viewport-width, 100vw) / 2);
+  top: calc(var(--hz-viewport-top, 0px) + max(1rem, var(--hz-viewport-safe-top)));
+  margin: 0;
+  transform: translateX(-50%);
+  max-height: calc(
+    var(--hz-viewport-height, 100dvh) -
+    max(1rem, var(--hz-viewport-safe-top)) -
+    max(1rem, var(--hz-viewport-safe-bottom))
+  );
+}
+
+.viewport-popover {
+  max-width: calc(
+    var(--hz-viewport-width, 100vw) -
+    var(--hz-viewport-safe-left) -
+    var(--hz-viewport-safe-right) -
+    1rem
+  );
+  max-height: calc(
+    var(--hz-viewport-height, 100dvh) -
+    var(--hz-viewport-safe-top) -
+    var(--hz-viewport-safe-bottom) -
+    1rem
+  );
+}
+
+/* Short phone workspaces keep navigation, session actions and the composer usable together. */
+:root[data-keyboard-open="true"] .workspace-panel[data-placement="below"] {
+  top: 0;
+}
+:root[data-keyboard-open="true"] .workspace-panel {
+  --workspace-tab-padding: 0px;
+  --workspace-composer-padding: 0.5rem;
+  --workspace-input-height: 2.25rem;
+  --workspace-chat-header-height: 2rem;
+  --workspace-cost-margin: 0px;
+  --workspace-cost-font: 10px;
+  --workspace-cost-leading: 14px;
+}
+@media (max-height: 400px) {
+  .workspace-panel {
+    --workspace-tab-padding: 0px;
+    --workspace-composer-padding: 0.5rem;
+    --workspace-input-height: 2.25rem;
+    --workspace-chat-header-height: 2rem;
+    --workspace-cost-margin: 0px;
+    --workspace-cost-font: 10px;
+    --workspace-cost-leading: 14px;
+  }
+  .workspace-panel[data-placement="below"]:not([data-active="page"]) {
+    top: 0;
+  }
+}
+.workspace-tabs {
+  padding-block: var(--workspace-tab-padding, 0.25rem);
+}
+.chat-panel-header {
+  height: var(--workspace-chat-header-height, 2.5rem);
+}
+@media (min-width: 640px) {
+  .chat-panel-header {
+    height: var(--workspace-chat-header-height, 3rem);
+  }
+}
+.chat-panel-composer {
+  padding: var(--workspace-composer-padding, 0.75rem);
+}
+.chat-panel-composer textarea {
+  height: var(--workspace-input-height, auto);
+}
+.chat-panel-costs {
+  margin-top: var(--workspace-cost-margin, 0.375rem);
+  font-size: var(--workspace-cost-font, 0.75rem);
+  line-height: var(--workspace-cost-leading, 1rem);
+}

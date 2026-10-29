@@ -57,7 +57,7 @@ export function NotificationSettings() {
           role="switch"
           aria-checked={state === "on"}
           checked={state === "on"}
-          disabled={busy || state === "unsupported" || state === "denied"}
+          disabled={busy || state === "unsupported" || state === "install" || state === "denied"}
           onChange={(event) => void toggle(event.target.checked)}
         />
         {t("notify.toggle")}

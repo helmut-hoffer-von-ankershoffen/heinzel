@@ -243,6 +243,8 @@ def test_a_first_party_plugin_is_added_by_name_and_the_previews_hint_works_paste
     [hint] = [line for line in preview.splitlines() if line.startswith("To install: ")]
     command = shlex.split(hint.removeprefix("To install: "))
     assert command[0] == "hz"
+    operation_id = command[command.index("--operation-id") + 1]
+    assert re.fullmatch(r"[A-Za-z0-9_-]{40,50}", operation_id)
     assert "Installed heinzel-clock" in sandbox.run(sandbox.hz_bin, *command[1:])
     assert [p["distribution"] for p in json.loads(sandbox.hz("system", "plugin", "list", "--json"))] == [
         "heinzel-clock"

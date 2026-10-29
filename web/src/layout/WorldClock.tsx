@@ -12,7 +12,7 @@ import { zoneClock } from "@/lib/zoneTime";
 import { city, knownZone, useZones } from "./StatusBar";
 
 /** Both a labelled time list and a globe. The globe never contacts a map service. */
-export function WorldClock({ onClose }: { onClose: () => void }) {
+export function WorldClock({ onClose, flowing = false }: { onClose: () => void; flowing?: boolean }) {
   const zones = useZones();
   const [now, setNow] = useState(() => new Date());
   const [phi, setPhi] = useState(0);
@@ -125,7 +125,7 @@ export function WorldClock({ onClose }: { onClose: () => void }) {
   );
   const hover = markers.find((point) => point.zone === hovered && point.visible);
   return (
-    <section className="flex h-full flex-col" aria-label={t("worldClock.title")}>
+    <section className={flowing ? "flex flex-col" : "flex h-full flex-col"} aria-label={t("worldClock.title")}>
       <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-3">
         <Globe aria-hidden className="size-4" />
         <h2 className="flex-1 font-semibold">{t("worldClock.title")}</h2>
@@ -133,7 +133,7 @@ export function WorldClock({ onClose }: { onClose: () => void }) {
           <X aria-hidden />
         </Button>
       </header>
-      <div className="min-h-0 flex-1 overflow-auto p-4">
+      <div className={flowing ? "p-4" : "min-h-0 flex-1 overflow-auto p-4"}>
         {!times.length ? (
           <p className="text-sm text-muted-foreground">
             {zones.isLoading ? t("worldClock.loading") : t("worldClock.empty")}
@@ -182,7 +182,7 @@ export function WorldClock({ onClose }: { onClose: () => void }) {
               </svg>
               {!flat && (
                 <div
-                  className="absolute inset-0 touch-none"
+                  className="absolute inset-0 touch-pan-y"
                   onPointerDown={(event) => {
                     drag.current = event.clientX;
                     event.currentTarget.setPointerCapture(event.pointerId);
@@ -221,7 +221,7 @@ export function WorldClock({ onClose }: { onClose: () => void }) {
                     <button
                       key={point.zone}
                       type="button"
-                      aria-label={`${city(point.zone)} · ${point.zone}`}
+                      aria-label={city(point.zone)}
                       aria-describedby={hovered === point.zone ? `world-clock-marker-${point.zone}` : undefined}
                       className="absolute z-10 size-6 -translate-x-1/2 -translate-y-1/2 rounded-full focus-visible:outline-2 focus-visible:outline-offset-2"
                       style={{ left: `${point.x}%`, top: `${point.y}%` }}
@@ -265,7 +265,7 @@ export function WorldClock({ onClose }: { onClose: () => void }) {
                   className="pointer-events-none absolute z-(--layer-popover) -translate-x-1/2 -translate-y-full rounded-md border border-border bg-popover px-2 py-1 text-xs shadow-sm"
                   style={{ left: `${hover.x}%`, top: `${hover.y}%` }}
                 >
-                  {city(hover.zone)} · {hover.zone}
+                  {city(hover.zone)}
                 </div>
               )}
             </div>
@@ -300,9 +300,6 @@ export function WorldClock({ onClose }: { onClose: () => void }) {
                           )}
                         </span>
                       </span>
-                      {zone.zone !== city(zone.zone) && (
-                        <span className="block text-xs text-muted-foreground">{zone.zone}</span>
-                      )}
                     </button>
                     <WorkStateIcon work={work} />
                     {knownZone(zone.zone) ? (

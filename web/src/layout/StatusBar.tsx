@@ -1,3 +1,4 @@
+import { watchViewport } from "@/lib/viewport";
 // The status bar under the screen: hz's version on the left; the meeting running now or the next
 // one, and a clock, on the right, then what modules add (ADR 0056). The meeting comes from `hz org agenda` (the bound calendar), refreshed each minute.
 
@@ -16,9 +17,9 @@ import { Prose } from "@/components/Prose";
 import { SettingsShortcut } from "@/components/SettingsShortcut";
 import { WorkStateIcon } from "@/components/WorkStateIcon";
 import { t } from "@/i18n";
+import { placePopover, popoverHeight } from "@/lib/placement";
 import { workingHours } from "@/lib/workingHours";
 import { zoneClock, zoneTime } from "@/lib/zoneTime";
-import { placePopover } from "@/sound/dock";
 import { DurableHeinzelStatus } from "./DurableHeinzelStatus";
 import { HealthStatus } from "./HealthStatus";
 import { ResourceStatus } from "./ResourceStatus";
@@ -145,7 +146,7 @@ function Clock({ now }: { now: Date }) {
     const position = () => {
       if (!wrapper.current) return;
       const box = popup.getBoundingClientRect();
-      const maxHeight = Math.max(1, window.innerHeight - 16);
+      const maxHeight = popoverHeight(wrapper.current.getBoundingClientRect());
       const next = {
         ...placePopover(
           wrapper.current.getBoundingClientRect(),
@@ -162,12 +163,12 @@ function Clock({ now }: { now: Date }) {
     const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(position);
     observer?.observe(popup);
     observer?.observe(wrapper.current);
-    window.addEventListener("resize", position);
+    const unwatchViewport = watchViewport(position);
     window.addEventListener(FOOTER_RELOCATED, position);
     window.addEventListener("scroll", position, true);
     return () => {
       observer?.disconnect();
-      window.removeEventListener("resize", position);
+      unwatchViewport();
       window.removeEventListener(FOOTER_RELOCATED, position);
       window.removeEventListener("scroll", position, true);
     };
@@ -204,7 +205,7 @@ function Clock({ now }: { now: Date }) {
     // biome-ignore lint/a11y/noStaticElementInteractions: hover and focus only show what the time button opens on click
     <span
       ref={wrapper}
-      className="relative shrink-0"
+      className="relative inline-flex shrink-0"
       onMouseEnter={enter}
       onMouseLeave={leave}
       onFocus={() => {
@@ -243,7 +244,7 @@ function Clock({ now }: { now: Date }) {
           <div
             ref={pane}
             id={panelId}
-            className="fixed z-(--layer-popover) overflow-y-auto"
+            className="viewport-popover fixed z-(--layer-popover) overflow-y-auto"
             style={placement ?? { left: 0, top: 0, visibility: "hidden" }}
             onMouseEnter={enter}
             onMouseLeave={leave}
@@ -451,7 +452,7 @@ export function StatusBar() {
             state="off"
             text={`v${info.data.version}`}
             align="left"
-            popoverClassName="w-[min(28rem,calc(100vw_-_2rem))]"
+            popoverClassName="w-[min(28rem,calc(var(--hz-viewport-width,100vw)_-_2rem))]"
           >
             <ReleaseNotes version={info.data.version} />
           </FooterItem>

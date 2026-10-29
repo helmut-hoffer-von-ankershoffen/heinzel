@@ -13,12 +13,13 @@ export const daemonStatusKey = ["system", "daemon", "status"] as const;
 export type DaemonAction = "install" | "uninstall" | "pause" | "resume" | "restart";
 
 /** The daemon's current facts; refreshed after every confirmed change. */
-export const useDaemonStatus = () =>
+export const useDaemonStatus = (enabled = true) =>
   useQuery({
     queryKey: daemonStatusKey,
     queryFn: ({ signal }) =>
       unwrap(api.GET("/system/daemon/status", { signal: AbortSignal.any([signal, AbortSignal.timeout(10_000)]) })),
     refetchInterval: 3000,
+    enabled,
   });
 
 /** Daemon controls; persistence installation/removal are called only after explicit Settings confirmation. */

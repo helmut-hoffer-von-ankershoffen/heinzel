@@ -1,6 +1,6 @@
 // The notification center: every notice hz recorded (ADR 0043), newest first, beside the sidebar. Read state is this
 // browser's: notices after the last one seen count as unread, on the bell and in the list.
-import { AlertTriangle, Bell, BellRing, FileText, Gift, Stethoscope, X } from "lucide-react";
+import { AlertTriangle, Bell, BellRing, FileText, Gift, Sparkles, Stethoscope, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 import type { SchemaNotice } from "@/api/client";
@@ -8,8 +8,10 @@ import { useNotices } from "@/api/queries";
 import { Gnome } from "@/components/Gnome";
 import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
+import { isLocalServer } from "@/lib/browser";
 import { cn } from "@/lib/utils";
 import { zoneTime } from "@/lib/zoneTime";
+import { useDesktopState } from "@/notifications/desktop";
 import { NotificationTest } from "@/notifications/NotificationTest";
 
 const SEEN = "hz.notify.seen";
@@ -79,7 +81,14 @@ export function BellButton({ className, onOpen }: { className: string; onOpen: (
   );
 }
 
-const icons = { draft: FileText, failed: AlertTriangle, doctor: Stethoscope, release: Gift, test: BellRing } as const;
+const icons = {
+  draft: FileText,
+  failed: AlertTriangle,
+  doctor: Stethoscope,
+  release: Gift,
+  test: BellRing,
+  heinzel: Sparkles,
+} as const;
 
 export function when(at: string): string {
   const date = new Date(at);
@@ -88,6 +97,8 @@ export function when(at: string): string {
 }
 
 export function NotificationPanel({ onClose, navOpen }: { onClose: () => void; navOpen: boolean }) {
+  const local = isLocalServer();
+  const browser = useDesktopState();
   const notices = useLiveNotices();
   const [seen, markSeen] = useSeen();
   const [kind, setKind] = useState<SchemaNotice["kind"] | "all">("all");
@@ -104,14 +115,14 @@ export function NotificationPanel({ onClose, navOpen }: { onClose: () => void; n
     { label: t("notify.today"), items: list.filter((notice) => new Date(notice.at).toDateString() === today) },
     { label: t("notify.earlier"), items: list.filter((notice) => new Date(notice.at).toDateString() !== today) },
   ].filter((group) => group.items.length > 0);
-  const kinds: (SchemaNotice["kind"] | "all")[] = ["all", "draft", "failed", "doctor", "release", "test"];
+  const kinds: (SchemaNotice["kind"] | "all")[] = ["all", "draft", "failed", "doctor", "release", "test", "heinzel"];
   return (
     <section
       aria-label={t("notify.title")}
       onKeyDown={(event) => event.key === "Escape" && onClose()}
       className={cn(
-        "absolute inset-y-0 z-(--layer-popover) flex w-[min(26rem,100vw)] flex-col border-r border-border bg-popover shadow-2xl",
-        navOpen ? "left-64" : "left-14",
+        "absolute top-[var(--hz-safe-area-top,env(safe-area-inset-top,0px))] bottom-[var(--hz-safe-area-bottom,env(safe-area-inset-bottom,0px))] z-(--layer-popover) flex w-[min(26rem,calc(100%-3.5rem))] flex-col border-r border-border bg-popover shadow-2xl",
+        navOpen ? "left-14 sm:left-64 sm:max-w-[calc(100%-16rem)]" : "left-14",
       )}
     >
       <header className="flex h-12 shrink-0 items-center gap-2 pr-2 pl-4">
@@ -196,11 +207,13 @@ export function NotificationPanel({ onClose, navOpen }: { onClose: () => void; n
                           <span className="mt-0.5 line-clamp-2 block text-sm text-muted-foreground">{notice.body}</span>
                         )}
                         <span className="mt-1 block text-xs text-muted-foreground/80">
-                          {notice.delivered_by
-                            ? t("notify.shownBy", { by: t(`notify.by.${notice.delivered_by}`) })
-                            : notice.held
-                              ? notice.held
-                              : t("notify.waiting")}
+                          {notice.delivered_by === "daemon" && !local
+                            ? t("notify.shownOnServer")
+                            : notice.delivered_by
+                              ? t("notify.shownBy", { by: t(`notify.by.${notice.delivered_by}`) })
+                              : notice.held
+                                ? notice.held
+                                : t(browser !== "on" && !local ? "notify.saved" : "notify.waiting")}
                         </span>
                       </span>
                       {unread && (
@@ -218,7 +231,7 @@ export function NotificationPanel({ onClose, navOpen }: { onClose: () => void; n
         ))}
       </div>
       <footer className="flex max-h-[50%] shrink-0 flex-col gap-1.5 overflow-y-auto border-t border-border px-4 py-2.5 text-xs text-muted-foreground">
-        <span className="truncate">{notices.data?.native}</span>
+        {local && <span className="truncate">{notices.data?.native}</span>}
         <NotificationTest />
       </footer>
     </section>

@@ -21,6 +21,9 @@ class NotifySettings(ModuleSettings):
     draft: bool = Field(
         default=True, title="Drafts to approve", description="Notify when a draft is ready to read and approve."
     )
+    heinzel: bool = Field(
+        default=True, title="Scheduled Heinzel check-ins", description="Notify when a personal Heinzel checks in."
+    )
     failed: bool = Field(
         default=True, title="Failed runs", description="Notify when a contract run on your daemon failed."
     )
@@ -70,6 +73,7 @@ class NotifySettings(ModuleSettings):
         {
             "enabled",
             "draft",
+            "heinzel",
             "failed",
             "doctor",
             "release",

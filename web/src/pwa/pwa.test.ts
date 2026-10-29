@@ -56,6 +56,18 @@ describe("pairing", () => {
 });
 
 describe("installing", () => {
+  it("recognizes iPad desktop mode and its installed Home Screen app", () => {
+    const ipad = {
+      userAgent: "Mozilla/5.0 (Macintosh) AppleWebKit/605.1.15 Safari/605.1.15",
+      platform: "MacIntel",
+      maxTouchPoints: 5,
+    };
+    vi.stubGlobal("navigator", ipad);
+    expect(installState()).toBe("ios");
+    vi.stubGlobal("navigator", { ...ipad, standalone: true });
+    expect(installState()).toBe("installed");
+  });
+
   it("keeps the browser's prompt and shows it when asked", async () => {
     const target = new EventTarget() as unknown as Window;
     captureInstallPrompt(target);

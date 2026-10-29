@@ -27,6 +27,46 @@ beforeEach(() => vi.useFakeTimers());
 afterEach(() => vi.useRealTimers());
 
 describe("verified restart and apply", () => {
+  it("retries a preflight disconnect before one confirmed mutation", async () => {
+    const transport = server();
+    let first: AbortSignal | undefined;
+    transport.read
+      .mockReset()
+      .mockImplementationOnce((signal) => {
+        first = signal;
+        return new Promise(() => {});
+      })
+      .mockResolvedValue(before);
+    const preserve = vi.fn(async () => false);
+    const result = restartAndApply(
+      { confirmed: true, preserve },
+      { transport, requestTimeout: 10, readinessTimeout: 30, interval: 1, preserveTimeout: 20 * 60_000 },
+    );
+    await vi.advanceTimersByTimeAsync(12);
+    await expect(result).resolves.toEqual(before);
+    expect(first?.aborted).toBe(true);
+    expect(transport.read).toHaveBeenCalledTimes(2);
+    expect(preserve).toHaveBeenCalledOnce();
+    expect(transport.restart).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("gives confirmed long-running work its own budget and keeps restart observation bounded", async () => {
+    const transport = server();
+    transport.read.mockResolvedValue(before);
+    const preserve = vi.fn(() => new Promise<boolean>((resolve) => setTimeout(() => resolve(true), 18)));
+    transport.restart.mockImplementation(() => new Promise(() => {}));
+    const result = restartAndApply(
+      { confirmed: true, version: after.version, preserve },
+      { transport, requestTimeout: 10, preserveTimeout: 25, timeout: 20, interval: 1 },
+    ).catch((error: unknown) => error);
+    await vi.runAllTimersAsync();
+    await expect(result).resolves.toMatchObject({ kind: "timeout", observation: { retired: [before.instance] } });
+    expect(preserve).toHaveBeenCalledOnce();
+    expect(transport.restart).toHaveBeenCalledOnce();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it("requires explicit confirmation before any reads or mutation", async () => {
     const transport = server();
     await expect(restartAndApply({ confirmed: false }, { transport })).rejects.toMatchObject({ kind: "confirmation" });

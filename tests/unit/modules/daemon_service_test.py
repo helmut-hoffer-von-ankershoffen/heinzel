@@ -16,6 +16,7 @@ from heinzel.modules.system.daemon import DaemonService, DaemonSettings
 from heinzel.modules.system.daemon._ledger import Ledger
 from heinzel.modules.system.daemon._models import Disposition, Wake, unit_dir
 from heinzel.modules.system.daemon._runtime import Outcome, lock, within
+from heinzel.modules.system.daemon._service import MAX_SERVICE_MANAGER_OUTPUT, _launchd_pid, _reported_pid
 from heinzel.modules.system.daemon._units import LABEL
 
 pytestmark = pytest.mark.unit
@@ -822,24 +823,117 @@ def test_a_failing_notifier_never_fails_the_tick(make, jobs):
     assert "posting notices failed: OSError: disk full" in service.log_path.read_text(encoding="utf-8")
 
 
-def test_status_reports_the_version_the_daemon_was_started_with(make):
+def test_manual_tick_cannot_attest_the_daemon_and_restart_stays_unknown_until_a_service_tick(make, monkeypatch):
     service = make()
     assert (service.status().version, service.status().version_mismatch) == (None, False)
     service.install(timedelta(minutes=5))
-    assert (service.status().version, service.status().version_mismatch) == (__version__, False)
+    assert service.status().installed_version == __version__
+    assert (service.status().version, service.status().version_mismatch) == (None, False)
+    service.tick()
+    assert (service.status().version, service.status().version_mismatch) == (None, False)
+    monkeypatch.setattr(service, "_service_manager_pid", lambda: os.getpid() + 1)
+    service.tick()
+    assert (service.status().version, service.status().version_mismatch) == (None, False)
+    monkeypatch.setattr(service, "_service_manager_pid", os.getpid)
+    service.tick()
+    assert (
+        service.status().version,
+        service.status().installed_version,
+        service.status().version_mismatch,
+    ) == (__version__, __version__, False)
 
 
-def test_a_daemon_started_by_an_older_hz_is_flagged_and_restart_mends_it(make, tmp_path):
+def test_a_daemon_started_by_an_older_hz_is_flagged_until_current_service_tick(make, tmp_path, monkeypatch):
     service = make()
     service.install(timedelta(minutes=5))
-    state = service.state_dir / "install.json"
-    state.write_text(state.read_text().replace(__version__, "0.0.1"), encoding="utf-8")
+    monkeypatch.setattr(service, "_service_manager_pid", os.getpid)
+    service.tick()
+    heartbeat = service.state_dir / "heartbeat.json"
+    heartbeat.write_text(heartbeat.read_text().replace(__version__, "0.0.1"), encoding="utf-8")
     status = service.status()
     assert (status.version, status.version_mismatch) == ("0.0.1", True)
     restarted = service.restart()
     assert (restarted.restarted, restarted.version, restarted.interval_minutes) == (True, __version__, 5)
+    assert (service.status().version, service.status().version_mismatch) == ("0.0.1", True)
+    service.tick()
     assert (service.status().version, service.status().version_mismatch) == (__version__, False)
+
+
+def test_launchd_service_pid_is_read_from_its_running_job(make, bin_dir, monkeypatch):
+    service = make(runner=Runner(bin_dir))
+    output = f'{{\n\t"Label" = "{LABEL}";\n\t"PID" = {os.getpid()};\n}}\n'
+    commands = []
+
+    def runner(command):
+        commands.append(command)
+        return subprocess.CompletedProcess(command, 0, output, "")
+
+    monkeypatch.setattr(
+        service,
+        "_runner",
+        runner,
+    )
+    assert service._service_manager_pid() == os.getpid()
+    assert commands[0][-2:] == ["list", LABEL]
+
+
+def test_systemd_service_pid_is_read_from_main_pid(make, bin_dir, monkeypatch):
+    service = make(platform="linux", runner=Runner(bin_dir))
+    monkeypatch.setattr(
+        service,
+        "_runner",
+        lambda command: subprocess.CompletedProcess(command, 0, "417\n", ""),
+    )
+    assert service._service_manager_pid() == 417
+
+
+@pytest.mark.parametrize(
+    "output",
+    [
+        f'{{\n"Label" = "{LABEL}";\n"PID" = "-";\n}}\n',
+        f'{{\n"Label" = "{LABEL}";\n"PID" = 12345678901;\n}}\n',
+        f'{{\n"Label" = "{LABEL}-lookalike";\n"PID" = 12;\n}}\n',
+        f'{{\n"Label" = "{LABEL}";\n"PID" = 12;\n"PID" = 13;\n}}\n',
+        "x" * (MAX_SERVICE_MANAGER_OUTPUT + 1),
+    ],
+    ids=["unrunning", "oversized-pid", "wrong-label", "duplicate-pid", "oversized-output"],
+)
+def test_launchd_pid_parser_fails_closed_on_malformed_or_unbounded_output(output):
+    assert _launchd_pid(output, LABEL) is None
+
+
+@pytest.mark.parametrize("output", ["0", "-1", "12\n99", "12345678901", "x" * (MAX_SERVICE_MANAGER_OUTPUT + 1)])
+def test_systemd_pid_parser_fails_closed_on_malformed_or_unbounded_output(output):
+    assert _reported_pid(output) is None
+
+
+def test_failed_daemon_replacement_keeps_the_old_version_marker_fail_closed(make, tmp_path, bin_dir):
+    service = make(runner=Runner(bin_dir))
+    service.install(timedelta(minutes=5))
+    state = service.state_dir / "install.json"
+    state.write_text(state.read_text().replace(__version__, "0.0.1"), encoding="utf-8")
+
+    with pytest.raises(HeinzelError, match="bootstrap failed"):
+        make(runner=Runner(bin_dir, {"bootstrap": 5})).install(timedelta(minutes=5))
+
+    assert json.loads(state.read_text(encoding="utf-8"))["version"] == "0.0.1"
+    status = service.status()
+    assert (status.version, status.installed_version, status.version_mismatch) == (None, "0.0.1", True)
 
 
 def test_restarting_a_daemon_that_is_not_installed_does_nothing(make):
     assert make(runner=Refuses()).restart().restarted is False
+
+
+def test_worker_thread_inherits_only_the_callers_context():
+    from contextvars import ContextVar
+
+    owner = ContextVar("test_owner", default="none")
+    token = owner.set("first")
+    try:
+        assert within(owner.get, 1).value == "first"
+        owner.set("second")
+        assert within(owner.get, 1).value == "second"
+    finally:
+        owner.reset(token)
+    assert within(owner.get, 1).value == "none"

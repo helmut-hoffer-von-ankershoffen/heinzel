@@ -288,6 +288,49 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/heinzel/propose-check-in": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Propose local five-minute check-ins; the schedule stays inactive until activated.
+         * @description Propose local five-minute check-ins; the schedule stays inactive until activated.
+         */
+        post: operations["heinzel_propose_check_in"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/heinzel/schedule-control": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Pause a schedule; activation and resume require an exact-intent approval from a trusted issuer.
+         * @description Pause a schedule; activation and resume require an exact-intent approval from a trusted issuer.
+         *
+         *     Raises:
+         *         HeinzelError: If the schedule is stale or approval is invalid or unavailable.
+         */
+        post: operations["heinzel_schedule_control"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/heinzel/session": {
         parameters: {
             query?: never;
@@ -923,8 +966,15 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Show whether the daemon is installed, loaded and paused, its last tick and failing jobs.
-         * @description Show whether the daemon is installed, loaded and paused, its last tick and failing jobs.
+         * Check-ins need a resumed daemon with 5m ticks and a matching service version.
+         * @description Check-ins need a resumed daemon with 5m ticks and a matching service version.
+         *
+         *     For five-minute check-ins, the daemon must be installed and tick every five minutes or faster. If it is absent,
+         *     `hz system daemon install --interval 5m` installs a persistent login service; the schedule stays dormant until
+         *     it is installed and a service-managed tick is observed. If paused, run `hz system daemon resume`. If its service
+         *     tick version is unknown or mismatched, run `hz system daemon restart` and wait until a service-managed tick
+         *     records the installed version; a manual tick cannot establish that proof. Use the install command to correct a
+         *     slower cadence.
          */
         get: operations["system_daemon_status"];
         put?: never;
@@ -1217,8 +1267,9 @@ export interface paths {
          * @description Show what a plugin would install, then add it with `--confirm`; adding it again replaces it.
          *
          *     Without `confirm` it only reads PyPI or GitHub and answers what `requirement` would be installed, pinned to the
-         *     release or commit it read; with `confirm` it installs that and records it in the plugin history. Running servers
-         *     (`hz ui`, MCP) see the plugin after a restart (`restart_required`).
+         *     release or commit it read; the answer includes a receipt that can confirm exactly that candidate once. Existing
+         *     callers may still confirm by spec. Running servers (`hz ui`, MCP) see the plugin after a restart
+         *     (`restart_required`).
          */
         post: operations["system_plugin_add"];
         delete?: never;
@@ -1328,6 +1379,26 @@ export interface paths {
          *         HeinzelError: If the requested fresh interpreter cannot read the installed environment.
          */
         get: operations["system_plugin_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/plugin/operation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read the status and result of a plugin add without repeating it.
+         * @description Read the status and result of a plugin add without repeating it.
+         */
+        get: operations["system_plugin_operation"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1448,6 +1519,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/system/runner/chat/authorize-for-mcp": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Authorize one reviewed schedule action for a single MCP run; keep its proof private.
+         * @description Authorize one reviewed schedule action for a single MCP run; keep its proof private.
+         *
+         *     CLI requires an interactive terminal and an action-scoped typed confirmation. The paired web action is the
+         *     browser's explicit review button.
+         *
+         *     Raises:
+         *         HeinzelError: If CLI lacks a controlling terminal or the action was not confirmed.
+         */
+        post: operations["system_runner_chat_authorize_for_mcp"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/system/runner/chat/confirm": {
         parameters: {
             query?: never;
@@ -1531,6 +1628,69 @@ export interface paths {
          *         HeinzelError: If the context's kind is unknown.
          */
         post: operations["system_runner_chat_open"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/runner/chat/open-check-in": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Open a runner chat bound to this owner's durable session and current conversation history.
+         * @description Open a runner chat bound to this owner's durable session and current conversation history.
+         */
+        post: operations["system_runner_chat_open_check_in"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/runner/chat/propose-schedule-control": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Stage a schedule action for review in chat; creating the proposal never changes or activates it.
+         * @description Stage a schedule action for review in chat; creating the proposal never changes or activates it.
+         */
+        post: operations["system_runner_chat_propose_schedule_control"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/runner/chat/recover": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Check an interrupted confirmation without running it again; unresolved outcomes stay blocked.
+         * @description Check an interrupted confirmation without running it again; unresolved outcomes stay blocked.
+         *
+         *     Raises:
+         *         HeinzelError: If the chat is busy or the selected action is not interrupted.
+         */
+        post: operations["system_runner_chat_recover"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3082,6 +3242,12 @@ export interface components {
              */
             id: string;
             /**
+             * Mcp Authorized
+             * @description Whether a person explicitly authorized this exact pending action for one MCP confirmation.
+             * @default false
+             */
+            mcp_authorized: boolean;
+            /**
              * Module
              * @description The operation's module, e.g. `system.config`.
              */
@@ -3105,11 +3271,11 @@ export interface components {
             result: string;
             /**
              * Status
-             * @description `pending` until the person confirms it (`running`, then `done` or `failed`) or declines it.
+             * @description `pending` until confirmed, declined, or reconciled after an interrupted confirmation.
              * @default pending
              * @enum {string}
              */
-            status: "pending" | "running" | "done" | "failed" | "declined";
+            status: "pending" | "running" | "done" | "failed" | "declined" | "uncertain";
             /**
              * Tool
              * @description The tool the agent called, e.g. `system_config_set`.
@@ -3129,16 +3295,26 @@ export interface components {
             detail: string;
             /**
              * Kind
-             * @description `route`, `contract`, `draft`, `event` or `text`.
+             * @description The context kind; `check-in` is created only by the durable-session flow.
              * @enum {string}
              */
-            kind: "route" | "contract" | "draft" | "event" | "text";
+            kind: "route" | "contract" | "draft" | "event" | "text" | "check-in";
             /**
              * Ref
              * @description Which one: a route such as `/contracts/weekly`, a contract name, an id.
              * @default
              */
             ref: string;
+            /**
+             * Request Id
+             * @description The idempotency key for opening a scoped durable check-in conversation.
+             */
+            request_id?: string | null;
+            /**
+             * Timezone
+             * @description The user's selected time zone for a proposed check-in schedule.
+             */
+            timezone?: string | null;
         };
         /**
          * ChatCosts
@@ -3244,6 +3420,11 @@ export interface components {
              * @description Tokens produced, if reported.
              */
             output_tokens?: number | null;
+            /**
+             * Request Id
+             * @description The stable client id for a retriable message; absent for older and generic chats.
+             */
+            request_id?: string | null;
             /**
              * Role
              * @description `user`, `assistant`, or `action`: what a confirmed or declined action did.
@@ -4115,6 +4296,11 @@ export interface components {
              */
             installed: boolean;
             /**
+             * Installed Version
+             * @description The hz version in the last install marker; a successful service-manager command is not proof that this code ran.
+             */
+            installed_version?: string | null;
+            /**
              * Interval Minutes
              * @description Minutes between ticks, as installed.
              */
@@ -4146,12 +4332,12 @@ export interface components {
             platform: string;
             /**
              * Version
-             * @description The hz version the daemon was started with (installed or last restarted); none if it isn't installed or was installed by an older hz.
+             * @description The hz version observed in the last tick whose PID matched the installed service manager; none when the process manager could not verify the invocation.
              */
             version?: string | null;
             /**
              * Version Mismatch
-             * @description Whether `version` differs from the hz that answers: after `hz system update` the daemon should be restarted (`hz system daemon restart`).
+             * @description Whether the install marker or the last observed tick differs from the hz that answers, or whether the tick and install marker disagree.
              * @default false
              */
             version_mismatch: boolean;
@@ -6149,7 +6335,7 @@ export interface components {
          * @description What a notice is about; each kind can be switched off in `[system.notify]`.
          * @enum {string}
          */
-        NoticeKind: "draft" | "failed" | "doctor" | "release" | "test";
+        NoticeKind: "draft" | "failed" | "doctor" | "release" | "test" | "heinzel";
         /**
          * NoticeList
          * @description The latest notices, and how they reach you on this machine.
@@ -6604,6 +6790,11 @@ export interface components {
              */
             next: string[];
             /**
+             * Operation Id
+             * @description Opaque server receipt for confirming or checking this add.
+             */
+            operation_id?: string | null;
+            /**
              * Plugins
              * @description The plugins installed afterwards (now, if not done).
              */
@@ -6787,6 +6978,27 @@ export interface components {
              * @description The site layer it names, if any.
              */
             site: string | null;
+        };
+        /**
+         * PluginOperation
+         * @description Durable state of one plugin-add preview and its confirmation.
+         */
+        PluginOperation: {
+            /** @description The exact candidate shown before confirmation. */
+            candidate: components["schemas"]["PluginCandidate"];
+            /**
+             * Operation Id
+             * @description Opaque id returned by the preview; it contains no candidate details.
+             */
+            operation_id: string;
+            /** @description The authoritative result after a completed add. */
+            result?: components["schemas"]["PluginChange"] | null;
+            /**
+             * Status
+             * @description Whether confirmation is available, running, finished, or uncertain and must not be replayed.
+             * @enum {string}
+             */
+            status: "previewed" | "running" | "completed" | "unknown";
         };
         /**
          * PluginPage
@@ -7426,6 +7638,11 @@ export interface components {
              */
             cpu_percent: number | null;
             /**
+             * Hostname
+             * @description Hostname of the machine running hz.
+             */
+            hostname: string;
+            /**
              * Load 1M
              * @description One-minute load average; unavailable on unsupported platforms.
              */
@@ -7475,7 +7692,7 @@ export interface components {
         };
         /**
          * Restarted
-         * @description What `restart` did.
+         * @description What `restart` asked the service manager to reload; a later tick reports the code that actually ran.
          */
         Restarted: {
             /**
@@ -7490,7 +7707,7 @@ export interface components {
             restarted: boolean;
             /**
              * Version
-             * @description The hz version the daemon runs with now.
+             * @description The hz version in the unit the service manager was asked to load.
              */
             version: string;
         };
@@ -9704,7 +9921,7 @@ export interface components {
             requested?: boolean | null;
             /**
              * Sign In Url
-             * @description Computed by the host only: a ready URL whose exact origin is explicitly allowed. Copying a sign-in fragment still requires a separate owner gesture and a session credential.
+             * @description Computed by the host only: a ready URL whose exact origin is explicitly allowed. Copying a sign-in fragment still requires a separate owner gesture and an active session or device credential.
              */
             sign_in_url?: string | null;
             /**
@@ -10255,6 +10472,65 @@ export interface components {
              */
             session_id: string;
         };
+        /** heinzel_propose_check_in_Input */
+        heinzel_propose_check_in_Input: {
+            /**
+             * Request Id
+             * @description A stable client request id; reuse it only for an exact retry.
+             */
+            request_id: string;
+            /**
+             * Session Id
+             * @description The stable personal session id returned by new-chat or sessions.
+             */
+            session_id: string;
+            /**
+             * Timezone
+             * @description The IANA time zone for the schedule preview.
+             * @default UTC
+             */
+            timezone: string;
+        };
+        /** heinzel_schedule_control_Input */
+        heinzel_schedule_control_Input: {
+            /**
+             * Action
+             * @description Explicitly activate the proposal, pause it, or resume a paused schedule.
+             * @enum {string}
+             */
+            action: "activate" | "pause" | "resume";
+            /**
+             * Approval Proof
+             * @description Human-issued exact-intent proof required to activate or resume; never returned by reads. On CLI, pass `-` to read it from hidden input or stdin.
+             */
+            approval_proof?: string | null;
+            /**
+             * Expected Contract Version
+             * @description The contract version in the schedule preview.
+             * @default 1
+             */
+            expected_contract_version: number;
+            /**
+             * Expected Preview Hash
+             * @description The preview hash shown for this exact schedule.
+             */
+            expected_preview_hash?: string | null;
+            /**
+             * Expected Revision
+             * @description The schedule revision you last inspected.
+             */
+            expected_revision: number;
+            /**
+             * Request Id
+             * @description A stable client request id; reuse it only for an exact retry.
+             */
+            request_id: string;
+            /**
+             * Session Id
+             * @description The stable personal session id returned by new-chat or sessions.
+             */
+            session_id: string;
+        };
         /** system_state_push_Input */
         system_state_push_Input: Record<string, never>;
         /** system_state_reset_Input */
@@ -10399,6 +10675,7 @@ export type SchemaPluginChange = components['schemas']['PluginChange'];
 export type SchemaPluginEvent = components['schemas']['PluginEvent'];
 export type SchemaPluginInfo = components['schemas']['PluginInfo'];
 export type SchemaPluginLayer = components['schemas']['PluginLayer'];
+export type SchemaPluginOperation = components['schemas']['PluginOperation'];
 export type SchemaPluginPage = components['schemas']['PluginPage'];
 export type SchemaPluginSearch = components['schemas']['PluginSearch'];
 export type SchemaPluginUpdate = components['schemas']['PluginUpdate'];
@@ -10489,6 +10766,8 @@ export type SchemaWidgetEntry = components['schemas']['WidgetEntry'];
 export type SchemaHeinzelChatInput = components['schemas']['heinzel_chat_Input'];
 export type SchemaHeinzelNewChatInput = components['schemas']['heinzel_new_chat_Input'];
 export type SchemaHeinzelProfileInput = components['schemas']['heinzel_profile_Input'];
+export type SchemaHeinzelProposeCheckInInput = components['schemas']['heinzel_propose_check_in_Input'];
+export type SchemaHeinzelScheduleControlInput = components['schemas']['heinzel_schedule_control_Input'];
 export type SchemaSystemStatePushInput = components['schemas']['system_state_push_Input'];
 export type SchemaSystemStateResetInput = components['schemas']['system_state_reset_Input'];
 export type $defs = Record<string, never>;
@@ -10906,6 +11185,72 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["heinzel_profile_Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionSnapshot"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    heinzel_propose_check_in: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["heinzel_propose_check_in_Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionSnapshot"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    heinzel_schedule_control: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["heinzel_schedule_control_Input"];
             };
         };
         responses: {
@@ -12087,6 +12432,8 @@ export interface operations {
                 spec: string;
                 /** @description Install it. Without it, nothing is installed: the answer shows the source, version and publisher to confirm first, because a plugin runs with your rights. */
                 confirm?: boolean;
+                /** @description Opaque receipt returned by a preview; confirms that exact candidate only once. */
+                operation_id?: string | null;
             };
             header?: never;
             path?: never;
@@ -12266,6 +12613,38 @@ export interface operations {
             };
         };
     };
+    system_plugin_operation: {
+        parameters: {
+            query: {
+                /** @description Receipt id from a plugin preview. */
+                operation_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PluginOperation"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     system_plugin_remove: {
         parameters: {
             query: {
@@ -12404,6 +12783,40 @@ export interface operations {
             };
         };
     };
+    system_runner_chat_authorize_for_mcp: {
+        parameters: {
+            query: {
+                /** @description The chat session's id, from `hz chat list`. */
+                session: string;
+                /** @description The proposed action's id, e.g. `a1`. */
+                action: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatSession"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     system_runner_chat_confirm: {
         parameters: {
             query: {
@@ -12526,6 +12939,118 @@ export interface operations {
             };
         };
     };
+    system_runner_chat_open_check_in: {
+        parameters: {
+            query: {
+                /** @description The durable personal session id from `hz heinzel sessions` or the personal Heinzel page. */
+                session_id: string;
+                /** @description A stable id for opening or resuming this scoped chat. */
+                request_id: string;
+                /** @description The IANA time zone to use for this schedule preview. */
+                timezone: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatSession"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_runner_chat_propose_schedule_control: {
+        parameters: {
+            query: {
+                /** @description The personal Heinzel whose schedule you read. */
+                durable_session: string;
+                /** @description A stable id for this schedule action. */
+                request_id: string;
+                /** @description The schedule revision you inspected. */
+                expected_revision: number;
+                /** @description The exact schedule change to review. */
+                action: "activate" | "resume";
+                /** @description The contract version shown in the preview. */
+                expected_contract_version: number;
+                /** @description The preview hash shown in the schedule details. */
+                expected_preview_hash: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatSession"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_runner_chat_recover: {
+        parameters: {
+            query: {
+                /** @description The chat session's id, from `hz chat list`. */
+                session: string;
+                /** @description The proposed action's id, e.g. `a1`. */
+                action: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatSession"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     system_runner_chat_remove: {
         parameters: {
             query: {
@@ -12571,6 +13096,8 @@ export interface operations {
                 model?: string | null;
                 /** @description The effort this chat uses from now on: low, medium, high, xhigh or max; empty: the default. */
                 effort?: ("" | "low" | "medium" | "high" | "xhigh" | "max") | null;
+                /** @description Stable id for a safe exact-message retry. */
+                request_id?: string | null;
             };
             header?: never;
             path?: never;

@@ -2,11 +2,12 @@ import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SchemaSoundList, SchemaSoundscapeView } from "@/api/client";
+import { clampToWindow, placePopover } from "@/lib/placement";
 import { shell } from "@/test/fixtures";
 import { expectAccessible, mockApi, renderAt } from "@/test/render";
-import { clampToWindow, nearSlot, placePopover, resetDock } from "./dock";
+import { nearSlot, resetDock } from "./dock";
 import { resetPageFrame } from "./queries";
-import { resetSound } from "./store";
+import { resetSound, soundState } from "./store";
 
 const ORIGIN = "https://www.youtube-nocookie.com";
 const base = { module: null, plugin: null, selected: false, effective: false, fade_seconds: 4 };
@@ -134,7 +135,7 @@ describe("the mini-player docked in the sidebar", () => {
     await user.click(screen.getByRole("button", { name: "Dock the player in the sidebar" }));
     await waitFor(() => expect(card).toHaveAttribute("data-dock", "docked"));
     await user.click(screen.getByRole("button", { name: "Collapse navigation" }));
-    await waitFor(() => expect(card).toHaveAttribute("data-dock", "floating"));
+    await waitFor(() => expect(card).not.toBeVisible());
     await user.click(screen.getByRole("button", { name: "Expand navigation" }));
     await waitFor(() => expect(card).toHaveAttribute("data-dock", "docked"));
     watch.disconnect();
@@ -178,15 +179,37 @@ describe("the mini-player docked in the sidebar", () => {
     expect(Number.parseInt((await player()).style.left, 10)).toBe(left + 16);
   });
 
-  it("floats when the sidebar collapses and docks again when it expands", async () => {
+  it("keeps a docked stream in micro form with working play and pause when collapsed", async () => {
     api();
     const { user, card } = await play();
-    expect(card).toHaveAttribute("data-dock", "docked");
+    const frame = within(card).getByTitle("Claude FM player");
     await user.click(screen.getByRole("button", { name: "Collapse navigation" }));
-    expect(await screen.findByRole("region", { name: "Claude FM player" })).toHaveAttribute("data-dock", "floating");
-    expect(within(await player()).queryByRole("button", { name: "Dock the player in the sidebar" })).toBeNull();
+    expect(card).toHaveAttribute("data-dock", "docked");
+    expect(card).not.toBeVisible();
+    expect(dockSlot().style.height).toBe("");
+    await user.click(screen.getByRole("button", { name: "Pause Claude FM" }));
+    expect(soundState().playing).toBe(false);
+    await user.click(screen.getByRole("button", { name: "Play Claude FM" }));
+    expect(soundState().playing).toBe(true);
+    expect(frame.isConnected).toBe(true);
+    await user.click(screen.getByRole("button", { name: "Choose a soundscape" }));
+    expect(await screen.findByRole("dialog", { name: "Sound" })).toBeVisible();
+    await user.keyboard("{Escape}");
     await user.click(screen.getByRole("button", { name: "Expand navigation" }));
-    await waitFor(() => expect(document.querySelector("[data-dock='docked']")).not.toBeNull());
+    expect(await player()).toBeVisible();
+    expect(within(card).getByTitle("Claude FM player")).toBe(frame);
+  });
+
+  it("can start playback directly from the collapsed sidebar", async () => {
+    api();
+    const user = userEvent.setup();
+    renderAt("/");
+    await user.click(await screen.findByRole("button", { name: "Collapse navigation" }));
+    expect(document.querySelector("iframe")).toBeNull();
+    await user.click(await screen.findByRole("button", { name: "Play Claude FM" }));
+    expect(soundState().playing).toBe(true);
+    expect(document.querySelector("iframe")).toBeInTheDocument();
+    expect(document.querySelector("[data-dock='docked']")).not.toBeVisible();
   });
 
   it("stays floating after a collapse and an expand when it was popped out before", async () => {

@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 
 from heinzel import Settings, __version__
 from heinzel.heads import web
+from heinzel.heads.web import _updates
 from heinzel.kernel import CorePin, Installation, ReleaseCache
 
 pytestmark = pytest.mark.integration
@@ -15,8 +16,9 @@ AUTH = {"Authorization": f"Bearer {TOKEN}"}
 
 
 class Receipt(Installation):
-    def __init__(self, pin):
+    def __init__(self, pin, prefix):
         self.pin = pin
+        self.prefix = prefix
 
     def core_pin(self):
         return self.pin
@@ -45,7 +47,9 @@ def client(make_kernel, tmp_path, **options):
             (static / "assets" / "app-a.js").symlink_to(outside)
     settings = Settings(cache_dir=tmp_path / "cache", update_check=checking)
     kernel = make_kernel(builtins=True, settings_=settings)
-    kernel.bind(Installation, Receipt(CorePin(kind, "heinzel", ref=ref) if kind else None))
+    kernel.bind(
+        Installation, Receipt(CorePin(kind, "heinzel", ref=ref) if kind else None, options.get("prefix", tmp_path))
+    )
     ReleaseCache(settings.cache_dir).remember("99.0.0")
     return TestClient(
         web.build(kernel, port=8000, token=TOKEN, static=static, restart=(lambda: None) if restart else None),
@@ -62,6 +66,7 @@ def test_update_facts_are_authenticated_cache_only_and_keep_source_intent(make_k
     assert response.json() == {
         "current": __version__,
         "latest": "99.0.0",
+        "installed_at": None,
         "available": True,
         "supported": True,
         "reason": None,
@@ -110,3 +115,53 @@ def test_unsafe_or_missing_frontend_cannot_enable_one_click(make_kernel, tmp_pat
     assert not status["supported"]
     assert "Frontend assets are incomplete" in status["reason"]
     assert "uv tool upgrade heinzel" in status["reason"]
+
+
+def test_installation_date_uses_uv_core_marker_not_release_or_receipt(make_kernel, tmp_path, monkeypatch):
+    import os
+    from datetime import UTC, datetime
+    from importlib.metadata import PackagePath
+
+    prefix = tmp_path / "tool"
+    prefix.mkdir()
+    (prefix / "uv-receipt.toml").write_text("receipt")
+    marker = prefix / f"heinzel-{__version__}.dist-info" / "INSTALLER"
+    marker.parent.mkdir()
+    marker.write_text("uv\n")
+    timestamp = datetime(2026, 1, 2, 12, tzinfo=UTC).timestamp()
+    os.utime(marker, (timestamp, timestamp))
+
+    class Distribution:
+        version = __version__
+
+        def __init__(self):
+            self.files = [PackagePath(marker.relative_to(prefix).as_posix())]
+
+        def locate_file(self, path):
+            return prefix / path
+
+    dist = Distribution()
+    dist.files[0].dist = dist
+    monkeypatch.setattr(_updates.metadata, "distribution", lambda _: dist)
+    monkeypatch.setattr(_updates, "_now", lambda: datetime(2026, 1, 3, tzinfo=UTC))
+    app = client(make_kernel, tmp_path, prefix=prefix)
+    assert app.get("/api/update-status", headers=AUTH).json()["installed_at"] == "2026-01-02T12:00:00Z"
+    installation = Receipt(CorePin("release", "heinzel", ref="v0.1.0"), prefix)
+    dist.version = "999.0.0"
+    assert _updates._installed_at(installation) is None
+    dist.version = __version__
+    outside = tmp_path / "outside" / f"heinzel-{__version__}.dist-info" / "INSTALLER"
+    outside.parent.mkdir(parents=True)
+    outside.write_text("uv\n")
+    dist.files = [PackagePath(f"../outside/{outside.parent.name}/INSTALLER")]
+    dist.files[0].dist = dist
+    assert _updates._installed_at(installation) is None
+    dist.files = [PackagePath(marker.relative_to(prefix).as_posix())]
+    dist.files[0].dist = dist
+    os.utime(marker, (timestamp + 172800, timestamp + 172800))
+    assert _updates._installed_at(installation) is None
+    marker.write_text("pip\n")
+    os.utime(marker, (timestamp, timestamp))
+    assert _updates._installed_at(installation) is None
+    marker.unlink()
+    assert _updates._installed_at(installation) is None

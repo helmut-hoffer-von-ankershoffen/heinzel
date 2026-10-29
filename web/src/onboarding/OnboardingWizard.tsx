@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { type MessageKey, t } from "@/i18n";
 import { ThemePreviews } from "@/layout/ThemePreviews";
 import { TimeZonePicker } from "@/layout/TimeZonePicker";
+import { isLocalServer } from "@/lib/browser";
 import { runInTerminal } from "@/lib/terminal";
 import { cn } from "@/lib/utils";
 import { setDesktop, useDesktopState } from "@/notifications/desktop";
@@ -120,14 +121,14 @@ export function OnboardingWizard({ progress, onProgress, onClose }: Props) {
     }
   };
   return (
-    <div className="fixed inset-0 z-(--layer-modal) flex items-center justify-center bg-black/50 p-4">
+    <div className="viewport-overlay fixed z-(--layer-modal) flex items-center justify-center bg-black/50 p-4">
       <div
         ref={dialog}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
         onKeyDown={keys}
-        className="flex h-[min(44rem,calc(100vh-2rem))] w-[min(56rem,100%)] overflow-hidden rounded-xl border border-border bg-popover text-popover-foreground shadow-2xl"
+        className="flex h-[min(44rem,100%)] w-[min(56rem,100%)] overflow-hidden rounded-xl border border-border bg-popover text-popover-foreground shadow-2xl"
       >
         <nav
           aria-label={t("onboarding.steps")}
@@ -265,7 +266,7 @@ function Saved({ state, error }: { state: "idle" | "pending" | "success" | "erro
 }
 
 const field = "h-8 w-full rounded-lg border border-border bg-input px-2.5 text-sm";
-const selectField = cn(field, "pr-8");
+const selectField = cn(field, "min-w-0 max-w-full pr-8");
 
 function You() {
   const profile = useProfile();
@@ -468,23 +469,25 @@ function TeamForm({ onClose }: { onClose: () => void }) {
 }
 
 /** `hz system daemon status`, re-read while the step is open: the terminal install is seen when it finishes. */
-const useDaemonStatus = () =>
+const useDaemonStatus = (enabled: boolean) =>
   useQuery({
     queryKey: ["system", "daemon", "status"],
     queryFn: () => unwrap(api.GET("/system/daemon/status")),
     refetchInterval: 3000,
+    enabled,
   });
 
 function Notifications({ onClose }: { onClose: () => void }) {
   const state = useDesktopState();
-  const daemon = useDaemonStatus().data;
+  const local = isLocalServer();
+  const daemon = useDaemonStatus(local).data;
   const [busy, setBusy] = useState(false);
   return (
     <div className="flex max-w-lg flex-col gap-5">
       <Item title={t("onboarding.notifications.browser")} hint={t(`notify.state.${state}`)}>
         <Button
           variant="outline"
-          disabled={busy || state === "on" || state === "unsupported" || state === "denied"}
+          disabled={busy || state === "on" || state === "unsupported" || state === "install" || state === "denied"}
           onClick={() => {
             setBusy(true);
             void setDesktop(true).finally(() => setBusy(false));
@@ -493,29 +496,34 @@ function Notifications({ onClose }: { onClose: () => void }) {
           {state === "on" ? t("onboarding.notifications.on") : t("onboarding.notifications.allow")}
         </Button>
       </Item>
-      <Item title={t("onboarding.notifications.native")} hint={t("onboarding.notifications.nativeHint")}>
+      <Item
+        title={t(local ? "onboarding.notifications.native" : "onboarding.notifications.device")}
+        hint={t(local ? "onboarding.notifications.nativeHint" : "onboarding.notifications.deviceHint")}
+      >
         <NotificationTest label={t("onboarding.notifications.test")} onTerminal={onClose} />
       </Item>
-      <Item title={t("onboarding.notifications.daemon")} hint={t("onboarding.notifications.daemonHint")}>
-        {daemon?.installed && daemon.loaded ? (
-          <span role="status" className="text-sm text-ok">
-            {t("onboarding.notifications.installed")}
-          </span>
-        ) : (
-          <>
-            <Confirmed
-              command="hz system daemon install"
-              label={t("onboarding.notifications.install")}
-              onRun={onClose}
-            />
-            {daemon?.installed && (
-              <span role="status" className="text-xs text-warn">
-                {t("onboarding.notifications.notLoaded")}
-              </span>
-            )}
-          </>
-        )}
-      </Item>
+      {local && (
+        <Item title={t("onboarding.notifications.daemon")} hint={t("onboarding.notifications.daemonHint")}>
+          {daemon?.installed && daemon.loaded ? (
+            <span role="status" className="text-sm text-ok">
+              {t("onboarding.notifications.installed")}
+            </span>
+          ) : (
+            <>
+              <Confirmed
+                command="hz system daemon install"
+                label={t("onboarding.notifications.install")}
+                onRun={onClose}
+              />
+              {daemon?.installed && (
+                <span role="status" className="text-xs text-warn">
+                  {t("onboarding.notifications.notLoaded")}
+                </span>
+              )}
+            </>
+          )}
+        </Item>
+      )}
     </div>
   );
 }

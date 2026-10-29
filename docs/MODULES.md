@@ -153,6 +153,8 @@ Your Heinzelmännchen: durable agents that keep your team's documents true.
 | List your durable personal Heinzels, including new conversations without an approved contract. | `hz heinzel sessions` | `heinzel_sessions` | — | `GET /api/heinzel/sessions` |  |  |
 | Open one durable Heinzel and an ordered page of its accepted messages, even during an active turn. | `hz heinzel session` | `heinzel_session` | — | `GET /api/heinzel/session` |  |  |
 | Save this Heinzel's name or look against the exact profile revision you saw. | `hz heinzel profile` | `heinzel_profile` | — | `POST /api/heinzel/profile` | yes |  |
+| Propose local five-minute check-ins; the schedule stays inactive until activated. | `hz heinzel propose-check-in` | `heinzel_propose_check_in` | — | `POST /api/heinzel/propose-check-in` | yes |  |
+| Pause a schedule; activation and resume require an exact-intent approval from a trusted issuer. | `hz heinzel schedule-control` | `heinzel_schedule_control` | — | `POST /api/heinzel/schedule-control` | yes |  |
 | Durably queue a message for this Heinzel; acceptance is distinct from a completed model answer. | `hz heinzel chat` | `heinzel_chat` | — | `POST /api/heinzel/chat` | yes |  |
 | List your Heinzelmännchen, one per contract: owner, schedule, state, last and next run. | `hz heinzel list` | `heinzel_list` | — | `GET /api/heinzel/list` |  |  |
 | Write a starter contract, or a playbook's template (--template), into your workflows directory. | `hz heinzel new` | `heinzel_new` | — | — | yes |  |
@@ -302,7 +304,7 @@ Run modules' jobs in the background, supervised by launchd or systemd.
 | Install and load the launchd agent or systemd timer that ticks every few minutes. | `hz system daemon install` | — | — | `POST /api/system/daemon/install` | yes | expert |
 | Unload and remove the daemon's unit; receipts and logs stay. | `hz system daemon uninstall` | — | — | `POST /api/system/daemon/uninstall` | yes | expert |
 | Restart the daemon so it runs with the installed hz. | `hz system daemon restart` | `system_daemon_restart` | `POST /system/daemon/restart` | `POST /api/system/daemon/restart` | yes | expert |
-| Show whether the daemon is installed, loaded and paused, its last tick and failing jobs. | `hz system daemon status` | `system_daemon_status` | `GET /system/daemon/status` | `GET /api/system/daemon/status` |  | expert |
+| Check-ins need a resumed daemon with 5m ticks and a matching service version. | `hz system daemon status` | `system_daemon_status` | `GET /system/daemon/status` | `GET /api/system/daemon/status` |  | expert |
 | Show the latest lines of the daemon's log. | `hz system daemon logs` | `system_daemon_logs` | `GET /system/daemon/logs` | `GET /api/system/daemon/logs` |  | expert |
 | Run the jobs that are due and write a receipt for each; exits with 1 if any job failed. | `hz system daemon tick` | `system_daemon_tick` | — | — | yes | expert |
 | Pause the daemon: ticks run no job until resumed. | `hz system daemon pause` | `system_daemon_pause` | `POST /system/daemon/pause` | `POST /api/system/daemon/pause` | yes | expert |
@@ -374,6 +376,7 @@ Find, add, remove, enable, disable, list and scaffold plugins.
 | --- | --- | --- | --- | --- | --- | --- |
 | List installed plugins, enabled or not, with their source and the modules and adapters they bring. | `hz system plugin list` | `system_plugin_list` | `GET /system/plugin/list` | `GET /api/system/plugin/list` |  | expert |
 | Show what a plugin would install, then add it with `--confirm`; adding it again replaces it. | `hz system plugin add` | `system_plugin_add` | — | `POST /api/system/plugin/add` | yes | expert |
+| Read the status and result of a plugin add without repeating it. | `hz system plugin operation` | `system_plugin_operation` | — | `GET /api/system/plugin/operation` |  | expert |
 | Add the plugin in a directory on this machine, to try a plugin you are writing. | `hz system plugin develop` | — | — | — | yes | expert |
 | Remove a plugin. | `hz system plugin remove` | `system_plugin_remove` | — | `POST /api/system/plugin/remove` | yes | expert |
 | Switch a plugin off without removing it, in `[hz] disabled_modules` of your user file. | `hz system plugin disable` | `system_plugin_disable` | — | `POST /api/system/plugin/disable` | yes | expert |
@@ -420,9 +423,13 @@ Chat with the agent runner about where you are; it acts through hz once you conf
 | Operation | CLI | MCP tool | REST | Web | Changes state | Expert |
 | --- | --- | --- | --- | --- | --- | --- |
 | Open a chat session, optionally about a screen, a contract, a draft or a notification event. | `hz chat open` | — | — | `POST /api/system/runner/chat/open` | yes |  |
+| Open a runner chat bound to this owner's durable session and current conversation history. | `hz chat open-check-in` | — | — | `POST /api/system/runner/chat/open-check-in` | yes |  |
 | Send a message in a chat session and wait for the answer; this may cost money. | `hz chat send` | — | — | `POST /api/system/runner/chat/send` | yes |  |
 | Run an action the agent proposed, with exactly the arguments shown; only you can confirm. | `hz chat confirm` | — | — | `POST /api/system/runner/chat/confirm` | yes |  |
+| Authorize one reviewed schedule action for a single MCP run; keep its proof private. | `hz chat authorize-for-mcp` | — | — | `POST /api/system/runner/chat/authorize-for-mcp` | yes |  |
 | Decline an action the agent proposed; it never runs. | `hz chat decline` | — | — | `POST /api/system/runner/chat/decline` | yes |  |
+| Check an interrupted confirmation without running it again; unresolved outcomes stay blocked. | `hz chat recover` | — | — | `POST /api/system/runner/chat/recover` | yes |  |
+| Stage a schedule action for review in chat; creating the proposal never changes or activates it. | `hz chat propose-schedule-control` | — | — | `POST /api/system/runner/chat/propose-schedule-control` | yes |  |
 | Show a chat session: its context, messages, actions and costs. | `hz chat show` | — | — | `GET /api/system/runner/chat/show` |  | expert |
 | List chat sessions, most recent first; they are kept for system.runner.chat.keep_days. | `hz chat list` | — | — | `GET /api/system/runner/chat/list` |  |  |
 | Delete a chat session and everything it holds; returns the sessions left. | `hz chat remove` | — | — | `POST /api/system/runner/chat/remove` | yes | expert |

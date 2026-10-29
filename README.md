@@ -163,6 +163,9 @@ flowchart TB
     System & Clock & Ext -- "advertise lets" --> Core
 ```
 
+Doctor lists the hostname of the machine running hz. The footer's System resources panel shows that hostname
+alongside its CPU, memory and load readings.
+
 ## What's inside
 
 Every module is a set of operations, and every operation is a `hz` command, an MCP tool (`hz system serve mcp`)

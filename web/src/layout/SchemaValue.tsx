@@ -11,7 +11,7 @@ import { cityOf, TimeZonePicker } from "./TimeZonePicker";
 
 const field =
   "h-8 rounded-lg border border-border bg-input px-2 text-sm outline-none focus:border-muted-foreground/50 disabled:opacity-50";
-const selectField = cn(field, "pr-8");
+const selectField = cn(field, "min-w-0 max-w-full pr-8");
 
 const pad = (value: number | string) => (typeof value === "number" && value < 10 ? `0${value}` : String(value));
 /** Hours read as times: 9 → 09:00; other numbers as they are. */

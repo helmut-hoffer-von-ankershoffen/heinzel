@@ -216,10 +216,33 @@ Enforced by [import-linter](https://import-linter.readthedocs.io) (`make lint`):
 ## World Clock
 
 The clock plugin's header button opens the local World Clock in the right panel (`?panel=world-clock`). It shows
-configured zones on a draggable globe, with a 24-hour time list and approximate daylight. Reduced motion or missing
-WebGL uses a static map. Orange marks the primary zone; selecting a place centres it. Markers are the representative
-locations of IANA time-zone names, never people's locations. No map service is contacted.
+configured zones on a draggable globe, with city names in the list and marker tooltips, 24-hour times and approximate
+daylight. Reduced motion or missing WebGL uses a static map. Orange marks the primary zone; selecting a place centres
+it. Markers are the representative locations of IANA time-zone names, never people's locations. No map service is
+contacted.
 
 The fallback land outline is simplified [Natural Earth land](https://www.naturalearthdata.com/about/terms-of-use/)
 (public domain), and representative zone points are from IANA's public-domain `zone.tab`. See
 [ADR 0063](adr/0063-world-clock-is-a-local-interactive-globe.md).
+
+### Phone overlays
+
+The web head sizes dialogs and positions footer popovers against the visual viewport, including keyboard and zoom
+changes. Floating controls respect device safe areas; touch form fields use at least 16px text to avoid focus zoom.
+`web/e2e/mobile-responsive.mjs` checks phone portrait/landscape layouts, dialog and footer bounds, navigation,
+keyboard-sized heights and zoom. The collapsed sidebar keeps direct play/pause; see [ADR 0088](adr/0088-collapsed-sidebar-keeps-sound-controls.md).
+
+The workspace uses descriptor-driven tabs for Chat, Terminal and World Clock on desktop and phone. Hidden contents
+stay mounted. On phones, the World Clock, Chat and Terminal header actions scroll to their panels, and Page scrolls
+back to the main screen. Reduced motion uses an immediate transition. The header and footer stay visible while scrolling, except in the full-screen
+terminal. New panels use the same renderer rather than adding another stack or viewport rule; [ADR 0089](adr/0089-one-selected-workspace-panel.md) records the boundary.
+
+On iPhone and iPad, embedded YouTube volume belongs to the device's volume buttons. The sound picker explains this
+instead of offering a slider or typing ducking; layered Web Audio soundscapes keep both. Stream pause, meeting mute
+and mute during voice input use the player's pause/mute commands rather than volume fades.
+
+Notification tests report the browser running the app. Only loopback desktop pages also test and offer repairs for
+the server's native notifier. Remote pages never open the server's notification settings or claim its pop-up reached
+the phone. The test shows a browser notification and checks that delivery before claiming success. iPhone/iPad tabs
+explain Share → Add to Home Screen; the installed app can request permission. The app must remain running to receive
+notices: it has no background Web Push service (ADR 0046).

@@ -1,5 +1,6 @@
 // One query per operation the screens read; TanStack Query caches them, so screens share what they fetched.
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { isLocalServer } from "@/lib/browser";
 import { splash, unreachableError } from "@/splash/store";
 import { api, unwrap } from "./client";
 import type { components } from "./schema";
@@ -172,8 +173,8 @@ export const useNotices = () =>
 export const useTestNotice = () => {
   const client = useQueryClient();
   return useMutation({
-    // Native too, as a person pressed the button: the answer says how each way of reaching you stands.
-    mutationFn: () => unwrap(api.POST("/system/notify/test", { params: { query: { native: true } } })),
+    // A remote browser tests its own notifications, not the server's desktop.
+    mutationFn: () => unwrap(api.POST("/system/notify/test", { params: { query: { native: isLocalServer() } } })),
     onSettled: () => client.invalidateQueries({ queryKey: ["system", "notify", "list"] }),
   });
 };
@@ -206,11 +207,26 @@ export const usePluginPreview = () =>
     mutationFn: (spec: string) => unwrap(api.POST("/system/plugin/add", { params: { query: { spec } } })),
   });
 
-export type PluginChangeRequest =
-  | { add: string; onProgress?: (text: string) => void }
+/** Poll only while a confirmed install is active; the server receipt is authoritative across reloads. */
+export const usePluginOperation = (operationId: string | null) =>
+  useQuery({
+    queryKey: ["system", "plugin", "operation", operationId],
+    queryFn: ({ signal }) =>
+      unwrap(api.GET("/system/plugin/operation", { params: { query: { operation_id: operationId ?? "" } }, signal })),
+    enabled: Boolean(operationId),
+    refetchInterval: (query) => (query.state.data?.status === "running" ? 1000 : false),
+    retry: false,
+  });
+
+export const readPluginOperation = async (operationId: string) =>
+  unwrap(api.GET("/system/plugin/operation", { params: { query: { operation_id: operationId } } }));
+
+export type PluginChangeRequest = (
+  | { add: string; operationId: string; onProgress?: (text: string) => void; signal?: AbortSignal }
   | { remove: string }
   | { enable: string }
-  | { disable: string };
+  | { disable: string }
+) & { signal?: AbortSignal };
 
 /** `hz system plugin add --confirm|remove|enable|disable`: changes what code runs, so the UI asks first (ADR 0047). */
 export const useChangePlugin = () => {
@@ -223,21 +239,45 @@ export const useChangePlugin = () => {
         // its task event immediately, keeps quiet work alive across proxies, and returns the same result or error.
         return stream<components["schemas"]["PluginChange"]>(
           "/system/plugin/add",
-          { spec: variables.add, confirm: true },
+          { spec: variables.add, confirm: true, operation_id: variables.operationId },
           (event) => {
             if (event.event === "task" && typeof event.data.text === "string") variables.onProgress?.(event.data.text);
           },
+          variables.signal,
         );
       }
       if ("remove" in variables) {
-        return unwrap(api.POST("/system/plugin/remove", { params: { query: { distribution: variables.remove } } }));
+        return unwrap(
+          api.POST("/system/plugin/remove", {
+            params: { query: { distribution: variables.remove } },
+            signal: variables.signal,
+          }),
+        );
       }
       if ("enable" in variables) {
-        return unwrap(api.POST("/system/plugin/enable", { params: { query: { distribution: variables.enable } } }));
+        return unwrap(
+          api.POST("/system/plugin/enable", {
+            params: { query: { distribution: variables.enable } },
+            signal: variables.signal,
+          }),
+        );
       }
-      return unwrap(api.POST("/system/plugin/disable", { params: { query: { distribution: variables.disable } } }));
+      return unwrap(
+        api.POST("/system/plugin/disable", {
+          params: { query: { distribution: variables.disable } },
+          signal: variables.signal,
+        }),
+      );
     },
     onSuccess: async (answer) => {
+      if (answer.operation_id && answer.candidate) {
+        client.setQueryData(["system", "plugin", "operation", answer.operation_id], {
+          operation_id: answer.operation_id,
+          status: answer.done ? "completed" : "unknown",
+          candidate: answer.candidate,
+          result: answer,
+        });
+      }
       if (!answer.done) return;
       // A query started before the installation must not replace its authoritative after-state.
       await client.cancelQueries({ queryKey: ["system", "plugin"] });
@@ -259,9 +299,11 @@ export const useChangePlugin = () => {
       void client.invalidateQueries({ queryKey: ["system", "plugin"] });
       void client.invalidateQueries({ queryKey: ["ui"] });
     },
-    onError: () => {
+    onError: (_error, variables) => {
       // A lost response is uncertain; reconcile reads without replaying an installation.
       void client.invalidateQueries({ queryKey: ["system", "plugin"] });
+      if ("add" in variables && variables.operationId)
+        void client.invalidateQueries({ queryKey: ["system", "plugin", "operation", variables.operationId] });
     },
   });
 };

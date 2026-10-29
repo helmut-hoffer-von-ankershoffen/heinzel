@@ -22,10 +22,12 @@ LINT := \
 		"&confidential=uv run --script scripts/check_confidentiality.py"
 TYPES := "&mypy=uv run mypy" "&pyright=uv run pyright"
 # Unit, then integration (the suite orders them), on 4 workers, stopping at the first failure; coverage is in make test.
-TESTS := "&tests=uv run pytest -m '(unit or integration) and not perf' -n 4 -x -q --session-timeout=120"
-# The same suite measured, on the same 4 workers: each xdist worker is a Python subprocess, which coverage measures
-# ([tool.coverage.run] patch = ["subprocess"]) into its own data file; `coverage combine` merges them afterwards.
-COVERED := uv run coverage erase && uv run coverage run -m pytest -m '(unit or integration) and not perf' -n 4 -q --session-timeout=300
+# Match the covered suite's deadline: the full suite can exceed two minutes on a busy developer machine.
+TESTS := "&tests=uv run pytest -m '(unit or integration) and not perf' -n 4 -x -q --session-timeout=300"
+# The same suite measured, on the same 4 workers: coverage's subprocess tracing can exceed the unmeasured 300s
+# deadline on a busy developer machine. Match `make test`'s 420s allowance; coverage still measures every worker.
+# ([tool.coverage.run] patch = ["subprocess"]) writes each worker to its own file; `coverage combine` merges them.
+COVERED := uv run coverage erase && uv run coverage run -m pytest -m '(unit or integration) and not perf' -n 4 -q --session-timeout=420
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'

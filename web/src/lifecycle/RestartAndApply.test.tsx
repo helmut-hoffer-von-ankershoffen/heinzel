@@ -64,11 +64,47 @@ it("keeps failed verification actionable and Check again only observes the repla
   await act(async () => vi.advanceTimersByTimeAsync(50));
   expect(screen.getByRole("alert")).toHaveTextContent("has not answered");
   expect(screen.queryByText("Applied")).toBeNull();
+  expect(screen.queryByRole("button", { name: "Restart and apply" })).toBeNull();
   expect(onApplied).not.toHaveBeenCalled();
   transport.read.mockResolvedValue(after);
   await act(async () => fireEvent.click(screen.getByRole("button", { name: "Check again" })));
   expect(screen.getByRole("status")).toHaveTextContent("Applied");
   expect(transport.restart).toHaveBeenCalledOnce();
+});
+
+it("does not replay a restart when its acknowledgement is lost; Check again only observes", async () => {
+  const transport = server();
+  const order: string[] = [];
+  transport.read.mockResolvedValue(before);
+  transport.restart.mockImplementation(async () => {
+    order.push("restart-post");
+    throw new TypeError("connection dropped after the server accepted restart");
+  });
+  render(
+    <RestartAndApply
+      target="Clock"
+      changes={["Primary time zone"]}
+      options={{
+        transport,
+        timeout: 50,
+        interval: 10,
+        onObservation: () => order.push("observation-saved"),
+      }}
+    />,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Restart and apply" }));
+  await act(async () => fireEvent.click(screen.getByRole("button", { name: "Restart and apply Clock" })));
+  await act(async () => vi.advanceTimersByTimeAsync(50));
+
+  expect(screen.getByRole("alert")).toHaveTextContent("has not answered");
+  expect(screen.getByRole("button", { name: "Check again" })).toBeVisible();
+  expect(screen.queryByRole("button", { name: "Restart and apply" })).toBeNull();
+  transport.read.mockResolvedValue(after);
+  await act(async () => fireEvent.click(screen.getByRole("button", { name: "Check again" })));
+
+  expect(screen.getByRole("status")).toHaveTextContent("Applied");
+  expect(transport.restart).toHaveBeenCalledOnce();
+  expect(order).toEqual(["observation-saved", "restart-post"]);
 });
 
 it("cancels owned polling on unmount without claiming that the server mutation was cancelled", async () => {

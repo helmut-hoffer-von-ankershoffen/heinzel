@@ -78,7 +78,9 @@ export function Home() {
   const focused = params.get("card");
   // Home is where you talk to your Heinzelmännchen: the composer has the focus when it opens.
   // biome-ignore lint/correctness/useExhaustiveDependencies: once, when Home opens
-  useEffect(() => focus(), []);
+  useEffect(() => {
+    if (window.innerWidth >= 1024) focus();
+  }, []);
 
   const askAbout = async (context: string, text: string) => {
     await chat.openAbout(context, text);

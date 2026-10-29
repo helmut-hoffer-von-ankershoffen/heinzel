@@ -78,7 +78,7 @@ def client(kernel):
 def test_the_web_head_manages_plugins_and_the_rest_head_only_lists_and_searches(kernel):
     on_the_web = {item.name for item in exposed(kernel, web.HEAD)}
     on_rest = {item.name for item in exposed(kernel, api.HEAD)}
-    assert {"system_plugin_list", "system_plugin_search", *CHANGES} <= on_the_web
+    assert {"system_plugin_list", "system_plugin_search", "system_plugin_operation", *CHANGES} <= on_the_web
     assert not on_rest & CHANGES
     assert {"system_plugin_list", "system_plugin_search"} <= on_rest
     assert not {"system_plugin_develop", "system_plugin_new"} & (on_the_web | on_rest)  # paths, terminals: CLI only
@@ -89,6 +89,7 @@ def test_the_web_head_manages_plugins_and_the_rest_head_only_lists_and_searches(
 
 def test_adding_needs_the_token(client, kernel):
     assert client.post("/api/system/plugin/add", params={"spec": "heinzel-crm", "confirm": True}).status_code == 401
+    assert client.get("/api/system/plugin/operation", params={"operation_id": "r" * 43}).status_code == 401
     assert kernel.runs == []
 
 
@@ -170,10 +171,22 @@ def test_without_confirm_the_web_app_gets_what_to_show_and_nothing_is_installed(
 
 def test_confirmed_the_shown_requirement_is_installed_recorded_and_a_restart_asked_for(client, kernel):
     shown = client.post("/api/system/plugin/add", params={"spec": "heinzel-crm"}, headers=AUTH).json()
-    params = {"spec": shown["candidate"]["requirement"], "confirm": True}
+    params = {
+        "spec": shown["candidate"]["requirement"],
+        "confirm": True,
+        "operation_id": shown["operation_id"],
+    }
     change = client.post("/api/system/plugin/add", params=params, headers=AUTH).json()
     assert (change["done"], change["restart_required"]) == (True, True)
     assert kernel.runs[0][-1] == "heinzel-crm==1.1.0"
+    replay = client.post("/api/system/plugin/add", params=params, headers=AUTH).json()
+    assert replay == change
+    assert len(kernel.runs) == 1
+    receipt = client.get(
+        "/api/system/plugin/operation", params={"operation_id": shown["operation_id"]}, headers=AUTH
+    ).json()
+    assert receipt["status"] == "completed"
+    assert receipt["result"] == change
     history = client.get("/api/system/plugin/history", headers=AUTH).json()
     assert [(e["action"], e["requirement"]) for e in history] == [("add", "heinzel-crm==1.1.0")]
 
@@ -182,9 +195,14 @@ def test_a_confirmed_plugin_install_streams_progress_and_its_result(client, kern
     """The UI's long-running install path uses the authenticated operation stream, not a timed REST request."""
     # The fixture constructs PluginService before the web head replaces Progress with its request-scoped stream sink.
     kernel.resolve(PluginService)._installation._progress = kernel.resolve(Progress)
+    shown = client.post("/api/system/plugin/add", params={"spec": "heinzel-crm"}, headers=AUTH).json()
     response = client.post(
         "/api/stream/system/plugin/add",
-        params={"spec": "heinzel-crm==1.1.0", "confirm": True},
+        params={
+            "spec": shown["candidate"]["requirement"],
+            "confirm": True,
+            "operation_id": shown["operation_id"],
+        },
         headers=AUTH,
     )
 
@@ -193,6 +211,10 @@ def test_a_confirmed_plugin_install_streams_progress_and_its_result(client, kern
     assert 'event: task\ndata: {"text": "Adding plugin heinzel-crm"}' in response.text
     assert 'event: result\ndata: {"data": {"action": "add", "done": true' in response.text
     assert kernel.runs[0][-1] == "heinzel-crm==1.1.0"
+    receipt = client.get(
+        "/api/system/plugin/operation", params={"operation_id": shown["operation_id"]}, headers=AUTH
+    ).json()
+    assert receipt["status"] == "completed"
 
 
 def test_a_first_party_catalog_entry_installs_through_the_add_endpoint_by_its_install_spec(client, kernel):

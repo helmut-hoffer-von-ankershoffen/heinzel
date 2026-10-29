@@ -177,6 +177,20 @@ class PluginChange(BaseModel):
     previewed: bool = Field(
         default=False, description="Whether a terminal already showed the preview and asked; the CLI says no more."
     )
+    operation_id: str | None = Field(
+        default=None, description="Opaque server receipt for confirming or checking this add."
+    )
+
+
+class PluginOperation(BaseModel):
+    """Durable state of one plugin-add preview and its confirmation."""
+
+    operation_id: str = Field(description="Opaque id returned by the preview; it contains no candidate details.")
+    status: Literal["previewed", "running", "completed", "unknown"] = Field(
+        description="Whether confirmation is available, running, finished, or uncertain and must not be replayed."
+    )
+    candidate: PluginCandidate = Field(description="The exact candidate shown before confirmation.")
+    result: PluginChange | None = Field(default=None, description="The authoritative result after a completed add.")
 
 
 class PluginEvent(BaseModel):

@@ -178,6 +178,58 @@ class NotifyService(Notifications):
             logger.warning("can't record a notice in %s", self.store.directory, exc_info=True)
             return None
 
+    def emit_once(  # noqa: PLR0913 - the notice fields match emit
+        self, kind: NoticeKind, title: str, body: str, *, route: str, command: str, key: str
+    ) -> bool:
+        """Persist a notice and replay key together, independent of repeat policy and display retention."""
+        if not self.settings.wants(kind):
+            return False
+        now = self._clock()
+
+        def record(notices: list[Notice]) -> None:
+            decision = policy.decide(self.settings, self.hours, now, urgent=False, recent=notices)
+            notices.append(
+                Notice(
+                    id=f"{now.astimezone(UTC):%Y%m%dT%H%M%S%fZ}-{secrets.token_hex(3)}",
+                    kind=kind,
+                    title=title,
+                    body=body,
+                    route=route if ROUTE.fullmatch(route) else "/",
+                    command=command,
+                    key=key,
+                    at=now,
+                    due=decision.due,
+                    popup=decision.popup,
+                    held=decision.held,
+                )
+            )
+
+        try:
+            return self.store.change_once(now, key, record)
+        except OSError:
+            logger.warning("can't record a durable notice in %s", self.store.directory, exc_info=True)
+            return False
+
+    def forget_once(self, key: str) -> bool:
+        """Remove a completed outbox receipt while preserving its display notice."""
+        return self.forget_completed({key})
+
+    def forget_completed(self, keys: set[str]) -> bool:
+        """Remove completed outbox receipts in one write, retaining unresolved keys and visible notices."""
+        try:
+            return self.store.forget_completed(self._clock(), keys)
+        except OSError:
+            logger.warning("can't compact a completed durable notice in %s", self.store.directory, exc_info=True)
+            return False
+
+    def has_once(self, key: str) -> bool | None:
+        """Check whether an uncertain outbox key was already recorded, failing closed on store errors."""
+        try:
+            return self.store.has_once(key)
+        except OSError:
+            logger.warning("can't inspect a durable notice in %s", self.store.directory, exc_info=True)
+            return None
+
     # What heads call -------------------------------------------------------------------------------------------------
 
     def recent(self, limit: int = 50) -> list[Notice]:

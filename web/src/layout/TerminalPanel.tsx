@@ -1,4 +1,5 @@
-// A terminal under the chat, as in Claude: the user's login shell on this machine, through the web head's
+import { AnchoredPopover } from "@/components/AnchoredPopover";
+// A terminal workspace tab: the user's login shell on this machine, through the web head's
 // /api/terminal WebSocket (ADR 0048). Tabs each run their own shell and stay alive while hidden; full screen covers the
 // screen and the chat. Closing a tab or the panel hangs its shell up.
 import "@xterm/xterm/css/xterm.css";
@@ -306,10 +307,7 @@ function OptionsMenu({ options, onChange }: { options: Options; onChange: (patch
         <Ellipsis aria-hidden />
       </Button>
       {open && (
-        <div
-          role="menu"
-          className="absolute top-full right-0 z-(--layer-popover) mt-1 w-60 rounded-xl border border-border bg-popover p-1.5 shadow-xl"
-        >
+        <AnchoredPopover anchor={ref} role="menu" className="w-60">
           <button
             type="button"
             role="menuitem"
@@ -380,7 +378,7 @@ function OptionsMenu({ options, onChange }: { options: Options; onChange: (patch
                 {options.scrollback === lines && tick}
               </button>
             ))}
-        </div>
+        </AnchoredPopover>
       )}
     </div>
   );

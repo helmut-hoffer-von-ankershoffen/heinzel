@@ -4,6 +4,7 @@ import { Check, ChevronDown, Link2, RefreshCw, SquareTerminal } from "lucide-rea
 import { useEffect, useRef, useState } from "react";
 import { matchPath, useLocation } from "react-router";
 import { usePlayful } from "@/api/queries";
+import { AnchoredPopover } from "@/components/AnchoredPopover";
 import { HeaderActions } from "@/components/Contributions";
 import { HeinzelAvatar } from "@/components/HeinzelAvatar";
 import { Button } from "@/components/ui/button";
@@ -42,9 +43,18 @@ type Props = {
   onToggleChat: () => void;
   terminalOpen: boolean;
   onToggleTerminal: () => void;
+  navigationMode?: boolean;
+  onWorldClock?: () => void;
 };
 
-export function TopBar({ chatOpen, onToggleChat, terminalOpen, onToggleTerminal }: Props) {
+export function TopBar({
+  chatOpen,
+  onToggleChat,
+  terminalOpen,
+  onToggleTerminal,
+  navigationMode = false,
+  onWorldClock,
+}: Props) {
   const { title, command } = useScreen();
   const queries = useQueryClient();
   const playful = usePlayful();
@@ -78,7 +88,7 @@ export function TopBar({ chatOpen, onToggleChat, terminalOpen, onToggleTerminal 
   };
   return (
     // The sidebar's top line has the same height and hairline, so both run across the window as one.
-    <header className="flex h-12 shrink-0 items-center gap-1 border-b-[0.5px] border-foreground/20 px-3">
+    <header className="workspace-topbar flex h-12 shrink-0 items-center gap-1 border-b-[0.5px] border-foreground/20 px-3">
       <div ref={menuRef} className="relative min-w-0">
         <button
           type="button"
@@ -91,10 +101,7 @@ export function TopBar({ chatOpen, onToggleChat, terminalOpen, onToggleTerminal 
           <ChevronDown aria-hidden className="size-4 shrink-0 text-icon" />
         </button>
         {menu && (
-          <div
-            role="menu"
-            className="absolute top-full left-0 z-(--layer-popover) mt-1 w-64 rounded-xl border border-border bg-card p-1 shadow-lg"
-          >
+          <AnchoredPopover anchor={menuRef} role="menu" className="w-64">
             <MenuItem
               onSelect={() => copy("command")}
               icon={copied === "command" ? <Check aria-hidden /> : <SquareTerminal aria-hidden />}
@@ -108,11 +115,11 @@ export function TopBar({ chatOpen, onToggleChat, terminalOpen, onToggleTerminal 
             <MenuItem onSelect={refresh} icon={<RefreshCw aria-hidden />}>
               {t("top.refresh")}
             </MenuItem>
-          </div>
+          </AnchoredPopover>
         )}
       </div>
       <div className="ml-auto flex items-center gap-0.5 text-icon">
-        <HeaderActions />
+        <HeaderActions onWorldClock={onWorldClock} />
         <Button variant="ghost" size="icon" onClick={refresh} aria-label={t("top.refresh")} title={t("top.refresh")}>
           <RefreshCw aria-hidden />
         </Button>
@@ -121,8 +128,8 @@ export function TopBar({ chatOpen, onToggleChat, terminalOpen, onToggleTerminal 
           size="icon"
           onClick={onToggleTerminal}
           aria-pressed={terminalOpen}
-          aria-label={terminalOpen ? t("terminal.close") : t("terminal.open")}
-          title={terminalOpen ? t("terminal.close") : t("terminal.open")}
+          aria-label={terminalOpen ? t(navigationMode ? "terminal.show" : "terminal.close") : t("terminal.open")}
+          title={terminalOpen ? t(navigationMode ? "terminal.show" : "terminal.close") : t("terminal.open")}
           className={cn(terminalOpen && "bg-accent text-accent-foreground")}
         >
           <SquareTerminal aria-hidden />
@@ -134,8 +141,8 @@ export function TopBar({ chatOpen, onToggleChat, terminalOpen, onToggleTerminal 
           onClick={onToggleChat}
           aria-expanded={chatOpen}
           aria-pressed={chatOpen}
-          aria-label={chatOpen ? t("chat.collapse") : t("chat.expand")}
-          title={chatOpen ? t("chat.collapse") : t("chat.expand")}
+          aria-label={chatOpen ? t(navigationMode ? "chat.show" : "chat.collapse") : t("chat.expand")}
+          title={chatOpen ? t(navigationMode ? "chat.show" : "chat.collapse") : t("chat.expand")}
           className="relative hover:bg-transparent hover:opacity-70"
         >
           <HeinzelAvatar view="head" age="young" shirt="teal" alive={playful} className="size-[1.4em] text-lg" />

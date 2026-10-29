@@ -110,6 +110,17 @@ function renderSettings() {
 }
 
 describe("desktop notifications", () => {
+  it("asks iPhone browser tabs to open from the Home Screen without requesting permission", async () => {
+    installNotification();
+    vi.spyOn(navigator, "userAgent", "get").mockReturnValue("Mozilla/5.0 (iPhone) AppleWebKit/605.1.15");
+    mockApi(shell);
+    renderSettings();
+    expect(await screen.findByRole("switch", { name: "Notify me in this browser" })).toBeDisabled();
+    expect(screen.getByText(/Keep hz open to receive notices/)).toBeInTheDocument();
+    expect(await setDesktop(true)).toBe("install");
+    expect(FakeNotification.requestPermission).not.toHaveBeenCalled();
+  });
+
   it("ask for permission only when turned on, never on page load", async () => {
     installNotification();
     mockApi(shell);

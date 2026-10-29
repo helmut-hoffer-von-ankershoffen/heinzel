@@ -28,7 +28,7 @@ PLUGINS = ("heinzel_acme", "heinzel_sound_demo")
 ACME = ("heinzel_acme", "heinzel_acme_payments", "heinzel_acme_lisbon", "heinzel_acme_payments_checkout")
 TOKEN = "s3ssion-token-for-tests"
 AUTH = {"Authorization": f"Bearer {TOKEN}"}
-FRAMED = f"{web.CSP}; frame-src https://www.youtube-nocookie.com"
+FRAMED = f"{web.CSP}; frame-src https://www.youtube-nocookie.com https://www.youtube.com"
 WEATHER_FRAMED = f"{web.CSP}; frame-src {web.OSM_FRAME_ORIGIN}"
 STREAM = {"kind": "stream", "stream": {"provider": "youtube", "video": "tRsQsTMvPNg"}}
 
@@ -352,7 +352,7 @@ def test_the_weather_map_frame_is_admitted_only_when_a_weather_module_is_install
     hz(hzk, "system", "sound", "use", "claude-fm")
     weather_and_stream = client(hzk, static)
     assert weather_and_stream.get("/").headers["content-security-policy"] == (
-        f"{web.CSP}; frame-src {web.OSM_FRAME_ORIGIN} https://www.youtube-nocookie.com"
+        f"{web.CSP}; frame-src {web.OSM_FRAME_ORIGIN} https://www.youtube-nocookie.com https://www.youtube.com"
     )
 
 

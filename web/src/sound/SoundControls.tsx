@@ -8,8 +8,10 @@ import { useThemes } from "@/api/queries";
 import { SettingsShortcut } from "@/components/SettingsShortcut";
 import { t } from "@/i18n";
 import { Switch } from "@/layout/SettingControls";
+import { isIOS } from "@/lib/browser";
+import { placePopover, popoverHeight } from "@/lib/placement";
 import { cn } from "@/lib/utils";
-import { placePopover } from "./dock";
+import { viewportBounds, watchViewport } from "@/lib/viewport";
 import { effective, useSetSound, useSoundSetting, useSoundscapes } from "./queries";
 import { toggle, useSound } from "./store";
 
@@ -93,6 +95,9 @@ function VolumeSlider({ list }: { list: SchemaSoundList }) {
   useEffect(() => setValue(list.volume), [list.volume]);
   useEffect(() => () => clearTimeout(timer.current), []);
   const id = useId();
+  if (isIOS() && effective(list)?.stream) {
+    return <p className="px-2.5 py-1.5 text-ui-sm text-muted-foreground">{t("sound.deviceVolume")}</p>;
+  }
   return (
     <div className="flex items-center gap-3 px-2.5 py-1.5">
       <label htmlFor={id} className="text-ui-sm text-muted-foreground">
@@ -130,6 +135,7 @@ function Toggle({
   const setting = useSoundSetting();
   const id = useId();
   const on = list[field];
+  if (field === "duck_while_typing" && isIOS() && effective(list)?.stream) return null;
   return (
     <div className="flex items-center gap-3 px-2.5 py-1.5">
       <span id={id} className="flex-1 text-ui">
@@ -152,17 +158,21 @@ function Popover({
   dialog: RefObject<HTMLDivElement | null>;
   children: ReactNode;
 }) {
-  const [at, setAt] = useState<{ left: number; top: number } | null>(null);
+  const [at, setAt] = useState<{ left: number; top: number; maxHeight: number } | null>(null);
   useLayoutEffect(() => {
     const place = () => {
       const target = anchor.current?.getBoundingClientRect();
       const box = dialog.current?.getBoundingClientRect();
       if (!target || !box) return;
-      setAt(placePopover(target, { width: box.width, height: box.height }, side));
+      const maxHeight = side === "above" ? popoverHeight(target) : Math.max(1, viewportBounds().height - 16);
+      setAt({
+        ...placePopover(target, { width: box.width, height: Math.min(box.height, maxHeight) }, side),
+        maxHeight,
+      });
     };
     place();
-    window.addEventListener("resize", place);
-    return () => window.removeEventListener("resize", place);
+    const unwatchViewport = watchViewport(place);
+    return () => unwatchViewport();
   }, [anchor, dialog, side]);
   return createPortal(
     <div
@@ -170,7 +180,7 @@ function Popover({
       role="dialog"
       aria-label={t("sound.title")}
       style={at ? { left: at.left, top: at.top } : { left: 0, top: 0, visibility: "hidden" }}
-      className="fixed z-(--layer-popover) max-h-[calc(100vh-1rem)] w-72 max-w-[calc(100vw-1rem)] overflow-y-auto rounded-xl border border-border bg-popover p-1.5 shadow-xl"
+      className="viewport-popover fixed z-(--layer-popover) max-h-[calc(var(--hz-viewport-height,100dvh)-1rem)] w-72 max-w-[calc(var(--hz-viewport-width,100vw)-1rem)] overflow-y-auto rounded-xl border border-border bg-popover p-1.5 shadow-xl"
     >
       {children}
     </div>,
@@ -249,6 +259,19 @@ export function SoundButton({ compact = false }: { compact?: boolean }) {
             <SettingsShortcut section="hz" label={t("sound.more")} onClick={() => setOpen(false)} />
           </div>
         </Popover>
+      )}
+      {compact && current && (
+        <button
+          type="button"
+          onClick={() => toggle()}
+          aria-label={
+            sound.playing ? t("sound.pause", { title: current.title }) : t("sound.play", { title: current.title })
+          }
+          title={sound.playing ? t("sound.pause", { title: current.title }) : t("sound.play", { title: current.title })}
+          className="flex size-9 items-center justify-center rounded-lg text-icon hover:bg-accent/70"
+        >
+          {sound.playing ? <Pause aria-hidden className="size-4" /> : <Play aria-hidden className="size-4" />}
+        </button>
       )}
       <button
         ref={opener}

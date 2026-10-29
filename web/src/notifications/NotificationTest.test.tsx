@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SchemaChannel, SchemaTested } from "@/api/client";
 import { OPEN_TERMINAL } from "@/lib/terminal";
+import * as registration from "@/pwa/register";
 import { base } from "@/test/chat";
 import { expectAccessible, mockApi, renderAt } from "@/test/render";
 
@@ -45,6 +46,50 @@ const answers = {
 afterEach(() => vi.restoreAllMocks());
 
 describe("The notification test", () => {
+  it("reports the iPhone browser and keeps the Mac server's settings out of the result", async () => {
+    vi.spyOn(navigator, "userAgent", "get").mockReturnValue("Mozilla/5.0 (iPhone) AppleWebKit/605.1.15");
+    const { calls } = mockApi({ ...answers, "/api/system/notify/test": { status: 503, body: nothing } });
+    const user = userEvent.setup();
+    const { container } = renderAt("/doctor?panel=notifications");
+    await user.click(await screen.findByRole("button", { name: "Send a test notification" }));
+    const result = await screen.findByRole("region", { name: "How the test went" });
+    expect(within(result).getByRole("status")).toHaveTextContent("The test was added to Notifications in this app.");
+    expect(result).toHaveTextContent("This app is open");
+    expect(result).toHaveTextContent("Add to Home Screen");
+    expect(result).not.toHaveTextContent(/macOS|Native pop-ups|Daemon/);
+    expect(within(result).queryByRole("button", { name: /settings|Install daemon/ })).not.toBeInTheDocument();
+    const test = calls.find((call) => call.url.includes("/system/notify/test"));
+    expect(new URL(test?.url ?? "").searchParams.get("native")).toBe("false");
+    await expectAccessible(container);
+  });
+
+  it.each([true, false])("checks actual browser delivery in an installed iPhone app (shown: %s)", async (works) => {
+    vi.spyOn(navigator, "userAgent", "get").mockReturnValue("Mozilla/5.0 (iPhone) AppleWebKit/605.1.15");
+    const media = window.matchMedia("(display-mode: standalone)");
+    vi.spyOn(window, "matchMedia").mockImplementation((query) => ({
+      ...media,
+      media: query,
+      matches: query === "(display-mode: standalone)",
+    }));
+    vi.stubGlobal("Notification", { permission: "granted" });
+    localStorage.setItem("hz.notifications", "on");
+    const showNotification = vi.fn(async () => {
+      if (!works) throw new Error("blocked");
+    });
+    vi.spyOn(registration, "workerRegistration").mockResolvedValue({
+      showNotification,
+    } as unknown as ServiceWorkerRegistration);
+    const { calls } = mockApi({ ...answers, "/api/system/notify/test": nothing });
+    const user = userEvent.setup();
+    renderAt("/doctor?panel=notifications");
+    await user.click(await screen.findByRole("button", { name: "Send a test notification" }));
+    expect(
+      await screen.findByText(works ? "A test notification popped up." : /could not show the test/),
+    ).toBeInTheDocument();
+    expect(showNotification).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(calls.some((call) => call.url.includes("/system/notify/ack"))).toBe(works));
+  });
+
   it("says when nothing pops up outside the app, and offers the fix of each blocked way", async () => {
     // hz answers a test nothing pops up with exit 1, which the web head sends as 503 with the result.
     const { calls } = mockApi({ ...answers, "/api/system/notify/test": { status: 503, body: nothing } });

@@ -7,9 +7,9 @@ import { useEffect, useRef, useState } from "react";
 import type { SchemaSoundscapeView } from "@/api/client";
 import { useThemes } from "@/api/queries";
 import { t } from "@/i18n";
+import { isIOS } from "@/lib/browser";
 import { type Inputs, rampSeconds, type Signals, targetGain, type Why, why } from "./machine";
 import { type EarconView, type LayerView, Mixer } from "./mixer";
-import { PlayerCard } from "./PlayerCard";
 import {
   effective,
   listSignals,
@@ -21,8 +21,8 @@ import {
   useMeeting,
   useSoundscapes,
 } from "./queries";
+import { StreamPlayer } from "./StreamPlayer";
 import { fail, stop, useSound } from "./store";
-import { command, embedSrc, FRAME_ATTRIBUTES, listen, playerEvent, type StreamView } from "./stream";
 
 /** How loud, and how fast it gets there: the gain, and the seconds of the fade from what it was. */
 type Level = { gain: number; seconds: number; playing: boolean };
@@ -40,6 +40,7 @@ export function SoundEngine() {
   const list = useSoundscapes();
   const sound = useSound();
   const current = effective(list.data);
+  const deviceStream = Boolean(current?.stream && isIOS());
   const meeting = useMeeting(Boolean(list.data?.mute_in_meetings && sound.started));
   useEffect(() => {
     if (list.data) rememberPageFrame(list.data);
@@ -69,10 +70,10 @@ export function SoundEngine() {
   const level = useLevel(
     {
       playing: sound.playing,
-      volume: list.data?.volume ?? 50,
+      volume: deviceStream ? 100 : (list.data?.volume ?? 50),
       typing: sound.typing,
       voice: sound.voice,
-      duckWhileTyping: list.data?.duck_while_typing ?? true,
+      duckWhileTyping: !deviceStream && (list.data?.duck_while_typing ?? true),
       meeting,
       muteInMeetings: list.data?.mute_in_meetings ?? true,
     },
@@ -80,94 +81,16 @@ export function SoundEngine() {
   );
   if (!current || !sound.started) return null;
   if (current.stream)
-    return <StreamPlayer key={current.name} soundscape={current} stream={current.stream} level={level} />;
+    return (
+      <StreamPlayer
+        key={current.name}
+        soundscape={current}
+        stream={current.stream}
+        level={deviceStream && sound.voice ? { ...level, gain: 0 } : level}
+      />
+    );
   return (
     <LayeredPlayer key={current.name} soundscape={current} signals={listSignals(list.data).signals()} level={level} />
-  );
-}
-
-const STEP_MS = 100;
-
-function StreamPlayer({
-  soundscape,
-  stream,
-  level,
-}: {
-  soundscape: SchemaSoundscapeView;
-  stream: StreamView;
-  level: Level;
-}) {
-  const frame = useRef<HTMLIFrameElement>(null);
-  const [ready, setReady] = useState(false);
-  const [blocked, setBlocked] = useState(false);
-  const volume = useRef(0);
-  const src = embedSrc(stream);
-  const origin = stream.frame_origin;
-  useEffect(() => {
-    const onMessage = (message: MessageEvent) => {
-      const event = playerEvent(message, frame.current, origin);
-      if (event !== "onReady" && event !== "initialDelivery") return;
-      // Silent first, so the fade-in starts from nothing, never at the player's own volume.
-      command(frame.current, origin, "setVolume", [volume.current]);
-      setReady(true);
-    };
-    // The page's CSP admits no frame of this host (the soundscape changed elsewhere): it must load again.
-    const onViolation = (event: SecurityPolicyViolationEvent) => {
-      if (event.effectiveDirective === "frame-src" && event.blockedURI.startsWith(origin)) setBlocked(true);
-    };
-    window.addEventListener("message", onMessage);
-    document.addEventListener("securitypolicyviolation", onViolation);
-    return () => {
-      window.removeEventListener("message", onMessage);
-      document.removeEventListener("securitypolicyviolation", onViolation);
-    };
-  }, [origin]);
-  // Fade by steps of setVolume; at 0 after a pause the video pauses too, and plays again before fading in.
-  useEffect(() => {
-    if (!ready) return;
-    const target = Math.round(level.gain * 100);
-    if (level.playing) command(frame.current, origin, "playVideo");
-    const steps = Math.max(1, Math.round((level.seconds * 1000) / STEP_MS));
-    const start = volume.current;
-    let step = 0;
-    const timer = setInterval(() => {
-      step += 1;
-      volume.current = Math.round(start + ((target - start) * step) / steps);
-      command(frame.current, origin, "setVolume", [volume.current]);
-      if (step >= steps) {
-        clearInterval(timer);
-        if (!level.playing) command(frame.current, origin, "pauseVideo");
-      }
-    }, STEP_MS);
-    return () => clearInterval(timer);
-  }, [ready, level.gain, level.seconds, level.playing, origin]);
-  if (!src) return null;
-  return (
-    <PlayerCard title={soundscape.title} watchUrl={stream.watch_url} host="YouTube">
-      {blocked ? (
-        <div className="flex flex-col items-start gap-2 p-3 text-ui-sm">
-          <p>{t("sound.reloadNeeded")}</p>
-          <button
-            type="button"
-            onClick={page.reload}
-            className="rounded-lg bg-primary px-2.5 py-1 text-primary-foreground"
-          >
-            {t("sound.reload")}
-          </button>
-        </div>
-      ) : (
-        <iframe
-          ref={frame}
-          title={t("sound.player", { title: soundscape.title })}
-          src={src}
-          onLoad={() => listen(frame.current, origin)}
-          className="aspect-video w-full border-0"
-          referrerPolicy={FRAME_ATTRIBUTES.referrerPolicy}
-          sandbox={FRAME_ATTRIBUTES.sandbox}
-          allow={FRAME_ATTRIBUTES.allow}
-        />
-      )}
-    </PlayerCard>
   );
 }
 
