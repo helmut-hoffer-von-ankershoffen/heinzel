@@ -1,12 +1,17 @@
 """A pure verifier binds stored decisions; it is not an issuer or a nonce ledger."""
 
 from datetime import UTC, datetime, timedelta
-from hashlib import sha256
 
 import pytest
 from pydantic import ValidationError
 
-from heinzel.kernel._approval import ApprovalIntent, ApprovalRecord, arguments_hash, verify_approval
+from heinzel.kernel._approval import (
+    ApprovalIntent,
+    ApprovalRecord,
+    approval_proof_hash,
+    arguments_hash,
+    verify_approval,
+)
 from heinzel.kernel._identity import Principal
 
 pytestmark = pytest.mark.unit
@@ -35,7 +40,7 @@ def intent():
 def record(intent):
     return ApprovalRecord(
         intent=intent,
-        proof_hash=sha256(PROOF.encode()).hexdigest(),
+        proof_hash=approval_proof_hash(PROOF),
         nonce="f" * 64,
         provenance="human-test-fixture",
         decision="approve",

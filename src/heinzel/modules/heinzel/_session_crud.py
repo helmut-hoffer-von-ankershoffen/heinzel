@@ -27,6 +27,7 @@ from heinzel.kernel._approval import (
     ApprovalIntent,
     ApprovalIssuer,
     ApprovalRecord,
+    approval_proof_hash,
     arguments_hash,
     consume_approval,
 )
@@ -1021,7 +1022,7 @@ class SessionCrud(ApprovalIssuer):
             policy_revision=0,
         )
         proof = secrets.token_urlsafe(32)
-        digest = hashlib.sha256(proof.encode("ascii")).hexdigest()
+        digest = approval_proof_hash(proof)
         now = self.clock()
         record = ApprovalRecord(
             intent=intent,

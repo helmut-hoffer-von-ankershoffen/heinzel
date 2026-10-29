@@ -178,6 +178,15 @@ def arguments_hash(arguments: JsonValue) -> str:
     return hashlib.sha256(b"hz-approval-arguments-v1\0" + encoded.encode("ascii")).hexdigest()
 
 
+def approval_proof_hash(proof: str) -> str:
+    """Derive the lookup digest for an issued random approval token.
+
+    The issuer generates 256-bit random tokens. A fixed, domain-specific salt permits lookup before the
+    record is known; it does not claim to make low-entropy human passwords safe.
+    """
+    return hashlib.scrypt(proof.encode("ascii"), salt=b"hz-approval-proof-v1", n=16384, r=8, p=1, dklen=32).hex()
+
+
 def verify_approval(  # noqa: PLR0913 - each argument is an independent trust input
     proof: str,
     record: ApprovalRecord,
@@ -195,7 +204,7 @@ def verify_approval(  # noqa: PLR0913 - each argument is an independent trust in
     """
     if not _PROOF.fullmatch(proof) or now.tzinfo is None or now.utcoffset() is None:
         return None
-    proof_hash = hashlib.sha256(proof.encode("ascii")).hexdigest()
+    proof_hash = approval_proof_hash(proof)
     if not hmac.compare_digest(proof_hash, record.proof_hash):
         return None
     if (
@@ -264,7 +273,7 @@ def consume_approval(  # noqa: PLR0912, PLR0913, PLR0917, C901 - one locked vali
     invalid = "Approval is invalid or unavailable"
     if not _PROOF.fullmatch(proof):
         raise HeinzelError(invalid)
-    digest = hashlib.sha256(proof.encode("ascii")).hexdigest()
+    digest = approval_proof_hash(proof)
     with repository.control_writer(session_id) as writer:
         events = repository.control_read(session_id).events
         matches = [event for event in events if event.kind == "approval.issued" and event.key == digest]

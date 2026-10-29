@@ -9,7 +9,7 @@ import pytest
 from pydantic import ValidationError
 
 from heinzel import CallIdentity, CurrentUser, HeinzelError, Principal
-from heinzel.kernel._approval import ApprovalIntent, ApprovalRecord, arguments_hash
+from heinzel.kernel._approval import ApprovalIntent, ApprovalRecord, approval_proof_hash, arguments_hash
 from heinzel.modules.heinzel import _session_crud
 from heinzel.modules.heinzel._session_bodies import immutable_body
 from heinzel.modules.heinzel._session_crud import SessionCrud
@@ -43,7 +43,7 @@ def _issue_test_approval(repository, current, session_id, request_id, revision, 
     )
     record = ApprovalRecord(
         intent=intent,
-        proof_hash=sha256(proof.encode()).hexdigest(),
+        proof_hash=approval_proof_hash(proof),
         nonce=sha256(f"nonce:{request_id}".encode()).hexdigest(),
         provenance="test-only-synthetic-decision",
         decision="approve",

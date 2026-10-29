@@ -14,7 +14,7 @@ from heinzel import CurrentUser, Module
 from heinzel.heads import api, cli, mcp
 from heinzel.heads._exposure import MCP_HTTP, exposed
 from heinzel.heads.api._auth import ApiBearer
-from heinzel.kernel._approval import ApprovalIntent, ApprovalRecord, arguments_hash
+from heinzel.kernel._approval import ApprovalIntent, ApprovalRecord, approval_proof_hash, arguments_hash
 from heinzel.modules.heinzel._session_operations import register_session_operations
 from heinzel.modules.heinzel._session_repository import PersonalSessionRepository
 
@@ -48,7 +48,7 @@ def _seed_test_approval(kernel, session_id, request_id, revision, action, contra
     )
     record = ApprovalRecord(
         intent=intent,
-        proof_hash=sha256(proof.encode()).hexdigest(),
+        proof_hash=approval_proof_hash(proof),
         nonce=sha256(f"nonce:{request_id}".encode()).hexdigest(),
         provenance="test-only-synthetic-decision",
         decision="approve",
@@ -244,7 +244,7 @@ def test_propose_activate_pause_and_resume_five_minute_check_in_through_private_
         )
     activated_events = [event for event in approval_events if event.kind == "schedule.activated"]
     assert len(activated_events) == 1
-    assert activated_events[0].data["proof_hash"] == sha256(approval.encode()).hexdigest()
+    assert activated_events[0].data["proof_hash"] == approval_proof_hash(approval)
     assert approval not in json.dumps([event.model_dump(mode="json") for event in approval_events])
     assert not any(event.kind == "approval.intent" for event in approval_events)
 

@@ -2,13 +2,18 @@
 
 import multiprocessing
 from datetime import UTC, datetime, timedelta
-from hashlib import sha256
 from pathlib import Path
 
 import pytest
 
 from heinzel import CurrentUser
-from heinzel.kernel._approval import ApprovalIntent, ApprovalRecord, arguments_hash, consume_approval
+from heinzel.kernel._approval import (
+    ApprovalIntent,
+    ApprovalRecord,
+    approval_proof_hash,
+    arguments_hash,
+    consume_approval,
+)
 from heinzel.modules.heinzel._session_crud import SessionCrud
 from heinzel.modules.heinzel._session_models import SessionCosts
 from heinzel.modules.heinzel._session_repository import PersonalSessionRepository
@@ -48,7 +53,7 @@ def test_multiple_processes_cannot_consume_one_nonce_twice(tmp_path, monkeypatch
         )
         record = ApprovalRecord(
             intent=intent,
-            proof_hash=sha256(PROOF.encode()).hexdigest(),
+            proof_hash=approval_proof_hash(PROOF),
             nonce="f" * 64,
             provenance="synthetic-test",
             decision="approve",

@@ -37,7 +37,7 @@ from heinzel import (
     TranscriptSegment,
     Window,
 )
-from heinzel.kernel._approval import ApprovalIntent, ApprovalRecord, arguments_hash
+from heinzel.kernel._approval import ApprovalIntent, ApprovalRecord, approval_proof_hash, arguments_hash
 from heinzel.modules.heinzel import HeinzelService, HeinzelSettings
 from heinzel.modules.heinzel import _service as service_module
 from heinzel.modules.heinzel._session_crud import SessionCrud
@@ -69,7 +69,7 @@ def _approve_test_schedule(sessions, current, session_id, request_id, revision, 
     )
     record = ApprovalRecord(
         intent=intent,
-        proof_hash=hashlib.sha256(proof.encode()).hexdigest(),
+        proof_hash=approval_proof_hash(proof),
         nonce=hashlib.sha256(f"nonce:{request_id}".encode()).hexdigest(),
         provenance="test-only-synthetic-decision",
         decision="approve",

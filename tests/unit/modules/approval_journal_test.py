@@ -4,12 +4,17 @@ import json
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
-from hashlib import sha256
 
 import pytest
 
 from heinzel import CallIdentity, CurrentUser, HeinzelError, Principal
-from heinzel.kernel._approval import ApprovalIntent, ApprovalRecord, arguments_hash, consume_approval
+from heinzel.kernel._approval import (
+    ApprovalIntent,
+    ApprovalRecord,
+    approval_proof_hash,
+    arguments_hash,
+    consume_approval,
+)
 from heinzel.modules.heinzel._session_crud import SessionCrud
 from heinzel.modules.heinzel._session_models import SessionCosts
 from heinzel.modules.heinzel._session_repository import PersonalSessionRepository
@@ -40,7 +45,7 @@ def setup(tmp_path):
         )
         record = ApprovalRecord(
             intent=intent,
-            proof_hash=sha256(PROOF.encode()).hexdigest(),
+            proof_hash=approval_proof_hash(PROOF),
             nonce="f" * 64,
             provenance="test-only",
             decision="approve",
