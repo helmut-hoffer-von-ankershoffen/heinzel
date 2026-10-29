@@ -74,11 +74,12 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
   });
   const approvalChat = approvalChatId === null ? undefined : approvalQuery.data;
   const activeDaemon = query.data?.schedule?.status === "active" ? daemonStatus.data : undefined;
+  const daemonTickAgeMs = activeDaemon?.last_tick ? Date.now() - Date.parse(activeDaemon.last_tick) : null;
   const staleDaemonTick =
     activeDaemon?.installed === true &&
-    activeDaemon.interval_minutes !== null &&
-    activeDaemon.last_tick !== null &&
-    Date.now() - Date.parse(activeDaemon.last_tick) > activeDaemon.interval_minutes * 2 * 60_000;
+    (daemonTickAgeMs === null ||
+      !Number.isFinite(daemonTickAgeMs) ||
+      (activeDaemon.interval_minutes !== null && daemonTickAgeMs > activeDaemon.interval_minutes * 2 * 60_000));
   const daemonReadinessMessage = activeDaemon
     ? !activeDaemon.installed
       ? t("durable.daemonAbsent")

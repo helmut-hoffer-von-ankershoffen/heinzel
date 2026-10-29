@@ -51,7 +51,7 @@ const en = {
   "durable.daemonVersionNeedsCheck":
     "The daemon is not verified running the installed Heinzel version. Restart it in Settings and wait for a service-managed tick before relying on check-ins.",
   "durable.daemonNeedsCheck":
-    "The schedule is saved, but daemon jobs are failing or ticks have stopped. Check daemon status and logs before relying on check-ins.",
+    "The schedule is saved, but the daemon has not reported a recent valid tick or has failing jobs. Check daemon status and logs before relying on check-ins.",
   "durable.daemonStatusUnavailable":
     "The schedule is saved, but the background daemon status could not be verified. Check it before relying on check-ins.",
   "durable.daemonSettings": "Open daemon settings",

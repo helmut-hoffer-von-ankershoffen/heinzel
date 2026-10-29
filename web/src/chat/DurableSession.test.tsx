@@ -762,7 +762,9 @@ describe("personal conversation links", () => {
     ["version mismatch", { version_mismatch: true }, /not verified running the installed Heinzel version/i],
     ["slow cadence", { interval_minutes: 10 }, /cadence is unknown or slower than five minutes/i],
     ["unknown cadence", { interval_minutes: null }, /cadence is unknown or slower than five minutes/i],
-    ["stale tick", { last_tick: "2000-01-01T00:00:00Z" }, /daemon jobs are failing or ticks have stopped/i],
+    ["stale tick", { last_tick: "2000-01-01T00:00:00Z" }, /has not reported a recent valid tick/i],
+    ["missing heartbeat", { last_tick: null }, /has not reported a recent valid tick/i],
+    ["invalid heartbeat", { last_tick: "not-a-timestamp" }, /has not reported a recent valid tick/i],
   ])("directs an active check-in to daemon recovery when readiness is %s", async (_case, change, copy) => {
     mockApi({
       ...shell,
