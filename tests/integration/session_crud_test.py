@@ -492,3 +492,36 @@ def test_personal_artifact_associations_are_private_local_and_owner_scoped(kerne
         != 200
     )
     assert other.post("/heinzel/associate-artifact", headers=stranger_auth, json=payload).status_code != 200
+
+
+def test_private_skill_draft_http_is_owner_scoped_and_never_publishes(kernel):
+    from heinzel import Principal
+
+    client, auth = protected(kernel)
+    session_id = client.post("/heinzel/new-chat", headers=auth, json={"request_id": "draft-chat"}).json()["session_id"]
+    payload = {
+        "session_id": session_id,
+        "request_id": "draft-1",
+        "name": "review-work",
+        "requested_scope": "team",
+        "scope_ref": "team-1",
+        "files": {"SKILL.md": "private draft", "scripts/check.py": "print('never run')"},
+    }
+    assert client.post("/heinzel/propose-skill-draft", json=payload).status_code == 401
+    created = client.post("/heinzel/propose-skill-draft", headers=auth, json=payload)
+    assert created.status_code == 200, created.text
+    assert created.json()["files"] == payload["files"]
+    assert created.json()["status"] == "draft"
+    assert client.post("/heinzel/propose-skill-draft", headers=auth, json=payload).json() == created.json()
+    read = client.get("/heinzel/skill-draft", headers=auth, params={"session_id": session_id, "request_id": "draft-1"})
+    assert read.json() == created.json()
+    stranger = ApiBearer.issue(Principal("u-" + "a" * 32), "sessions", now=NOW)
+    other = TestClient(api.build(kernel, credentials=stranger, audience="sessions", clock=lambda: NOW), base_url=BASE)
+    other_auth = {"Authorization": f"Bearer {stranger.secret}"}
+    assert (
+        other.get(
+            "/heinzel/skill-draft", headers=other_auth, params={"session_id": session_id, "request_id": "draft-1"}
+        ).status_code
+        != 200
+    )
+    assert other.post("/heinzel/propose-skill-draft", headers=other_auth, json=payload).status_code != 200

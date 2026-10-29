@@ -47,6 +47,7 @@ from heinzel.modules.heinzel._session_models import (
     SessionMessage,
     SessionSnapshot,
     SessionSummary,
+    SkillDraft,
     WakeScheduleView,
 )
 from heinzel.modules.heinzel._session_protocol import SessionRepository
@@ -724,6 +725,81 @@ class SessionCrud(ApprovalIssuer):
             msg = "This artifact association is invalid; restore its private snapshot"
             raise HeinzelError(msg)
         return artifact
+
+    def propose_skill_draft(  # noqa: PLR0913, PLR0917 - complete scoped private draft
+        self,
+        session_id: str,
+        request_id: str,
+        name: str,
+        requested_scope: str,
+        scope_ref: str | None,
+        files: dict[str, str],
+    ) -> SkillDraft:
+        """Store exact inert draft files and sharing intent without publishing, granting or executing.
+
+        Raises:
+            HeinzelError: If the request identifies different draft terms.
+        """
+        validated = SkillDraft.model_validate(
+            {
+                "session_id": session_id,
+                "request_id": request_id,
+                "name": name,
+                "requested_scope": requested_scope,
+                "scope_ref": scope_ref,
+                "files": files,
+                "preview_sha256": "0" * 64,
+            }
+        )
+        terms = validated.model_dump(mode="json", exclude={"preview_sha256"})
+        draft = validated.model_copy(update={"preview_sha256": _digest(terms)})
+        key = f"skill-draft-{request_id}"
+        with self.repository.control_writer(session_id) as writer:
+            events = self.repository.control_read(session_id).events
+            prior = next((event for event in events if event.kind == "skill.draft" and event.key == key), None)
+            if prior is not None:
+                saved = self._read_skill_draft(session_id, request_id, prior)
+                if saved != draft:
+                    msg = "This request already identifies different skill draft terms"
+                    raise HeinzelError(msg)
+                return saved
+            body = immutable_body(writer, "skill-draft", draft.model_dump(mode="json"), control=True)
+            writer.append("skill.draft", key=key, data=body.model_dump(mode="json"))
+        return draft
+
+    def skill_draft(self, session_id: str, request_id: str) -> SkillDraft:
+        """Read the owner's exact private draft; it remains unpublished and unapproved.
+
+        Raises:
+            HeinzelError: If the draft is missing or invalid.
+        """
+        _REQUEST.validate_python(request_id)
+        events = self.repository.control_read(session_id).events
+        prior = next(
+            (event for event in events if event.kind == "skill.draft" and event.key == f"skill-draft-{request_id}"),
+            None,
+        )
+        if prior is None:
+            msg = "This skill draft does not exist"
+            raise HeinzelError(msg)
+        return self._read_skill_draft(session_id, request_id, prior)
+
+    def _read_skill_draft(self, session_id: str, request_id: str, event: SessionEvent) -> SkillDraft:
+        try:
+            draft = SkillDraft.model_validate(self._body(session_id, event))
+            terms = draft.model_dump(mode="json", exclude={"preview_sha256"})
+        except (ValidationError, TypeError, ValueError):
+            msg = "This skill draft is invalid; restore its private snapshot"
+            raise HeinzelError(msg) from None
+        if (
+            event.kind != "skill.draft"
+            or draft.session_id != session_id
+            or draft.request_id != request_id
+            or draft.preview_sha256 != _digest(terms)
+        ):
+            msg = "This skill draft is invalid; restore its private snapshot"
+            raise HeinzelError(msg)
+        return draft
 
     def propose_scheduled_agent(
         self, session_id: str, request_id: str, contract: str, max_usd: float, timeout_seconds: int

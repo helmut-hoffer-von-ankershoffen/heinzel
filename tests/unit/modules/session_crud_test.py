@@ -705,3 +705,108 @@ def test_artifact_duplicate_file_id_cannot_claim_different_types(services):
         service.associate_artifact(
             session_id, "sheet", "spreadsheet", "https://docs.google.com/spreadsheets/d/abc123_DEF456/edit"
         )
+
+
+def test_skill_draft_is_private_exact_inert_and_idempotent(services, tmp_path):
+    service, repository, current = services
+    session_id = service.new_chat("draft-owner").session_id
+    sentinel = tmp_path / "never-run"
+    files = {
+        "SKILL.md": "---\nname: review-work\ndescription: Inspect work\n---\nPrivate instructions.",
+        "references/guide.md": "Supporting notes.",
+        "scripts/run.py": f"open({str(sentinel)!r}, 'w').write('ran')\n",
+    }
+    draft = service.propose_skill_draft(session_id, "draft-1", "review-work", "team", "team-1", files)
+    assert draft.status == "draft"
+    assert draft.files == files
+    assert draft.requested_scope == "team"
+    assert len(draft.preview_sha256) == 64
+    assert not sentinel.exists()
+    assert service.propose_skill_draft(session_id, "draft-1", "review-work", "team", "team-1", files) == draft
+    restarted = SessionCrud(PersonalSessionRepository(current), service.costs)
+    assert restarted.skill_draft(session_id, "draft-1") == draft
+    events = repository.control_read(session_id).events
+    metadata = json.dumps([event.model_dump(mode="json") for event in events])
+    assert "Private instructions" not in metadata
+    assert "never-run" not in metadata
+    assert all(event.kind not in {"approval.issued", "skill.published", "skill.executed"} for event in events)
+    with pytest.raises(HeinzelError, match="different skill draft"):
+        service.propose_skill_draft(session_id, "draft-1", "review-work", "company", "company-1", files)
+    stranger = CallIdentity(
+        Principal("u-" + "a" * 32), "api-bearer", "other", "private", frozenset({"private:read", "private:write"})
+    )
+    with current.using(stranger), pytest.raises(HeinzelError, match="No such personal"):
+        service.skill_draft(session_id, "draft-1")
+    with current.using(stranger), pytest.raises(HeinzelError, match="No such personal"):
+        service.propose_skill_draft(session_id, "draft-1", "review-work", "team", "team-1", files)
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "../outside.py",
+        "/outside.py",
+        "scripts/../escape.py",
+        "scripts//x.py",
+        "scripts/./x.py",
+        "scripts/x.sh",
+        "scripts/a\\\\b.py",
+        "scripts/.hidden.py",
+    ],
+)
+def test_skill_draft_rejects_unsafe_paths(services, path):
+    service, _, _ = services
+    session_id = service.new_chat("draft-path").session_id
+    with pytest.raises(ValidationError):
+        service.propose_skill_draft(
+            session_id, "bad", "review-work", "personal", None, {"SKILL.md": "draft", path: "text"}
+        )
+    with pytest.raises(HeinzelError, match="does not exist"):
+        service.skill_draft(session_id, "bad")
+
+
+def test_skill_draft_does_not_follow_supplied_paths_or_symlinks(services, tmp_path, monkeypatch):
+    service, _, _ = services
+    session_id = service.new_chat("draft-symlink").session_id
+    outside = tmp_path / "outside.py"
+    outside.write_text("untouched")
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "scripts" / "run.py").symlink_to(outside)
+    monkeypatch.chdir(tmp_path)
+    files = {"SKILL.md": "draft", "scripts/run.py": "not the file on disk"}
+    saved = service.propose_skill_draft(session_id, "link", "review-work", "personal", None, files)
+    assert saved.files == files
+    assert outside.read_text() == "untouched"
+
+
+@pytest.mark.parametrize(
+    ("scope", "scope_ref", "files"),
+    [
+        ("team", None, {"SKILL.md": "draft"}),
+        ("personal", "team-1", {"SKILL.md": "draft"}),
+        ("company", "company-1", {}),
+        ("site", "site-1", {"SKILL.md": "a" * (24 * 1024 + 1)}),
+        ("org", "org-1", {"SKILL.md": "a" * (24 * 1024), "scripts/a.py": "b" * (24 * 1024)}),
+        ("team", "team-1", {"SKILL.md": "draft", "scripts/a.py": "a", "scripts/A.py": "b"}),
+    ],
+)
+def test_skill_draft_rejects_invalid_scope_size_and_colliding_paths(services, scope, scope_ref, files):
+    service, _, _ = services
+    session_id = service.new_chat("draft-invalid").session_id
+    with pytest.raises(ValidationError):
+        service.propose_skill_draft(session_id, "bad", "review-work", scope, scope_ref, files)
+
+
+def test_skill_draft_replay_scopes_event_kind_and_detects_changed_snapshot(services):
+    service, repository, _ = services
+    session_id = service.new_chat("draft-event-owner").session_id
+    service.propose_check_in(session_id, "skill-draft-review")
+    files = {"SKILL.md": "original draft"}
+    draft = service.propose_skill_draft(session_id, "review", "review-work", "personal", None, files)
+    assert service.propose_skill_draft(session_id, "review", "review-work", "personal", None, files) == draft
+    forged = draft.model_copy(update={"request_id": "forged", "files": {"SKILL.md": "changed"}})
+    with repository.control_writer(session_id) as writer:
+        body = immutable_body(writer, "skill-draft", forged.model_dump(mode="json"), control=True)
+        writer.append("skill.draft", key="skill-draft-forged", data=body.model_dump(mode="json"))
+    with pytest.raises(HeinzelError, match="skill draft is invalid"):
+        service.skill_draft(session_id, "forged")

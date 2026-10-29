@@ -30,6 +30,7 @@ from heinzel.modules.heinzel._session_models import (
     SessionId,
     SessionList,
     SessionSnapshot,
+    SkillDraft,
 )
 from heinzel.modules.heinzel._session_repository import PersonalSessionRepository
 
@@ -200,6 +201,36 @@ def register_session_operations(module: Module) -> None:  # noqa: C901 - operati
     ) -> SessionSnapshot:
         """Propose local five-minute check-ins; the schedule stays inactive until activated."""
         return service.propose_check_in(session_id, request_id, timezone)
+
+    @module.operation(private=True, read_only=False, heads={"web", "api-private", "mcp-stdio"}, audience="everyday")
+    def propose_skill_draft(  # noqa: PLR0913, PLR0917 - complete private draft and intended scope
+        service: SessionCrud,
+        session_id: Identity,
+        request_id: Request,
+        name: Annotated[str, Field(description="Proposed skill name.", min_length=1, max_length=64)],
+        requested_scope: Annotated[
+            Literal["personal", "team", "org", "site", "company"],
+            Field(description="Requested scope; no grant is created."),
+        ],
+        files: Annotated[
+            dict[str, str], Field(description="Exact SKILL.md, supporting text and optional Python script drafts.")
+        ],
+        scope_ref: Annotated[
+            str | None,
+            Field(
+                description="Opaque target for a requested shared scope; not verified.",
+                max_length=128,
+                pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            ),
+        ] = None,
+    ) -> SkillDraft:
+        """Store a private skill draft; no file is published, executed or shared."""
+        return service.propose_skill_draft(session_id, request_id, name, requested_scope, scope_ref, files)
+
+    @module.operation(private=True, audience="everyday")
+    def skill_draft(service: SessionCrud, session_id: Identity, request_id: Request) -> SkillDraft:
+        """Read exact private skill draft files and requested sharing scope."""
+        return service.skill_draft(session_id, request_id)
 
     @module.operation(private=True, read_only=False, audience="everyday")
     def associate_artifact(

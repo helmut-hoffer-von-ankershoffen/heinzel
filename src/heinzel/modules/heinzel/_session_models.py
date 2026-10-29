@@ -4,18 +4,23 @@ These are private application models, not kernel primitives. Heads render the sa
 the public session identity, pending decisions or contract versions.
 """
 
+import json
 import re
 from datetime import datetime
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
-from heinzel.kernel import Billing, Effort
+from heinzel.kernel import Billing, Effort, skill_name_problem
 
 SessionId = Annotated[str, Field(pattern=r"^hz-[0-9A-HJKMNP-TV-Z]{26}$")]
 RequestId = Annotated[str, Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$")]
 Digest = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
 BackendMode = Literal["api", "cli-model", "native-cli"]
+MAX_DRAFT_FILES = 16
+MAX_DRAFT_PATH = 160
+MAX_DRAFT_FILE_BYTES = 24 * 1024
+MAX_DRAFT_BYTES = 48 * 1024
 
 
 class BackendBinding(BaseModel):
@@ -117,6 +122,77 @@ class PersonalArtifacts(BaseModel):
     artifacts: list[PersonalArtifact] = Field(
         description="Locally recorded associations; provider access is not verified."
     )
+
+
+def _validate_skill_draft_files(files: dict[str, str]) -> None:
+    if not 1 <= len(files) <= MAX_DRAFT_FILES or not files.get("SKILL.md"):
+        msg = "Supply a nonempty SKILL.md and at most 16 files"
+        raise ValueError(msg)
+    seen: set[str] = set()
+    for path, content in files.items():
+        script = re.fullmatch(r"scripts/(?:[A-Za-z0-9_-]+/){0,2}[A-Za-z0-9_-]+\.py", path)
+        supporting = re.fullmatch(
+            r"(?:references|templates|assets)/(?:[A-Za-z0-9_-]+/){0,2}[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)?", path
+        )
+        if path != "SKILL.md" and not (script or supporting):
+            msg = "Use safe paths for supporting text or Python scripts"
+            raise ValueError(msg)
+        if path.casefold() in seen or len(path) > MAX_DRAFT_PATH or "\x00" in content:
+            msg = "Draft files contain duplicate or invalid paths or content"
+            raise ValueError(msg)
+        seen.add(path.casefold())
+        try:
+            size = len(content.encode("utf-8"))
+        except UnicodeError:
+            msg = "Draft files must be valid UTF-8 text"
+            raise ValueError(msg) from None
+        if size > MAX_DRAFT_FILE_BYTES:
+            msg = "Each draft file must be at most 24 KiB"
+            raise ValueError(msg)
+
+
+class SkillDraft(BaseModel):
+    """Private inert text and requested sharing intent; readiness, publication and grants are not verified."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    session_id: SessionId = Field(description="The authenticated owner's personal session.")
+    request_id: RequestId = Field(description="Stable request identity for exact retries.")
+    name: str = Field(description="The proposed skill name.", min_length=1, max_length=64)
+    requested_scope: Literal["personal", "team", "org", "site", "company"] = Field(
+        description="Proposed sharing scope, not an access grant or verified membership."
+    )
+    scope_ref: RequestId | None = Field(
+        default=None, description="Opaque proposed shared-scope reference; not verified."
+    )
+    files: dict[str, str] = Field(
+        description="Exact SKILL.md, supporting text and optional Python scripts; not validated for publication."
+    )
+    status: Literal["draft"] = Field(default="draft", description="Not published, approved or executable.")
+    preview_sha256: Digest = Field(description="Fingerprint of the proposed terms; not an approval proof.")
+
+    @model_validator(mode="after")
+    def validate_draft(self) -> "SkillDraft":
+        """Validate bounds and names without opening, writing or executing any supplied path.
+
+        Raises:
+            ValueError: If a name, sharing intent, file path or size is invalid.
+        """
+        if skill_name_problem(self.name):
+            msg = "Choose a valid unreserved skill name"
+            raise ValueError(msg)
+        if (self.requested_scope == "personal") != (self.scope_ref is None):
+            msg = "Shared scopes require a target reference; personal drafts do not"
+            raise ValueError(msg)
+        _validate_skill_draft_files(self.files)
+        try:
+            size = len(json.dumps(self.model_dump(mode="json"), ensure_ascii=False, sort_keys=True).encode("utf-8"))
+        except UnicodeError:
+            msg = "Draft files must be valid UTF-8 text"
+            raise ValueError(msg) from None
+        if size > MAX_DRAFT_BYTES:
+            msg = "The complete draft must be at most 48 KiB"
+            raise ValueError(msg)
+        return self
 
 
 class ScheduledAgentProposal(BaseModel):
