@@ -210,6 +210,7 @@ class UserChatService:
             model,
             limits=TurnLimits(requests=_MAX_REQUESTS, total_tokens=None, output_tokens=None, timeout_seconds=_TIMEOUT),
             allow_ungranted_tools=False,
+            user_proposal_policy=unchanged,
             backend_binding=BackendBinding(backend="claude-code", mode="cli-model", revision=1),
         )
         return UserChatAnswer(session_id=session, request_id=request, message=message)

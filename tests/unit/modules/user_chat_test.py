@@ -18,9 +18,12 @@ from heinzel.modules.system.runner._models import RunnerSettings
 pytestmark = pytest.mark.unit
 
 
-def fake_claude(directory: Path, *, pause: bool = False) -> Path:
+def fake_claude(
+    directory: Path, *, pause: bool = False, tool: str = "text.word_count", arguments: dict | None = None
+) -> Path:
     path = directory / "fake-claude"
     marker = directory / "model-calls"
+    arguments = arguments if arguments is not None else {"text": "private"}
     path.write_text(
         f"""#!{sys.executable}
 import json,sys,time
@@ -35,7 +38,7 @@ if {pause!r}: time.sleep(10)
 payload=json.load(sys.stdin)
 open({str(directory / "prompt-input")!r},'w').write(json.dumps(payload))
 if len(payload['messages']) == 1:
- wire={{'kind':'tool','name':'use_tool','arguments':{{'name':'text.word_count','arguments':{{'text':'private'}}}},'text':None}}
+ wire={{'kind':'tool','name':'use_tool','arguments':{{'name':{tool!r},'arguments':{arguments!r}}},'text':None}}
 else:
  name=next(t['name'] for t in payload['tools'] if t['name'] != 'use_tool')
  wire={{'kind':'tool','name':name,'arguments':{{'report':'A real recorded reply'}},'text':None}}
@@ -216,6 +219,33 @@ def test_existing_legacy_personal_action_does_not_block_new_generic_turn(tmp_pat
         answer = asyncio.run(service.answer(session, "hello"))
         assert answer.message.text == "A real recorded reply"
         assert store.load(chat.id).actions[0].status == status
+
+
+def test_fake_model_proposes_contract_in_owner_private_journal(tmp_path):
+    current = CurrentUser(tmp_path / "identity")
+    with current.local("cli"):
+        current, crud, session = setup_chat(current)
+        executable = fake_claude(
+            tmp_path,
+            tool="agent:propose",
+            arguments={
+                "expected_revision": 0,
+                "contract": "Review a document",
+                "max_usd": 0.2,
+                "timeout_seconds": 30,
+            },
+        )
+        service = UserChatService(crud, current, load=lambda: FixtureConfig(executable))
+        answer = asyncio.run(service.answer(session, "hello"))
+        assert answer.message.text == "A real recorded reply"
+        proposal = crud.latest_scheduled_agent_proposal(session)
+        assert proposal.contract == "Review a document"
+        assert proposal.status == "proposed"
+        assert crud.snapshot(session).schedule is None
+        assert [(item.tool, item.status) for item in service.activity(session).items] == [
+            ("agent:propose", "requested"),
+            ("agent:propose", "completed"),
+        ]
 
 
 def test_executable_size_boundary_accepts_installed_cli_without_large_fixture():

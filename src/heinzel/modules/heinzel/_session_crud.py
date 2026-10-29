@@ -40,6 +40,7 @@ from heinzel.modules.heinzel._session_models import (
     MessageRequest,
     PersonalArtifact,
     PersonalArtifacts,
+    ProfileProposal,
     RequestId,
     ScheduledAgentProposal,
     SessionCosts,
@@ -930,6 +931,66 @@ class SessionCrud(ApprovalIssuer):
             raise HeinzelError(msg)
         return draft
 
+    def propose_profile(
+        self, session_id: str, request_id: str, expected_revision: int, name: str, appearance: HeinzelAppearance
+    ) -> ProfileProposal:
+        """Store an inert suggested profile; never apply it to the current identity.
+
+        Raises:
+            HeinzelError: If the current profile is stale or this request is reused with different details.
+        """
+        _REQUEST.validate_python(request_id)
+        clean = PersonalProfile(name=name, appearance=appearance)
+        proposal = ProfileProposal(
+            session_id=session_id,
+            request_id=request_id,
+            expected_revision=expected_revision,
+            name=clean.name,
+            appearance=clean.appearance,
+            preview_sha256="0" * 64,
+        )
+        terms = proposal.model_dump(mode="json", exclude={"preview_sha256"})
+        proposal = proposal.model_copy(update={"preview_sha256": _digest(terms)})
+        key = f"profile-proposal-{request_id}"
+        with self.repository.control_writer(session_id) as writer:
+            events = self.repository.control_read(session_id).events
+            prior = next((event for event in events if event.key == key), None)
+            if prior is not None:
+                saved = self._read_profile_proposal(session_id, prior)
+                if saved != proposal:
+                    msg = "This profile proposal request already identifies different details"
+                    raise HeinzelError(msg)
+                return saved
+            if self._profile(session_id, events)[1] != expected_revision:
+                msg = "The profile changed; inspect it before proposing a look"
+                raise HeinzelError(msg)
+            body = immutable_body(writer, "profile-proposal", proposal.model_dump(mode="json"), control=True)
+            writer.append("profile.proposed", key=key, data=body.model_dump(mode="json"))
+        return proposal
+
+    def _read_profile_proposal(self, session_id: str, event: SessionEvent) -> ProfileProposal:
+        try:
+            proposal = ProfileProposal.model_validate(self._body(session_id, event))
+            terms = proposal.model_dump(mode="json", exclude={"preview_sha256"})
+        except (ValidationError, TypeError, ValueError):
+            msg = "This profile proposal is invalid"
+            raise HeinzelError(msg) from None
+        if (
+            event.kind != "profile.proposed"
+            or proposal.session_id != session_id
+            or event.key != f"profile-proposal-{proposal.request_id}"
+            or proposal.preview_sha256 != _digest(terms)
+        ):
+            msg = "This profile proposal is invalid"
+            raise HeinzelError(msg)
+        return proposal
+
+    def latest_profile_proposal(self, session_id: str) -> ProfileProposal | None:
+        """Read the latest owner-private suggested profile, without approving or applying it."""
+        events = self.repository.control_read(session_id).events
+        event = next((item for item in reversed(events) if item.kind == "profile.proposed"), None)
+        return self._read_profile_proposal(session_id, event) if event else None
+
     def propose_scheduled_agent(
         self, session_id: str, request_id: str, contract: str, max_usd: float, timeout_seconds: int
     ) -> ScheduledAgentProposal:
@@ -1625,7 +1686,6 @@ class SessionCrud(ApprovalIssuer):
         if more:
             encoded = _Cursor(v=1, session_id=session_id, after=page[-1].seq).model_dump_json().encode()
             next_cursor = base64.urlsafe_b64encode(encoded).decode().rstrip("=")
-        costs = self.costs()
         costs = self.costs()
         return SessionSnapshot(
             session_id=session_id,

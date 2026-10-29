@@ -28,6 +28,7 @@ from heinzel.modules.heinzel._session_models import (
     MessageRequest,
     PersonalArtifact,
     PersonalArtifacts,
+    ProfileProposal,
     RequestId,
     ScheduledAgentProposal,
     SessionCosts,
@@ -243,7 +244,7 @@ def _register_skill_operations(module: Module) -> None:
         return service.skill_drafts(session_id, cursor, limit)
 
 
-def register_session_operations(module: Module) -> None:  # noqa: C901 - operation declarations define one shared head surface
+def register_session_operations(module: Module) -> None:  # noqa: C901, PLR0915 - operation declarations define one shared head surface
     """Register once on the owning module; constructing the service performs no private I/O."""
     module.service(SessionCrud, _crud)
     module.service(UserChatService)
@@ -459,6 +460,11 @@ def register_session_operations(module: Module) -> None:  # noqa: C901 - operati
             expected_contract_version,
             expected_preview_hash,
         )
+
+    @module.operation(private=True, heads={"cli", "web", "api-private"}, audience="everyday")
+    def latest_profile_proposal(service: SessionCrud, session_id: Identity) -> ProfileProposal | None:
+        """Inspect the latest suggested name and look; it has not been applied."""
+        return service.latest_profile_proposal(session_id)
 
     @module.operation(private=True, read_only=False, heads={"cli", "web", "api-private"}, audience="everyday")
     def answer_chat(service: UserChatService, session_id: Identity, request_id: Request) -> UserChatAnswer:
