@@ -83,6 +83,11 @@ Your Heinzelmännchen: durable agents that keep your team's documents true.
 | --- | --- | --- | --- | --- | --- | --- |
 | Read exact private skill draft files and requested sharing scope. | `hz heinzel skill-draft` | `heinzel_skill_draft` | — | `GET /api/heinzel/skill-draft` |  |  |
 | List private draft references without file contents. | `hz heinzel skill-drafts` | `heinzel_skill_drafts` | — | `GET /api/heinzel/skill-drafts` |  |  |
+| Inspect the latest suggested name and look; it has not been applied. | `hz heinzel latest-profile-proposal` | — | — | `GET /api/heinzel/latest-profile-proposal` |  |  |
+| Answer one authenticated user's accepted message; an interrupted request is never silently replayed. | `hz heinzel answer-chat` | — | — | `POST /api/heinzel/answer-chat` | yes |  |
+| Read the recorded turn state; unresolved may still be running. | `hz heinzel chat-turn-state` | — | — | `GET /api/heinzel/chat-turn-state` |  |  |
+| Explicitly set aside a stopped uncertain turn; never retry or undo its possible effects. | `hz heinzel abandon-chat-turn` | — | — | `POST /api/heinzel/abandon-chat-turn` | yes |  |
+| Show owner-private host-observed tool decisions, without their arguments. | `hz heinzel tool-activity` | — | — | `GET /api/heinzel/tool-activity` |  |  |
 | Create a durable personal Heinzel with an idempotent request, name and look. | `hz heinzel new-chat` | `heinzel_new_chat` | — | `POST /api/heinzel/new-chat` | yes |  |
 | List your durable personal Heinzels, including new conversations without an approved contract. | `hz heinzel sessions` | `heinzel_sessions` | — | `GET /api/heinzel/sessions` |  |  |
 | Open one durable Heinzel and an ordered page of its accepted messages, even during an active turn. | `hz heinzel session` | `heinzel_session` | — | `GET /api/heinzel/session` |  |  |
@@ -363,6 +368,8 @@ Chat with the agent runner about where you are; it acts through hz once you conf
 | Decline an action the agent proposed; it never runs. | `hz chat decline` | — | — | `POST /api/system/runner/chat/decline` | yes |  |
 | Check an interrupted confirmation without running it again; unresolved outcomes stay blocked. | `hz chat recover` | — | — | `POST /api/system/runner/chat/recover` | yes |  |
 | Stage a schedule action for review in chat; creating the proposal never changes or activates it. | `hz chat propose-schedule-control` | — | — | `POST /api/system/runner/chat/propose-schedule-control` | yes |  |
+| Stage the exact current model policy for human review; no grant or model call is made. | `hz chat propose-model-policy` | — | — | `POST /api/system/runner/chat/propose-model-policy` | yes |  |
+| Stage the exact current agent contract for human review; no schedule, access, or model call is granted. | `hz chat propose-agent-contract` | — | — | `POST /api/system/runner/chat/propose-agent-contract` | yes |  |
 | Show a chat session: its context, messages, actions and costs. | `hz chat show` | — | — | `GET /api/system/runner/chat/show` |  | expert |
 | List chat sessions, most recent first; they are kept for system.runner.chat.keep_days. | `hz chat list` | — | — | `GET /api/system/runner/chat/list` |  |  |
 | Delete a chat session and everything it holds; returns the sessions left. | `hz chat remove` | — | — | `POST /api/system/runner/chat/remove` | yes | expert |

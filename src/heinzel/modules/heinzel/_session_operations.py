@@ -42,7 +42,13 @@ from heinzel.modules.heinzel._session_models import (
     SkillSharingProposal,
 )
 from heinzel.modules.heinzel._session_repository import PersonalSessionRepository
-from heinzel.modules.heinzel._user_chat import UserChatAnswer, UserChatService, UserToolActivity, UserTurnResolution
+from heinzel.modules.heinzel._user_chat import (
+    UserChatAnswer,
+    UserChatService,
+    UserToolActivity,
+    UserTurnResolution,
+    UserTurnState,
+)
 
 Request = Annotated[RequestId, Field(description="A stable client request id; reuse it only for an exact retry.")]
 Identity = Annotated[SessionId, Field(description="The stable personal session id returned by new-chat or sessions.")]
@@ -307,6 +313,11 @@ def _register_user_chat_operations(module: Module) -> None:
     def answer_chat(service: UserChatService, session_id: Identity, request_id: Request) -> UserChatAnswer:
         """Answer one authenticated user's accepted message; an interrupted request is never silently replayed."""
         return asyncio.run(service.answer(session_id, request_id))
+
+    @module.operation(private=True, heads={"cli", "web", "api-private"}, audience="everyday")
+    def chat_turn_state(service: UserChatService, session_id: Identity, request_id: Request) -> UserTurnState:
+        """Read the recorded turn state; unresolved may still be running."""
+        return service.turn_state(session_id, request_id)
 
     @module.operation(private=True, read_only=False, heads={"cli", "web", "api-private"}, audience="everyday")
     def abandon_chat_turn(

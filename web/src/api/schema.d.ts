@@ -128,6 +128,72 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/heinzel/abandon-chat-turn": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Explicitly set aside a stopped uncertain turn; never retry or undo its possible effects.
+         * @description Explicitly set aside a stopped uncertain turn; never retry or undo its possible effects.
+         *
+         *     Raises:
+         *         HeinzelError: If the uncertain outcome was not acknowledged.
+         */
+        post: operations["heinzel_abandon_chat_turn"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/heinzel/accept-agent-contract": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Record only exact contract acceptance through trusted confirmation.
+         * @description Record only exact contract acceptance through trusted confirmation.
+         *
+         *     Raises:
+         *         HeinzelError: If confirmation or exact review is invalid.
+         */
+        post: operations["heinzel_accept_agent_contract"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/heinzel/agent-contract-review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read an exact contract and its acceptance; this grants no execution or access.
+         * @description Read an exact contract and its acceptance; this grants no execution or access.
+         */
+        get: operations["heinzel_agent_contract_review"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/heinzel/amend-scheduled-agent": {
         parameters: {
             query?: never;
@@ -142,6 +208,26 @@ export interface paths {
          * @description Propose revised terms; an independent human review and approval is still required.
          */
         post: operations["heinzel_amend_scheduled_agent"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/heinzel/answer-chat": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Answer one authenticated user's accepted message; an interrupted request is never silently replayed.
+         * @description Answer one authenticated user's accepted message; an interrupted request is never silently replayed.
+         */
+        post: operations["heinzel_answer_chat"];
         delete?: never;
         options?: never;
         head?: never;
@@ -208,6 +294,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/heinzel/chat-turn-state": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read the recorded turn state; unresolved may still be running.
+         * @description Read the recorded turn state; unresolved may still be running.
+         */
+        get: operations["heinzel_chat_turn_state"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/heinzel/check": {
         parameters: {
             query?: never;
@@ -260,6 +366,26 @@ export interface paths {
          * @description Show the workflow your contracts make: what each maintains and reads, cycles, unmaintained inputs.
          */
         get: operations["heinzel_graph"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/heinzel/latest-profile-proposal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Inspect the latest suggested name and look; it has not been applied.
+         * @description Inspect the latest suggested name and look; it has not been applied.
+         */
+        get: operations["heinzel_latest_profile_proposal"];
         put?: never;
         post?: never;
         delete?: never;
@@ -683,6 +809,26 @@ export interface paths {
          * @description Discover owner-private pending sharing request references.
          */
         get: operations["heinzel_skill_sharing_proposals"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/heinzel/tool-activity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Show owner-private host-observed tool decisions, without their arguments.
+         * @description Show owner-private host-observed tool decisions, without their arguments.
+         */
+        get: operations["heinzel_tool_activity"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1930,6 +2076,26 @@ export interface paths {
          * @description Open a runner chat bound to this owner's durable session and current conversation history.
          */
         post: operations["system_runner_chat_open_check_in"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/runner/chat/propose-agent-contract": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Stage the exact current agent contract for human review; no schedule, access, or model call is granted.
+         * @description Stage the exact current agent contract for human review; no schedule, access, or model call is granted.
+         */
+        post: operations["system_runner_chat_propose_agent_contract"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4449,6 +4615,19 @@ export interface components {
              * @description Inputs that read an output no contract maintains.
              */
             unmaintained: components["schemas"]["Unmaintained"][];
+        };
+        /**
+         * ContractReviewView
+         * @description An owner-private acceptance record, not an execution or access grant.
+         */
+        ContractReviewView: {
+            /**
+             * Accepted
+             * @description Whether the trusted confirmation boundary recorded this exact acceptance.
+             */
+            accepted: boolean;
+            /** @description Exact proposal revision and preview hash. */
+            proposal: components["schemas"]["ScheduledAgentProposal"];
         };
         /**
          * ContractVersion
@@ -7678,6 +7857,29 @@ export interface components {
             working_hours_set: boolean;
         };
         /**
+         * ProfileProposal
+         * @description Private suggested identity and appearance; applying it requires a separate user save.
+         */
+        ProfileProposal: {
+            appearance: components["schemas"]["HeinzelAppearance"];
+            /** Expected Revision */
+            expected_revision: number;
+            /** Name */
+            name: string;
+            /** Preview Sha256 */
+            preview_sha256: string;
+            /** Request Id */
+            request_id: string;
+            /** Session Id */
+            session_id: string;
+            /**
+             * Status
+             * @default proposed
+             * @constant
+             */
+            status: "proposed";
+        };
+        /**
          * ProgressWidget
          * @description How much of something is done.
          */
@@ -8316,9 +8518,9 @@ export interface components {
             contract: string;
             /**
              * Max Usd
-             * @description Proposed maximum USD cost per turn; enforcement is not yet available.
+             * @description Proposed API USD limit, or null for subscription plan limits and unknown cost; not yet enforced.
              */
-            max_usd: number;
+            max_usd: number | null;
             /**
              * Permitted Tools
              * @description The tools the proposed turn may use; this slice permits none.
@@ -10659,6 +10861,28 @@ export interface components {
             summary: string;
         };
         /**
+         * ToolActivity
+         * @description A redacted host-observed tool invocation or denial.
+         */
+        ToolActivity: {
+            /**
+             * At
+             * Format: date-time
+             */
+            at: string;
+            /** Seq */
+            seq: number;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "requested" | "completed" | "failed" | "denied";
+            /** Tool */
+            tool: string;
+            /** Turn Id */
+            turn_id: string;
+        };
+        /**
          * Uninstalled
          * @description What `uninstall` removed.
          */
@@ -10868,6 +11092,58 @@ export interface components {
              * @description Runs that reported no cost.
              */
             unpriced: number;
+        };
+        /**
+         * UserChatAnswer
+         * @description A persisted answer for exactly the accepted request; not a schedule or approval.
+         */
+        UserChatAnswer: {
+            message: components["schemas"]["SessionMessage"];
+            /** Request Id */
+            request_id: string;
+            /** Session Id */
+            session_id: string;
+        };
+        /**
+         * UserToolActivity
+         * @description Owner-private, host-observed tool decisions without arguments or secrets.
+         */
+        UserToolActivity: {
+            /** Items */
+            items: components["schemas"]["ToolActivity"][];
+            /** Session Id */
+            session_id: string;
+        };
+        /**
+         * UserTurnResolution
+         * @description The exact stopped turn was explicitly set aside, not replayed or undone.
+         */
+        UserTurnResolution: {
+            /** Request Id */
+            request_id: string;
+            /** Session Id */
+            session_id: string;
+            /**
+             * Status
+             * @default abandoned
+             * @constant
+             */
+            status: "abandoned";
+        };
+        /**
+         * UserTurnState
+         * @description The recorded state of one owner-bound turn; unresolved may still be running.
+         */
+        UserTurnState: {
+            /** Request Id */
+            request_id: string;
+            /** Session Id */
+            session_id: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "pending" | "unresolved" | "abandoned" | "completed";
         };
         /** ValidationError */
         ValidationError: {
@@ -11151,6 +11427,43 @@ export interface components {
              */
             widget?: (components["schemas"]["CardWidget"] | components["schemas"]["ListWidget"] | components["schemas"]["MetricWidget"] | components["schemas"]["ProgressWidget"] | components["schemas"]["GraphicWidget"]) | null;
         };
+        /** heinzel_abandon_chat_turn_Input */
+        heinzel_abandon_chat_turn_Input: {
+            /**
+             * Acknowledge Uncertain
+             * @description Confirm the outcome may be unknown and no retry or undo occurs.
+             */
+            acknowledge_uncertain: boolean;
+            /**
+             * Request Id
+             * @description A stable client request id; reuse it only for an exact retry.
+             */
+            request_id: string;
+            /**
+             * Session Id
+             * @description The stable personal session id returned by new-chat or sessions.
+             */
+            session_id: string;
+        };
+        /** heinzel_accept_agent_contract_Input */
+        heinzel_accept_agent_contract_Input: {
+            /** Approval Proof */
+            approval_proof: string;
+            /**
+             * Request Id
+             * @description A stable client request id; reuse it only for an exact retry.
+             */
+            request_id: string;
+            /** Review */
+            review: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            /**
+             * Session Id
+             * @description The stable personal session id returned by new-chat or sessions.
+             */
+            session_id: string;
+        };
         /** heinzel_amend_scheduled_agent_Input */
         heinzel_amend_scheduled_agent_Input: {
             /**
@@ -11183,6 +11496,19 @@ export interface components {
              * @description Proposed maximum seconds per turn.
              */
             timeout_seconds: number;
+        };
+        /** heinzel_answer_chat_Input */
+        heinzel_answer_chat_Input: {
+            /**
+             * Request Id
+             * @description A stable client request id; reuse it only for an exact retry.
+             */
+            request_id: string;
+            /**
+             * Session Id
+             * @description The stable personal session id returned by new-chat or sessions.
+             */
+            session_id: string;
         };
         /** heinzel_approve_model_grant_Input */
         heinzel_approve_model_grant_Input: {
@@ -11524,6 +11850,7 @@ export type SchemaConnectorCapability = components['schemas']['ConnectorCapabili
 export type SchemaConnectorReport = components['schemas']['ConnectorReport'];
 export type SchemaConnectorTest = components['schemas']['ConnectorTest'];
 export type SchemaContractGraph = components['schemas']['ContractGraph'];
+export type SchemaContractReviewView = components['schemas']['ContractReviewView'];
 export type SchemaContractVersion = components['schemas']['ContractVersion'];
 export type SchemaContributionInfo = components['schemas']['ContributionInfo'];
 export type SchemaCredentialDoc = components['schemas']['CredentialDoc'];
@@ -11617,6 +11944,7 @@ export type SchemaPluginPage = components['schemas']['PluginPage'];
 export type SchemaPluginSearch = components['schemas']['PluginSearch'];
 export type SchemaPluginUpdate = components['schemas']['PluginUpdate'];
 export type SchemaProfile = components['schemas']['Profile'];
+export type SchemaProfileProposal = components['schemas']['ProfileProposal'];
 export type SchemaProgressWidget = components['schemas']['ProgressWidget'];
 export type SchemaPublishStatus = components['schemas']['PublishStatus'];
 export type SchemaPushed = components['schemas']['Pushed'];
@@ -11694,12 +12022,17 @@ export type SchemaToggleControl = components['schemas']['ToggleControl'];
 export type SchemaToggled = components['schemas']['Toggled'];
 export type SchemaTokenUsage = components['schemas']['TokenUsage'];
 export type SchemaTool = components['schemas']['Tool'];
+export type SchemaToolActivity = components['schemas']['ToolActivity'];
 export type SchemaUninstalled = components['schemas']['Uninstalled'];
 export type SchemaUnmaintained = components['schemas']['Unmaintained'];
 export type SchemaUpdateResult = components['schemas']['UpdateResult'];
 export type SchemaUsageReport = components['schemas']['UsageReport'];
 export type SchemaUsageRow = components['schemas']['UsageRow'];
 export type SchemaUsageTotal = components['schemas']['UsageTotal'];
+export type SchemaUserChatAnswer = components['schemas']['UserChatAnswer'];
+export type SchemaUserToolActivity = components['schemas']['UserToolActivity'];
+export type SchemaUserTurnResolution = components['schemas']['UserTurnResolution'];
+export type SchemaUserTurnState = components['schemas']['UserTurnState'];
 export type SchemaValidationError = components['schemas']['ValidationError'];
 export type SchemaViewEntry = components['schemas']['ViewEntry'];
 export type SchemaWaiting = components['schemas']['Waiting'];
@@ -11707,7 +12040,10 @@ export type SchemaWakeScheduleView = components['schemas']['WakeScheduleView'];
 export type SchemaWeek = components['schemas']['Week'];
 export type SchemaWidgetAction = components['schemas']['WidgetAction'];
 export type SchemaWidgetEntry = components['schemas']['WidgetEntry'];
+export type SchemaHeinzelAbandonChatTurnInput = components['schemas']['heinzel_abandon_chat_turn_Input'];
+export type SchemaHeinzelAcceptAgentContractInput = components['schemas']['heinzel_accept_agent_contract_Input'];
 export type SchemaHeinzelAmendScheduledAgentInput = components['schemas']['heinzel_amend_scheduled_agent_Input'];
+export type SchemaHeinzelAnswerChatInput = components['schemas']['heinzel_answer_chat_Input'];
 export type SchemaHeinzelApproveModelGrantInput = components['schemas']['heinzel_approve_model_grant_Input'];
 export type SchemaHeinzelAssociateArtifactInput = components['schemas']['heinzel_associate_artifact_Input'];
 export type SchemaHeinzelChatInput = components['schemas']['heinzel_chat_Input'];
@@ -11899,6 +12235,104 @@ export interface operations {
             };
         };
     };
+    heinzel_abandon_chat_turn: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["heinzel_abandon_chat_turn_Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserTurnResolution"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    heinzel_accept_agent_contract: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["heinzel_accept_agent_contract_Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScheduledAgentProposal"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    heinzel_agent_contract_review: {
+        parameters: {
+            query: {
+                session_id: string;
+                request_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContractReviewView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     heinzel_amend_scheduled_agent: {
         parameters: {
             query?: never;
@@ -11919,6 +12353,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ScheduledAgentProposal"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    heinzel_answer_chat: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["heinzel_answer_chat_Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserChatAnswer"];
                 };
             };
             /** @description Validation Error */
@@ -12031,6 +12498,38 @@ export interface operations {
             };
         };
     };
+    heinzel_chat_turn_state: {
+        parameters: {
+            query: {
+                session_id: string;
+                request_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserTurnState"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     heinzel_check: {
         parameters: {
             query?: {
@@ -12123,6 +12622,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ContractGraph"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    heinzel_latest_profile_proposal: {
+        parameters: {
+            query: {
+                session_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProfileProposal"] | null;
                 };
             };
             /** @description Validation Error */
@@ -12790,6 +13320,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SkillSharingPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    heinzel_tool_activity: {
+        parameters: {
+            query: {
+                session_id: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserToolActivity"];
                 };
             };
             /** @description Validation Error */
@@ -14370,6 +14932,40 @@ export interface operations {
                 request_id: string;
                 /** @description The IANA time zone to use for this schedule preview. */
                 timezone: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatSession"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_runner_chat_propose_agent_contract: {
+        parameters: {
+            query: {
+                /** @description The personal agent session. */
+                durable_session: string;
+                /** @description The contract proposal request id. */
+                request_id: string;
             };
             header?: never;
             path?: never;

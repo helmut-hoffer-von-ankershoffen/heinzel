@@ -167,12 +167,15 @@ def test_owner_explicitly_sets_aside_uncertain_turn_and_can_continue(make_kernel
     blocked = client.post("/api/heinzel/answer-chat", headers=AUTH, json=second)
     assert blocked.status_code == 400
     assert "uncertain" in blocked.json()["error"]
+    state_path = "/api/heinzel/chat-turn-state"
+    assert client.get(state_path, headers=AUTH, params=first).json()["status"] == "unresolved"
     path = "/api/heinzel/abandon-chat-turn"
     assert client.post(path, json={**first, "acknowledge_uncertain": True}).status_code == 401
     assert client.post(path, headers=AUTH, json={**first, "acknowledge_uncertain": False}).status_code == 400
     resolved = client.post(path, headers=AUTH, json={**first, "acknowledge_uncertain": True})
     assert resolved.status_code == 200, resolved.text
     assert resolved.json() == {**first, "status": "abandoned"}
+    assert client.get(state_path, headers=AUTH, params=first).json()["status"] == "abandoned"
     assert client.post(path, headers=AUTH, json={**first, "acknowledge_uncertain": True}).json() == resolved.json()
     assert client.post("/api/heinzel/answer-chat", headers=AUTH, json=first).status_code == 400
     result = client.post("/api/heinzel/answer-chat", headers=AUTH, json=second)

@@ -3427,6 +3427,26 @@
         "title": "ContractGraph",
         "type": "object"
       },
+      "ContractReviewView": {
+        "description": "An owner-private acceptance record, not an execution or access grant.",
+        "properties": {
+          "accepted": {
+            "description": "Whether the trusted confirmation boundary recorded this exact acceptance.",
+            "title": "Accepted",
+            "type": "boolean"
+          },
+          "proposal": {
+            "$ref": "#/components/schemas/ScheduledAgentProposal",
+            "description": "Exact proposal revision and preview hash."
+          }
+        },
+        "required": [
+          "proposal",
+          "accepted"
+        ],
+        "title": "ContractReviewView",
+        "type": "object"
+      },
       "ContractVersion": {
         "description": "A versioned contract artifact; only an explicit approval can activate its schedule.",
         "properties": {
@@ -9130,6 +9150,57 @@
         "title": "Profile",
         "type": "object"
       },
+      "ProfileProposal": {
+        "additionalProperties": false,
+        "description": "Private suggested identity and appearance; applying it requires a separate user save.",
+        "properties": {
+          "appearance": {
+            "$ref": "#/components/schemas/HeinzelAppearance"
+          },
+          "expected_revision": {
+            "minimum": 1.0,
+            "title": "Expected Revision",
+            "type": "integer"
+          },
+          "name": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "preview_sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Preview Sha256",
+            "type": "string"
+          },
+          "request_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "session_id": {
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "status": {
+            "const": "proposed",
+            "default": "proposed",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "request_id",
+          "expected_revision",
+          "name",
+          "appearance",
+          "preview_sha256"
+        ],
+        "title": "ProfileProposal",
+        "type": "object"
+      },
       "ProgressWidget": {
         "additionalProperties": false,
         "description": "How much of something is done.",
@@ -10115,10 +10186,17 @@
             "type": "string"
           },
           "max_usd": {
-            "description": "Proposed maximum USD cost per turn; enforcement is not yet available.",
-            "exclusiveMinimum": 0.0,
-            "title": "Max Usd",
-            "type": "number"
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Proposed API USD limit, or null for subscription plan limits and unknown cost; not yet enforced.",
+            "title": "Max Usd"
           },
           "permitted_tools": {
             "description": "The tools the proposed turn may use; this slice permits none.",
@@ -14182,6 +14260,47 @@
         "title": "Tool",
         "type": "object"
       },
+      "ToolActivity": {
+        "description": "A redacted host-observed tool invocation or denial.",
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "seq": {
+            "title": "Seq",
+            "type": "integer"
+          },
+          "status": {
+            "enum": [
+              "requested",
+              "completed",
+              "failed",
+              "denied"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "tool": {
+            "title": "Tool",
+            "type": "string"
+          },
+          "turn_id": {
+            "title": "Turn Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "seq",
+          "at",
+          "turn_id",
+          "tool",
+          "status"
+        ],
+        "title": "ToolActivity",
+        "type": "object"
+      },
       "Uninstalled": {
         "description": "What `uninstall` removed.",
         "properties": {
@@ -14501,6 +14620,114 @@
           "unpriced"
         ],
         "title": "UsageTotal",
+        "type": "object"
+      },
+      "UserChatAnswer": {
+        "description": "A persisted answer for exactly the accepted request; not a schedule or approval.",
+        "properties": {
+          "message": {
+            "$ref": "#/components/schemas/SessionMessage"
+          },
+          "request_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "session_id": {
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "request_id",
+          "message"
+        ],
+        "title": "UserChatAnswer",
+        "type": "object"
+      },
+      "UserToolActivity": {
+        "description": "Owner-private, host-observed tool decisions without arguments or secrets.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ToolActivity"
+            },
+            "maxItems": 100,
+            "title": "Items",
+            "type": "array"
+          },
+          "session_id": {
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "items"
+        ],
+        "title": "UserToolActivity",
+        "type": "object"
+      },
+      "UserTurnResolution": {
+        "description": "The exact stopped turn was explicitly set aside, not replayed or undone.",
+        "properties": {
+          "request_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "session_id": {
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "status": {
+            "const": "abandoned",
+            "default": "abandoned",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "request_id"
+        ],
+        "title": "UserTurnResolution",
+        "type": "object"
+      },
+      "UserTurnState": {
+        "description": "The recorded state of one owner-bound turn; unresolved may still be running.",
+        "properties": {
+          "request_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "session_id": {
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "unresolved",
+              "abandoned",
+              "completed"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "request_id",
+          "status"
+        ],
+        "title": "UserTurnState",
         "type": "object"
       },
       "ValidationError": {
@@ -15124,6 +15351,71 @@
         "title": "WidgetEntry",
         "type": "object"
       },
+      "heinzel_abandon_chat_turn_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "acknowledge_uncertain": {
+            "description": "Confirm the outcome may be unknown and no retry or undo occurs.",
+            "title": "Acknowledge Uncertain",
+            "type": "boolean"
+          },
+          "request_id": {
+            "description": "A stable client request id; reuse it only for an exact retry.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "session_id": {
+            "description": "The stable personal session id returned by new-chat or sessions.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "request_id",
+          "acknowledge_uncertain"
+        ],
+        "title": "heinzel_abandon_chat_turn_Input",
+        "type": "object"
+      },
+      "heinzel_accept_agent_contract_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "approval_proof": {
+            "title": "Approval Proof",
+            "type": "string"
+          },
+          "request_id": {
+            "description": "A stable client request id; reuse it only for an exact retry.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "review": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "title": "Review",
+            "type": "object"
+          },
+          "session_id": {
+            "description": "The stable personal session id returned by new-chat or sessions.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "request_id",
+          "review",
+          "approval_proof"
+        ],
+        "title": "heinzel_accept_agent_contract_Input",
+        "type": "object"
+      },
       "heinzel_amend_scheduled_agent_Input": {
         "additionalProperties": false,
         "properties": {
@@ -15175,6 +15467,29 @@
           "timeout_seconds"
         ],
         "title": "heinzel_amend_scheduled_agent_Input",
+        "type": "object"
+      },
+      "heinzel_answer_chat_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "request_id": {
+            "description": "A stable client request id; reuse it only for an exact retry.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "session_id": {
+            "description": "The stable personal session id returned by new-chat or sessions.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "request_id"
+        ],
+        "title": "heinzel_answer_chat_Input",
         "type": "object"
       },
       "heinzel_approve_model_grant_Input": {
@@ -16016,6 +16331,142 @@
         ]
       }
     },
+    "/heinzel/abandon-chat-turn": {
+      "post": {
+        "description": "Explicitly set aside a stopped uncertain turn; never retry or undo its possible effects.\n\nRaises:\n    HeinzelError: If the uncertain outcome was not acknowledged.",
+        "operationId": "heinzel_abandon_chat_turn",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/heinzel_abandon_chat_turn_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserTurnResolution"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Explicitly set aside a stopped uncertain turn; never retry or undo its possible effects.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/accept-agent-contract": {
+      "post": {
+        "description": "Record only exact contract acceptance through trusted confirmation.\n\nRaises:\n    HeinzelError: If confirmation or exact review is invalid.",
+        "operationId": "heinzel_accept_agent_contract",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/heinzel_accept_agent_contract_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduledAgentProposal"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Record only exact contract acceptance through trusted confirmation.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/agent-contract-review": {
+      "get": {
+        "description": "Read an exact contract and its acceptance; this grants no execution or access.",
+        "operationId": "heinzel_agent_contract_review",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContractReviewView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read an exact contract and its acceptance; this grants no execution or access.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
     "/heinzel/amend-scheduled-agent": {
       "post": {
         "description": "Propose revised terms; an independent human review and approval is still required.",
@@ -16053,6 +16504,48 @@
           }
         },
         "summary": "Propose revised terms; an independent human review and approval is still required.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/answer-chat": {
+      "post": {
+        "description": "Answer one authenticated user's accepted message; an interrupted request is never silently replayed.",
+        "operationId": "heinzel_answer_chat",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/heinzel_answer_chat_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserChatAnswer"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Answer one authenticated user's accepted message; an interrupted request is never silently replayed.",
         "tags": [
           "heinzel"
         ]
@@ -16179,6 +16672,58 @@
           }
         },
         "summary": "Durably queue a message for this Heinzel; acceptance is distinct from a completed model answer.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/chat-turn-state": {
+      "get": {
+        "description": "Read the recorded turn state; unresolved may still be running.",
+        "operationId": "heinzel_chat_turn_state",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserTurnState"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read the recorded turn state; unresolved may still be running.",
         "tags": [
           "heinzel"
         ]
@@ -16340,6 +16885,57 @@
           }
         },
         "summary": "Show the workflow your contracts make: what each maintains and reads, cycles, unmaintained inputs.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/latest-profile-proposal": {
+      "get": {
+        "description": "Inspect the latest suggested name and look; it has not been applied.",
+        "operationId": "heinzel_latest_profile_proposal",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ProfileProposal"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Response Heinzel Latest Profile Proposal"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Inspect the latest suggested name and look; it has not been applied.",
         "tags": [
           "heinzel"
         ]
@@ -17368,6 +17964,59 @@
           }
         },
         "summary": "Discover owner-private pending sharing request references.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/tool-activity": {
+      "get": {
+        "description": "Show owner-private host-observed tool decisions, without their arguments.",
+        "operationId": "heinzel_tool_activity",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 30,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserToolActivity"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Show owner-private host-observed tool decisions, without their arguments.",
         "tags": [
           "heinzel"
         ]
@@ -19717,6 +20366,62 @@
           }
         },
         "summary": "Open a runner chat bound to this owner's durable session and current conversation history.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/runner/chat/propose-agent-contract": {
+      "post": {
+        "description": "Stage the exact current agent contract for human review; no schedule, access, or model call is granted.",
+        "operationId": "system_runner_chat_propose_agent_contract",
+        "parameters": [
+          {
+            "description": "The personal agent session.",
+            "in": "query",
+            "name": "durable_session",
+            "required": true,
+            "schema": {
+              "description": "The personal agent session.",
+              "title": "Durable Session",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The contract proposal request id.",
+            "in": "query",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "description": "The contract proposal request id.",
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatSession"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Stage the exact current agent contract for human review; no schedule, access, or model call is granted.",
         "tags": [
           "system"
         ]
