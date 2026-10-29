@@ -20,7 +20,6 @@ from pydantic_ai.messages import (
     UserPromptPart,
 )
 from pydantic_ai.models import Model, ModelRequestParameters
-from pydantic_ai.models.openai import OpenAIResponsesModel
 from pydantic_ai.models.wrapper import WrapperModel
 from pydantic_ai.settings import ModelSettings
 
@@ -117,6 +116,11 @@ class ReservedModel(WrapperModel):
         Raises:
             HeinzelError: If the provider, snapshot or endpoint cannot be established.
         """
+        try:
+            from pydantic_ai.models.openai import OpenAIResponsesModel  # noqa: PLC0415 - optional provider
+        except ImportError:
+            msg = "The OpenAI provider is not installed for this model"
+            raise HeinzelError(msg) from None
         if (
             not isinstance(model, OpenAIResponsesModel)
             or bool(model.settings)
