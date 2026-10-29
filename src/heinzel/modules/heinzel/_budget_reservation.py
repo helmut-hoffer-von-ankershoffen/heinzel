@@ -51,6 +51,7 @@ class _Reservation(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     session: str
     request_id: str
+    turn_id: str
     owner: str
     envelope: PriceEnvelope
     amount: Decimal = Field(gt=0, allow_inf_nan=False)
@@ -65,13 +66,14 @@ class ReservationResult(BaseModel):
     owner_reserved: Decimal
 
 
-def reserve_model_spend(  # noqa: PLR0913, C901 - policy and ledger checks share one atomic boundary
+def reserve_model_spend(  # noqa: PLR0913, PLR0912, PLR0915, C901 - one atomic policy and ledger boundary
     repository: SessionRepository,
     session_id: str,
     request_id: str,
     envelope: PriceEnvelope,
     *,
     message_cap: Decimal,
+    turn_id: str | None = None,
     session_cap: Decimal,
     owner_cap: Decimal,
 ) -> ReservationResult:
@@ -92,9 +94,15 @@ def reserve_model_spend(  # noqa: PLR0913, C901 - policy and ledger checks share
         if not cap.is_finite() or cap <= 0 or cap > _MAX_CAP:
             msg = "Budget caps must be finite and positive"
             raise HeinzelError(msg)
+    turn_id = turn_id or request_id
+    if len(turn_id) > _MAX_REQUEST_ID:
+        msg = "The reservation turn identity is invalid"
+        raise HeinzelError(msg)
     amount = envelope.maximum()
     key = hashlib.sha256(f"{session_id}\0{request_id}".encode()).hexdigest()
-    requested = _Reservation(session=session_id, request_id=request_id, owner=owner, envelope=envelope, amount=amount)
+    requested = _Reservation(
+        session=session_id, request_id=request_id, turn_id=turn_id, owner=owner, envelope=envelope, amount=amount
+    )
     with repository.budget_writer(session_id) as writer:
         events = repository.budget_read(session_id).events
         records: list[_Reservation] = []
@@ -123,6 +131,11 @@ def reserve_model_spend(  # noqa: PLR0913, C901 - policy and ledger checks share
             context.rounding = ROUND_CEILING
             owner_total = sum((record.amount for record in records), Decimal(0))
             session_total = sum((record.amount for record in records if record.session == session_id), Decimal(0))
+            turn_total = sum(
+                (record.amount for record in records if record.session == session_id and record.turn_id == turn_id),
+                Decimal(0),
+            )
+            turn_with_new = turn_total + amount
             owner_with_new = owner_total + amount
             session_with_new = session_total + amount
         if prior is not None:
@@ -132,7 +145,7 @@ def reserve_model_spend(  # noqa: PLR0913, C901 - policy and ledger checks share
             return ReservationResult(
                 disposition="existing", amount=amount, session_reserved=session_total, owner_reserved=owner_total
             )
-        if amount > message_cap or session_with_new > session_cap or owner_with_new > owner_cap:
+        if turn_with_new > message_cap or session_with_new > session_cap or owner_with_new > owner_cap:
             msg = "The worst-case model reservation exceeds an approved budget cap"
             raise HeinzelError(msg)
         data = json.loads(requested.model_dump_json())
