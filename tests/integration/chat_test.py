@@ -963,8 +963,7 @@ def test_stdio_mcp_can_require_direct_human_terminal_approval_without_a_bearer( 
     assert schedule.summary in shown
     assert schedule.cron in shown
     assert schedule.timezone in shown
-    with pytest.raises(ToolError, match="schedule changed"):
-        handler(**arguments)
+    _assert_mcp_schedule_retry_reconciles(kernel, arguments, monkeypatch)
     with user.local("cli"):
         events = PersonalSessionRepository(user).control_read(created.session_id).events
     assert sum(event.kind == "approval.issued" for event in events) == 1
@@ -1009,6 +1008,29 @@ def _assert_mcp_schedule_fails_headless(kernel, arguments, monkeypatch) -> None:
         result = anyio.run(invoke)
     assert result.is_error
     assert "controlling terminal" in str(result.content)
+
+
+def _assert_mcp_schedule_retry_reconciles(kernel, arguments, monkeypatch) -> None:
+    prompts: list[dict[str, object]] = []
+
+    def unexpected_prompt(review: dict[str, object]) -> None:
+        prompts.append(review)
+        msg = "approval prompt must not be repeated"
+        raise HeinzelError(msg)
+
+    monkeypatch.setattr(mcp, "_confirm_schedule_on_tty", unexpected_prompt)
+
+    async def replay_tool(call_arguments: dict[str, object]):
+        async with Client(mcp.build(kernel)) as connected:
+            return await connected.call_tool("heinzel_schedule_control", call_arguments)
+
+    replayed = anyio.run(replay_tool, arguments)
+    assert not replayed.is_error
+    assert replayed.structured_content["schedule"]["status"] == "active"
+    conflict = anyio.run(replay_tool, arguments | {"expected_preview_hash": "b" * 64})
+    assert conflict.is_error
+    assert "different schedule control" in str(conflict.content)
+    assert prompts == []
 
 
 def test_mcp_handoff_crashes_fail_closed_before_and_after_the_schedule_commit(kernel, tmp_path, monkeypatch):

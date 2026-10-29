@@ -224,13 +224,18 @@ def test_propose_activate_pause_and_resume_five_minute_check_in_through_private_
     assert approval not in cli_retry.output
     assert json.loads(cli_retry.output)["schedule"]["status"] == "active"
 
-    async def same_approval_from_stdio_mcp():
+    async def exact_retry_from_stdio_mcp():
         async with Client(mcp.build(kernel)) as connected:
-            result = await connected.call_tool("heinzel_schedule_control", {**activation, "approval_proof": approval})
-            assert result.is_error
-            assert "approval_proof" not in str(result.content)
+            tool = next(
+                item for item in (await connected.list_tools()).tools if item.name == "heinzel_schedule_control"
+            )
+            assert "approval_proof" not in tool.input_schema["properties"]
+            result = await connected.call_tool("heinzel_schedule_control", activation)
+            assert not result.is_error
+            assert result.structured_content["schedule"]["status"] == "active"
+            assert approval not in str(result.content)
 
-    anyio.run(same_approval_from_stdio_mcp)
+    anyio.run(exact_retry_from_stdio_mcp)
     with kernel.resolve(CurrentUser).local("cli"):
         approval_events = (
             PersonalSessionRepository(kernel.resolve(CurrentUser), clock=lambda: NOW)

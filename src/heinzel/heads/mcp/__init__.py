@@ -239,6 +239,10 @@ def _authorize_mcp_schedule(kernel: Kernel, item: Exposed, arguments: dict[str, 
         if name in arguments
     }
     issuer = kernel.resolve(ApprovalIssuer)
+    # A tool response can be lost after the owner journal commits. Resolve that exact request before prompting
+    # again; the operation will return the recorded disposition without requiring or consuming another proof.
+    if issuer.applied(item.record.qualname, item.operation.name, approval_arguments):
+        return arguments
     current_schedule = issuer.review(item.record.qualname, item.operation.name, approval_arguments)
     _confirm_schedule_on_tty({"requested_control": approval_arguments, "current_schedule": current_schedule})
     proof = issuer.issue(

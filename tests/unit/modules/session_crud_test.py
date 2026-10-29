@@ -205,6 +205,27 @@ def test_check_in_contract_and_schedule_are_private_inactive_versioned_and_resta
     assert resumed.schedule is not None
     assert resumed.schedule.status == "active"
     assert resumed.appearance == HeinzelAppearance(hat="teal")
+    replayed_resume = service.schedule_control(
+        created.session_id,
+        "resume-v1",
+        3,
+        "resume",
+        None,
+        proposed.schedule.contract_version,
+        proposed.schedule.preview_hash,
+    )
+    assert replayed_resume.schedule is not None
+    assert replayed_resume.schedule.status == "active"
+    with pytest.raises(HeinzelError, match="different schedule control"):
+        service.schedule_control(
+            created.session_id,
+            "resume-v1",
+            4,
+            "resume",
+            None,
+            proposed.schedule.contract_version,
+            proposed.schedule.preview_hash,
+        )
 
     restarted = SessionCrud(PersonalSessionRepository(current), service.costs, clock=lambda: AT)
     reopened = restarted.snapshot(created.session_id)
@@ -273,6 +294,27 @@ def test_only_the_internal_issuer_records_a_fresh_exact_intent(services):
     )
     assert active.schedule is not None
     assert active.schedule.status == "active"
+    replayed = service.schedule_control(
+        created.session_id,
+        arguments["request_id"],
+        arguments["expected_revision"],
+        "activate",
+        None,
+        arguments["expected_contract_version"],
+        arguments["expected_preview_hash"],
+    )
+    assert replayed.schedule is not None
+    assert replayed.schedule.status == "active"
+    with pytest.raises(HeinzelError, match="different schedule control"):
+        service.schedule_control(
+            created.session_id,
+            arguments["request_id"],
+            arguments["expected_revision"] + 1,
+            "activate",
+            None,
+            arguments["expected_contract_version"],
+            arguments["expected_preview_hash"],
+        )
     assert service.applied("heinzel", "schedule-control", arguments)
     assert not service.applied("heinzel", "schedule-control", arguments | {"request_id": "another-request"})
 

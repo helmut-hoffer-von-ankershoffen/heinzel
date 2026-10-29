@@ -765,6 +765,9 @@ class SessionCrud(ApprovalIssuer):
         )
         key = f"schedule-control-{request_id}"
         if action in {"activate", "resume"}:
+            event_kind = "schedule.activated" if action == "activate" else "schedule.resume"
+            if self._has_recorded_schedule_control(session_id, request_id, request_hash, event_kind):
+                return self.snapshot(session_id)
             if approval_proof is None or expected_preview_hash is None:
                 msg = "Approval is invalid or unavailable"
                 raise HeinzelError(msg)
@@ -833,7 +836,7 @@ class SessionCrud(ApprovalIssuer):
                 requested,
                 current_intent,
                 self.clock,
-                event_kind="schedule.activated" if action == "activate" else "schedule.resume",
+                event_kind=event_kind,
                 effect_data=effect_data,
                 event_key=key,
                 idempotency_hash=request_hash,
@@ -874,6 +877,29 @@ class SessionCrud(ApprovalIssuer):
                 )
         return self.snapshot(session_id)
 
+    def _has_recorded_schedule_control(
+        self, session_id: str, request_id: str, request_hash: str, event_kind: str
+    ) -> bool:
+        """Find the exact owner-journal disposition for one request id, denying mismatched reuse.
+
+        Raises:
+            HeinzelError: If the request id identifies another action or the journal is ambiguous.
+        """
+        key = f"schedule-control-{request_id}"
+        with self.repository.control_writer(session_id):
+            prior = [event for event in self.repository.control_read(session_id).events if event.key == key]
+        if not prior:
+            return False
+        if (
+            len(prior) != 1
+            or prior[0].kind != event_kind
+            or prior[0].data.get("request_hash") != request_hash
+            or prior[0].data.get("request_id") != request_id
+        ):
+            msg = "This request already identifies a different schedule control"
+            raise HeinzelError(msg)
+        return True
+
     def review(self, module: str, operation: str, arguments: dict[str, JsonValue]) -> dict[str, JsonValue]:
         """Describe the exact current schedule to its owner without creating approval state.
 
@@ -904,6 +930,18 @@ class SessionCrud(ApprovalIssuer):
             or any(char not in "0123456789abcdef" for char in preview_hash)
         ):
             raise HeinzelError(invalid)
+        request_hash = _digest(
+            {
+                "expected_revision": revision,
+                "action": action,
+                "expected_contract_version": contract_version,
+                "expected_preview_hash": preview_hash,
+            }
+        )
+        event_kind = "schedule.activated" if action == "activate" else "schedule.resume"
+        if self._has_recorded_schedule_control(session_id, request_id, request_hash, event_kind):
+            msg = "This exact schedule action is already recorded"
+            raise HeinzelError(msg)
         snapshot = self.snapshot(session_id)
         schedule = snapshot.schedule
         expected_status = "proposed" if action == "activate" else "paused"
