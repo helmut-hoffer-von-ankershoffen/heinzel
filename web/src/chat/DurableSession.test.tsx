@@ -714,6 +714,55 @@ describe("personal conversation links", () => {
     expect(activity.getByText("example:read · completed")).toBeInTheDocument();
   });
 
+  it("attaches recorded events only to the exact reply and can expand the bounded recent window", async () => {
+    const events = Array.from({ length: 100 }, (_, index) => ({
+      seq: index + 10,
+      at: "2026-10-30T00:00:00Z",
+      turn_id: index === 99 ? "matching-turn" : "other-turn",
+      tool: index === 99 ? "example:matching" : `example:other-${index}`,
+      status: index === 99 ? "denied" : "requested",
+    }));
+    mockApi({
+      ...shell,
+      "/api/heinzel/session": {
+        ...snapshot,
+        messages: [
+          {
+            id: "reply",
+            seq: 2,
+            role: "assistant",
+            turn_id: "matching-turn",
+            text: "A recorded answer",
+            status: "completed",
+          },
+          {
+            id: "another",
+            seq: 3,
+            role: "assistant",
+            turn_id: "different-turn",
+            text: "Another answer",
+            status: "completed",
+          },
+        ],
+      },
+      "/api/heinzel/tool-activity": (request: Request) => ({
+        session_id: sessionId,
+        items: events.slice(-Number(new URL(request.url).searchParams.get("limit"))),
+      }),
+    });
+    renderAt(`/heinzel?chat=${sessionId}`);
+    const answer = (await screen.findByText("A recorded answer")).closest("div");
+    if (!answer) throw new Error("Missing answer");
+    const attached = within(answer).getByText(/Tool activity for this reply/);
+    fireEvent.click(attached);
+    expect(within(answer).getByText("example:matching · denied")).toBeVisible();
+    expect(within(answer).queryByText(/example:other/)).not.toBeInTheDocument();
+    expect(screen.getByText(/Earlier activity may be omitted/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Show more recorded activity" }));
+    expect(await screen.findByText(/Events older than the latest 100/)).toBeInTheDocument();
+    expect(screen.getByText("example:other-0 · requested")).toBeInTheDocument();
+  });
+
   it("does not display tool activity from a different session", async () => {
     mockApi({
       ...shell,

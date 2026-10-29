@@ -23,6 +23,13 @@ try {
   assert.equal(await message.inputValue(), text);
   await page.getByRole("button", { name: "Queue message" }).click();
   await page.getByText("I prepared proposals for your review.").waitFor({ timeout: 30000 });
+  const replyActivity = page.getByText("Tool activity for this reply · 4 events");
+  await replyActivity.click();
+  const replyEvents = replyActivity.locator("..");
+  await replyEvents.getByText("agent:propose · requested").waitFor();
+  await replyEvents.getByText("agent:propose · completed").waitFor();
+  await replyEvents.getByText("profile:propose · requested").waitFor();
+  await replyEvents.getByText("profile:propose · completed").waitFor();
   const terms = page.getByRole("region", { name: "Proposed agent terms" });
   await terms.getByText("Review proposed terms").click();
   await terms.getByText("Prepare a private draft from my context.").waitFor();

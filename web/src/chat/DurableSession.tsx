@@ -12,6 +12,7 @@ import { ActionCard } from "@/chat/Conversation";
 import { useDurableDraft } from "@/chat/durableDraft";
 import { ModelPolicyReviewCard, supportedPolicy } from "@/chat/ModelPolicyReviewCard";
 import { SkillDraftPanel } from "@/chat/SkillDraftPanel";
+import { ToolEvents } from "@/chat/ToolEvents";
 import { UncertainTurnRecovery } from "@/chat/UncertainTurnRecovery";
 import { Button } from "@/components/ui/button";
 import { ProfileEditor } from "@/heinzel/PersonalHeinzels";
@@ -71,6 +72,7 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
   const [scheduleError, setScheduleError] = useState(false);
   const [scheduleErrorMessage, setScheduleErrorMessage] = useState<string | null>(null);
   const [intentNotice, setIntentNotice] = useState(false);
+  const [activityLimit, setActivityLimit] = useState(20);
   const [historyCursors, setHistoryCursors] = useState<Array<string | null>>([null]);
   const historyCursor = historyCursors.at(-1) ?? null;
   const clearScheduleError = () => {
@@ -112,10 +114,10 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
     retry: false,
   });
   const activity = useQuery({
-    queryKey: ["heinzel", "tool-activity", sessionId],
+    queryKey: ["heinzel", "tool-activity", sessionId, activityLimit],
     queryFn: async () => {
       const page = await result(
-        api.GET("/heinzel/tool-activity", { params: { query: { session_id: sessionId, limit: 20 } } }),
+        api.GET("/heinzel/tool-activity", { params: { query: { session_id: sessionId, limit: activityLimit } } }),
       );
       if (page.session_id !== sessionId) throw new Error("Unexpected activity session");
       return page;
@@ -713,38 +715,67 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
             </div>
           </nav>
         )}
-        {query.data?.messages?.map((message) => (
-          <p key={`${message.seq}-${message.id}`} className="whitespace-pre-wrap text-sm">
-            <strong>
-              {message.role === "tool" ? "Tool activity" : message.origin === "daemon" ? "Daemon" : message.role}:
-            </strong>{" "}
-            {message.role === "tool" ? "A tool event was recorded." : message.text}
-            {message.status && message.status !== "completed" && <span> ({message.status})</span>}
-            {message.billing === "plan" && (
-              <span className="block text-xs text-muted-foreground">Subscription usage · cost unknown</span>
-            )}
-            {message.billing === "api" && message.cost_usd != null && (
-              <span className="block text-xs text-muted-foreground">API cost: ${message.cost_usd.toFixed(4)}</span>
-            )}
-          </p>
-        ))}
+        {query.data?.messages?.map((message) => {
+          const turnItems =
+            message.role === "assistant" && message.turn_id
+              ? (activity.data?.items ?? []).filter((item) => item.turn_id === message.turn_id)
+              : [];
+          return (
+            <div key={`${message.seq}-${message.id}`} className="space-y-1 text-sm">
+              <p className="whitespace-pre-wrap break-words">
+                <strong>
+                  {message.role === "tool" ? "Tool activity" : message.origin === "daemon" ? "Daemon" : message.role}:
+                </strong>{" "}
+                {message.role === "tool" ? "A tool event was recorded." : message.text}
+                {message.status && message.status !== "completed" && <span> ({message.status})</span>}
+                {message.billing === "plan" && (
+                  <span className="block text-xs text-muted-foreground">Subscription usage · cost unknown</span>
+                )}
+                {message.billing === "api" && message.cost_usd != null && (
+                  <span className="block text-xs text-muted-foreground">API cost: ${message.cost_usd.toFixed(4)}</span>
+                )}
+              </p>
+              {turnItems.length > 0 && <ToolEvents items={turnItems} label="Tool activity for this reply" />}
+            </div>
+          );
+        })}
         {activity.isError && (
           <p role="status" className="text-sm">
             Recorded tool activity is unavailable.
           </p>
         )}
-        {activity.data?.session_id === sessionId && activity.data.items.length > 0 && (
-          <section aria-label="Recorded tool activity" className="space-y-1 rounded border border-border p-3 text-sm">
-            <h3 className="font-medium">Recorded tool activity</h3>
-            <ol className="space-y-1">
-              {activity.data.items.map((item) => (
-                <li key={item.seq} className="break-words">
-                  {item.tool} · {item.status}
-                </li>
-              ))}
-            </ol>
-          </section>
-        )}
+        {activity.data?.session_id === sessionId &&
+          activity.data.items.length > 0 &&
+          (() => {
+            const visibleTurns = new Set(
+              (query.data?.messages ?? [])
+                .filter((message) => message.role === "assistant")
+                .map((message) => message.turn_id),
+            );
+            const unmatched = activity.data.items.filter((item) => !visibleTurns.has(item.turn_id));
+            return (
+              <section
+                aria-label="Recorded tool activity"
+                className="space-y-2 rounded border border-border p-3 text-sm"
+              >
+                <h3 className="font-medium">Recorded tool activity</h3>
+                <p>Showing up to the latest {activityLimit} recorded events. Earlier activity may be omitted.</p>
+                {[...new Set(unmatched.map((item) => item.turn_id))].map((turn) => (
+                  <ToolEvents
+                    key={turn}
+                    items={unmatched.filter((item) => item.turn_id === turn)}
+                    label="Activity for a turn without a visible reply"
+                  />
+                ))}
+                {activityLimit < 100 && activity.data.items.length === activityLimit && (
+                  <Button type="button" size="sm" variant="outline" onClick={() => setActivityLimit(100)}>
+                    Show more recorded activity
+                  </Button>
+                )}
+                {activityLimit === 100 && <p>Events older than the latest 100 are not available here yet.</p>}
+              </section>
+            );
+          })()}
         {(query.data?.pending_actions ?? []).map((action) => (
           <section
             key={action.id}
