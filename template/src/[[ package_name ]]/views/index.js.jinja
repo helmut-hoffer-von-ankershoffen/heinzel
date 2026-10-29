@@ -1,0 +1,11 @@
+// The host supplies one React runtime. This starter needs no bundler.
+/** @param {import("../../../sdk/index").PluginSDK} sdk */
+export default function createView(sdk) {
+  if (sdk.abi !== 1) throw new Error("This view needs Heinzel plugin SDK 1");
+  return function Inspector({ data, loading, onClose }) {
+    return sdk.React.createElement("section", { "aria-label": "[[ plugin_name ]]", className: "p-4" },
+      sdk.React.createElement("h2", null, "[[ plugin_name ]]"),
+      sdk.React.createElement("p", { role: "status" }, loading ? "Loading…" : `Version ${data?.version ?? "unknown"}`),
+      sdk.React.createElement(sdk.Button, { onClick: onClose }, "Close"));
+  };
+}

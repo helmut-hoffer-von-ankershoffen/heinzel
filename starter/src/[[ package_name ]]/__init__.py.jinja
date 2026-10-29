@@ -1,0 +1,13 @@
+[% if preset == 'contributions' %][% include 'template/src/[[ package_name ]]/__init__.py.jinja' %][% else -%]
+"""A small independently delivered Heinzelmännchen plugin."""
+
+from heinzel import Module
+
+module = Module("[[ plugin_name ]]", [[ plugin_summary | tojson ]])
+
+
+@module.operation
+def hello(name: str = "Ada") -> str:
+    """Greet someone by name."""
+    return f"Hello, {name}!"
+[% endif -%]

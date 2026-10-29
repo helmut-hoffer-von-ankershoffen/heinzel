@@ -43,7 +43,7 @@ must preserve the original Host; the app does not infer trust from forwarded hea
 [Tailscale Serve](https://tailscale.com/docs/features/tailscale-serve) provides a private HTTPS proxy to a local
 service. Its network login and HTTPS consent are separate from hz's browser authentication. This change does not
 install Tailscale, log in, enable sharing, change existing Serve mappings or enable public Funnel automatically.
-The [first-party plugin](../plugins/heinzel-tailscale/README.md) provides one **Share over Tailscale** control in
+The [first-party plugin](https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/tree/main/plugins/heinzel-tailscale/README.md) provides one **Share over Tailscale** control in
 Settings and its footer popover, with the same `hz tailscale status|enable|disable` operations for CLI and agents.
 ON means the exact mapping and authenticated serving instance were verified; a separate process reports pending
 until that owner confirms the loaded configuration. Copy URL remains nonsecret. Copy sign-in link is a separate

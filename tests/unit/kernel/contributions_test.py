@@ -160,8 +160,8 @@ def test_widget_shapes_have_limits():
         ListWidget(title="Reviews", items=[ListEntry(text=str(n)) for n in range(9)])
     with pytest.raises(ValidationError, match="at most 3"):
         CardWidget(title="x", actions=[WidgetAction(label="a", effect=Navigate(path="/"))] * 4)
-    with pytest.raises(ValidationError, match="at most 8"):
-        StatusItem(text="x", detail=[DetailLine(text="d")] * 9)
+    with pytest.raises(ValidationError, match="at most 64"):
+        StatusItem(text="x", detail=[DetailLine(text="d")] * 65)
     with pytest.raises(ValidationError, match="at most 16"):
         MetricWidget(label="x", value="1" * 17)
     with pytest.raises(ValidationError, match="can't exceed total"):
@@ -219,7 +219,7 @@ def test_status_items_and_widgets_are_views_with_defaults():
         ({"source": "Report"}, "operation name"),
         ({"source": "report", "name": "Bad"}, "must match"),
         ({"source": "report", "order": 1001}, "order must be"),
-        ({"source": "report", "refresh": "5s"}, "refresh must be between 15 s"),
+        ({"source": "report", "refresh": "1s"}, "refresh must be between 2 s"),
         ({"source": "report", "refresh": "2d"}, "refresh must be between"),
         ({"source": "report", "slots": {"today": True}}, "slots are footer, sidebar"),
         ({"source": "report", "slots": {"footer": "yes"}}, "each true or false"),

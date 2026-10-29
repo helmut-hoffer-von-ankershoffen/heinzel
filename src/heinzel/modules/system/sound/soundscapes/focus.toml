@@ -1,9 +1,0 @@
-# Die Heinzelmännchen, a stream on YouTube (ADR 0058), never on by default.
-# By default, played in YouTube's privacy-enhanced player; nothing of YouTube loads until you press Play.
-name = "focus"
-title = "Die Heinzelmännchen"
-kind = "stream"
-
-[stream]
-provider = "youtube"
-video = "5Le8Mrx3uA0"

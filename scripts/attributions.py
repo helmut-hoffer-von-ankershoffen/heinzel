@@ -7,7 +7,7 @@
 Two parts, each sorted by name:
 
 - Python packages: the runtime dependencies of the core and of every first-party plugin, as uv.lock pins them
-  (`uv export --no-dev --all-packages`), for the platforms hz runs on (macOS and Linux, every supported Python).
+  (`uv export --no-dev`), for the platforms hz runs on (macOS and Linux, every supported Python).
   Dev tools are not distributed, so they are not listed. Their metadata and license files come from the very wheels
   uv.lock pins, installed per platform into a throwaway directory (`uv pip install --target --python-platform`), so
   the file is the same whichever machine generates it.

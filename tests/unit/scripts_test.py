@@ -33,6 +33,7 @@ CALLERS = [
     *sorted((REPO / ".github" / "workflows").glob("*.yml")),
 ]
 CALL = re.compile(r"(?P<runner>\buv run(?P<flags>(?: -[\w-]+)*)(?P<python> python3?)? )?scripts/(?P<name>[\w-]+\.py)\b")
+FILE_TEST = re.compile(r"\[\s+-[ef]\s+(['\"]?)scripts/[\w-]+\.py\1\s+\]")
 
 
 def inline_metadata(script: Path) -> dict[str, object] | None:
@@ -82,7 +83,7 @@ def call_problems(text: str, standalone: set[str], bound: set[str]) -> list[str]
     for line in text.splitlines():
         if line.lstrip().startswith("#"):
             continue
-        code = line.split(" #", 1)[0]
+        code = FILE_TEST.sub("", line.split(" #", 1)[0])  # A shell file-existence predicate doesn't execute the file.
         for call in CALL.finditer(code):
             name, flags = call["name"], (call["flags"] or "").split()
             if name in standalone and (not call["runner"] or call["python"] or "--script" not in flags):
@@ -119,6 +120,8 @@ def test_finds_scripts_run_the_wrong_way():
     assert len(call_problems("uv run python scripts/a.py", standalone, bound)) == 1
     assert len(call_problems("python scripts/a.py", standalone, bound)) == 1
     assert len(call_problems("uv run --script scripts/b.py", standalone, bound)) == 1
+    assert call_problems("if [ -f scripts/a.py ]; then uv run --script scripts/a.py; fi", standalone, bound) == []
+    assert len(call_problems('if [ -f "scripts/a.py" ]; then python scripts/a.py; fi', standalone, bound)) == 1
 
 
 @pytest.mark.parametrize("caller", CALLERS, ids=lambda p: str(p.relative_to(REPO)))

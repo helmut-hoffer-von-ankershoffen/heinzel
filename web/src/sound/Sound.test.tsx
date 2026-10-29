@@ -22,8 +22,8 @@ const off: SchemaSoundscapeView = {
   fade_seconds: 4,
 };
 const fm: SchemaSoundscapeView = {
-  name: "claude-fm",
-  title: "Claude FM",
+  name: "fixture-radio",
+  title: "Fixture radio",
   kind: "stream",
   module: "system.sound",
   plugin: "heinzel",
@@ -32,10 +32,10 @@ const fm: SchemaSoundscapeView = {
   fade_seconds: 4,
   stream: {
     provider: "youtube",
-    video: "tRsQsTMvPNg",
-    embed_url: `${ORIGIN}/embed/tRsQsTMvPNg`,
+    video: "abcdefghijk",
+    embed_url: `${ORIGIN}/embed/abcdefghijk`,
     frame_origin: ORIGIN,
-    watch_url: "https://www.youtube.com/watch?v=tRsQsTMvPNg",
+    watch_url: "https://www.youtube.com/watch?v=abcdefghijk",
   },
 };
 const rain: SchemaSoundscapeView = {
@@ -106,13 +106,13 @@ const playSound = async (user: ReturnType<typeof userEvent.setup>, title: string
 };
 
 describe("Sound", () => {
-  it.each(["claude-fm", "rain"])("offers working volume controls for %s on iPhone", async (name) => {
+  it.each(["fixture-radio", "rain"])("offers working volume controls for %s on iPhone", async (name) => {
     vi.spyOn(navigator, "userAgent", "get").mockReturnValue("Mozilla/5.0 (iPhone) AppleWebKit/605.1.15");
     soundApi(name);
     const user = userEvent.setup();
     renderAt("/");
     const dialog = await openSoundChoices(user);
-    if (name === "claude-fm") {
+    if (name === "fixture-radio") {
       expect(within(dialog).getByText(/Use your iPhone or iPad volume buttons/)).toBeInTheDocument();
       expect(within(dialog).queryByRole("slider", { name: "Volume" })).not.toBeInTheDocument();
       expect(within(dialog).queryByRole("switch", { name: "Softer while I type" })).not.toBeInTheDocument();
@@ -215,7 +215,7 @@ describe("Sound", () => {
     expect(soundState()).toMatchObject({ playing: true, started: true, problem: null });
   });
 
-  it.each(["claude-fm", "rain"])(
+  it.each(["fixture-radio", "rain"])(
     "manual choice %s takes over from the theme, including reselecting its sound",
     async (name) => {
       vi.spyOn(page, "reload").mockImplementation(() => undefined);
@@ -223,7 +223,10 @@ describe("Sound", () => {
       const { calls } = mockApi({
         ...shell,
         get "/api/system/sound/list"() {
-          return soundList(manual ? name : "claude-fm", { follow_theme: !manual, effective: manual ? name : "rain" });
+          return soundList(manual ? name : "fixture-radio", {
+            follow_theme: !manual,
+            effective: manual ? name : "rain",
+          });
         },
         get "/api/system/sound/use"() {
           manual = true;
@@ -235,7 +238,9 @@ describe("Sound", () => {
       await user.click(await speaker(/^Choose a soundscape$/));
       const dialog = await screen.findByRole("dialog", { name: "Sound" });
       expect(within(dialog).getByRole("radio", { name: /^Rain/ })).toHaveAttribute("aria-checked", "true");
-      await user.click(within(dialog).getByRole("radio", { name: name === "claude-fm" ? /^Claude FM/ : /^Rain/ }));
+      await user.click(
+        within(dialog).getByRole("radio", { name: name === "fixture-radio" ? /^Fixture radio/ : /^Rain/ }),
+      );
       await waitFor(() => expect(calls.some((call) => call.url.includes(`/system/sound/use?name=${name}`))).toBe(true));
       await waitFor(() => expect(screen.queryByRole("dialog", { name: "Sound" })).not.toBeInTheDocument());
       await user.pointer({
@@ -250,7 +255,7 @@ describe("Sound", () => {
         ),
       );
       expect(
-        within(choices).getByRole("radio", { name: name === "claude-fm" ? /^Claude FM/ : /^Rain/ }),
+        within(choices).getByRole("radio", { name: name === "fixture-radio" ? /^Fixture radio/ : /^Rain/ }),
       ).toHaveAttribute("aria-checked", "true");
     },
   );
@@ -288,15 +293,15 @@ describe("Sound", () => {
   });
 
   it("loads nothing of the stream's host until Play, then its player with the frame attributes it needs", async () => {
-    const { calls } = soundApi("claude-fm");
+    const { calls } = soundApi("fixture-radio");
     const user = userEvent.setup();
     const { container } = renderAt("/");
     await speaker(/^Choose a soundscape$/);
     expect(document.querySelector("iframe")).toBeNull();
     expect(calls.some((call) => !call.url.startsWith(window.location.origin))).toBe(false);
     await expectAccessible(container); // before Play: axe can't look into a cross-origin frame in jsdom
-    await playSound(user, "Claude FM");
-    const frame = (await screen.findByTitle("Claude FM player")) as HTMLIFrameElement;
+    await playSound(user, "Fixture radio");
+    const frame = (await screen.findByTitle("Fixture radio player")) as HTMLIFrameElement;
     expect(new URL(frame.src).origin).toBe(ORIGIN);
     expect(new URL(frame.src).searchParams.get("origin")).toBe(window.location.origin);
     expect(frame.getAttribute("referrerpolicy")).toBe("strict-origin-when-cross-origin");
@@ -307,21 +312,21 @@ describe("Sound", () => {
     expect(frame.getAttribute("loading")).toBeNull();
     expect(screen.getByText("Plays from YouTube")).toBeInTheDocument();
     const activeDialog = await screen.findByRole("dialog", { name: "Sound" });
-    expect(within(activeDialog).getByRole("button", { name: "Pause Claude FM" })).toBeInTheDocument();
+    expect(within(activeDialog).getByRole("button", { name: "Pause Fixture radio" })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Stop and close the player" }));
     expect(document.querySelector("iframe")).toBeNull();
   });
 
   it("does not load YouTube before Play even when this browser remembers account playback", async () => {
     rememberYouTubeAccount(true);
-    const { calls } = soundApi("claude-fm");
+    const { calls } = soundApi("fixture-radio");
     const user = userEvent.setup();
     renderAt("/");
     await speaker(/^Choose a soundscape$/);
     expect(document.querySelector("iframe")).toBeNull();
     expect(calls.some((call) => !call.url.startsWith(window.location.origin))).toBe(false);
-    await playSound(user, "Claude FM");
-    const frame = (await screen.findByTitle("Claude FM player")) as HTMLIFrameElement;
+    await playSound(user, "Fixture radio");
+    const frame = (await screen.findByTitle("Fixture radio player")) as HTMLIFrameElement;
     expect(new URL(frame.src).origin).toBe("https://www.youtube.com");
   });
 
@@ -335,25 +340,27 @@ describe("Sound", () => {
       within(group)
         .getAllByRole("radio")
         .map((radio) => radio.textContent),
-    ).toEqual(["Claude FMBuilt-in · Plays from YouTube", "RainPlugin: heinzel-rain · Sounds by Jo Example"]);
+    ).toEqual(["Fixture radioBuilt-in · Plays from YouTube", "RainPlugin: heinzel-rain · Sounds by Jo Example"]);
     expect(within(group).queryByRole("radio", { name: /^Off/ })).not.toBeInTheDocument();
     expect(soundState().playing).toBe(false);
   });
 
   it("chooses a soundscape without exposing the Off row or Sound on toggle", async () => {
-    const { calls } = soundApi("off", "claude-fm");
+    const { calls } = soundApi("off", "fixture-radio");
     const user = userEvent.setup();
     renderAt("/");
     const dialog = await openSoundChoices(user);
     expect(within(dialog).queryByRole("switch", { name: "Sound on" })).not.toBeInTheDocument();
     expect(within(dialog).queryByRole("radio", { name: /^Off/ })).not.toBeInTheDocument();
-    await user.click(within(dialog).getByRole("radio", { name: /^Claude FM/ }));
-    await waitFor(() => expect(calls.some((call) => call.url.includes("/system/sound/use?name=claude-fm"))).toBe(true));
+    await user.click(within(dialog).getByRole("radio", { name: /^Fixture radio/ }));
+    await waitFor(() =>
+      expect(calls.some((call) => call.url.includes("/system/sound/use?name=fixture-radio"))).toBe(true),
+    );
     expect(soundState().playing).toBe(false);
   });
 
   it("the visible speaker opens sound choices from the keyboard and restores focus on Escape", async () => {
-    soundApi("claude-fm");
+    soundApi("fixture-radio");
     const user = userEvent.setup();
     renderAt("/");
     const speakerButton = (await speaker(/^Choose a soundscape$/)) as HTMLElement;
@@ -375,7 +382,7 @@ describe("Sound", () => {
   });
 
   it("a right-click on the speaker opens the popover too", async () => {
-    soundApi("claude-fm");
+    soundApi("fixture-radio");
     const user = userEvent.setup();
     renderAt("/");
     await user.click(await speaker(/^Choose a soundscape$/));
@@ -392,10 +399,10 @@ describe("Sound", () => {
   });
 
   it("typing in the chat ducks a playing soundscape", async () => {
-    soundApi("claude-fm");
+    soundApi("fixture-radio");
     const user = userEvent.setup();
     renderAt("/");
-    await playSound(user, "Claude FM");
+    await playSound(user, "Fixture radio");
     const input = await screen.findByRole("textbox", { name: /message/i });
     await user.type(input, "hi");
     expect(soundState().typing).toBe(true);
@@ -406,22 +413,22 @@ describe("the page's frame origin", () => {
   it("needs a reload only when the soundscape in effect needs another frame origin than the page admits", () => {
     rememberPageFrame(soundList("off"));
     expect(needsReload(soundList("rain"))).toBe(false);
-    expect(needsReload(soundList("claude-fm"))).toBe(true);
+    expect(needsReload(soundList("fixture-radio"))).toBe(true);
     resetPageFrame();
-    rememberPageFrame(soundList("claude-fm"));
+    rememberPageFrame(soundList("fixture-radio"));
     rememberPageFrame(soundList("off")); // the first list decides: it is what the server served the page with
-    expect(needsReload(soundList("claude-fm"))).toBe(false);
+    expect(needsReload(soundList("fixture-radio"))).toBe(false);
     expect(needsReload(soundList("off"))).toBe(true);
   });
 
   it("picking a stream while the page admits none reloads the page", async () => {
     const reload = vi.spyOn(page, "reload").mockImplementation(() => undefined);
-    soundApi("off", "claude-fm");
+    soundApi("off", "fixture-radio");
     const user = userEvent.setup();
     renderAt("/");
     const dialog = await openSoundChoices(user);
     await act(async () => {
-      await user.click(within(dialog).getByRole("radio", { name: /^Claude FM/ }));
+      await user.click(within(dialog).getByRole("radio", { name: /^Fixture radio/ }));
     });
     await waitFor(() => expect(reload).toHaveBeenCalled());
   });
@@ -495,11 +502,11 @@ describe("a layered soundscape", () => {
 describe("a stream's fades", () => {
   it("leaves iPhone volume to the device even when saved volume is zero, and mutes while recording voice", async () => {
     vi.spyOn(navigator, "userAgent", "get").mockReturnValue("Mozilla/5.0 (iPhone) AppleWebKit/605.1.15");
-    mockApi({ ...shell, "/api/system/sound/list": soundList("claude-fm", { volume: 0 }) });
+    mockApi({ ...shell, "/api/system/sound/list": soundList("fixture-radio", { volume: 0 }) });
     const user = userEvent.setup();
     renderAt("/");
-    await playSound(user, "Claude FM");
-    const frame = (await screen.findByTitle("Claude FM player")) as HTMLIFrameElement;
+    await playSound(user, "Fixture radio");
+    const frame = (await screen.findByTitle("Fixture radio player")) as HTMLIFrameElement;
     const post = vi.spyOn(frame.contentWindow as Window, "postMessage");
     const sent = () => post.mock.calls.map(([data]) => JSON.parse(String(data)).func);
     await act(async () => {
@@ -517,11 +524,11 @@ describe("a stream's fades", () => {
   });
 
   it("is silent when the player is ready, plays, then steps its volume up, and pauses after fading out", async () => {
-    soundApi("claude-fm");
+    soundApi("fixture-radio");
     const user = userEvent.setup();
     renderAt("/");
-    await playSound(user, "Claude FM");
-    const frame = (await screen.findByTitle("Claude FM player")) as HTMLIFrameElement;
+    await playSound(user, "Fixture radio");
+    const frame = (await screen.findByTitle("Fixture radio player")) as HTMLIFrameElement;
     const post = vi.spyOn(frame.contentWindow as Window, "postMessage");
     const sent = () => post.mock.calls.map(([data, target]) => [JSON.parse(String(data)).func, target]);
     await act(async () => {
@@ -540,25 +547,25 @@ describe("a stream's fades", () => {
     expect(sent()[1]).toEqual(["playVideo", ORIGIN]);
     await waitFor(() => expect(JSON.parse(String(post.mock.calls.at(-1)?.[0])).args).toEqual([50]), { timeout: 6000 });
     await user.click(
-      within(await screen.findByRole("dialog", { name: "Sound" })).getByRole("button", { name: "Pause Claude FM" }),
+      within(await screen.findByRole("dialog", { name: "Sound" })).getByRole("button", { name: "Pause Fixture radio" }),
     );
     await waitFor(() => expect(sent().at(-1)).toEqual(["pauseVideo", ORIGIN]), { timeout: 6000 });
     expect(post.mock.calls.every((call) => (call as unknown[])[1] === ORIGIN)).toBe(true);
   }, 20_000);
 
   it("offers a reload when the page's CSP blocks the player", async () => {
-    soundApi("claude-fm");
+    soundApi("fixture-radio");
     const user = userEvent.setup();
     renderAt("/");
-    await playSound(user, "Claude FM");
-    await screen.findByTitle("Claude FM player");
+    await playSound(user, "Fixture radio");
+    await screen.findByTitle("Fixture radio player");
     const reload = vi.spyOn(page, "reload").mockImplementation(() => undefined);
     await act(async () => {
       const event = new Event("securitypolicyviolation") as SecurityPolicyViolationEvent;
-      Object.assign(event, { effectiveDirective: "frame-src", blockedURI: `${ORIGIN}/embed/tRsQsTMvPNg` });
+      Object.assign(event, { effectiveDirective: "frame-src", blockedURI: `${ORIGIN}/embed/abcdefghijk` });
       document.dispatchEvent(event);
     });
-    expect(screen.queryByTitle("Claude FM player")).toBeNull();
+    expect(screen.queryByTitle("Fixture radio player")).toBeNull();
     await user.click(screen.getByRole("button", { name: "Reload" }));
     expect(reload).toHaveBeenCalled();
   });

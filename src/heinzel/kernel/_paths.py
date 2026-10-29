@@ -5,7 +5,6 @@ runs (`system.ui`'s server-built calls, ADR 0056) needs the same one.
 """
 
 import inspect
-from typing import get_origin
 
 from heinzel.kernel._kernel import Kernel, ModuleRecord
 from heinzel.kernel._lets import OperationLet
@@ -13,11 +12,7 @@ from heinzel.kernel._lets import OperationLet
 
 def public_parameters(kernel: Kernel, operation: OperationLet) -> tuple[inspect.Parameter, ...]:
     """The parameters a caller supplies; injected ones (services, settings, the kernel) are left out."""
-    return tuple(
-        p
-        for p in operation.signature().parameters.values()
-        if not kernel.provides(get_origin(p.annotation) or p.annotation)
-    )
+    return tuple(p for p in operation.signature().parameters.values() if not kernel.provides(p.annotation))
 
 
 def collapses(kernel: Kernel, record: ModuleRecord) -> bool:

@@ -5,6 +5,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { chromium, webkit } from "playwright-core";
 import ts from "typescript";
+import { contributePanel } from "./contributed-panel.mjs";
 
 const [url, shots] = process.argv.slice(2);
 mkdirSync(shots, { recursive: true });
@@ -233,6 +234,7 @@ try {
       colorScheme: spec.width >= 390 ? "dark" : "light",
     });
     const page = await context.newPage();
+    await contributePanel(page);
     // Platform-specific CLI paths and provider names must wrap rather than widen their settings pane.
     await page.route("**/api/ai/access/list", async (route) => {
       const response = await route.fetch();
@@ -353,6 +355,7 @@ try {
     const visitedRoutes = new Set([...destinations, ...routePaths]);
     for (const destination of visitedRoutes) {
       await page.goto(`${new URL(destination, url).href}${new URL(url).hash}`);
+      await page.locator("#splash").waitFor({ state: "hidden", timeout: 15_000 });
       await page.locator("main").waitFor();
       for (const detail of await page
         .locator('main a[href^="/contracts/"]')
@@ -444,10 +447,7 @@ try {
     await page.getByRole("button", { name: "Close settings" }).click();
 
     // Every footer pane must fit, including the wide release notes and controls moved into More.
-    for (const [id, label] of [
-      ["@resources", "System resources"],
-      ["@version", /^v/],
-    ]) {
+    for (const [id, label] of [["@version", /^v/]]) {
       const pane = await footerPane(page, id, label);
       await assertContained(page, pane, `${spec.name}: ${id}`);
       await page.screenshot({ path: join(shots, `mobile-${spec.name}-${id.slice(1)}.png`) });
@@ -523,13 +523,13 @@ try {
       window.mobileTerminal = element;
     });
     await page.evaluate(() => {
-      history.pushState({}, "", "?panel=world-clock");
+      history.pushState({}, "", "?panel=specimen:inspector");
       dispatchEvent(new PopStateEvent("popstate"));
     });
     await assertContained(
       page,
-      page.getByRole("region", { name: "World clock", exact: true }).getByRole("button", { name: "Close World clock" }),
-      `${spec.name}: world clock header with chat and terminal open`,
+      page.getByRole("region", { name: "Specimen", exact: true }).getByRole("button", { name: "Close Specimen" }),
+      `${spec.name}: world contributed header with chat and terminal open`,
     );
     if ((await page.locator('[data-placement="below"]').count()) > 0) {
       const scrollArea = page.locator(".workspace-scroll");
@@ -540,10 +540,10 @@ try {
       });
       const headerAfter = await topbar.boundingBox();
       const footerAfter = await footer.boundingBox();
-      assert.ok(await topbar.isVisible(), `${spec.name}: header hidden with World Clock selected`);
+      assert.ok(await topbar.isVisible(), `${spec.name}: header hidden with Specimen selected`);
       assert.ok(headerBefore && headerAfter && footerBefore && footerAfter);
-      assert.ok(Math.abs(headerBefore.y - headerAfter.y) <= 1, `${spec.name}: header moved in World Clock`);
-      assert.ok(Math.abs(footerBefore.y - footerAfter.y) <= 1, `${spec.name}: footer moved in World Clock`);
+      assert.ok(Math.abs(headerBefore.y - headerAfter.y) <= 1, `${spec.name}: header moved in Specimen`);
+      assert.ok(Math.abs(footerBefore.y - footerAfter.y) <= 1, `${spec.name}: footer moved in Specimen`);
       const end = await page
         .locator('[data-placement="below"]')
         .evaluate((element) => element.getBoundingClientRect().bottom);
@@ -776,33 +776,7 @@ try {
       return scroll.apply(this, args);
     };
   });
-  await scrollPage.route("**/api/system/ui/actions**", (route) =>
-    route.fulfill({
-      json: [
-        {
-          id: "clock:team-clock",
-          module: "clock",
-          plugin: "heinzel-clock",
-          order: 500,
-          refresh: 60,
-          problem: null,
-          slots: { header: true },
-          label: "World clock",
-          icon: "globe",
-          badge: 0,
-          effect: { kind: "navigate", path: "/?panel=world-clock" },
-        },
-      ],
-    }),
-  );
-  await scrollPage.route("**/api/clock", (route) =>
-    route.fulfill({
-      json: [
-        { zone: "Europe/Berlin", hours: [9, 18], working: false, time: "" },
-        { zone: "America/New_York", hours: [9, 18], working: false, time: "" },
-      ],
-    }),
-  );
+  await contributePanel(scrollPage, { delay: 350 });
   await scrollPage.goto(url);
   await scrollPage.getByRole("heading", { name: "Today" }).waitFor();
   const workspaceScroll = scrollPage.locator(".workspace-scroll");
@@ -832,17 +806,18 @@ try {
     );
   };
   const lastScroll = async () => scrollPage.evaluate(() => window.workspaceScrollCalls.at(-1));
-  await scrollPage.getByRole("button", { name: "World clock", exact: true }).tap();
-  await atPanel("world-clock");
-  assert.equal((await lastScroll()).behavior, "smooth", "clock header scrolls smoothly");
+  await scrollPage.getByRole("button", { name: "Specimen", exact: true }).tap();
+  await scrollPage.getByRole("heading", { name: "Specimen", exact: true }).waitFor();
+  await atPanel("specimen:inspector");
+  assert.equal((await lastScroll()).behavior, "smooth", "contributed header scrolls smoothly");
   await workspaceScroll.evaluate((element) => {
     element.scrollTop = 0;
   });
-  await scrollPage.getByRole("button", { name: "World clock", exact: true }).tap();
-  await atPanel("world-clock");
-  assert.equal((await lastScroll()).behavior, "smooth", "repeated clock selection scrolls again");
+  await scrollPage.getByRole("button", { name: "Specimen", exact: true }).tap();
+  await atPanel("specimen:inspector");
+  assert.equal((await lastScroll()).behavior, "smooth", "repeated panel selection scrolls again");
   const startTop = await workspaceScroll.evaluate((element) => element.scrollTop);
-  await scrollPage.getByRole("tab", { name: "World clock", exact: true }).focus();
+  await scrollPage.getByRole("tab", { name: "Specimen", exact: true }).focus();
   await scrollPage.keyboard.press("Home");
   const pageTab = scrollPage.getByRole("tab", { name: "Page", exact: true });
   await pageTab.waitFor({ state: "visible" });
@@ -914,8 +889,8 @@ try {
   );
   const routeTimers = await scrollPage.evaluate(() => window.workspaceTimers);
   assert.ok(routeTimers.cleared.includes(routeTimers.started.at(-1)), "route changes cancel the Page timer");
-  await scrollPage.getByRole("button", { name: "World clock", exact: true }).tap();
-  await atPanel("world-clock");
+  await scrollPage.getByRole("button", { name: "Specimen", exact: true }).tap();
+  await atPanel("specimen:inspector");
   await scrollPage.evaluate(() => {
     window.workspaceTimers = { started: [], cleared: [] };
   });
@@ -942,9 +917,9 @@ try {
   await scrollPage.setViewportSize({ width: 390, height: 844 });
   await scrollPage.goto(`${new URL("/doctor?view=probe", url).href}${new URL(url).hash}`);
   await scrollPage.locator("main table").waitFor();
-  await scrollPage.getByRole("button", { name: "World clock", exact: true }).tap();
-  await atPanel("world-clock");
-  assert.equal(new URL(scrollPage.url()).pathname, "/doctor", "clock keeps the current page");
+  await scrollPage.getByRole("button", { name: "Specimen", exact: true }).tap();
+  await atPanel("specimen:inspector");
+  assert.equal(new URL(scrollPage.url()).pathname, "/doctor", "panel keeps the current page");
   assert.equal(new URL(scrollPage.url()).searchParams.get("view"), "probe");
   await scrollPage.getByRole("tab", { name: "Page", exact: true }).tap();
   await atPage();
