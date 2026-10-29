@@ -115,6 +115,12 @@ schedule preview and opens the existing exact-intent approval card; only the per
 it. This local phrase match does not call a model or infer other schedule changes. Other messages remain queued, and
 general natural-language replies still require a future conversation runner.
 
+The personal session journal does not yet contain an owner-bound agent activity or tool-call timeline. The separate
+check-in runner chat records the aggregate tool counts reported by its runner, but its legacy chat store is not
+partitioned by personal-session owner. Do not treat those counts as a durable, ordered activity log for a personal
+Heinzel. An activity feed requires a trusted runner-to-session link, owner checks, and bounded redacted records;
+client-authored messages must never be interpreted as tool events.
+
 These operations are private: local CLI, stdio MCP, paired web and the authenticated private API use the same owner
 and service. The unauthenticated REST API and network MCP do not expose them. Names, appearance and message text
 live in hash-verified private bodies; the durable journals contain opaque references and revisions.
