@@ -67,6 +67,29 @@ describe("The status bar's clock", () => {
     await expectAccessible(container);
   });
 
+  it("shows time until work and since work on the status icons", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-19T21:00:00Z"));
+    try {
+      mockApi(answers);
+      renderAt("/doctor");
+      const clock = await screen.findByRole("button", {
+        description: "World clock: time for the team and stakeholders",
+      });
+      fireEvent.mouseEnter(clock.parentElement as HTMLElement);
+      const zones = await screen.findByRole("region", { name: "World clock: time for the team and stakeholders" });
+      const berlin = within(within(zones).getAllByRole("listitem")[0] as HTMLElement).getByRole("img", {
+        name: "Likely sleeping",
+      });
+      expect(berlin).toHaveAttribute(
+        "title",
+        "Likely sleeping · Starts in 10h · 5h since end · Mon–Fri 09:00–18:00 · Starts Tue 09:00",
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("closes a short while after the pointer leaves, opens pinned on click, and closes on Escape", async () => {
     mockApi(answers);
     const user = userEvent.setup();
