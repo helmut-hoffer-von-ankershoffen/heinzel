@@ -24,6 +24,14 @@ class SessionRepository(Protocol):
         """Owned agents only; creation catalogs and control journals do not appear as extra agents."""
         ...
 
+    def budget_read(self, session_id: str) -> SessionRead:
+        """Read the authenticated owner's shared budget ledger after checking session ownership."""
+        ...
+
+    def budget_writer(self, session_id: str) -> AbstractContextManager[SessionWriter]:
+        """Serialize this owner's reservations after checking session ownership."""
+        ...
+
     def main_read(self, session_id: str) -> SessionRead:
         """Verified turn/checkpoint/effect metadata, refusing a damaged authoritative spine."""
         ...

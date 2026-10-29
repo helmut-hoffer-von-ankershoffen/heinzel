@@ -93,6 +93,25 @@ class PersonalSessionRepository:
         }
         return [head for head in self._store("main").heads() if head.session in owned]
 
+    def budget_read(self, session_id: str) -> SessionRead:
+        """Read the current owner's shared budget ledger after checking session ownership."""
+        self._owned(session_id)
+        try:
+            return _verified(self._store("budget").read("reservations"))
+        except FileNotFoundError:
+            return SessionRead()
+
+    @contextmanager
+    def budget_writer(self, session_id: str) -> Generator[SessionWriter]:
+        """Serialize reservations across this owner's sessions after verifying session ownership.
+
+        Yields:
+            The exclusively locked owner budget writer.
+        """
+        self._owned(session_id)
+        with self._store("budget").writer("reservations", wait=True) as writer:
+            yield writer
+
     def main_read(self, session_id: str) -> SessionRead:
         """Read only after ownership is established; damaged prefixes cannot authorize resumed work."""
         self._owned(session_id)
