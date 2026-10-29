@@ -1,5 +1,6 @@
 """HeinzelService with test-only adapters and a fake agent runner: never a real agent, never the network."""
 
+import hashlib
 import json
 import os
 import re
@@ -14,6 +15,7 @@ import pytest
 from heinzel import (
     AgentResult,
     Config,
+    CurrentUser,
     Event,
     FreeBusy,
     HeinzelError,
@@ -35,10 +37,49 @@ from heinzel import (
     TranscriptSegment,
     Window,
 )
+from heinzel.kernel._approval import ApprovalIntent, ApprovalRecord, approval_proof_hash, arguments_hash
 from heinzel.modules.heinzel import HeinzelService, HeinzelSettings
 from heinzel.modules.heinzel import _service as service_module
+from heinzel.modules.heinzel._session_crud import SessionCrud
+from heinzel.modules.heinzel._session_models import HeinzelAppearance, SessionCosts
+from heinzel.modules.heinzel._session_repository import PersonalSessionRepository
 
 pytestmark = pytest.mark.unit
+
+
+def _approve_test_schedule(sessions, current, session_id, request_id, revision, action, preview_hash):  # noqa: PLR0913, PLR0917
+    proof = hashlib.sha256(f"proof:{request_id}".encode()).hexdigest()
+    intent = ApprovalIntent(
+        owner=current.principal().id,
+        audience="personal-check-in",
+        session=session_id,
+        action=action,
+        resource="five-minute-check-in",
+        arguments_hash=arguments_hash(
+            {
+                "request_id": request_id,
+                "expected_revision": revision,
+                "contract_version": 1,
+                "preview_hash": preview_hash,
+            }
+        ),
+        contract_revision=1,
+        grant_revision=0,
+        policy_revision=0,
+    )
+    record = ApprovalRecord(
+        intent=intent,
+        proof_hash=approval_proof_hash(proof),
+        nonce=hashlib.sha256(f"nonce:{request_id}".encode()).hexdigest(),
+        provenance="test-only-synthetic-decision",
+        decision="approve",
+        issued_at=NOW,
+        expires_at=NOW + timedelta(minutes=5),
+    )
+    with sessions.repository.control_writer(session_id) as writer:
+        writer.append("approval.issued", key=record.proof_hash, data=record.model_dump(mode="json"))
+    return proof
+
 
 EXAMPLE = Path(__file__).parents[2] / "fixtures" / "workflows" / "weekly-digest.prose.md"
 NOW = datetime(2026, 10, 26, 7, 0, tzinfo=UTC)
@@ -310,6 +351,161 @@ def test_the_kernel_hands_the_daemon_the_compiled_jobs(make, dirs):
     put(dirs[0])
     kernel = make()._kernel
     assert [(module, job.name) for module, job in kernel.compiled_jobs()] == [("heinzel", "me-weekly-digest")]
+
+
+def test_active_check_in_compiles_a_local_deduplicated_job_and_pause_wins_a_stale_compilation(make, runner):
+    service = make()
+    kernel = service._kernel
+    current = kernel.resolve(CurrentUser)
+    sessions = SessionCrud(
+        PersonalSessionRepository(current, clock=lambda: NOW),
+        lambda: SessionCosts(session_max_usd=service._workflow.session_max_usd, message_max_usd=0.2),
+        clock=lambda: NOW,
+    )
+    with current.local("cli"):
+        created = sessions.new_chat("check-in-create", "Five-minute helper", HeinzelAppearance(hat="teal"))
+        proposed = sessions.propose_check_in(created.session_id, "check-in-proposal", "UTC")
+        assert proposed.schedule is not None
+        proof = _approve_test_schedule(
+            sessions, current, created.session_id, "check-in-activate", 1, "activate", proposed.schedule.preview_hash
+        )
+        sessions.schedule_control(
+            created.session_id,
+            "check-in-activate",
+            1,
+            "activate",
+            proof,
+            proposed.schedule.contract_version,
+            proposed.schedule.preview_hash,
+        )
+
+    with current.local("daemon"):
+        job = next(
+            item
+            for item in service.compiled(sessions=sessions).jobs
+            if item.name == f"check-in-{created.session_id.lower()}"
+        )
+        assert job.schedule == "*/5 * * * *"
+        first = job.run_for_slot(NOW)
+        duplicate = job.run_for_slot(NOW)
+        assert first["notice"] is True
+        assert duplicate["notice"] is True
+        assert kernel.resolve(Notifications).store._read_state(strict=True).durable_keys == set()
+
+        paused = sessions.schedule_control(created.session_id, "check-in-pause", 2, "pause")
+        assert paused.schedule is not None
+        assert paused.schedule.status == "paused"
+        assert job.run_for_slot(NOW).__class__.__name__ == "JobInactive"
+
+        notices = kernel.resolve(Notifications).recent()
+        assert len(notices) == 1
+        assert notices[0].kind is NoticeKind.HEINZEL
+        assert notices[0].title == "Five-minute helper checked in"
+        assert notices[0].route == f"/heinzel?chat={created.session_id}"
+        assert notices[0].key.startswith(f"heinzel:{current.principal().id}:{created.session_id}:1:check-in:")
+    assert runner.runs == []
+
+
+@pytest.mark.parametrize("resume", [False, True])
+def test_compiled_check_in_does_not_notify_after_pause_or_revision_change(make, resume):
+    service = make()
+    user = service._kernel.resolve(CurrentUser)
+    sessions = SessionCrud(
+        PersonalSessionRepository(user, clock=lambda: NOW),
+        lambda: SessionCosts(session_max_usd=service._workflow.session_max_usd, message_max_usd=0.2),
+        clock=lambda: NOW,
+    )
+    with user.local("daemon"):
+        created = sessions.new_chat("race-create", "Race check-in")
+        proposed = sessions.propose_check_in(created.session_id, "race-proposal")
+        assert proposed.schedule is not None
+        proof = _approve_test_schedule(
+            sessions, user, created.session_id, "race-activate", 1, "activate", proposed.schedule.preview_hash
+        )
+        sessions.schedule_control(
+            created.session_id,
+            "race-activate",
+            1,
+            "activate",
+            proof,
+            proposed.schedule.contract_version,
+            proposed.schedule.preview_hash,
+        )
+        stale = next(job for job in service.compiled(sessions=sessions).jobs if job.schedule == "*/5 * * * *")
+        sessions.schedule_control(created.session_id, "race-pause", 2, "pause")
+        if resume:
+            resume_proof = _approve_test_schedule(
+                sessions, user, created.session_id, "race-resume", 3, "resume", proposed.schedule.preview_hash
+            )
+            sessions.schedule_control(
+                created.session_id,
+                "race-resume",
+                3,
+                "resume",
+                resume_proof,
+                proposed.schedule.contract_version,
+                proposed.schedule.preview_hash,
+            )
+
+        outcome = stale.run_for_slot(NOW)
+        assert outcome.__class__.__name__ == "JobInactive"
+        assert service._kernel.resolve(Notifications).recent() == []
+
+        if resume:
+            fresh = next(job for job in service.compiled(sessions=sessions).jobs if job.schedule == "*/5 * * * *")
+            assert fresh.run_for_slot(NOW)["notice"] is True
+            assert len(service._kernel.resolve(Notifications).recent()) == 1
+
+
+def test_check_in_notice_deduplicates_after_reopening_session_and_notification_services(make, runner):
+    service = make()
+    user = service._kernel.resolve(CurrentUser)
+    sessions = SessionCrud(
+        PersonalSessionRepository(user, clock=lambda: NOW),
+        lambda: SessionCosts(session_max_usd=service._workflow.session_max_usd, message_max_usd=0.2),
+        clock=lambda: NOW,
+    )
+    with user.local("cli"):
+        created = sessions.new_chat("restart-create", "Persistent check-in")
+        proposed = sessions.propose_check_in(created.session_id, "restart-proposal")
+        assert proposed.schedule is not None
+        proof = _approve_test_schedule(
+            sessions, user, created.session_id, "restart-activate", 1, "activate", proposed.schedule.preview_hash
+        )
+        sessions.schedule_control(
+            created.session_id,
+            "restart-activate",
+            1,
+            "activate",
+            proof,
+            proposed.schedule.contract_version,
+            proposed.schedule.preview_hash,
+        )
+    with user.local("daemon"):
+        first_job = next(job for job in service.compiled(sessions=sessions).jobs if job.schedule == "*/5 * * * *")
+        first_job.run_for_slot(NOW)
+        assert len(service._kernel.resolve(Notifications).recent()) == 1
+
+    restarted = make()
+    restarted_user = restarted._kernel.resolve(CurrentUser)
+    restarted_sessions = SessionCrud(
+        PersonalSessionRepository(restarted_user, clock=lambda: NOW),
+        lambda: SessionCosts(session_max_usd=restarted._workflow.session_max_usd, message_max_usd=0.2),
+        clock=lambda: NOW,
+    )
+    with restarted_user.local("daemon"):
+        reopened = restarted_sessions.snapshot(created.session_id)
+        assert reopened.appearance == created.appearance
+        assert reopened.schedule is not None
+        assert reopened.schedule.status == "active"
+        resumed_job = next(
+            job for job in restarted.compiled(sessions=restarted_sessions).jobs if job.schedule == "*/5 * * * *"
+        )
+        resumed_job.run_for_slot(NOW)
+        notices = restarted._kernel.resolve(Notifications).recent()
+        assert len(notices) == 1
+        assert notices[0].key.startswith(f"heinzel:{restarted_user.principal().id}:{created.session_id}:1:check-in:")
+    assert runner.runs == []
 
 
 def test_a_compiled_job_renders_its_contract_and_its_result_holds_the_drafts_hash_not_its_text(make, dirs, runner):

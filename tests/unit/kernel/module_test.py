@@ -470,3 +470,8 @@ def test_no_adapter_may_be_named_none():
     module = Module("none", "Would shadow the binding that binds nothing.")
     with pytest.raises(ValueError, match="reserved"):
         module.provides("documents", modes={"read"})(object)
+
+
+def test_a_job_rejects_a_nonpositive_maximum_tick_interval():
+    with pytest.raises(ValueError, match="maximum tick interval must be positive"):
+        JobLet(name="scheduled", func=lambda: None, summary="x", schedule="*/5 * * * *", max_tick_interval=timedelta(0))

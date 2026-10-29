@@ -45,6 +45,8 @@ export function DaemonSettings() {
               <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1">
                 <dt className="text-muted-foreground">{t("daemon.version")}</dt>
                 <dd>{daemon.version ?? t("daemon.unknown")}</dd>
+                <dt className="text-muted-foreground">{t("daemon.installedVersion")}</dt>
+                <dd>{daemon.installed_version ?? t("daemon.unknown")}</dd>
                 <dt className="text-muted-foreground">{t("daemon.jobs")}</dt>
                 <dd>{daemon.jobs}</dd>
                 <dt className="text-muted-foreground">{t("daemon.lastTick")}</dt>

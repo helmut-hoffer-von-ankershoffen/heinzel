@@ -12,6 +12,7 @@ from typer.testing import CliRunner
 from heinzel import Config, Module, ModuleSettings
 from heinzel.heads import mcp
 from heinzel.heads.cli import build
+from heinzel.modules.system.runner.chat._service import ChatService
 
 pytestmark = pytest.mark.integration
 
@@ -91,8 +92,10 @@ def test_mcp_runs_an_old_tool_name(kernel):
 
 
 def test_a_chat_gets_only_the_current_tool_names(kernel):
+    session = kernel.resolve(ChatService).open(None).id
+
     async def listed() -> set[str]:
-        async with Client(mcp.build(kernel, chat="0123456789abcdef", chat_tools="all")) as client:
+        async with Client(mcp.build(kernel, chat=session, chat_tools="all")) as client:
             return {tool.name for tool in (await client.list_tools()).tools}
 
     names = anyio.run(listed)

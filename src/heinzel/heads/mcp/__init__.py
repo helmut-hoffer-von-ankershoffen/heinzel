@@ -6,30 +6,58 @@ description from the docstring, its output schema from the return model, and `re
 With `chat=<session>` (`hz system serve mcp --chat <session>`, started over stdio by the agent of a chat, ADR 0045)
 it serves the same tools to that one chat, and enforces the chat's rule in code: a read-only operation runs and
 returns its result as JSON without email addresses; any other operation does not run. It is handed to the
-`ActionGate` as a proposal, and the tool returns its action id: only the person's `hz chat confirm` (CLI or web head,
-never MCP) runs it. Tools follow the MCP head's own exposure, so what a UI hides from beginners is still a tool here.
+`ActionGate` as a proposal, and the tool returns its action id. MCP cannot supply an approval proof. Direct stdio MCP
+schedule activation or resume requires a separate exact-intent challenge typed on the controlling terminal; without
+that terminal, the call fails closed. Chat MCP can consume a one-use approval the person issued through CLI or paired
+web; the proof stays in private state and never appears in MCP arguments or results. Tools follow the MCP head's own
+exposure, so what a UI hides from beginners is still a tool here.
 """
+
+from __future__ import annotations
 
 import inspect
 import json
 import logging
+import os
+import secrets
+import select
 import shlex
+import stat
+import time
 from collections.abc import Callable
-from typing import Any, Literal
+from dataclasses import replace
+from threading import Lock
+from typing import TYPE_CHECKING, Any, Literal
 
 from mcp.server import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import ToolAnnotations
 from pydantic_core import to_jsonable_python
 
+if TYPE_CHECKING:
+    from pydantic import JsonValue
+
 from heinzel import __version__
 from heinzel.heads._exposure import MCP_HTTP, Exposed, exposed
 from heinzel.heads._presence import mark_authenticated_presence
 from heinzel.heads.mcp._skills import add_skills
-from heinzel.kernel import ActionGate, CurrentUser, HeinzelError, Kernel, ProposedCall, boot, redact_emails
+from heinzel.kernel import (
+    ActionGate,
+    CurrentUser,
+    HeinzelError,
+    Kernel,
+    McpChatSessions,
+    ProposedCall,
+    boot,
+    redact_emails,
+)
+from heinzel.kernel._approval import ApprovalIssuer
 
 HEAD = "mcp"
 log = logging.getLogger(__name__)
+_SCHEDULE_APPROVAL_LOCK = Lock()
+_SCHEDULE_APPROVAL_TIMEOUT_SECONDS = 60
+_SCHEDULE_APPROVAL_INPUT_LIMIT = 256
 INSTRUCTIONS = (
     "Heinzelmännchen helps product development teams with the busywork of running a team. Tools are named after "
     "their command path: `system_doctor` is `hz system doctor`. Start with `system_info` or `system_doctor`; tools "
@@ -46,7 +74,7 @@ RESULT_LIMIT = 20000
 Transport = Literal["stdio", "streamable-http"]
 
 
-ChatTools = Literal["everyday", "all"]
+ChatTools = Literal["everyday", "all", "personal-check-in"]
 
 
 def build(
@@ -59,7 +87,11 @@ def build(
 
     Over streamable HTTP, which has no authentication, the operations restricted to stdio (`mcp-stdio` in their
     `heads`, such as installing plugins) are left out. Over stdio, outside a chat, skills are prompts and resources.
+
+    Raises:
+        HeinzelError: If the personal check-in tool profile is requested for a chat without its durable context.
     """
+    _verify_chat(kernel, transport, chat)
     server = MCPServer(
         name="heinzel",
         title="Heinzelmännchen",
@@ -67,19 +99,34 @@ def build(
         instructions=INSTRUCTIONS if chat is None else CHAT_INSTRUCTIONS,
     )
     items = exposed(kernel, HEAD if transport == "stdio" else MCP_HTTP)
+    if chat is not None and chat_tools == "personal-check-in":
+        items = _check_in_items(kernel, chat)
     names = {item.name for item in items}
     for item in items:
-        if chat is not None and item.operation.private:
+        if item.record.qualname == "system.runner.chat" and item.operation.name == "confirm-authorized-mcp":
+            if chat is None:
+                continue
+            server.add_tool(
+                authorized_chat_confirmation(kernel, item, chat),
+                name=item.name,
+                description=item.operation.summary,
+                annotations=ToolAnnotations(read_only_hint=False, destructive_hint=True),
+            )
+            continue
+        if chat is not None and item.operation.private and chat_tools != "personal-check-in":
             continue  # Private session data is granted by the durable engine, never ambient chat tools.
         if chat is not None and chat_tools == "everyday" and item.operation.audience != "everyday":
             continue
         annotations = ToolAnnotations(
             read_only_hint=item.operation.read_only, destructive_hint=not item.operation.read_only
         )
+        tool_item = _mcp_item(item)
         server.add_tool(
-            tool(kernel, item, local=transport == "stdio") if chat is None else chat_tool(kernel, item, chat),
-            name=item.name,
-            description=item.operation.summary,
+            tool(kernel, tool_item, local=transport == "stdio")
+            if chat is None
+            else chat_tool(kernel, tool_item, chat, local=transport == "stdio"),
+            name=tool_item.name,
+            description=tool_item.operation.summary,
             annotations=annotations,
         )
         # Old tool names of renamed operations, for the one minor release both work (ADR 0051); a chat gets the
@@ -89,7 +136,7 @@ def build(
                 continue
             names.add(alias)
             server.add_tool(
-                _signed(tool(kernel, item, local=transport == "stdio"), item, item.returns, name=alias),
+                _signed(tool(kernel, tool_item, local=transport == "stdio"), tool_item, item.returns, name=alias),
                 name=alias,
                 description=f"Deprecated: use `{item.name}`, which this runs; goes in the next minor release. "
                 f"{item.operation.summary}",
@@ -98,6 +145,46 @@ def build(
     if transport == "stdio" and chat is None:  # skills may be internal: only for a client that started hz as you
         add_skills(server, kernel)
     return server
+
+
+def _mcp_item(item: Exposed) -> Exposed:
+    """Never ask an MCP caller for a bearer proof; stdio obtains human approval at its local terminal."""
+    if item.record.qualname != "heinzel" or item.operation.name != "schedule-control":
+        return item
+    parameters = tuple(parameter for parameter in item.parameters if parameter.name != "approval_proof")
+    return replace(item, parameters=parameters)
+
+
+def _verify_chat(kernel: Kernel, transport: Transport, chat: str | None) -> None:
+    """Bind chat-mode tools to a verified local stdio identity and an existing local chat.
+
+    Raises:
+        HeinzelError: If chat mode is requested over HTTP or its local session is unavailable.
+    """
+    if chat is None:
+        return
+    if transport != "stdio":
+        msg = "A chat's tools are served over stdio only, never on a port."
+        raise HeinzelError(msg)
+    # The agent cannot choose this principal: only this local child transport can construct a chat server.
+    with kernel.resolve(CurrentUser).local_read("mcp-stdio"):
+        kernel.resolve(McpChatSessions).require(chat)
+
+
+def _check_in_items(kernel: Kernel, chat: str) -> list[Exposed]:
+    """The one proposal tool, only for a durable chat bound to its owner's session.
+
+    Raises:
+        HeinzelError: If the chat is not a durable check-in context.
+    """
+    if not kernel.resolve(McpChatSessions).is_check_in(chat):
+        msg = "The personal-check-in tool profile requires a durable check-in chat"
+        raise HeinzelError(msg)
+    return [
+        item
+        for item in exposed(kernel, "mcp-check-in")
+        if item.record.qualname == "heinzel" and item.operation.name == "propose-check-in"
+    ]
 
 
 def tool(kernel: Kernel, item: Exposed, *, local: bool = True) -> Callable[..., Any]:
@@ -109,6 +196,8 @@ def tool(kernel: Kernel, item: Exposed, *, local: bool = True) -> Callable[..., 
         try:
             with user.local("mcp-stdio") if local else user.using(None):
                 mark_authenticated_presence(kernel, item.record.qualname)
+                if _is_schedule_approval(item, kwargs):
+                    kwargs = _authorize_mcp_schedule(kernel, item, kwargs, local=local)
                 return kernel.invoke(item.operation, **kwargs)
         except HeinzelError as exc:
             raise ToolError(str(exc)) from exc
@@ -116,13 +205,169 @@ def tool(kernel: Kernel, item: Exposed, *, local: bool = True) -> Callable[..., 
     return _signed(run, item, item.returns)
 
 
-def chat_tool(kernel: Kernel, item: Exposed, session: str) -> Callable[..., str]:
+def _is_schedule_approval(item: Exposed, arguments: dict[str, Any]) -> bool:
+    return (
+        item.record.qualname == "heinzel"
+        and item.operation.name == "schedule-control"
+        and arguments.get("action") in {"activate", "resume"}
+    )
+
+
+def _authorize_mcp_schedule(kernel: Kernel, item: Exposed, arguments: dict[str, Any], *, local: bool) -> dict[str, Any]:
+    """Issue an internal proof only after an exact MCP request is approved on its controlling terminal.
+
+    Raises:
+        HeinzelError: If this is not a local, human-confirmed schedule action.
+    """
+    if not local:
+        msg = "Schedule approval requires a trusted local stdio MCP connection"
+        raise HeinzelError(msg)
+    if arguments.get("approval_proof") is not None:
+        msg = "MCP cannot accept approval proofs; confirm this exact action on the controlling terminal"
+        raise HeinzelError(msg)
+    approval_arguments: dict[str, JsonValue] = {
+        name: to_jsonable_python(arguments[name], fallback=str)
+        for name in (
+            "session_id",
+            "request_id",
+            "expected_revision",
+            "action",
+            "expected_contract_version",
+            "expected_preview_hash",
+        )
+        if name in arguments
+    }
+    issuer = kernel.resolve(ApprovalIssuer)
+    # A tool response can be lost after the owner journal commits. Resolve that exact request before prompting
+    # again; the operation will return the recorded disposition without requiring or consuming another proof.
+    if issuer.applied(item.record.qualname, item.operation.name, approval_arguments):
+        return arguments
+    current_schedule = issuer.review(item.record.qualname, item.operation.name, approval_arguments)
+    _confirm_schedule_on_tty({"requested_control": approval_arguments, "current_schedule": current_schedule})
+    proof = issuer.issue(
+        item.record.qualname,
+        item.operation.name,
+        approval_arguments,
+        "human-mcp-terminal-confirmation",
+    )
+    return arguments | {"approval_proof": proof}
+
+
+def _confirm_schedule_on_tty(arguments: dict[str, Any]) -> None:
+    """Require an explicit local-terminal challenge; never fall back to MCP stdin or protocol output.
+
+    Raises:
+        HeinzelError: If no controlling terminal exists, the challenge is declined or its 60-second window expires.
+    """
+    deadline = time.monotonic() + _SCHEDULE_APPROVAL_TIMEOUT_SECONDS
+    if not _SCHEDULE_APPROVAL_LOCK.acquire(timeout=_SCHEDULE_APPROVAL_TIMEOUT_SECONDS):
+        msg = "MCP schedule approval was not confirmed before its deadline"
+        raise HeinzelError(msg)
+    descriptor = -1
+    try:
+        challenge = f"approve schedule {secrets.token_hex(3)}"
+        # ASCII JSON escapes C1, bidi and other non-ASCII code points so profile text cannot reorder or control
+        # the terminal. The owner can still inspect the exact code points shown in the escaped representation.
+        review = json.dumps(arguments, ensure_ascii=True, sort_keys=True, indent=2)
+        descriptor = os.open("/dev/tty", os.O_RDWR | os.O_NOCTTY | os.O_CLOEXEC)
+        _require_controlling_tty(descriptor)
+        # Output can also block on a full or flow-controlled terminal queue. Make the descriptor nonblocking before
+        # writing, then wait for writability and write bounded chunks against the same absolute deadline as reading.
+        os.set_blocking(descriptor, False)
+        prompt = (
+            "Human approval requested for this exact schedule action:\n"
+            f"{review}\nPress Ctrl-D or enter any other text to cancel.\n\nType exactly: {challenge}\n> "
+        )
+        confirmed = _write_tty_text(descriptor, prompt, deadline) and _read_tty_challenge(
+            descriptor, challenge, deadline
+        )
+    except (OSError, UnicodeError):
+        msg = "MCP schedule approval needs a controlling terminal; use the paired web review instead"
+        raise HeinzelError(msg) from None
+    finally:
+        try:
+            if descriptor >= 0:
+                os.close(descriptor)
+        finally:
+            _SCHEDULE_APPROVAL_LOCK.release()
+    if not confirmed:
+        msg = "MCP schedule approval was not confirmed"
+        raise HeinzelError(msg)
+
+
+def _write_tty_text(descriptor: int, text: str, deadline: float) -> bool:
+    """Write terminal text incrementally, returning false once the shared deadline expires.
+
+    Raises:
+        OSError: If writing the controlling terminal fails.
+    """
+    encoded = text.encode("ascii")
+    offset = 0
+    while offset < len(encoded):
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return False
+        _, writable, _ = select.select([], [descriptor], [], remaining)
+        if not writable:
+            return False
+        try:
+            written = os.write(descriptor, encoded[offset:])
+        except BlockingIOError:
+            continue
+        if written <= 0:
+            return False
+        offset += written
+    return True
+
+
+def _read_tty_challenge(descriptor: int, challenge: str, deadline: float) -> bool:
+    expected = challenge.encode("ascii")
+    answer = bytearray()
+    while len(answer) <= _SCHEDULE_APPROVAL_INPUT_LIMIT:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return False
+        ready, _, _ = select.select([descriptor], [], [], remaining)
+        if not ready:
+            return False
+        try:
+            chunk = os.read(descriptor, _SCHEDULE_APPROVAL_INPUT_LIMIT + 1 - len(answer))
+        except BlockingIOError:
+            continue
+        if not chunk:
+            return False
+        terminators = [position for position in (chunk.find(b"\n"), chunk.find(b"\r")) if position >= 0]
+        if terminators:
+            position = min(terminators)
+            answer.extend(chunk[:position])
+            return not chunk[position + 1 :] and secrets.compare_digest(bytes(answer), expected)
+        answer.extend(chunk)
+    return False
+
+
+def _require_controlling_tty(descriptor: int) -> None:
+    """Verify the descriptor is a real controlling terminal.
+
+    Raises:
+        OSError: If the descriptor is not a character terminal.
+    """
+    info = os.fstat(descriptor)
+    if not stat.S_ISCHR(info.st_mode) or not os.isatty(descriptor):
+        msg = "no controlling terminal"
+        raise OSError(msg)
+
+
+def chat_tool(kernel: Kernel, item: Exposed, session: str, *, local: bool) -> Callable[..., str]:
     """The tool of one chat session: runs a read-only operation, and only proposes any other (ADR 0045)."""
+    user = kernel.resolve(CurrentUser)
 
     def run(**kwargs: Any) -> str:  # noqa: ANN401 - the operation's own parameters
         try:
             if item.operation.read_only:
-                result = kernel.invoke(item.operation, **kwargs)
+                # The chat MCP server is a local stdio child, like the regular MCP head. Give reads the trusted
+                # installation identity, while keeping the chat-specific exposed tool list as the access boundary.
+                with user.local_read("mcp-stdio") if local else user.using(None):
+                    result = kernel.invoke(item.operation, **kwargs)
                 # Redacted before it is cut, so no address is cut into something the pattern misses.
                 text = redact_emails(json.dumps(to_jsonable_python(result, fallback=str), ensure_ascii=False))
                 return text[:RESULT_LIMIT] + ("…(cut)" if len(text) > RESULT_LIMIT else "")
@@ -148,6 +393,28 @@ def chat_tool(kernel: Kernel, item: Exposed, session: str) -> Callable[..., str]
         )
 
     return _signed(run, item, str)
+
+
+def authorized_chat_confirmation(kernel: Kernel, item: Exposed, session: str) -> Callable[..., Any]:
+    """Expose only the private-proof consumer in this chat; it cannot approve or broaden an action."""
+    user = kernel.resolve(CurrentUser)
+
+    def run(**kwargs: Any) -> Any:  # noqa: ANN401 - operation's public signature
+        if kwargs.get("session") != session:
+            msg = "This confirmation is limited to the MCP chat session"
+            raise ToolError(msg)
+        try:
+            with user.local("mcp-stdio"):
+                mark_authenticated_presence(kernel, item.record.qualname)
+                return kernel.invoke(item.operation, **kwargs)
+        except HeinzelError as exc:
+            raise ToolError(redact_emails(str(exc))) from exc
+        except Exception as exc:
+            log.exception("Authorized confirmation failed for chat %s", session)
+            msg = "The authorized confirmation failed; no approval token was returned"
+            raise ToolError(msg) from exc
+
+    return _signed(run, item, item.returns)
 
 
 def command_line(item: Exposed, arguments: dict[str, Any]) -> str:

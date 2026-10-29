@@ -56,16 +56,26 @@ def status_item(status: DaemonStatus, now: datetime | None = None) -> StatusItem
     detail.insert(
         1,
         DetailLine(
-            text=f"Daemon version {status.version}"
+            text=f"Last service tick ran hz {status.version}"
             if status.version
-            else "Daemon version unknown · restart it to record its version"
+            else "Service tick version unknown · restart and wait for a tick to record it"
+        ),
+    )
+    detail.insert(
+        2,
+        DetailLine(
+            text=f"Unit records hz {status.installed_version}" if status.installed_version else "Unit version unknown"
         ),
     )
     if status.version_mismatch:
         detail.insert(
-            2,
+            3,
             DetailLine(
-                text=f"Daemon runs hz {status.version}, not the installed {__version__}: restart it", tone="bad"
+                text=(
+                    f"Unit {status.installed_version or 'unknown'}; service tick {status.version or 'unknown'}; "
+                    f"current {__version__}: restart and wait for tick"
+                ),
+                tone="bad",
             ),
         )
     restart = [RESTART] if status.version_mismatch or status.version is None else []
@@ -86,7 +96,7 @@ def status_item(status: DaemonStatus, now: datetime | None = None) -> StatusItem
         return StatusItem(text=text, tone="bad", icon="bot", detail=detail, actions=[*restart, LOGS, PAUSE, UNINSTALL])
     upcoming = last + interval if last and interval else None
     return StatusItem(
-        text="Daemon needs a restart"
+        text="Daemon version mismatch · restart and wait for a tick"
         if status.version_mismatch
         else "Daemon running · next tick"
         if upcoming

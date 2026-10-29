@@ -29,12 +29,82 @@ hz heinzel profile <session-id> change-look 1 --appearance '{"hat":"teal","acces
 Profile changes name the revision displayed in the snapshot. If another change arrived first, reload before
 saving. Retrying an identical request id and payload returns its durable result; changing that payload is refused.
 Omitted personal fields inherit the renderer's defaults, including theme colours. To restore those defaults, send
-an empty appearance object. A profile update does not replace an already queued message or approve a contract.
+an empty appearance object. The web app's Heinzelmännchen page lets you create a personal Heinzel, choose its name and
+look, and preview it with the active theme. After saving, continue to its chat to propose a check-in schedule; profile
+editing alone does not start a schedule. A profile update does not replace an already queued message or approve a
+contract.
+
+### Five-minute check-in
+
+The first scheduled personal Heinzel stores one immutable versioned check-in contract and its five-minute schedule in
+the same private control journal as its identity. Proposing it does not start work. Inspect the returned contract and
+schedule. Pause is available directly; activation and resume require trusted human approval of the exact schedule
+intent. The web chat flow is one way to provide that approval. The schedule revision, contract version and preview
+hash are bound into the short-lived proof issued after confirmation.
+
+```bash
+hz heinzel propose-check-in <session-id> check-in-v1 --timezone Europe/Berlin --json
+hz heinzel schedule-control <session-id> pause-v1 2 pause --json
+```
+
+The web conversation panel offers “Review activation in chat” for a proposed schedule. The stored proposal shows the
+exact change before the person confirms it. That chat confirmation invokes the internal issuer and passes a short-lived
+proof directly to schedule control. Direct stdio MCP activation and resume show the exact schedule arguments on the
+controlling terminal and require a fresh typed challenge; the tool schema accepts no proof, and the proof stays inside
+the server. If stdio MCP has no controlling terminal, that direct action fails closed; use paired web review or the
+private CLI/web handoff to authorize the chat-scoped MCP confirmation tool. MCP over HTTP cannot access private
+schedule controls. The CLI reads a proof from hidden input or stdin with `--approval-proof -` and never expects the
+secret as a command-line argument.
+
+An active check-in attempts one local `system.notify` notice for each eligible five-minute slot after activation or
+resume. The daemon must tick at least every five minutes; a slower configured or foreground cadence reports a failed
+check-in instead of silently skipping slots. The reported next wake remains unknown until runtime timing can be
+verified. A manual daemon wake does not run this scheduled-only check-in. The notice and its replay key are committed
+atomically; the replay key stays until the owner's outbox records completion, so a retry after restart recognizes it
+even if the notice was pruned from the display list. Completed keys are removed while unresolved intents keep theirs.
+A failed notice is retried twice within its tick, then recorded as failed; that slot is not retried on later ticks. A
+damaged durable notification store must be restored before new notices can be recorded. This replay guarantee assumes
+all concurrent notification writers use the durable-key format; stop older Heinzel processes before upgrading while
+they still write the same notification store. The owner's control journal remains append-only and retains completed
+slot history. Creating a personal Heinzel never installs or enables background work or requests notification
+permission. This first slice does not run an agent model turn or execute user-authored contract text.
+
+The outbox migrates earlier append-only `check-in.intent` and `check-in.recorded` journal records while holding the
+same per-session `SessionStore` control lock used by those writers. This migration is safe for older writers that use
+that lock. The last published version before check-in support, v0.7.27, uses the same per-session control lock; the
+published release tags do not contain the legacy check-in writer, so the append-only records being migrated came from
+pre-release builds. If a daemon unit is installed, schedule approval requires its version marker and the version
+recorded by the last service-managed daemon tick to match the current install. A tick records its version only when
+launchd or systemd reports the current process as the service's active PID; manual CLI or MCP ticks cannot establish
+that proof. The tick version stays unknown for older daemons that do not record it, and remains unknown after restart
+until a service-managed tick runs; approval fails closed while an installed daemon's version is unknown or mismatched.
+If no daemon unit is installed, activation can preconfigure the schedule, but it remains dormant and sends no notices
+until a daemon is installed, started and observed running the current version. The install marker and service-manager
+reload result are not treated as proof that the new code ran. The tick version records the code that executed in that
+invocation, not proof about a separate manually launched process.
+
+From the CLI, use `hz system daemon status --json` to inspect `installed`, `loaded`, `paused`, `interval_minutes`,
+`version`, `installed_version` and `version_mismatch`. An absent daemon leaves this schedule dormant; install one with
+`hz system daemon install --interval 5m` only if you want the persistent login service. A paused daemon can be resumed
+with `hz system daemon resume`. If the service is unloaded, or its tick version is unknown or mismatched, run
+`hz system daemon restart` and wait for `version` to match `installed_version` before relying on check-ins. A manual
+`hz system daemon tick` does not provide that service-managed version proof. Five-minute schedules require an interval
+of five minutes or less; reinstall with `--interval 5m` if the reported cadence is slower.
+
+Advisory file locks cannot fence a process that
+appends without taking the lock, and this journal has no writer epoch or compare-and-swap append to stop one. Stop
+any such process before enabling scheduled check-ins; concurrent unlocked writes are unsupported and can leave
+migration state ambiguous.
 
 `hz heinzel chat <session-id> <request-id> <message> --json` currently acknowledges a durable inbox entry. A queued
 receipt confirms acceptance, not a completed model response. The same `request_id` appears on the user message,
 so a lost network acknowledgement can be reconciled without submitting another message. Session snapshots page
 through an opaque cursor and stay readable while a turn is running.
+
+The web composer also recognizes a narrow fixed request for a check-in every five minutes. It prepares the standard
+schedule preview and opens the existing exact-intent approval card; only the person's separate confirmation activates
+it. This local phrase match does not call a model or infer other schedule changes. Other messages remain queued, and
+general natural-language replies still require a future conversation runner.
 
 These operations are private: local CLI, stdio MCP, paired web and the authenticated private API use the same owner
 and service. The unauthenticated REST API and network MCP do not expose them. Names, appearance and message text

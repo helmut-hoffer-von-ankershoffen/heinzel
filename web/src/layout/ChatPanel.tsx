@@ -4,15 +4,19 @@
 // The header's switcher picks another session, the Workshop or a new chat.
 import { PanelRightClose, Plus } from "lucide-react";
 import { useEffect, useRef } from "react";
-import { useLocation } from "react-router";
+import { useLocation, useSearchParams } from "react-router";
 import { useSharedChat } from "@/chat/ChatContext";
 import { Composer, Conversation, Costs } from "@/chat/Conversation";
+import { DurableSession } from "@/chat/DurableSession";
 import { SessionSwitcher } from "@/chat/SessionSwitcher";
+import { isDurableSession } from "@/chat/useChat";
 import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
 
 export function ChatPanel({ onCollapse }: { onCollapse: () => void }) {
   const location = useLocation();
+  const [params, setParams] = useSearchParams();
+  const durableId = params.get("chat");
   const { chat, inputRef, focus } = useSharedChat();
   const context = chat.session?.context;
   const end = useRef<HTMLDivElement>(null);
@@ -32,6 +36,21 @@ export function ChatPanel({ onCollapse }: { onCollapse: () => void }) {
     if (!empty) chat.fresh();
     focus();
   };
+  if (durableId && isDurableSession(durableId)) {
+    return (
+      <DurableSession
+        key={durableId}
+        sessionId={durableId}
+        onClose={() =>
+          setParams((current) => {
+            const next = new URLSearchParams(current);
+            next.delete("chat");
+            return next;
+          })
+        }
+      />
+    );
+  }
   return (
     <div className="flex h-full flex-col">
       <div className="chat-panel-header flex h-10 shrink-0 items-center sm:h-12 gap-1 border-b-[0.5px] border-foreground/20 px-3">

@@ -458,3 +458,144 @@ def test_the_list_pages_back_through_everything_kept(make, clock):
     second = service.listing(2, before=first.notices[-1].id)
     assert [n.key for n in second.notices] == ["2", "1"]
     assert [n.key for n in service.listing(2, before=second.notices[-1].id).notices] == ["0"]
+
+
+def test_durable_keys_survive_repeat_disabled_display_pruning_and_service_restart(make):
+    service = make(repeat_hours=0)
+
+    def once(target, key):
+        return target.emit_once(NoticeKind.HEINZEL, "Check-in", "Due", route="/heinzel", command="hz", key=key)
+
+    assert once(service, "owner-a:slot")
+    assert once(service, "owner-a:slot")
+    assert len(service.recent()) == 1
+    for index in range(MAX_NOTICES + 1):
+        assert draft(service, key=f"other-{index}") is not None
+    assert all(notice.key != "owner-a:slot" for notice in service.recent(500))
+    restarted = make(repeat_hours=0)
+    assert once(restarted, "owner-a:slot")
+    assert all(notice.key != "owner-a:slot" for notice in restarted.recent(500))
+    assert once(restarted, "owner-b:slot")
+    assert restarted.recent(1)[0].key == "owner-b:slot"
+
+
+def test_completed_receipt_can_be_forgotten_without_removing_the_display_notice(make):
+    service = make(repeat_hours=0)
+    assert service.emit_once(NoticeKind.HEINZEL, "Check-in", "Due", route="/heinzel", command="hz", key="slot")
+    assert service.has_once("slot") is True
+
+    assert service.forget_once("slot")
+    assert service.has_once("slot") is True  # The bounded notice list still proves that the effect occurred.
+    assert [notice.key for notice in service.recent()] == ["slot"]
+    assert service.store._read_state(strict=True).durable_keys == set()
+
+
+def test_uncertain_notice_lookup_fails_closed_on_damaged_store(make, settings):
+    service = make()
+    assert service.emit_once(NoticeKind.HEINZEL, "Check-in", "Due", route="/heinzel", command="hz", key="slot")
+    (settings.state_dir / "notify" / "notices.json").write_text("{damaged", encoding="utf-8")
+    assert service.has_once("slot") is None
+
+
+def test_durable_store_damage_fails_closed_instead_of_forgetting_keys(make, settings):
+    service = make()
+    assert service.emit_once(NoticeKind.HEINZEL, "Check-in", "Due", route="/heinzel", command="hz", key="slot")
+    path = settings.state_dir / "notify" / "notices.json"
+    path.write_text("{damaged", encoding="utf-8")
+    assert not service.emit_once(NoticeKind.HEINZEL, "Check-in", "Due", route="/heinzel", command="hz", key="slot")
+    assert draft(service, key="other") is None
+    assert path.read_text(encoding="utf-8") == "{damaged"
+
+
+def test_legacy_writer_overwrite_fails_closed_instead_of_replaying_a_durable_key(make, settings):
+    import subprocess
+    import sys
+
+    service = make(repeat_hours=0)
+    assert service.emit_once(NoticeKind.HEINZEL, "Check-in", "Due", route="/heinzel", command="hz", key="slot")
+    path = settings.state_dir / "notify" / "notices.json"
+    legacy_writer = """
+import fcntl
+import os
+import secrets
+import sys
+from pathlib import Path
+from pydantic import TypeAdapter, ValidationError
+from heinzel import Notice
+
+path = Path(sys.argv[1])
+adapter = TypeAdapter(list[Notice])
+with (path.parent / "notices.lock").open("a") as lock:
+    fcntl.flock(lock, fcntl.LOCK_EX)
+    try:
+        notices = adapter.validate_json(path.read_bytes())
+    except ValidationError:
+        notices = []
+    temporary = path.with_name(f".notices.{secrets.token_hex(8)}")
+    descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(descriptor, "wb") as output:
+        output.write(adapter.dump_json(notices, indent=1) + b"\\n")
+        output.flush()
+        os.fsync(output.fileno())
+    temporary.replace(path)
+    directory = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.fsync(directory)
+    finally:
+        os.close(directory)
+"""
+    subprocess.run(
+        [sys.executable, "-c", legacy_writer, str(path)], check=True, capture_output=True, text=True, timeout=10
+    )
+
+    assert not service.emit_once(NoticeKind.HEINZEL, "Check-in", "Due", route="/heinzel", command="hz", key="slot")
+    assert path.read_text(encoding="utf-8").strip() == "[]"
+
+
+def test_interrupted_atomic_notice_write_retries_without_losing_or_duplicating(make, monkeypatch):
+    from heinzel.modules.system.notify import _store
+
+    service = make(repeat_hours=0)
+    real_write = _store._write_private
+    failed = False
+
+    def interrupted(path, text):
+        nonlocal failed
+        if path == service.store.path and service.store._durable.exists() and not failed:
+            failed = True
+            msg = "interrupted before atomic replacement"
+            raise OSError(msg)
+        real_write(path, text)
+
+    monkeypatch.setattr(_store, "_write_private", interrupted)
+    args = (NoticeKind.HEINZEL, "Check-in", "Due")
+    kwargs = {"route": "/heinzel", "command": "hz", "key": "owner:slot"}
+    assert not service.emit_once(*args, **kwargs)
+    assert service.recent() == []
+    assert service.emit_once(*args, **kwargs)
+    assert service.emit_once(*args, **kwargs)
+    assert len(service.recent()) == 1
+
+
+def test_unknown_acknowledgement_after_atomic_commit_replays_without_duplicate(make, monkeypatch):
+    from heinzel.modules.system.notify import _store
+
+    service = make(repeat_hours=0)
+    real_write = _store._write_private
+    failed = False
+
+    def interrupted(path, text):
+        nonlocal failed
+        real_write(path, text)
+        if path == service.store.path and service.store._durable.exists() and not failed:
+            failed = True
+            msg = "interrupted after atomic replacement"
+            raise OSError(msg)
+
+    monkeypatch.setattr(_store, "_write_private", interrupted)
+    args = (NoticeKind.HEINZEL, "Check-in", "Due")
+    kwargs = {"route": "/heinzel", "command": "hz", "key": "owner:slot"}
+    assert not service.emit_once(*args, **kwargs)
+    assert len(service.recent()) == 1
+    assert make(repeat_hours=0).emit_once(*args, **kwargs)
+    assert len(service.recent()) == 1
