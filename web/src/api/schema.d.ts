@@ -408,6 +408,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/heinzel/propose-skill-draft": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Store a private skill draft; no file is published, executed or shared.
+         * @description Store a private skill draft; no file is published, executed or shared.
+         */
+        post: operations["heinzel_propose_skill_draft"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/heinzel/schedule-control": {
         parameters: {
             query?: never;
@@ -503,6 +523,26 @@ export interface paths {
          * @description Show a contract as the daemon runs it: schedule, requirements, adapters, readiness, next steps.
          */
         get: operations["heinzel_show"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/heinzel/skill-draft": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read exact private skill draft files and requested sharing scope.
+         * @description Read exact private skill draft files and requested sharing scope.
+         */
+        get: operations["heinzel_skill_draft"];
         put?: never;
         post?: never;
         delete?: never;
@@ -8583,6 +8623,57 @@ export interface components {
             skill: components["schemas"]["SkillView"];
         };
         /**
+         * SkillDraft
+         * @description Private inert text and requested sharing intent; readiness, publication and grants are not verified.
+         */
+        SkillDraft: {
+            /**
+             * Files
+             * @description Exact SKILL.md, supporting text and optional Python scripts; not validated for publication.
+             */
+            files: {
+                [key: string]: string;
+            };
+            /**
+             * Name
+             * @description The proposed skill name.
+             */
+            name: string;
+            /**
+             * Preview Sha256
+             * @description Fingerprint of the proposed terms; not an approval proof.
+             */
+            preview_sha256: string;
+            /**
+             * Request Id
+             * @description Stable request identity for exact retries.
+             */
+            request_id: string;
+            /**
+             * Requested Scope
+             * @description Proposed sharing scope, not an access grant or verified membership.
+             * @enum {string}
+             */
+            requested_scope: "personal" | "team" | "org" | "site" | "company";
+            /**
+             * Scope Ref
+             * @description Opaque proposed shared-scope reference; not verified.
+             */
+            scope_ref?: string | null;
+            /**
+             * Session Id
+             * @description The authenticated owner's personal session.
+             */
+            session_id: string;
+            /**
+             * Status
+             * @description Not published, approved or executable.
+             * @default draft
+             * @constant
+             */
+            status: "draft";
+        };
+        /**
          * SkillList
          * @description Every skill in effect, the names nobody decided between, and personal skills that failed their checks.
          */
@@ -10826,6 +10917,42 @@ export interface components {
              */
             timeout_seconds: number;
         };
+        /** heinzel_propose_skill_draft_Input */
+        heinzel_propose_skill_draft_Input: {
+            /**
+             * Files
+             * @description Exact SKILL.md, supporting text and optional Python script drafts.
+             */
+            files: {
+                [key: string]: string;
+            };
+            /**
+             * Name
+             * @description Proposed skill name.
+             */
+            name: string;
+            /**
+             * Request Id
+             * @description A stable client request id; reuse it only for an exact retry.
+             */
+            request_id: string;
+            /**
+             * Requested Scope
+             * @description Requested scope; no grant is created.
+             * @enum {string}
+             */
+            requested_scope: "personal" | "team" | "org" | "site" | "company";
+            /**
+             * Scope Ref
+             * @description Opaque target for a requested shared scope; not verified.
+             */
+            scope_ref?: string | null;
+            /**
+             * Session Id
+             * @description The stable personal session id returned by new-chat or sessions.
+             */
+            session_id: string;
+        };
         /** heinzel_schedule_control_Input */
         heinzel_schedule_control_Input: {
             /**
@@ -11049,6 +11176,7 @@ export type SchemaSettingRevealed = components['schemas']['SettingRevealed'];
 export type SchemaSetupDoc = components['schemas']['SetupDoc'];
 export type SchemaSkill = components['schemas']['Skill'];
 export type SchemaSkillDetail = components['schemas']['SkillDetail'];
+export type SchemaSkillDraft = components['schemas']['SkillDraft'];
 export type SchemaSkillList = components['schemas']['SkillList'];
 export type SchemaSkillView = components['schemas']['SkillView'];
 export type SchemaSkipped = components['schemas']['Skipped'];
@@ -11108,6 +11236,7 @@ export type SchemaHeinzelNewChatInput = components['schemas']['heinzel_new_chat_
 export type SchemaHeinzelProfileInput = components['schemas']['heinzel_profile_Input'];
 export type SchemaHeinzelProposeCheckInInput = components['schemas']['heinzel_propose_check_in_Input'];
 export type SchemaHeinzelProposeScheduledAgentInput = components['schemas']['heinzel_propose_scheduled_agent_Input'];
+export type SchemaHeinzelProposeSkillDraftInput = components['schemas']['heinzel_propose_skill_draft_Input'];
 export type SchemaHeinzelScheduleControlInput = components['schemas']['heinzel_schedule_control_Input'];
 export type SchemaSystemStatePushInput = components['schemas']['system_state_push_Input'];
 export type SchemaSystemStateResetInput = components['schemas']['system_state_reset_Input'];
@@ -11743,6 +11872,39 @@ export interface operations {
             };
         };
     };
+    heinzel_propose_skill_draft: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["heinzel_propose_skill_draft_Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillDraft"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     heinzel_schedule_control: {
         parameters: {
             query?: never;
@@ -11882,6 +12044,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CompiledContract"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    heinzel_skill_draft: {
+        parameters: {
+            query: {
+                session_id: string;
+                request_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillDraft"];
                 };
             };
             /** @description Validation Error */

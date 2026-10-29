@@ -653,6 +653,7 @@ $ hz heinzel [OPTIONS] COMMAND [ARGS]...
 * `profile`: Save this Heinzel&#x27;s name or look against...
 * `propose-check-in`: Propose local five-minute check-ins; the...
 * `propose-scheduled-agent`: Save an inert agent execution proposal; it...
+* `propose-skill-draft`: Store a private skill draft; no file is...
 * `prune`: (expert) Delete drafts and records older...
 * `schedule-control`: Pause a schedule; activation and resume...
 * `scheduled-agent-proposal`: Inspect the exact inert proposal; a...
@@ -660,6 +661,7 @@ $ hz heinzel [OPTIONS] COMMAND [ARGS]...
 * `session`: Open one durable Heinzel and an ordered...
 * `sessions`: List your durable personal Heinzels,...
 * `show`: Show a contract as the daemon runs it:...
+* `skill-draft`: Read exact private skill draft files and...
 * `wake`: Wake a Heinzelmännchen now: fetch its...
 
 ### `hz heinzel amend-scheduled-agent`
@@ -992,6 +994,31 @@ $ hz heinzel propose-scheduled-agent [OPTIONS] {session_id} {request_id} {contra
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
 
+### `hz heinzel propose-skill-draft`
+
+Store a private skill draft; no file is published, executed or shared.
+
+**Usage**:
+
+```console
+$ hz heinzel propose-skill-draft [OPTIONS] {session_id} {request_id} {name} {requested_scope}:<personal|team|org|site|company> {JSON}
+```
+
+**Arguments**:
+
+* `session_id`: [required]
+* `request_id`: [required]
+* `name`: Proposed skill name.  [required]
+* `requested_scope:<personal|team|org|site|company>`: Requested scope; no grant is created.  [required]
+* `JSON`: Exact SKILL.md, supporting text and optional Python script drafts.  [required]
+
+**Options**:
+
+* `--scope-ref <str>`: Opaque target for a requested shared scope; not verified.
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
 ### `hz heinzel prune`
 
 (expert) Delete drafts and records older than ` retention_days` (default 90); receipts are kept.
@@ -1131,6 +1158,27 @@ $ hz heinzel show [OPTIONS] {name}
 **Arguments**:
 
 * `name`: The contract&#x27;s name, or `&lt;namespace&gt;:&lt;name&gt;` (`team:` or `me:`) when both have it.  [required]
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz heinzel skill-draft`
+
+Read exact private skill draft files and requested sharing scope.
+
+**Usage**:
+
+```console
+$ hz heinzel skill-draft [OPTIONS] {session_id} {request_id}
+```
+
+**Arguments**:
+
+* `session_id`: [required]
+* `request_id`: [required]
 
 **Options**:
 

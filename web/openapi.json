@@ -10814,6 +10814,87 @@
         "title": "SkillDetail",
         "type": "object"
       },
+      "SkillDraft": {
+        "additionalProperties": false,
+        "description": "Private inert text and requested sharing intent; readiness, publication and grants are not verified.",
+        "properties": {
+          "files": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Exact SKILL.md, supporting text and optional Python scripts; not validated for publication.",
+            "title": "Files",
+            "type": "object"
+          },
+          "name": {
+            "description": "The proposed skill name.",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "preview_sha256": {
+            "description": "Fingerprint of the proposed terms; not an approval proof.",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Preview Sha256",
+            "type": "string"
+          },
+          "request_id": {
+            "description": "Stable request identity for exact retries.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "requested_scope": {
+            "description": "Proposed sharing scope, not an access grant or verified membership.",
+            "enum": [
+              "personal",
+              "team",
+              "org",
+              "site",
+              "company"
+            ],
+            "title": "Requested Scope",
+            "type": "string"
+          },
+          "scope_ref": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Opaque proposed shared-scope reference; not verified.",
+            "title": "Scope Ref"
+          },
+          "session_id": {
+            "description": "The authenticated owner's personal session.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "status": {
+            "const": "draft",
+            "default": "draft",
+            "description": "Not published, approved or executable.",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "request_id",
+          "name",
+          "requested_scope",
+          "files",
+          "preview_sha256"
+        ],
+        "title": "SkillDraft",
+        "type": "object"
+      },
       "SkillList": {
         "description": "Every skill in effect, the names nobody decided between, and personal skills that failed their checks.",
         "properties": {
@@ -14858,6 +14939,73 @@
         "title": "heinzel_propose_scheduled_agent_Input",
         "type": "object"
       },
+      "heinzel_propose_skill_draft_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "files": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Exact SKILL.md, supporting text and optional Python script drafts.",
+            "title": "Files",
+            "type": "object"
+          },
+          "name": {
+            "description": "Proposed skill name.",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "request_id": {
+            "description": "A stable client request id; reuse it only for an exact retry.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "requested_scope": {
+            "description": "Requested scope; no grant is created.",
+            "enum": [
+              "personal",
+              "team",
+              "org",
+              "site",
+              "company"
+            ],
+            "title": "Requested Scope",
+            "type": "string"
+          },
+          "scope_ref": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Opaque target for a requested shared scope; not verified.",
+            "title": "Scope Ref"
+          },
+          "session_id": {
+            "description": "The stable personal session id returned by new-chat or sessions.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "request_id",
+          "name",
+          "requested_scope",
+          "files"
+        ],
+        "title": "heinzel_propose_skill_draft_Input",
+        "type": "object"
+      },
       "heinzel_schedule_control_Input": {
         "additionalProperties": false,
         "properties": {
@@ -15940,6 +16088,48 @@
         ]
       }
     },
+    "/heinzel/propose-skill-draft": {
+      "post": {
+        "description": "Store a private skill draft; no file is published, executed or shared.",
+        "operationId": "heinzel_propose_skill_draft",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/heinzel_propose_skill_draft_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillDraft"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Store a private skill draft; no file is published, executed or shared.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
     "/heinzel/schedule-control": {
       "post": {
         "description": "Pause a schedule; activation and resume require an exact-intent approval from a trusted issuer.\n\nRaises:\n    HeinzelError: If the schedule is stale or approval is invalid or unavailable.",
@@ -16169,6 +16359,58 @@
           }
         },
         "summary": "Show a contract as the daemon runs it: schedule, requirements, adapters, readiness, next steps.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/skill-draft": {
+      "get": {
+        "description": "Read exact private skill draft files and requested sharing scope.",
+        "operationId": "heinzel_skill_draft",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillDraft"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read exact private skill draft files and requested sharing scope.",
         "tags": [
           "heinzel"
         ]
