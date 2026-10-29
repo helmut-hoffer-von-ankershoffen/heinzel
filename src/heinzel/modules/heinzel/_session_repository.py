@@ -152,6 +152,11 @@ class PersonalSessionRepository:
         with self._store("main").writer(session_id, wait=wait) as writer:
             yield writer
 
+    def is_main_writer(self, session_id: str, writer: SessionWriter) -> bool:
+        """Check the scoped active owner/session writer before dispatching a granted operation."""
+        self._owned(session_id)
+        return writer.active and writer.session == session_id and writer.store.root == self._store("main").root
+
     @contextmanager
     def control_writer(self, session_id: str) -> Generator[SessionWriter]:
         """Wait only for this short control journal, never for a main turn writer.

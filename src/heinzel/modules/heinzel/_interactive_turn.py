@@ -6,6 +6,7 @@ Only the deterministic local tool below can execute. Other requests become priva
 
 import hashlib
 import json
+import re
 from collections.abc import Callable
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -18,7 +19,7 @@ from heinzel import CurrentUser, HeinzelError, SessionEvent
 from heinzel.modules.ai.access._pydantic import PydanticAiAccess
 from heinzel.modules.heinzel._budget_reservation import initialize_budget
 from heinzel.modules.heinzel._engine import EngineCheckpoint, TurnAuthority, TurnDeps, TurnLimits, run_turn
-from heinzel.modules.heinzel._host_tools import HostToolCatalog
+from heinzel.modules.heinzel._host_tools import HostToolCatalog, OperationFailedError
 from heinzel.modules.heinzel._model_admission import ConnectedModelFactory, connected_model
 from heinzel.modules.heinzel._model_grants import ModelGrant, ModelGrants
 from heinzel.modules.heinzel._priced_model import ReservedModel
@@ -53,7 +54,7 @@ class ToolActivity(BaseModel):
     at: datetime
     turn_id: str
     tool: str
-    status: Literal["completed", "denied"]
+    status: Literal["requested", "completed", "failed", "denied"]
 
 
 class InteractiveTurn:
@@ -184,7 +185,7 @@ class InteractiveTurn:
         self._check_owner()
         repo = self._crud.repository
         turn = _turn_id(request_id)
-        with repo.main_writer(session_id):
+        with repo.main_writer(session_id) as turn_writer:
             self._check_owner()
             events = repo.control_read(session_id).events
             if expected_grant is not None and ModelGrants(self._crud).approved(session_id) != expected_grant:
@@ -246,6 +247,10 @@ class InteractiveTurn:
                 if len(json.dumps(args, ensure_ascii=False).encode()) > _MAX_ARGUMENT_BYTES:
                     return "Tool request is too large."
                 if name in _READ_TOOLS:
+                    # The prototype's pure local tool is not part of the reviewed registered catalog.
+                    if expected_grant is not None:
+                        self._event(session_id, turn, calls, name, "denied")
+                        return "Tool unavailable under this grant."
                     try:
                         result = _READ_TOOLS[name](args)
                     except HeinzelError:
@@ -254,12 +259,16 @@ class InteractiveTurn:
                     self._event(session_id, turn, calls, name, "completed")
                     return result
                 if catalog is not None and expected_grant is not None and name in expected_grant.allowed_tools:
+                    self._event(session_id, turn, calls, name, "requested")
                     try:
-                        result = catalog.invoke(expected_grant, name, args)
+                        result = catalog.invoke(expected_grant, name, args, turn_writer=turn_writer)
+                    except OperationFailedError:
+                        self._event(session_id, turn, calls, name, "failed")
+                        return "The operation ran but did not produce a usable result."
                     except HeinzelError:
-                        self._event(session_id, turn, calls, "hz.read", "denied")
+                        self._event(session_id, turn, calls, name, "denied")
                         return "Operation unavailable or invalid."
-                    self._event(session_id, turn, calls, "hz.read", "completed")
+                    self._event(session_id, turn, calls, name, "completed")
                     return result
                 if name == "propose_action":
                     with repo.control_writer(session_id) as writer:
@@ -367,8 +376,12 @@ class InteractiveTurn:
                 event.turn not in starts
                 or starts[event.turn] >= event.seq
                 or not isinstance(name, str)
-                or (name not in _READ_TOOLS and name not in {"unavailable", "hz.read"})
-                or status not in {"completed", "denied"}
+                or (
+                    name not in _READ_TOOLS
+                    and name not in {"unavailable", "hz.read"}
+                    and re.fullmatch(r"[a-z][a-z0-9_.-]{0,127}:[a-z][a-z0-9-]{0,127}", name) is None
+                )
+                or status not in {"requested", "completed", "failed", "denied"}
                 or (name == "unavailable" and status != "denied")
             ):
                 msg = "A tool activity event has invalid provenance"
@@ -379,7 +392,7 @@ class InteractiveTurn:
                     at=event.ts,
                     turn_id=event.turn,
                     tool=name,
-                    status=cast("Literal['completed', 'denied']", status),
+                    status=cast("Literal['requested', 'completed', 'failed', 'denied']", status),
                 )
             )
         return projected
@@ -388,4 +401,6 @@ class InteractiveTurn:
         """Record only host-selected tool name and disposition, never arguments or results."""
         self._check_owner()
         with self._crud.repository.control_writer(session) as writer:
-            writer.append("interactive.tool", key=f"{turn}-{call}", turn=turn, data={"tool": name, "status": status})
+            writer.append(
+                "interactive.tool", key=f"{turn}-{call}-{status}", turn=turn, data={"tool": name, "status": status}
+            )
