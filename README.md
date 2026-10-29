@@ -20,11 +20,12 @@
 | src/heinzel/heads/cli/\_setup.py                              |      319 |        6 |       96 |        6 |     97% |275, 342, 427, 434, 481-\>490, 504, 507 |
 | src/heinzel/heads/mcp/\_\_init\_\_.py                         |      238 |       19 |       72 |        9 |     91% |223-224, 309, 315-316, 318, 329, 335-336, 338, 345, 356-357, 412-415, 425, 460 |
 | src/heinzel/heads/web/\_\_init\_\_.py                         |      253 |       15 |       58 |        3 |     94% |412-414, 460, 470-\>474, 481-483, 491-\>exit, 511-512, 515-520 |
+| src/heinzel/heads/web/\_agent\_titles.py                      |       23 |        1 |        6 |        1 |     93% |        31 |
 | src/heinzel/heads/web/\_devices.py                            |      100 |        2 |       12 |        0 |     98% |   125-126 |
 | src/heinzel/heads/web/\_lifecycle.py                          |      133 |        7 |       38 |        2 |     95% |83, 99-100, 108-\>103, 110-111, 182-183 |
 | src/heinzel/heads/web/\_shutdown.py                           |       83 |        3 |       14 |        1 |     96% |112, 141-142 |
 | src/heinzel/heads/web/\_stream.py                             |       51 |        2 |       16 |        2 |     94% |85-\>84, 95-96 |
-| src/heinzel/heads/web/\_terminal.py                           |      269 |       17 |       58 |       12 |     91% |36-\>41, 108, 119-\>123, 198-199, 208-210, 211-\>213, 219-\>exit, 235-236, 238, 267-\>exit, 317, 345-\>338, 351-\>exit, 357-360, 422-423, 425 |
+| src/heinzel/heads/web/\_terminal.py                           |      284 |       20 |       62 |       14 |     90% |38-\>43, 110, 121-\>125, 200-201, 210-212, 213-\>215, 221-\>exit, 237-238, 240, 269-\>exit, 323, 340, 350-351, 364-\>357, 370-\>exit, 376-379, 441-442, 444 |
 | src/heinzel/heads/web/\_updates.py                            |      117 |        4 |       32 |        3 |     95% |66-\>exit, 81-82, 93, 114 |
 | src/heinzel/kernel/\_ai.py                                    |       69 |        1 |        6 |        1 |     97% |        95 |
 | src/heinzel/kernel/\_approval.py                              |      163 |       30 |       52 |        9 |     79% |87-88, 96-97, 104, 126-128, 142-143, 151-153, 275, 281, 284-285, 287, 289, 301, 314, 317-328, 337 |
@@ -133,7 +134,7 @@
 | src/heinzel/modules/telemetry/\_\_init\_\_.py                 |       44 |        2 |        0 |        0 |     95% |  110, 164 |
 | src/heinzel/modules/telemetry/\_render.py                     |       15 |       10 |        2 |        0 |     29% |11-17, 22-27 |
 | src/heinzel/modules/telemetry/\_service.py                    |      236 |        8 |       70 |        3 |     96% |146-\>152, 154-\>152, 162, 219-220, 289-291, 344-345 |
-| **TOTAL**                                                     | **31322** | **1027** | **7868** |  **440** | **96%** |           |
+| **TOTAL**                                                     | **31360** | **1031** | **7878** |  **443** | **96%** |           |
 
 165 files skipped due to complete coverage.
 
