@@ -34,6 +34,15 @@ look, and preview it with the active theme. After saving, continue to its chat t
 editing alone does not start a schedule. A profile update does not replace an already queued message or approve a
 contract.
 
+### Scheduled agent execution proposal
+
+You can record an inert proposal for a possible future scheduled model turn with
+`hz heinzel propose-scheduled-agent <session-id> <request-id> <contract> <max-usd> <timeout-seconds>`.
+Read it with `hz heinzel scheduled-agent-proposal <session-id> <request-id> --json` to inspect the exact contract,
+proposed per-turn budget, time limit, and empty permitted-tools list. The preview hash identifies those terms; it is
+not an approval, and it does not bind an owner decision or schedule revision. The limits are not yet enforced and no separate approval or scheduled agent execution exists. The
+existing notification-only check-in contract is unaffected.
+
 ### Five-minute check-in
 
 The first scheduled personal Heinzel stores one immutable versioned check-in contract and its five-minute schedule in

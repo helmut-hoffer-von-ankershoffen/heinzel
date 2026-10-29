@@ -9918,6 +9918,76 @@
         "title": "SceneStep",
         "type": "object"
       },
+      "ScheduledAgentProposal": {
+        "description": "An inert execution proposal; creating or reading it never authorizes a run.",
+        "properties": {
+          "contract": {
+            "description": "Exact instructions proposed for each scheduled model turn.",
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Contract",
+            "type": "string"
+          },
+          "max_usd": {
+            "description": "Proposed maximum USD cost per turn; enforcement is not yet available.",
+            "exclusiveMinimum": 0.0,
+            "title": "Max Usd",
+            "type": "number"
+          },
+          "permitted_tools": {
+            "description": "The tools the proposed turn may use; this slice permits none.",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 0,
+            "title": "Permitted Tools",
+            "type": "array"
+          },
+          "preview_sha256": {
+            "description": "Hash of the exact proposed terms, not an approval proof.",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Preview Sha256",
+            "type": "string"
+          },
+          "request_id": {
+            "description": "The proposal's stable request identity.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "session_id": {
+            "description": "The owner-scoped personal session.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "status": {
+            "const": "proposed",
+            "default": "proposed",
+            "description": "No execution approval has been granted.",
+            "title": "Status",
+            "type": "string"
+          },
+          "timeout_seconds": {
+            "description": "Proposed maximum duration per turn in seconds.",
+            "maximum": 300.0,
+            "minimum": 1.0,
+            "title": "Timeout Seconds",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "session_id",
+          "request_id",
+          "contract",
+          "permitted_tools",
+          "max_usd",
+          "timeout_seconds",
+          "preview_sha256"
+        ],
+        "title": "ScheduledAgentProposal",
+        "type": "object"
+      },
       "SessionCosts": {
         "description": "The same visible budget for every head and backend, with plan estimates labelled separately.",
         "properties": {
@@ -14517,6 +14587,52 @@
         "title": "heinzel_propose_check_in_Input",
         "type": "object"
       },
+      "heinzel_propose_scheduled_agent_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "contract": {
+            "description": "Exact instructions to preview for a future agent turn.",
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Contract",
+            "type": "string"
+          },
+          "max_usd": {
+            "description": "Proposed per-turn USD limit; not yet enforced.",
+            "exclusiveMinimum": 0.0,
+            "title": "Max Usd",
+            "type": "number"
+          },
+          "request_id": {
+            "description": "A stable client request id; reuse it only for an exact retry.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "session_id": {
+            "description": "The stable personal session id returned by new-chat or sessions.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "timeout_seconds": {
+            "description": "Proposed maximum seconds per turn.",
+            "maximum": 300.0,
+            "minimum": 1.0,
+            "title": "Timeout Seconds",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "session_id",
+          "request_id",
+          "contract",
+          "max_usd",
+          "timeout_seconds"
+        ],
+        "title": "heinzel_propose_scheduled_agent_Input",
+        "type": "object"
+      },
       "heinzel_schedule_control_Input": {
         "additionalProperties": false,
         "properties": {
@@ -15379,6 +15495,48 @@
         ]
       }
     },
+    "/heinzel/propose-scheduled-agent": {
+      "post": {
+        "description": "Save an inert agent execution proposal; it neither approves nor starts a model turn.",
+        "operationId": "heinzel_propose_scheduled_agent",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/heinzel_propose_scheduled_agent_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduledAgentProposal"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Save an inert agent execution proposal; it neither approves nor starts a model turn.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
     "/heinzel/schedule-control": {
       "post": {
         "description": "Pause a schedule; activation and resume require an exact-intent approval from a trusted issuer.\n\nRaises:\n    HeinzelError: If the schedule is stale or approval is invalid or unavailable.",
@@ -15416,6 +15574,58 @@
           }
         },
         "summary": "Pause a schedule; activation and resume require an exact-intent approval from a trusted issuer.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/scheduled-agent-proposal": {
+      "get": {
+        "description": "Inspect the exact inert proposal; a separate future human approval is required to run it.",
+        "operationId": "heinzel_scheduled_agent_proposal",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduledAgentProposal"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Inspect the exact inert proposal; a separate future human approval is required to run it.",
         "tags": [
           "heinzel"
         ]

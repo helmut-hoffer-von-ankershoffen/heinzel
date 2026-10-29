@@ -486,3 +486,82 @@ def test_invalid_names_do_not_reserve_a_session(services, name):
     with pytest.raises(ValidationError):
         service.new_chat("create-1", name)
     assert service.listing().sessions == []
+
+
+def test_scheduled_agent_proposal_is_inert_private_idempotent_and_separate_from_check_in(services):
+    service, repository, current = services
+    session = service.new_chat("create-agent-preview")
+    check_in = service.propose_check_in(session.session_id, "notice-only")
+    proposal = service.propose_scheduled_agent(session.session_id, "agent-1", "Summarize local context", 0.2, 60)
+    assert proposal.status == "proposed"
+    assert proposal.contract == "Summarize local context"
+    assert proposal.permitted_tools == []
+    assert proposal.max_usd == 0.2
+    assert proposal.timeout_seconds == 60
+    assert len(proposal.preview_sha256) == 64
+    after = service.snapshot(session.session_id)
+    assert after.schedule == check_in.schedule
+    assert after.contracts == check_in.contracts
+    restarted = SessionCrud(PersonalSessionRepository(current), service.costs)
+    assert restarted.scheduled_agent_proposal(session.session_id, "agent-1") == proposal
+    assert (
+        restarted.propose_scheduled_agent(session.session_id, "agent-1", "Summarize local context", 0.2, 60) == proposal
+    )
+    with pytest.raises(HeinzelError, match="different agent execution proposal"):
+        service.propose_scheduled_agent(session.session_id, "agent-1", "Different instructions", 0.2, 60)
+    metadata = json.dumps(
+        [event.model_dump(mode="json") for event in repository.control_read(session.session_id).events]
+    )
+    assert "Summarize local context" not in metadata
+    assert "approval.issued" not in metadata
+
+
+@pytest.mark.parametrize(
+    ("contract", "budget", "timeout"), [("Other", 0.2, 60), ("Instructions", 0.3, 60), ("Instructions", 0.2, 90)]
+)
+def test_scheduled_agent_proposal_rejects_reusing_identity_for_changed_terms(services, contract, budget, timeout):
+    service, _, _ = services
+    session_id = service.new_chat("proposal-owner").session_id
+    original = service.propose_scheduled_agent(session_id, "proposal-1", "Instructions", 0.2, 60)
+    with pytest.raises(HeinzelError, match="different agent execution proposal"):
+        service.propose_scheduled_agent(session_id, "proposal-1", contract, budget, timeout)
+    assert service.scheduled_agent_proposal(session_id, "proposal-1") == original
+
+
+def test_scheduled_agent_proposal_checks_owner_and_session(services):
+    service, _, current = services
+    one = service.new_chat("agent-owner-1").session_id
+    two = service.new_chat("agent-owner-2").session_id
+    proposal = service.propose_scheduled_agent(one, "same-request", "Instructions", 0.2, 60)
+    other = service.propose_scheduled_agent(two, "same-request", "Instructions", 0.2, 60)
+    assert proposal.preview_sha256 != other.preview_sha256
+    stranger = CallIdentity(
+        Principal("u-" + "a" * 32), "api-bearer", "other", "private", frozenset({"private:read", "private:write"})
+    )
+    with current.using(stranger), pytest.raises(HeinzelError, match="No such personal"):
+        service.scheduled_agent_proposal(one, "same-request")
+    with current.using(stranger), pytest.raises(HeinzelError, match="No such personal"):
+        service.propose_scheduled_agent(one, "different", "Instructions", 0.2, 60)
+
+
+def test_scheduled_agent_proposal_rejects_invalid_terms(services):
+    service, _, _ = services
+    session_id = service.new_chat("invalid-agent").session_id
+    with pytest.raises(ValidationError):
+        service.propose_scheduled_agent(session_id, "invalid", "Instructions", float("nan"), 60)
+    with pytest.raises(ValidationError):
+        service.propose_scheduled_agent(session_id, "invalid", "Instructions", 0.2, 301)
+    with pytest.raises(HeinzelError, match="does not exist"):
+        service.scheduled_agent_proposal(session_id, "invalid")
+
+
+def test_scheduled_agent_proposal_rejects_inconsistent_stored_preview(services):
+    service, repository, _ = services
+    session_id = service.new_chat("invalid-preview-owner").session_id
+    original = service.propose_scheduled_agent(session_id, "original", "Instructions", 0.2, 60)
+    forged = original.model_copy(update={"request_id": "forged"})
+    with repository.control_writer(session_id) as writer:
+        body = immutable_body(writer, "agent-proposal", forged.model_dump(mode="json"), control=True)
+        writer.append("agent.proposed", key="agent-proposal-forged", data=body.model_dump(mode="json"))
+    with pytest.raises(HeinzelError, match="proposal is invalid"):
+        service.scheduled_agent_proposal(session_id, "forged")

@@ -403,3 +403,30 @@ def test_public_http_schema_and_network_mcp_do_not_expose_private_session_operat
     assert not any(path.startswith("/heinzel/") for path in paths)
     assert client.get("/heinzel/sessions").status_code == 404
     assert not list(exposed(kernel, MCP_HTTP))
+
+
+def test_scheduled_agent_proposal_requires_private_identity_and_remains_inert(kernel):
+    client, auth = protected(kernel)
+    session_id = client.post("/heinzel/new-chat", headers=auth, json={"request_id": "create-preview"}).json()[
+        "session_id"
+    ]
+    payload = {
+        "session_id": session_id,
+        "request_id": "review-1",
+        "contract": "Produce a short check-in",
+        "max_usd": 0.1,
+        "timeout_seconds": 30,
+    }
+    assert client.post("/heinzel/propose-scheduled-agent", json=payload).status_code == 401
+    response = client.post("/heinzel/propose-scheduled-agent", headers=auth, json=payload)
+    assert response.status_code == 200, response.text
+    proposal = response.json()
+    assert proposal["status"] == "proposed"
+    assert proposal["contract"] == payload["contract"]
+    assert proposal["permitted_tools"] == []
+    inspected = client.get(
+        "/heinzel/scheduled-agent-proposal", headers=auth, params={"session_id": session_id, "request_id": "review-1"}
+    )
+    assert inspected.status_code == 200, inspected.text
+    assert inspected.json() == proposal
+    assert client.get("/heinzel/session", headers=auth, params={"session_id": session_id}).json()["schedule"] is None

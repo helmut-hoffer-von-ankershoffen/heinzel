@@ -23,6 +23,7 @@ from heinzel.modules.heinzel._session_models import (
     MessageAccepted,
     MessageRequest,
     RequestId,
+    ScheduledAgentProposal,
     SessionCosts,
     SessionId,
     SessionList,
@@ -197,6 +198,30 @@ def register_session_operations(module: Module) -> None:  # noqa: C901 - operati
     ) -> SessionSnapshot:
         """Propose local five-minute check-ins; the schedule stays inactive until activated."""
         return service.propose_check_in(session_id, request_id, timezone)
+
+    @module.operation(private=True, read_only=False, audience="everyday")
+    def propose_scheduled_agent(  # noqa: PLR0913, PLR0917 - flat private API
+        service: SessionCrud,
+        session_id: Identity,
+        request_id: Request,
+        contract: Annotated[
+            str,
+            Field(description="Exact instructions to preview for a future agent turn.", min_length=1, max_length=4000),
+        ],
+        max_usd: Annotated[
+            float, Field(description="Proposed per-turn USD limit; not yet enforced.", gt=0, allow_inf_nan=False)
+        ],
+        timeout_seconds: Annotated[int, Field(description="Proposed maximum seconds per turn.", ge=1, le=300)],
+    ) -> ScheduledAgentProposal:
+        """Save an inert agent execution proposal; it neither approves nor starts a model turn."""
+        return service.propose_scheduled_agent(session_id, request_id, contract, max_usd, timeout_seconds)
+
+    @module.operation(private=True, audience="everyday")
+    def scheduled_agent_proposal(
+        service: SessionCrud, session_id: Identity, request_id: Request
+    ) -> ScheduledAgentProposal:
+        """Inspect the exact inert proposal; a separate future human approval is required to run it."""
+        return service.scheduled_agent_proposal(session_id, request_id)
 
     @module.operation(private=True, read_only=False, audience="everyday")
     def schedule_control(  # noqa: PLR0913, PLR0917 - flat private HTTP input binds the approval to its preview

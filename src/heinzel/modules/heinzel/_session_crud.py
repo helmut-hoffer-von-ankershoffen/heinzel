@@ -38,6 +38,7 @@ from heinzel.modules.heinzel._session_models import (
     MessageAccepted,
     MessageRequest,
     RequestId,
+    ScheduledAgentProposal,
     SessionCosts,
     SessionId,
     SessionList,
@@ -664,6 +665,81 @@ class SessionCrud(ApprovalIssuer):
     @staticmethod
     def _schedule_revision(events: list[SessionEvent]) -> int:
         return sum(event.kind == "contract.proposed" or event.kind.startswith("schedule.") for event in events)
+
+    def propose_scheduled_agent(
+        self, session_id: str, request_id: str, contract: str, max_usd: float, timeout_seconds: int
+    ) -> ScheduledAgentProposal:
+        """Store an inert proposal for a future, separately approved scheduled model turn.
+
+        No runner, approval, schedule or notification contract is changed.
+
+        Raises:
+            HeinzelError: If the request id already identifies different terms.
+        """
+        _REQUEST.validate_python(request_id)
+        terms: dict[str, JsonValue] = {
+            "session_id": session_id,
+            "request_id": request_id,
+            "contract": contract,
+            "permitted_tools": [],
+            "max_usd": max_usd,
+            "timeout_seconds": timeout_seconds,
+            "status": "proposed",
+        }
+        validated = ScheduledAgentProposal.model_validate({**terms, "preview_sha256": "0" * 64})
+        terms = validated.model_dump(mode="json", exclude={"preview_sha256"})
+        proposal = validated.model_copy(update={"preview_sha256": _digest(terms)})
+        key = f"agent-proposal-{request_id}"
+        with self.repository.control_writer(session_id) as writer:
+            events = self.repository.control_read(session_id).events
+            prior = next((event for event in events if event.key == key), None)
+            if prior is not None:
+                saved = self._read_agent_proposal(session_id, request_id, prior)
+                if saved != proposal:
+                    msg = "This request already identifies a different agent execution proposal"
+                    raise HeinzelError(msg)
+                return saved
+            body = immutable_body(writer, "agent-proposal", proposal.model_dump(mode="json"), control=True)
+            writer.append("agent.proposed", key=key, data=body.model_dump(mode="json"))
+        return proposal
+
+    def scheduled_agent_proposal(self, session_id: str, request_id: str) -> ScheduledAgentProposal:
+        """Read the owner's exact inert execution proposal for human review.
+
+        Raises:
+            HeinzelError: If the proposal does not exist.
+        """
+        _REQUEST.validate_python(request_id)
+        events = self.repository.control_read(session_id).events
+        prior = next(
+            (
+                event
+                for event in events
+                if event.kind == "agent.proposed" and event.key == f"agent-proposal-{request_id}"
+            ),
+            None,
+        )
+        if prior is None:
+            msg = "This agent execution proposal does not exist"
+            raise HeinzelError(msg)
+        return self._read_agent_proposal(session_id, request_id, prior)
+
+    def _read_agent_proposal(self, session_id: str, request_id: str, event: SessionEvent) -> ScheduledAgentProposal:
+        try:
+            proposal = ScheduledAgentProposal.model_validate(self._body(session_id, event))
+            terms = proposal.model_dump(mode="json", exclude={"preview_sha256"})
+        except (ValidationError, TypeError, ValueError):
+            msg = "This agent execution proposal is invalid; restore its private snapshot"
+            raise HeinzelError(msg) from None
+        if (
+            event.kind != "agent.proposed"
+            or proposal.session_id != session_id
+            or proposal.request_id != request_id
+            or proposal.preview_sha256 != _digest(terms)
+        ):
+            msg = "This agent execution proposal is invalid; restore its private snapshot"
+            raise HeinzelError(msg)
+        return proposal
 
     def propose_check_in(self, session_id: str, request_id: str, timezone: str = "UTC") -> "SessionSnapshot":
         """Store a proposal for one local five-minute check-in; it remains inert until activated by the person.

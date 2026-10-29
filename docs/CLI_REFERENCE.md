@@ -648,8 +648,10 @@ $ hz heinzel [OPTIONS] COMMAND [ARGS]...
 * `playbooks`: (expert) List the playbooks plugins...
 * `profile`: Save this Heinzel&#x27;s name or look against...
 * `propose-check-in`: Propose local five-minute check-ins; the...
+* `propose-scheduled-agent`: Save an inert agent execution proposal; it...
 * `prune`: (expert) Delete drafts and records older...
 * `schedule-control`: Pause a schedule; activation and resume...
+* `scheduled-agent-proposal`: Inspect the exact inert proposal; a...
 * `sent`: (expert) Record how much of a draft you...
 * `session`: Open one durable Heinzel and an ordered...
 * `sessions`: List your durable personal Heinzels,...
@@ -874,6 +876,30 @@ $ hz heinzel propose-check-in [OPTIONS] {session_id} {request_id}
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
 
+### `hz heinzel propose-scheduled-agent`
+
+Save an inert agent execution proposal; it neither approves nor starts a model turn.
+
+**Usage**:
+
+```console
+$ hz heinzel propose-scheduled-agent [OPTIONS] {session_id} {request_id} {contract} {max_usd} {timeout_seconds}
+```
+
+**Arguments**:
+
+* `session_id`: [required]
+* `request_id`: [required]
+* `contract`: Exact instructions to preview for a future agent turn.  [required]
+* `max_usd`: Proposed per-turn USD limit; not yet enforced.  [required]
+* `timeout_seconds`: Proposed maximum seconds per turn.  [required]
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
 ### `hz heinzel prune`
 
 (expert) Delete drafts and records older than ` retention_days` (default 90); receipts are kept.
@@ -913,6 +939,27 @@ $ hz heinzel schedule-control [OPTIONS] {session_id} {request_id} {expected_revi
 * `--approval-proof <str>`: Human-issued exact-intent proof required to activate or resume; never returned by reads. On CLI, pass `-` to read it from hidden input or stdin.
 * `--expected-contract-version <int>`: The contract version in the schedule preview.  [default: 1]
 * `--expected-preview-hash <str>`: The preview hash shown for this exact schedule.
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz heinzel scheduled-agent-proposal`
+
+Inspect the exact inert proposal; a separate future human approval is required to run it.
+
+**Usage**:
+
+```console
+$ hz heinzel scheduled-agent-proposal [OPTIONS] {session_id} {request_id}
+```
+
+**Arguments**:
+
+* `session_id`: [required]
+* `request_id`: [required]
+
+**Options**:
+
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.

@@ -308,6 +308,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/heinzel/propose-scheduled-agent": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Save an inert agent execution proposal; it neither approves nor starts a model turn.
+         * @description Save an inert agent execution proposal; it neither approves nor starts a model turn.
+         */
+        post: operations["heinzel_propose_scheduled_agent"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/heinzel/schedule-control": {
         parameters: {
             query?: never;
@@ -325,6 +345,26 @@ export interface paths {
          *         HeinzelError: If the schedule is stale or approval is invalid or unavailable.
          */
         post: operations["heinzel_schedule_control"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/heinzel/scheduled-agent-proposal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Inspect the exact inert proposal; a separate future human approval is required to run it.
+         * @description Inspect the exact inert proposal; a separate future human approval is required to run it.
+         */
+        get: operations["heinzel_scheduled_agent_proposal"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -7896,6 +7936,54 @@ export interface components {
             value: string;
         };
         /**
+         * ScheduledAgentProposal
+         * @description An inert execution proposal; creating or reading it never authorizes a run.
+         */
+        ScheduledAgentProposal: {
+            /**
+             * Contract
+             * @description Exact instructions proposed for each scheduled model turn.
+             */
+            contract: string;
+            /**
+             * Max Usd
+             * @description Proposed maximum USD cost per turn; enforcement is not yet available.
+             */
+            max_usd: number;
+            /**
+             * Permitted Tools
+             * @description The tools the proposed turn may use; this slice permits none.
+             */
+            permitted_tools: string[];
+            /**
+             * Preview Sha256
+             * @description Hash of the exact proposed terms, not an approval proof.
+             */
+            preview_sha256: string;
+            /**
+             * Request Id
+             * @description The proposal's stable request identity.
+             */
+            request_id: string;
+            /**
+             * Session Id
+             * @description The owner-scoped personal session.
+             */
+            session_id: string;
+            /**
+             * Status
+             * @description No execution approval has been granted.
+             * @default proposed
+             * @constant
+             */
+            status: "proposed";
+            /**
+             * Timeout Seconds
+             * @description Proposed maximum duration per turn in seconds.
+             */
+            timeout_seconds: number;
+        };
+        /**
          * SessionCosts
          * @description The same visible budget for every head and backend, with plan estimates labelled separately.
          */
@@ -10491,6 +10579,34 @@ export interface components {
              */
             timezone: string;
         };
+        /** heinzel_propose_scheduled_agent_Input */
+        heinzel_propose_scheduled_agent_Input: {
+            /**
+             * Contract
+             * @description Exact instructions to preview for a future agent turn.
+             */
+            contract: string;
+            /**
+             * Max Usd
+             * @description Proposed per-turn USD limit; not yet enforced.
+             */
+            max_usd: number;
+            /**
+             * Request Id
+             * @description A stable client request id; reuse it only for an exact retry.
+             */
+            request_id: string;
+            /**
+             * Session Id
+             * @description The stable personal session id returned by new-chat or sessions.
+             */
+            session_id: string;
+            /**
+             * Timeout Seconds
+             * @description Proposed maximum seconds per turn.
+             */
+            timeout_seconds: number;
+        };
         /** heinzel_schedule_control_Input */
         heinzel_schedule_control_Input: {
             /**
@@ -10700,6 +10816,7 @@ export type SchemaRunMeasure = components['schemas']['RunMeasure'];
 export type SchemaRunOperation = components['schemas']['RunOperation'];
 export type SchemaScene = components['schemas']['Scene'];
 export type SchemaSceneStep = components['schemas']['SceneStep'];
+export type SchemaScheduledAgentProposal = components['schemas']['ScheduledAgentProposal'];
 export type SchemaSessionCosts = components['schemas']['SessionCosts'];
 export type SchemaSessionList = components['schemas']['SessionList'];
 export type SchemaSessionMessage = components['schemas']['SessionMessage'];
@@ -10767,6 +10884,7 @@ export type SchemaHeinzelChatInput = components['schemas']['heinzel_chat_Input']
 export type SchemaHeinzelNewChatInput = components['schemas']['heinzel_new_chat_Input'];
 export type SchemaHeinzelProfileInput = components['schemas']['heinzel_profile_Input'];
 export type SchemaHeinzelProposeCheckInInput = components['schemas']['heinzel_propose_check_in_Input'];
+export type SchemaHeinzelProposeScheduledAgentInput = components['schemas']['heinzel_propose_scheduled_agent_Input'];
 export type SchemaHeinzelScheduleControlInput = components['schemas']['heinzel_schedule_control_Input'];
 export type SchemaSystemStatePushInput = components['schemas']['system_state_push_Input'];
 export type SchemaSystemStateResetInput = components['schemas']['system_state_reset_Input'];
@@ -11241,6 +11359,39 @@ export interface operations {
             };
         };
     };
+    heinzel_propose_scheduled_agent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["heinzel_propose_scheduled_agent_Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScheduledAgentProposal"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     heinzel_schedule_control: {
         parameters: {
             query?: never;
@@ -11261,6 +11412,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SessionSnapshot"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    heinzel_scheduled_agent_proposal: {
+        parameters: {
+            query: {
+                session_id: string;
+                request_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScheduledAgentProposal"];
                 };
             };
             /** @description Validation Error */

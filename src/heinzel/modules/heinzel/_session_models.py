@@ -77,6 +77,25 @@ class ReferenceBlock(BaseModel):
 ResultBlock = Annotated[TextBlock | RendererBlock | ReferenceBlock, Field(discriminator="kind")]
 
 
+class ScheduledAgentProposal(BaseModel):
+    """An inert execution proposal; creating or reading it never authorizes a run."""
+
+    session_id: SessionId = Field(description="The owner-scoped personal session.")
+    request_id: RequestId = Field(description="The proposal's stable request identity.")
+    contract: str = Field(
+        description="Exact instructions proposed for each scheduled model turn.", min_length=1, max_length=4000
+    )
+    permitted_tools: list[str] = Field(
+        description="The tools the proposed turn may use; this slice permits none.", max_length=0
+    )
+    max_usd: float = Field(
+        description="Proposed maximum USD cost per turn; enforcement is not yet available.", gt=0, allow_inf_nan=False
+    )
+    timeout_seconds: int = Field(description="Proposed maximum duration per turn in seconds.", ge=1, le=300)
+    status: Literal["proposed"] = Field(default="proposed", description="No execution approval has been granted.")
+    preview_sha256: Digest = Field(description="Hash of the exact proposed terms, not an approval proof.")
+
+
 class SessionMessage(BaseModel):
     """A visible message or an explicit gap where private body content expired."""
 
