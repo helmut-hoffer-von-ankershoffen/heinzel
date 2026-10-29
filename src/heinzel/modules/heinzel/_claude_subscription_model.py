@@ -11,6 +11,7 @@ import json
 import math
 import os
 import re
+import stat
 import tempfile
 import threading
 from collections.abc import Callable
@@ -64,6 +65,34 @@ _FLAGS = (
     "--allowed-tools",
     "",
 )
+
+
+def executable_digest(path: Path) -> str:
+    """Hash a bounded regular executable without blocking on a substituted FIFO or following a new link.
+
+    Raises:
+        HeinzelError: If the executable cannot be safely read.
+    """
+    invalid = "The selected Claude Code executable is unavailable"
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW)
+        with os.fdopen(fd, "rb") as stream:
+            info = os.fstat(stream.fileno())
+            if not stat.S_ISREG(info.st_mode) or info.st_size > 256 * 1024 * 1024:
+                raise HeinzelError(invalid)  # noqa: TRY301 - one redacted error for all unsafe files
+            digest = hashlib.sha256()
+            remaining = info.st_size
+            while remaining:
+                data = stream.read(min(remaining, 1024 * 1024))
+                if not data:
+                    raise HeinzelError(invalid)  # noqa: TRY301
+                digest.update(data)
+                remaining -= len(data)
+            if stream.read(1):
+                raise HeinzelError(invalid)  # noqa: TRY301
+            return digest.hexdigest()
+    except (OSError, HeinzelError):
+        raise HeinzelError(invalid) from None
 
 
 @dataclass(frozen=True, slots=True)
@@ -252,9 +281,7 @@ class ClaudeSubscriptionModel(Model):
         self._inflight = True
         try:
             executable = self._executable.resolve(strict=True)
-            if executable.stat().st_size > 256 * 1024 * 1024:
-                raise HeinzelError(denied)  # noqa: TRY301 - all process failures are redacted at this boundary
-            digest = hashlib.sha256(executable.read_bytes()).hexdigest()
+            digest = executable_digest(executable)
             if self._current_policy() != self._policy or not self._verifier.verify(
                 executable, digest, _VERSION, _COMMAND_FLAGS, self._policy
             ):
@@ -280,7 +307,7 @@ class ClaudeSubscriptionModel(Model):
                     raise HeinzelError(denied)  # noqa: TRY301
                 if (
                     self._current_policy() != self._policy
-                    or hashlib.sha256(executable.read_bytes()).hexdigest() != digest
+                    or executable_digest(executable) != digest
                     or not self._verifier.verify(executable, digest, _VERSION, _COMMAND_FLAGS, self._policy)
                 ):
                     raise HeinzelError(denied)  # noqa: TRY301 - all process failures are redacted at this boundary
