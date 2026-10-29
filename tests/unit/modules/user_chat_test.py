@@ -231,7 +231,6 @@ def test_fake_model_proposes_contract_in_owner_private_journal(tmp_path):
             arguments={
                 "expected_revision": 0,
                 "contract": "Review a document",
-                "max_usd": 0.2,
                 "timeout_seconds": 30,
             },
         )
@@ -241,6 +240,7 @@ def test_fake_model_proposes_contract_in_owner_private_journal(tmp_path):
         proposal = crud.latest_scheduled_agent_proposal(session)
         assert proposal.contract == "Review a document"
         assert proposal.status == "proposed"
+        assert proposal.max_usd is None
         assert crud.snapshot(session).schedule is None
         assert [(item.tool, item.status) for item in service.activity(session).items] == [
             ("agent:propose", "requested"),
@@ -258,3 +258,49 @@ def test_executable_size_boundary_accepts_installed_cli_without_large_fixture():
     assert _allowed_executable_stat(SimpleNamespace(st_mode=S_IFREG, st_size=512 * 1024 * 1024))
     assert not _allowed_executable_stat(SimpleNamespace(st_mode=S_IFREG, st_size=512 * 1024 * 1024 + 1))
     assert not _allowed_executable_stat(SimpleNamespace(st_mode=S_IFIFO, st_size=1))
+
+
+def test_subscription_subprocess_environment_preserves_identity_but_not_ambient_secrets(monkeypatch, tmp_path):
+    from heinzel.modules.heinzel._claude_subscription_model import subscription_environment
+
+    monkeypatch.setenv("USER", "fixture-user")
+    monkeypatch.setenv("LOGNAME", "fixture-login")
+    monkeypatch.setenv("SHELL", "/bin/sh")
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "private-fixture-key")
+    monkeypatch.setenv("HTTPS_PROXY", "https://private.invalid")
+    env = subscription_environment()
+    assert env["USER"] == "fixture-user"
+    assert env["LOGNAME"] == "fixture-login"
+    assert env["SHELL"] == "/bin/sh"
+    assert env["XDG_CONFIG_HOME"] == str(tmp_path)
+    assert "ANTHROPIC_API_KEY" not in env
+    assert "HTTPS_PROXY" not in env
+    assert "private-fixture-key" not in repr(env)
+
+
+def test_auth_and_model_processes_receive_same_restricted_identity_environment(tmp_path, monkeypatch):
+    from heinzel.modules.system.runner._process import run_bounded
+
+    monkeypatch.setenv("USER", "fixture-user")
+    monkeypatch.setenv("LOGNAME", "fixture-login")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "private-fixture-key")
+    monkeypatch.setenv("HTTPS_PROXY", "https://private.invalid")
+    observed = []
+
+    def execute(command, **kwargs):
+        observed.append(kwargs["env"].copy())
+        return run_bounded(command, **kwargs)
+
+    current = CurrentUser(tmp_path / "identity")
+    with current.local("cli"):
+        current, crud, session = setup_chat(current)
+        executable = fake_claude(tmp_path)
+        service = UserChatService(crud, current, load=lambda: FixtureConfig(executable), execute=execute)
+        assert asyncio.run(service.answer(session, "hello")).message.text == "A real recorded reply"
+    assert len(observed) >= 3
+    assert all(env == observed[0] for env in observed)
+    assert observed[0]["USER"] == "fixture-user"
+    assert observed[0]["LOGNAME"] == "fixture-login"
+    assert "ANTHROPIC_API_KEY" not in observed[0]
+    assert "HTTPS_PROXY" not in observed[0]

@@ -27,7 +27,6 @@ class _Empty(_Request):
 class _Agent(_Request):
     expected_revision: int = Field(ge=0)
     contract: str = Field(min_length=1, max_length=4000)
-    max_usd: float = Field(gt=0, allow_inf_nan=False)
     timeout_seconds: int = Field(ge=1, le=300)
 
 
@@ -109,7 +108,7 @@ class UserProposalTools:
                 agent = _Agent.model_validate(arguments)
                 if agent.expected_revision == 0:
                     proposal = self._crud.propose_scheduled_agent(
-                        self._session, request_id, agent.contract, agent.max_usd, agent.timeout_seconds
+                        self._session, request_id, agent.contract, None, agent.timeout_seconds
                     )
                 else:
                     proposal = self._crud.amend_scheduled_agent(
@@ -117,7 +116,7 @@ class UserProposalTools:
                         request_id,
                         agent.expected_revision,
                         agent.contract,
-                        agent.max_usd,
+                        None,
                         agent.timeout_seconds,
                     )
                 result = {

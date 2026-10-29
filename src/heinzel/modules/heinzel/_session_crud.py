@@ -992,7 +992,7 @@ class SessionCrud(ApprovalIssuer):
         return self._read_profile_proposal(session_id, event) if event else None
 
     def propose_scheduled_agent(
-        self, session_id: str, request_id: str, contract: str, max_usd: float, timeout_seconds: int
+        self, session_id: str, request_id: str, contract: str, max_usd: float | None, timeout_seconds: int
     ) -> ScheduledAgentProposal:
         """Store the first inert execution proposal; no approval or model turn occurs."""
         return self._propose_agent_revision(session_id, request_id, 0, contract, max_usd, timeout_seconds)
@@ -1003,7 +1003,7 @@ class SessionCrud(ApprovalIssuer):
         request_id: str,
         expected_revision: int,
         contract: str,
-        max_usd: float,
+        max_usd: float | None,
         timeout_seconds: int,
     ) -> ScheduledAgentProposal:
         """Propose a complete replacement against an inspected revision; it never activates a turn.
@@ -1024,7 +1024,7 @@ class SessionCrud(ApprovalIssuer):
         request_id: str,
         expected_revision: int,
         contract: str,
-        max_usd: float,
+        max_usd: float | None,
         timeout_seconds: int,
     ) -> ScheduledAgentProposal:
         _REQUEST.validate_python(request_id)

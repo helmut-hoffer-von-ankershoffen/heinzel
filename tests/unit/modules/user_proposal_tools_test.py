@@ -29,7 +29,6 @@ def test_proposal_tools_scope_to_owner_and_leave_profile_schedule_and_files_iner
                     {
                         "expected_revision": 0,
                         "contract": "Review the supplied document",
-                        "max_usd": 0.2,
                         "timeout_seconds": 30,
                     },
                     1,
@@ -37,13 +36,19 @@ def test_proposal_tools_scope_to_owner_and_leave_profile_schedule_and_files_iner
             )
             assert contract["status"] == "proposed"
             assert crud.latest_scheduled_agent_proposal(session).contract == "Review the supplied document"
+            assert crud.latest_scheduled_agent_proposal(session).max_usd is None
+            with pytest.raises(HeinzelError):
+                tools.dispatch(
+                    "agent:propose",
+                    {"expected_revision": 1, "contract": "x", "timeout_seconds": 30, "max_usd": 1.0},
+                    99,
+                )
             revised = json.loads(
                 tools.dispatch(
                     "agent:propose",
                     {
                         "expected_revision": 1,
                         "contract": "Revise the document",
-                        "max_usd": 0.2,
                         "timeout_seconds": 30,
                     },
                     2,
@@ -56,7 +61,6 @@ def test_proposal_tools_scope_to_owner_and_leave_profile_schedule_and_files_iner
                     {
                         "expected_revision": 1,
                         "contract": "stale",
-                        "max_usd": 0.2,
                         "timeout_seconds": 30,
                     },
                     3,
