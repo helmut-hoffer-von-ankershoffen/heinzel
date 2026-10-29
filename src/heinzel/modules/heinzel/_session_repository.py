@@ -112,6 +112,25 @@ class PersonalSessionRepository:
         with self._store("budget").writer("reservations", wait=True) as writer:
             yield writer
 
+    def subscription_read(self, session_id: str) -> SessionRead:
+        """Read an owner-scoped slot ledger only after checking session ownership."""
+        self._owned(session_id)
+        try:
+            return _verified(self._store("subscription").read("slots"))
+        except FileNotFoundError:
+            return SessionRead()
+
+    @contextmanager
+    def subscription_writer(self, session_id: str) -> Generator[SessionWriter]:
+        """Serialize slots across an owner's sessions.
+
+        Yields:
+            The exclusively locked owner slot writer.
+        """
+        self._owned(session_id)
+        with self._store("subscription").writer("slots", wait=True) as writer:
+            yield writer
+
     def main_read(self, session_id: str) -> SessionRead:
         """Read only after ownership is established; damaged prefixes cannot authorize resumed work."""
         self._owned(session_id)
