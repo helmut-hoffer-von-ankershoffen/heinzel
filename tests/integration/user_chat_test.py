@@ -126,3 +126,61 @@ def test_subscription_quota_error_has_safe_code_and_is_not_replayed(make_kernel,
     retry = client.post("/api/heinzel/answer-chat", headers=AUTH, json=body)
     assert retry.status_code == 400
     assert calls == [1]
+
+
+def test_owner_explicitly_sets_aside_uncertain_turn_and_can_continue(make_kernel, tmp_path):
+    import json
+
+    from heinzel.heads._exposure import exposed
+    from heinzel.modules.system.runner._process import Outcome, run_bounded
+
+    kernel = make_kernel(builtins=True)
+    current = kernel.resolve(CurrentUser)
+    crud = kernel.resolve(SessionCrud)
+    executable = fake_claude(tmp_path)
+    quota_calls = []
+
+    def execute(command, **kwargs):
+        if "--json-schema" in command and not quota_calls:
+            quota_calls.append(1)
+            return Outcome(
+                1,
+                json.dumps(
+                    {"type": "result", "is_error": True, "api_error_status": 429, "api_error": "usage_limit_reached"}
+                ),
+                "",
+            )
+        return run_bounded(command, **kwargs)
+
+    kernel.bind(
+        UserChatService, UserChatService(crud, current, load=lambda: FixtureConfig(executable), execute=execute)
+    )
+    client = web_client(kernel, tmp_path)
+    session = client.post("/api/heinzel/new-chat", headers=AUTH, json={"request_id": "resume"}).json()["session_id"]
+    first = {"session_id": session, "request_id": "first"}
+    client.post("/api/heinzel/chat", headers=AUTH, json={**first, "message": "First request"})
+    assert (
+        client.post("/api/heinzel/answer-chat", headers=AUTH, json=first).json()["code"] == "subscription_usage_limit"
+    )
+    second = {"session_id": session, "request_id": "second"}
+    client.post("/api/heinzel/chat", headers=AUTH, json={**second, "message": "Second request"})
+    blocked = client.post("/api/heinzel/answer-chat", headers=AUTH, json=second)
+    assert blocked.status_code == 400
+    assert "uncertain" in blocked.json()["error"]
+    path = "/api/heinzel/abandon-chat-turn"
+    assert client.post(path, json={**first, "acknowledge_uncertain": True}).status_code == 401
+    assert client.post(path, headers=AUTH, json={**first, "acknowledge_uncertain": False}).status_code == 400
+    resolved = client.post(path, headers=AUTH, json={**first, "acknowledge_uncertain": True})
+    assert resolved.status_code == 200, resolved.text
+    assert resolved.json() == {**first, "status": "abandoned"}
+    assert client.post(path, headers=AUTH, json={**first, "acknowledge_uncertain": True}).json() == resolved.json()
+    assert client.post("/api/heinzel/answer-chat", headers=AUTH, json=first).status_code == 400
+    result = client.post("/api/heinzel/answer-chat", headers=AUTH, json=second)
+    assert result.status_code == 200, result.text
+    assert result.json()["message"]["text"] == "A real recorded reply"
+    assert quota_calls == [1]
+    context = (tmp_path / "prompt-input").read_text()
+    assert "First request" in context
+    assert "set aside with an uncertain outcome" in context
+    assert "Second request" in context
+    assert "heinzel_abandon_chat_turn" not in {item.name for item in exposed(kernel, "mcp-stdio")}

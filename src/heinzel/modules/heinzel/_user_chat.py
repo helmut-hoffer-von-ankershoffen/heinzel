@@ -11,6 +11,7 @@ import tempfile
 from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -46,6 +47,14 @@ class UserChatAnswer(BaseModel):
     session_id: SessionId
     request_id: RequestId
     message: SessionMessage
+
+
+class UserTurnResolution(BaseModel):
+    """The exact stopped turn was explicitly set aside, not replayed or undone."""
+
+    session_id: SessionId
+    request_id: RequestId
+    status: Literal["abandoned"] = "abandoned"
 
 
 class UserToolActivity(BaseModel):
@@ -211,6 +220,50 @@ class UserChatService:
             backend_binding=BackendBinding(backend="claude-code", mode="cli-model", revision=1),
         )
         return UserChatAnswer(session_id=session, request_id=request, message=message)
+
+    def abandon(self, session: str, request: str) -> UserTurnResolution:
+        """Record an explicit owner decision to proceed without replaying a stopped uncertain turn.
+
+        Raises:
+            HeinzelError: If the turn is active, unstarted, finished, or not owner-bound.
+        """
+        self._owner(session, request)
+        repo = self._crud.repository
+        turn = _turn_id(request)
+        with repo.main_writer(session):
+            self._owner(session, request)
+            with repo.control_writer(session) as writer:
+                events = repo.control_read(session).events
+                starts = [e for e in events if e.kind == "interactive.started" and e.key == turn]
+                resolutions = [e for e in events if e.kind == "interactive.abandoned" and e.key == turn]
+                if len(starts) != 1 or starts[0].data.get("message_id") != request:
+                    msg = "Only a previously started uncertain turn can be set aside"
+                    raise HeinzelError(msg)
+                if any(e.kind == "message.replied" and e.key == turn for e in events):
+                    msg = "This turn already has a recorded reply"
+                    raise HeinzelError(msg)
+                if resolutions:
+                    if (
+                        len(resolutions) != 1
+                        or resolutions[0].data.get("message_id") != request
+                        or resolutions[0].data.get("owner") != repo.principal_id
+                        or resolutions[0].data.get("origin") not in _HEADS
+                        or resolutions[0].seq <= starts[0].seq
+                    ):
+                        msg = "This turn has an invalid resolution record"
+                        raise HeinzelError(msg)
+                    return UserTurnResolution(session_id=session, request_id=request)
+                writer.append(
+                    "interactive.abandoned",
+                    key=turn,
+                    turn=turn,
+                    data={
+                        "message_id": request,
+                        "owner": repo.principal_id,
+                        "origin": self._current.context().authentication,
+                    },
+                )
+        return UserTurnResolution(session_id=session, request_id=request)
 
     def activity(self, session: str, limit: int = 30) -> UserToolActivity:
         """Return only owner-bound host-observed tool activity."""

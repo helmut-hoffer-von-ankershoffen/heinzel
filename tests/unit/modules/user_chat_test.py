@@ -304,3 +304,28 @@ def test_auth_and_model_processes_receive_same_restricted_identity_environment(t
     assert observed[0]["LOGNAME"] == "fixture-login"
     assert "ANTHROPIC_API_KEY" not in observed[0]
     assert "HTTPS_PROXY" not in observed[0]
+
+
+def test_abandon_requires_owner_stopped_turn_and_never_changes_finished_reply(tmp_path):
+    from heinzel import CallIdentity, Principal
+    from heinzel.modules.heinzel._interactive_turn import _turn_id
+
+    current = CurrentUser(tmp_path / "identity")
+    with current.local("cli"):
+        current, crud, session = setup_chat(current)
+        executable = fake_claude(tmp_path)
+        service = UserChatService(crud, current, load=lambda: FixtureConfig(executable))
+        with pytest.raises(HeinzelError, match="previously started"):
+            service.abandon(session, "hello")
+        turn = _turn_id("hello")
+        with crud.repository.control_writer(session) as writer:
+            writer.append("interactive.started", key=turn, turn=turn, data={"message_id": "hello"})
+        stranger = CallIdentity(
+            Principal("u-" + "a" * 32), "api-bearer", "other", "private", frozenset({"private:write"})
+        )
+        with current.using(stranger), pytest.raises(HeinzelError):
+            service.abandon(session, "hello")
+        with crud.repository.main_writer(session), pytest.raises(HeinzelError):
+            service.abandon(session, "hello")
+        assert service.abandon(session, "hello").status == "abandoned"
+        assert service.abandon(session, "hello").status == "abandoned"
