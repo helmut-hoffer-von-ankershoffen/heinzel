@@ -160,6 +160,7 @@ export const everyday: SchemaExpertMode = { expert: false, operations: audiences
 export const expert: SchemaExpertMode = { expert: true, operations: audiences, next: ["hz system expert off"] };
 
 export const shell = {
+  "/api/system/ui/views": [],
   "/api/system/ui/navigation": [],
   "/api/system/expert": everyday,
   "/api/heinzel/list": contracts,

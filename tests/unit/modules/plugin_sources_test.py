@@ -85,7 +85,7 @@ def test_pypi_packages_and_https_git_repositories_are_taken(spec, kind, name, ur
     ],
 )
 def test_everything_else_is_refused_with_what_is_taken(spec, why):
-    with pytest.raises(HeinzelError, match="takes a first-party name") as refused:
+    with pytest.raises(HeinzelError, match="takes a catalog short name") as refused:
         _sources.parse(spec)
     assert why in str(refused.value)
 
@@ -149,6 +149,19 @@ def test_gh_timing_out_is_unreachable(monkeypatch):
     monkeypatch.setattr(_sources.subprocess, "run", run)
     with pytest.raises(OSError, match="timed out"):
         _sources.github_getter(None)("repos/o/x")
+
+
+def test_an_installed_but_unsigned_gh_falls_back_to_public_https(monkeypatch):
+    monkeypatch.setattr(_sources.shutil, "which", lambda name: "/opt/bin/gh")
+    monkeypatch.setattr(
+        _sources.subprocess,
+        "run",
+        lambda command, **_: subprocess.CompletedProcess(command, 4, "", "To get started, run: gh auth login"),
+    )
+    requests = []
+    monkeypatch.setattr(_sources, "get_json", lambda url, *_: requests.append(url) or {"public": True})
+    assert _sources.github_getter(None)("repos/example/heinzel-harbor") == {"public": True}
+    assert requests == ["https://api.github.com/repos/example/heinzel-harbor"]
 
 
 def test_without_gh_public_repositories_are_read_over_https(monkeypatch):

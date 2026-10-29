@@ -52,7 +52,7 @@ def command(  # noqa: PLR0913 - the head's collaborators, plus the optional prol
     parameters = [
         _cli_parameter(parameter)
         for parameter in operation.signature().parameters.values()
-        if not kernel.provides(get_origin(parameter.annotation) or parameter.annotation)
+        if not kernel.provides(parameter.annotation)
     ]
     format_option = inspect.Parameter(
         FORMAT_PARAMETER,

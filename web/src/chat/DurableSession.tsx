@@ -619,12 +619,22 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
         {query.data?.session_id === sessionId && <SkillDraftPanel key={`skills:${sessionId}`} sessionId={sessionId} />}
         {(historyCursors.length > 1 || query.data?.has_more) && (
           <nav aria-label="Conversation history" className="space-y-2 rounded border border-border p-2 text-sm">
-            {query.isFetching && <p role="status">Loading this message page…</p>}
-            <p>
-              {query.data?.has_more
-                ? "More messages follow this page, including any newer queued messages."
-                : "You are viewing the latest message page."}
-            </p>
+            {query.isFetching || query.isPlaceholderData ? (
+              <p role="status">Loading this message page…</p>
+            ) : query.isError ? (
+              <div className="space-y-2" role="alert">
+                <p>This message page could not be loaded. You can retry or return to an earlier page.</p>
+                <Button type="button" size="sm" variant="outline" onClick={() => void query.refetch()}>
+                  Retry message page
+                </Button>
+              </div>
+            ) : query.data ? (
+              <p>
+                {query.data.has_more
+                  ? "More messages follow this page, including any newer queued messages."
+                  : "You are viewing the latest message page."}
+              </p>
+            ) : null}
             <div className="flex flex-wrap gap-2">
               {historyCursors.length > 1 && (
                 <Button

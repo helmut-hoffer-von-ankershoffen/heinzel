@@ -3,10 +3,10 @@
 # Run by the hz-init skill; safe to run again. Honours uv's UV_TOOL_DIR / UV_TOOL_BIN_DIR and Heinzelmännchen's HZ_* settings.
 #
 # Usage: install.sh [--version vX.Y.Z] [--plugin SPEC]...
-#   HZ_SOURCE overrides where Heinzelmännchen comes from (default: the GitHub repository; a wheel or path works too).
+#   HZ_SOURCE selects a development core source instead of the verified standard app (a wheel or path works too).
 set -euo pipefail
 
-source_spec="${HZ_SOURCE:-git+https://github.com/helmut-hoffer-von-ankershoffen/heinzel}"
+source_spec="${HZ_SOURCE:-heinzel}"
 version=""
 plugins=()
 
@@ -23,7 +23,11 @@ command -v uv >/dev/null || { echo "error: uv is required: https://docs.astral.s
 
 spec="$source_spec${version:+@$version}"
 hz="$(uv --color never tool dir --bin)/hz"
-if [[ -x "$hz" ]]; then
+if [[ -z "${HZ_SOURCE:-}" ]]; then
+  spec="heinzel${version:+==${version#v}}"
+  echo "==> Installing the verified standard app from $spec"
+  uvx --from "$spec" hz-install
+elif [[ -x "$hz" ]]; then
   echo "==> Updating Heinzelmännchen from $spec, keeping its plugins"
   "$hz" system update --source "$spec"
 else

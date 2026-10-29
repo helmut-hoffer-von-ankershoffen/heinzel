@@ -248,6 +248,34 @@ describe("personal conversation links", () => {
     expect(calls.some((request) => new URL(request.url).searchParams.get("cursor") === "opaque-page-51")).toBe(true);
   });
 
+  it("does not label a failed history page as the latest and retries its exact cursor", async () => {
+    let attempts = 0;
+    const { calls } = mockApi({
+      ...shell,
+      "/api/heinzel/session": (request: Request) => {
+        if (new URL(request.url).searchParams.get("cursor") !== "next-page")
+          return { ...snapshot, has_more: true, next_cursor: "next-page" };
+        attempts += 1;
+        return attempts === 1
+          ? { status: 503, body: { error: "History unavailable" } }
+          : {
+              ...snapshot,
+              messages: [{ id: "new", seq: 52, role: "user", text: "Recovered later message" }],
+              has_more: false,
+            };
+      },
+    });
+    renderAt(`/heinzel?chat=${sessionId}`);
+    const panel = within(await screen.findByRole("complementary", { name: "Chat" }));
+    fireEvent.click(await panel.findByRole("button", { name: "Newer messages" }));
+    expect(await panel.findByText(/This message page could not be loaded/)).toBeInTheDocument();
+    expect(panel.queryByText("You are viewing the latest message page.")).not.toBeInTheDocument();
+    expect(panel.getByRole("button", { name: "Earlier messages" })).toBeEnabled();
+    fireEvent.click(panel.getByRole("button", { name: "Retry message page" }));
+    expect(await panel.findByText("Recovered later message")).toBeInTheDocument();
+    expect(calls.filter((request) => new URL(request.url).searchParams.get("cursor") === "next-page")).toHaveLength(2);
+  });
+
   it("keeps one artifact and skill section across repeated session refreshes", async () => {
     const client = queryClient();
     mockApi({

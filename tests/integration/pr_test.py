@@ -1,10 +1,12 @@
 """scripts/pr.sh (`make pr`) against throwaway git repositories, with `uv`, `make` and `gh` stubbed out."""
 
+import json
 import os
 import re
 import shlex
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -295,6 +297,129 @@ def test_pushes_a_branch_that_fast_forwards_after_preflight(repo):
     assert repo.remote() == head
     assert repo.log("make") == ["--no-print-directory preflight BASE=origin/main"]
     assert f"✓ {URL} (squash auto-merge on)" in done.stdout
+
+
+@pytest.mark.parametrize("mixed", [False, True])
+def test_actual_pr_selects_owning_preflight_for_plugin_only_changes_and_preserves_core_checks(repo, mixed):
+    helper = repo.dir / "scripts/scoped_checks.py"
+    helper.parent.mkdir()
+    repo.commit("scripts/scoped_checks.py", (SCRIPT.parent / "scoped_checks.py").read_text())
+    repo.git("push", "--quiet", "origin", "HEAD:main")
+    repo.git("fetch", "--quiet", "origin", "main")
+    (repo.dir / "plugins/heinzel-harbor").mkdir(parents=True)
+    repo.commit("plugins/heinzel-harbor/feature.py", "value = 1")
+    if mixed:
+        repo.commit("core.py", "core = True")
+    # Run the real scope helper and Git diff, but capture SDK and make invocations instead of testing Core.
+    (repo.tmp / "bin/uv").write_text(
+        f"#!{sys.executable}\nimport json,os,subprocess,sys\nfrom pathlib import Path\n"
+        "args=sys.argv[1:]\n"
+        "with (Path(os.environ['LOG'])/'scope').open('a') as stream: stream.write(json.dumps(args)+'\\n')\n"
+        "if 'scripts/scoped_checks.py' in args:\n"
+        "    index=args.index('scripts/scoped_checks.py')\n"
+        "    sys.exit(subprocess.call([sys.executable,*args[index:]]))\n"
+        "if 'hz-plugin' in args and 'plan' in args:\n"
+        "    print(json.dumps({'include':[{'name':'heinzel-harbor'},{'name':'heinzel-reader'}]}))\n"
+    )
+    done = repo.pr()
+    assert done.returncode == 0, done.stderr
+    calls = [json.loads(line) for line in repo.log("scope")]
+    owning = [call[call.index("hz-plugin") + 1 :] for call in calls if "hz-plugin" in call]
+    if mixed:
+        assert repo.log("make") == ["preflight BASE=origin/main"]
+        assert owning == []
+    else:
+        assert repo.log("make") == ["commits secrets BASE=origin/main"]
+        assert ["run", "--script", "scripts/check_confidentiality.py"] in calls
+        assert owning == [
+            ["plan", "--changed", "plugins/heinzel-harbor/feature.py"],
+            ["preflight", "heinzel-harbor"],
+            ["preflight", "heinzel-reader"],
+        ]
+
+
+@pytest.mark.parametrize("change", ["deleted-plugin", "untracked-plugin", "core"])
+def test_core_root_agent_scope_uses_owning_checks_including_deletions_and_untracked_files(repo, change):
+    (repo.dir / "scripts").mkdir()
+    helper = repo.dir / "scripts/scoped_checks.py"
+    repo.commit("scripts/scoped_checks.py", (SCRIPT.parent / "scoped_checks.py").read_text())
+    (repo.dir / "plugins/heinzel-harbor").mkdir(parents=True)
+    repo.commit("plugins/heinzel-harbor/obsolete.py", "value = 1")
+    if change == "deleted-plugin":
+        (repo.dir / "plugins/heinzel-harbor/obsolete.py").unlink()
+    else:
+        path = "plugins/heinzel-harbor/new.py" if change == "untracked-plugin" else "core.py"
+        (repo.dir / path).write_text("value = 2\n")
+    done = subprocess.run(
+        [sys.executable, str(helper), "fast"],
+        cwd=repo.dir,
+        env=repo.env,
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    assert done.returncode == 0, done.stderr
+    if change == "core":
+        assert repo.log("make") == ["check-fast BASE=origin/main"]
+    else:
+        assert repo.log("make") == []
+        assert any("hz-plugin check-changed --changed plugins/heinzel-harbor/" in call for call in repo.log("uv"))
+
+
+@pytest.mark.parametrize("core_host", [False, True])
+@pytest.mark.parametrize("filename", ["feature.py", "feature name.py", "föö.py"])
+def test_actual_agent_stop_hook_dispatches_scoped_checks_only_in_core_hosts(repo, core_host, filename):
+    if core_host:
+        (repo.dir / "scripts").mkdir()
+        repo.commit("scripts/scoped_checks.py", (SCRIPT.parent / "scoped_checks.py").read_text())
+    (repo.dir / "plugins/heinzel-harbor").mkdir(parents=True)
+    (repo.dir / "plugins/heinzel-harbor" / filename).write_text("value = 1\n")
+    hook = SCRIPT.parents[1] / ".claude/hooks/check_before_stop.py"
+    done = subprocess.run(
+        [sys.executable, str(hook)],
+        input=json.dumps({"cwd": str(repo.dir)}),
+        cwd=repo.dir,
+        env=repo.env,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=30,
+    )
+    assert done.returncode == 0, done.stderr
+    if core_host:
+        assert repo.log("uv") == [f"run --no-project --script {repo.dir}/scripts/scoped_checks.py fast"]
+        assert repo.log("make") == []
+    else:
+        assert repo.log("make") == ["check-fast"]
+
+
+@pytest.mark.parametrize("conflict", [False, True], ids=["clean merge", "resolved conflict"])
+def test_preserves_a_pushed_branch_after_merging_main(repo, conflict):
+    repo.commit("widget")
+    repo.push()
+    repo.commit("base", "feature")
+    repo.git("switch", "--quiet", "main")
+    repo.commit("base" if conflict else "gear", "main changes")
+    repo.git("push", "--quiet", "origin", "main")
+    repo.git("switch", "--quiet", "feat")
+    merged = subprocess.run(
+        ["git", "merge", "--no-edit", "main"], cwd=repo.dir, env=repo.env, capture_output=True, check=False, timeout=30
+    )
+    assert merged.returncode == (1 if conflict else 0)
+    if conflict:
+        (repo.dir / "base").write_text("feature and main\n", encoding="utf-8")
+        repo.git("add", "base")
+        repo.git("commit", "--quiet", "--no-edit")
+    head = repo.git("rev-parse", "HEAD")
+
+    done = repo.pr()
+
+    assert done.returncode == 0, done.stderr
+    assert repo.remote() == head, "an ordinary push must preserve the resolved merge and commit identities"
+    assert (repo.dir / "base").read_text(encoding="utf-8") == ("feature and main\n" if conflict else "feature\n")
+    assert repo.git("status", "--porcelain") == ""
+    assert repo.log("make") == ["--no-print-directory preflight BASE=origin/main"]
 
 
 @pytest.mark.parametrize(

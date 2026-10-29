@@ -1,5 +1,6 @@
 """Private operations use one owner and fail closed across local and authenticated network heads."""
 
+import base64
 import json
 import logging
 import subprocess
@@ -16,10 +17,11 @@ from fastapi.testclient import TestClient
 from mcp import Client
 from typer.testing import CliRunner
 
-from heinzel import Config, CurrentUser, HeinzelError, Module, Principal, Settings
+from heinzel import Config, CurrentUser, HeinzelError, Module, OperationLet, Principal, Settings
 from heinzel.heads import api, cli, mcp
 from heinzel.heads._exposure import API_PRIVATE, MCP_HTTP, exposed
 from heinzel.heads.api._auth import ApiBearer
+from heinzel.modules.system.plugin._service import PluginService
 
 pytestmark = pytest.mark.integration
 
@@ -82,6 +84,54 @@ def test_private_operations_are_absent_publicly_and_enforced_in_the_kernel(make_
         assert user.principal() == user.owner()
     with pytest.raises(HeinzelError, match="authenticated"):
         user.context()
+
+
+def test_private_plugin_catalog_is_absent_publicly_and_requires_the_owner_credential(make_kernel, monkeypatch):
+    monkeypatch.setenv("HZ_SYSTEM_PLUGIN__CATALOG_SOURCES", "[]")
+    kernel = make_kernel(builtins=True)
+    service = kernel.resolve(PluginService)
+    calls = []
+
+    def github(path):
+        calls.append(path)
+        if path.startswith("search/repositories?"):
+            return {
+                "items": [
+                    {
+                        "full_name": "example-private/heinzel-harbor",
+                        "html_url": "https://github.com/example-private/heinzel-harbor",
+                        "private": True,
+                    }
+                ]
+            }
+        if path.endswith("/plugins"):
+            msg = "No collection"
+            raise LookupError(msg)
+        content = (
+            '[project]\nname="heinzel-harbor"\n[project.entry-points."heinzel.modules"]\nharbor="heinzel_harbor"\n'
+        )
+        return {"encoding": "base64", "content": base64.b64encode(content.encode()).decode()}
+
+    service.github_api = github
+    operation = next(
+        let for owner, let in kernel.lets(OperationLet) if owner.qualname == "system.plugin" and let.name == "search"
+    )
+    public = TestClient(api.build(kernel), base_url=BASE)
+    assert public.get("/system/plugin/search").status_code == 404
+    assert "/system/plugin/search" not in public.get("/openapi.json").json()["paths"]
+    assert not any(item.operation is operation for item in exposed(kernel, MCP_HTTP))
+    with pytest.raises(HeinzelError, match="authenticated"):
+        kernel.invoke(operation)
+    app, auth, _ = protected(kernel)
+    private = TestClient(app, base_url=BASE)
+    assert private.get("/system/plugin/search").status_code == 401
+    assert calls == []
+    result = private.get("/system/plugin/search", headers=auth)
+    assert result.status_code == 200, result.text
+    [plugin] = result.json()["plugins"]
+    assert plugin["name"] == "heinzel-harbor"
+    assert plugin["private_repository"] is True
+    assert len(calls) == 3
 
 
 def test_private_api_requires_exact_credential_and_preserves_host_origin_guards(make_kernel):

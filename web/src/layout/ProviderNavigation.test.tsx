@@ -63,7 +63,7 @@ const answers = {
 };
 
 describe("navigation declared by any installed provider", () => {
-  it("normalizes contributed labels and gives legacy theme/weather preferences semantic closed icons", () => {
+  it("preserves provider titles and gives legacy theme/weather preferences semantic closed icons", () => {
     const theme = {
       ...provider,
       name: "acme",
@@ -77,7 +77,7 @@ describe("navigation declared by any installed provider", () => {
       id: `${module}:@settings`,
       module,
       plugin: `heinzel-${module}`,
-      title: module === "harbor" ? "weather" : module,
+      title: module === "harbor" ? "Weather" : "ACME",
       icon: "code",
       declared: false,
       settings: { sections: [module], group: "preferences" },
@@ -89,7 +89,7 @@ describe("navigation declared by any installed provider", () => {
       icon: ICONS["cloud-sun"],
     });
     const declared = settingsNav(["harbor"], [weather], [{ ...entry, title: "weather", icon: "code" }]);
-    expect(declared.pages.find((page) => page.id === entry.id)).toMatchObject({ title: "Weather", icon: ICONS.code });
+    expect(declared.pages.find((page) => page.id === entry.id)).toMatchObject({ title: "weather", icon: ICONS.code });
     const mixedCase = settingsNav(["harbor"], [weather], [{ ...entry, title: "eBay settings" }]);
     expect(mixedCase.pages.find((page) => page.id === entry.id)?.title).toBe("eBay settings");
   });
@@ -115,7 +115,7 @@ describe("navigation declared by any installed provider", () => {
         id: `${name}:@settings`,
         module: name,
         plugin: `heinzel-${name}`,
-        title: name,
+        title: name === "acme" ? "ACME" : "Weather",
         icon: "code",
         declared: false,
         settings: { group: "preferences", sections: [name] },

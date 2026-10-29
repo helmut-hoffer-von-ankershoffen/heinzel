@@ -10,7 +10,123 @@ import { t } from "@/i18n";
 
 const sessionsKey = ["heinzel", "sessions"] as const;
 const pendingCreation = "hz.personal-heinzel.creation";
+const profileDraftKey = (sessionId: string) => `hz.personal-heinzel.profile-draft.${sessionId}`;
+const profileSaveKey = (sessionId: string) => `hz.personal-heinzel.profile-save.${sessionId}`;
 const field = "block w-full rounded border border-border bg-background px-2 py-1 text-sm";
+
+type ProfileDraft = { name: string; appearance: SchemaHeinzelAppearance };
+type ProfileSave = ProfileDraft & { request_id: string; expected_revision: number };
+
+function readProfileSave(sessionId: string): { pending: ProfileSave | null; invalid: boolean } {
+  try {
+    const raw = sessionStorage.getItem(profileSaveKey(sessionId));
+    if (raw === null) return { pending: null, invalid: false };
+    const stored: unknown = JSON.parse(raw);
+    if (!stored || typeof stored !== "object") return { pending: null, invalid: true };
+    const value = stored as Record<string, unknown>;
+    const appearance = value.appearance;
+    if (
+      typeof value.request_id !== "string" ||
+      !/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(value.request_id) ||
+      typeof value.name !== "string" ||
+      typeof value.expected_revision !== "number" ||
+      !Number.isInteger(value.expected_revision) ||
+      value.expected_revision < 1 ||
+      !appearance ||
+      typeof appearance !== "object"
+    )
+      return { pending: null, invalid: true };
+    const look = appearance as Record<string, unknown>;
+    if (!AGES.includes(look.age as (typeof AGES)[number]) || !BUILDS.includes(look.build as (typeof BUILDS)[number]))
+      return { pending: null, invalid: true };
+    const beard = look.beard;
+    const hat = look.hat;
+    const shirt = look.shirt;
+    const accessories = look.accessories ?? [];
+    if (
+      (beard !== undefined && beard !== null && !BEARDS.includes(beard as (typeof BEARDS)[number])) ||
+      (hat !== undefined && hat !== null && !Object.hasOwn(HATS, String(hat))) ||
+      (shirt !== undefined && shirt !== null && !Object.hasOwn(SHIRTS, String(shirt))) ||
+      !Array.isArray(accessories) ||
+      !accessories.every(
+        (item) => typeof item === "string" && ACCESSORIES.includes(item as (typeof ACCESSORIES)[number]),
+      )
+    )
+      return { pending: null, invalid: true };
+    return {
+      pending: {
+        request_id: value.request_id,
+        name: value.name,
+        expected_revision: value.expected_revision,
+        appearance: {
+          age: look.age as SchemaHeinzelAppearance["age"],
+          build: look.build as SchemaHeinzelAppearance["build"],
+          ...(beard === undefined ? {} : { beard: beard as SchemaHeinzelAppearance["beard"] }),
+          ...(hat === undefined ? {} : { hat: hat as SchemaHeinzelAppearance["hat"] }),
+          ...(shirt === undefined ? {} : { shirt: shirt as SchemaHeinzelAppearance["shirt"] }),
+          accessories: accessories as SchemaHeinzelAppearance["accessories"],
+        },
+      },
+      invalid: false,
+    };
+  } catch {
+    return { pending: null, invalid: true };
+  }
+}
+
+function profileSaveApplied(pending: ProfileSave, snapshot: SchemaSessionSnapshot): boolean {
+  const saved = snapshot.appearance ?? { age: "grown", build: "regular" };
+  const requested = pending.appearance;
+  return (
+    snapshot.profile_revision > pending.expected_revision &&
+    snapshot.name === pending.name &&
+    saved.age === requested.age &&
+    saved.build === requested.build &&
+    (saved.beard ?? null) === (requested.beard ?? null) &&
+    (saved.hat ?? null) === (requested.hat ?? null) &&
+    (saved.shirt ?? null) === (requested.shirt ?? null) &&
+    JSON.stringify(saved.accessories ?? []) === JSON.stringify(requested.accessories ?? [])
+  );
+}
+
+function readProfileDraft(sessionId: string): ProfileDraft | null {
+  try {
+    const stored: unknown = JSON.parse(sessionStorage.getItem(profileDraftKey(sessionId)) ?? "null");
+    if (!stored || typeof stored !== "object" || !("name" in stored) || typeof stored.name !== "string") return null;
+    if (!("appearance" in stored) || !stored.appearance || typeof stored.appearance !== "object") return null;
+    const appearance = stored.appearance as Record<string, unknown>;
+    const age = appearance.age;
+    const build = appearance.build;
+    if (!AGES.includes(age as (typeof AGES)[number]) || !BUILDS.includes(build as (typeof BUILDS)[number])) return null;
+    const beard = appearance.beard;
+    const hat = appearance.hat;
+    const shirt = appearance.shirt;
+    const accessories = appearance.accessories ?? [];
+    if (
+      (beard !== undefined && beard !== null && !BEARDS.includes(beard as (typeof BEARDS)[number])) ||
+      (hat !== undefined && hat !== null && !Object.hasOwn(HATS, String(hat))) ||
+      (shirt !== undefined && shirt !== null && !Object.hasOwn(SHIRTS, String(shirt))) ||
+      !Array.isArray(accessories) ||
+      !accessories.every(
+        (item) => typeof item === "string" && ACCESSORIES.includes(item as (typeof ACCESSORIES)[number]),
+      )
+    )
+      return null;
+    return {
+      name: stored.name,
+      appearance: {
+        age: age as SchemaHeinzelAppearance["age"],
+        build: build as SchemaHeinzelAppearance["build"],
+        ...(beard === undefined ? {} : { beard: beard as SchemaHeinzelAppearance["beard"] }),
+        ...(hat === undefined ? {} : { hat: hat as SchemaHeinzelAppearance["hat"] }),
+        ...(shirt === undefined ? {} : { shirt: shirt as SchemaHeinzelAppearance["shirt"] }),
+        accessories: accessories as SchemaHeinzelAppearance["accessories"],
+      },
+    };
+  } catch {
+    return null;
+  }
+}
 
 // These private mutations do not use the API's 503-as-result convention: a non-2xx response is always uncertain.
 async function personalResult<T>(call: Promise<{ data?: T; error?: unknown; response: Response }>): Promise<T> {
@@ -41,7 +157,13 @@ export function PersonalHeinzels() {
   });
   const session = useQuery({
     queryKey: ["heinzel", "session", selected],
-    queryFn: () => personalResult(api.GET("/heinzel/session", { params: { query: { session_id: selected ?? "" } } })),
+    queryFn: async () => {
+      const result = await personalResult(
+        api.GET("/heinzel/session", { params: { query: { session_id: selected ?? "" } } }),
+      );
+      if (!selected || result.session_id !== selected) throw new Error("Invalid profile response");
+      return result;
+    },
     enabled: selected !== null,
     retry: false,
   });
@@ -120,29 +242,55 @@ export function ProfileEditor({
 }) {
   const client = useQueryClient();
   const navigate = useNavigate();
+  const [draftStorageFailed, setDraftStorageFailed] = useState(false);
+  const [draft] = useState(() => readProfileDraft(initial.session_id));
   const [snapshot, setSnapshot] = useState(initial);
-  const [name, setName] = useState(initial.name);
-  const [look, setLook] = useState<SchemaHeinzelAppearance>(initial.appearance ?? { age: "grown", build: "regular" });
-  const [pending, setPending] = useState<{
-    request_id: string;
-    name: string;
-    appearance: SchemaHeinzelAppearance;
-    expected_revision: number;
-  } | null>(null);
+  const [savedRequest] = useState(() => readProfileSave(initial.session_id));
+  const [name, setName] = useState(savedRequest.pending?.name ?? draft?.name ?? initial.name);
+  const [look, setLook] = useState<SchemaHeinzelAppearance>(
+    savedRequest.pending?.appearance ?? draft?.appearance ?? initial.appearance ?? { age: "grown", build: "regular" },
+  );
+  const [pending, setPending] = useState<ProfileSave | null>(savedRequest.pending);
+  const [pendingStorageInvalid, setPendingStorageInvalid] = useState(savedRequest.invalid);
   const [busy, setBusy] = useState(false);
   const savingNow = useRef(false);
   const [error, setError] = useState(false);
 
+  useEffect(() => {
+    const key = profileDraftKey(snapshot.session_id);
+    const savedLook = snapshot.appearance ?? { age: "grown", build: "regular" };
+    try {
+      if (name === snapshot.name && JSON.stringify(look) === JSON.stringify(savedLook)) sessionStorage.removeItem(key);
+      else sessionStorage.setItem(key, JSON.stringify({ name, appearance: look }));
+      setDraftStorageFailed(false);
+    } catch {
+      setDraftStorageFailed(true);
+    }
+  }, [look, name, snapshot]);
+
   const save = async () => {
-    if (savingNow.current) return;
+    if (savingNow.current || pendingStorageInvalid) return;
     savingNow.current = true;
-    const request = pending ?? {
+    const request: ProfileSave = pending ?? {
       request_id: crypto.randomUUID(),
       name,
       appearance: look,
       expected_revision: snapshot.profile_revision,
     };
+    try {
+      // Persist the id and exact body before sending. A reload can then retry idempotently or reconcile a lost ACK.
+      const serialized = JSON.stringify(request);
+      sessionStorage.setItem(profileSaveKey(snapshot.session_id), serialized);
+      if (sessionStorage.getItem(profileSaveKey(snapshot.session_id)) !== serialized)
+        throw new Error("Profile recovery unavailable");
+    } catch {
+      savingNow.current = false;
+      setDraftStorageFailed(true);
+      setError(true);
+      return;
+    }
     setPending(request);
+    setPendingStorageInvalid(false);
     onLock(true);
     setBusy(true);
     setError(false);
@@ -153,7 +301,7 @@ export function ProfileEditor({
       if (
         saved.session_id !== snapshot.session_id ||
         !Number.isInteger(saved.profile_revision) ||
-        saved.profile_revision <= request.expected_revision
+        !profileSaveApplied(request, saved)
       ) {
         throw new Error("Invalid profile acknowledgement");
       }
@@ -161,6 +309,11 @@ export function ProfileEditor({
       setName(saved.name);
       setLook(saved.appearance ?? { age: "grown", build: "regular" });
       setPending(null);
+      try {
+        sessionStorage.removeItem(profileSaveKey(snapshot.session_id));
+      } catch {
+        setDraftStorageFailed(true);
+      }
       onLock(false);
       client.setQueryData(["heinzel", "session", saved.session_id], saved);
       await client.invalidateQueries({ queryKey: sessionsKey });
@@ -180,11 +333,28 @@ export function ProfileEditor({
         api.GET("/heinzel/session", { params: { query: { session_id: snapshot.session_id } } }),
       );
       if (saved.session_id !== snapshot.session_id) throw new Error("Invalid profile response");
+      // A read at the original revision cannot rule out a delayed POST committing later.
+      // Once the revision advances, the old compare-and-swap can no longer newly apply.
+      if (
+        pendingStorageInvalid ||
+        !pending ||
+        !Number.isInteger(saved.profile_revision) ||
+        saved.profile_revision <= pending.expected_revision
+      )
+        throw new Error("Profile save remains uncertain");
       setSnapshot(saved);
       setName(saved.name);
       setLook(saved.appearance ?? { age: "grown", build: "regular" });
       client.setQueryData(["heinzel", "session", saved.session_id], saved);
       setPending(null);
+      setPendingStorageInvalid(false);
+      try {
+        sessionStorage.removeItem(profileSaveKey(snapshot.session_id));
+      } catch {
+        setDraftStorageFailed(true);
+        setError(true);
+        return;
+      }
       setError(false);
       onLock(false);
       await client.invalidateQueries({ queryKey: sessionsKey });
@@ -195,12 +365,14 @@ export function ProfileEditor({
       setBusy(false);
     }
   };
-  const disabled = busy || pending !== null;
+  const pendingNeedsReload =
+    pendingStorageInvalid || (pending !== null && snapshot.profile_revision !== pending.expected_revision);
+  const disabled = busy || pending !== null || pendingStorageInvalid;
   const savedLook = snapshot.appearance ?? { age: "grown" as const, build: "regular" as const };
   const hasUncommittedChanges = name !== snapshot.name || JSON.stringify(look) !== JSON.stringify(savedLook);
   useEffect(() => {
-    onLock(hasUncommittedChanges || pending !== null || busy);
-  }, [hasUncommittedChanges, pending, busy, onLock]);
+    onLock(hasUncommittedChanges || pending !== null || pendingStorageInvalid || busy);
+  }, [hasUncommittedChanges, pending, pendingStorageInvalid, busy, onLock]);
   return (
     <form
       className="space-y-3 border-t border-border pt-4"
@@ -334,11 +506,13 @@ export function ProfileEditor({
         </fieldset>
       </fieldset>
       {error && <p role="alert">{t("personal.saveError")}</p>}
+      {pendingNeedsReload && <p role="alert">{t("personal.saveOutcomeChanged")}</p>}
+      {draftStorageFailed && <p role="status">{t("personal.draftStorageFailed")}</p>}
       <div className="flex flex-wrap gap-2">
-        <Button type="submit" disabled={busy || !name.trim()}>
+        <Button type="submit" disabled={busy || pendingStorageInvalid || (!pending && !name.trim())}>
           {pending ? t("personal.retrySave") : t("personal.save")}
         </Button>
-        {pending && (
+        {(pending || pendingStorageInvalid) && (
           <Button type="button" variant="outline" disabled={busy} onClick={() => void reload()}>
             {t("personal.reload")}
           </Button>

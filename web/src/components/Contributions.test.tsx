@@ -152,7 +152,7 @@ describe("Contributions", () => {
     renderAt("/doctor");
     expect(await screen.findByRole("button", { name: "Team clock (2)" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Hidden/ })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Weather map" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Weather map" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Open weather report" })).not.toBeInTheDocument();
   });
 
@@ -294,4 +294,27 @@ describe("Contribution data", () => {
       "Release: 2 of 5",
     );
   });
+});
+
+it("exposes generic meter labels and readings without provider-specific details", async () => {
+  mockApi({
+    ...answers,
+    "/api/system/ui/status": [
+      {
+        ...entry,
+        id: "arbitrary:capacity",
+        slots: { footer: true },
+        item: {
+          text: "Capacity",
+          tone: "ok",
+          meters: [
+            { label: "Queue", value: 25, tone: "ok" },
+            { label: "Workers", value: null, tone: "neutral" },
+          ],
+        },
+      },
+    ],
+  });
+  renderAt("/doctor");
+  expect(await screen.findByRole("button", { name: /Capacity; Queue: 25%; Workers: unavailable/ })).toBeInTheDocument();
 });

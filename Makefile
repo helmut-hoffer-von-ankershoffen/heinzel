@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help install setup release-local doctor tools-verify check check-fast preflight fix lint format typecheck test test-parallel commits test-all-pythons test-unit test-integration test-perf test-e2e audit licenses secrets template-test template-sync docs attributions fuzz demo terminal-art notifier icons web-build web-dev test-web managed-backend-setup managed-backend-check desktop-electron-test desktop-electron-sandbox desktop-electron-native desktop-electron-package build pypi-clean-build-marker changelog ci-logs pr sync docs-plugins docs-record docs-site release clean
+.PHONY: help install setup release-local doctor tools-verify check check-fast preflight fix lint format typecheck test test-parallel commits test-all-pythons test-unit test-integration test-perf test-e2e test-browser-deps audit licenses secrets template-test template-sync docs attributions fuzz demo terminal-art notifier icons web-build web-dev test-web managed-backend-setup managed-backend-check desktop-electron-test desktop-electron-sandbox desktop-electron-native desktop-electron-package build pypi-clean-build-marker changelog ci-logs pr sync docs-plugins docs-record docs-site release clean
 
 # Quiet by default: one line per passing step, the tail of a failing one. VERBOSE=1 streams everything.
 # A step starting with & runs concurrently with the one before it; the first failure cancels the rest.
@@ -85,7 +85,7 @@ preflight: ## What CI checks, before you push: check with coverage, template, bu
 	$(STEPS) $(GATE) $(LINT) $(WEB_LINT) $(TYPES) $(WEB_TYPES) $(WEB_TESTS) \
 		"&tests=$(COVERED) -x && uv run coverage combine --quiet && uv run coverage report --format=total --fail-under=90" \
 		"&template=TEMPLATE_AUDIT=$(if $(filter full,$(PREFLIGHT)),1) bash scripts/template-test.sh" \
-		"&build=uv build --all-packages --quiet --out-dir .preflight-dist && rm -rf .preflight-dist" \
+		"&build=uv build --quiet --out-dir .preflight-dist && rm -rf .preflight-dist" \
 		"&commits=$(MAKE) --no-print-directory commits" $(MANAGED_CHECK)
 	@if [ "$(PREFLIGHT)" = full ]; then $(MAKE) --no-print-directory audit test-e2e; fi
 
@@ -98,7 +98,8 @@ fix: ## Fix what tools can fix: lockfile, formatting, lint autofixes, generated 
 		"&demo=uv run --script scripts/demo_tape.py" \
 		"&attributions=uv run --quiet --script scripts/attributions.py" \
 		"format=uv run ruff format --quiet ." \
-		"ruff=uv run ruff check --fix --quiet --exit-zero ."
+		"ruff=uv run ruff check --fix --quiet --exit-zero ." \
+		"format-final=uv run ruff format --quiet ."
 	@git status --short
 
 lint: ## Check formatting, lint, architecture contracts and workflows
@@ -107,6 +108,7 @@ lint: ## Check formatting, lint, architecture contracts and workflows
 format: ## Format and autofix
 	uv run ruff format .
 	uv run ruff check --fix .
+	uv run ruff format .
 
 typecheck: ## Type-check with mypy and pyright (both strict)
 	$(STEPS) "mypy=uv run mypy" "&pyright=uv run pyright" $(WEB_TYPES) $(MANAGED_TYPES)
@@ -182,6 +184,9 @@ test-integration: ## Run integration tests
 test-perf: ## Run the performance tests (timing assertions such as linear time); CI only, they flake on a loaded machine
 	$(STEPS) "perf=uv run pytest -m perf -q --session-timeout=120"
 
+test-browser-deps: ## Install browser runtimes and host libraries for Linux browser tests
+	@$(WEB) exec playwright-core install --with-deps chromium webkit
+
 test-e2e: ## Run end-to-end tests (needs network), on 3 workers
 	$(STEPS) "e2e=uv run pytest -m e2e -n 3 -q --session-timeout=600"
 
@@ -241,8 +246,8 @@ icons: ## Make every image of Heinzelmännchen from heinzel.svg: the web app's i
 terminal-art: ## Redraw Heinzelmännchen for the terminal from web/src/components/heinzel.ts (needs node, rsvg-convert, magick)
 	@uv run --quiet --script scripts/terminal_art.py && uv run --quiet ruff format --quiet src/heinzel/heads/cli/_art_data.py
 
-build: web-build ## Build wheels and sdists into dist/ (the core and every first-party plugin; the web app first)
-	uv build --all-packages
+build: web-build ## Build the core wheel and sdist into dist/ (the web app first)
+	uv build
 
 PYPI_DIST ?= dist
 pypi-clean-build-marker: ## Remove uv's generated ignore marker from the PyPI staging directory
