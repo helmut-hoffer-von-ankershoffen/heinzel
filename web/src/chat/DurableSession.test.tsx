@@ -561,12 +561,64 @@ describe("personal conversation links", () => {
     expect(panel.getByText(/Contract v1: proposed/)).toBeInTheDocument();
     expect(panel.getByText("Keep notes current.")).toBeInTheDocument();
     const proposed = within(await panel.findByRole("region", { name: "Proposed agent terms" }));
-    expect(proposed.getByText("Revision 1 · awaiting review")).toBeInTheDocument();
+    expect(proposed.getByText("Revision 1 · proposed terms")).toBeInTheDocument();
     expect(proposed.getByText(/Subscription plan · cost unknown/)).toBeInTheDocument();
     expect(proposed.getByText("Use the user's context.")).toBeInTheDocument();
     expect(proposed.getByText(/does not activate the agent/)).toBeInTheDocument();
     expect(calls.some((request) => new URL(request.url).pathname.includes("open-check-in"))).toBe(false);
     expect(calls.some((request) => new URL(request.url).pathname.endsWith("/confirm"))).toBe(false);
+  });
+
+  it.each([false, true])("reviews exact agent terms through explicit confirmation (changed: %s)", async (changed) => {
+    const proposal = {
+      session_id: sessionId,
+      request_id: "terms-one",
+      revision: 1,
+      contract: "Prepare a draft from my context.",
+      max_usd: null,
+      timeout_seconds: 30,
+      permitted_tools: [],
+      status: "proposed",
+      preview_sha256: "b".repeat(64),
+    };
+    const action = {
+      ...reviewChat.actions[0],
+      operation: "accept-agent-contract",
+      arguments: { session_id: sessionId, request_id: proposal.request_id, review: proposal },
+    };
+    const contractChat = { ...reviewChat, actions: [action] };
+    let reads = 0;
+    let accepted = false;
+    const { calls } = mockApi({
+      ...shell,
+      "/api/heinzel/session": snapshot,
+      "/api/heinzel/latest-scheduled-agent-proposal": proposal,
+      "/api/heinzel/agent-contract-review": () => ({
+        proposal: changed && ++reads > 1 ? { ...proposal, contract: "Different terms" } : proposal,
+        accepted,
+      }),
+      "/api/system/runner/chat/propose-agent-contract": contractChat,
+      "/api/system/runner/chat/show": contractChat,
+      "/api/system/runner/chat/confirm": () => {
+        accepted = true;
+        return { ...contractChat, actions: [{ ...action, status: "done" }] };
+      },
+    });
+    renderAt(`/heinzel?chat=${sessionId}`);
+    const reviewButton = await screen.findByRole("button", { name: "Review these terms" });
+    await waitFor(() => expect(reviewButton).toBeEnabled());
+    fireEvent.click(reviewButton);
+    expect(await screen.findByRole("heading", { name: "Review agent terms" })).toBeInTheDocument();
+    expect(calls.filter((request) => new URL(request.url).pathname.endsWith("/confirm"))).toHaveLength(0);
+    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+    if (changed) {
+      expect(await screen.findByText(/review could not be confirmed/i)).toBeInTheDocument();
+      expect(calls.filter((request) => new URL(request.url).pathname.endsWith("/confirm"))).toHaveLength(0);
+    } else {
+      expect(await screen.findByText("These exact terms were accepted.")).toBeInTheDocument();
+      expect(calls.filter((request) => new URL(request.url).pathname.endsWith("/confirm"))).toHaveLength(1);
+    }
+    expect(calls.some((request) => new URL(request.url).pathname.endsWith("/propose-schedule-control"))).toBe(false);
   });
 
   it("lets the person review a suggested identity before an explicit profile save", async () => {
@@ -716,6 +768,37 @@ describe("personal conversation links", () => {
     expect(turns[1]).toEqual(turns[0]);
     expect(accepted).toHaveLength(1);
     await waitFor(() => expect(sessionStorage.getItem(`hz.durable.composer.${sessionId}`)).toBeNull());
+  });
+
+  it("keeps a reported subscription limit across reload without retrying the uncertain turn", async () => {
+    const turns: unknown[] = [];
+    const answers = {
+      ...shell,
+      "/api/heinzel/session": snapshot,
+      "/api/heinzel/chat": async (request: Request) => {
+        const body = await request.json();
+        return { session_id: sessionId, request_id: body.request_id, disposition: "queued", inbox_position: 2 };
+      },
+      "/api/heinzel/answer-chat": async (request: Request) => {
+        turns.push(await request.json());
+        return { status: 400, body: { code: "subscription_usage_limit", error: "redacted status" } };
+      },
+    };
+    mockApi(answers);
+    const first = renderAt(`/heinzel?chat=${sessionId}`);
+    fireEvent.change(await screen.findByLabelText("Message your Heinzel"), { target: { value: "Check my notes" } });
+    fireEvent.click(screen.getByRole("button", { name: "Queue message" }));
+    expect(await screen.findByText(/reported its subscription usage limit/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Retry the same message" })).toBeDisabled();
+    expect(turns).toHaveLength(1);
+    first.unmount();
+    mockApi(answers);
+    renderAt(`/heinzel?chat=${sessionId}`);
+    expect(await screen.findByText(/reported its subscription usage limit/)).toBeInTheDocument();
+    expect(turns).toHaveLength(1);
+    expect(screen.queryByRole("button", { name: "Start a new message" })).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Message your Heinzel")).toBeDisabled();
+    expect(turns).toHaveLength(1);
   });
 
   it("retains the accepted request when an answer acknowledgement belongs to another session", async () => {

@@ -249,7 +249,12 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
       setError(true);
       return;
     }
-    if (running.current || (!pending && !agentPending && !text.trim())) return;
+    if (
+      running.current ||
+      pending?.outcome === "subscription_usage_limit" ||
+      (!pending && !agentPending && !text.trim())
+    )
+      return;
     const requestedMessage = agentPending?.message ?? pending?.message ?? text;
     if (!pending && agentPending !== null && agentChatId === null) {
       running.current = true;
@@ -383,6 +388,7 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
     }
     setBusy(true);
     setError(false);
+    let acceptedConfirmed = request.accepted === true;
     try {
       if (!request.accepted) {
         const accepted = await result(
@@ -397,6 +403,7 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
         );
         if (accepted.session_id !== sessionId || accepted.request_id !== request.request_id)
           throw new Error("Invalid acknowledgement");
+        acceptedConfirmed = true;
         if (!updateComposer({ pending: { ...request, accepted: true } }))
           throw new Error("The accepted request could not be preserved in this tab.");
       }
@@ -414,7 +421,10 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
       await client.invalidateQueries({ queryKey: ["heinzel", "tool-activity", sessionId] });
       await client.invalidateQueries({ queryKey: ["heinzel", "agent-proposal", sessionId] });
       await client.invalidateQueries({ queryKey: ["heinzel", "profile-proposal", sessionId] });
-    } catch {
+    } catch (reason) {
+      if (acceptedConfirmed && reason instanceof ApiError && reason.code === "subscription_usage_limit") {
+        updateComposer({ pending: { ...request, accepted: true, outcome: "subscription_usage_limit" } });
+      }
       setError(true);
       await client.invalidateQueries({ queryKey: ["heinzel", "session", sessionId] });
     } finally {
@@ -1030,12 +1040,19 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
             onChange={(event) => updateComposer({ text: event.target.value })}
           />
         </label>
-        {error && <p role="alert">{t("durable.failed")}</p>}
-        {pending?.accepted && (
+        {error && pending?.outcome !== "subscription_usage_limit" && <p role="alert">{t("durable.failed")}</p>}
+        {pending?.outcome === "subscription_usage_limit" ? (
           <p role="status" className="text-sm">
-            Your message was saved. Its answer is not confirmed; retrying uses the same request and an interrupted turn
-            will not be run again automatically.
+            Claude Code reported its subscription usage limit. Your message is saved; the answer is uncertain and this
+            turn will not run again. This conversation remains blocked until the uncertain turn is resolved.
           </p>
+        ) : (
+          pending?.accepted && (
+            <p role="status" className="text-sm">
+              Your message was saved. Its answer is not confirmed; retrying uses the same request and an interrupted
+              turn will not be run again automatically.
+            </p>
+          )
         )}
         <Button
           type="submit"
@@ -1045,6 +1062,7 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
             recoveryBlocked ||
             agentChatUnavailable ||
             !query.data ||
+            pending?.outcome === "subscription_usage_limit" ||
             (!pending && !agentPending && !text.trim())
           }
         >

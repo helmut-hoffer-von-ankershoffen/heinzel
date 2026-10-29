@@ -4,7 +4,12 @@ import { registerUpdatePreparation } from "@/updates/work";
 const PREFIX = "hz.durable.composer.";
 const REQUEST_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
 
-export type DurableRequest = { request_id: string; message: string; accepted?: boolean };
+export type DurableRequest = {
+  request_id: string;
+  message: string;
+  accepted?: boolean;
+  outcome?: "subscription_usage_limit";
+};
 export type DurableComposerState = {
   text: string;
   pending: DurableRequest | null;
@@ -24,7 +29,8 @@ function isRequest(value: unknown): value is DurableRequest {
     typeof request.message === "string" &&
     request.message.length > 0 &&
     request.message.length <= 4000 &&
-    (request.accepted === undefined || typeof request.accepted === "boolean")
+    (request.accepted === undefined || typeof request.accepted === "boolean") &&
+    (request.outcome === undefined || (request.outcome === "subscription_usage_limit" && request.accepted === true))
   );
 }
 

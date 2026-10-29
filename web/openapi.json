@@ -3427,6 +3427,26 @@
         "title": "ContractGraph",
         "type": "object"
       },
+      "ContractReviewView": {
+        "description": "An owner-private acceptance record, not an execution or access grant.",
+        "properties": {
+          "accepted": {
+            "description": "Whether the trusted confirmation boundary recorded this exact acceptance.",
+            "title": "Accepted",
+            "type": "boolean"
+          },
+          "proposal": {
+            "$ref": "#/components/schemas/ScheduledAgentProposal",
+            "description": "Exact proposal revision and preview hash."
+          }
+        },
+        "required": [
+          "proposal",
+          "accepted"
+        ],
+        "title": "ContractReviewView",
+        "type": "object"
+      },
       "ContractVersion": {
         "description": "A versioned contract artifact; only an explicit approval can activate its schedule.",
         "properties": {
@@ -15272,6 +15292,42 @@
         "title": "WidgetEntry",
         "type": "object"
       },
+      "heinzel_accept_agent_contract_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "approval_proof": {
+            "title": "Approval Proof",
+            "type": "string"
+          },
+          "request_id": {
+            "description": "A stable client request id; reuse it only for an exact retry.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "review": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "title": "Review",
+            "type": "object"
+          },
+          "session_id": {
+            "description": "The stable personal session id returned by new-chat or sessions.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "request_id",
+          "review",
+          "approval_proof"
+        ],
+        "title": "heinzel_accept_agent_contract_Input",
+        "type": "object"
+      },
       "heinzel_amend_scheduled_agent_Input": {
         "additionalProperties": false,
         "properties": {
@@ -16184,6 +16240,100 @@
         "summary": "Show your team's promises: who keeps which artifact, how each promise stands, where the flow waits.",
         "tags": [
           "graph"
+        ]
+      }
+    },
+    "/heinzel/accept-agent-contract": {
+      "post": {
+        "description": "Record only exact contract acceptance through trusted confirmation.\n\nRaises:\n    HeinzelError: If confirmation or exact review is invalid.",
+        "operationId": "heinzel_accept_agent_contract",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/heinzel_accept_agent_contract_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduledAgentProposal"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Record only exact contract acceptance through trusted confirmation.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/agent-contract-review": {
+      "get": {
+        "description": "Read an exact contract and its acceptance; this grants no execution or access.",
+        "operationId": "heinzel_agent_contract_review",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContractReviewView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read an exact contract and its acceptance; this grants no execution or access.",
+        "tags": [
+          "heinzel"
         ]
       }
     },
@@ -20034,6 +20184,62 @@
           }
         },
         "summary": "Open a runner chat bound to this owner's durable session and current conversation history.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/runner/chat/propose-agent-contract": {
+      "post": {
+        "description": "Stage the exact current agent contract for human review; no schedule, access, or model call is granted.",
+        "operationId": "system_runner_chat_propose_agent_contract",
+        "parameters": [
+          {
+            "description": "The personal agent session.",
+            "in": "query",
+            "name": "durable_session",
+            "required": true,
+            "schema": {
+              "description": "The personal agent session.",
+              "title": "Durable Session",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The contract proposal request id.",
+            "in": "query",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "description": "The contract proposal request id.",
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatSession"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Stage the exact current agent contract for human review; no schedule, access, or model call is granted.",
         "tags": [
           "system"
         ]

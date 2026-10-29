@@ -128,6 +128,49 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/heinzel/accept-agent-contract": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Record only exact contract acceptance through trusted confirmation.
+         * @description Record only exact contract acceptance through trusted confirmation.
+         *
+         *     Raises:
+         *         HeinzelError: If confirmation or exact review is invalid.
+         */
+        post: operations["heinzel_accept_agent_contract"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/heinzel/agent-contract-review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read an exact contract and its acceptance; this grants no execution or access.
+         * @description Read an exact contract and its acceptance; this grants no execution or access.
+         */
+        get: operations["heinzel_agent_contract_review"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/heinzel/amend-scheduled-agent": {
         parameters: {
             query?: never;
@@ -1990,6 +2033,26 @@ export interface paths {
          * @description Open a runner chat bound to this owner's durable session and current conversation history.
          */
         post: operations["system_runner_chat_open_check_in"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/runner/chat/propose-agent-contract": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Stage the exact current agent contract for human review; no schedule, access, or model call is granted.
+         * @description Stage the exact current agent contract for human review; no schedule, access, or model call is granted.
+         */
+        post: operations["system_runner_chat_propose_agent_contract"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4509,6 +4572,19 @@ export interface components {
              * @description Inputs that read an output no contract maintains.
              */
             unmaintained: components["schemas"]["Unmaintained"][];
+        };
+        /**
+         * ContractReviewView
+         * @description An owner-private acceptance record, not an execution or access grant.
+         */
+        ContractReviewView: {
+            /**
+             * Accepted
+             * @description Whether the trusted confirmation boundary recorded this exact acceptance.
+             */
+            accepted: boolean;
+            /** @description Exact proposal revision and preview hash. */
+            proposal: components["schemas"]["ScheduledAgentProposal"];
         };
         /**
          * ContractVersion
@@ -11277,6 +11353,25 @@ export interface components {
              */
             widget?: (components["schemas"]["CardWidget"] | components["schemas"]["ListWidget"] | components["schemas"]["MetricWidget"] | components["schemas"]["ProgressWidget"] | components["schemas"]["GraphicWidget"]) | null;
         };
+        /** heinzel_accept_agent_contract_Input */
+        heinzel_accept_agent_contract_Input: {
+            /** Approval Proof */
+            approval_proof: string;
+            /**
+             * Request Id
+             * @description A stable client request id; reuse it only for an exact retry.
+             */
+            request_id: string;
+            /** Review */
+            review: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            /**
+             * Session Id
+             * @description The stable personal session id returned by new-chat or sessions.
+             */
+            session_id: string;
+        };
         /** heinzel_amend_scheduled_agent_Input */
         heinzel_amend_scheduled_agent_Input: {
             /**
@@ -11663,6 +11758,7 @@ export type SchemaConnectorCapability = components['schemas']['ConnectorCapabili
 export type SchemaConnectorReport = components['schemas']['ConnectorReport'];
 export type SchemaConnectorTest = components['schemas']['ConnectorTest'];
 export type SchemaContractGraph = components['schemas']['ContractGraph'];
+export type SchemaContractReviewView = components['schemas']['ContractReviewView'];
 export type SchemaContractVersion = components['schemas']['ContractVersion'];
 export type SchemaContributionInfo = components['schemas']['ContributionInfo'];
 export type SchemaCredentialDoc = components['schemas']['CredentialDoc'];
@@ -11850,6 +11946,7 @@ export type SchemaWakeScheduleView = components['schemas']['WakeScheduleView'];
 export type SchemaWeek = components['schemas']['Week'];
 export type SchemaWidgetAction = components['schemas']['WidgetAction'];
 export type SchemaWidgetEntry = components['schemas']['WidgetEntry'];
+export type SchemaHeinzelAcceptAgentContractInput = components['schemas']['heinzel_accept_agent_contract_Input'];
 export type SchemaHeinzelAmendScheduledAgentInput = components['schemas']['heinzel_amend_scheduled_agent_Input'];
 export type SchemaHeinzelAnswerChatInput = components['schemas']['heinzel_answer_chat_Input'];
 export type SchemaHeinzelApproveModelGrantInput = components['schemas']['heinzel_approve_model_grant_Input'];
@@ -12030,6 +12127,71 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TeamGraphDocument"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    heinzel_accept_agent_contract: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["heinzel_accept_agent_contract_Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScheduledAgentProposal"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    heinzel_agent_contract_review: {
+        parameters: {
+            query: {
+                session_id: string;
+                request_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContractReviewView"];
                 };
             };
             /** @description Validation Error */
@@ -14610,6 +14772,40 @@ export interface operations {
                 request_id: string;
                 /** @description The IANA time zone to use for this schedule preview. */
                 timezone: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatSession"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_runner_chat_propose_agent_contract: {
+        parameters: {
+            query: {
+                /** @description The personal agent session. */
+                durable_session: string;
+                /** @description The contract proposal request id. */
+                request_id: string;
             };
             header?: never;
             path?: never;

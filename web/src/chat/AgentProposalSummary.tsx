@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { api, problem } from "@/api/client";
+import { AgentContractAcceptance } from "@/chat/AgentContractAcceptance";
 
 /** The stored proposal is a draft, never a claim that the agent or its tools are enabled. */
 export function AgentProposalSummary({ sessionId }: { sessionId: string }) {
@@ -19,7 +20,7 @@ export function AgentProposalSummary({ sessionId }: { sessionId: string }) {
   return (
     <section aria-label="Proposed agent terms" className="space-y-1 rounded border border-border p-3 text-sm">
       <h3 className="font-medium">Proposed agent terms</h3>
-      <p>Revision {query.data.revision} · awaiting review</p>
+      <p>Revision {query.data.revision} · proposed terms</p>
       <details>
         <summary className="cursor-pointer">Review proposed terms</summary>
         <p className="whitespace-pre-wrap break-words">{query.data.contract}</p>
@@ -31,6 +32,7 @@ export function AgentProposalSummary({ sessionId }: { sessionId: string }) {
         </p>
         <p>This proposal does not activate the agent or grant tool permissions.</p>
       </details>
+      <AgentContractAcceptance sessionId={sessionId} proposal={query.data} />
     </section>
   );
 }
