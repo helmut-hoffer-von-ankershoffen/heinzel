@@ -14,21 +14,6 @@ notifications and a local view. Each declaration stays beside its owning feature
 [AGENTS.md](AGENTS.md); use the minimal preset when you need only one operation and test.
 [% endif %]
 
-[% if layout == 'collection' %]
-From the collection root:
-
-```sh
-make lock NAME=[[ project_name ]]
-make check-fast NAME=[[ project_name ]]
-make check NAME=[[ project_name ]]
-make preview NAME=[[ project_name ]]
-make build NAME=[[ project_name ]]
-make acceptance NAME=[[ project_name ]]
-```
-
-This directory is the complete plugin. It reuses collection tooling and requires no parent registration or workflow
-edit. Do not run `git init` here. The collection's `new` target with `NAME=<another-name>` creates the next plugin.
-[% else %]
 You need Python 3.12+, git, make and uv. From this directory:
 
 ```sh
@@ -40,8 +25,15 @@ make build
 make acceptance
 ```
 
-`setup` creates the owning lock and isolated environment and initializes this standalone Git repository. The
-versioned developer toolkit is installed from its immutable official GitHub wheel; no core checkout is needed.
+`setup` creates the owning lock and isolated environment. The versioned developer toolkit is installed from its
+immutable official GitHub wheel; no core checkout is needed.
+[% if layout == 'collection' %]
+This directory is the complete plugin, including its small owning command wrapper. Setup creates no nested Git
+repository or workflows. Collection roots providing shortcuts also accept `NAME=[[ project_name ]]`; otherwise
+use the owning commands above. Core, contrib and the official collection provide one generic plugin release
+workflow, so adding a plugin requires no parent registration or workflow edit.
+[% else %]
+Setup initializes this standalone Git repository. Its own CI and protected release workflow are included.
 [% endif %]
 
 `check-fast` runs this plugin's lint and unit tests. `check` also runs strict types, integration tests and coverage.
@@ -61,21 +53,21 @@ can be exported with `hz system plugin sdk <new-directory>`.
 
 ## Release
 
-1. Run the owning checks and installed-wheel acceptance above. Advance this project's version with
-   `uv version --project [% if layout == 'collection' %]plugins/[[ project_name ]][% else %].[% endif %] --bump minor --frozen`
+1. Run the owning checks and installed-wheel acceptance above. From this directory, advance this project's version with
+   `uv version --bump minor --frozen`
    for its first release; later choose the appropriate patch/minor/major bump.
-2. Run `make release[% if layout == 'collection' %] NAME=[[ project_name ]][% endif %]`. It checks/builds this plugin
+2. Run `make release`. It checks/builds this plugin
    and previews its tag and artifacts; it uploads nothing.
 3. Commit the project and lock files using a conventional commit and merge a reviewed pull request. A standalone
    project needs its own GitHub repository with the `heinzel-plugin` topic so the catalog discovers it.
 4. For public PyPI publication, configure a protected `pypi` environment for main and a trusted publisher for this
    distribution, repository, `release.yml` and environment. Private plugins publish to their own GitHub releases;
    no PyPI grant is needed. `gh auth login` provides private repository access. PyPI is public.
-5. From clean, current main, run `make publish[% if layout == 'collection' %] NAME=[[ project_name ]][% endif %]`.
+5. From clean, current main, run `make publish` in this directory.
    It selects GitHub for private sources and PyPI for public sources. `REGISTRY=github` selects a public GitHub-only
    release. The workflow verifies and publishes this plugin's exact artifacts. An existing public GitHub release
    can later be sent to PyPI with
-   `make publish[% if layout == 'collection' %] NAME=[[ project_name ]][% endif %] REGISTRY=pypi TAG=[[ project_name ]]/v<version>`;
+   `make publish REGISTRY=pypi TAG=[[ project_name ]]/v<version>`;
    this verifies the original provenance and uploads the same bytes without a rebuild.
 
 For a local publishing rehearsal, `uv publish --dry-run dist/*` validates artifacts without uploading. For a

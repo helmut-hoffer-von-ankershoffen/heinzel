@@ -55,7 +55,8 @@ options are in [docs/CLI_REFERENCE.md](docs/CLI_REFERENCE.md).
   the next free number, fixing every reference (the README index, `amended-by` lines, docstrings).
 - A failing check: `gh run view <run> --log-failed` works only after the whole run has finished. Rerun a job that
   failed for reasons outside the diff (a runner timeout) with `gh run rerun <run> --failed`; fix everything else.
-- The pre-push hook runs `make check-fast`. On a heavily loaded machine its unit step can hit the session
+- Core-root PR preflight, agent completion and pre-push hooks select owning checks for plugin-only changes.
+  Mixed/core changes retain core checks. On a heavily loaded machine the unit step can hit the session
   timeout; wait for the load to drop and push again. `NO_PREFLIGHT=1 make pr` skips only the preflight, never a
   hook, and is for timeouts in tests you didn't touch, after review.
 - UI changes must follow [Mobile UI](docs/CODING_STANDARDS.md#mobile-ui): use the shared viewport primitives and

@@ -4,21 +4,7 @@ Read [README.md](README.md). Edit the feature in `src/[[ package_name ]]/` and i
 and `heinzel.kernel` API. One `@module.operation` supplies CLI, MCP and REST. Add a service or model when the
 feature needs it; neither is required for a small operation. Never import a plugin implementation or core internals.
 
-[% if layout == 'collection' %]
-Run from the collection root:
-
-```sh
-make check-fast NAME=[[ project_name ]]
-make check NAME=[[ project_name ]]
-make build NAME=[[ project_name ]]
-make acceptance NAME=[[ project_name ]]
-make preview NAME=[[ project_name ]]
-make lock NAME=[[ project_name ]] # after changing dependencies
-make release NAME=[[ project_name ]] # preview only
-```
-
-Keep all feature changes in this directory. Reuse collection tooling; do not initialize Git here or copy workflows.
-[% else %]
+Run from this plugin's directory:
 ```sh
 make setup
 make check-fast
@@ -29,6 +15,11 @@ make preview
 make lock # after changing dependencies
 make release # preview only
 ```
+[% if layout == 'collection' %]
+Keep all feature changes in this directory. Setup never initializes Git for a collection plugin. The owning
+Makefile works even when the parent repository builds something else. A parent that provides collection commands
+also accepts `NAME=[[ project_name ]]` from its root. Publication uses the parent's generic plugin release workflow;
+do not copy a nested `.github/` or edit a parent registry.
 [% endif %]
 
 Each pytest file declares exactly one level: `unit`, `integration` or `e2e`. Write a behavior test for a change.

@@ -3,6 +3,7 @@
 import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -32,17 +33,52 @@ def test_standalone_make_forwards_values_without_evaluating_them(tmp_path, optio
     assert not sentinel.exists()
 
 
-def test_dependency_validator_refuses_stale_metadata_without_rewriting_its_lock(tmp_path):
+@pytest.mark.parametrize("frozen_caller", [False, True])
+def test_dependency_validator_refuses_stale_metadata_without_rewriting_its_lock(tmp_path, monkeypatch, frozen_caller):
     uv = shutil.which("uv")
     assert uv
+    if frozen_caller:
+        monkeypatch.setenv("UV_FROZEN", "1")
+        monkeypatch.setenv("UV_NO_SYNC", "1")
+    else:
+        monkeypatch.delenv("UV_FROZEN", raising=False)
+    environment = {
+        key: value for key, value in os.environ.items() if not key.startswith("UV_") and key != "VIRTUAL_ENV"
+    }
+    environment["UV_PYTHON"] = sys.executable
     project = tmp_path / "pyproject.toml"
     source = '[project]\nname="harbor-fixture"\nversion="0.1.0"\nrequires-python=">=3.12"\n'
     project.write_text(source)
-    subprocess.run([uv, "lock", "--offline"], cwd=tmp_path, check=True, capture_output=True, timeout=15)
+    created = subprocess.run(
+        [uv, "lock", "--offline"],
+        cwd=tmp_path,
+        env=environment,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=15,
+    )
+    assert created.returncode == 0, created.stderr
     lock = (tmp_path / "uv.lock").read_bytes()
+    if frozen_caller:
+        environment["UV_FROZEN"] = "1"  # --check must enforce freshness even under the production CI flag.
+    valid = subprocess.run(
+        [uv, "lock", "--check", "--offline"],
+        cwd=tmp_path,
+        env=environment,
+        check=False,
+        capture_output=True,
+        timeout=15,
+    )
+    assert valid.returncode == 0, valid.stderr
     project.write_text(source.replace("0.1.0", "0.2.0"))
     result = subprocess.run(
-        [uv, "lock", "--check", "--offline"], cwd=tmp_path, check=False, capture_output=True, timeout=15
+        [uv, "lock", "--check", "--offline"],
+        cwd=tmp_path,
+        env=environment,
+        check=False,
+        capture_output=True,
+        timeout=15,
     )
     assert result.returncode != 0
     assert (tmp_path / "uv.lock").read_bytes() == lock

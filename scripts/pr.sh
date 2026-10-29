@@ -69,7 +69,13 @@ if git fetch --quiet origin "$branch" 2>/dev/null; then
     exit 2
   fi
 fi
-[ -n "${NO_PREFLIGHT:-}" ] || make --no-print-directory preflight BASE="$base/main"
+if [ -z "${NO_PREFLIGHT:-}" ]; then
+  if [ -f scripts/scoped_checks.py ]; then
+    uv run --no-project --script scripts/scoped_checks.py preflight --base "$base/main"
+  else
+    make --no-print-directory preflight BASE="$base/main"
+  fi
+fi
 
 if [ -n "${BODY_FILE:-}" ]; then body="$(cat "$BODY_FILE")"; else body="${BODY:-}"; fi
 [ -n "$body" ] || body="$(git log --reverse --format='- %s' "$base/main..HEAD")"

@@ -8,6 +8,9 @@ This guide applies to Heinzel 0.9.1 and its versioned developer toolkit. You nee
 GitHub CLI (`gh`) supplies repository creation, private access and release dispatch. The examples use a fictional
 Harbor plugin; replace `your-account` with your GitHub user or organization.
 
+If `hz` is not installed, get the SDK CLI with `uv tool install 'heinzel>=0.9.1,<0.10'`. This installs core without
+real plugins or a source checkout. Run `gh auth login` before creating a GitHub repository if you are not signed in.
+
 ## Scaffold a standalone repository
 
 From a directory outside an existing Git repository:
@@ -131,7 +134,14 @@ plugin against an installed core wheel. It does not run core's suite.
 For a **public PyPI package**, configure a GitHub environment named `pypi`, restricted to `main`, and register a
 [PyPI trusted publisher](https://docs.pypi.org/trusted-publishers/adding-a-publisher/) for this distribution, your
 repository, `release.yml` and that environment. Each distribution needs its own trust grant; no long-lived API
-token is needed. Then:
+token is needed.
+
+When a collection has several brand-new PyPI projects, enroll and publish one pending project before enrolling
+the next. PyPI currently rejects duplicate pending GitHub publisher identities; activation removes that bootstrap
+restriction. Existing projects can publish independently in parallel. See the
+[PyPI tracking issue](https://github.com/pypi/warehouse/issues/16920).
+
+With the owning publisher configured:
 
 ```sh
 make publish
@@ -191,8 +201,19 @@ make release NAME=harbor
 make publish NAME=harbor
 ```
 
-The collection scaffold creates only `plugins/heinzel-harbor/`, with its own metadata, source, tests and lock. It
-adds no nested Git repository, copied workflow or parent registration. To render collection files directly use
+The collection scaffold creates only `plugins/heinzel-harbor/`, with its own metadata, source, tests, lock and the
+same small owning Makefile. From inside that directory, the standalone commands above work unchanged. This is
+also the owning loop for optional plugins in Core or contrib: the parent Makefile may build something else.
+Root `NAME` shortcuts are conveniences of a configured collection.
+
+The supported hosts route plugin-only hooks and CI to owning projects and public-contract consumers. Their one
+generic plugin release workflow supplies publication without core tests. The scaffold adds no nested Git
+repository, copied workflow or parent registration. To render collection files directly use
 `hz system plugin new plugins/heinzel-harbor --defaults --layout collection --data plugin_name=harbor`.
-Name the owner in collection commands; shared tooling checks have the distinct `tooling-check` target.
+Name the owner in root collection commands; shared tooling checks have the distinct `tooling-check` target.
 Consumers of a changed public contract are selected from their declared requirements, without testing all core.
+Core-root `make pr` and coding-agent completion checks also select the owning projects for plugin-only work.
+Shared commit and credential policies still apply; a mixed core/plugin change retains the full core preflight.
+Core's optional-plugin workflow uses the main-restricted `plugin-pypi` environment for public PyPI grants;
+standalone repositories, contrib and the official collection use `pypi`. Register the owning distribution with
+its host's `release.yml` and that environment. Core's separate tagged-core publisher remains in `pypi`.

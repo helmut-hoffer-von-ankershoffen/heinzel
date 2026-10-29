@@ -23,8 +23,10 @@ Read [the author guide](../../../docs/PLUGIN_AUTHORING.md), including the separa
    `make publish` selects private GitHub or public PyPI publication. Public PyPI needs the owning trusted publisher;
    private sources must stay off PyPI. Independent tags are `<distribution>/v<version>`.
 
-In an existing collection, use its `new` target with `NAME=<name> [PRESET=contributions]`. Keep all feature files in the new
-directory; use `NAME=<owner>` on its commands. Never create an embedded repository or copy parent workflows.
+Inside an existing repository, use `hz system plugin new plugins/heinzel-<name> --defaults --layout collection
+--data plugin_name=<name>`, or the host's optional `new` shortcut with `NAME=<name>`. Keep all feature files in the new
+directory and run the same owning Make commands from there. Root `NAME=<owner>` shortcuts are optional. Never
+create an embedded repository or copy parent workflows.
 
 ## Update an existing plugin
 

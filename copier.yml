@@ -16,11 +16,7 @@ _envops:
   keep_trailing_newline: true
 _message_after_copy: |
   Your Heinzelmännchen plugin is ready in [[ _copier_conf.dst_path ]]. Next:
-  [% if layout == 'collection' %]
-    make lock NAME=[[ project_name ]]
-    make check-fast NAME=[[ project_name ]]
-    make preview NAME=[[ project_name ]]
-  [% elif preset != 'governed' %]
+  [% if preset != 'governed' %]
     cd [[ _copier_conf.dst_path ]] && make setup
     make check-fast
     make preview

@@ -16,7 +16,7 @@ jobs:
       contents: read
     env:
       PLUGIN_PRIVATE: ${{ github.event.repository.private }}
-      TOOLING: heinzel-plugin-tools @ https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/releases/download/tools-v0.1.1/heinzel_plugin_tools-0.1.1-py3-none-any.whl#sha256=a76e8891faf91ce59964d02870ce32c894a4492518453c27aa6a7c5f91c40647
+      TOOLING: heinzel-plugin-tools @ https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/releases/download/tools-v0.2.1/heinzel_plugin_tools-0.2.1-py3-none-any.whl#sha256=eebaf555c0c3b39cb13d28ae5ea146ec459e06d1b96cf8ba4499ffea4247aab7
       CORE: ${{ vars.CORE_ARTIFACT }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

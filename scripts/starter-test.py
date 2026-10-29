@@ -15,8 +15,8 @@ from pathlib import Path
 
 TOOLKIT = (
     "heinzel-plugin-tools @ https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/releases/download/"
-    "tools-v0.1.1/heinzel_plugin_tools-0.1.1-py3-none-any.whl"
-    "#sha256=a76e8891faf91ce59964d02870ce32c894a4492518453c27aa6a7c5f91c40647"
+    "tools-v0.2.1/heinzel_plugin_tools-0.2.1-py3-none-any.whl"
+    "#sha256=eebaf555c0c3b39cb13d28ae5ea146ec459e06d1b96cf8ba4499ffea4247aab7"
 )
 
 
@@ -27,7 +27,9 @@ def check_layout(directory: Path, *, collection: bool) -> None:
         AssertionError: If the generated layout violates its ownership contract.
     """
     if collection:
-        valid = not any((directory / path).exists() for path in (".git", "Makefile", ".github"))
+        valid = (directory / "Makefile").is_file() and not any(
+            (directory / path).exists() for path in (".git", ".github")
+        )
     else:
         valid = (directory / ".git").is_dir() and not (directory / ".claude/agents").exists()
     if not valid:
@@ -59,6 +61,18 @@ def add_first_operation(directory: Path) -> None:
         "    assert result.returncode == 0, result.stderr\n"
         "    assert json.loads(result.stdout) == 14\n"
     )
+
+
+def check_collection_message(log: Path) -> None:
+    """Keep printed next steps aligned with the owning Makefile.
+
+    Raises:
+        AssertionError: If the scaffold sends an author into unrelated host commands.
+    """
+    message = log.read_text()
+    if "&& make setup" not in message or "make check-fast NAME=" in message or "make lock NAME=" in message:
+        msg = "Collection scaffold must display the owning-directory setup and check commands"
+        raise AssertionError(msg)
 
 
 def journey(core: str, toolkit: str, template: Path, destination: Path) -> None:
@@ -135,12 +149,15 @@ def journey(core: str, toolkit: str, template: Path, destination: Path) -> None:
             collection,
             f"{name}-scaffold",
         )
+        check_collection_message(destination / f"{name}-scaffold.log")
         owning = collection / "plugins" / f"heinzel-{name}"
         check_layout(owning, collection=True)
         add_first_operation(owning)
-        run([*cli, "fix", name, "--core", core], collection, f"{name}-first-change")
+        make = ["make", f"CORE={core}", f"TOOLING={toolkit}"]
+        run([*make, "setup"], owning, f"{name}-setup")
+        run([*make, "fix"], owning, f"{name}-first-change")
         for command in ("check-fast", "check", "build", "acceptance", "release"):
-            run([*cli, command, name, "--core", core], collection, f"{name}-{command}")
+            run([*make, command], owning, f"{name}-{command}")
     if marker.read_text() != "Existing collection; no registration edits.\n" or set(collection.iterdir()) != {
         marker,
         collection / "plugins",

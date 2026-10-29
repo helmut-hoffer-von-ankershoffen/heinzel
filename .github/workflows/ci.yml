@@ -465,6 +465,8 @@ jobs:
 
   local-plugin-check:
     name: Source plugin (${{ matrix.name }})
+    env:
+      PLUGIN_PRIVATE: ${{ github.event.repository.private }}
     needs: [changes, core-wheel, local-plugin-plan]
     if: ${{ !cancelled() && needs.local-plugin-plan.outputs.selected == 'True' }}
     runs-on: ubuntu-latest

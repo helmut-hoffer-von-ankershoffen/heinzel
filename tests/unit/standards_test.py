@@ -103,6 +103,7 @@ CORE_ONLY = {  # path: why plugins don't get it
     "scripts/sync_template.py": "generates the template from Heinzelmännchen's files",
     "scripts/template-test.sh": "renders and checks the template",
     "scripts/starter-test.py": "core SDK compatibility job exercises fresh standalone and collection authors",
+    "scripts/scoped_checks.py": "routes Core-root checks; owning and governed plugins already check their own project",
     "scripts/template_pyproject_head.toml.tmpl": "input of sync_template.py",
     "scripts/web.py": "the web head's typed client and dev server (web/, ADR 0039); plugins bring no UI",
     "scripts/web_build.py": "runs and builds the web head's app (web/, ADR 0039); plugins bring no UI",
@@ -466,15 +467,51 @@ def matching_toolkit_pins(pins):
 
 def test_standalone_commands_workflows_and_journey_pin_one_immutable_toolkit():
     starter = REPO / "starter"
-    paths = [next(starter.glob("*Makefile*.jinja")), *starter.glob("*github*/workflows/*.yml.jinja")]
+    paths = [
+        next(starter.glob("*Makefile*.jinja")),
+        *starter.glob("*github*/workflows/*.yml.jinja"),
+        REPO / ".github/workflows/release.yml",
+    ]
     pins = [_load(REPO / "scripts/starter-test.py").TOOLKIT.rsplit(" ", 1)[-1]]
+    pins.append(_load(REPO / "scripts/scoped_checks.py").TOOLKIT.rsplit(" ", 1)[-1])
     for path in paths:
         text = path.read_text().replace(r"\#", "#")
         match = re.search(r"https://github\.com/\S+?\.whl(?:#sha256=[a-f0-9]{64})?", text)
         assert match, path
         pins.append(match.group())
-    assert len(pins) == 4
+    config = yaml.safe_load((REPO / ".pre-commit-config.yaml").read_text())
+    hook = next(hook for repo in config["repos"] for hook in repo["hooks"] if hook["id"] == "owning-plugin-checks")
+    pins.append(hook["args"][0].rsplit(" ", 1)[-1])
+    assert len(pins) == 7
     assert matching_toolkit_pins(pins)
+
+
+def test_plugin_only_pushes_and_commits_use_owning_checks_instead_of_core_checks():
+    config = yaml.safe_load((REPO / ".pre-commit-config.yaml").read_text())
+    hooks = {hook["id"]: hook for repo in config["repos"] for hook in repo["hooks"]}
+    path = "plugins/heinzel-unforeseen/src/feature.py"
+    for name in ("check-fast", "mypy", "ruff-format", "ruff-check"):
+        assert not hooks[name].get("always_run")
+        assert re.search(hooks[name]["exclude"], path)
+        assert not re.search(hooks[name]["exclude"], "src/heinzel/kernel/_kernel.py")
+    owner = hooks["owning-plugin-checks"]
+    assert owner["pass_filenames"] is False
+    assert owner["always_run"] is True
+    assert owner["args"][-2:] == ["check-changed", "--git-hook"]
+    assert owner["require_serial"] is True
+    assert set(owner["stages"]) == {"pre-commit", "pre-push"}
+
+
+def test_core_can_release_an_unknown_source_plugin_without_core_build_or_tests():
+    workflow = yaml.safe_load((REPO / ".github/workflows/release.yml").read_text())
+    build = workflow["jobs"]["build"]
+    commands = "\n".join(step.get("run", "") for step in build["steps"])
+    assert 'hz-plugin verify-release "$PLUGIN"' in commands
+    assert "make check" not in commands
+    assert "make build" not in commands
+    assert "pytest" not in commands
+    assert workflow["jobs"]["publish"]["environment"] == "plugin-pypi"
+    assert 'test "$PUBLISH" != true || test "$REF" = refs/heads/main' in commands
 
 
 def test_unhashed_or_drifting_toolkit_pins_are_refused():

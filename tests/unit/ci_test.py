@@ -64,6 +64,15 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
         "uv run --script scripts/pypi_release.py artifacts": "checks core metadata and complete packaged payloads",
         "python3 - <<'PY'": "rechecks hashes without checking out or running project code in the OIDC job",
     },
+    "release.yml": {
+        'test "$REF" = refs/heads/main': "restores an original plugin artifact set with the pinned toolkit",
+        'test "$PUBLISH" != true || test "$REF" = refs/heads/main': (
+            "runs the owning Make commands' same toolkit checks, build, audit and acceptance without core work"
+        ),
+        'uv run --no-project --with "$TOOLING" python -m heinzel_plugin_tools.publishing': (
+            "publishes the original verified plugin bytes through its protected generic host workflow"
+        ),
+    },
     "prepare-release.yml": {
         'if [[ ! "$INTRO"': "rejects blank dispatch input before checkout or release work",
         "git config user.name": "opens the release pull request as the bot and hands its tag to the next step",
@@ -114,6 +123,11 @@ def test_finds_commands_not_run_through_make(tmp_path):
 def test_workflows_run_checks_through_make(workflow):
     """Locally and in CI the same make targets run, so a green `make check` means a green CI and a good release."""
     assert not_through_make(workflow) == [], "run these through a make target, or add them to NOT_MAKE with a reason"
+
+
+def test_source_plugin_audits_receive_authoritative_repository_visibility():
+    workflow = yaml.safe_load((REPO / ".github/workflows/ci.yml").read_text())
+    assert workflow["jobs"]["local-plugin-check"]["env"]["PLUGIN_PRIVATE"] == "${{ github.event.repository.private }}"
 
 
 def test_managed_backend_verification_gates_ci_without_leaking_into_plugin_templates():

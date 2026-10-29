@@ -27,9 +27,17 @@ on their feature while common commands enforce the delivery contracts.
 
 - A default starter contains one typed operation and one public-contract test. A contributions preset retains the
   complete status, navigation, Today, notification and local-view example. Existing public lets remain unchanged.
-- Standalone layout supplies concise human and agent guides, a small Makefile and owning CI/release workflows.
-  Collection layout supplies only owning project files and reuses its repository's commands; it never initializes
-  an embedded Git repository or copies another project's configuration.
+- Every layout supplies concise human and agent guides and the same small owning Makefile. Standalone layout
+  includes CI/release workflows; a collection reuses its host's generic workflow, never initializes an embedded Git
+  repository and never copies parent governance. Owning commands also work in a host whose root builds core.
+- Host hooks select changed plugin projects and public-contract consumers from metadata, without invoking core's
+  tests for plugin-only changes. Core and contrib expose the same generic per-plugin protected release workflow;
+  adding a project needs no parent registration or workflow edit.
+- Core-root pull-request preflight and agent completion checks use that same scope selection. Plugin-only PRs
+  retain shared commit, source confidentiality and credential policies, then run owning checks, build, audit and wheel acceptance;
+  mixed/core changes retain core preflight. Initial pushes and deletion-only edits remain covered.
+- Optional source plugins in Core use the main-restricted `plugin-pypi` environment. The tagged core publisher
+  retains its existing `pypi` tag policy; other plugin hosts use their main-restricted `pypi` environment.
 - Scaffolding supports explicit defaults for unattended agents. Derived names do not require repeated answers.
   Generated compatibility ranges respect pre-1.0 minor boundaries. Candidate wheels remain explicit overrides.
 - The generic developer toolkit is an ordinary development artifact in `heinzel-plugins`, with no plugin entry

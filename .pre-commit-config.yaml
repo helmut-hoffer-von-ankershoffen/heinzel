@@ -35,17 +35,20 @@ repos:
         entry: uv run ruff format
         language: system
         types: [python]
+        exclude: ^plugins/
       - id: ruff-check
         name: ruff check
         entry: uv run ruff check --fix
         language: system
         types: [python]
+        exclude: ^plugins/
       - id: mypy
         name: mypy
         entry: uv run mypy
         language: system
         types: [python]
         pass_filenames: false
+        exclude: ^plugins/
       - id: confidentiality
         name: confidential terms
         entry: uv run --script scripts/check_confidentiality.py
@@ -73,8 +76,21 @@ repos:
         entry: bash -c 'test -f pyproject.toml || exit 0; exec make check-fast' # prek also runs this from template/, which has no project
         language: system
         pass_filenames: false
-        always_run: true
+        exclude: ^plugins/
         stages: [pre-push]
+      - id: owning-plugin-checks
+        name: owning plugin lint and unit tests
+        entry: uv run --no-project --with
+        args:
+          - heinzel-plugin-tools @ https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/releases/download/tools-v0.2.1/heinzel_plugin_tools-0.2.1-py3-none-any.whl#sha256=eebaf555c0c3b39cb13d28ae5ea146ec459e06d1b96cf8ba4499ffea4247aab7
+          - hz-plugin
+          - check-changed
+          - --git-hook
+        language: system
+        pass_filenames: false
+        always_run: true # Git supplies deleted plugin paths; unrelated changes are a no-op.
+        require_serial: true
+        stages: [pre-commit, pre-push]
       - id: commitizen
         name: conventional commit message
         entry: uv run cz check --commit-msg-file
