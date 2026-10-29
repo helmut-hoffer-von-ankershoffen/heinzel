@@ -221,8 +221,11 @@ jobs:
           enable-cache: true
           cache-dependency-glob: uv.lock
           save-cache: ${{ github.ref == 'refs/heads/main' }} # pull requests reuse main's cache
+      # Keep the full pytest traceback in CI logs when a browser interaction flakes; the step wrapper's default tail
+      # can otherwise hide the test name and the action that timed out.
       - run: make test-e2e
         env:
+          VERBOSE: "1"
           # read-only (contents: read): e2e tests ask GitHub's API (`hz system changelog --newer`), which rate-limits
           # shared runners' unauthenticated requests; hz sends the token to api.github.com only (ADR 0031)
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
