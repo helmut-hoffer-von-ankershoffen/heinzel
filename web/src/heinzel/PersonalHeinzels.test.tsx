@@ -259,6 +259,100 @@ describe("personal identities", () => {
     await waitFor(() => expect(section.getByLabelText("Personal Heinzel")).not.toBeDisabled());
   });
 
+  it("restores an uncertain profile save after reload and retries the exact request", async () => {
+    const attempts: unknown[] = [];
+    const key = `hz.personal-heinzel.profile-save.${first}`;
+    sessionStorage.removeItem(key);
+    mockApi({
+      ...shell,
+      "/api/heinzel/sessions": { sessions },
+      "/api/heinzel/session": snapshot(first, "Alpha"),
+      "/api/heinzel/profile": async (request: Request) => {
+        const body = await request.json();
+        attempts.push(body);
+        return attempts.length === 1
+          ? { status: 503, body: { detail: "acknowledgement lost" } }
+          : { ...snapshot(first, "Reloaded Alpha"), appearance: look, profile_revision: 2 };
+      },
+    });
+    const firstView = renderAt("/heinzel");
+    let section = within(await screen.findByRole("region", { name: "Personal Heinzels" }));
+    fireEvent.change(await section.findByLabelText("Personal Heinzel"), { target: { value: first } });
+    fireEvent.change(await section.findByLabelText("Name"), { target: { value: "Reloaded Alpha" } });
+    fireEvent.click(section.getByRole("button", { name: "Save name and look" }));
+    await section.findByRole("button", { name: "Retry save" });
+    expect(sessionStorage.getItem(key)).not.toBeNull();
+    firstView.unmount();
+
+    renderAt("/heinzel");
+    section = within(await screen.findByRole("region", { name: "Personal Heinzels" }));
+    fireEvent.change(await section.findByLabelText("Personal Heinzel"), { target: { value: first } });
+    fireEvent.click(await section.findByRole("button", { name: "Retry save" }));
+    await waitFor(() => expect(attempts).toHaveLength(2));
+    expect(attempts[1]).toEqual(attempts[0]);
+    await waitFor(() => expect(sessionStorage.getItem(key)).toBeNull());
+  });
+
+  it("reconciles a committed profile save after reload without sending it again", async () => {
+    let attempts = 0;
+    const key = `hz.personal-heinzel.profile-save.${first}`;
+    sessionStorage.removeItem(key);
+    let stored = snapshot(first, "Alpha");
+    mockApi({
+      ...shell,
+      "/api/heinzel/sessions": { sessions },
+      "/api/heinzel/session": () => stored,
+      "/api/heinzel/profile": async (request: Request) => {
+        attempts += 1;
+        const body = await request.json();
+        stored = { ...snapshot(first, body.name), appearance: body.appearance, profile_revision: 2 };
+        return { status: 503, body: { detail: "acknowledgement lost after commit" } };
+      },
+    });
+    const firstView = renderAt("/heinzel");
+    let section = within(await screen.findByRole("region", { name: "Personal Heinzels" }));
+    fireEvent.change(await section.findByLabelText("Personal Heinzel"), { target: { value: first } });
+    fireEvent.change(await section.findByLabelText("Name"), { target: { value: "Committed Alpha" } });
+    fireEvent.click(section.getByRole("button", { name: "Save name and look" }));
+    await section.findByRole("button", { name: "Retry save" });
+    firstView.unmount();
+
+    renderAt("/heinzel");
+    section = within(await screen.findByRole("region", { name: "Personal Heinzels" }));
+    fireEvent.change(await section.findByLabelText("Personal Heinzel"), { target: { value: first } });
+    await waitFor(() => expect(section.getByLabelText("Name")).toHaveValue("Committed Alpha"));
+    expect(section.queryByRole("button", { name: "Retry save" })).not.toBeInTheDocument();
+    expect(attempts).toBe(1);
+    await waitFor(() => expect(sessionStorage.getItem(key)).toBeNull());
+  });
+
+  it("blocks retry when a profile changed differently while an old save was unresolved", async () => {
+    const attempts: unknown[] = [];
+    const key = `hz.personal-heinzel.profile-save.${first}`;
+    sessionStorage.setItem(
+      key,
+      JSON.stringify({ request_id: "uncertain-save", name: "Old draft", appearance: look, expected_revision: 1 }),
+    );
+    mockApi({
+      ...shell,
+      "/api/heinzel/sessions": { sessions },
+      "/api/heinzel/session": { ...snapshot(first, "Updated elsewhere"), profile_revision: 2 },
+      "/api/heinzel/profile": async (request: Request) => {
+        attempts.push(await request.json());
+        return { ...snapshot(first, "Updated elsewhere"), profile_revision: 3 };
+      },
+    });
+    renderAt("/heinzel");
+    const section = within(await screen.findByRole("region", { name: "Personal Heinzels" }));
+    fireEvent.change(await section.findByLabelText("Personal Heinzel"), { target: { value: first } });
+    expect(await section.findByRole("alert")).toHaveTextContent(/profile changed while this save was unresolved/i);
+    expect(section.getByRole("button", { name: "Retry save" })).toBeDisabled();
+    expect(attempts).toHaveLength(0);
+    fireEvent.click(section.getByRole("button", { name: "Reload saved profile" }));
+    await waitFor(() => expect(section.getByLabelText("Name")).toHaveValue("Updated elsewhere"));
+    expect(sessionStorage.getItem(key)).toBeNull();
+  });
+
   it("keeps the creation request id when a response is lost", async () => {
     const attempts: unknown[] = [];
     mockApi({
