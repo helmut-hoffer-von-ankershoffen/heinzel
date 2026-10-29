@@ -116,10 +116,11 @@ it. This local phrase match does not call a model or infer other schedule change
 general natural-language replies still require a future conversation runner.
 
 The personal session journal does not yet contain an owner-bound agent activity or tool-call timeline. Newly opened
-check-in runner chats record the authenticated owner and personal session, and reject another owner on lookup. Older
-check-in chats without that binding fail closed and cannot be reopened automatically. The separate chat store remains
-subject to chat retention and records runner-reported aggregate tool counts, not a durable ordered activity log for a
-personal Heinzel. An activity feed requires a trusted runner-to-session link and bounded redacted records;
+check-in runner chats record the authenticated owner and personal session, and reject another owner on lookup. A
+personal session reuses its bound chat for subsequent opens and schedule review; generic chat retention does not prune
+it. Older unbound chats or multiple chats claiming one personal session fail closed and require inspection. The chat
+still has bounded message and proposal counts. It records runner-reported aggregate tool counts, not a durable ordered
+activity log for a personal Heinzel. An activity feed requires a trusted runner-to-session link and bounded redacted records;
 client-authored messages must never be interpreted as tool events.
 
 These operations are private: local CLI, stdio MCP, paired web and the authenticated private API use the same owner

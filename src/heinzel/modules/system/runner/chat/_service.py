@@ -21,7 +21,6 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from pydantic_core import to_jsonable_python
 
 from heinzel import (
-    ActionGate,
     AgentResult,
     AgentRunner,
     Budget,
@@ -258,10 +257,10 @@ class ChatService:
             owner_id=owner_id,
         )
         with self._store.proposal_request_lock():
-            prior = self._store.find_context("check-in", session_id, request_id)
+            prior = self._store.find_personal_chat(session_id)
             if prior is not None:
-                if prior.context is None or prior.context.timezone != timezone:
-                    msg = "This check-in chat request id already identifies a different time zone"
+                if prior.context is None or prior.context.kind != "check-in" or prior.context.timezone != timezone:
+                    msg = "This personal chat has a different time zone or context; inspect it before continuing"
                     raise HeinzelError(msg)
                 return prior
             return self._store.create(context, personal_session_id=session_id)
@@ -280,7 +279,7 @@ class ChatService:
         Raises:
             HeinzelError: If this request id already identifies another exact schedule review.
         """
-        self._kernel.resolve(CheckInChatContextSource).get(durable_session)
+        durable_context = self._kernel.resolve(CheckInChatContextSource).get(durable_session)
         arguments: dict[str, JsonValue] = {
             "session_id": durable_session,
             "request_id": request_id,
@@ -297,24 +296,31 @@ class ChatService:
                     msg = "This request id already identifies a different schedule review"
                     raise HeinzelError(msg)
                 return chat
-            chat = self._store.create(
-                ChatContext(
-                    kind="text",
-                    ref=f"five-minute check-in for {durable_session}",
-                    detail="Review the exact schedule action below. Confirm only if you want this schedule to run.",
-                ),
-                personal_session_id=durable_session,
-            )
+            personal_chat = self._store.find_personal_chat(durable_session)
+            if personal_chat is None:
+                owner_id = self._store.personal_owner()
+                context = ChatContext(
+                    kind="check-in",
+                    ref=durable_session,
+                    request_id=request_id,
+                    timezone=durable_context.timezone or "UTC",
+                    owner_id=owner_id,
+                    detail="Review proposed schedule changes before confirming them.",
+                )
+                personal_chat = self._store.create(context, personal_session_id=durable_session)
+            if personal_chat.context is None or personal_chat.context.kind != "check-in":
+                msg = "This personal chat has an incompatible legacy context; inspect it before continuing"
+                raise HeinzelError(msg)
             call = ProposedCall(
-                session=chat.id,
+                session=personal_chat.id,
                 module="heinzel",
                 operation="schedule-control",
                 tool="heinzel_schedule_control",
                 arguments=arguments,
                 command="hz heinzel schedule-control",
             )
-            self._kernel.resolve(ActionGate).propose(call)
-            return self._store.load(chat.id)
+            self._store.propose(call)  # Trusted review staging; the agent-facing gate cannot stage this action.
+            return self._store.load(personal_chat.id)
 
     def _notice(self, event: str) -> str:
         """What the notice `event` says, from the notifications every head reads (ADR 0043); empty if unknown."""

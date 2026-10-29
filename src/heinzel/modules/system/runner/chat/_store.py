@@ -411,6 +411,36 @@ class ChatStore(McpChatSessions):
                     return chat, found
         return None
 
+    def find_personal_chat(self, session_id: str) -> ChatSession | None:
+        """Find the single owner-bound chat, refusing ambiguous or unbound legacy associations.
+
+        Raises:
+            HeinzelError: If multiple or unbound chats claim this personal session.
+        """
+        found: ChatSession | None = None
+        paths = sorted(self.root.glob(f"*/{SESSION}")) if self.root.is_dir() else []
+        for path in paths:
+            try:
+                raw = ChatSession.model_validate_json(path.read_text(encoding="utf-8"))
+            except (OSError, ValidationError):
+                continue
+            if (
+                raw.context is not None
+                and raw.context.kind == "check-in"
+                and raw.context.ref == session_id
+                and raw.personal_session_id is None
+            ):
+                msg = "This personal session has an unbound legacy chat; inspect it before continuing"
+                raise HeinzelError(msg)
+            if raw.personal_session_id != session_id or raw.personal_owner_id != self.personal_owner():
+                continue
+            chat = self.load(path.parent.name)
+            if found is not None:
+                msg = "This personal session has multiple bound chats; inspect them before continuing"
+                raise HeinzelError(msg)
+            found = chat
+        return found
+
     def find_context(self, kind: str, ref: str, request_id: str) -> ChatSession | None:
         """Find a scoped chat opened by one idempotency key, if any.
 
@@ -454,10 +484,13 @@ class ChatStore(McpChatSessions):
         Raises:
             HeinzelError: If there is no such session.
         """
-        with self.locked(session):
+        with self.locked(session) as chat:
+            if chat.personal_session_id is not None:
+                msg = "A personal agent's continuous chat cannot be removed separately"
+                raise HeinzelError(msg)
             shutil.rmtree(self.directory(session))
 
-    def prune(self) -> list[str]:
+    def prune(self) -> list[str]:  # noqa: C901 - retention and owner isolation share the cleanup boundary
         """Remove sessions unchanged for longer than `keep_days`, and the oldest beyond `keep_sessions`.
 
         Returns:
@@ -471,9 +504,11 @@ class ChatStore(McpChatSessions):
             marker = path / SESSION
             if path.is_dir() and marker.is_file():
                 try:
-                    self.load(path.name)
+                    chat = self.load(path.name)
                 except HeinzelError:
                     continue
+                if chat.personal_session_id is not None:
+                    continue  # A personal agent's continuous chat is not subject to generic chat retention.
                 found.append((marker.stat().st_mtime, path))
             elif path.is_dir() and not path.name.startswith("."):
                 with contextlib.suppress(OSError):
