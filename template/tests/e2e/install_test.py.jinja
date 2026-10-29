@@ -41,7 +41,9 @@ def hz(tmp_path_factory):
     else:
         subprocess.run(
             [uv, "build", "--wheel", "--project", str(REPO), "--out-dir", str(root / "dist")],
-            check=True, env=env, timeout=240,
+            check=True,
+            env=env,
+            timeout=240,
         )
         wheel = next((root / "dist").glob("*.whl"))
     subprocess.run([uv, "tool", "install", "--force", HZ_SPEC, "--with", str(wheel)], check=True, env=env, timeout=240)
