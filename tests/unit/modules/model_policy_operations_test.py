@@ -39,6 +39,8 @@ def test_exact_owner_confirmation_and_stale_replay(tmp_path):
         confirmation = ApprovalConfirmation()
         with pytest.raises(HeinzelError):
             service.propose(session, "subscription", payload)
+        with pytest.raises(HeinzelError, match="catalog review"):
+            service.propose(session, "api-priced", {**payload, "allowed_tools": {"plugin:read": "a" * 64}})
         assert service.propose(session, "api-priced", payload).proposal == payload
         assert service.propose(session, "api-priced", payload).status == "proposed"
         with pytest.raises(HeinzelError):

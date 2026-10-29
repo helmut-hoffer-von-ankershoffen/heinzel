@@ -35,6 +35,9 @@ class ModelPolicyService:
         if billing != "api-priced" or grant.access != "pydantic-ai" or grant.model != MODEL:
             msg = "This model billing policy is not supported for review"
             raise HeinzelError(msg)
+        if grant.allowed_tools or grant.allowed_skill_tools:
+            msg = "Tool grants require a verified catalog review that is not yet available"
+            raise HeinzelError(msg)
         resolve_pricing(MODEL, "standard", datetime.now(UTC))
 
     def propose(self, session: str, billing: str, proposal: dict[str, JsonValue]) -> ModelPolicyReview:
