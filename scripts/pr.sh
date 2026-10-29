@@ -75,7 +75,9 @@ if [ -n "${BODY_FILE:-}" ]; then body="$(cat "$BODY_FILE")"; else body="${BODY:-
 [ -n "$body" ] || body="$(git log --reverse --format='- %s' "$base/main..HEAD")"
 uv run --quiet --script scripts/check_confidentiality.py --text "$body"
 
-[ -z "$remote_branch" ] || git rebase --quiet "$remote_branch"
+if [ -n "$remote_branch" ] && ! git merge-base --is-ancestor "$remote_branch" HEAD; then
+  git rebase --quiet "$remote_branch"
+fi
 git push --quiet --set-upstream origin HEAD
 url="$(gh pr list --repo "$repo" --head "$branch" --state open --json url,headRepositoryOwner \
   --jq "map(select(.headRepositoryOwner.login == \"$owner\"))[0].url // empty")"

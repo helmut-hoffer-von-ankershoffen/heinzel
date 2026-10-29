@@ -297,6 +297,34 @@ def test_pushes_a_branch_that_fast_forwards_after_preflight(repo):
     assert f"✓ {URL} (squash auto-merge on)" in done.stdout
 
 
+@pytest.mark.parametrize("conflict", [False, True], ids=["clean merge", "resolved conflict"])
+def test_preserves_a_pushed_branch_after_merging_main(repo, conflict):
+    repo.commit("widget")
+    repo.push()
+    repo.commit("base", "feature")
+    repo.git("switch", "--quiet", "main")
+    repo.commit("base" if conflict else "gear", "main changes")
+    repo.git("push", "--quiet", "origin", "main")
+    repo.git("switch", "--quiet", "feat")
+    merged = subprocess.run(
+        ["git", "merge", "--no-edit", "main"], cwd=repo.dir, env=repo.env, capture_output=True, check=False, timeout=30
+    )
+    assert merged.returncode == (1 if conflict else 0)
+    if conflict:
+        (repo.dir / "base").write_text("feature and main\n", encoding="utf-8")
+        repo.git("add", "base")
+        repo.git("commit", "--quiet", "--no-edit")
+    head = repo.git("rev-parse", "HEAD")
+
+    done = repo.pr()
+
+    assert done.returncode == 0, done.stderr
+    assert repo.remote() == head, "an ordinary push must preserve the resolved merge and commit identities"
+    assert (repo.dir / "base").read_text(encoding="utf-8") == ("feature and main\n" if conflict else "feature\n")
+    assert repo.git("status", "--porcelain") == ""
+    assert repo.log("make") == ["--no-print-directory preflight BASE=origin/main"]
+
+
 @pytest.mark.parametrize(
     ("env", "body"),
     [

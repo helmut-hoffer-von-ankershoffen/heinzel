@@ -9,7 +9,7 @@ Every page is generated from the installed plugin by `hz system plugin docs buil
 
 ## More plugins
 
-Plugins in repositories of their own, installed with `hz system plugin add <spec> --confirm`; a community plugin lists itself in [registry.toml](registry.toml) with a pull request, and `hz system plugin search` finds any repository with the topic `heinzel-plugin`.
+Install a discovered plugin with `hz system plugin add <spec> --confirm`. `hz system plugin search` discovers plugin metadata in configured repository directories and external repositories with the topic `heinzel-plugin`; no registry pull request is needed. The optional [registry.toml](registry.toml) curates additional documentation links below.
 
 | Plugin | What it does | Repository | Documentation |
 | --- | --- | --- | --- |

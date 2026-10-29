@@ -75,6 +75,10 @@ ownership must extend from source boundaries through design, build, test and rel
   repositories carrying the heinzel-plugin topic. Catalog discovery never executes plugin code. Installing the
   discovered spec uses existing reviewed source/provenance checks. A plugin requires no central name list, manual
   workspace dependency, type/coverage registry, test registry or release-list edit. Private metadata stays private.
+- Plugins declare their own runtime and development dependencies and regenerate their own locks, without a core
+  dependency change or sibling environment. Ordinary libraries and implementation-free shared contracts are allowed;
+  concrete provider dependencies remain prohibited. An isolated-environment test installs an additional runtime
+  dependency from a hashed wheel and executes plugin code using it to keep this supported.
 - Core development dependencies and tests exclude real plugins. Core contract tests use synthetic arbitrary names.
   Each plugin builds its own wheel/view bundle, tests against a compatible core/SDK artifact and has its own version
   and release. Plugin-only CI selects affected plugins and never runs core/web/native build matrices. Core changes
