@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { chatKey, sendChat } from "@/api/chat";
-import { api, problem, type SchemaSessionSnapshot } from "@/api/client";
+import { api, problem, type SchemaChatSession, type SchemaSessionSnapshot } from "@/api/client";
 import { useDaemonStatus } from "@/api/daemon";
 import { AgentProposal } from "@/chat/AgentProposal";
 import { ActionCard } from "@/chat/Conversation";
@@ -21,6 +21,13 @@ async function result<T>(call: Promise<{ data?: T; error?: unknown; response: Re
 }
 
 const DAEMON_TICK_CLOCK_SKEW_MS = 60_000;
+
+function requirePersonalChat(chat: SchemaChatSession, sessionId: string, chatId?: string): SchemaChatSession {
+  if (chat.personal_session_id !== sessionId || (chatId !== undefined && chat.id !== chatId)) {
+    throw new Error("This conversation does not belong to the selected Heinzel.");
+  }
+  return chat;
+}
 
 /** Recognize only the fixed five-minute request supported by this local scheduling flow. */
 function asksForFiveMinuteCheckIn(message: string): boolean {
@@ -70,21 +77,41 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
   const daemonStatus = useDaemonStatus(query.data?.schedule?.status === "active");
   const approvalChatId = params.get("approval-chat");
   const agentChatId = params.get("agent-chat");
+  const rememberChat = (chat: SchemaChatSession, expectedId?: string) => {
+    requirePersonalChat(chat, sessionId, expectedId);
+    client.setQueryData(chatKey(chat.id), chat);
+  };
   const agentChatQuery = useQuery({
     queryKey: chatKey(agentChatId ?? ""),
-    queryFn: () => result(api.GET("/system/runner/chat/show", { params: { query: { session: agentChatId ?? "" } } })),
+    queryFn: async () =>
+      requirePersonalChat(
+        await result(api.GET("/system/runner/chat/show", { params: { query: { session: agentChatId ?? "" } } })),
+        sessionId,
+        agentChatId ?? "",
+      ),
     enabled: agentChatId !== null,
     retry: false,
   });
-  const agentChat = agentChatQuery.data;
+  const agentChat =
+    agentChatQuery.data?.personal_session_id === sessionId && agentChatQuery.data.id === agentChatId
+      ? agentChatQuery.data
+      : undefined;
+  const agentChatUnavailable = agentChatId !== null && !agentChat;
   const approvalQuery = useQuery({
     queryKey: chatKey(approvalChatId ?? ""),
-    queryFn: () =>
-      result(api.GET("/system/runner/chat/show", { params: { query: { session: approvalChatId ?? "" } } })),
+    queryFn: async () =>
+      requirePersonalChat(
+        await result(api.GET("/system/runner/chat/show", { params: { query: { session: approvalChatId ?? "" } } })),
+        sessionId,
+        approvalChatId ?? "",
+      ),
     enabled: approvalChatId !== null,
     retry: false,
   });
-  const approvalChat = approvalChatId === null ? undefined : approvalQuery.data;
+  const approvalChat =
+    approvalQuery.data?.personal_session_id === sessionId && approvalQuery.data.id === approvalChatId
+      ? approvalQuery.data
+      : undefined;
   const activeDaemon = query.data?.schedule?.status === "active" ? daemonStatus.data : undefined;
   const daemonStatusUpdatedAt = daemonStatus.dataUpdatedAt;
   const daemonTickAgeMs = activeDaemon?.last_tick ? Date.now() - Date.parse(activeDaemon.last_tick) : null;
@@ -171,6 +198,7 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
     });
   }, [approvalActions, approvalChatId, approvalQuery.isError, approvalQuery.isPending, setParams]);
   const send = async () => {
+    if (agentChatUnavailable) return;
     if (recoveryBlocked || storageError) {
       setError(true);
       return;
@@ -215,7 +243,7 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
           }),
         );
         openedChatId = opened.id;
-        client.setQueryData(chatKey(opened.id), opened);
+        rememberChat(opened);
         setParams(
           (current) => {
             const next = new URLSearchParams(current);
@@ -226,7 +254,7 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
           { replace: true },
         );
         const answered = await sendChat(opened.id, requestedMessage, () => {}, {}, stableRequestId);
-        client.setQueryData(chatKey(answered.id), answered);
+        rememberChat(answered, opened.id);
         const last = answered.messages?.at(-1);
         if (last?.role === "assistant" && last.status !== "completed") {
           if (last.status !== "pending") updateComposer({ agentPending: null });
@@ -245,7 +273,7 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
             const current = await result(
               api.GET("/system/runner/chat/show", { params: { query: { session: openedChatId } } }),
             );
-            client.setQueryData(chatKey(current.id), current);
+            rememberChat(current, openedChatId);
             const last = current.messages?.at(-1);
             if (last?.role === "assistant" && last.request_id === requestId && last.status !== "pending") {
               updateComposer({ agentPending: null, text: "" });
@@ -272,7 +300,7 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
           throw new Error("The message could not be preserved in this tab.");
         }
         const answered = await sendChat(agentChatId, request.message, () => {}, {}, request.request_id);
-        client.setQueryData(chatKey(answered.id), answered);
+        rememberChat(answered, agentChatId);
         const last = answered.messages?.at(-1);
         if (last?.role === "assistant" && last.status !== "completed") {
           if (last.status !== "pending") updateComposer({ agentPending: null });
@@ -289,7 +317,7 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
           const current = await result(
             api.GET("/system/runner/chat/show", { params: { query: { session: agentChatId } } }),
           );
-          client.setQueryData(chatKey(current.id), current);
+          rememberChat(current, agentChatId);
           const last = current.messages?.at(-1);
           if (last?.role === "assistant" && last.request_id === requestId && last.status !== "pending") {
             updateComposer({ agentPending: null, text: "" });
@@ -392,7 +420,7 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
         }),
       );
       controlRequest.current = null;
-      client.setQueryData(chatKey(chat.id), chat);
+      rememberChat(chat);
       setParams(
         (current) => {
           const next = new URLSearchParams(current);
@@ -420,7 +448,7 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
           ? api.POST("/system/runner/chat/confirm", { params: { query: { session: approvalChat.id, action } } })
           : api.POST("/system/runner/chat/decline", { params: { query: { session: approvalChat.id, action } } }),
       );
-      client.setQueryData(chatKey(updated.id), updated);
+      rememberChat(updated, approvalChat.id);
       const decided = updated.actions?.find((item) => item.id === action)?.status;
       if (decided === "done" || decided === "failed" || decided === "declined") forgetApprovalChat();
     } catch (reason) {
@@ -430,7 +458,7 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
         const current = await result(
           api.GET("/system/runner/chat/show", { params: { query: { session: approvalChat.id } } }),
         );
-        client.setQueryData(chatKey(current.id), current);
+        rememberChat(current, approvalChat.id);
         const decided = current.actions?.find((item) => item.id === action)?.status;
         if (decided === "done" || decided === "failed" || decided === "declined") forgetApprovalChat();
       } catch {
@@ -449,7 +477,7 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
       const updated = await result(
         api.POST("/system/runner/chat/recover", { params: { query: { session: agentChat.id, action } } }),
       );
-      client.setQueryData(chatKey(updated.id), updated);
+      rememberChat(updated, agentChat.id);
       await client.invalidateQueries({ queryKey: ["heinzel", "session", sessionId] });
     } catch (reason) {
       setScheduleError(true);
@@ -469,7 +497,7 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
           params: { query: { session: approvalChat.id, action } },
         }),
       );
-      client.setQueryData(chatKey(updated.id), updated);
+      rememberChat(updated, approvalChat.id);
     } catch (reason) {
       setScheduleError(true);
       setScheduleErrorMessage(visibleScheduleError(reason));
@@ -496,7 +524,7 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
           params: { query: { session: approvalChat.id, action } },
         }),
       );
-      client.setQueryData(chatKey(updated.id), updated);
+      rememberChat(updated, approvalChat.id);
       if (updated.actions?.find((item) => item.id === action)?.status === "done") forgetApprovalChat();
       await client.invalidateQueries({ queryKey: ["heinzel", "session", sessionId] });
     } catch (reason) {
@@ -506,7 +534,7 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
         const current = await result(
           api.GET("/system/runner/chat/show", { params: { query: { session: approvalChat.id } } }),
         );
-        client.setQueryData(chatKey(current.id), current);
+        rememberChat(current, approvalChat.id);
       } catch {
         // Keep the recovery link; a later check still cannot rerun the action.
       }
@@ -583,7 +611,9 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
           </section>
         ))}
         {agentChatId && agentChatQuery.isPending && <p role="status">{t("durable.agentLoading")}</p>}
-        {agentChatId && agentChatQuery.isError && <p role="alert">{t("durable.agentUnavailable")}</p>}
+        {agentChatId && !agentChatQuery.isPending && agentChatUnavailable && (
+          <p role="alert">{t("durable.agentUnavailable")}</p>
+        )}
         {agentChat?.messages?.map((message) => (
           <p key={`${message.role}-${message.request_id ?? message.at}`} className="whitespace-pre-wrap text-sm">
             <strong>{message.role}:</strong> {message.text || message.detail}
@@ -620,7 +650,7 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
                               params: { query: { session: agentChat.id, action: action.id } },
                             }),
                       );
-                      client.setQueryData(chatKey(updated.id), updated);
+                      rememberChat(updated, agentChat.id);
                       await client.invalidateQueries({ queryKey: ["heinzel", "session", sessionId] });
                     } catch (reason) {
                       setScheduleError(true);
@@ -629,7 +659,7 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
                         const current = await result(
                           api.GET("/system/runner/chat/show", { params: { query: { session: agentChat.id } } }),
                         );
-                        client.setQueryData(chatKey(current.id), current);
+                        rememberChat(current, agentChat.id);
                         await client.invalidateQueries({ queryKey: ["heinzel", "session", sessionId] });
                       } catch {
                         // Keep the recovery link; a later reload reads the same action without replaying it.
@@ -762,7 +792,9 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
               </div>
             )}
             {approvalChatId && approvalQuery.isPending && <p role="status">{t("durable.scheduleLoadingReview")}</p>}
-            {approvalChatId && approvalQuery.isError && <p role="alert">{t("durable.scheduleReviewFailed")}</p>}
+            {approvalChatId && !approvalQuery.isPending && !approvalChat && (
+              <p role="alert">{t("durable.scheduleReviewFailed")}</p>
+            )}
             {intentNotice && <p role="status">{t("durable.scheduleIntentPrepared")}</p>}
             {scheduleError && <p role="alert">{scheduleErrorMessage || t("durable.scheduleFailed")}</p>}
           </section>
@@ -808,7 +840,9 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
         {error && <p role="alert">{t("durable.failed")}</p>}
         <Button
           type="submit"
-          disabled={busy || storageError || recoveryBlocked || !query.data || (!pending && !text.trim())}
+          disabled={
+            busy || storageError || recoveryBlocked || agentChatUnavailable || !query.data || (!pending && !text.trim())
+          }
         >
           {busy
             ? t("durable.scheduleWorking")

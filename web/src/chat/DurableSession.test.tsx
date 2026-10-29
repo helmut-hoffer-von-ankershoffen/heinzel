@@ -28,6 +28,7 @@ const proposedSchedule = {
 
 const reviewChat = {
   id: "0123456789abcdef",
+  personal_session_id: sessionId,
   title: "Check-in approval",
   messages: [],
   actions: [
@@ -60,6 +61,54 @@ const approvedChat = {
 afterEach(() => sessionStorage.clear());
 
 describe("personal conversation links", () => {
+  it.each([null, "hz-01ARZ3NDEKTSV4RRFFQ69G5FAW"])(
+    "does not display or send to a linked conversation with binding %s",
+    async (binding) => {
+      const linked = {
+        ...reviewChat,
+        personal_session_id: binding,
+        messages: [{ role: "assistant", text: "Another agent's private conversation" }],
+      };
+      const { calls } = mockApi({
+        ...shell,
+        "/api/heinzel/session": snapshot,
+        "/api/system/runner/chat/show": linked,
+      });
+      renderAt(`/heinzel?chat=${sessionId}&agent-chat=${linked.id}&approval-chat=${linked.id}`);
+      const panel = within(await screen.findByRole("complementary", { name: "Chat" }));
+      const box = await panel.findByLabelText("Message your Heinzel");
+      fireEvent.change(box, { target: { value: "Keep this with the selected agent" } });
+      await waitFor(() => expect(panel.getByRole("button", { name: "Queue message" })).toBeDisabled());
+      fireEvent.submit(box.closest("form") as HTMLFormElement);
+      await waitFor(() => expect(panel.getAllByRole("alert").length).toBeGreaterThan(0));
+      expect(panel.queryByText("Another agent's private conversation")).not.toBeInTheDocument();
+      expect(panel.queryByRole("button", { name: "Confirm" })).not.toBeInTheDocument();
+      expect(calls.some((request) => request.method === "POST")).toBe(false);
+      expect(box).toHaveValue("Keep this with the selected agent");
+    },
+  );
+
+  it("does not render another agent's cached conversation while its link is being checked", async () => {
+    const client = queryClient();
+    client.setQueryData(["system", "runner", "chat", "show", reviewChat.id], {
+      ...reviewChat,
+      personal_session_id: "hz-01ARZ3NDEKTSV4RRFFQ69G5FAW",
+      messages: [{ role: "assistant", text: "Cached private conversation" }],
+    });
+    mockApi({ ...shell, "/api/heinzel/session": snapshot });
+    const router = createMemoryRouter(
+      [{ path: "/", element: <DurableSession sessionId={sessionId} onClose={() => {}} /> }],
+      { initialEntries: [`/?agent-chat=${reviewChat.id}`] },
+    );
+    render(
+      <Providers client={client}>
+        <RouterProvider router={router} />
+      </Providers>,
+    );
+    expect(screen.queryByText("Cached private conversation")).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole("button", { name: "Queue message" })).toBeDisabled());
+  });
+
   it.each([
     "Please schedule a check-in every five minutes.",
     "Notify me every 5 minutes.",
@@ -69,6 +118,7 @@ describe("personal conversation links", () => {
     let confirmed = false;
     const agentChat = {
       id: "abcdef0123456789",
+      personal_session_id: sessionId,
       title: "Check-in conversation",
       context: { kind: "check-in", ref: sessionId, request_id: "open-request", timezone: "Europe/Berlin" },
       messages: [
@@ -137,7 +187,14 @@ describe("personal conversation links", () => {
 
   it("offers a direct inactive proposal when the configured runner is unavailable", async () => {
     let stored = { ...snapshot, schedule: null as null | typeof proposedSchedule };
-    const chat = { id: "abcdef0123456789", title: "Check-in conversation", messages: [], actions: [], costs: {} };
+    const chat = {
+      id: "abcdef0123456789",
+      personal_session_id: sessionId,
+      title: "Check-in conversation",
+      messages: [],
+      actions: [],
+      costs: {},
+    };
     const failedChat = {
       ...chat,
       messages: [
@@ -196,6 +253,7 @@ describe("personal conversation links", () => {
     };
     const interruptedChat = {
       id: "abcdef0123456789",
+      personal_session_id: sessionId,
       title: "Check-in conversation",
       context: { kind: "check-in", ref: sessionId, request_id: "open-request", timezone: "Europe/Berlin" },
       messages: [],
@@ -232,6 +290,7 @@ describe("personal conversation links", () => {
     let confirmed = false;
     const pendingChat = {
       id: "abcdef0123456789",
+      personal_session_id: sessionId,
       title: "Check-in conversation",
       context: { kind: "check-in", ref: sessionId, request_id: "open-request", timezone: "Europe/Berlin" },
       messages: [],
@@ -414,6 +473,7 @@ describe("personal conversation links", () => {
     async (status) => {
       const agentChat = {
         id: "abcdef0123456789",
+        personal_session_id: sessionId,
         title: "Check-in conversation",
         context: { kind: "check-in", ref: sessionId, request_id: "open-request", timezone: "Europe/Berlin" },
         messages: [],
