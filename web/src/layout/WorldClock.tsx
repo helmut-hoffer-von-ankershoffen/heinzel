@@ -221,7 +221,7 @@ export function WorldClock({ onClose, flowing = false }: { onClose: () => void; 
                     <button
                       key={point.zone}
                       type="button"
-                      aria-label={`${city(point.zone)} · ${point.zone}`}
+                      aria-label={city(point.zone)}
                       aria-describedby={hovered === point.zone ? `world-clock-marker-${point.zone}` : undefined}
                       className="absolute z-10 size-6 -translate-x-1/2 -translate-y-1/2 rounded-full focus-visible:outline-2 focus-visible:outline-offset-2"
                       style={{ left: `${point.x}%`, top: `${point.y}%` }}
@@ -265,7 +265,7 @@ export function WorldClock({ onClose, flowing = false }: { onClose: () => void; 
                   className="pointer-events-none absolute z-(--layer-popover) -translate-x-1/2 -translate-y-full rounded-md border border-border bg-popover px-2 py-1 text-xs shadow-sm"
                   style={{ left: `${hover.x}%`, top: `${hover.y}%` }}
                 >
-                  {city(hover.zone)} · {hover.zone}
+                  {city(hover.zone)}
                 </div>
               )}
             </div>
@@ -300,9 +300,6 @@ export function WorldClock({ onClose, flowing = false }: { onClose: () => void; 
                           )}
                         </span>
                       </span>
-                      {zone.zone !== city(zone.zone) && (
-                        <span className="block text-xs text-muted-foreground">{zone.zone}</span>
-                      )}
                     </button>
                     <WorkStateIcon work={work} />
                     {knownZone(zone.zone) ? (

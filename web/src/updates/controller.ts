@@ -12,6 +12,7 @@ import { preserveUpdateWork } from "./work";
 export type UpdateStatus = {
   current: string;
   latest: string | null;
+  installed_at: string | null;
   available: boolean;
   supported: boolean;
   reason: string | null;
@@ -207,5 +208,5 @@ export async function finishUpdate(signal: AbortSignal, transport = updateTransp
     throw new Error("The frontend build changed before reload verification completed.");
   await bounded((signal) => transport.assets(frontend, signal, true), signal, 30_000);
   sessionStorage.removeItem(KEY);
-  return `Updated to hz ${running.version}. ${receipt.result.message}`;
+  return receipt.result.message;
 }

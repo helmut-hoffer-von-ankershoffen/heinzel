@@ -75,15 +75,34 @@ try {
   await touch.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x, y }] });
   await touch.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x, y: y - 120 }] });
   await touch.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
-  await page.waitForTimeout(200);
+  await page.waitForFunction(
+    (before) => document.querySelector('[data-placement="below"]').parentElement.scrollTop > before,
+    beforeTouch,
+    { timeout: 3000 },
+  );
   const afterTouch = await scroller.evaluate((element) => element.scrollTop);
   assert.ok(
     afterTouch > beforeTouch,
     `touch scroll: before=${beforeTouch} after=${afterTouch} globe=${JSON.stringify(globe)} metrics=${JSON.stringify(await scroller.evaluate((e) => [e.scrollHeight, e.clientHeight]))}`,
   );
-  await touch.detach();
   const last = panel.getByText("Los Angeles", { exact: true });
-  const box = await last.boundingBox();
+  // A single 120px swipe need not cover the 200px initially remaining. Keep
+  // swiping as a person would, while still requiring the globe gesture above
+  // to have scrolled the shared page rather than being captured as rotation.
+  let box = await last.boundingBox();
+  for (let attempt = 0; attempt < 3 && (!box || box.y + box.height > 844); attempt++) {
+    const beforeSwipe = await scroller.evaluate((element) => element.scrollTop);
+    await touch.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x, y: 700 }] });
+    await touch.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x, y: 450 }] });
+    await touch.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+    await page.waitForFunction(
+      (before) => document.querySelector('[data-placement="below"]').parentElement.scrollTop > before,
+      beforeSwipe,
+      { timeout: 3000 },
+    );
+    box = await last.boundingBox();
+  }
+  await touch.detach();
   assert.ok(box && box.y >= 0 && box.y + box.height <= 844, "last location is visible after scrolling");
   // The other workspace panels also follow the page, and switching preserves their contents.
   await page.getByRole("tab", { name: "Chat", exact: true }).click();

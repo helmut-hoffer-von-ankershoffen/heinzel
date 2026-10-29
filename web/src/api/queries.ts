@@ -1,5 +1,6 @@
 // One query per operation the screens read; TanStack Query caches them, so screens share what they fetched.
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { isLocalServer } from "@/lib/browser";
 import { splash, unreachableError } from "@/splash/store";
 import { api, unwrap } from "./client";
 import type { components } from "./schema";
@@ -172,8 +173,8 @@ export const useNotices = () =>
 export const useTestNotice = () => {
   const client = useQueryClient();
   return useMutation({
-    // Native too, as a person pressed the button: the answer says how each way of reaching you stands.
-    mutationFn: () => unwrap(api.POST("/system/notify/test", { params: { query: { native: true } } })),
+    // A remote browser tests its own notifications, not the server's desktop.
+    mutationFn: () => unwrap(api.POST("/system/notify/test", { params: { query: { native: isLocalServer() } } })),
     onSettled: () => client.invalidateQueries({ queryKey: ["system", "notify", "list"] }),
   });
 };

@@ -70,7 +70,7 @@ it("installs once, verifies replacement and assets, then proves the reloaded app
       "reload",
     ]);
     expect(pendingUpdate()?.stage).toBe("reloading");
-    expect(await finishUpdate(new AbortController().signal, transport)).toContain("Updated to hz 0.2.0");
+    expect(await finishUpdate(new AbortController().signal, transport)).toBe("Core and plugins updated.");
     expect(order.at(-1)).toBe("loaded-assets");
     expect(pendingUpdate()).toBeNull();
     expect(transport.install).toHaveBeenCalledTimes(1);

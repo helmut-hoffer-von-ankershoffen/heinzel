@@ -1,6 +1,7 @@
-// Installing the app (ADR 0046): Chrome and Edge offer `beforeinstallprompt`, which this keeps until the person asks;
-// Safari has no prompt, so the app says where its menu item is (File > Add to Dock). Installed, it has a Dock icon.
+// Installing the app (ADR 0046): keep Chrome/Edge's prompt until asked; Safari gets Add to Dock on desktop or Add to
+// Home Screen on iPhone/iPad. Both display-mode and navigator.standalone can identify an installed app.
 import { useSyncExternalStore } from "react";
+import { isIOS } from "@/lib/browser";
 
 type InstallPrompt = Event & { prompt: () => Promise<void>; userChoice: Promise<{ outcome: string }> };
 
@@ -23,11 +24,16 @@ export function captureInstallPrompt(target: Window = window) {
   });
 }
 
-export type InstallState = "installed" | "prompt" | "safari" | "unsupported";
+export type InstallState = "installed" | "prompt" | "safari" | "ios" | "unsupported";
 
 export function installState(): InstallState {
-  if (window.matchMedia?.("(display-mode: standalone)").matches) return "installed";
+  if (
+    window.matchMedia?.("(display-mode: standalone)").matches ||
+    (navigator as Navigator & { standalone?: boolean }).standalone
+  )
+    return "installed";
   if (deferred) return "prompt";
+  if (isIOS()) return "ios";
   const agent = navigator.userAgent;
   if (/Safari\//.test(agent) && !/Chrome\/|Chromium\/|Edg\//.test(agent)) return "safari";
   return "unsupported";

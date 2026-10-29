@@ -262,6 +262,7 @@ export async function verifyLayers(page, shots, screenshot) {
       throw new Error(`Version tagline should occupy two lines, found ${JSON.stringify(taglineLayout)}`);
     await front(`${mode}-version`, versionPane);
     await page.keyboard.press("Escape");
+    await versionPane.waitFor({ state: "hidden" });
     await page.mouse.move(0, 0);
     await park();
     const clock = page.getByRole("button", { description: "World Clock: time for the team and stakeholders" });

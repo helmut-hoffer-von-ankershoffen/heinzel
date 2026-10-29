@@ -6,7 +6,7 @@ import { type FakeContext, fakeAudio } from "@/test/fakeAudio";
 import { acmeTheme, shell, themeList } from "@/test/fixtures";
 import { expectAccessible, mockApi, renderAt } from "@/test/render";
 import { needsReload, page, rememberPageFrame, resetPageFrame } from "./queries";
-import { resetSound, soundState } from "./store";
+import { duck, resetSound, soundState } from "./store";
 import { rememberYouTubeAccount } from "./stream";
 
 const ORIGIN = "https://www.youtube-nocookie.com";
@@ -106,6 +106,22 @@ const playSound = async (user: ReturnType<typeof userEvent.setup>, title: string
 };
 
 describe("Sound", () => {
+  it.each(["claude-fm", "rain"])("offers working volume controls for %s on iPhone", async (name) => {
+    vi.spyOn(navigator, "userAgent", "get").mockReturnValue("Mozilla/5.0 (iPhone) AppleWebKit/605.1.15");
+    soundApi(name);
+    const user = userEvent.setup();
+    renderAt("/");
+    const dialog = await openSoundChoices(user);
+    if (name === "claude-fm") {
+      expect(within(dialog).getByText(/Use your iPhone or iPad volume buttons/)).toBeInTheDocument();
+      expect(within(dialog).queryByRole("slider", { name: "Volume" })).not.toBeInTheDocument();
+      expect(within(dialog).queryByRole("switch", { name: "Softer while I type" })).not.toBeInTheDocument();
+    } else {
+      expect(within(dialog).getByRole("slider", { name: "Volume" })).toHaveValue("50");
+      expect(within(dialog).getByRole("switch", { name: "Softer while I type" })).toBeInTheDocument();
+    }
+  });
+
   it("switches from the followed theme sound to a manual contributor soundscape and plays its source", async () => {
     vi.spyOn(page, "reload").mockImplementation(() => undefined);
     const snow: SchemaSoundscapeView = {
@@ -477,6 +493,29 @@ describe("a layered soundscape", () => {
 });
 
 describe("a stream's fades", () => {
+  it("leaves iPhone volume to the device even when saved volume is zero, and mutes while recording voice", async () => {
+    vi.spyOn(navigator, "userAgent", "get").mockReturnValue("Mozilla/5.0 (iPhone) AppleWebKit/605.1.15");
+    mockApi({ ...shell, "/api/system/sound/list": soundList("claude-fm", { volume: 0 }) });
+    const user = userEvent.setup();
+    renderAt("/");
+    await playSound(user, "Claude FM");
+    const frame = (await screen.findByTitle("Claude FM player")) as HTMLIFrameElement;
+    const post = vi.spyOn(frame.contentWindow as Window, "postMessage");
+    const sent = () => post.mock.calls.map(([data]) => JSON.parse(String(data)).func);
+    await act(async () => {
+      window.dispatchEvent(
+        new MessageEvent("message", { data: { event: "onReady" }, origin: ORIGIN, source: frame.contentWindow }),
+      );
+    });
+    expect(sent()).toEqual(["mute", "unMute", "playVideo"]);
+    post.mockClear();
+    act(() => duck("voice", true));
+    expect(sent()).toEqual(["mute", "playVideo"]);
+    post.mockClear();
+    act(() => duck("voice", false));
+    expect(sent()).toEqual(["unMute", "playVideo"]);
+  });
+
   it("is silent when the player is ready, plays, then steps its volume up, and pauses after fading out", async () => {
     soundApi("claude-fm");
     const user = userEvent.setup();
