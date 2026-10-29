@@ -14671,6 +14671,65 @@
         "title": "UserToolActivity",
         "type": "object"
       },
+      "UserTurnResolution": {
+        "description": "The exact stopped turn was explicitly set aside, not replayed or undone.",
+        "properties": {
+          "request_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "session_id": {
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "status": {
+            "const": "abandoned",
+            "default": "abandoned",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "request_id"
+        ],
+        "title": "UserTurnResolution",
+        "type": "object"
+      },
+      "UserTurnState": {
+        "description": "The recorded state of one owner-bound turn; unresolved may still be running.",
+        "properties": {
+          "request_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "session_id": {
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "unresolved",
+              "abandoned",
+              "completed"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "request_id",
+          "status"
+        ],
+        "title": "UserTurnState",
+        "type": "object"
+      },
       "ValidationError": {
         "properties": {
           "ctx": {
@@ -15290,6 +15349,35 @@
           "slots"
         ],
         "title": "WidgetEntry",
+        "type": "object"
+      },
+      "heinzel_abandon_chat_turn_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "acknowledge_uncertain": {
+            "description": "Confirm the outcome may be unknown and no retry or undo occurs.",
+            "title": "Acknowledge Uncertain",
+            "type": "boolean"
+          },
+          "request_id": {
+            "description": "A stable client request id; reuse it only for an exact retry.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "session_id": {
+            "description": "The stable personal session id returned by new-chat or sessions.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "request_id",
+          "acknowledge_uncertain"
+        ],
+        "title": "heinzel_abandon_chat_turn_Input",
         "type": "object"
       },
       "heinzel_accept_agent_contract_Input": {
@@ -16243,6 +16331,48 @@
         ]
       }
     },
+    "/heinzel/abandon-chat-turn": {
+      "post": {
+        "description": "Explicitly set aside a stopped uncertain turn; never retry or undo its possible effects.\n\nRaises:\n    HeinzelError: If the uncertain outcome was not acknowledged.",
+        "operationId": "heinzel_abandon_chat_turn",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/heinzel_abandon_chat_turn_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserTurnResolution"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Explicitly set aside a stopped uncertain turn; never retry or undo its possible effects.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
     "/heinzel/accept-agent-contract": {
       "post": {
         "description": "Record only exact contract acceptance through trusted confirmation.\n\nRaises:\n    HeinzelError: If confirmation or exact review is invalid.",
@@ -16542,6 +16672,58 @@
           }
         },
         "summary": "Durably queue a message for this Heinzel; acceptance is distinct from a completed model answer.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/chat-turn-state": {
+      "get": {
+        "description": "Read the recorded turn state; unresolved may still be running.",
+        "operationId": "heinzel_chat_turn_state",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserTurnState"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read the recorded turn state; unresolved may still be running.",
         "tags": [
           "heinzel"
         ]

@@ -128,6 +128,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/heinzel/abandon-chat-turn": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Explicitly set aside a stopped uncertain turn; never retry or undo its possible effects.
+         * @description Explicitly set aside a stopped uncertain turn; never retry or undo its possible effects.
+         *
+         *     Raises:
+         *         HeinzelError: If the uncertain outcome was not acknowledged.
+         */
+        post: operations["heinzel_abandon_chat_turn"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/heinzel/accept-agent-contract": {
         parameters: {
             query?: never;
@@ -265,6 +288,26 @@ export interface paths {
          * @description Durably queue a message for this Heinzel; acceptance is distinct from a completed model answer.
          */
         post: operations["heinzel_chat"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/heinzel/chat-turn-state": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read the recorded turn state; unresolved may still be running.
+         * @description Read the recorded turn state; unresolved may still be running.
+         */
+        get: operations["heinzel_chat_turn_state"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -11071,6 +11114,37 @@ export interface components {
             /** Session Id */
             session_id: string;
         };
+        /**
+         * UserTurnResolution
+         * @description The exact stopped turn was explicitly set aside, not replayed or undone.
+         */
+        UserTurnResolution: {
+            /** Request Id */
+            request_id: string;
+            /** Session Id */
+            session_id: string;
+            /**
+             * Status
+             * @default abandoned
+             * @constant
+             */
+            status: "abandoned";
+        };
+        /**
+         * UserTurnState
+         * @description The recorded state of one owner-bound turn; unresolved may still be running.
+         */
+        UserTurnState: {
+            /** Request Id */
+            request_id: string;
+            /** Session Id */
+            session_id: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "pending" | "unresolved" | "abandoned" | "completed";
+        };
         /** ValidationError */
         ValidationError: {
             /** Context */
@@ -11352,6 +11426,24 @@ export interface components {
              * @description What to show; none when there is nothing to show.
              */
             widget?: (components["schemas"]["CardWidget"] | components["schemas"]["ListWidget"] | components["schemas"]["MetricWidget"] | components["schemas"]["ProgressWidget"] | components["schemas"]["GraphicWidget"]) | null;
+        };
+        /** heinzel_abandon_chat_turn_Input */
+        heinzel_abandon_chat_turn_Input: {
+            /**
+             * Acknowledge Uncertain
+             * @description Confirm the outcome may be unknown and no retry or undo occurs.
+             */
+            acknowledge_uncertain: boolean;
+            /**
+             * Request Id
+             * @description A stable client request id; reuse it only for an exact retry.
+             */
+            request_id: string;
+            /**
+             * Session Id
+             * @description The stable personal session id returned by new-chat or sessions.
+             */
+            session_id: string;
         };
         /** heinzel_accept_agent_contract_Input */
         heinzel_accept_agent_contract_Input: {
@@ -11939,6 +12031,8 @@ export type SchemaUsageRow = components['schemas']['UsageRow'];
 export type SchemaUsageTotal = components['schemas']['UsageTotal'];
 export type SchemaUserChatAnswer = components['schemas']['UserChatAnswer'];
 export type SchemaUserToolActivity = components['schemas']['UserToolActivity'];
+export type SchemaUserTurnResolution = components['schemas']['UserTurnResolution'];
+export type SchemaUserTurnState = components['schemas']['UserTurnState'];
 export type SchemaValidationError = components['schemas']['ValidationError'];
 export type SchemaViewEntry = components['schemas']['ViewEntry'];
 export type SchemaWaiting = components['schemas']['Waiting'];
@@ -11946,6 +12040,7 @@ export type SchemaWakeScheduleView = components['schemas']['WakeScheduleView'];
 export type SchemaWeek = components['schemas']['Week'];
 export type SchemaWidgetAction = components['schemas']['WidgetAction'];
 export type SchemaWidgetEntry = components['schemas']['WidgetEntry'];
+export type SchemaHeinzelAbandonChatTurnInput = components['schemas']['heinzel_abandon_chat_turn_Input'];
 export type SchemaHeinzelAcceptAgentContractInput = components['schemas']['heinzel_accept_agent_contract_Input'];
 export type SchemaHeinzelAmendScheduledAgentInput = components['schemas']['heinzel_amend_scheduled_agent_Input'];
 export type SchemaHeinzelAnswerChatInput = components['schemas']['heinzel_answer_chat_Input'];
@@ -12127,6 +12222,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TeamGraphDocument"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    heinzel_abandon_chat_turn: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["heinzel_abandon_chat_turn_Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserTurnResolution"];
                 };
             };
             /** @description Validation Error */
@@ -12357,6 +12485,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MessageAccepted"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    heinzel_chat_turn_state: {
+        parameters: {
+            query: {
+                session_id: string;
+                request_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserTurnState"];
                 };
             };
             /** @description Validation Error */

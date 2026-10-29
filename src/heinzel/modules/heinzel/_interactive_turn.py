@@ -248,6 +248,27 @@ class InteractiveTurn:
                     None,
                 )
                 if prior_reply is None:
+                    abandoned = [
+                        e for e in events if e.kind == "interactive.abandoned" and e.key == _turn_id(incoming_id)
+                    ]
+                    if abandoned:
+                        if (
+                            len(abandoned) != 1
+                            or abandoned[0].data.get("message_id") != incoming_id
+                            or abandoned[0].data.get("owner") != repo.principal_id
+                            or abandoned[0].data.get("origin") not in {"cli", "api-bearer", "web-session", "web-device"}
+                            or not any(
+                                e.kind == "interactive.started"
+                                and e.key == _turn_id(incoming_id)
+                                and e.seq < abandoned[0].seq
+                                and e.data.get("message_id") == incoming_id
+                                for e in events
+                            )
+                        ):
+                            msg = "An earlier turn has an invalid resolution record"
+                            raise HeinzelError(msg)
+                        ordered.extend((incoming, abandoned[0]))
+                        continue
                     if any(
                         event.kind == "interactive.started" and event.key == _turn_id(incoming_id) for event in events
                     ):
@@ -265,11 +286,23 @@ class InteractiveTurn:
             if len(json.dumps(current_item, ensure_ascii=True).encode()) > _MAX_CURRENT_JSON_BYTES:
                 msg = "This message is too large for the selected chat bridge; shorten it before sending"
                 raise HeinzelError(msg)
-            previous = [self._crud._message(session_id, event) for event in ordered[:-1]]  # noqa: SLF001
             history: list[dict[str, str]] = []
             remaining = _MAX_HISTORY_JSON_BYTES
             omitted = False
-            for item in reversed(previous):
+            for previous_event in reversed(ordered[:-1]):
+                if previous_event.kind == "interactive.abandoned":
+                    entry = {
+                        "role": "system",
+                        "text": "The prior turn was set aside with an uncertain outcome; it was not retried.",
+                    }
+                    size = len(json.dumps(entry, ensure_ascii=True).encode()) + 2
+                    if size > remaining:
+                        omitted = True
+                        break
+                    history.insert(0, entry)
+                    remaining -= size
+                    continue
+                item = self._crud._message(session_id, previous_event)  # noqa: SLF001
                 if item.status == "expired":
                     omitted = True
                     continue
