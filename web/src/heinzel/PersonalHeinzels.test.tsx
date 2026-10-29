@@ -414,4 +414,20 @@ describe("personal identities", () => {
     expect(await section.findByRole("button", { name: "Retry save" })).toBeInTheDocument();
     expect(section.getByLabelText("Personal Heinzel")).toBeDisabled();
   });
+  it("keeps the pending save when the acknowledgement contains different profile values", async () => {
+    mockApi({
+      ...shell,
+      "/api/heinzel/sessions": { sessions },
+      "/api/heinzel/session": snapshot(first, "Alpha"),
+      "/api/heinzel/profile": { ...snapshot(first, "Other profile"), profile_revision: 2 },
+    });
+    renderAt("/heinzel");
+    const section = within(await screen.findByRole("region", { name: "Personal Heinzels" }));
+    fireEvent.change(await section.findByLabelText("Personal Heinzel"), { target: { value: first } });
+    fireEvent.change(await section.findByLabelText("Name"), { target: { value: "My draft" } });
+    fireEvent.click(section.getByRole("button", { name: "Save name and look" }));
+    expect(await section.findByRole("button", { name: "Retry save" })).toBeInTheDocument();
+    expect(section.getByLabelText("Name")).toHaveValue("My draft");
+    expect(section.getByLabelText("Personal Heinzel")).toBeDisabled();
+  });
 });
