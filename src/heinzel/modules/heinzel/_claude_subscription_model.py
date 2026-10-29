@@ -35,6 +35,7 @@ from pydantic_ai.settings import ModelSettings
 from pydantic_ai.usage import RequestUsage
 
 from heinzel import HeinzelError
+from heinzel.modules.heinzel._subscription_slots import SubscriptionSlots
 from heinzel.modules.system.runner._process import Outcome, run_bounded
 
 _VERSION = "2.1.312"
@@ -111,13 +112,15 @@ _COMMAND_FLAGS = (*_FLAGS, "--json-schema", json.dumps(_WIRE_SCHEMA, separators=
 class ClaudeSubscriptionModel(Model):
     """Turn closed CLI text/tool requests into Pydantic messages; host dispatches any proposed tool."""
 
-    def __init__(
+    def __init__(  # noqa: PLR0913 - host admission requires explicit trusted dependencies
         self,
         executable: Path,
         policy: SubscriptionAdmission,
         verifier: SubscriptionVerifier,
         current_policy: Callable[[], SubscriptionAdmission],
         *,
+        slots: SubscriptionSlots,
+        turn_id: str,
         execute: Callable[..., Outcome] = run_bounded,
     ) -> None:
         super().__init__()
@@ -126,7 +129,11 @@ class ClaudeSubscriptionModel(Model):
         self._verifier = verifier
         self._current_policy = current_policy
         self._execute = execute
+        self._slots = slots
+        self._turn_id = turn_id
         self._calls = 0
+        self._blocked = False
+        self._inflight = False
         if (
             not executable.is_absolute()
             or re.fullmatch(r"u-[0-9a-f]{32}", policy.owner) is None
@@ -164,12 +171,20 @@ class ClaudeSubscriptionModel(Model):
 
         Raises:
             HeinzelError: If any requested bound, tool, process or response cannot be verified.
+            asyncio.CancelledError: If the caller stops waiting; the reserved slot remains consumed.
         """
         denied = "The subscription response could not be safely admitted or verified"
         settings = dict(model_settings or {})
-        if settings or model_request_parameters.native_tools or self._calls >= self._policy.max_requests:
+        if (
+            settings
+            or model_request_parameters.native_tools
+            or self._blocked
+            or self._inflight
+            or self._calls >= self._policy.max_requests
+        ):
             raise HeinzelError(denied)
-        self._calls += 1  # Reserve before any await; uncertain attempts are never renewed.
+        self._calls += 1
+        ordinal = self._calls  # Capture before any await; concurrent calls must not share an ordinal.
         tools = [*model_request_parameters.function_tools, *model_request_parameters.output_tools]
         names = [tool.name for tool in tools]
         if len(set(names)) != len(names):
@@ -204,6 +219,7 @@ class ClaudeSubscriptionModel(Model):
             raise HeinzelError(denied) from None
         if len(payload.encode()) > _MAX_INPUT:
             raise HeinzelError(denied)
+        self._inflight = True
         try:
             executable = self._executable.resolve(strict=True)
             if executable.stat().st_size > 256 * 1024 * 1024:
@@ -238,6 +254,14 @@ class ClaudeSubscriptionModel(Model):
                     or not self._verifier.verify(executable, digest, _VERSION, _COMMAND_FLAGS, self._policy)
                 ):
                     raise HeinzelError(denied)  # noqa: TRY301 - all process failures are redacted at this boundary
+                self._slots.reserve(
+                    self._policy.owner,
+                    self._policy.session,
+                    self._turn_id,
+                    self._policy.revision,
+                    self._policy.max_requests,
+                    ordinal,
+                )
                 outcome = await asyncio.to_thread(
                     self._execute,
                     [str(executable), *_COMMAND_FLAGS],
@@ -274,5 +298,11 @@ class ClaudeSubscriptionModel(Model):
             else:
                 raise HeinzelError(denied)  # noqa: TRY301 - all process failures are redacted at this boundary
             return ModelResponse(parts, model_name=self.model_name, usage=RequestUsage(unmeasured_requests=1))
+        except asyncio.CancelledError:
+            self._blocked = True
+            raise
         except Exception:  # noqa: BLE001 - verifier, process and response errors can contain private data
+            self._blocked = True
             raise HeinzelError(denied) from None
+        finally:
+            self._inflight = False

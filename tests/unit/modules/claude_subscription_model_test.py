@@ -13,7 +13,18 @@ from pydantic_ai.models import ModelRequestParameters
 from pydantic_ai.tools import ToolDefinition
 
 from heinzel import HeinzelError
-from heinzel.modules.heinzel._claude_subscription_model import ClaudeSubscriptionModel, SubscriptionAdmission
+from heinzel.modules.heinzel._claude_subscription_model import ClaudeSubscriptionModel as _ClaudeSubscriptionModel
+from heinzel.modules.heinzel._claude_subscription_model import SubscriptionAdmission
+
+
+class FixtureSlots:
+    def reserve(self, *args):
+        pass
+
+
+def fixture_model(*args, **kwargs):
+    return _ClaudeSubscriptionModel(*args, slots=FixtureSlots(), turn_id="fixture", **kwargs)
+
 
 pytestmark = pytest.mark.unit
 
@@ -78,7 +89,7 @@ def parameters():
 def test_fake_executable_roundtrip_preserves_unknown_subscription_cost_and_host_tool_boundary(tmp_path):
     verifier = FixtureVerifier()
     policy = admission()
-    model = ClaudeSubscriptionModel(fake_cli(tmp_path), policy, verifier, lambda: policy)
+    model = fixture_model(fake_cli(tmp_path), policy, verifier, lambda: policy)
     first = [ModelRequest(parts=[UserPromptPart(content="private question")])]
     response = asyncio.run(model.request(first, None, parameters()))
     assert len(response.parts) == 1
@@ -98,7 +109,7 @@ def test_fake_executable_roundtrip_preserves_unknown_subscription_cost_and_host_
 
 def test_pydantic_agent_roundtrip_dispatches_only_host_tool(tmp_path):
     policy = admission()
-    model = ClaudeSubscriptionModel(fake_cli(tmp_path), policy, FixtureVerifier(), lambda: policy)
+    model = fixture_model(fake_cli(tmp_path), policy, FixtureVerifier(), lambda: policy)
     agent = Agent(model)
     calls = []
 
@@ -117,10 +128,10 @@ def test_unsupported_caps_and_model_settings_fail_closed_before_process(tmp_path
     executable = fake_cli(tmp_path)
     for policy in (admission(dollar_cap=1.0), admission(total_token_cap=1000)):
         with pytest.raises(HeinzelError, match="cannot be enforced"):
-            ClaudeSubscriptionModel(executable, policy, FixtureVerifier(), lambda policy=policy: policy)
+            fixture_model(executable, policy, FixtureVerifier(), lambda policy=policy: policy)
     policy = admission()
     verifier = FixtureVerifier()
-    model = ClaudeSubscriptionModel(executable, policy, verifier, lambda: policy)
+    model = fixture_model(executable, policy, verifier, lambda: policy)
     with pytest.raises(HeinzelError, match="safely admitted"):
         asyncio.run(
             model.request([ModelRequest(parts=[UserPromptPart(content="private")])], {"max_tokens": 20}, parameters())
@@ -138,7 +149,7 @@ def test_untrusted_or_stale_admission_and_version_refuse_before_prompt(tmp_path)
         (FixtureVerifier(), lambda: replace(policy, revision=2)),
         (FixtureVerifier(), lambda: policy),
     ]:
-        model = ClaudeSubscriptionModel(executable, policy, verifier, current)
+        model = fixture_model(executable, policy, verifier, current)
         with pytest.raises(HeinzelError, match="safely admitted"):
             asyncio.run(model.request(message, None, parameters()))
         assert not sentinel.exists()
@@ -163,7 +174,7 @@ def test_closed_result_rejects_unknown_tool_or_extra_fields(tmp_path):
                 "",
             )
 
-        model = ClaudeSubscriptionModel(executable, policy, FixtureVerifier(), lambda: policy, execute=fake)
+        model = fixture_model(executable, policy, FixtureVerifier(), lambda: policy, execute=fake)
         with pytest.raises(HeinzelError, match="safely admitted"):
             asyncio.run(model.request([ModelRequest(parts=[UserPromptPart(content="private")])], None, parameters()))
 
@@ -190,6 +201,6 @@ def test_permission_denial_cannot_be_reported_as_success(tmp_path):
             "",
         )
 
-    model = ClaudeSubscriptionModel(fake_cli(tmp_path), policy, FixtureVerifier(), lambda: policy, execute=fake)
+    model = fixture_model(fake_cli(tmp_path), policy, FixtureVerifier(), lambda: policy, execute=fake)
     with pytest.raises(HeinzelError, match="safely admitted"):
         asyncio.run(model.request([ModelRequest(parts=[UserPromptPart(content="private")])], None, parameters()))

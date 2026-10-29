@@ -32,6 +32,14 @@ class SessionRepository(Protocol):
         """Serialize this owner's reservations after checking session ownership."""
         ...
 
+    def subscription_read(self, session_id: str) -> SessionRead:
+        """Read owner-scoped subscription request slots."""
+        ...
+
+    def subscription_writer(self, session_id: str) -> AbstractContextManager[SessionWriter]:
+        """Serialize the owner-scoped subscription request ledger."""
+        ...
+
     def main_read(self, session_id: str) -> SessionRead:
         """Verified turn/checkpoint/effect metadata, refusing a damaged authoritative spine."""
         ...
