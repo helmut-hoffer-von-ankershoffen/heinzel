@@ -55,6 +55,8 @@ assert sys.argv[sys.argv.index("--setting-sources") + 1] == ""
 assert "--json-schema" in sys.argv
 {extra}
 request = json.load(sys.stdin)
+assert "conversation transport" in request["protocol"]
+assert "listed output tool" in request["protocol"]
 if len(request["messages"]) == 1:
     wire = {{"kind":"tool", "name":"use_tool", "arguments":{{"name":"fixture:read", "arguments":{{}}}}, "text":None}}
 else:
