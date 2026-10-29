@@ -18,6 +18,7 @@ from heinzel.kernel import (
 )
 from heinzel.kernel._approval import ApprovalConfirmation, ApprovalIssuer
 from heinzel.modules.heinzel._configured_api_binding import ConfiguredApiBinding
+from heinzel.modules.heinzel._contract_review import ContractReview, ContractReviewView
 from heinzel.modules.heinzel._model_grants import ModelGrants
 from heinzel.modules.heinzel._model_policy_operations import ModelPolicyService, register_model_policy_operations
 from heinzel.modules.heinzel._models import HeinzelSettings
@@ -105,6 +106,8 @@ class _SessionApprovalIssuer(ApprovalIssuer):
         return session, request
 
     def review(self, module: str, operation: str, arguments: dict[str, JsonValue]) -> dict[str, JsonValue]:
+        if module == "heinzel" and operation == "accept-agent-contract":
+            return ContractReview(self.service).current(*self._model_args(arguments)).model_dump(mode="json")
         if module == "heinzel" and operation == "approve-model-grant":
             if self.kernel is None:
                 msg = "Configured model policy review is unavailable"
@@ -118,6 +121,12 @@ class _SessionApprovalIssuer(ApprovalIssuer):
         return self.service.review(module, operation, arguments)
 
     def issue(self, module: str, operation: str, arguments: dict[str, JsonValue], provenance: str) -> str:
+        if module == "heinzel" and operation == "accept-agent-contract":
+            session, request = self._model_args(arguments)
+            if arguments.get("review") != self.review(module, operation, arguments):
+                msg = "The reviewed contract changed"
+                raise HeinzelError(msg)
+            return ContractReview(self.service).issue(session, request, provenance)
         if module == "heinzel" and operation == "approve-model-grant":
             session, request = self._model_args(arguments)
             if arguments.get("review") != self.review(module, operation, arguments):
@@ -128,6 +137,8 @@ class _SessionApprovalIssuer(ApprovalIssuer):
         return self.service.issue(module, operation, arguments, provenance)
 
     def applied(self, module: str, operation: str, arguments: dict[str, JsonValue]) -> bool:
+        if module == "heinzel" and operation == "accept-agent-contract":
+            return ContractReview(self.service).applied(*self._model_args(arguments))
         if module == "heinzel" and operation == "approve-model-grant":
             return ModelGrants(self.service).applied(*self._model_args(arguments))
         return self.service.applied(module, operation, arguments)
@@ -341,6 +352,42 @@ def register_session_operations(module: Module) -> None:  # noqa: C901, PLR0915 
     def personal_artifacts(service: SessionCrud, session_id: Identity) -> PersonalArtifacts:
         """List local principal-submitted file associations without accessing the provider."""
         return service.personal_artifacts(session_id)
+
+    @module.operation(private=True, heads={"web", "api-private"}, audience="everyday")
+    def agent_contract_review(service: SessionCrud, session_id: Identity, request_id: Request) -> ContractReviewView:
+        """Read an exact contract and its acceptance; this grants no execution or access."""
+        review = ContractReview(service)
+        proposal = service.scheduled_agent_proposal(session_id, request_id)
+        return ContractReviewView(proposal=proposal, accepted=review.applied(session_id, request_id))
+
+    @module.operation(private=True, read_only=False, heads={"web", "api-private"}, audience="everyday")
+    def accept_agent_contract(  # noqa: PLR0913, PLR0917 - exact trusted confirmation
+        service: SessionCrud,
+        confirmation: ApprovalConfirmation,
+        session_id: Identity,
+        request_id: Request,
+        review: dict[str, JsonValue],
+        approval_proof: str,
+    ) -> ScheduledAgentProposal:
+        """Record only exact contract acceptance through trusted confirmation.
+
+        Raises:
+            HeinzelError: If confirmation or exact review is invalid.
+        """
+        args: dict[str, JsonValue] = {
+            "session_id": session_id,
+            "request_id": request_id,
+            "review": review,
+            "approval_proof": approval_proof,
+        }
+        if not confirmation.matches("heinzel", "accept-agent-contract", args):
+            msg = "Approval is invalid or unavailable"
+            raise HeinzelError(msg)
+        contracts = ContractReview(service)
+        if contracts.current(session_id, request_id).model_dump(mode="json") != review:
+            msg = "The reviewed contract changed"
+            raise HeinzelError(msg)
+        return contracts.accept(session_id, request_id, approval_proof)
 
     @module.operation(private=True, read_only=False, audience="everyday")
     def propose_scheduled_agent(  # noqa: PLR0913, PLR0917 - flat private API
