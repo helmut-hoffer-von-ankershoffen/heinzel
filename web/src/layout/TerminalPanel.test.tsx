@@ -45,6 +45,7 @@ class Socket {
   readyState = 1;
   send = vi.fn();
   close() {}
+  onmessage: ((event: { data: unknown }) => void) | null = null;
   constructor() {
     Socket.instances.push(this);
   }
@@ -109,6 +110,20 @@ describe("terminal tabs", () => {
     expect(screen.getByRole("tab", { name: /Working/ })).toBeInTheDocument();
     send("state=clear");
     expect(screen.queryByText("Working")).not.toBeInTheDocument();
+  });
+
+  it("shows the foreground agent's name without mixing up terminal tabs", async () => {
+    vi.stubGlobal("WebSocket", Socket);
+    const user = userEvent.setup();
+    render(<TerminalPanel onClose={vi.fn()} full={false} onToggleFull={vi.fn()} />);
+    await user.click(screen.getByRole("button", { name: "New terminal tab" }));
+    act(() => Socket.instances[0]?.onmessage?.({ data: JSON.stringify({ agent_title: "First task" }) }));
+    expect(screen.getByRole("tab", { name: "First task" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Terminal 2" })).toBeInTheDocument();
+    act(() => Socket.instances[0]?.onmessage?.({ data: JSON.stringify({ agent_title: "Renamed task" }) }));
+    expect(screen.getByRole("tab", { name: "Renamed task" })).toBeInTheDocument();
+    act(() => Socket.instances[0]?.onmessage?.({ data: JSON.stringify({ agent_title: null }) }));
+    expect(screen.getByRole("tab", { name: "Terminal" })).toBeInTheDocument();
   });
 
   it("notifies once when a background agent becomes blocked, if desktop notifications are enabled", () => {

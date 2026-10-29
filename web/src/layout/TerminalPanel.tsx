@@ -38,7 +38,7 @@ function loadOptions(): Options {
   }
 }
 
-type Tab = { id: number; title: string; notice?: string; status?: string };
+type Tab = { id: number; title: string; agentTitle?: string; notice?: string; status?: string };
 type Props = { onClose: () => void; full: boolean; onToggleFull: () => void; onActivate?: () => void };
 
 export function TerminalPanel({ onClose, full, onToggleFull, onActivate }: Props) {
@@ -100,7 +100,7 @@ export function TerminalPanel({ onClose, full, onToggleFull, onActivate }: Props
                 }}
                 className="px-3.5 py-1"
               >
-                {tab.title}
+                {tab.agentTitle || tab.title}
                 {tab.status && <span className="ml-2 text-xs text-muted-foreground">{tab.status}</span>}
                 {tab.notice && (
                   <span
@@ -115,7 +115,7 @@ export function TerminalPanel({ onClose, full, onToggleFull, onActivate }: Props
                 <button
                   type="button"
                   onClick={() => close(tab.id)}
-                  aria-label={t("terminal.closeTab", { title: tab.title })}
+                  aria-label={t("terminal.closeTab", { title: tab.agentTitle || tab.title })}
                   className="mr-1 rounded p-0.5 opacity-60 hover:bg-background/40 hover:opacity-100"
                 >
                   <X aria-hidden className="size-3" />
@@ -168,12 +168,13 @@ export function TerminalPanel({ onClose, full, onToggleFull, onActivate }: Props
                 title: title || (tab.id === 1 ? t("terminal.title") : `${t("terminal.title")} ${tab.id}`),
               })
             }
+            onAgentTitle={(agentTitle) => updateTab(tab.id, { agentTitle })}
             onNotice={(notice) => {
               updateTab(tab.id, { notice });
               const hidden = tab.id !== active || !document.hasFocus() || !!panelRef.current?.closest("[hidden]");
               if (hidden && desktopState() === "on") {
                 try {
-                  const notification = new Notification(tab.title, { body: notice });
+                  const notification = new Notification(tab.agentTitle || tab.title, { body: notice });
                   notification.onclick = () => {
                     window.focus();
                     onActivate?.();
@@ -207,6 +208,7 @@ function TerminalView({
   full,
   options,
   onTitle,
+  onAgentTitle,
   onNotice,
   onStatus,
 }: {
@@ -214,11 +216,12 @@ function TerminalView({
   full: boolean;
   options: Options;
   onTitle: (title: string) => void;
+  onAgentTitle: (title: string | undefined) => void;
   onNotice: (notice: string) => void;
   onStatus: (status: string) => void;
 }) {
-  const callbacks = useRef({ onTitle, onNotice, onStatus });
-  callbacks.current = { onTitle, onNotice, onStatus };
+  const callbacks = useRef({ onTitle, onAgentTitle, onNotice, onStatus });
+  callbacks.current = { onTitle, onAgentTitle, onNotice, onStatus };
   const host = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const refitRef = useRef<(() => void) | null>(null);
@@ -262,11 +265,23 @@ function TerminalView({
     };
     socket.onmessage = (event) => {
       if (event.data instanceof ArrayBuffer) terminal.write(new Uint8Array(event.data));
+      else if (typeof event.data === "string") {
+        try {
+          const message: unknown = JSON.parse(event.data);
+          if (typeof message === "object" && message !== null && "agent_title" in message) {
+            const title: unknown = message.agent_title;
+            if (title === null || typeof title === "string") callbacks.current.onAgentTitle(title ?? undefined);
+          }
+        } catch {
+          // Ignore malformed control messages.
+        }
+      }
     };
     socket.onclose = (event) => {
       senderRef.current = null;
       callbacks.current.onStatus("");
       callbacks.current.onTitle("");
+      callbacks.current.onAgentTitle(undefined);
       setState("closed");
       setReason(event.reason);
     };
