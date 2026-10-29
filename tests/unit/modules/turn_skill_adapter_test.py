@@ -1,36 +1,20 @@
 """Real private skill services through a host-bound adapter and offline Pydantic model."""
 
-import importlib.util
+import asyncio
 import json
-from pathlib import Path
 
 import pytest
-from pydantic_ai import Agent
-from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart, ToolCallPart
+from pydantic_ai.messages import ModelMessage, ModelResponse, ToolCallPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
 from heinzel import CallIdentity, CurrentUser, HeinzelError, Principal
-from heinzel.modules.heinzel._engine import TurnAuthority, TurnDeps
+from heinzel.modules.heinzel._engine import TurnAuthority, TurnDeps, TurnLimits, run_turn
 from heinzel.modules.heinzel._session_crud import SessionCrud
 from heinzel.modules.heinzel._session_models import SessionCosts
 from heinzel.modules.heinzel._session_repository import PersonalSessionRepository
+from heinzel.modules.heinzel._turn_skill_adapter import TurnSkillAdapter
 
-pytestmark = [
-    pytest.mark.unit,
-    pytest.mark.skipif(
-        not hasattr(SessionCrud, "propose_skill_sharing"), reason="requires reviewed private skill sharing foundation"
-    ),
-]
-
-# The isolated turn branch predates the skill foundation. Load the adapter from this checkout while the test
-# runner supplies the reviewed skill foundation on PYTHONPATH; after integration a normal package import suffices.
-source = Path(__file__).resolve().parents[3] / "src/heinzel/modules/heinzel/_turn_skill_adapter.py"
-spec = importlib.util.spec_from_file_location("heinzel.modules.heinzel._turn_skill_adapter", source)
-assert spec
-assert spec.loader
-adapter_module = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(adapter_module)
-TurnSkillAdapter = adapter_module.TurnSkillAdapter
+pytestmark = pytest.mark.unit
 
 
 def test_host_scoped_skill_proposals_and_fake_model_never_leak_private_files(tmp_path):
@@ -54,7 +38,7 @@ def test_host_scoped_skill_proposals_and_fake_model_never_leak_private_files(tmp
         tool = TurnSkillAdapter(service, deps)
         calls = 0
 
-        def model(_messages: list[ModelMessage], _info: AgentInfo) -> ModelResponse:
+        def model(_messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
             nonlocal calls
             calls += 1
             if calls == 1:
@@ -78,16 +62,21 @@ def test_host_scoped_skill_proposals_and_fake_model_never_leak_private_files(tmp
                         )
                     ]
                 )
-            return ModelResponse([TextPart("Draft staged for review.")])
+            return ModelResponse([ToolCallPart(info.output_tools[0].name, {"report": "Draft staged for review."})])
 
-        agent = Agent(FunctionModel(model))
-
-        @agent.tool_plain
-        def use_tool(name: str, arguments: dict) -> str:
-            return tool.dispatch(name, arguments)
-
-        result = agent.run_sync("Create the skill")
-        assert result.output == "Draft staged for review."
+        result = asyncio.run(
+            run_turn(
+                FunctionModel(model),
+                deps,
+                "Create the skill",
+                instructions="Stage only private proposals.",
+                limits=TurnLimits(),
+                checkpoint=lambda _checkpoint: None,
+                dispatch=tool.dispatch,
+            )
+        )
+        assert result.outcome is not None
+        assert result.outcome.report == "Draft staged for review."
         events = repository.control_read(session).events
         tool_events = [event for event in events if event.kind == "interactive.skill-tool"]
         assert len(tool_events) == 1
@@ -132,3 +121,24 @@ def test_host_scoped_skill_proposals_and_fake_model_never_leak_private_files(tmp
         )
         with current.using(stranger), pytest.raises(HeinzelError, match="unavailable"):
             tool.dispatch("skill.propose_sharing", body)
+
+
+def test_trusted_binding_must_reference_actual_owned_session(tmp_path):
+    current = CurrentUser(tmp_path / "state" / "identity")
+    with current.local("cli"):
+        repo = PersonalSessionRepository(current)
+        service = SessionCrud(repo, lambda: SessionCosts(session_max_usd=2, message_max_usd=0.2))
+        authority = TurnAuthority(
+            principal_id=current.principal().id,
+            backend_id="offline",
+            binding_revision=1,
+            grant_revision=1,
+            policy_revision=1,
+        )
+        stranger = CallIdentity(
+            Principal("u-" + "a" * 32), "api-bearer", "other", "private", frozenset({"private:read", "private:write"})
+        )
+        with current.using(stranger):
+            foreign = service.new_chat("foreign").session_id
+        with pytest.raises(HeinzelError, match="No such personal"):
+            TurnSkillAdapter(service, TurnDeps(foreign, "turn-one", "asked", authority))
