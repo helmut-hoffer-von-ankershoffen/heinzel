@@ -10169,6 +10169,121 @@
         "title": "SceneStep",
         "type": "object"
       },
+      "ScheduleBinding": {
+        "additionalProperties": false,
+        "description": "Exact reviewed private schedule; no external tools or account permissions are granted.",
+        "properties": {
+          "access": {
+            "const": "claude-code-subscription",
+            "default": "claude-code-subscription",
+            "title": "Access",
+            "type": "string"
+          },
+          "access_fingerprint": {
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Access Fingerprint",
+            "type": "string"
+          },
+          "cadence_seconds": {
+            "maximum": 86400.0,
+            "minimum": 60.0,
+            "title": "Cadence Seconds",
+            "type": "integer"
+          },
+          "contract_request_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Contract Request Id",
+            "type": "string"
+          },
+          "contract_revision": {
+            "minimum": 1.0,
+            "title": "Contract Revision",
+            "type": "integer"
+          },
+          "contract_sha256": {
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Contract Sha256",
+            "type": "string"
+          },
+          "first_run": {
+            "const": "current-slot-after-approval",
+            "default": "current-slot-after-approval",
+            "title": "First Run",
+            "type": "string"
+          },
+          "max_requests": {
+            "maximum": 4.0,
+            "minimum": 1.0,
+            "title": "Max Requests",
+            "type": "integer"
+          },
+          "owner": {
+            "pattern": "^u-[0-9a-f]{32}$",
+            "title": "Owner",
+            "type": "string"
+          },
+          "request_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "session_id": {
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "status": {
+            "const": "proposed",
+            "default": "proposed",
+            "title": "Status",
+            "type": "string"
+          },
+          "timeout_seconds": {
+            "maximum": 120.0,
+            "minimum": 1.0,
+            "title": "Timeout Seconds",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "session_id",
+          "request_id",
+          "owner",
+          "contract_request_id",
+          "contract_revision",
+          "contract_sha256",
+          "cadence_seconds",
+          "max_requests",
+          "timeout_seconds",
+          "access_fingerprint"
+        ],
+        "title": "ScheduleBinding",
+        "type": "object"
+      },
+      "ScheduleReviewView": {
+        "description": "Owner-private schedule proposal or its recorded decision and current eligibility.",
+        "properties": {
+          "binding": {
+            "$ref": "#/components/schemas/ScheduleBinding"
+          },
+          "status": {
+            "enum": [
+              "proposed",
+              "approved",
+              "paused",
+              "stale"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "binding",
+          "status"
+        ],
+        "title": "ScheduleReviewView",
+        "type": "object"
+      },
       "ScheduledAgentProposal": {
         "description": "An inert execution proposal; creating or reading it never authorizes a run.",
         "properties": {
@@ -15492,6 +15607,42 @@
         "title": "heinzel_answer_chat_Input",
         "type": "object"
       },
+      "heinzel_approve_agent_schedule_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "approval_proof": {
+            "title": "Approval Proof",
+            "type": "string"
+          },
+          "request_id": {
+            "description": "A stable client request id; reuse it only for an exact retry.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "review": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "title": "Review",
+            "type": "object"
+          },
+          "session_id": {
+            "description": "The stable personal session id returned by new-chat or sessions.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "request_id",
+          "review",
+          "approval_proof"
+        ],
+        "title": "heinzel_approve_agent_schedule_Input",
+        "type": "object"
+      },
       "heinzel_approve_model_grant_Input": {
         "additionalProperties": false,
         "properties": {
@@ -15647,6 +15798,29 @@
         "title": "heinzel_new_chat_Input",
         "type": "object"
       },
+      "heinzel_pause_agent_schedule_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "request_id": {
+            "description": "A stable client request id; reuse it only for an exact retry.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "session_id": {
+            "description": "The stable personal session id returned by new-chat or sessions.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "request_id"
+        ],
+        "title": "heinzel_pause_agent_schedule_Input",
+        "type": "object"
+      },
       "heinzel_profile_Input": {
         "additionalProperties": false,
         "properties": {
@@ -15700,6 +15874,58 @@
           "expected_revision"
         ],
         "title": "heinzel_profile_Input",
+        "type": "object"
+      },
+      "heinzel_propose_agent_schedule_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "cadence_seconds": {
+            "maximum": 86400.0,
+            "minimum": 60.0,
+            "multipleOf": 60.0,
+            "title": "Cadence Seconds",
+            "type": "integer"
+          },
+          "contract_request_id": {
+            "description": "A stable client request id; reuse it only for an exact retry.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Contract Request Id",
+            "type": "string"
+          },
+          "max_requests": {
+            "maximum": 4.0,
+            "minimum": 1.0,
+            "title": "Max Requests",
+            "type": "integer"
+          },
+          "request_id": {
+            "description": "A stable client request id; reuse it only for an exact retry.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "session_id": {
+            "description": "The stable personal session id returned by new-chat or sessions.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "timeout_seconds": {
+            "maximum": 120.0,
+            "minimum": 1.0,
+            "title": "Timeout Seconds",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "session_id",
+          "request_id",
+          "contract_request_id",
+          "cadence_seconds",
+          "max_requests",
+          "timeout_seconds"
+        ],
+        "title": "heinzel_propose_agent_schedule_Input",
         "type": "object"
       },
       "heinzel_propose_check_in_Input": {
@@ -16467,6 +16693,58 @@
         ]
       }
     },
+    "/heinzel/agent-schedule": {
+      "get": {
+        "description": "Inspect the exact proposed schedule and its recorded state.",
+        "operationId": "heinzel_agent_schedule",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduleReviewView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Inspect the exact proposed schedule and its recorded state.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
     "/heinzel/amend-scheduled-agent": {
       "post": {
         "description": "Propose revised terms; an independent human review and approval is still required.",
@@ -16546,6 +16824,48 @@
           }
         },
         "summary": "Answer one authenticated user's accepted message; an interrupted request is never silently replayed.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/approve-agent-schedule": {
+      "post": {
+        "description": "Record exact human-confirmed autonomous schedule authority.",
+        "operationId": "heinzel_approve_agent_schedule",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/heinzel_approve_agent_schedule_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduleBinding"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Record exact human-confirmed autonomous schedule authority.",
         "tags": [
           "heinzel"
         ]
@@ -17180,6 +17500,48 @@
         ]
       }
     },
+    "/heinzel/pause-agent-schedule": {
+      "post": {
+        "description": "Stop future launches; a new schedule needs a separate human approval.",
+        "operationId": "heinzel_pause_agent_schedule",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/heinzel_pause_agent_schedule_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduleReviewView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Stop future launches; a new schedule needs a separate human approval.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
     "/heinzel/personal-artifacts": {
       "get": {
         "description": "List local principal-submitted file associations without accessing the provider.",
@@ -17282,6 +17644,48 @@
           }
         },
         "summary": "Save this Heinzel's name or look against the exact profile revision you saw.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/propose-agent-schedule": {
+      "post": {
+        "description": "Propose autonomous turns; separate human confirmation is required to authorize them.",
+        "operationId": "heinzel_propose_agent_schedule",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/heinzel_propose_agent_schedule_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduleBinding"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Propose autonomous turns; separate human confirmation is required to authorize them.",
         "tags": [
           "heinzel"
         ]
@@ -20422,6 +20826,62 @@
           }
         },
         "summary": "Stage the exact current agent contract for human review; no schedule, access, or model call is granted.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/runner/chat/propose-agent-schedule-review": {
+      "post": {
+        "description": "Stage the exact current agent schedule for human review; no schedule is approved yet.",
+        "operationId": "system_runner_chat_propose_agent_schedule_review",
+        "parameters": [
+          {
+            "description": "The personal agent session.",
+            "in": "query",
+            "name": "durable_session",
+            "required": true,
+            "schema": {
+              "description": "The personal agent session.",
+              "title": "Durable Session",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The schedule proposal request id.",
+            "in": "query",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "description": "The schedule proposal request id.",
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatSession"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Stage the exact current agent schedule for human review; no schedule is approved yet.",
         "tags": [
           "system"
         ]

@@ -10,7 +10,7 @@ import secrets
 from datetime import UTC, datetime, timedelta
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, JsonValue
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator
 
 from heinzel import HeinzelError, SessionEvent, SessionWriter
 from heinzel.kernel._approval import (
@@ -22,7 +22,9 @@ from heinzel.kernel._approval import (
     arguments_hash,
     consume_approval,
 )
+from heinzel.kernel._identity import PRIVATE_WRITE
 from heinzel.modules.heinzel._contract_review import ContractReview
+from heinzel.modules.heinzel._interactive_turn import _turn_id
 from heinzel.modules.heinzel._session_bodies import immutable_body
 from heinzel.modules.heinzel._session_crud import SessionCrud
 from heinzel.modules.heinzel._session_models import MessageRequest, RequestId, SessionId
@@ -44,7 +46,28 @@ class ScheduleBinding(BaseModel):
     timeout_seconds: int = Field(ge=1, le=_TIMEOUT, strict=True)
     access: Literal["claude-code-subscription"] = "claude-code-subscription"
     access_fingerprint: str = Field(pattern=r"^[a-f0-9]{64}$")
+    first_run: Literal["current-slot-after-approval"] = "current-slot-after-approval"
     status: Literal["proposed"] = "proposed"
+
+    @field_validator("cadence_seconds")
+    @classmethod
+    def whole_minutes(cls, value: int) -> int:
+        """The daemon checks every minute; durations must be whole minutes.
+
+        Raises:
+            ValueError: If the cadence is not a whole minute.
+        """
+        if value % 60:
+            msg = "Schedule cadence must be a whole number of minutes"
+            raise ValueError(msg)
+        return value
+
+
+class ScheduleReviewView(BaseModel):
+    """Owner-private schedule proposal or its recorded decision and current eligibility."""
+
+    binding: ScheduleBinding
+    status: Literal["proposed", "approved", "paused", "stale"]
 
 
 def _fingerprint(chat: UserChatService) -> str:
@@ -73,6 +96,17 @@ class AutonomousSchedules:
 
     def __init__(self, crud: SessionCrud, chat: UserChatService) -> None:
         self.crud, self.chat = crud, chat
+
+    def _require_owner_write(self) -> None:
+        context = self.chat._current.context()  # noqa: SLF001 - trusted identity service
+        if (
+            context.authentication not in {"cli", "api-bearer", "web-session", "web-device"}
+            or context.principal != self.chat._current.owner()  # noqa: SLF001
+            or context.principal.id != self.crud.repository.principal_id
+            or PRIVATE_WRITE not in context.permissions
+        ):
+            msg = "This schedule action requires the authenticated owner"
+            raise HeinzelError(msg)
 
     def _current(self, session: str, request: str) -> ScheduleBinding:
         events = self.crud.repository.control_read(session).events
@@ -112,6 +146,7 @@ class AutonomousSchedules:
         Raises:
             HeinzelError: If contract, selected access, terms, or request identity cannot be verified.
         """
+        self._require_owner_write()
         proposal = ContractReview(self.crud).current(session, contract_request)
         if not ContractReview(self.crud).applied(session, contract_request) or proposal.max_usd is not None:
             msg = "Accept the exact subscription contract before proposing a schedule"
@@ -162,10 +197,11 @@ class AutonomousSchedules:
         Raises:
             HeinzelError: If the schedule is stale or already approved.
         """
+        self._require_owner_write()
         proof = secrets.token_urlsafe(32)
         with self.crud.repository.control_writer(session) as writer:
             binding = self._current(session, request)
-            if self._already_approved(session, binding, self.crud.repository.control_read(session).events):
+            if self._has_active(session, self.crud.repository.control_read(session).events):
                 msg = "This schedule has already been approved"
                 raise HeinzelError(msg)
             now = self.crud.clock()
@@ -181,12 +217,35 @@ class AutonomousSchedules:
             writer.append("approval.issued", key=record.proof_hash, data=record.model_dump(mode="json"))
         return proof
 
-    def _already_approved(self, session: str, binding: ScheduleBinding, events: list[SessionEvent]) -> bool:
-        return any(
-            event.kind == "agent.schedule-approved"
-            and ScheduleBinding.model_validate(self.crud._body(session, event)) == binding  # noqa: SLF001
-            for event in events
-        )
+    def _paused(self, session: str, request: str, events: list[SessionEvent]) -> bool:
+        pauses = [e for e in events if e.kind == "agent.schedule-paused" and e.key == request]
+        if not pauses:
+            return False
+        approved = [
+            e
+            for e in events
+            if e.kind == "agent.schedule-approved"
+            and ScheduleBinding.model_validate(self.crud._body(session, e)).request_id == request  # noqa: SLF001
+        ]
+        if (
+            len(pauses) != 1
+            or len(approved) != 1
+            or pauses[0].seq <= approved[0].seq
+            or pauses[0].data.get("request_id") != request
+            or pauses[0].data.get("owner") != self.crud.repository.principal_id
+            or pauses[0].data.get("origin") not in {"cli", "api-bearer", "web-session", "web-device"}
+        ):
+            msg = "The schedule pause record is invalid"
+            raise HeinzelError(msg)
+        return True
+
+    def _has_active(self, session: str, events: list[SessionEvent]) -> bool:
+        for event in events:
+            if event.kind == "agent.schedule-approved":
+                binding = ScheduleBinding.model_validate(self.crud._body(session, event))  # noqa: SLF001
+                if not self._paused(session, binding.request_id, events):
+                    return True
+        return False
 
     def approve(
         self, session: str, request: str, review: dict[str, JsonValue], proof: str, confirmation: ApprovalConfirmation
@@ -196,6 +255,7 @@ class AutonomousSchedules:
         Raises:
             HeinzelError: If confirmation, current binding, or exact intent is invalid.
         """
+        self._require_owner_write()
         args: dict[str, JsonValue] = {
             "session_id": session,
             "request_id": request,
@@ -211,7 +271,7 @@ class AutonomousSchedules:
             raise HeinzelError(msg)
 
         def current(events: list[SessionEvent]) -> ApprovalIntent:
-            if self._already_approved(session, binding, events):
+            if self._has_active(session, events):
                 msg = "This schedule has already been approved"
                 raise HeinzelError(msg)
             return self._intent(self._current(session, request))
@@ -236,9 +296,25 @@ class AutonomousSchedules:
             )
         return binding
 
-    def _approved(self, session: str, request: str) -> ScheduleBinding:
-        binding = self._current(session, request)
+    def _saved(self, session: str, request: str, events: list[SessionEvent]) -> ScheduleBinding:
+        proposals = [e for e in events if e.kind == "agent.schedule-proposed" and e.key == request]
+        if len(proposals) != 1:
+            msg = "The schedule proposal is unavailable"
+            raise HeinzelError(msg)
+        binding = ScheduleBinding.model_validate(self.crud._body(session, proposals[0]))  # noqa: SLF001
+        if binding.session_id != session or binding.owner != self.crud.repository.principal_id:
+            msg = "The schedule owner or session is invalid"
+            raise HeinzelError(msg)
+        return binding
+
+    def _approved(
+        self, session: str, request: str, *, validate_current: bool = True, allow_paused: bool = False
+    ) -> ScheduleBinding:
         events = self.crud.repository.control_read(session).events
+        binding = self._saved(session, request, events)
+        if validate_current and self._current(session, request) != binding:
+            msg = "The schedule binding changed"
+            raise HeinzelError(msg)
         matches = []
         for event in events:
             if event.kind != "agent.schedule-approved":
@@ -264,7 +340,8 @@ class AutonomousSchedules:
             msg = "This schedule approval has invalid evidence"
             raise HeinzelError(msg) from None
         if (
-            record.intent != self._intent(binding)
+            record.model_dump(mode="json").get("decision") != "approve"
+            or record.intent != self._intent(binding)
             or record.proof_hash != issued[0].key
             or record.nonce != event.data.get("consumed_nonce")
             or record.intent.model_dump(mode="json") != event.data.get("intent")
@@ -273,11 +350,46 @@ class AutonomousSchedules:
             or issued[0].ts > event.ts
             or sum(e.data.get("consumed_nonce") == record.nonce for e in events) != 1
             or any(e.kind == "approval.revoked" and e.key == record.nonce for e in events)
-            or any(e.kind == "agent.schedule-paused" and e.data.get("request_id") == request for e in events)
+            or (not allow_paused and self._paused(session, request, events))
         ):
             msg = "This schedule is paused or its approval is invalid"
             raise HeinzelError(msg)
         return binding
+
+    def applied(self, session: str, request: str) -> bool:
+        """Reconcile the exact recorded approval, including a subsequently paused schedule."""
+        events = self.crud.repository.control_read(session).events
+        binding = self._saved(session, request, events)
+        if not any(
+            e.kind == "agent.schedule-approved"
+            and ScheduleBinding.model_validate(self.crud._body(session, e)) == binding  # noqa: SLF001
+            for e in events
+        ):
+            return False
+        self._approved(session, request, validate_current=False, allow_paused=True)
+        return True
+
+    def review(self, session: str, request: str) -> ScheduleReviewView:
+        """Read exact owner-private terms and eligibility; never issue a decision."""
+        events = self.crud.repository.control_read(session).events
+        binding = self._saved(session, request, events)
+        status: Literal["proposed", "approved", "paused", "stale"] = "proposed"
+        if self.applied(session, request):
+            if self._paused(session, request, events):
+                status = "paused"
+            else:
+                try:
+                    self._current(session, request)
+                except HeinzelError:
+                    status = "stale"
+                else:
+                    status = "approved"
+        else:
+            try:
+                self._current(session, request)
+            except HeinzelError:
+                status = "stale"
+        return ScheduleReviewView(binding=binding, status=status)
 
     def pause(self, session: str, request: str) -> None:
         """Stop future launches; resumption requires a new exact schedule approval.
@@ -285,14 +397,36 @@ class AutonomousSchedules:
         Raises:
             HeinzelError: If the caller is not the owner through a human-facing head.
         """
-        context = self.chat._current.context()  # noqa: SLF001 - trusted caller identity
-        if context.authentication not in {"cli", "api-bearer", "web-session", "web-device"}:
-            msg = "Only the owner can pause this schedule"
-            raise HeinzelError(msg)
+        self._require_owner_write()
         with self.crud.repository.main_writer(session):
-            self._approved(session, request)
+            self._approved(session, request, validate_current=False, allow_paused=True)
+            events = self.crud.repository.control_read(session).events
+            if self._paused(session, request, events):
+                return
             with self.crud.repository.control_writer(session) as writer:
-                writer.append("agent.schedule-paused", key=request, data={"request_id": request})
+                writer.append(
+                    "agent.schedule-paused",
+                    key=request,
+                    data={
+                        "request_id": request,
+                        "owner": self.crud.repository.principal_id,
+                        "origin": self.chat._current.context().authentication,  # noqa: SLF001
+                    },
+                )
+
+    def _ensure_no_prior_pending(self, session: str, occurrence: str) -> None:
+        events = self.crud.repository.control_read(session).events
+        for event in events:
+            if event.kind != "message.accepted" or event.data.get("message_id") == occurrence:
+                continue
+            previous = event.data.get("message_id")
+            if not isinstance(previous, str):
+                msg = "An earlier message has an invalid identity"
+                raise HeinzelError(msg)
+            turn = _turn_id(previous)
+            if not any(e.key == turn and e.kind in {"message.replied", "interactive.abandoned"} for e in events):
+                msg = "An earlier message must finish or be resolved before a scheduled turn"
+                raise HeinzelError(msg)
 
     async def tick(self, session: str, request: str, when: datetime) -> str:
         """Run one due generic turn under the trusted local daemon identity, never a model-supplied identity.
@@ -320,12 +454,16 @@ class AutonomousSchedules:
             if current.authentication != "daemon" or current.principal.id != binding.owner:
                 msg = "The scheduled owner identity changed"
                 raise HeinzelError(msg)
+            if int(datetime.now(UTC).timestamp()) // binding.cadence_seconds != slot:
+                msg = "The schedule occurrence expired before launch"
+                raise HeinzelError(msg)
             if self._approved(session, request) != binding:
                 msg = "The approved schedule changed"
                 raise HeinzelError(msg)
 
         def prepare() -> None:
             verify()
+            self._ensure_no_prior_pending(session, occurrence)
             self.crud.accept(session, MessageRequest(request_id=occurrence, text=contract.contract))
             events = self.crud.repository.control_read(session).events
             accepted = [e for e in events if e.kind == "message.accepted" and e.key == f"message-{occurrence}"]

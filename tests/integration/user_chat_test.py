@@ -187,3 +187,101 @@ def test_owner_explicitly_sets_aside_uncertain_turn_and_can_continue(make_kernel
     assert "set aside with an uncertain outcome" in context
     assert "Second request" in context
     assert "heinzel_abandon_chat_turn" not in {item.name for item in exposed(kernel, "mcp-stdio")}
+
+
+def test_schedule_card_and_daemon_registry_run_one_owner_bound_fake_turn(make_kernel, tmp_path, settings, monkeypatch):  # noqa: PLR0915 - complete reviewed lifecycle
+    from datetime import UTC, datetime
+
+    from heinzel.heads._exposure import exposed
+    from heinzel.kernel import CompiledJobs
+    from heinzel.modules.heinzel._autonomous_schedule import AutonomousSchedules
+    from heinzel.modules.system.daemon import DaemonService, DaemonSettings
+
+    kernel = make_kernel(builtins=True)
+    current = kernel.resolve(CurrentUser)
+    crud = kernel.resolve(SessionCrud)
+    executable = fake_claude(tmp_path)
+    chat_service = UserChatService(crud, current, load=lambda: FixtureConfig(executable))
+    kernel.bind(UserChatService, chat_service)
+    kernel.bind(AutonomousSchedules, AutonomousSchedules(crud, chat_service))
+    client = web_client(kernel, tmp_path)
+    session = client.post("/api/heinzel/new-chat", headers=AUTH, json={"request_id": "job"}).json()["session_id"]
+    with current.local("cli"):
+        contract = crud.propose_scheduled_agent(session, "contract", "Make a brief report", None, 30)
+    card = client.post(
+        "/api/system/runner/chat/propose-agent-contract",
+        headers=AUTH,
+        params={"durable_session": session, "request_id": "contract"},
+    ).json()
+    action = next(a for a in card["actions"] if a["operation"] == "accept-agent-contract")
+    confirmed = client.post(
+        "/api/system/runner/chat/confirm", headers=AUTH, params={"session": card["id"], "action": action["id"]}
+    )
+    assert confirmed.status_code == 200, confirmed.text
+    args = {
+        "session_id": session,
+        "request_id": "schedule",
+        "contract_request_id": "contract",
+        "cadence_seconds": 300,
+        "max_requests": 4,
+        "timeout_seconds": 30,
+    }
+    proposed = client.post("/api/heinzel/propose-agent-schedule", headers=AUTH, json=args)
+    assert proposed.status_code == 200, proposed.text
+    assert proposed.json()["contract_sha256"] == contract.preview_sha256
+    assert proposed.json()["first_run"] == "current-slot-after-approval"
+    params = {"durable_session": session, "request_id": "schedule"}
+    card = client.post("/api/system/runner/chat/propose-agent-schedule-review", headers=AUTH, params=params)
+    assert card.status_code == 200, card.text
+    action = next(a for a in card.json()["actions"] if a["operation"] == "approve-agent-schedule")
+    assert action["arguments"]["review"] == proposed.json()
+    direct = client.post(
+        "/api/heinzel/approve-agent-schedule",
+        headers=AUTH,
+        json={"session_id": session, "request_id": "schedule", "review": proposed.json(), "approval_proof": "fake"},
+    )
+    assert direct.status_code == 400
+    exposed_names = {item.name for item in exposed(kernel, "mcp-stdio")}
+    assert "heinzel_approve_agent_schedule" not in exposed_names
+    assert "heinzel_propose_agent_schedule" not in exposed_names
+    assert "system_runner_chat_propose_agent_schedule_review" not in exposed_names
+    result = client.post(
+        "/api/system/runner/chat/confirm", headers=AUTH, params={"session": card.json()["id"], "action": action["id"]}
+    )
+    assert result.status_code == 200, result.text
+    assert next(a for a in result.json()["actions"] if a["id"] == action["id"])["status"] == "done"
+    from heinzel.modules.system.runner.chat._models import ChatMessage
+    from heinzel.modules.system.runner.chat._service import transcript
+
+    visible = transcript([ChatMessage.model_validate(item) for item in result.json()["messages"]])
+    assert proposed.json()["access_fingerprint"] not in visible
+    assert proposed.json()["owner"] not in visible
+    state = client.get(
+        "/api/heinzel/agent-schedule", headers=AUTH, params={"session_id": session, "request_id": "schedule"}
+    )
+    assert state.json()["status"] == "approved"
+    with current.local("daemon"):
+        jobs = kernel.resolve(CompiledJobs).jobs
+        job = next(job for job in jobs if job.name.startswith("agent-" + session.lower()))
+        assert job.scheduled_only
+        assert job.retries == 0
+        now = datetime.now(UTC)
+        daemon = DaemonService(kernel, settings, DaemonSettings(), clock=lambda: now, zone=UTC)
+        registered = [item for item in daemon._jobs() if item.id == "heinzel:" + job.name]
+        assert len(registered) == 1
+        monkeypatch.setattr(daemon, "_jobs", lambda: registered)
+        monkeypatch.setattr(daemon, "_post_notices", lambda _log: None)
+        report = daemon.tick()
+        assert any(item.job == "heinzel:" + job.name and item.disposition == "rendered" for item in report.runs)
+        count = (tmp_path / "model-calls").read_text()
+        restarted = DaemonService(kernel, settings, DaemonSettings(), clock=lambda: now, zone=UTC)
+        monkeypatch.setattr(restarted, "_jobs", lambda: registered)
+        monkeypatch.setattr(restarted, "_post_notices", lambda _log: None)
+        restarted.tick()
+        assert (tmp_path / "model-calls").read_text() == count
+    paused = client.post(
+        "/api/heinzel/pause-agent-schedule", headers=AUTH, json={"session_id": session, "request_id": "schedule"}
+    )
+    assert paused.status_code == 200, paused.text
+    assert paused.json()["status"] == "paused"
+    assert client.get("/api/heinzel/session", headers=AUTH, params={"session_id": session}).json()["schedule"] is None

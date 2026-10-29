@@ -201,6 +201,9 @@ class UserChatService:
         prior = next((event for event in events if event.kind == "message.replied" and event.key == turn), None)
         if prior is not None:
             return UserChatAnswer(session_id=session, request_id=request, message=self._crud._message(session, prior))  # noqa: SLF001
+        if any(event.kind == "interactive.abandoned" and event.key == turn for event in events):
+            msg = "This turn was set aside and will not be retried"
+            raise HeinzelError(msg)
         if any(event.kind == "interactive.started" and event.key == turn for event in events):
             msg = "This interrupted turn has an uncertain outcome and cannot be retried automatically"
             raise HeinzelError(msg)
@@ -265,10 +268,14 @@ class UserChatService:
         status: Literal["pending", "unresolved", "abandoned", "completed"] = "pending"
         if resolutions:
             event = resolutions[0]
+            unstarted = event.data.get("unstarted") is True
+            accepted = next(e for e in events if e.kind == "message.accepted" and e.key == f"message-{request}")
             if (
-                len(starts) != 1
-                or event.seq <= starts[0].seq
-                or starts[0].data.get("message_id") != request
+                (unstarted and (starts or accepted.data.get("origin") != "daemon"))
+                or (
+                    not unstarted
+                    and (len(starts) != 1 or event.seq <= starts[0].seq or starts[0].data.get("message_id") != request)
+                )
                 or event.data.get("message_id") != request
                 or event.data.get("owner") != repo.principal_id
                 or event.data.get("origin") not in _HEADS
@@ -290,7 +297,7 @@ class UserChatService:
         """Record an explicit owner decision to proceed without replaying a stopped uncertain turn.
 
         Raises:
-            HeinzelError: If the turn is active, unstarted, finished, or not owner-bound.
+            HeinzelError: If the turn is active, finished, not owner-bound, or an unstarted user message.
         """
         self._owner(session, request, allow_daemon_origin=True)
         repo = self._crud.repository
@@ -301,8 +308,10 @@ class UserChatService:
                 events = repo.control_read(session).events
                 starts = [e for e in events if e.kind == "interactive.started" and e.key == turn]
                 resolutions = [e for e in events if e.kind == "interactive.abandoned" and e.key == turn]
-                if len(starts) != 1 or starts[0].data.get("message_id") != request:
-                    msg = "Only a previously started uncertain turn can be set aside"
+                accepted = next(e for e in events if e.kind == "message.accepted" and e.key == f"message-{request}")
+                unstarted = not starts and accepted.data.get("origin") == "daemon"
+                if not unstarted and (len(starts) != 1 or starts[0].data.get("message_id") != request):
+                    msg = "Only a stopped uncertain turn or unstarted daemon occurrence can be set aside"
                     raise HeinzelError(msg)
                 if any(e.kind == "message.replied" and e.key == turn for e in events):
                     msg = "This turn already has a recorded reply"
@@ -313,7 +322,8 @@ class UserChatService:
                         or resolutions[0].data.get("message_id") != request
                         or resolutions[0].data.get("owner") != repo.principal_id
                         or resolutions[0].data.get("origin") not in _HEADS
-                        or resolutions[0].seq <= starts[0].seq
+                        or resolutions[0].data.get("unstarted", False) != unstarted
+                        or (not unstarted and resolutions[0].seq <= starts[0].seq)
                     ):
                         msg = "This turn has an invalid resolution record"
                         raise HeinzelError(msg)
@@ -326,6 +336,7 @@ class UserChatService:
                         "message_id": request,
                         "owner": repo.principal_id,
                         "origin": self._current.context().authentication,
+                        **({"unstarted": True} if unstarted else {}),
                     },
                 )
         return UserTurnResolution(session_id=session, request_id=request)
