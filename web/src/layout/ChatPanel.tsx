@@ -42,7 +42,7 @@ export function ChatPanel({ onCollapse }: { onCollapse: () => void }) {
     focus();
   };
   const createPersonal = async () => {
-    if (creating.current) return;
+    if (creating.current) return false;
     creating.current = true;
     setCreateError(false);
     try {
@@ -64,8 +64,10 @@ export function ChatPanel({ onCollapse }: { onCollapse: () => void }) {
         next.set("chat", data.session_id);
         return next;
       });
+      return true;
     } catch {
       setCreateError(true);
+      return false;
     } finally {
       creating.current = false;
     }
@@ -126,7 +128,21 @@ export function ChatPanel({ onCollapse }: { onCollapse: () => void }) {
         <div ref={end} />
       </div>
       <div className="chat-panel-composer border-t border-border p-3">
-        <Composer chat={chat} context={`route:${location.pathname}`} inputRef={inputRef} />
+        <p className="mb-1 text-xs text-muted-foreground">
+          To start a personal Heinzel, say “Create a Heinzelmännchen”.
+        </p>
+        <Composer
+          chat={chat}
+          context={`route:${location.pathname}`}
+          inputRef={inputRef}
+          onPersonalSentence={(text) =>
+            /^(?:please\s+)?(?:create|make)(?:\s+me)?\s+(?:a\s+)?(?:new\s+)?(?:personal\s+)?heinzel(?:männchen|maennchen)?[.!]?$/i.test(
+              text.trim(),
+            )
+              ? createPersonal()
+              : null
+          }
+        />
         <Costs chat={chat} className="chat-panel-costs mt-1.5" />
       </div>
     </div>

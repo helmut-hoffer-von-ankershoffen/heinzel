@@ -806,6 +806,7 @@ const en = {
   "chat.untitled": "Untitled chat",
   "chat.start": "Start",
   "chat.recent": "Recent chats",
+  "chat.personalSessions": "Your Heinzels",
   "workspace.page": "Page",
   "workspace.panels": "Workspace panels",
   "chat.sessions": "Your chats",

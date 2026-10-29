@@ -3,10 +3,12 @@ import { AnchoredPopover } from "@/components/AnchoredPopover";
 // (`hz chat list`), a general "Workshop" chat and "New chat". The list is grouped, so the durable Heinzelmännchen of
 // ADR 0049 (`hz heinzel list`) become one more group of items with their own fields, not a new component.
 
+import { useQuery } from "@tanstack/react-query";
 import { Check, ChevronDown, Hammer, Plus } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router";
 import { useChatSessions } from "@/api/chat";
-import type { SchemaChatSummary } from "@/api/client";
+import { api, problem, type SchemaChatSummary, type SchemaSessionSummary } from "@/api/client";
 import { SearchField } from "@/components/ui/search-field";
 import { format, t } from "@/i18n";
 import { cn } from "@/lib/utils";
@@ -21,7 +23,11 @@ export type SwitcherItem =
 export type SwitcherGroup = { label: string; items: SwitcherItem[] };
 
 /** The groups in the order shown: the general chat, then the recent sessions; empty groups go. */
-export function switcherGroups(sessions: SchemaChatSummary[], needle: string): SwitcherGroup[] {
+export function switcherGroups(
+  sessions: SchemaChatSummary[],
+  needle: string,
+  personal: SchemaSessionSummary[] = [],
+): SwitcherGroup[] {
   const match = (text: string) => !needle || text.toLowerCase().includes(needle.toLowerCase());
   const workshop: SwitcherItem = { kind: "workshop", id: "workshop", title: t("chat.workshop") };
   const recent: SwitcherItem[] = sessions.map((session) => ({
@@ -35,6 +41,12 @@ export function switcherGroups(sessions: SchemaChatSummary[], needle: string): S
   }));
   return [
     { label: t("chat.start"), items: [workshop].filter((item) => match(item.title)) },
+    {
+      label: t("chat.personalSessions"),
+      items: personal
+        .map((item): SwitcherItem => ({ kind: "heinzel", id: item.session_id, title: item.name, state: item.state }))
+        .filter((item) => match(item.title)),
+    },
     { label: t("chat.recent"), items: recent.filter((item) => match(item.title)) },
   ].filter((group) => group.items.length > 0);
 }
@@ -67,6 +79,17 @@ export function SessionSwitcher({
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const sessions = useChatSessions(open);
+  const [, setParams] = useSearchParams();
+  const personal = useQuery({
+    queryKey: ["heinzel", "sessions"],
+    queryFn: async () => {
+      const { data, error, response } = await api.GET("/heinzel/sessions");
+      if (!response.ok || !data) throw problem(response.status, error);
+      return data;
+    },
+    enabled: open,
+    retry: false,
+  });
   const ref = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   const listId = useId();
@@ -78,7 +101,10 @@ export function SessionSwitcher({
     window.addEventListener("mousedown", close);
     return () => window.removeEventListener("mousedown", close);
   }, [open]);
-  const groups = useMemo(() => switcherGroups(sessions.data ?? [], query.trim()), [sessions.data, query]);
+  const groups = useMemo(
+    () => switcherGroups(sessions.data ?? [], query.trim(), personal.data?.sessions ?? []),
+    [sessions.data, query, personal.data],
+  );
   // A chat is named by its first message; until then it is a new chat, whatever it is about.
   const current = chat.session?.messages?.length ? chat.session.title || t("chat.untitled") : t("chat.new");
   const choose = (item: SwitcherItem) => {
@@ -87,6 +113,13 @@ export function SessionSwitcher({
     trigger.current?.focus();
     if (item.kind === "workshop") void chat.openGeneral();
     else if (item.kind === "session") chat.select(item.id);
+    else
+      setParams((current) => {
+        const next = new URLSearchParams(current);
+        for (const key of ["agent-chat", "approval-chat", "approval-request", "agent-open-request"]) next.delete(key);
+        next.set("chat", item.id);
+        return next;
+      });
   };
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: Escape anywhere inside closes the list, as menus do
@@ -152,6 +185,11 @@ export function SessionSwitcher({
             {t("personal.create")}
           </button>
           <div id={listId} className="mt-1 max-h-80 overflow-y-auto">
+            {personal.isError && (
+              <p role="status" className="px-2.5 text-ui-sm">
+                Could not load personal Heinzels.
+              </p>
+            )}
             {sessions.isLoading && (
               <p className="px-2.5 py-1.5 text-ui-sm text-muted-foreground">{t("state.loading")}</p>
             )}
@@ -215,6 +253,9 @@ function Row({
               .filter(Boolean)
               .join(" · ")}
           </span>
+        )}
+        {item.kind === "heinzel" && item.state && (
+          <span className="block text-ui-sm text-muted-foreground">{item.state}</span>
         )}
         {item.kind === "workshop" && (
           <span className="block truncate text-ui-sm text-muted-foreground">{t("chat.workshopHelp")}</span>

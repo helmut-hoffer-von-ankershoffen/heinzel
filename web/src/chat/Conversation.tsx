@@ -197,11 +197,13 @@ export function Composer({
   context,
   inputRef,
   className,
+  onPersonalSentence,
 }: {
   chat: Chat;
   context: string;
   inputRef?: RefObject<HTMLTextAreaElement | null>;
   className?: string;
+  onPersonalSentence?: (text: string) => Promise<boolean> | null;
 }) {
   const sessionId = chat.session?.id;
   const { message, setMessage, picked, setPicked } = useUpdateDraft(
@@ -215,7 +217,12 @@ export function Composer({
     event.preventDefault();
     const text = message.trim();
     if (!text || chat.live || chat.loading) return;
+    const personal = onPersonalSentence?.(text);
     setMessage("");
+    if (personal) {
+      if (!(await personal)) setMessage((current) => current || text);
+      return;
+    }
     if (!(await chat.send(text, context, picked ?? {})))
       setMessage((current) => current || text); // nothing lost
     else setPicked(null);

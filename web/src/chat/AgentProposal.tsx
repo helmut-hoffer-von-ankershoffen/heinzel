@@ -160,6 +160,7 @@ export function AgentProposal({ sessionId }: { sessionId: string }) {
       <h3 className="font-medium">Scheduled agent proposal</h3>
       <p>
         You write these terms for later review. They do not start an agent or grant approval; limits are not enforced.
+        This preview cannot yet describe MCP, shell, or CLI permissions.
       </p>
       {loading ? (
         <p role="status">Loading proposal…</p>
@@ -170,7 +171,7 @@ export function AgentProposal({ sessionId }: { sessionId: string }) {
               <p>Revision {proposal.revision} · Proposed</p>
               <p className="whitespace-pre-wrap">{proposal.contract}</p>
               <p>
-                Per turn: ${proposal.max_usd}, {proposal.timeout_seconds} seconds. Tools: none.
+                Per turn: ${proposal.max_usd}, {proposal.timeout_seconds} seconds. This proposal grants no tools.
               </p>
               <p className="break-all">Preview: {proposal.preview_sha256}</p>
             </div>
