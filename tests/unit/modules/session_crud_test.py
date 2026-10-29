@@ -565,3 +565,42 @@ def test_scheduled_agent_proposal_rejects_inconsistent_stored_preview(services):
         writer.append("agent.proposed", key="agent-proposal-forged", data=body.model_dump(mode="json"))
     with pytest.raises(HeinzelError, match="proposal is invalid"):
         service.scheduled_agent_proposal(session_id, "forged")
+
+
+def test_scheduled_agent_amendments_are_revision_guarded_and_exact_retries_survive_later_changes(services):
+    service, repository, current = services
+    session_id = service.new_chat("conversation-create").session_id
+    assert service.latest_scheduled_agent_proposal(session_id) is None
+    initial = service.propose_scheduled_agent(session_id, "proposal-first", "First instructions", 0.2, 60)
+    revised = service.amend_scheduled_agent(session_id, "proposal-second", 1, "Second instructions", 0.3, 90)
+    assert (initial.revision, initial.based_on_revision) == (1, 0)
+    assert (revised.revision, revised.based_on_revision) == (2, 1)
+    assert revised.preview_sha256 != initial.preview_sha256
+    assert revised.status == "proposed"
+    assert revised.permitted_tools == []
+    assert service.latest_scheduled_agent_proposal(session_id) == revised
+    restarted = SessionCrud(PersonalSessionRepository(current), service.costs)
+    assert restarted.amend_scheduled_agent(session_id, "proposal-second", 1, "Second instructions", 0.3, 90) == revised
+    assert restarted.propose_scheduled_agent(session_id, "proposal-first", "First instructions", 0.2, 60) == initial
+    with pytest.raises(HeinzelError, match="proposal changed"):
+        service.amend_scheduled_agent(session_id, "stale", 1, "Stale instructions", 0.2, 60)
+    with pytest.raises(HeinzelError, match="different agent execution proposal"):
+        service.amend_scheduled_agent(session_id, "proposal-second", 1, "Different instructions", 0.3, 90)
+    with pytest.raises(HeinzelError, match="proposal changed"):
+        service.propose_scheduled_agent(session_id, "another-initial", "Instructions", 0.2, 60)
+    assert service.latest_scheduled_agent_proposal(session_id) == revised
+    assert not any(event.kind.startswith("approval.") for event in repository.control_read(session_id).events)
+    assert service.snapshot(session_id).schedule is None
+
+
+def test_new_personal_styling_survives_execution_proposal_and_amendment(services):
+    service, _, _ = services
+    initial = service.new_chat("styled-agent", "My helper", HeinzelAppearance(hat="teal", beard="long"))
+    service.propose_scheduled_agent(initial.session_id, "first-agent-contract", "Check in", 0.2, 60)
+    service.amend_scheduled_agent(initial.session_id, "amend-agent-contract", 1, "Check in briefly", 0.2, 60)
+    after = service.snapshot(initial.session_id)
+    assert after.session_id == initial.session_id
+    assert after.name == initial.name
+    assert after.appearance == initial.appearance
+    assert after.profile_revision == initial.profile_revision
+    assert after.schedule is None

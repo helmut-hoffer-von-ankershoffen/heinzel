@@ -430,3 +430,34 @@ def test_scheduled_agent_proposal_requires_private_identity_and_remains_inert(ke
     assert inspected.status_code == 200, inspected.text
     assert inspected.json() == proposal
     assert client.get("/heinzel/session", headers=auth, params={"session_id": session_id}).json()["schedule"] is None
+
+
+def test_agent_execution_revision_http_replay_and_stale_amendment(kernel):
+    client, auth = protected(kernel)
+    session = client.post("/heinzel/new-chat", headers=auth, json={"request_id": "new-agent-revision"}).json()
+    first = {
+        "session_id": session["session_id"],
+        "request_id": "proposal-one",
+        "contract": "Prepare a check-in",
+        "max_usd": 0.1,
+        "timeout_seconds": 30,
+    }
+    created = client.post("/heinzel/propose-scheduled-agent", headers=auth, json=first)
+    assert created.status_code == 200, created.text
+    assert created.json()["revision"] == 1
+    amendment = first | {"request_id": "proposal-two", "expected_revision": 1, "contract": "Prepare a brief check-in"}
+    changed = client.post("/heinzel/amend-scheduled-agent", headers=auth, json=amendment)
+    assert changed.status_code == 200, changed.text
+    assert changed.json()["revision"] == 2
+    assert changed.json()["status"] == "proposed"
+    assert client.post("/heinzel/amend-scheduled-agent", headers=auth, json=amendment).json() == changed.json()
+    latest = client.get(
+        "/heinzel/latest-scheduled-agent-proposal", headers=auth, params={"session_id": session["session_id"]}
+    )
+    assert latest.json() == changed.json()
+    stale = amendment | {"request_id": "proposal-stale"}
+    assert client.post("/heinzel/amend-scheduled-agent", headers=auth, json=stale).status_code >= 400
+    assert (
+        client.get("/heinzel/session", headers=auth, params={"session_id": session["session_id"]}).json()["schedule"]
+        is None
+    )

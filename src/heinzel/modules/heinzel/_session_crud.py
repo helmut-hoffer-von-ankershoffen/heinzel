@@ -669,17 +669,45 @@ class SessionCrud(ApprovalIssuer):
     def propose_scheduled_agent(
         self, session_id: str, request_id: str, contract: str, max_usd: float, timeout_seconds: int
     ) -> ScheduledAgentProposal:
-        """Store an inert proposal for a future, separately approved scheduled model turn.
+        """Store the first inert execution proposal; no approval or model turn occurs."""
+        return self._propose_agent_revision(session_id, request_id, 0, contract, max_usd, timeout_seconds)
 
-        No runner, approval, schedule or notification contract is changed.
+    def amend_scheduled_agent(  # noqa: PLR0913, PLR0917 - exact revision and complete proposed terms
+        self,
+        session_id: str,
+        request_id: str,
+        expected_revision: int,
+        contract: str,
+        max_usd: float,
+        timeout_seconds: int,
+    ) -> ScheduledAgentProposal:
+        """Propose a complete replacement against an inspected revision; it never activates a turn.
 
         Raises:
-            HeinzelError: If the request id already identifies different terms.
+            HeinzelError: If the revision is missing, stale, or the request conflicts.
         """
+        if type(expected_revision) is not int or expected_revision < 1:
+            msg = "Reload the agent execution proposal before amending it"
+            raise HeinzelError(msg)
+        return self._propose_agent_revision(
+            session_id, request_id, expected_revision, contract, max_usd, timeout_seconds
+        )
+
+    def _propose_agent_revision(  # noqa: PLR0913, PLR0917 - complete immutable proposal terms
+        self,
+        session_id: str,
+        request_id: str,
+        expected_revision: int,
+        contract: str,
+        max_usd: float,
+        timeout_seconds: int,
+    ) -> ScheduledAgentProposal:
         _REQUEST.validate_python(request_id)
         terms: dict[str, JsonValue] = {
             "session_id": session_id,
             "request_id": request_id,
+            "revision": expected_revision + 1,
+            "based_on_revision": expected_revision,
             "contract": contract,
             "permitted_tools": [],
             "max_usd": max_usd,
@@ -699,9 +727,35 @@ class SessionCrud(ApprovalIssuer):
                     msg = "This request already identifies a different agent execution proposal"
                     raise HeinzelError(msg)
                 return saved
+            revisions = [event for event in events if event.kind == "agent.proposed"]
+            if revisions:
+                latest_event = revisions[-1]
+                latest_request = latest_event.key.removeprefix("agent-proposal-") if latest_event.key else ""
+                latest = self._read_agent_proposal(session_id, latest_request, latest_event)
+                current_revision = latest.revision
+            else:
+                current_revision = 0
+            if current_revision != expected_revision:
+                msg = "The agent execution proposal changed; reload it before proposing new terms"
+                raise HeinzelError(msg)
             body = immutable_body(writer, "agent-proposal", proposal.model_dump(mode="json"), control=True)
             writer.append("agent.proposed", key=key, data=body.model_dump(mode="json"))
         return proposal
+
+    def latest_scheduled_agent_proposal(self, session_id: str) -> ScheduledAgentProposal | None:
+        """Read the current inert proposal for this owner and session, or none if not proposed.
+
+        Raises:
+            HeinzelError: If the proposal journal is invalid.
+        """
+        events = self.repository.control_read(session_id).events
+        event = next((item for item in reversed(events) if item.kind == "agent.proposed"), None)
+        if event is None:
+            return None
+        if event.key is None or not event.key.startswith("agent-proposal-"):
+            msg = "This agent execution proposal is invalid; restore its private snapshot"
+            raise HeinzelError(msg)
+        return self._read_agent_proposal(session_id, event.key.removeprefix("agent-proposal-"), event)
 
     def scheduled_agent_proposal(self, session_id: str, request_id: str) -> ScheduledAgentProposal:
         """Read the owner's exact inert execution proposal for human review.
@@ -735,6 +789,7 @@ class SessionCrud(ApprovalIssuer):
             event.kind != "agent.proposed"
             or proposal.session_id != session_id
             or proposal.request_id != request_id
+            or proposal.revision != proposal.based_on_revision + 1
             or proposal.preview_sha256 != _digest(terms)
         ):
             msg = "This agent execution proposal is invalid; restore its private snapshot"

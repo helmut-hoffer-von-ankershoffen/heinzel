@@ -216,6 +216,32 @@ def register_session_operations(module: Module) -> None:  # noqa: C901 - operati
         """Save an inert agent execution proposal; it neither approves nor starts a model turn."""
         return service.propose_scheduled_agent(session_id, request_id, contract, max_usd, timeout_seconds)
 
+    @module.operation(private=True, read_only=False, audience="everyday")
+    def amend_scheduled_agent(  # noqa: PLR0913, PLR0917 - exact revision and complete flat private API terms
+        service: SessionCrud,
+        session_id: Identity,
+        request_id: Request,
+        expected_revision: Annotated[
+            int, Field(description="The exact proposal revision inspected.", strict=True, ge=1)
+        ],
+        contract: Annotated[
+            str, Field(description="Complete replacement instructions.", min_length=1, max_length=4000)
+        ],
+        max_usd: Annotated[
+            float, Field(description="Proposed per-turn USD limit; not yet enforced.", gt=0, allow_inf_nan=False)
+        ],
+        timeout_seconds: Annotated[int, Field(description="Proposed maximum seconds per turn.", ge=1, le=300)],
+    ) -> ScheduledAgentProposal:
+        """Propose revised terms; an independent human review and approval is still required."""
+        return service.amend_scheduled_agent(
+            session_id, request_id, expected_revision, contract, max_usd, timeout_seconds
+        )
+
+    @module.operation(private=True, audience="everyday")
+    def latest_scheduled_agent_proposal(service: SessionCrud, session_id: Identity) -> ScheduledAgentProposal | None:
+        """Read the current inert proposal for the personal session, if one exists."""
+        return service.latest_scheduled_agent_proposal(session_id)
+
     @module.operation(private=True, audience="everyday")
     def scheduled_agent_proposal(
         service: SessionCrud, session_id: Identity, request_id: Request

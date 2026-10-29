@@ -82,6 +82,10 @@ class ScheduledAgentProposal(BaseModel):
 
     session_id: SessionId = Field(description="The owner-scoped personal session.")
     request_id: RequestId = Field(description="The proposal's stable request identity.")
+    revision: int = Field(description="The sequential execution proposal revision.", ge=1)
+    based_on_revision: int = Field(
+        description="The previous revision inspected for this proposal; zero for the first.", ge=0
+    )
     contract: str = Field(
         description="Exact instructions proposed for each scheduled model turn.", min_length=1, max_length=4000
     )
