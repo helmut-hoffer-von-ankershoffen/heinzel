@@ -276,6 +276,9 @@ class ClaudeSubscriptionModel(Model):
                     self._policy.max_requests,
                     ordinal,
                 )
+                # The ledger lock can block; do not launch on a policy revoked while waiting.
+                if self._current_policy() != self._policy:
+                    raise HeinzelError(denied)  # noqa: TRY301
                 outcome = await _run_cancelable(
                     self._execute,
                     [str(executable), *_COMMAND_FLAGS],

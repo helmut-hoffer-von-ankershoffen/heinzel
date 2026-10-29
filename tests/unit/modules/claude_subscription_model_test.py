@@ -204,3 +204,33 @@ def test_permission_denial_cannot_be_reported_as_success(tmp_path):
     model = fixture_model(fake_cli(tmp_path), policy, FixtureVerifier(), lambda: policy, execute=fake)
     with pytest.raises(HeinzelError, match="safely admitted"):
         asyncio.run(model.request([ModelRequest(parts=[UserPromptPart(content="private")])], None, parameters()))
+
+
+def test_policy_revoked_during_slot_reservation_prevents_model_launch(tmp_path):
+    from heinzel.modules.system.runner._process import Outcome
+
+    policy = admission()
+    current = [policy]
+    launches = []
+
+    class RevokingSlots:
+        def reserve(self, *_args):
+            current[0] = replace(policy, revision=2)
+
+    def fake(command, **_kwargs):
+        launches.append(command)
+        return Outcome(0, "2.1.312 (Claude Code)\n", "")
+
+    model = _ClaudeSubscriptionModel(
+        fake_cli(tmp_path),
+        policy,
+        FixtureVerifier(),
+        lambda: current[0],
+        slots=RevokingSlots(),
+        turn_id="fixture",
+        execute=fake,
+    )
+    with pytest.raises(HeinzelError):
+        asyncio.run(model.request([ModelRequest(parts=[UserPromptPart(content="private")])], None, parameters()))
+    assert len(launches) == 1
+    assert launches[0][-1] == "--version"
