@@ -299,7 +299,7 @@ function ProfileEditor({ initial, onLock }: { initial: SchemaSessionSnapshot; on
       if (
         saved.session_id !== snapshot.session_id ||
         !Number.isInteger(saved.profile_revision) ||
-        saved.profile_revision <= request.expected_revision
+        !profileSaveApplied(request, saved)
       ) {
         throw new Error("Invalid profile acknowledgement");
       }
