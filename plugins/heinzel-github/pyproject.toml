@@ -1,11 +1,11 @@
 [project]
 name = "heinzel-github"
-version = "0.8.0"
+version = "0.8.1"
 description = "Read pull requests and issues from GitHub: the code-host and tracker capabilities."
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.12"
-dependencies = ["heinzel>=0.8.0"] # released together; the release process bumps the bound
+dependencies = ["heinzel>=0.8.1"] # released together; the release process bumps the bound
 
 [project.urls]
 Source = "https://github.com/helmut-hoffer-von-ankershoffen/heinzel/tree/main/plugins/heinzel-github"
