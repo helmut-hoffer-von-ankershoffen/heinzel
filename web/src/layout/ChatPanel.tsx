@@ -129,10 +129,11 @@ export function ChatPanel({ onCollapse }: { onCollapse: () => void }) {
       </div>
       <div className="chat-panel-composer border-t border-border p-3">
         <p className="mb-1 text-xs text-muted-foreground">
-          To create a personal Heinzel, choose “Create a personal Heinzel” in the chat switcher. Creating one through
-          conversation is not available yet.
+          You can discuss an idea here. Creating an agent through conversation, scheduled meeting reminders, VIP email
+          monitoring, and meeting-note diary automation are not available yet. To create a personal Heinzel, use the
+          chat switcher.
         </p>
-        <Composer chat={chat} context={`route:${location.pathname}`} inputRef={inputRef} />
+        <Composer chat={chat} context={`route:${location.pathname}`} inputRef={inputRef} ideas={empty} />
         <Costs chat={chat} className="chat-panel-costs mt-1.5" />
       </div>
     </div>

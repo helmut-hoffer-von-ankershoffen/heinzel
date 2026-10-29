@@ -197,11 +197,13 @@ export function Composer({
   context,
   inputRef,
   className,
+  ideas = false,
 }: {
   chat: Chat;
   context: string;
   inputRef?: RefObject<HTMLTextAreaElement | null>;
   className?: string;
+  ideas?: boolean;
 }) {
   const sessionId = chat.session?.id;
   const { message, setMessage, picked, setPicked } = useUpdateDraft(
@@ -222,6 +224,24 @@ export function Composer({
   };
   return (
     <div className={cn("flex flex-col gap-1", className)}>
+      {ideas && !message && !chat.live && !chat.loading && (
+        <fieldset className="mb-1 flex flex-wrap gap-2">
+          <legend className="sr-only">{t("chat.exampleIdeas")}</legend>
+          {[t("chat.ideaMeetings"), t("chat.ideaVip"), t("chat.ideaDiary")].map((idea) => (
+            <button
+              key={idea}
+              type="button"
+              className="rounded border border-border px-2 py-1 text-left text-xs hover:bg-accent"
+              onClick={() => {
+                setMessage(idea);
+                inputRef?.current?.focus();
+              }}
+            >
+              {idea}
+            </button>
+          ))}
+        </fieldset>
+      )}
       <form onSubmit={submit} className="flex items-end gap-2">
         <label htmlFor={inputId} className="sr-only">
           {t("chat.label")}
