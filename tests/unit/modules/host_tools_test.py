@@ -73,6 +73,8 @@ def test_granted_read_fences_code_owner_turn_and_model_arguments(make_kernel, tm
         )
         assert _schema(registered, "a" * 64)[1] != _schema(newer, "a" * 64)[1]
         assert _schema(registered, "a" * 64)[1] != _schema(registered, "b" * 64)[1]
+        changed_summary = replace(registered, operation=replace(registered.operation, summary="different description"))
+        assert _schema(registered, "a" * 64)[1] != _schema(changed_summary, "a" * 64)[1]
         grant = ModelGrant(
             request_id="grant",
             revision=1,

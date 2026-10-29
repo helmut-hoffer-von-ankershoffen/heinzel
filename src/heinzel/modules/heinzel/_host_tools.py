@@ -45,6 +45,7 @@ def _schema(item: Exposed, implementation: str) -> tuple[dict[str, Any], str]:
     binding = json.dumps(
         {
             "identity": _identity(item),
+            "summary": item.operation.summary,
             "implementation": implementation,
             "schema": schema,
             "distribution": origin.distribution,
@@ -79,6 +80,7 @@ class ToolDescriptor:
     """Human-reviewable registration and fixed argument constraints, not an authority attestation."""
 
     identity: str
+    description: str
     schema: dict[str, Any]
     binding_sha256: str
     distribution: str
@@ -190,6 +192,7 @@ class HostToolCatalog:
             descriptors.append(
                 ToolDescriptor(
                     name,
+                    item.operation.summary,
                     schema,
                     digest,
                     origin.distribution,
@@ -205,6 +208,19 @@ class HostToolCatalog:
                 )
             )
         return descriptors
+
+    def review_descriptors_for(self, session: str) -> list[ToolDescriptor]:
+        """Resolve descriptors for the exact authenticated personal session.
+
+        Raises:
+            HeinzelError: If the catalog and requested session are different or ownership is unavailable.
+        """
+        self._check_owner()
+        if session != self._session:
+            msg = "The review catalog belongs to a different session"
+            raise HeinzelError(msg)
+        self._crud.repository.control_read(session)
+        return self.review_descriptors()
 
     def _check_owner(self) -> None:
         if self._crud.repository.principal_id != self._owner or self._current.principal().id != self._owner:
