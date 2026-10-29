@@ -64,7 +64,7 @@ describe("local personal artifact associations", () => {
     { ...item("document", "document"), ref: `${item("document", "document").ref}\n` },
     { ...item("document", "document"), session_id: second },
     { ...item("document", "document"), provenance: "verified" },
-  ])("rejects an invalid or mis-scoped association", async (bad) => {
+  ])("rejects an invalid or incorrectly scoped association", async (bad) => {
     mockApi({
       "/api/heinzel/sessions": sessions,
       "/api/heinzel/personal-artifacts": { session_id: first, artifacts: [bad] },
