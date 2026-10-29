@@ -72,6 +72,27 @@ def _allowed_executable_stat(info: os.stat_result) -> bool:
     return stat.S_ISREG(info.st_mode) and 0 <= info.st_size <= _MAX_EXECUTABLE_BYTES
 
 
+def subscription_environment() -> dict[str, str]:
+    """Keep only OS identity and XDG paths needed by the selected CLI, never ambient credentials or proxies."""
+    allowed = (
+        "HOME",
+        "LANG",
+        "TMPDIR",
+        "USER",
+        "LOGNAME",
+        "SHELL",
+        "XDG_CONFIG_HOME",
+        "XDG_DATA_HOME",
+        "XDG_CACHE_HOME",
+        "XDG_STATE_HOME",
+        "XDG_RUNTIME_DIR",
+    )
+    environment = {key: os.environ[key] for key in allowed if key in os.environ}
+    environment["PATH"] = "/usr/bin:/bin"
+    environment.update({"CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1", "DISABLE_AUTOUPDATER": "1"})
+    return environment
+
+
 def executable_digest(path: Path) -> str:
     """Hash a bounded regular executable without blocking on a substituted FIFO or following a new link.
 
@@ -291,9 +312,7 @@ class ClaudeSubscriptionModel(Model):
                 executable, digest, _VERSION, _COMMAND_FLAGS, self._policy
             ):
                 raise HeinzelError(denied)  # noqa: TRY301 - all process failures are redacted at this boundary
-            environment = {key: os.environ[key] for key in ("HOME", "LANG", "TMPDIR") if key in os.environ}
-            environment["PATH"] = "/usr/bin:/bin"
-            environment.update({"CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1", "DISABLE_AUTOUPDATER": "1"})
+            environment = subscription_environment()
             with tempfile.TemporaryDirectory(prefix="hz-model-") as directory:
                 version = await _run_cancelable(
                     self._execute,
