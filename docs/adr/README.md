@@ -189,4 +189,4 @@ of inventing them. Two factual corrections came with it: ADR 0004 names the plug
 | [0091](0091-plugin-add-uses-server-owned-operation-receipts.md) | Confirmed plugin adds use server-owned operation receipts | proposed | 2026-10-28 |
 | [0092](0092-youtube-sign-in-is-an-explicit-player-choice.md) | YouTube sign-in is an explicit player choice | proposed | 2026-10-28 |
 | [0093](0093-touch-update-pane-remains-inspectable.md) | Touch users inspect updates before installing | proposed | 2026-10-28 |
-| [0094](0094-plugins-own-features-and-independent-delivery.md) | Plugins own their features and independent delivery | proposed | 2026-10-29 |
+| [0094](0094-plugins-own-features-and-independent-delivery.md) | Plugins own their features and independent delivery | accepted | 2026-10-29 |

@@ -27,6 +27,7 @@ git fetch --tags --quiet origin 2>/dev/null || true
 current="$(uv run --frozen bump-my-version show current_version)"
 if [[ "$bump" == "auto" ]]; then
   next="$(uv run --frozen git-cliff --offline --bumped-version)"
+  next="$(uv run --script scripts/release_version.py "$current" "${next#v}")"
 else
   next="$(uv run --frozen bump-my-version show --increment "$bump" new_version)"
 fi
@@ -34,12 +35,16 @@ next="${next#v}"
 tag="v$next"
 
 [[ "$next" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "could not determine the next version (got '$next')"
-[[ "$next" != "$current" ]] || die "no releasable commits since v$current"
+if [[ "$next" == "$current" ]] && git rev-parse -q --verify "refs/tags/v$current" >/dev/null; then
+  die "no releasable commits since v$current"
+fi
 git rev-parse -q --verify "refs/tags/$tag" >/dev/null && die "tag $tag already exists"
 
 echo "Preparing $tag (was $current)" >&2
 git switch --quiet --create "release/$tag"
-uv run --frozen bump-my-version bump --new-version "$next" --no-commit --no-tag --allow-dirty >&2
+if [[ "$next" != "$current" ]]; then
+  uv run --frozen bump-my-version bump --new-version "$next" --no-commit --no-tag --allow-dirty >&2
+fi
 uv lock --quiet
 # Regenerate what derives from the version (the plugin template's pyproject, generated docs); the release PR's
 # lint fails otherwise.

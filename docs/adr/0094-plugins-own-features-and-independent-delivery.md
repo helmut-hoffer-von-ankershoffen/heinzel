@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-10-29
 decision-makers: maintainer
 amends: 0017, 0056, 0063, 0065, 0072, 0074, 0082
