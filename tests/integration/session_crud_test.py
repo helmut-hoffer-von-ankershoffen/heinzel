@@ -512,6 +512,20 @@ def test_private_skill_draft_http_is_owner_scoped_and_never_publishes(kernel):
     assert created.status_code == 200, created.text
     assert created.json()["files"] == payload["files"]
     assert created.json()["status"] == "draft"
+    sharing = {
+        "session_id": session_id,
+        "request_id": "sharing-1",
+        "draft_request_id": "draft-1",
+        "draft_sha256": created.json()["preview_sha256"],
+    }
+    assert client.post("/heinzel/propose-skill-sharing", json=sharing).status_code == 401
+    requested = client.post("/heinzel/propose-skill-sharing", headers=auth, json=sharing)
+    assert requested.status_code == 200, requested.text
+    assert requested.json()["status"] == "awaiting_review"
+    assert requested.json()["authority"] == "unverified"
+    assert "private draft" not in requested.text
+    listing = client.get("/heinzel/skill-sharing-proposals", headers=auth, params={"session_id": session_id})
+    assert listing.json()["items"][0]["request_id"] == "sharing-1"
     assert client.post("/heinzel/propose-skill-draft", headers=auth, json=payload).json() == created.json()
     read = client.get("/heinzel/skill-draft", headers=auth, params={"session_id": session_id, "request_id": "draft-1"})
     assert read.json() == created.json()
@@ -525,3 +539,8 @@ def test_private_skill_draft_http_is_owner_scoped_and_never_publishes(kernel):
         != 200
     )
     assert other.post("/heinzel/propose-skill-draft", headers=other_auth, json=payload).status_code != 200
+    assert other.post("/heinzel/propose-skill-sharing", headers=other_auth, json=sharing).status_code != 200
+    assert (
+        other.get("/heinzel/skill-sharing-proposals", headers=other_auth, params={"session_id": session_id}).status_code
+        != 200
+    )

@@ -654,6 +654,7 @@ $ hz heinzel [OPTIONS] COMMAND [ARGS]...
 * `propose-check-in`: Propose local five-minute check-ins; the...
 * `propose-scheduled-agent`: Save an inert agent execution proposal; it...
 * `propose-skill-draft`: Store a private skill draft; no file is...
+* `propose-skill-sharing`: Request review of exact private draft and...
 * `prune`: (expert) Delete drafts and records older...
 * `schedule-control`: Pause a schedule; activation and resume...
 * `scheduled-agent-proposal`: Inspect the exact inert proposal; a...
@@ -662,6 +663,9 @@ $ hz heinzel [OPTIONS] COMMAND [ARGS]...
 * `sessions`: List your durable personal Heinzels,...
 * `show`: Show a contract as the daemon runs it:...
 * `skill-draft`: Read exact private skill draft files and...
+* `skill-drafts`: List private draft references without file...
+* `skill-sharing`: Read a private sharing request; it is...
+* `skill-sharing-proposals`: Discover owner-private pending sharing...
 * `wake`: Wake a Heinzelmännchen now: fetch its...
 
 ### `hz heinzel amend-scheduled-agent`
@@ -1019,6 +1023,29 @@ $ hz heinzel propose-skill-draft [OPTIONS] {session_id} {request_id} {name} {req
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
 
+### `hz heinzel propose-skill-sharing`
+
+Request review of exact private draft and target; membership and authority are unverified.
+
+**Usage**:
+
+```console
+$ hz heinzel propose-skill-sharing [OPTIONS] {session_id} {request_id} {draft_request_id} {draft_sha256}
+```
+
+**Arguments**:
+
+* `session_id`: [required]
+* `request_id`: [required]
+* `draft_request_id`: [required]
+* `draft_sha256`: The exact immutable draft fingerprint.  [required]
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
 ### `hz heinzel prune`
 
 (expert) Delete drafts and records older than ` retention_days` (default 90); receipts are kept.
@@ -1182,6 +1209,71 @@ $ hz heinzel skill-draft [OPTIONS] {session_id} {request_id}
 
 **Options**:
 
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz heinzel skill-drafts`
+
+List private draft references without file contents.
+
+**Usage**:
+
+```console
+$ hz heinzel skill-drafts [OPTIONS] {session_id}
+```
+
+**Arguments**:
+
+* `session_id`: [required]
+
+**Options**:
+
+* `--cursor <int>`: Resume after this session journal position.  [default: 0]
+* `--limit <int>`: The most private draft references returned in this page.  [default: 20]
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz heinzel skill-sharing`
+
+Read a private sharing request; it is neither approved nor published.
+
+**Usage**:
+
+```console
+$ hz heinzel skill-sharing [OPTIONS] {session_id} {request_id}
+```
+
+**Arguments**:
+
+* `session_id`: [required]
+* `request_id`: [required]
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz heinzel skill-sharing-proposals`
+
+Discover owner-private pending sharing request references.
+
+**Usage**:
+
+```console
+$ hz heinzel skill-sharing-proposals [OPTIONS] {session_id}
+```
+
+**Arguments**:
+
+* `session_id`: [required]
+
+**Options**:
+
+* `--cursor <int>`: Resume after this session journal position.  [default: 0]
+* `--limit <int>`: The most private sharing references returned in this page.  [default: 20]
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.

@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api, type SchemaHeinzelProposeSkillDraftInput, type SchemaSkillDraft } from "@/api/client";
 import { Button } from "@/components/ui/button";
+import { SkillSharingPanel } from "./SkillSharingPanel";
 
 type DraftRequest = SchemaHeinzelProposeSkillDraftInput;
 type Scope = DraftRequest["requested_scope"];
@@ -97,6 +98,8 @@ export function SkillDraftPanel({ sessionId }: { sessionId: string }) {
   const [saved, setSaved] = useState<SchemaSkillDraft | null>(null);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [draftRefs, setDraftRefs] = useState<string[]>([]);
+  const [draftCursor, setDraftCursor] = useState<number | null>(null);
   const [lookupId, setLookupId] = useState(() => {
     try {
       const id = sessionStorage.getItem(lastKey);
@@ -111,20 +114,20 @@ export function SkillDraftPanel({ sessionId }: { sessionId: string }) {
       setError("This tab's pending draft cannot be recovered. Inspect its saved state before starting another.");
   }, [recovery.blocked]);
 
-  const openDraft = async () => {
-    if (running.current || !matches(requestId, lookupId)) return;
+  const openDraft = async (selectedId = lookupId) => {
+    if (running.current || !matches(requestId, selectedId)) return;
     running.current = true;
     setSaving(true);
     setError("");
     try {
       const { data, response } = await api.GET("/heinzel/skill-draft", {
-        params: { query: { session_id: sessionId, request_id: lookupId } },
+        params: { query: { session_id: sessionId, request_id: selectedId } },
       });
       if (
         !response.ok ||
         !data ||
         data.session_id !== sessionId ||
-        data.request_id !== lookupId ||
+        data.request_id !== selectedId ||
         data.status !== "draft" ||
         !valid(data, sessionId)
       )
@@ -137,6 +140,33 @@ export function SkillDraftPanel({ sessionId }: { sessionId: string }) {
       setSaving(false);
     }
   };
+  const listDrafts = async (cursor: number | null) => {
+    if (running.current) return;
+    running.current = true;
+    setSaving(true);
+    setError("");
+    try {
+      const { data, response } = await api.GET("/heinzel/skill-drafts", {
+        params: { query: { session_id: sessionId, cursor: cursor ?? 0, limit: 20 } },
+      });
+      if (!response.ok || !data || data.items.some((item) => !matches(requestId, item.request_id)))
+        throw new Error("Unavailable");
+      setDraftRefs((old) =>
+        cursor === null
+          ? data.items.map((item) => item.request_id)
+          : [...old, ...data.items.map((item) => item.request_id)],
+      );
+      setDraftCursor(data.next_cursor ?? null);
+    } catch {
+      setError("Saved drafts could not be loaded.");
+    } finally {
+      running.current = false;
+      setSaving(false);
+    }
+  };
+  const hasEdits = Boolean(
+    name || scopeRef || scope !== "personal" || files.some((file) => file.text || file.path !== "SKILL.md"),
+  );
   const prepare = () => {
     const entries = files.map((file) => [file.path, file.text] as const);
     if (new Set(entries.map(([path]) => path.toLowerCase())).size !== entries.length) {
@@ -224,6 +254,7 @@ export function SkillDraftPanel({ sessionId }: { sessionId: string }) {
               </pre>
             </div>
           ))}
+          {saved.requested_scope !== "personal" && <SkillSharingPanel key={saved.request_id} draft={saved} />}
           <Button
             type="button"
             variant="outline"
@@ -292,21 +323,43 @@ export function SkillDraftPanel({ sessionId }: { sessionId: string }) {
               <Button
                 type="button"
                 variant="outline"
-                disabled={
-                  saving ||
-                  recovery.blocked ||
-                  !matches(requestId, lookupId) ||
-                  Boolean(
-                    name ||
-                      scopeRef ||
-                      scope !== "personal" ||
-                      files.some((file) => file.text || file.path !== "SKILL.md"),
-                  )
-                }
+                disabled={saving || recovery.blocked || !matches(requestId, lookupId) || hasEdits}
                 onClick={() => void openDraft()}
               >
                 Open saved draft
               </Button>
+            </div>
+            <div className="space-y-1 border-b border-border pb-2">
+              <Button
+                type="button"
+                variant="outline"
+                disabled={saving || recovery.blocked || hasEdits}
+                onClick={() => void listDrafts(null)}
+              >
+                Load saved drafts
+              </Button>
+              {draftRefs.map((id) => (
+                <Button
+                  key={id}
+                  type="button"
+                  variant="outline"
+                  className="w-full justify-start whitespace-normal break-all text-left"
+                  disabled={saving || recovery.blocked || hasEdits}
+                  onClick={() => void openDraft(id)}
+                >
+                  Open draft {id}
+                </Button>
+              ))}
+              {draftCursor !== null && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={saving || recovery.blocked || hasEdits}
+                  onClick={() => void listDrafts(draftCursor)}
+                >
+                  More drafts
+                </Button>
+              )}
             </div>
             <label className="block text-sm">
               Skill name

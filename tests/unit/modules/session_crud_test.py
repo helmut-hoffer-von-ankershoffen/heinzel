@@ -810,3 +810,71 @@ def test_skill_draft_replay_scopes_event_kind_and_detects_changed_snapshot(servi
         writer.append("skill.draft", key="skill-draft-forged", data=body.model_dump(mode="json"))
     with pytest.raises(HeinzelError, match="skill draft is invalid"):
         service.skill_draft(session_id, "forged")
+
+
+@pytest.mark.parametrize("scope", ["team", "org", "site", "company"])
+def test_skill_sharing_is_only_a_private_exact_unverified_request(services, scope):
+    service, repository, current = services
+    session_id = service.new_chat("share-owner").session_id
+    draft = service.propose_skill_draft(
+        session_id,
+        "draft",
+        "review-work",
+        scope,
+        "scope-1",
+        {"SKILL.md": "private", "scripts/a.py": "raise Exception()"},
+    )
+    with pytest.raises(HeinzelError, match="does not match"):
+        service.propose_skill_sharing(session_id, "share", "draft", "0" * 64)
+    proposal = service.propose_skill_sharing(session_id, "share", "draft", draft.preview_sha256)
+    assert proposal.status == "awaiting_review"
+    assert proposal.authority == "unverified"
+    assert proposal.requested_scope == scope
+    assert proposal.scope_ref == "scope-1"
+    assert service.propose_skill_sharing(session_id, "share", "draft", draft.preview_sha256) == proposal
+    assert service.skill_sharing(session_id, "share") == proposal
+    assert [item.request_id for item in service.skill_sharing_proposals(session_id).items] == ["share"]
+    other = service.propose_skill_draft(session_id, "other", "review-work", scope, "scope-2", {"SKILL.md": "other"})
+    with pytest.raises(HeinzelError, match="different sharing"):
+        service.propose_skill_sharing(session_id, "share", "other", other.preview_sha256)
+    personal = service.propose_skill_draft(session_id, "personal", "review-work", "personal", None, {"SKILL.md": "x"})
+    with pytest.raises(HeinzelError, match="does not match"):
+        service.propose_skill_sharing(session_id, "personal-share", "personal", personal.preview_sha256)
+    events = repository.control_read(session_id).events
+    assert all(
+        event.kind not in {"approval.issued", "skill.published", "skill.executed", "skill.granted"} for event in events
+    )
+    assert "private" not in json.dumps([event.model_dump(mode="json") for event in events])
+    stranger = CallIdentity(
+        Principal("u-" + "a" * 32), "api-bearer", "other", "private", frozenset({"private:read", "private:write"})
+    )
+    with current.using(stranger):
+        with pytest.raises(HeinzelError, match="No such personal"):
+            service.skill_sharing(session_id, "share")
+        with pytest.raises(HeinzelError, match="No such personal"):
+            service.skill_sharing_proposals(session_id)
+        with pytest.raises(HeinzelError, match="No such personal"):
+            service.propose_skill_sharing(session_id, "other-share", "draft", draft.preview_sha256)
+
+
+def test_skill_draft_listing_is_private_paginated_and_stable(services):
+    service, _, current = services
+    session_id = service.new_chat("draft-list-owner").session_id
+    for request in ("one", "two", "three"):
+        service.propose_skill_draft(session_id, request, "review-work", "personal", None, {"SKILL.md": "secret text"})
+    first = service.skill_drafts(session_id, limit=2)
+    assert [item.request_id for item in first.items] == ["one", "two"]
+    assert first.next_cursor == first.items[-1].seq
+    assert "secret text" not in first.model_dump_json()
+    service.propose_skill_draft(session_id, "four", "review-work", "personal", None, {"SKILL.md": "secret text"})
+    assert [item.request_id for item in service.skill_drafts(session_id, first.next_cursor, 2).items] == [
+        "three",
+        "four",
+    ]
+    assert service.skill_drafts(session_id, first.next_cursor, 2).next_cursor is None
+    for limit in (0, 101, True):
+        with pytest.raises(HeinzelError):
+            service.skill_drafts(session_id, limit=limit)
+    stranger = CallIdentity(Principal("u-" + "a" * 32), "api-bearer", "other", "private", frozenset({"private:read"}))
+    with current.using(stranger), pytest.raises(HeinzelError, match="No such personal"):
+        service.skill_drafts(session_id)

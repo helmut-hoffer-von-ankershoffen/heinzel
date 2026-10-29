@@ -10895,6 +10895,59 @@
         "title": "SkillDraft",
         "type": "object"
       },
+      "SkillDraftPage": {
+        "description": "A stable page in control-journal order.",
+        "properties": {
+          "items": {
+            "description": "Private draft references in journal order.",
+            "items": {
+              "$ref": "#/components/schemas/SkillDraftReference"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Resume after this journal position; null at the end.",
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "SkillDraftPage",
+        "type": "object"
+      },
+      "SkillDraftReference": {
+        "description": "An owner-scoped reference, without draft content.",
+        "properties": {
+          "request_id": {
+            "description": "The stable request identity for the private draft or sharing request.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "seq": {
+            "description": "Its position in the owner's session journal.",
+            "exclusiveMinimum": 0.0,
+            "title": "Seq",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "request_id",
+          "seq"
+        ],
+        "title": "SkillDraftReference",
+        "type": "object"
+      },
       "SkillList": {
         "description": "Every skill in effect, the names nobody decided between, and personal skills that failed their checks.",
         "properties": {
@@ -10935,6 +10988,107 @@
           "skills"
         ],
         "title": "SkillList",
+        "type": "object"
+      },
+      "SkillSharingPage": {
+        "description": "Owner-private references to pending sharing requests.",
+        "properties": {
+          "items": {
+            "description": "Owner-private pending sharing request references.",
+            "items": {
+              "$ref": "#/components/schemas/SkillDraftReference"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Resume after this journal position; null at the end.",
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "SkillSharingPage",
+        "type": "object"
+      },
+      "SkillSharingProposal": {
+        "additionalProperties": false,
+        "description": "Private request for later review; no membership, approval or publication is asserted.",
+        "properties": {
+          "authority": {
+            "const": "unverified",
+            "default": "unverified",
+            "description": "Membership and publishing authority are unverified.",
+            "title": "Authority",
+            "type": "string"
+          },
+          "draft_request_id": {
+            "description": "The immutable skill draft being proposed for sharing.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Draft Request Id",
+            "type": "string"
+          },
+          "draft_sha256": {
+            "description": "The exact private draft fingerprint, including its intended target.",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Draft Sha256",
+            "type": "string"
+          },
+          "request_id": {
+            "description": "The stable identity of this exact sharing review request.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "requested_scope": {
+            "description": "The requested, unverified audience.",
+            "enum": [
+              "team",
+              "org",
+              "site",
+              "company"
+            ],
+            "title": "Requested Scope",
+            "type": "string"
+          },
+          "scope_ref": {
+            "description": "The opaque requested audience identity; no authority is established.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Scope Ref",
+            "type": "string"
+          },
+          "session_id": {
+            "description": "The authenticated owner's personal session.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "status": {
+            "const": "awaiting_review",
+            "default": "awaiting_review",
+            "description": "No sharing has been approved.",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "request_id",
+          "draft_request_id",
+          "draft_sha256",
+          "requested_scope",
+          "scope_ref"
+        ],
+        "title": "SkillSharingProposal",
         "type": "object"
       },
       "SkillView": {
@@ -15006,6 +15160,43 @@
         "title": "heinzel_propose_skill_draft_Input",
         "type": "object"
       },
+      "heinzel_propose_skill_sharing_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "draft_request_id": {
+            "description": "A stable client request id; reuse it only for an exact retry.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Draft Request Id",
+            "type": "string"
+          },
+          "draft_sha256": {
+            "description": "The exact immutable draft fingerprint.",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Draft Sha256",
+            "type": "string"
+          },
+          "request_id": {
+            "description": "A stable client request id; reuse it only for an exact retry.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "session_id": {
+            "description": "The stable personal session id returned by new-chat or sessions.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "request_id",
+          "draft_request_id",
+          "draft_sha256"
+        ],
+        "title": "heinzel_propose_skill_sharing_Input",
+        "type": "object"
+      },
       "heinzel_schedule_control_Input": {
         "additionalProperties": false,
         "properties": {
@@ -16130,6 +16321,48 @@
         ]
       }
     },
+    "/heinzel/propose-skill-sharing": {
+      "post": {
+        "description": "Request review of exact private draft and target; membership and authority are unverified.",
+        "operationId": "heinzel_propose_skill_sharing",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/heinzel_propose_skill_sharing_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillSharingProposal"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Request review of exact private draft and target; membership and authority are unverified.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
     "/heinzel/schedule-control": {
       "post": {
         "description": "Pause a schedule; activation and resume require an exact-intent approval from a trusted issuer.\n\nRaises:\n    HeinzelError: If the schedule is stale or approval is invalid or unavailable.",
@@ -16411,6 +16644,192 @@
           }
         },
         "summary": "Read exact private skill draft files and requested sharing scope.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/skill-drafts": {
+      "get": {
+        "description": "List private draft references without file contents.",
+        "operationId": "heinzel_skill_drafts",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Resume after this session journal position.",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Resume after this session journal position.",
+              "title": "Cursor",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "The most private draft references returned in this page.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "description": "The most private draft references returned in this page.",
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillDraftPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List private draft references without file contents.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/skill-sharing": {
+      "get": {
+        "description": "Read a private sharing request; it is neither approved nor published.",
+        "operationId": "heinzel_skill_sharing",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillSharingProposal"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read a private sharing request; it is neither approved nor published.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/skill-sharing-proposals": {
+      "get": {
+        "description": "Discover owner-private pending sharing request references.",
+        "operationId": "heinzel_skill_sharing_proposals",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Resume after this session journal position.",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Resume after this session journal position.",
+              "title": "Cursor",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "The most private sharing references returned in this page.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "description": "The most private sharing references returned in this page.",
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillSharingPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Discover owner-private pending sharing request references.",
         "tags": [
           "heinzel"
         ]

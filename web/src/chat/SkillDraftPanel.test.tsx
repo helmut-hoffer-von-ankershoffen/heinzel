@@ -144,3 +144,34 @@ it("refuses a different session's draft and prevents editing during lookup", asy
   expect(screen.queryByText("another owner's text")).not.toBeInTheDocument();
   expect(calls.some((call) => new URL(call.url).pathname.endsWith("/propose-skill-draft"))).toBe(false);
 });
+
+it("discovers and opens older drafts after tab-local state is gone", async () => {
+  const user = userEvent.setup();
+  const { calls } = mockApi({
+    "/api/heinzel/skill-drafts": (request: Request) => {
+      const cursor = new URL(request.url).searchParams.get("cursor");
+      return cursor === "0"
+        ? { items: [{ request_id: "older", seq: 2 }], next_cursor: 2 }
+        : { items: [{ request_id: "oldest", seq: 4 }], next_cursor: null };
+    },
+    "/api/heinzel/skill-draft": (request: Request) => ({
+      session_id: sessionId,
+      request_id: new URL(request.url).searchParams.get("request_id"),
+      name: "saved-skill",
+      requested_scope: "personal",
+      scope_ref: null,
+      files: { "SKILL.md": "Earlier private content" },
+      status: "draft",
+      preview_sha256: "a".repeat(64),
+    }),
+  });
+  render(<SkillDraftPanel sessionId={sessionId} />);
+  await user.click(screen.getByText("Skill draft"));
+  await user.click(screen.getByRole("button", { name: "Load saved drafts" }));
+  expect(await screen.findByRole("button", { name: "Open draft older" })).toBeVisible();
+  await user.click(screen.getByRole("button", { name: "More drafts" }));
+  await user.click(await screen.findByRole("button", { name: "Open draft oldest" }));
+  expect(await screen.findByText("Saved private draft: saved-skill")).toBeVisible();
+  expect(screen.getByText("Earlier private content")).toBeVisible();
+  expect(calls.filter((call) => new URL(call.url).pathname.endsWith("skill-drafts"))).toHaveLength(2);
+});

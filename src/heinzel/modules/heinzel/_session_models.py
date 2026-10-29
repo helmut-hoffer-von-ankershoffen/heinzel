@@ -23,6 +23,45 @@ MAX_DRAFT_FILE_BYTES = 24 * 1024
 MAX_DRAFT_BYTES = 48 * 1024
 
 
+class SkillDraftReference(BaseModel):
+    """An owner-scoped reference, without draft content."""
+
+    request_id: RequestId = Field(description="The stable request identity for the private draft or sharing request.")
+    seq: int = Field(description="Its position in the owner's session journal.", gt=0)
+
+
+class SkillDraftPage(BaseModel):
+    """A stable page in control-journal order."""
+
+    items: list[SkillDraftReference] = Field(description="Private draft references in journal order.")
+    next_cursor: int | None = Field(default=None, description="Resume after this journal position; null at the end.")
+
+
+class SkillSharingProposal(BaseModel):
+    """Private request for later review; no membership, approval or publication is asserted."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    session_id: SessionId = Field(description="The authenticated owner's personal session.")
+    request_id: RequestId = Field(description="The stable identity of this exact sharing review request.")
+    draft_request_id: RequestId = Field(description="The immutable skill draft being proposed for sharing.")
+    draft_sha256: Digest = Field(description="The exact private draft fingerprint, including its intended target.")
+    requested_scope: Literal["team", "org", "site", "company"] = Field(
+        description="The requested, unverified audience."
+    )
+    scope_ref: RequestId = Field(description="The opaque requested audience identity; no authority is established.")
+    status: Literal["awaiting_review"] = Field(default="awaiting_review", description="No sharing has been approved.")
+    authority: Literal["unverified"] = Field(
+        default="unverified", description="Membership and publishing authority are unverified."
+    )
+
+
+class SkillSharingPage(BaseModel):
+    """Owner-private references to pending sharing requests."""
+
+    items: list[SkillDraftReference] = Field(description="Owner-private pending sharing request references.")
+    next_cursor: int | None = Field(default=None, description="Resume after this journal position; null at the end.")
+
+
 class BackendBinding(BaseModel):
     """The effective choice pinned to a turn; changing it takes effect between turns."""
 

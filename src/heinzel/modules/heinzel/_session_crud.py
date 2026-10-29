@@ -48,6 +48,10 @@ from heinzel.modules.heinzel._session_models import (
     SessionSnapshot,
     SessionSummary,
     SkillDraft,
+    SkillDraftPage,
+    SkillDraftReference,
+    SkillSharingPage,
+    SkillSharingProposal,
     WakeScheduleView,
 )
 from heinzel.modules.heinzel._session_protocol import SessionRepository
@@ -783,6 +787,124 @@ class SessionCrud(ApprovalIssuer):
             msg = "This skill draft does not exist"
             raise HeinzelError(msg)
         return self._read_skill_draft(session_id, request_id, prior)
+
+    def propose_skill_sharing(
+        self, session_id: str, request_id: str, draft_request_id: str, draft_sha256: str
+    ) -> SkillSharingProposal:
+        """Record only an exact private sharing request; never authorize an effect.
+
+        Raises:
+            HeinzelError: If the draft differs, is personal, or the request is reused differently.
+        """
+        _REQUEST.validate_python(request_id)
+        draft = self.skill_draft(session_id, draft_request_id)
+        if draft.preview_sha256 != draft_sha256 or draft.requested_scope == "personal" or draft.scope_ref is None:
+            msg = "This sharing request does not match a shared-scope private draft"
+            raise HeinzelError(msg)
+        proposal = SkillSharingProposal(
+            session_id=session_id,
+            request_id=request_id,
+            draft_request_id=draft_request_id,
+            draft_sha256=draft_sha256,
+            requested_scope=draft.requested_scope,
+            scope_ref=draft.scope_ref,
+        )
+        key = f"skill-sharing-{request_id}"
+        with self.repository.control_writer(session_id) as writer:
+            events = self.repository.control_read(session_id).events
+            prior = next((event for event in events if event.kind == "skill.sharing" and event.key == key), None)
+            if prior:
+                saved = self._read_skill_sharing(session_id, request_id, prior)
+                if saved != proposal:
+                    msg = "This request already identifies a different sharing proposal"
+                    raise HeinzelError(msg)
+                return saved
+            body = immutable_body(writer, "skill-sharing", proposal.model_dump(mode="json"), control=True)
+            writer.append("skill.sharing", key=key, data=body.model_dump(mode="json"))
+        return proposal
+
+    def skill_sharing(self, session_id: str, request_id: str) -> SkillSharingProposal:
+        """Read one owned pending proposal and verify its immutable draft.
+
+        Raises:
+            HeinzelError: If the proposal or its draft is unavailable or invalid.
+        """
+        _REQUEST.validate_python(request_id)
+        events = self.repository.control_read(session_id).events
+        event = next(
+            (event for event in events if event.kind == "skill.sharing" and event.key == f"skill-sharing-{request_id}"),
+            None,
+        )
+        if event is None:
+            msg = "This private sharing proposal does not exist"
+            raise HeinzelError(msg)
+        return self._read_skill_sharing(session_id, request_id, event)
+
+    def _read_skill_sharing(self, session_id: str, request_id: str, event: SessionEvent) -> SkillSharingProposal:
+        try:
+            proposal = SkillSharingProposal.model_validate(self._body(session_id, event))
+            draft = self.skill_draft(session_id, proposal.draft_request_id)
+        except (ValidationError, TypeError, ValueError):
+            msg = "This private sharing proposal is invalid"
+            raise HeinzelError(msg) from None
+        if (
+            proposal.session_id != session_id
+            or proposal.request_id != request_id
+            or proposal.draft_sha256 != draft.preview_sha256
+            or proposal.requested_scope != draft.requested_scope
+            or proposal.scope_ref != draft.scope_ref
+        ):
+            msg = "This private sharing proposal does not match its draft"
+            raise HeinzelError(msg)
+        return proposal
+
+    def skill_sharing_proposals(self, session_id: str, cursor: int = 0, limit: int = 20) -> SkillSharingPage:
+        """List owner-private proposal references in stable journal order.
+
+        Raises:
+            HeinzelError: If ownership or pagination bounds are invalid.
+        """
+        max_page = 100
+        if isinstance(cursor, bool) or cursor < 0 or isinstance(limit, bool) or not 1 <= limit <= max_page:
+            msg = "Invalid sharing proposal page"
+            raise HeinzelError(msg)
+        events = self.repository.control_read(session_id).events
+        refs = [
+            SkillDraftReference(
+                request_id=_REQUEST.validate_python(event.key.removeprefix("skill-sharing-")), seq=event.seq
+            )
+            for event in events
+            if event.seq > cursor
+            and event.kind == "skill.sharing"
+            and event.key
+            and event.key.startswith("skill-sharing-")
+        ]
+        page = refs[:limit]
+        return SkillSharingPage(items=page, next_cursor=page[-1].seq if len(refs) > limit else None)
+
+    def skill_drafts(self, session_id: str, cursor: int = 0, limit: int = 20) -> SkillDraftPage:
+        """List private draft references in append order; never return their contents.
+
+        Raises:
+            HeinzelError: If the page bounds or ownership are invalid.
+        """
+        if isinstance(cursor, bool) or cursor < 0:
+            msg = "Invalid draft cursor"
+            raise HeinzelError(msg)
+        max_page = 100
+        if isinstance(limit, bool) or not 1 <= limit <= max_page:
+            msg = "Invalid draft page size"
+            raise HeinzelError(msg)
+        events = self.repository.control_read(session_id).events
+        refs = [
+            SkillDraftReference(
+                request_id=_REQUEST.validate_python(event.key.removeprefix("skill-draft-")), seq=event.seq
+            )
+            for event in events
+            if event.seq > cursor and event.kind == "skill.draft" and event.key and event.key.startswith("skill-draft-")
+        ]
+        page = refs[:limit]
+        return SkillDraftPage(items=page, next_cursor=page[-1].seq if len(refs) > limit else None)
 
     def _read_skill_draft(self, session_id: str, request_id: str, event: SessionEvent) -> SkillDraft:
         try:

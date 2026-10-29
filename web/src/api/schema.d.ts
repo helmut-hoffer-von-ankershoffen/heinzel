@@ -428,6 +428,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/heinzel/propose-skill-sharing": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Request review of exact private draft and target; membership and authority are unverified.
+         * @description Request review of exact private draft and target; membership and authority are unverified.
+         */
+        post: operations["heinzel_propose_skill_sharing"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/heinzel/schedule-control": {
         parameters: {
             query?: never;
@@ -543,6 +563,66 @@ export interface paths {
          * @description Read exact private skill draft files and requested sharing scope.
          */
         get: operations["heinzel_skill_draft"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/heinzel/skill-drafts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List private draft references without file contents.
+         * @description List private draft references without file contents.
+         */
+        get: operations["heinzel_skill_drafts"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/heinzel/skill-sharing": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read a private sharing request; it is neither approved nor published.
+         * @description Read a private sharing request; it is neither approved nor published.
+         */
+        get: operations["heinzel_skill_sharing"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/heinzel/skill-sharing-proposals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Discover owner-private pending sharing request references.
+         * @description Discover owner-private pending sharing request references.
+         */
+        get: operations["heinzel_skill_sharing_proposals"];
         put?: never;
         post?: never;
         delete?: never;
@@ -8674,6 +8754,38 @@ export interface components {
             status: "draft";
         };
         /**
+         * SkillDraftPage
+         * @description A stable page in control-journal order.
+         */
+        SkillDraftPage: {
+            /**
+             * Items
+             * @description Private draft references in journal order.
+             */
+            items: components["schemas"]["SkillDraftReference"][];
+            /**
+             * Next Cursor
+             * @description Resume after this journal position; null at the end.
+             */
+            next_cursor?: number | null;
+        };
+        /**
+         * SkillDraftReference
+         * @description An owner-scoped reference, without draft content.
+         */
+        SkillDraftReference: {
+            /**
+             * Request Id
+             * @description The stable request identity for the private draft or sharing request.
+             */
+            request_id: string;
+            /**
+             * Seq
+             * @description Its position in the owner's session journal.
+             */
+            seq: number;
+        };
+        /**
          * SkillList
          * @description Every skill in effect, the names nobody decided between, and personal skills that failed their checks.
          */
@@ -8698,6 +8810,73 @@ export interface components {
              * @description The skills in effect, by name.
              */
             skills: components["schemas"]["SkillView"][];
+        };
+        /**
+         * SkillSharingPage
+         * @description Owner-private references to pending sharing requests.
+         */
+        SkillSharingPage: {
+            /**
+             * Items
+             * @description Owner-private pending sharing request references.
+             */
+            items: components["schemas"]["SkillDraftReference"][];
+            /**
+             * Next Cursor
+             * @description Resume after this journal position; null at the end.
+             */
+            next_cursor?: number | null;
+        };
+        /**
+         * SkillSharingProposal
+         * @description Private request for later review; no membership, approval or publication is asserted.
+         */
+        SkillSharingProposal: {
+            /**
+             * Authority
+             * @description Membership and publishing authority are unverified.
+             * @default unverified
+             * @constant
+             */
+            authority: "unverified";
+            /**
+             * Draft Request Id
+             * @description The immutable skill draft being proposed for sharing.
+             */
+            draft_request_id: string;
+            /**
+             * Draft Sha256
+             * @description The exact private draft fingerprint, including its intended target.
+             */
+            draft_sha256: string;
+            /**
+             * Request Id
+             * @description The stable identity of this exact sharing review request.
+             */
+            request_id: string;
+            /**
+             * Requested Scope
+             * @description The requested, unverified audience.
+             * @enum {string}
+             */
+            requested_scope: "team" | "org" | "site" | "company";
+            /**
+             * Scope Ref
+             * @description The opaque requested audience identity; no authority is established.
+             */
+            scope_ref: string;
+            /**
+             * Session Id
+             * @description The authenticated owner's personal session.
+             */
+            session_id: string;
+            /**
+             * Status
+             * @description No sharing has been approved.
+             * @default awaiting_review
+             * @constant
+             */
+            status: "awaiting_review";
         };
         /**
          * SkillView
@@ -10953,6 +11132,29 @@ export interface components {
              */
             session_id: string;
         };
+        /** heinzel_propose_skill_sharing_Input */
+        heinzel_propose_skill_sharing_Input: {
+            /**
+             * Draft Request Id
+             * @description A stable client request id; reuse it only for an exact retry.
+             */
+            draft_request_id: string;
+            /**
+             * Draft Sha256
+             * @description The exact immutable draft fingerprint.
+             */
+            draft_sha256: string;
+            /**
+             * Request Id
+             * @description A stable client request id; reuse it only for an exact retry.
+             */
+            request_id: string;
+            /**
+             * Session Id
+             * @description The stable personal session id returned by new-chat or sessions.
+             */
+            session_id: string;
+        };
         /** heinzel_schedule_control_Input */
         heinzel_schedule_control_Input: {
             /**
@@ -11177,7 +11379,11 @@ export type SchemaSetupDoc = components['schemas']['SetupDoc'];
 export type SchemaSkill = components['schemas']['Skill'];
 export type SchemaSkillDetail = components['schemas']['SkillDetail'];
 export type SchemaSkillDraft = components['schemas']['SkillDraft'];
+export type SchemaSkillDraftPage = components['schemas']['SkillDraftPage'];
+export type SchemaSkillDraftReference = components['schemas']['SkillDraftReference'];
 export type SchemaSkillList = components['schemas']['SkillList'];
+export type SchemaSkillSharingPage = components['schemas']['SkillSharingPage'];
+export type SchemaSkillSharingProposal = components['schemas']['SkillSharingProposal'];
 export type SchemaSkillView = components['schemas']['SkillView'];
 export type SchemaSkipped = components['schemas']['Skipped'];
 export type SchemaSoundEarconView = components['schemas']['SoundEarconView'];
@@ -11237,6 +11443,7 @@ export type SchemaHeinzelProfileInput = components['schemas']['heinzel_profile_I
 export type SchemaHeinzelProposeCheckInInput = components['schemas']['heinzel_propose_check_in_Input'];
 export type SchemaHeinzelProposeScheduledAgentInput = components['schemas']['heinzel_propose_scheduled_agent_Input'];
 export type SchemaHeinzelProposeSkillDraftInput = components['schemas']['heinzel_propose_skill_draft_Input'];
+export type SchemaHeinzelProposeSkillSharingInput = components['schemas']['heinzel_propose_skill_sharing_Input'];
 export type SchemaHeinzelScheduleControlInput = components['schemas']['heinzel_schedule_control_Input'];
 export type SchemaSystemStatePushInput = components['schemas']['system_state_push_Input'];
 export type SchemaSystemStateResetInput = components['schemas']['system_state_reset_Input'];
@@ -11905,6 +12112,39 @@ export interface operations {
             };
         };
     };
+    heinzel_propose_skill_sharing: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["heinzel_propose_skill_sharing_Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillSharingProposal"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     heinzel_schedule_control: {
         parameters: {
             query?: never;
@@ -12076,6 +12316,108 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SkillDraft"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    heinzel_skill_drafts: {
+        parameters: {
+            query: {
+                session_id: string;
+                /** @description Resume after this session journal position. */
+                cursor?: number;
+                /** @description The most private draft references returned in this page. */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillDraftPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    heinzel_skill_sharing: {
+        parameters: {
+            query: {
+                session_id: string;
+                request_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillSharingProposal"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    heinzel_skill_sharing_proposals: {
+        parameters: {
+            query: {
+                session_id: string;
+                /** @description Resume after this session journal position. */
+                cursor?: number;
+                /** @description The most private sharing references returned in this page. */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillSharingPage"];
                 };
             };
             /** @description Validation Error */
