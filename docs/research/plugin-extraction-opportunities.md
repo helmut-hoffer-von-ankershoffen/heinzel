@@ -1,9 +1,10 @@
 # Further plugin extraction opportunities
 
-Code audit, 2026-10-29. Resource remains the only additional built-in module extracted for 0.9.0. This is a ranked
+Code audit, 2026-10-29. Resource remains the only additional built-in module extracted for 0.9.1. This is a ranked
 backlog for subsequent work, ordered by useful independence gained against implementation effort and risk. The
-Heinzelmännchen theme/content extraction at rank 3 subsequently joined the 0.9.0 scope in
-[ADR 0095](../adr/0095-standard-heinzel-theme-owns-bundled-soundscapes.md); other rows remain future opportunities.
+Heinzelmännchen theme/content extraction at rank 3 subsequently joined the approved scope in
+[ADR 0095](../adr/0095-standard-heinzel-theme-owns-bundled-soundscapes.md). The release target advanced to 0.9.1 in
+[ADR 0096](../adr/0096-release-plugin-boundary-at-the-first-unused-version.md); other rows remain future opportunities.
 
 Plugins own their runtime and development dependencies and version locks. They can implement and consume public
 interfaces, capabilities and lets. A dependency on another provider's capability should target its shared contract.
@@ -22,7 +23,7 @@ for Directory, Claude inventory, Report/Telemetry and Graph; their remaining int
 | --- | --- | --- | --- |
 | 1 | Directory fallback | Kernel bindings default to the concrete `one-on-ones` provider. | Existing `Directory`, `Calendar`, `Person` and `Relation` contracts suffice. Replace the named default with generic provider selection or explicit profile configuration. A small complete-module extraction. |
 | 2 | Claude configuration inventory | Core Settings imports its component and calls its endpoint directly. | Move scanner, settings view, navigation and tests together using existing operations and ViewLet. No new service contract is needed. Vendor-specific changes become independently releasable. |
-| 3 | Heinzelmännchen theme and soundscape content — included in 0.9.0 | Formerly core-owned definitions now belong to the standard-profile theme plugin. | The plugin owns the theme, logos and all three former soundscapes through existing public lets. Core keeps generic playback and fallback appearance. Installed-wheel and minimal-core tests enforce the boundary. |
+| 3 | Heinzelmännchen theme and soundscape content — included in 0.9.1 | Formerly core-owned definitions now belong to the standard-profile theme plugin. | The plugin owns the theme, logos and all three former soundscapes through existing public lets. Core keeps generic playback and fallback appearance. Installed-wheel and minimal-core tests enforce the boundary. |
 | 4 | AI usage ledger | Usage operations/settings share the core AI module's namespace and registration. | No architectural blocker found: public `UsageLog` already exists and recording tolerates an absent provider. Separate the ledger's ownership. Keep spending authorization and budget enforcement in core. |
 | 5 | Native notification delivery / Heinzel Notifier | Notification services accept private native implementations; daemon units know the bundle identity; core build and publishing compile/package the Swift app. | Add an optional native-delivery contract with availability, delivery, permissions and application identity. Move native assets, compilation and platform tests. This has the largest direct core release-path payoff. Keep notification policy and the durable ledger in core. |
 | 6 | AI gateway and vendor runner adapters | Gateway already fits `AiAccess`. Claude/Codex/Command share concrete implementation helpers; provider names and special cases also appear in core defaults and consumers. | Gateway is a near-term extraction. Move shared process helpers to a neutral home, replace provider-name defaults with descriptors/profile selection, and move provider login/settings with each adapter. Reuse `AiAccess` and `AgentRunner`; retain orchestration and authorization in core. |

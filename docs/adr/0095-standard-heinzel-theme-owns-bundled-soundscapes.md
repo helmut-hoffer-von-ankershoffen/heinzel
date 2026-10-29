@@ -4,6 +4,7 @@ date: 2026-10-29
 decision-makers: maintainer
 amends: 0058, 0094
 related: 0044, 0060, 0092
+amended-by: 0096
 ---
 
 # 0095: The standard Heinzelmännchen theme owns the bundled soundscapes
