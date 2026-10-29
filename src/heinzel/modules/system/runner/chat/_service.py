@@ -34,7 +34,7 @@ from heinzel import (
     ToolProfile,
     redact_emails,
 )
-from heinzel.kernel import CapabilityView, UsageEntry, record_usage
+from heinzel.kernel import CapabilityView, CheckInChatContextSource, UsageEntry, record_usage
 from heinzel.kernel._approval import ApprovalConfirmation, ApprovalIssuer
 from heinzel.modules.system.runner.chat._models import ChatAction, ChatContext, ChatMessage, ChatSession, ChatSettings
 from heinzel.modules.system.runner.chat._policy import guarded_settings, refusal
@@ -247,8 +247,15 @@ class ChatService:
         except (ValueError, ZoneInfoNotFoundError):
             msg = f"Unknown IANA time zone {timezone!r}"
             raise HeinzelError(msg) from None
+        self._kernel.resolve(CheckInChatContextSource).get(session_id)
+        owner_id = self._store.personal_owner()
         context = ChatContext(
-            kind="check-in", ref=session_id, request_id=request_id, timezone=timezone, detail=detail[:4000]
+            kind="check-in",
+            ref=session_id,
+            request_id=request_id,
+            timezone=timezone,
+            detail=detail[:4000],
+            owner_id=owner_id,
         )
         with self._store.proposal_request_lock():
             prior = self._store.find_context("check-in", session_id, request_id)

@@ -19,7 +19,7 @@ from pathlib import Path
 
 from pydantic import JsonValue, ValidationError
 
-from heinzel import ActionGate, HeinzelError, Kernel, ProposedCall, Settings
+from heinzel import ActionGate, CurrentUser, HeinzelError, Kernel, ProposedCall, Settings
 from heinzel.kernel import McpChatSessions
 from heinzel.modules.system.runner._models import RunnerSettings
 from heinzel.modules.system.runner.chat._models import (
@@ -79,11 +79,25 @@ def _write_private(path: Path, text: str) -> None:
 class ChatStore(McpChatSessions):
     """Reads, writes and prunes chat sessions."""
 
-    def __init__(self, settings: Settings, chat: ChatSettings, runner: RunnerSettings) -> None:
+    def __init__(
+        self, settings: Settings, chat: ChatSettings, runner: RunnerSettings, current: CurrentUser | None = None
+    ) -> None:
         """Keep sessions under the state directory, within the chat settings' bounds."""
         self.root = settings.state_dir / "chat"
         self._chat = chat
         self._runner = runner
+        self._current = current
+
+    def personal_owner(self) -> str:
+        """Return the authenticated principal for a personal chat, failing closed if unavailable.
+
+        Raises:
+            HeinzelError: If no authenticated owner is available.
+        """
+        if self._current is None:
+            msg = "The personal chat owner is unavailable"
+            raise HeinzelError(msg)
+        return self._current.principal().id
 
     def directory(self, session: str) -> Path:
         """The directory of `session`.
@@ -135,6 +149,13 @@ class ChatStore(McpChatSessions):
         if chat.id != session:
             msg = f"Chat session {session} holds another session's file; `hz chat remove {session}`."
             raise HeinzelError(msg)
+        if chat.context is not None and chat.context.kind == "check-in":
+            if self._current is None or chat.context.owner_id is None:
+                msg = "This personal chat has no verified owner binding"
+                raise HeinzelError(msg)
+            if chat.context.owner_id != self._current.principal().id:
+                msg = "This personal chat is not available to this owner"
+                raise HeinzelError(msg)
         known = {action.id for action in chat.actions}
         chat.actions += [action for action in self.proposals(session) if action.id not in known]
         for action in chat.actions:  # what the person reads is derived from what runs, never stored text
@@ -281,6 +302,7 @@ class ChatStore(McpChatSessions):
         Raises:
             HeinzelError: If there is no such session, or it has too many proposals.
         """
+        self.load(call.session)  # Verify a personal chat owner before opening its proposal file.
         path = self.directory(call.session) / PROPOSALS
         descriptor = os.open(path, os.O_RDWR | os.O_CREAT | os.O_APPEND, PRIVATE_FILE)
         with os.fdopen(descriptor, "r+", encoding="utf-8") as handle:
@@ -413,6 +435,10 @@ class ChatStore(McpChatSessions):
         for path in self.root.iterdir():
             marker = path / SESSION
             if path.is_dir() and marker.is_file():
+                try:
+                    self.load(path.name)
+                except HeinzelError:
+                    continue
                 found.append((marker.stat().st_mtime, path))
             elif path.is_dir() and not path.name.startswith("."):
                 with contextlib.suppress(OSError):

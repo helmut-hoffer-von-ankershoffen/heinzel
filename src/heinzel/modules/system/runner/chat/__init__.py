@@ -18,8 +18,9 @@ from typing import Annotated, Literal
 
 from pydantic import Field
 
-from heinzel import ActionGate, AgentRunner, CurrentUser, HeinzelError, Module
+from heinzel import ActionGate, AgentRunner, CurrentUser, HeinzelError, Module, Settings
 from heinzel.kernel import CheckInChatContextSource, Effort, McpChatSessions
+from heinzel.modules.system.runner._models import RunnerSettings
 from heinzel.modules.system.runner.chat._models import (
     ChatAction,
     ChatContext,
@@ -34,8 +35,18 @@ from heinzel.modules.system.runner.chat._store import ChatStore, StoreGate
 
 module = Module("chat", "Chat with the agent runner about where you are; it acts through hz once you confirm.")
 module.settings(ChatSettings)
-module.service(ChatStore)
-module.service(McpChatSessions, ChatStore)
+
+
+def _chat_store(settings: Settings, chat: ChatSettings, runner: RunnerSettings, current: CurrentUser) -> ChatStore:
+    return ChatStore(settings, chat, runner, current)
+
+
+def _mcp_chats(store: ChatStore) -> McpChatSessions:
+    return store
+
+
+module.service(ChatStore, _chat_store)
+module.service(McpChatSessions, _mcp_chats)
 module.service(ChatService)
 module.service(ActionGate, StoreGate)
 

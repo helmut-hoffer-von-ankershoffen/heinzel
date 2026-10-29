@@ -76,6 +76,7 @@ class ChatContext(BaseModel):
     request_id: str | None = Field(
         default=None, description="The idempotency key for opening a scoped durable check-in conversation."
     )
+    owner_id: str | None = Field(default=None, description="Authenticated owner of a durable personal chat.")
     timezone: str | None = Field(
         default=None, max_length=128, description="The user's selected time zone for a proposed check-in schedule."
     )

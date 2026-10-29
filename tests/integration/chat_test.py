@@ -1422,3 +1422,41 @@ def test_a_quiet_long_operation_stream_sends_keepalives(make_kernel, tmp_path, m
 def test_the_unauthenticated_rest_head_has_no_chat(kernel):
     paths = {route.path for route in api.build(kernel).routes}  # type: ignore[attr-defined]
     assert not any("chat" in path or path.startswith("/stream") for path in paths)
+
+
+def test_personal_chat_binding_is_owner_scoped_durable_and_rejects_legacy_unbound(kernel):
+    from heinzel import CallIdentity, Principal
+    from heinzel.modules.system.runner.chat._models import ChatContext
+
+    current = kernel.resolve(CurrentUser)
+    service = kernel.resolve(ChatService)
+    with current.local("cli"):
+        durable = kernel.resolve(SessionCrud).new_chat("owner-bound-chat", "Owner's helper")
+        chat = service.open_check_in(durable.session_id, "owner-open", "UTC", "Owner data")
+        assert chat.context is not None
+        assert chat.context.owner_id == current.principal().id
+        assert chat.context.ref == durable.session_id
+        assert service.open_check_in(durable.session_id, "owner-open", "UTC", "Owner data").id == chat.id
+        assert service._store.load(chat.id).id == chat.id
+        from heinzel.modules.system.runner.chat._store import ChatStore
+
+        reopened = ChatStore(kernel.settings, service._store._chat, service._store._runner, current)
+        assert reopened.load(chat.id).context == chat.context
+        legacy = service._store.create(ChatContext(kind="check-in", ref=durable.session_id, timezone="UTC"))
+        with pytest.raises(HeinzelError, match="no verified owner"):
+            service._store.load(legacy.id)
+    stranger = CallIdentity(
+        Principal("u-" + "a" * 32), "api-bearer", "stranger", "private", frozenset({"private:read", "private:write"})
+    )
+    with current.using(stranger):
+        with pytest.raises(HeinzelError, match="not available to this owner"):
+            service._store.load(chat.id)
+        with pytest.raises(HeinzelError, match="No such personal"):
+            service.open_check_in(durable.session_id, "owner-open", "UTC", "")
+        with pytest.raises(HeinzelError, match="not available to this owner"):
+            service._store.remove(chat.id)
+        with pytest.raises(HeinzelError, match="not available to this owner"):
+            service.confirm(chat.id, "a1")
+        assert chat.id not in [item.id for item in service._store.sessions()]
+    with current.local("cli"):
+        assert service._store.load(chat.id).id == chat.id
