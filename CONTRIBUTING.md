@@ -137,7 +137,7 @@ Company-, team- or site-specific features belong in a plugin, not in the core ([
 `uv run hz system plugin new ../heinzel-<name>` scaffolds one with the same tooling, hooks, CI and agent setup
 (every plugin is named `heinzel-<name>`, [ADR 0025](docs/adr/0025-plugin-distributions-are-named-heinzel-name.md));
 inside it, `make setup` works as here and `make update-template` keeps it current. A small complete plugin to copy
-from: [plugins/heinzel-clock](plugins/heinzel-clock). Operations, modules, settings and services: [README
+from: [plugins/heinzel-clock](https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/tree/main/plugins/heinzel-clock). Operations, modules, settings and services: [README
 Extend](README.md#extend) and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md); with Claude Code, the skills
 `add-module` and `add-operation`.
 

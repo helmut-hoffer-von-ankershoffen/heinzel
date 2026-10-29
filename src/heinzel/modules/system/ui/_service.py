@@ -29,6 +29,7 @@ from heinzel import (
     Slot,
     StatusItem,
     StatusLet,
+    ViewLet,
     WidgetLet,
     clean_text,
 )
@@ -41,6 +42,7 @@ from heinzel.modules.system.ui._models import (
     NavEntry,
     StatusEntry,
     UiSettings,
+    ViewEntry,
     WidgetEntry,
 )
 
@@ -228,6 +230,67 @@ class UiService:
             )
         return entries
 
+    def _prepared_view(self, record: ModuleRecord, let: ViewLet) -> ViewLet:
+        let = let.prepared()
+        if let.abi != 1 or not let.files or let.diagnostic:
+            msg = "Build a compatible view bundle for this plugin before opening its view"
+            raise Unusable(msg)
+        if let.section is not None and let.section != record.qualname:
+            msg = "A view may only claim its own module's Settings"
+            raise Unusable(msg)
+        if let.slot == "page" and let.route != f"/plugins/{record.qualname.replace('.', '/')}/{let.name}":
+            msg = "A page view must use its owned /plugins/<module>/<view> route"
+            raise Unusable(msg)
+        self.source(record, let.source)
+        return let
+
+    def views(self) -> list[ViewEntry]:
+        """Project installed active views; resolve sources through the ordinary operation boundary."""
+        entries: list[ViewEntry] = []
+        for record, declaration in self._kernel.lets(ViewLet):
+            let = declaration
+            problem, source = None, None
+            actions: dict[str, Effect] = {}
+            try:
+                let = self._prepared_view(record, let)
+                source = self._call(record, RunOperation(operation=let.source))
+                actions = {name: self.resolve(record, effect) for name, effect in let.actions.items()}
+            except Unusable as exc:
+                problem = str(exc)
+            except Exception as exc:  # noqa: BLE001 - isolate installed providers
+                problem = f"View unavailable: {type(exc).__name__}"
+            if problem is not None:
+                source, actions = None, {}
+            entries.append(
+                ViewEntry(
+                    id=f"{record.qualname}:{let.name}",
+                    module=record.qualname,
+                    plugin=None if record.origin.builtin else record.origin.distribution,
+                    title=let.title,
+                    fallback=let.fallback,
+                    slot=let.slot,
+                    order=let.order,
+                    refresh=let.refresh,
+                    abi=let.abi,
+                    section=let.section,
+                    route=let.route,
+                    bundle=None
+                    if problem
+                    else f"/plugin-assets/{record.qualname}/{let.name}/{let.fingerprint}/{let.entry}",
+                    styles=[]
+                    if problem
+                    else [
+                        f"/plugin-assets/{record.qualname}/{let.name}/{let.fingerprint}/{name}"
+                        for name, _ in let.files
+                        if name.endswith(".css")
+                    ],
+                    actions=actions if not problem else {},
+                    source=source,
+                    problem=problem,
+                )
+            )
+        return sorted(entries, key=lambda entry: (entry.order, entry.id))
+
     def navigation(self) -> list[NavEntry]:
         """Project active navigation declarations and generic legacy Settings entries without running sources."""
         entries = [self._navigation(record, let) for record, let in self._kernel.lets(NavLet)]
@@ -301,6 +364,7 @@ class UiService:
                 except Unusable as exc:
                     found.append((contribution.id, str(exc)))
         found.extend((entry.id, entry.problem) for entry in self.navigation() if entry.problem is not None)
+        found.extend((entry.id, entry.problem) for entry in self.views() if entry.problem is not None)
         return found
 
     def source(self, record: ModuleRecord, name: str) -> OperationLet:

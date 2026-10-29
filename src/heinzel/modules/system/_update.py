@@ -21,7 +21,6 @@ import shlex
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Literal
-from urllib.parse import urlsplit
 
 from packaging.requirements import InvalidRequirement, Requirement
 from packaging.utils import canonicalize_name
@@ -58,22 +57,6 @@ type Mode = Literal["new", "keep", "drop"]
 (`drop`)."""
 
 REASON_LENGTH = 300
-FIRST_PARTY_DIRECTORY = "plugins/heinzel-"
-
-
-def _git_ref(spec: str) -> tuple[str | None, str | None]:
-    """The repository and the ref a git requirement or `--source` installs from; None for anything that isn't git."""
-    url = spec.split(" @ ", 1)[-1]
-    if not url.startswith("git+"):
-        return None, None
-    parts = urlsplit(url.removeprefix("git+"))
-    path, _, ref = parts.path.partition("@")
-    return _repository(f"{parts.scheme}://{parts.netloc}{path}"), ref or None
-
-
-def _repository(url: str) -> str:
-    """A git repository URL as compared: no `.git` or trailing slash, lower case."""
-    return url.removesuffix("/").removesuffix(".git").lower()
 
 
 def _is_conflict(output: str) -> bool:
@@ -398,7 +381,7 @@ class UpdateService:
         return None, reasons, output
 
     @staticmethod
-    def _spec(plugin: CorePin, mode: Mode, core: str, installed: Installed | None) -> str:
+    def _spec(plugin: CorePin, mode: Mode, _core: str, installed: Installed | None) -> str:
         """The requirement `plugin` goes in with."""
         if mode == "keep" and plugin.kind == "index" and installed is not None:
             return f"{plugin.name}=={installed.version}"
@@ -407,22 +390,18 @@ class UpdateService:
                 fragment = f"#subdirectory={plugin.subdirectory}" if plugin.subdirectory else ""
                 return f"{plugin.name} @ git+{plugin.git}@{installed.revision}{fragment}"
             return plugin.requirement
-        repository, ref = _git_ref(core)
-        if ref and plugin.git and repository == _repository(plugin.git) and plugin.subdirectory:
-            return plugin.at(ref)  # a plugin of the core's own repository moves with the core
         return plugin.requirement
 
-    def _plugin_updates(  # noqa: PLR0913, PLR0917 - the plan, why, and the states before and after
+    def _plugin_updates(
         self,
         plugins: list[CorePin],
         modes: dict[str, Mode],
         reasons: dict[str, str],
         before: dict[str, Installed],
         after: dict[str, Installed],
-        core: str,
+        _core: str,
     ) -> list[PluginUpdate]:
         """Report each plugin: upgraded, unchanged, or failed with what became of it."""
-        repository, _ = _git_ref(core)
         updates = list[PluginUpdate]()
         for plugin in plugins:
             name = canonicalize_name(plugin.name)
@@ -430,13 +409,7 @@ class UpdateService:
             old_version, new_version = (old.version if old else None), (new.version if new else None)
             match modes[name]:
                 case "drop":
-                    short = canonicalize_name(plugin.name).removeprefix("heinzel-")
-                    own = (
-                        plugin.git
-                        and repository == _repository(plugin.git)
-                        and (plugin.subdirectory or "").startswith(FIRST_PARTY_DIRECTORY)
-                    )
-                    handle = short if own else plugin.requirement
+                    handle = plugin.requirement
                     add = f"hz system plugin add {shlex.quote(handle)} --confirm"
                     reason = (
                         f"{reasons[name]} It does not allow the new hz, so it was taken out of the installation "

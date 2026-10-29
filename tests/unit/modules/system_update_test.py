@@ -300,7 +300,7 @@ def test_a_plugin_follows_a_newer_version_in_the_same_run_as_hz(tmp_path):
     assert "Plugin heinzel-acme: upgraded 1.0.0 → 1.2.0." in result.message
 
 
-def test_a_plugin_of_the_cores_repository_moves_to_the_cores_new_release(tmp_path):
+def test_plugin_revision_stays_independent_of_the_core_release(tmp_path):
     uv = FakeUv("0.2.0")
     target = installation(tmp_path, f'git = "{REPO}?rev=v0.2.0"', uv)
     (tmp_path / "uv-receipt.toml").write_text(
@@ -309,7 +309,7 @@ def test_a_plugin_of_the_cores_repository_moves_to_the_cores_new_release(tmp_pat
         encoding="utf-8",
     )
     UpdateService(target, FakeReleases("0.4.0")).update(current="0.2.0")
-    assert uv.commands[0][-1] == f"heinzel-clock @ git+{REPO}@v0.4.0#subdirectory=plugins/heinzel-clock"
+    assert uv.commands[0][-1] == f"heinzel-clock @ git+{REPO}@v0.2.0#subdirectory=plugins/heinzel-clock"
 
 
 def test_a_private_git_plugin_is_fetched_with_the_gh_login(tmp_path, monkeypatch):

@@ -40,6 +40,7 @@ from heinzel.modules.system.ui._models import (
     NavEntry,
     StatusEntry,
     UiSettings,
+    ViewEntry,
     WidgetEntry,
 )
 from heinzel.modules.system.ui._service import UiService
@@ -149,6 +150,12 @@ def widgets(service: UiService, item: Item = None) -> list[WidgetEntry]:
         HeinzelError: If `item` names no widget.
     """
     return service.widgets(item)
+
+
+@module.operation(private=True)
+def views(service: UiService) -> list[ViewEntry]:
+    """List active installed views, their compatible bundles and read-only operation calls."""
+    return service.views()
 
 
 def render_navigation(entries: list[NavEntry]) -> RenderableType:

@@ -100,12 +100,12 @@ MAX_URL = 2048
 MAX_PER_MODULE = {"status": 3, "action": 2, "widget": 4, "nav": 4}
 """How many contributions of each kind one module may offer."""
 ORDER_MIN, ORDER_MAX, ORDER_DEFAULT = 0, 1000, 500
-STATUS_REFRESH = (timedelta(seconds=15), timedelta(days=1))
+STATUS_REFRESH = (timedelta(seconds=2), timedelta(days=1))
 """The shortest and longest refresh of a status item or a badge."""
 WIDGET_REFRESH = (timedelta(seconds=60), timedelta(days=1))
 """The shortest and longest refresh of a widget."""
 _SEGMENT = r"[a-z0-9](?:-?[a-z0-9])*"
-_QUERY = r"\?[a-z](?:-?[a-z0-9])*=[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?"
+_QUERY = r"\?[a-z](?:-?[a-z0-9])*=[a-z0-9](?:[a-z0-9.:-]*[a-z0-9])?"
 IN_APP_PATH = re.compile(rf"^/(?:{_SEGMENT}(?:/{_SEGMENT})*)?(?:{_QUERY})?$")
 """An in-app path: `/`, dash-separated lowercase segments, at most one `?name=value`; never `//`, `\\` or `..`."""
 _UNSAFE = re.compile(r"[\s\\\"'<>`\x00-\x1f\x7f-\x9f]")
@@ -378,6 +378,10 @@ class DetailLine(_Data):
 
     text: Text = Field(description="One line, e.g. `New York 08:00, at work`.")
     tone: Tone = Field(default="neutral", description="`ok` shows it as good, `warn` and `bad` as needing attention.")
+    live: Live | None = Field(default=None, description="Optional live value rendered after the text.")
+    secondary: Text | None = Field(default=None, description="Optional supporting text.")
+    tooltip: Body | None = Field(default=None, description="Optional accessible explanation.")
+    icon: Icon | None = Field(default=None, description="Optional semantic state icon.")
 
 
 class ToggleControl(_Data):
@@ -407,15 +411,34 @@ class ToggleControl(_Data):
     )
 
 
+class StatusMeter(_Data):
+    """One bounded percentage bar, with provider-owned meaning and accessible text."""
+
+    label: Text = Field(description="Accessible name of this measurement.")
+    value: Annotated[float, Field(ge=0, le=100, allow_inf_nan=False)] | None = Field(
+        default=None, description="Percentage from zero to one hundred, or none if unavailable."
+    )
+    tone: Tone = Field(default="neutral", description="Semantic state of this measurement.")
+
+
 class StatusItem(_Data):
     """A short item of the status bar: text, an optional live time after it, detail on hover, a click."""
 
     text: Text = Field(description="What it says, one line, e.g. `Standup until`.")
+    meters: list[StatusMeter] = Field(
+        default_factory=list[StatusMeter], max_length=8, description="Up to eight compact, labelled percentage meters."
+    )
+    presentation: Literal["icon", "text", "value", "ticker"] = Field(
+        default="icon", description="Generic rendering style."
+    )
+    segments: list[DetailLine] = Field(
+        default_factory=list[DetailLine], max_length=64, description="Ordered live ticker segments."
+    )
     tone: Tone = Field(default="neutral", description="How it reads: neutral, ok, warn or bad.")
     icon: Icon | None = Field(default=None, description="An icon before the text.")
     live: Live | None = Field(default=None, description="A time the app renders after `text` and keeps current.")
     detail: list[DetailLine] = Field(
-        default_factory=list[DetailLine], max_length=MAX_DETAIL, description="Up to eight lines shown on hover."
+        default_factory=list[DetailLine], max_length=64, description="Up to 64 detail lines shown on hover."
     )
     effect: Effect | None = Field(default=None, description="What a click does.")
     toggle: ToggleControl | None = Field(

@@ -49,7 +49,14 @@ Plugins are named `heinzel-<name>` and add the command group `hz <name>`.
 `hz system plugin search --text <words> --json` finds plugins to install (first-party, and community repositories on
 GitHub; it queries GitHub) with the `install_spec` to pass to `plugin add`. Community plugins run with the user's
 rights and are not reviewed: name the source and ask before adding one.
-`hz system plugin new <dir>` scaffolds a new plugin repository; inside it, follow its AGENTS.md.
+`hz system plugin new <dir> --defaults --data plugin_name=<name>` scaffolds one operation and test; use
+`--preset contributions` for the UI/Today/notification example. Inside it, follow AGENTS.md: setup, check-fast,
+check, build and acceptance use only the owning plugin and installed SDK. `--layout collection` emits owning files
+without copied workflows or an embedded repository. `make release` previews; `make publish` dispatches publication.
+Custom public and private repositories need no edits in core or heinzel-plugins. Private sources use the installing
+person's `gh auth login` and publish to private GitHub releases; never send private sources to public PyPI.
+See [the author guide](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/blob/main/docs/PLUGIN_AUTHORING.md)
+for dependencies, catalog topics, private access, versioning and releases.
 
 ## If something is wrong
 

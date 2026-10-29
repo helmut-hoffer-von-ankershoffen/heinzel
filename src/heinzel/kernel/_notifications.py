@@ -25,6 +25,8 @@ class NoticeKind(StrEnum):
     """`hz system doctor` found something degraded or down."""
     RELEASE = "release"
     """A newer release of Heinzelmännchen is available."""
+    PLUGIN = "plugin"
+    """A notice published by an installed provider through the shared notification policy."""
     TEST = "test"
     """`hz system notify test`: to see that notifications reach you."""
     HEINZEL = "heinzel"

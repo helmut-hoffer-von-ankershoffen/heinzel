@@ -92,7 +92,7 @@ export function useChat() {
     const next = new URLSearchParams(params);
     next.delete("chat");
     next.delete("chat-context");
-    if (next.get("panel") === "world-clock") next.delete("panel");
+    next.delete("panel");
     setParams(next, { replace: true });
   }, [params, setParams, openAbout]);
 

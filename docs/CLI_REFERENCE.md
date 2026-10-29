@@ -18,11 +18,7 @@ $ hz [OPTIONS] COMMAND [ARGS]...
 **Commands**:
 
 * `ai`: (expert) How hz reaches AI, and what it...
-* `atlassian`: (expert) Read Jira issues and Confluence...
 * `chat`: Chat with the agent runner in this...
-* `clock`: Show the time in each of the team&#x27;s time...
-* `github`: (expert) Read pull requests and issues...
-* `google`: (expert) Google Docs, Sheets, Drive,...
 * `graph`: Show your team&#x27;s promises: who keeps which...
 * `heinzel`: Your Heinzelmännchen: durable agents that...
 * `join`: Join a team from its invite line: finds...
@@ -30,10 +26,8 @@ $ hz [OPTIONS] COMMAND [ARGS]...
 * `report`: Telemetry: log what a Heinzelmännchen did,...
 * `setup`: Set up what is still missing, wizard...
 * `system`: Inspect, configure, diagnose and update...
-* `tailscale`: (expert) Private web sharing through...
 * `team`: Your team&#x27;s repository: create one (`hz...
 * `ui`: Open the web app in your browser, served...
-* `zoom`: (expert) Read meetings from Zoom&#x27;s...
 
 ## `hz ai`
 
@@ -175,40 +169,6 @@ $ hz ai usage [OPTIONS]
 
 * `--period <today|week>`: `today` (since local midnight) or `week` (the last seven days).  [default: today]
 * `--by <access|model|heinzel|cause>`: Break down by `access`, `model`, `heinzel` or `cause`.  [default: model]
-* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
-* `--json`: Shorthand for --format json, for scripts and agents.
-* `--help`: Show this message and exit.
-
-## `hz atlassian`
-
-(expert) Read Jira issues and Confluence pages through acli: the tracker and documents capabilities.
-
-**Usage**:
-
-```console
-$ hz atlassian [OPTIONS] COMMAND [ARGS]...
-```
-
-**Options**:
-
-* `--help`: Show this message and exit.
-
-**Commands**:
-
-* `info`: (expert) Show this plugin&#x27;s version, the...
-
-### `hz atlassian info`
-
-(expert) Show this plugin&#x27;s version, the Atlassian site and the acli commands it runs.
-
-**Usage**:
-
-```console
-$ hz atlassian info [OPTIONS]
-```
-
-**Options**:
-
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
@@ -490,110 +450,6 @@ $ hz chat show [OPTIONS] {session}
 **Arguments**:
 
 * `session`: The chat session&#x27;s id, from `hz chat list`.  [required]
-
-**Options**:
-
-* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
-* `--json`: Shorthand for --format json, for scripts and agents.
-* `--help`: Show this message and exit.
-
-## `hz clock`
-
-Show the time in each of the team&#x27;s time zones.
-
-**Usage**:
-
-```console
-$ hz clock [OPTIONS]
-```
-
-**Options**:
-
-* `--at ISO-8601`: Moment to show instead of now (ISO 8601).
-* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
-* `--json`: Shorthand for --format json, for scripts and agents.
-* `--help`: Show this message and exit.
-
-## `hz github`
-
-(expert) Read pull requests and issues from GitHub: the code-host and tracker capabilities.
-
-**Usage**:
-
-```console
-$ hz github [OPTIONS] COMMAND [ARGS]...
-```
-
-**Options**:
-
-* `--help`: Show this message and exit.
-
-**Commands**:
-
-* `info`: (expert) Show this plugin&#x27;s version, the...
-
-### `hz github info`
-
-(expert) Show this plugin&#x27;s version, the Heinzelmännchen it runs on and the GitHub host it reads.
-
-**Usage**:
-
-```console
-$ hz github info [OPTIONS]
-```
-
-**Options**:
-
-* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
-* `--json`: Shorthand for --format json, for scripts and agents.
-* `--help`: Show this message and exit.
-
-## `hz google`
-
-(expert) Google Docs, Sheets, Drive, Calendar and Gmail: the documents, calendar and mail capabilities.
-
-**Usage**:
-
-```console
-$ hz google [OPTIONS] COMMAND [ARGS]...
-```
-
-**Options**:
-
-* `--help`: Show this message and exit.
-
-**Commands**:
-
-* `files`: (expert) List the Google Docs and Sheets...
-* `info`: (expert) Show this plugin&#x27;s version, the...
-
-### `hz google files`
-
-(expert) List the Google Docs and Sheets you can open that changed recently, newest first.
-
-**Usage**:
-
-```console
-$ hz google files [OPTIONS]
-```
-
-**Options**:
-
-* `--days <int>`: How many days back to look for changes, 1 to 366.  [default: 7]
-* `--name <str>`: Only files whose name contains this text; all Docs and Sheets when not given.
-* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
-* `--json`: Shorthand for --format json, for scripts and agents.
-* `--help`: Show this message and exit.
-
-### `hz google info`
-
-(expert) Show this plugin&#x27;s version, the Heinzelmännchen it runs on and the gws, scopes and APIs it uses.
-
-**Usage**:
-
-```console
-$ hz google info [OPTIONS]
-```
 
 **Options**:
 
@@ -1360,7 +1216,6 @@ $ hz system [OPTIONS] COMMAND [ARGS]...
 * `notify`: (expert) Pop up what deserves your...
 * `plugin`: (expert) Find, add, remove, enable,...
 * `release`: (expert) Ask where Heinzelmännchen was...
-* `resource`: Show machine CPU/memory usage, one-minute...
 * `runner`: Run bounded agent sessions with Claude...
 * `serve`: (expert) Serve every operation to coding...
 * `skill`: (expert) List the skills plugins ship for...
@@ -2297,6 +2152,7 @@ $ hz system plugin [OPTIONS] COMMAND [ARGS]...
 * `new`: (expert) Scaffold a plugin repository from...
 * `operation`: (expert) Read the status and result of a...
 * `remove`: (expert) Remove a plugin.
+* `sdk`: (expert) Export the versioned plugin view...
 * `search`: (expert) Find plugins to install:...
 
 #### `hz system plugin add`
@@ -2493,6 +2349,9 @@ $ hz system plugin new [OPTIONS] {destination}
 * `--data <str>`: Answer a template question as key=value, e.g. plugin_name=crm; repeat for each.
 * `--template <str>`: Copier template: a git URL, gh:owner/repo or a local path.  [default: gh:helmut-hoffer-von-ankershoffen/heinzel]
 * `--ref <str>`: Template version; defaults to this Heinzelmännchen&#x27;s release tag.
+* `--defaults / --no-defaults`: Use template defaults without interactive questions.  [default: no-defaults]
+* `--layout <standalone|collection>`: A standalone repository, or only owning files inside a plugin collection.  [default: standalone]
+* `--preset <minimal|contributions>`: One operation and test, or the complete UI and notification example.  [default: minimal]
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
@@ -2537,6 +2396,26 @@ $ hz system plugin remove [OPTIONS] {distribution}
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
 
+#### `hz system plugin sdk`
+
+(expert) Export the versioned plugin view SDK from this installation, without a core checkout.
+
+**Usage**:
+
+```console
+$ hz system plugin sdk [OPTIONS] {destination}
+```
+
+**Arguments**:
+
+* `destination`: New directory for the installed view SDK and TypeScript definitions.  [required]
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
 #### `hz system plugin search`
 
 (expert) Find plugins to install: first-party ones, and community ones by querying the GitHub API.
@@ -2562,22 +2441,6 @@ $ hz system plugin search [OPTIONS]
 
 ```console
 $ hz system release [OPTIONS]
-```
-
-**Options**:
-
-* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
-* `--json`: Shorthand for --format json, for scripts and agents.
-* `--help`: Show this message and exit.
-
-### `hz system resource`
-
-Show machine CPU/memory usage, one-minute load and logical cores; cache each sample for one second.
-
-**Usage**:
-
-```console
-$ hz system resource [OPTIONS]
 ```
 
 **Options**:
@@ -2797,7 +2660,7 @@ $ hz system skill unexport [OPTIONS]
 
 ### `hz system sound`
 
-(expert) Pick the web app&#x27;s soundscape: off, a built-in one or one a plugin offers.
+(expert) Pick the web app&#x27;s soundscape: off or one an installed plugin offers.
 
 **Usage**:
 
@@ -2842,7 +2705,7 @@ $ hz system sound use [OPTIONS] {name}
 
 **Arguments**:
 
-* `name`: The soundscape to play, one `hz system sound list` shows, e.g. `claude-fm`, or `off`.  [required]
+* `name`: The soundscape to play, one `hz system sound list` shows, or `off`.  [required]
 
 **Options**:
 
@@ -3012,6 +2875,7 @@ $ hz system ui [OPTIONS] COMMAND [ARGS]...
 * `navigation`: (expert) List active providers&#x27; navigation...
 * `show`: (expert) Show a contribution in a slot of...
 * `status`: (expert) List the status items modules add...
+* `views`: (expert) List active installed views,...
 * `widgets`: (expert) List the widgets modules add to...
 
 #### `hz system ui actions`
@@ -3122,6 +2986,22 @@ $ hz system ui status [OPTIONS]
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
 
+#### `hz system ui views`
+
+(expert) List active installed views, their compatible bundles and read-only operation calls.
+
+**Usage**:
+
+```console
+$ hz system ui views [OPTIONS]
+```
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
 #### `hz system ui widgets`
 
 (expert) List the widgets modules add to the web app&#x27;s Today screen, with what each shows now.
@@ -3153,74 +3033,6 @@ $ hz system update [OPTIONS]
 
 * `--source <str>`: Install from here instead, e.g. git+https://github.com/org/heinzel@v1.2.0 or a wheel.
 * `--channel <release|main>`: Follow `release` (the default, setting `update_channel`): the newest release, also from `main` once a release is as new as it; or `main`: its newest commit.
-* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
-* `--json`: Shorthand for --format json, for scripts and agents.
-* `--help`: Show this message and exit.
-
-## `hz tailscale`
-
-(expert) Private web sharing through Tailscale Serve.
-
-**Usage**:
-
-```console
-$ hz tailscale [OPTIONS] COMMAND [ARGS]...
-```
-
-**Options**:
-
-* `--help`: Show this message and exit.
-
-**Commands**:
-
-* `disable`: (expert) Stop only hz&#x27;s private Serve...
-* `enable`: (expert) Share hz privately over...
-* `status`: (expert) Show private sharing readiness...
-
-### `hz tailscale disable`
-
-(expert) Stop only hz&#x27;s private Serve mapping and remove only the origin permission this plugin added.
-
-**Usage**:
-
-```console
-$ hz tailscale disable [OPTIONS]
-```
-
-**Options**:
-
-* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
-* `--json`: Shorthand for --format json, for scripts and agents.
-* `--help`: Show this message and exit.
-
-### `hz tailscale enable`
-
-(expert) Share hz privately over Tailscale, preserving existing services and requiring authenticated readiness.
-
-**Usage**:
-
-```console
-$ hz tailscale enable [OPTIONS]
-```
-
-**Options**:
-
-* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
-* `--json`: Shorthand for --format json, for scripts and agents.
-* `--help`: Show this message and exit.
-
-### `hz tailscale status`
-
-(expert) Show private sharing readiness without changing Tailscale or configuration.
-
-**Usage**:
-
-```console
-$ hz tailscale status [OPTIONS]
-```
-
-**Options**:
-
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
@@ -3375,38 +3187,4 @@ $ hz ui [OPTIONS]
 * `--browser / --no-browser`: Open the default browser at the app; --no-browser prints only its URL.  [default: browser]
 * `--devices`: List the browsers and installed apps paired with hz, then stop.
 * `--revoke <str>`: Unpair a device by its id from --devices, or `all`, then stop.
-* `--help`: Show this message and exit.
-
-## `hz zoom`
-
-(expert) Read meetings from Zoom&#x27;s meeting-summary emails: the meetings capability.
-
-**Usage**:
-
-```console
-$ hz zoom [OPTIONS] COMMAND [ARGS]...
-```
-
-**Options**:
-
-* `--help`: Show this message and exit.
-
-**Commands**:
-
-* `info`: (expert) Show this plugin&#x27;s version, the...
-
-### `hz zoom info`
-
-(expert) Show this plugin&#x27;s version, the Heinzelmännchen it runs on and where its meetings come from.
-
-**Usage**:
-
-```console
-$ hz zoom info [OPTIONS]
-```
-
-**Options**:
-
-* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
-* `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.

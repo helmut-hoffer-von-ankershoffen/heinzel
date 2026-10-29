@@ -90,7 +90,7 @@ def refused(spec: str, why: str) -> NoReturn:
         HeinzelError: Always.
     """
     msg = (
-        f"Can't add {spec!r}: {why}. `hz system plugin add` takes a first-party name (`hz system plugin add github`), "
+        f"Can't add {spec!r}: {why}. `hz system plugin add` takes a catalog short name (`hz system plugin search`), "
         f"a PyPI package named {PREFIX}<name>, or a git URL over https "
         "(`git+https://github.com/acme-example/heinzel-acme@v1.0.0`); a checkout on this machine goes with "
         "`hz system plugin develop PATH`."
@@ -287,6 +287,8 @@ def github_getter(token: SecretStr | None) -> JsonGetter:
             raise OSError(msg) from exc
         if result.returncode != 0:
             problem = result.stderr.strip() or f"gh api {path} failed"
+            if "gh auth login" in problem or "not logged" in problem.lower():
+                return through_https(path)
             if "404" in problem or "Not Found" in problem:
                 raise LookupError(problem)
             raise OSError(problem)

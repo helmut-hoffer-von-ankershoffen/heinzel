@@ -56,7 +56,10 @@ def service_for(make_kernel, prefix, runner=None, kernel=None, settings=None):
     if kernel is None:
         old = ModuleRecord("old", Module("old", "An old plugin."), Origin("heinzel-old", "1.0.0", builtin=False))
         kernel = Kernel(make_kernel().settings, [old])
-    return PluginService(kernel, installation, settings or PluginSettings(github_token=None))
+    configured = settings or PluginSettings(github_token=None, catalog_sources=[])
+    service = PluginService(kernel, installation, configured)
+    service.github_api = lambda path: _sources.get_json(f"https://api.github.com/{path}", configured.github_token, 10)
+    return service
 
 
 def test_installed_plugins_keep_repository_visibility_from_install_history(make_kernel, tmp_path):
@@ -104,7 +107,7 @@ def test_replacing_a_source_without_visibility_does_not_inherit_its_private_badg
         ("clock", "https://github.com/another-owner/heinzel", False),
         ("clock", "https://github.com.evil.example/helmut-hoffer-von-ankershoffen/heinzel", False),
         ("clock", "https://github.com:8443/helmut-hoffer-von-ankershoffen/heinzel", False),
-        ("acme", _service.REFERENCE["acme"][1], False),
+        ("acme", "https://github.com/someone/heinzel-studio", False),
         ("clock", None, False),
     ],
 )
@@ -198,11 +201,26 @@ def test_new_pins_the_template_and_passes_answers(make_kernel, tmp_path, monkeyp
     assert service.new(tmp_path / "p", data=["plugin_name=crm"], ref="v1.2.3") == tmp_path / "p"
     [(command, env)] = calls
     assert command == [
-        "uv", "tool", "run", "copier", "copy", "--vcs-ref", "v1.2.3", "--data", "plugin_name=crm",
+        "uv", "tool", "run", "copier", "copy", "--vcs-ref", "v1.2.3",
+        "--data", "layout=standalone", "--data", "preset=minimal", "--data", "plugin_name=crm",
         "gh:helmut-hoffer-von-ankershoffen/heinzel", str(tmp_path / "p"),
     ]  # fmt: skip
     assert "HZ_CREDENTIAL_EXAMPLE_API_TOKEN" not in env  # copier never needs a module's credentials
     assert env["PATH"] == os.environ["PATH"]
+
+
+def test_new_can_scaffold_a_collection_for_an_unattended_agent(make_kernel, tmp_path, monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        "subprocess.run",
+        lambda command, check, env: calls.append(command) or subprocess.CompletedProcess(command, 0),
+    )
+    service_for(make_kernel, tmp_path).new(tmp_path / "p", defaults=True, layout="collection", preset="contributions")
+    [command] = calls
+    assert "--defaults" in command
+    assert "layout=collection" in command
+    assert "preset=contributions" in command
+    assert "git" not in command
 
 
 def test_new_reports_copier_failures(make_kernel, tmp_path, monkeypatch):
@@ -211,54 +229,50 @@ def test_new_reports_copier_failures(make_kernel, tmp_path, monkeypatch):
         service_for(make_kernel, tmp_path).new(tmp_path / "p")
 
 
-def test_first_party_names_resolve_to_the_checkout_in_development(make_kernel, tmp_path):
+def test_collection_governance_stays_in_the_parent_repository(make_kernel, tmp_path):
+    with pytest.raises(HeinzelError, match="reuse repository governance"):
+        service_for(make_kernel, tmp_path).new(tmp_path / "p", layout="collection", preset="governed")
+    assert not (tmp_path / "p").exists()
+
+
+def test_short_names_resolve_only_through_catalog_metadata(make_kernel, tmp_path, github):
+    github.answer = {"items": [repository("heinzel-unforeseen", 1)]}
     service = service_for(make_kernel, tmp_path)
-    spec = service.first_party("clock")
-    assert spec is not None
-    assert spec.startswith("heinzel-clock @ file://")
-    assert spec.endswith("/plugins/heinzel-clock")
-    assert service.first_party("unknown") is None
+    catalog = service.github_api
+    service.github_api = lambda path: (
+        catalog(path) if "search/" in path or "/contents/" in path else raising(OSError("offline"))(path)
+    )
+    # Catalog membership selects a source, independent of the core checkout or core version.
+    candidate = service.candidate("unforeseen")
+    assert candidate.requirement.startswith("heinzel-unforeseen @ git+https://github.com/someone/heinzel-unforeseen")
+    assert candidate.source == "git"
+    assert not candidate.first_party
 
 
-def test_first_party_plugins_resolve_by_distribution_name_too(make_kernel, tmp_path):
+def test_explicit_package_names_do_not_need_catalog_discovery(make_kernel, tmp_path, github):
+    github.answer = AssertionError("Catalog was contacted for an explicit package requirement")
     service = service_for(make_kernel, tmp_path)
-    spec = service.first_party("heinzel-github")
-    assert spec == service.first_party("github")
-    assert spec is not None
-    assert spec.endswith("/plugins/heinzel-github")
-    assert service.candidate("heinzel-atlassian").requirement == service.first_party("atlassian")
-
-
-def test_first_party_names_follow_a_git_installed_core(make_kernel, tool_env, monkeypatch):
-    from heinzel.modules.system.plugin import _service
-
-    monkeypatch.setattr(_service, "__file__", "/nowhere/a/b/c/d/e/_service.py")
-    service = service_for(make_kernel, tool_env)
-    assert service.first_party("clock") == (
-        "heinzel-clock @ git+https://github.com/org/heinzel@v0.1.0#subdirectory=plugins/heinzel-clock"
-    )
-    assert service.candidate("clock").requirement == service.first_party("clock")
-    assert service.add_command(service.first_party("clock"))[-1] == service.first_party("clock")
-
-
-def test_first_party_names_default_to_the_release_tag(make_kernel, tmp_path, monkeypatch):
-    from heinzel.modules.system.plugin import _service
-
-    monkeypatch.setattr(_service, "__file__", "/nowhere/a/b/c/d/e/_service.py")
-    assert service_for(make_kernel, tmp_path).first_party("clock") == (
-        f"heinzel-clock @ git+{_service.REPOSITORY}@v{_service.__version__}#subdirectory=plugins/heinzel-clock"
-    )
+    service.pypi = lambda url: pypi_project("heinzel-unforeseen", "4.2.0")
+    assert service.candidate("heinzel-unforeseen").requirement == "heinzel-unforeseen==4.2.0"
+    assert not github.requests
 
 
 @pytest.fixture(autouse=True)
 def _fresh_contrib_cache():
-    _service._CONTRIB_CACHE.clear()
+    _service._CATALOG_CACHE.clear()
 
 
 def repository(name, stars, **extra):
     """A repository as GitHub's search API returns it."""
     url = f"https://github.com/someone/{name}"
-    return {"name": name, "description": f"The {name} plugin.", "html_url": url, "stargazers_count": stars, **extra}
+    return {
+        "name": name,
+        "full_name": f"someone/{name}",
+        "description": f"The {name} plugin.",
+        "html_url": url,
+        "stargazers_count": stars,
+        **extra,
+    }
 
 
 class FakeGitHub:
@@ -272,85 +286,60 @@ class FakeGitHub:
         self.requests.append((url, token.get_secret_value() if token else None, timeout))
         if isinstance(self.answer, Exception):
             raise self.answer
+        if "/contents/plugins" in url:
+            return []
+        if "/contents/pyproject.toml" in url:
+            name = url.split("/repos/")[1].split("/")[1]
+            return plugin_project(name)
         return self.answer
 
 
 @pytest.fixture
 def github(monkeypatch):
     fake = FakeGitHub()
-    monkeypatch.setattr(_service, "get_json", fake.get_json)
+    monkeypatch.setattr(_sources, "get_json", fake.get_json)
     for name in ("GH_TOKEN", "GITHUB_TOKEN", "HZ_SYSTEM_PLUGIN__GITHUB_TOKEN"):
         monkeypatch.delenv(name, raising=False)
     return fake
 
 
-def test_search_lists_first_party_first_then_community_plugins_by_stars(make_kernel, tmp_path, github):
+def test_search_lists_metadata_plugins_by_stars(make_kernel, tmp_path, github):
     github.answer = {"items": [repository("heinzel-few", 1), repository("heinzel-many", 50)]}
     result = service_for(make_kernel, tmp_path).search()
     assert [(p.name, p.source, p.community, p.stars) for p in result.plugins] == [
-        ("heinzel-acme", "first-party", False, None),
-        ("heinzel-atlassian", "first-party", False, None),
-        ("heinzel-clock", "first-party", False, None),
-        ("heinzel-github", "first-party", False, None),
-        ("heinzel-google", "first-party", False, None),
-        ("heinzel-tailscale", "first-party", False, None),
-        ("heinzel-zoom", "first-party", False, None),
         ("heinzel-many", "github", True, 50),
         ("heinzel-few", "github", True, 1),
     ]
-    assert result.warnings == ["The heinzel-contrib plugins could not be read from GitHub."]
+    assert result.warnings == []
 
 
-def test_search_tells_how_to_install_each_plugin(make_kernel, tmp_path, github):
-    github.answer = {"items": [repository("heinzel-crm", 3)]}
-    acme, atlassian, clock, github_, google, tailscale, zoom, crm = service_for(make_kernel, tmp_path).search().plugins
-    assert (acme.short_name, acme.install_spec, acme.url) == ("acme", "acme", _service.REFERENCE["acme"][1])
-    assert (atlassian.short_name, atlassian.install_spec) == ("atlassian", "atlassian")
-    assert (github_.short_name, github_.install_spec) == ("github", "github")
-    assert (google.short_name, google.install_spec) == ("google", "google")
-    assert (clock.short_name, clock.install_spec) == ("clock", "clock")
-    assert (tailscale.short_name, tailscale.install_spec) == ("tailscale", "tailscale")
-    assert (zoom.short_name, zoom.install_spec) == ("zoom", "zoom")
-    assert (crm.short_name, crm.install_spec) == ("crm", "git+https://github.com/someone/heinzel-crm")
+def test_search_tells_how_to_install_a_new_plugin(make_kernel, tmp_path, github):
+    github.answer = {"items": [repository("heinzel-unforeseen", 3)]}
+    [plugin] = service_for(make_kernel, tmp_path).search().plugins
+    assert (plugin.short_name, plugin.install_spec) == (
+        "unforeseen",
+        "heinzel-unforeseen @ git+https://github.com/someone/heinzel-unforeseen",
+    )
 
 
 def test_search_marks_installed_plugins(make_kernel, tmp_path, github):
     github.answer = {"items": [repository("heinzel-old", 3), repository("heinzel-new", 2)]}
-    installed = {p.name: p.installed for p in service_for(make_kernel, tmp_path).search().plugins}
-    assert installed == {
-        "heinzel-acme": False,
-        "heinzel-atlassian": False,
-        "heinzel-clock": False,
-        "heinzel-github": False,
-        "heinzel-google": False,
-        "heinzel-tailscale": False,
-        "heinzel-zoom": False,
+    assert {p.name: p.installed for p in service_for(make_kernel, tmp_path).search().plugins} == {
         "heinzel-old": True,
         "heinzel-new": False,
     }
 
 
-def test_search_prefers_first_party_plugins_and_skips_archived_repositories(make_kernel, tmp_path, github):
-    github.answer = {"items": [repository("heinzel-github", 99), repository("heinzel-gone", 9, archived=True)]}
-    plugins = service_for(make_kernel, tmp_path).search().plugins
-    assert [(p.name, p.source) for p in plugins] == [
-        (name, "first-party")
-        for name in [
-            "heinzel-acme",
-            "heinzel-atlassian",
-            "heinzel-clock",
-            "heinzel-github",
-            "heinzel-google",
-            "heinzel-tailscale",
-            "heinzel-zoom",
-        ]
-    ]
+def test_search_skips_archived_repositories(make_kernel, tmp_path, github):
+    github.answer = {"items": [repository("heinzel-live", 99), repository("heinzel-gone", 9, archived=True)]}
+    assert [p.name for p in service_for(make_kernel, tmp_path).search().plugins] == ["heinzel-live"]
 
 
-def test_search_filters_first_party_plugins_and_passes_the_text_to_github(make_kernel, tmp_path, github):
+def test_search_filters_metadata_and_passes_text_to_github(make_kernel, tmp_path, github):
+    github.answer = {"items": [repository("heinzel-invoicing", 1)]}
     service = service_for(make_kernel, tmp_path)
-    assert [p.name for p in service.search("TIME team").plugins] == ["heinzel-clock"]
-    assert service.search("invoicing").plugins == []
+    assert service.search("TIME team").plugins == []
+    assert [p.name for p in service.search("invoicing").plugins] == ["heinzel-invoicing"]
     url, token, timeout = next(r for r in reversed(github.requests) if "/search/" in r[0])
     assert url.startswith("https://api.github.com/search/repositories?q=topic%3Aheinzel-plugin+invoicing&")
     assert (token, timeout) == (None, 10)
@@ -373,22 +362,11 @@ def test_search_sends_a_github_token_from_the_environment(make_kernel, tmp_path,
         ({"items": "nope"}, "expected a list of repositories, got str"),
     ],
 )
-def test_search_falls_back_to_first_party_plugins_with_a_warning(make_kernel, tmp_path, github, answer, reason):
+def test_search_reports_topic_outages(make_kernel, tmp_path, github, answer, reason):
     github.answer = answer
     result = service_for(make_kernel, tmp_path).search()
-    assert [p.name for p in result.plugins] == [
-        "heinzel-acme",
-        "heinzel-atlassian",
-        "heinzel-clock",
-        "heinzel-github",
-        "heinzel-google",
-        "heinzel-tailscale",
-        "heinzel-zoom",
-    ]
-    assert result.warnings == [
-        f"GitHub could not be searched ({reason}); showing first-party plugins only.",
-        "The heinzel-contrib plugins could not be read from GitHub.",
-    ]
+    assert result.plugins == []
+    assert result.warnings == ["Topic search is unavailable; showing configured catalogs and cached metadata."]
 
 
 def test_a_ref_with_slashes_or_a_subdirectory_still_names_the_plugin_it_replaces(make_kernel, tool_env):
@@ -697,31 +675,23 @@ def test_unreachable_pypi_leaves_the_source_unverified_and_says_so(make_kernel, 
     assert candidate.warnings == ["What it is couldn't be read (offline): only the source below is known."]
 
 
-def test_first_party_plugins_are_published_by_the_maintainers(make_kernel, tool_env, monkeypatch):
+def test_official_repository_establishes_provenance_without_reserved_names(make_kernel, tool_env, monkeypatch):
     service, _ = installing(make_kernel, tool_env, monkeypatch)
-    candidate = service.candidate("github")
-    assert (candidate.distribution, candidate.first_party, candidate.publisher) == (
-        "heinzel-github",
-        True,
-        _service.MAINTAINERS,
+    service.github_api = raising(OSError("offline"))
+    candidate = service.candidate(
+        f"heinzel-unforeseen @ git+{_service.REPOSITORY}-plugins#subdirectory=plugins/heinzel-unforeseen"
     )
-    assert candidate.source == "path"  # this checkout's plugins/ directory
+    assert candidate.first_party
+    assert candidate.publisher == _service.MAINTAINERS
+    assert candidate.source == "git"
 
 
-def test_the_reference_company_is_first_party_from_its_own_repository(make_kernel, tool_env, monkeypatch):
+def test_external_themes_have_the_same_provenance_rules_as_other_plugins(make_kernel, tool_env, monkeypatch):
     service, _ = installing(make_kernel, tool_env, monkeypatch)
-    calls = []
-
-    def offline(path):
-        calls.append(path)
-        msg = "offline"
-        raise OSError(msg)
-
-    service.github_api = offline
-    candidate = service.candidate("acme")
-    assert candidate.requirement == f"heinzel-acme @ git+{_service.REFERENCE['acme'][1]}"
-    assert (candidate.first_party, candidate.publisher) == (True, _service.MAINTAINERS)
-    assert calls == ["repos/helmut-hoffer-von-ankershoffen/heinzel-acme"]
+    service.github_api = raising(OSError("offline"))
+    candidate = service.candidate("heinzel-studio @ git+https://github.com/someone/heinzel-studio")
+    assert not candidate.first_party
+    assert candidate.requirement == "heinzel-studio @ git+https://github.com/someone/heinzel-studio"
 
 
 def test_with_gh_git_asks_gh_for_github_credentials_and_no_token_passes_through(make_kernel, tool_env, monkeypatch):
@@ -895,15 +865,15 @@ def test_the_repository_a_spec_names_as_a_browser_opens_it(spec, expected):
 
 def test_search_entries_carry_their_repository_url(make_kernel, tmp_path, github):
     github.answer = {"items": [repository("heinzel-crm", 3)]}
-    plugins = {p.name: p for p in service_for(make_kernel, tmp_path).search().plugins}
-    assert plugins["heinzel-crm"].repository_url == "https://github.com/someone/heinzel-crm"
-    assert plugins["heinzel-clock"].repository_url == f"{_service.REPOSITORY}/tree/main/plugins/heinzel-clock"
-    assert plugins["heinzel-acme"].repository_url == _service.REFERENCE["acme"][1]
+    [plugin] = service_for(make_kernel, tmp_path).search().plugins
+    assert plugin.repository_url == "https://github.com/someone/heinzel-crm"
 
 
 @pytest.mark.parametrize("visibility", [True, False, None, "false", 0])
 @pytest.mark.parametrize("monorepo", [False, True])
-def test_catalog_visibility_is_reported_only_for_boolean_github_metadata(make_kernel, tmp_path, visibility, monorepo):
+def test_catalog_visibility_is_reported_only_for_boolean_github_metadata(
+    make_kernel, tmp_path, github, visibility, monorepo
+):
     service = service_for(make_kernel, tmp_path)
     service._monorepo_plugins = lambda _repository: [("heinzel-tools", "plugins/tools", "Tools.")] if monorepo else []
     [plugin] = service._community_plugins(repository("heinzel-tools", 0, private=visibility), set())
@@ -1007,7 +977,6 @@ def test_what_kind_of_plugin_each_one_is(make_kernel, tmp_path):
         ("heinzel", "git+https://github.com/acme-example/heinzel-crm", "calls itself heinzel"),
         ("heinzel-crm[all]", "git+https://github.com/acme-example/heinzel-crm", "no valid name"),
         ("heinzel crm", "git+https://github.com/acme-example/heinzel-crm", "no valid name"),
-        ("heinzel-github", "git+https://github.com/acme-example/heinzel-crm", "name of a first-party plugin"),
         ("heinzel-other", "heinzel-crm @ git+https://github.com/acme-example/heinzel-crm", "names heinzel-other"),
     ],
 )
@@ -1019,16 +988,13 @@ def test_a_repository_naming_itself_wrongly_is_refused(make_kernel, tool_env, mo
     assert runs == []
 
 
-def test_a_pypi_package_with_a_first_party_name_or_extras_is_refused(make_kernel, tool_env, monkeypatch):
+def test_package_identity_does_not_grant_provenance_and_extras_are_refused(make_kernel, tool_env, monkeypatch):
     service, _ = installing(make_kernel, tool_env, monkeypatch)
-    service.pypi = lambda url: pypi_project("heinzel-github", "1.0.0")
-    with pytest.raises(HeinzelError, match=r"by name \(github\)"):
-        service.candidate("heinzel-github==1.0.0")
-    service.pypi = raising(urllib.error.URLError("offline"))
-    with pytest.raises(HeinzelError, match="without extras or environment markers"):
-        service.candidate("heinzel-crm[all]")
-    with pytest.raises(HeinzelError, match="without extras or environment markers"):
-        service.candidate('heinzel-crm; python_version > "3"')
+    service.pypi = lambda url: pypi_project("heinzel-unforeseen", "1.0.0")
+    assert not service.candidate("heinzel-unforeseen==1.0.0").first_party
+    for requirement in ("heinzel-crm[all]", 'heinzel-crm; python_version > "3"'):
+        with pytest.raises(HeinzelError, match="without extras or environment markers"):
+            service.candidate(requirement)
 
 
 def test_a_plugin_not_named_heinzel_something_comes_with_a_warning(make_kernel, tool_env, monkeypatch):
@@ -1076,38 +1042,64 @@ class MonorepoGitHub(FakeGitHub):
 def monorepo(monkeypatch, files):
     repo = repository("heinzel-contrib", 4) | {"full_name": "someone/heinzel-contrib", "default_branch": "main"}
     fake = MonorepoGitHub(repo, files)
-    monkeypatch.setattr(_service, "get_json", fake.get_json)
+    monkeypatch.setattr(_sources, "get_json", fake.get_json)
     return fake
 
 
 EXPECTED_SPEC = "heinzel-weather @ git+https://github.com/someone/heinzel-contrib#subdirectory=plugins/heinzel-weather"
 
 
-def test_search_lists_each_plugin_of_a_monorepo_from_its_manifest(make_kernel, tmp_path, monkeypatch):
-    manifest = """
-[[plugin]]
-name = "weather"
-path = "plugins/heinzel-weather"
-summary = "Weather where you are."
+def test_stale_manifest_cannot_hide_new_plugin_directories(make_kernel, tmp_path, monkeypatch):
+    monorepo(
+        monkeypatch,
+        {
+            "heinzel-plugins.toml": contents('[[plugin]]\nname="obsolete"\n'),
+            "plugins": [{"name": "unforeseen", "type": "dir"}],
+            "plugins/unforeseen/pyproject.toml": plugin_project("heinzel-unforeseen"),
+        },
+    )
+    [plugin] = service_for(make_kernel, tmp_path).search().plugins
+    assert plugin.name == "heinzel-unforeseen"
+    assert plugin.install_spec.endswith("#subdirectory=plugins/unforeseen")
 
-[[plugin]]
-name = "heinzel-example"
-summary = "An example."
-"""
-    monorepo(monkeypatch, {"heinzel-plugins.toml": contents(manifest)})
-    community = [p for p in service_for(make_kernel, tmp_path).search().plugins if p.community]
-    assert [(p.name, p.description, p.stars) for p in community] == [
-        ("heinzel-example", "An example.", 4),
-        ("heinzel-weather", "Weather where you are.", 4),
-    ]
-    assert community[1].install_spec == EXPECTED_SPEC
-    assert community[0].install_spec.endswith("#subdirectory=plugins/heinzel-example")
-    assert community[1].url == "https://github.com/someone/heinzel-contrib/tree/main/plugins/heinzel-weather"
+
+def test_private_external_catalog_uses_the_authenticated_github_gateway(make_kernel, tmp_path, monkeypatch):
+    service = service_for(make_kernel, tmp_path)
+    paths = []
+    repo = repository("heinzel-harbor", 0) | {"full_name": "someone/heinzel-harbor", "private": True}
+
+    def authenticated(path):
+        paths.append(path)
+        if path.startswith("search/repositories?"):
+            return {"items": [repo]}
+        if path.endswith("/plugins"):
+            msg = "No collection directory"
+            raise LookupError(msg)
+        assert path == "repos/someone/heinzel-harbor/contents/pyproject.toml"
+        return plugin_project("heinzel-harbor")
+
+    service.github_api = authenticated
+    monkeypatch.setattr(_sources, "get_json", lambda *_: pytest.fail("Do not bypass the authenticated gateway"))
+    [plugin] = service.search().plugins
+    assert plugin.private_repository is True
+    assert plugin.install_spec == "heinzel-harbor @ git+https://github.com/someone/heinzel-harbor"
+    assert len(paths) == 3
+    with pytest.raises(ValueError, match="GitHub API"):
+        service._catalog_json("https://other.example/repos/someone/heinzel-harbor")
+
+
+def test_malformed_file_retains_cached_metadata_instead_of_reporting_a_removed_file(make_kernel, tmp_path):
+    service = service_for(make_kernel, tmp_path)
+    service.github_api = lambda _: {"encoding": "base64"}
+    assert (
+        service._file("https://api.github.com/repos/example/plugins/contents/pyproject.toml", missing_is_empty=True)
+        is None
+    )
 
 
 def test_search_discovers_monorepo_plugins_without_a_manifest(make_kernel, tmp_path, monkeypatch):
     def pyproject(name):
-        return contents(f'[project]\nname = "{name}"\ndescription = "About {name}."\n')
+        return plugin_project(name, f"About {name}.")
 
     monorepo(
         monkeypatch,
@@ -1127,36 +1119,9 @@ def test_search_discovers_monorepo_plugins_without_a_manifest(make_kernel, tmp_p
     ]
 
 
-def test_search_keeps_a_single_plugin_repository_as_one_entry(make_kernel, tmp_path, monkeypatch):
+def test_topic_repository_must_declare_a_plugin_entry_point(make_kernel, tmp_path, monkeypatch):
     monorepo(monkeypatch, {})
-    community = [p for p in service_for(make_kernel, tmp_path).search().plugins if p.community]
-    assert [(p.name, p.install_spec) for p in community] == [
-        ("heinzel-contrib", "git+https://github.com/someone/heinzel-contrib")
-    ]
-
-
-def test_a_first_party_preview_confirms_by_name_not_by_its_git_requirement(make_kernel, tool_env, monkeypatch):
-    from heinzel.modules.system.plugin._render import render_change
-
-    service, runs = installing(make_kernel, tool_env, monkeypatch)
-    preview = service.add("clock")
-    assert preview.candidate is not None
-    assert preview.candidate.requirement != "clock"  # a git or path requirement ...
-    assert preview.operation_id
-    assert preview.next == [
-        f"hz system plugin add clock --confirm --operation-id {preview.operation_id}"
-    ]  # ... which the hint must not suggest
-    rendered = render_change(preview)
-    from rich.console import Console
-
-    console = Console(record=True, width=60)
-    console.print(rendered, soft_wrap=getattr(rendered, "soft_wrap", False))
-    output = console.export_text()
-    assert "not reviewed" not in output
-    [hint] = [line for line in output.splitlines() if line.startswith("To install: ")]
-    assert preview.operation_id in hint
-    assert service.add(preview.candidate.spec, confirm=True, operation_id=preview.operation_id).done
-    assert len(runs) == 1
+    assert service_for(make_kernel, tmp_path).search().plugins == []
 
 
 def test_a_community_preview_still_confirms_by_its_requirement_and_warns(make_kernel, tool_env, monkeypatch):
@@ -1194,56 +1159,87 @@ def test_a_change_removes_stale_skill_exports_in_the_fresh_hz_and_survives_its_f
     assert change.next == ["hz system skill export --sync"]
 
 
-def test_search_lists_the_contrib_monorepo_without_the_topic(make_kernel, tmp_path, monkeypatch):
-    manifest = """
-[[plugin]]
-name = "weather"
-path = "plugins/heinzel-weather"
-summary = "Weather where you are."
+def plugin_project(name, description="New plugin."):
+    """A new plugin registers itself entirely through its own metadata."""
+    return contents(
+        f'[project]\nname="{name}"\ndescription="{description}"\n'
+        f'[project.entry-points."heinzel.modules"]\nplugin="{name.replace("-", "_")}:module"\n'
+    )
 
-[[plugin]]
-name = "example"
-path = "plugins/heinzel-example"
-summary = "An example."
-"""
-    monorepo(monkeypatch, {"heinzel-plugins.toml": contents(manifest)}).answer = {"items": []}
+
+@pytest.mark.parametrize("source", ["heinzel", "heinzel-contrib", "heinzel-plugins"])
+def test_new_catalog_directory_needs_no_core_registration(make_kernel, tmp_path, monkeypatch, source):
+    full_name = f"someone/{source}"
+    fake = MonorepoGitHub(
+        repository(source, 1),
+        {
+            "plugins": [{"name": "unexpected", "type": "dir"}],
+            "plugins/unexpected/pyproject.toml": plugin_project("heinzel-unexpected"),
+        },
+    )
+    fake.answer = {"items": []}  # configured sources work without the topic
+    monkeypatch.setattr(_sources, "get_json", fake.get_json)
+    service = service_for(
+        make_kernel, tmp_path, settings=PluginSettings(github_token=None, catalog_sources=[full_name])
+    )
+    [plugin] = service.search().plugins
+    assert plugin.name == "heinzel-unexpected"
+    assert (
+        plugin.install_spec
+        == f"heinzel-unexpected @ git+https://github.com/{full_name}#subdirectory=plugins/unexpected"
+    )
+
+
+def test_catalog_outage_keeps_last_successful_metadata(make_kernel, tmp_path, monkeypatch):
+    fake = monorepo(
+        monkeypatch,
+        {
+            "plugins": [{"name": "unexpected", "type": "dir"}],
+            "plugins/unexpected/pyproject.toml": plugin_project("heinzel-unexpected"),
+        },
+    )
     service = service_for(make_kernel, tmp_path)
-    contrib = [p for p in service.search().plugins if p.source == "contrib"]
-    base = "git+https://github.com/helmut-hoffer-von-ankershoffen/heinzel-contrib"
-    assert [(p.name, p.community, p.installed) for p in contrib] == [
-        ("heinzel-example", True, False),
-        ("heinzel-weather", True, False),
-    ]
-    assert contrib[1].install_spec == f"heinzel-weather @ {base}@main#subdirectory=plugins/heinzel-weather"
-    assert contrib[1].url.endswith("/heinzel-contrib/tree/main/plugins/heinzel-weather")
-    assert [p.name for p in service.search("weather").plugins if p.source == "contrib"] == ["heinzel-weather"]
+    assert [p.name for p in service.search().plugins] == ["heinzel-unexpected"]
+    fake.files.clear()
+    result = service.search()
+    assert [p.name for p in result.plugins] == ["heinzel-unexpected"]
+    assert any("retaining" in message for message in result.warnings)
 
 
-def test_search_does_not_list_contrib_twice_when_it_has_the_topic(make_kernel, tmp_path, monkeypatch):
-    manifest = '[[plugin]]\nname = "weather"\npath = "plugins/heinzel-weather"\nsummary = "W."\n'
-    fake = monorepo(monkeypatch, {"heinzel-plugins.toml": contents(manifest)})
-    fake.answer = {
-        "items": [
-            repository("heinzel-contrib", 4)
-            | {"full_name": "helmut-hoffer-von-ankershoffen/heinzel-contrib", "default_branch": "main"}
-        ]
-    }
-    names = [(p.name, p.source) for p in service_for(make_kernel, tmp_path).search().plugins if p.community]
-    assert names == [("heinzel-weather", "contrib")]
+def test_non_plugin_directory_is_not_installable_metadata(make_kernel, tmp_path, monkeypatch):
+    monorepo(
+        monkeypatch,
+        {
+            "plugins": [{"name": "unrelated", "type": "dir"}],
+            "plugins/unrelated/pyproject.toml": contents('[project]\nname="heinzel-unrelated"\n'),
+        },
+    )
+    assert service_for(make_kernel, tmp_path).search().plugins == []
 
 
-def test_search_warns_when_contrib_cannot_be_read_and_keeps_the_rest(make_kernel, tmp_path, github):
-    github.answer = {"items": [repository("heinzel-many", 50)]}
+def test_partial_metadata_outage_retains_each_cached_project_across_processes(make_kernel, tmp_path, monkeypatch):
+    fake = monorepo(
+        monkeypatch,
+        {
+            "plugins": [{"name": "new", "type": "dir"}],
+            "plugins/new/pyproject.toml": plugin_project("heinzel-new"),
+        },
+    )
+    service = service_for(make_kernel, tmp_path)
+    assert [entry.name for entry in service.search().plugins] == ["heinzel-new"]
+    fake.files.pop("plugins/new/pyproject.toml")
+    _service._CATALOG_CACHE.clear()  # A new process restores the previous metadata from its private cache.
     result = service_for(make_kernel, tmp_path).search()
-    assert "The heinzel-contrib plugins could not be read from GitHub." in result.warnings
-    assert [p.name for p in result.plugins if p.community] == ["heinzel-many"]
+    assert [entry.name for entry in result.plugins] == ["heinzel-new"]
+    assert any("metadata for plugins/new" in warning for warning in result.warnings)
+    fake.files["plugins/new/pyproject.toml"] = contents('[project]\nname="ordinary-library"\n')
+    assert service.search().plugins == []  # A successful removal of its entry point retires the project.
 
 
-def test_search_reads_contrib_once_while_it_is_cached(make_kernel, tmp_path, monkeypatch):
-    manifest = '[[plugin]]\nname = "weather"\npath = "plugins/heinzel-weather"\nsummary = "W."\n'
-    fake = monorepo(monkeypatch, {"heinzel-plugins.toml": contents(manifest)})
-    fake.answer = {"items": []}
-    service = service_for(make_kernel, tmp_path)
-    service.search()
-    service.search("weather")
-    assert len([r for r in fake.requests if "/contents/" in r[0]]) == 1
+def test_installed_sdk_export_is_versioned_and_never_overwrites_files(make_kernel, tmp_path):
+    destination = tmp_path / "sdk"
+    written = service_for(make_kernel, tmp_path).sdk(destination)
+    assert {path.name for path in written} >= {"index.d.ts", "react.js", "jsx-runtime.js"}
+    assert "interface PluginSDK" in (destination / "index.d.ts").read_text()
+    with pytest.raises(HeinzelError, match="new writable SDK directory"):
+        service_for(make_kernel, tmp_path).sdk(destination)
