@@ -242,10 +242,25 @@ def test_schedule_approval_full_terminal_output_queue_respects_the_deadline(monk
     filled = 0
     while True:
         try:
-            filled += os.write(slave, b"x" * 4096)
+            filled += os.write(slave, b"x")
         except BlockingIOError:
             break
+    os.set_blocking(slave, True)
     real_open = os.open
+    finished = threading.Event()
+    outcomes: list[str] = []
+
+    def confirm() -> None:
+        try:
+            mcp._confirm_schedule_on_tty({"action": "activate"})
+        except HeinzelError as exc:
+            outcomes.append(str(exc))
+        else:
+            outcomes.append("unexpected approval")
+        finally:
+            finished.set()
+
+    worker = threading.Thread(target=confirm, daemon=True)
     with monkeypatch.context() as patcher:
         patcher.setattr(
             mcp.os,
@@ -255,14 +270,16 @@ def test_schedule_approval_full_terminal_output_queue_respects_the_deadline(monk
             ),
         )
         patcher.setattr(mcp, "_SCHEDULE_APPROVAL_TIMEOUT_SECONDS", 0.02)
-        started = time.monotonic()
-        with pytest.raises(HeinzelError, match="not confirmed"):
-            mcp._confirm_schedule_on_tty({"action": "activate"})
-        elapsed = time.monotonic() - started
-    os.close(master)
-    os.close(slave)
+        try:
+            worker.start()
+            assert finished.wait(2), "approval output remained blocked by the full PTY queue"
+        finally:
+            os.close(master)
+            worker.join(timeout=2)
+            os.close(slave)
+    assert not worker.is_alive()
+    assert outcomes == ["MCP schedule approval was not confirmed"]
     assert filled > 0
-    assert elapsed < 1
     assert mcp._SCHEDULE_APPROVAL_LOCK.acquire(blocking=False)
     mcp._SCHEDULE_APPROVAL_LOCK.release()
 
