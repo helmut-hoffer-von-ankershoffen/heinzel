@@ -39,9 +39,9 @@ function loadOptions(): Options {
 }
 
 type Tab = { id: number; title: string; notice?: string; status?: string };
-type Props = { onClose: () => void; full: boolean; onToggleFull: () => void };
+type Props = { onClose: () => void; full: boolean; onToggleFull: () => void; onActivate?: () => void };
 
-export function TerminalPanel({ onClose, full, onToggleFull }: Props) {
+export function TerminalPanel({ onClose, full, onToggleFull, onActivate }: Props) {
   const [tabs, setTabs] = useState<Tab[]>([{ id: 1, title: t("terminal.title") }]);
   const [active, setActive] = useState(1);
   const [options, setOptions] = useState<Options>(loadOptions);
@@ -176,7 +176,9 @@ export function TerminalPanel({ onClose, full, onToggleFull }: Props) {
                   const notification = new Notification(tab.title, { body: notice });
                   notification.onclick = () => {
                     window.focus();
+                    onActivate?.();
                     setActive(tab.id);
+                    updateTab(tab.id, { notice: undefined });
                     notification.close();
                   };
                 } catch {

@@ -468,6 +468,7 @@ function Layout() {
                           content: (
                             <TerminalPanel
                               full={terminalFull}
+                              onActivate={() => selectPanel("terminal")}
                               onToggleFull={() => setTerminalFull((value) => !value)}
                               onClose={() => {
                                 setTerminalOpen(false);

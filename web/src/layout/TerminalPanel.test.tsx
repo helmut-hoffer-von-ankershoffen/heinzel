@@ -106,20 +106,29 @@ describe("terminal tabs", () => {
   it("notifies once when a background agent becomes blocked, if desktop notifications are enabled", () => {
     vi.stubGlobal("WebSocket", Socket);
     const notify = vi.fn();
+    const onActivate = vi.fn();
+    const instances: FakeNotification[] = [];
     class FakeNotification {
+      onclick: (() => void) | null = null;
+      close = vi.fn();
       constructor(title: string, options: NotificationOptions) {
         notify(title, options);
+        instances.push(this);
       }
     }
     vi.stubGlobal("Notification", FakeNotification);
+    vi.spyOn(window, "focus").mockImplementation(() => {});
     vi.spyOn(document, "hasFocus").mockReturnValue(false);
     desktopState.mockReturnValue("on");
-    render(<TerminalPanel onClose={vi.fn()} full={false} onToggleFull={vi.fn()} />);
+    render(<TerminalPanel onClose={vi.fn()} full={false} onToggleFull={vi.fn()} onActivate={onActivate} />);
     act(() => {
       terminals[0]?.osc.get(7501)?.("state=blocked:kind=permission:app=codex");
       terminals[0]?.osc.get(7501)?.("state=blocked:kind=permission:app=codex");
     });
     expect(notify).toHaveBeenCalledTimes(1);
     expect(notify).toHaveBeenCalledWith("Terminal", { body: "Waiting for input" });
+    act(() => instances[0]?.onclick?.());
+    expect(onActivate).toHaveBeenCalledOnce();
+    expect(screen.queryByLabelText("New terminal notification")).not.toBeInTheDocument();
   });
 });
