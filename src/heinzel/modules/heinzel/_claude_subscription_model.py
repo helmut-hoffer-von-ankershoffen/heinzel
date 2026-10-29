@@ -43,6 +43,7 @@ from heinzel.modules.heinzel._turn_authority_fence import TurnAuthorityFence
 from heinzel.modules.system.runner._process import Outcome, run_bounded
 
 _VERSION = "2.1.312"
+_MAX_EXECUTABLE_BYTES = 512 * 1024 * 1024
 _MAX_INPUT = 96 * 1024
 _MAX_RESPONSE = 128 * 1024
 _MAX_REQUESTS = 100
@@ -67,6 +68,10 @@ _FLAGS = (
 )
 
 
+def _allowed_executable_stat(info: os.stat_result) -> bool:
+    return stat.S_ISREG(info.st_mode) and 0 <= info.st_size <= _MAX_EXECUTABLE_BYTES
+
+
 def executable_digest(path: Path) -> str:
     """Hash a bounded regular executable without blocking on a substituted FIFO or following a new link.
 
@@ -78,7 +83,7 @@ def executable_digest(path: Path) -> str:
         fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW)
         with os.fdopen(fd, "rb") as stream:
             info = os.fstat(stream.fileno())
-            if not stat.S_ISREG(info.st_mode) or info.st_size > 256 * 1024 * 1024:
+            if not _allowed_executable_stat(info):
                 raise HeinzelError(invalid)  # noqa: TRY301 - one redacted error for all unsafe files
             digest = hashlib.sha256()
             remaining = info.st_size

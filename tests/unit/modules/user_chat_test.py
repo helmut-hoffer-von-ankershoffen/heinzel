@@ -216,3 +216,15 @@ def test_existing_legacy_personal_action_does_not_block_new_generic_turn(tmp_pat
         answer = asyncio.run(service.answer(session, "hello"))
         assert answer.message.text == "A real recorded reply"
         assert store.load(chat.id).actions[0].status == status
+
+
+def test_executable_size_boundary_accepts_installed_cli_without_large_fixture():
+    from stat import S_IFIFO, S_IFREG
+    from types import SimpleNamespace
+
+    from heinzel.modules.heinzel._claude_subscription_model import _allowed_executable_stat
+
+    assert _allowed_executable_stat(SimpleNamespace(st_mode=S_IFREG, st_size=275_988_512))
+    assert _allowed_executable_stat(SimpleNamespace(st_mode=S_IFREG, st_size=512 * 1024 * 1024))
+    assert not _allowed_executable_stat(SimpleNamespace(st_mode=S_IFREG, st_size=512 * 1024 * 1024 + 1))
+    assert not _allowed_executable_stat(SimpleNamespace(st_mode=S_IFIFO, st_size=1))
