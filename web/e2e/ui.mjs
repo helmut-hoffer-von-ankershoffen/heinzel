@@ -43,6 +43,32 @@ async function axeViolations(page) {
   );
 }
 
+async function dismissFooterPanes(page) {
+  // Footer panes are portaled and may have feature content instead of a version-based accessible name.
+  // Focus the owning trigger so Escape reaches the actual close handler, then wait for that pane to leave.
+  const controls = page.getByRole("contentinfo").locator("[aria-controls]");
+  for (let attempt = 0; attempt < 8; attempt++) {
+    let trigger;
+    let pane;
+    for (let index = 0; index < (await controls.count()); index++) {
+      const candidate = controls.nth(index);
+      const paneId = await candidate.getAttribute("aria-controls");
+      if (!paneId) continue;
+      const candidatePane = page.locator(`[id="${paneId}"]`);
+      if (await candidatePane.isVisible()) {
+        trigger = candidate;
+        pane = candidatePane;
+        break;
+      }
+    }
+    if (!trigger || !pane) return;
+    await trigger.focus();
+    await page.keyboard.press("Escape");
+    await pane.waitFor({ state: "hidden", timeout: 5000 });
+  }
+  throw new Error("Escape did not collapse every visible footer pane");
+}
+
 /** The splash, in a context of its own: its aborted requests are meant to fail, so they aren't the app's errors. A CSP
  * violation by its inline script still shows in the main context, which loads the same page. */
 async function splash() {
@@ -134,6 +160,8 @@ try {
   }
   await page.keyboard.press("Escape");
   await wizard.waitFor({ state: "detached" });
+  // Closing the modal can restore focus to a footer trigger, whose viewport popover may cover the account menu.
+  await dismissFooterPanes(page);
   // Doctor is hz itself, not work: it is in the account menu, not the navigation.
   await page.getByRole("button", { name: /Mira/ }).click();
   await page.getByRole("menuitem", { name: "Check this machine" }).click();

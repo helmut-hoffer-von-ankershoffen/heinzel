@@ -111,6 +111,13 @@ def test_pause_resume_and_status(kernel, calls):
     assert calls == []
 
 
+def test_status_help_explains_five_minute_checkin_readiness(kernel):
+    result = runner.invoke(build(kernel), ["system", "daemon", "status", "--help"])
+    assert result.exit_code == 0, result.output
+    assert "Check-ins need a resumed daemon with 5m ticks" in result.output
+    assert "matching service version" in result.output
+
+
 def test_doctor_reports_the_daemon(kernel):
     report = json.loads(runner.invoke(build(kernel), ["system", "doctor", "--json"]).output)
     assert report["checks"]["system.daemon"][0]["detail"].startswith("not installed")

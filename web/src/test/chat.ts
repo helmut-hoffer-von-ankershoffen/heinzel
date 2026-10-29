@@ -38,6 +38,7 @@ export const proposal = {
   command: "hz system config set --key org.role --value lead",
   arguments: { key: "org.role", value: "lead" },
   status: "pending" as const,
+  mcp_authorized: false,
   result: "",
   proposed: at,
   decided: null,

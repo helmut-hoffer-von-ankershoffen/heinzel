@@ -1916,6 +1916,12 @@
             "title": "Id",
             "type": "string"
           },
+          "mcp_authorized": {
+            "default": false,
+            "description": "Whether a person explicitly authorized this exact pending action for one MCP confirmation.",
+            "title": "Mcp Authorized",
+            "type": "boolean"
+          },
           "module": {
             "description": "The operation's module, e.g. `system.config`.",
             "title": "Module",
@@ -1940,13 +1946,14 @@
           },
           "status": {
             "default": "pending",
-            "description": "`pending` until the person confirms it (`running`, then `done` or `failed`) or declines it.",
+            "description": "`pending` until confirmed, declined, or reconciled after an interrupted confirmation.",
             "enum": [
               "pending",
               "running",
               "done",
               "failed",
-              "declined"
+              "declined",
+              "uncertain"
             ],
             "title": "Status",
             "type": "string"
@@ -1979,13 +1986,14 @@
             "type": "string"
           },
           "kind": {
-            "description": "`route`, `contract`, `draft`, `event` or `text`.",
+            "description": "The context kind; `check-in` is created only by the durable-session flow.",
             "enum": [
               "route",
               "contract",
               "draft",
               "event",
-              "text"
+              "text",
+              "check-in"
             ],
             "title": "Kind",
             "type": "string"
@@ -1996,6 +2004,31 @@
             "maxLength": 300,
             "title": "Ref",
             "type": "string"
+          },
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The idempotency key for opening a scoped durable check-in conversation.",
+            "title": "Request Id"
+          },
+          "timezone": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The user's selected time zone for a proposed check-in schedule.",
+            "title": "Timezone"
           }
         },
         "required": [
@@ -2202,6 +2235,18 @@
             ],
             "description": "Tokens produced, if reported.",
             "title": "Output Tokens"
+          },
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The stable client id for a retriable message; absent for older and generic chats.",
+            "title": "Request Id"
           },
           "role": {
             "description": "`user`, `assistant`, or `action`: what a confirmed or declined action did.",
@@ -3624,6 +3669,18 @@
             "title": "Installed",
             "type": "boolean"
           },
+          "installed_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The hz version in the last install marker; a successful service-manager command is not proof that this code ran.",
+            "title": "Installed Version"
+          },
           "interval_minutes": {
             "anyOf": [
               {
@@ -3678,12 +3735,12 @@
                 "type": "null"
               }
             ],
-            "description": "The hz version the daemon was started with (installed or last restarted); none if it isn't installed or was installed by an older hz.",
+            "description": "The hz version observed in the last tick whose PID matched the installed service manager; none when the process manager could not verify the invocation.",
             "title": "Version"
           },
           "version_mismatch": {
             "default": false,
-            "description": "Whether `version` differs from the hz that answers: after `hz system update` the daemon should be restarted (`hz system daemon restart`).",
+            "description": "Whether the install marker or the last observed tick differs from the hz that answers, or whether the tick and install marker disagree.",
             "title": "Version Mismatch",
             "type": "boolean"
           }
@@ -7219,7 +7276,8 @@
           "failed",
           "doctor",
           "release",
-          "test"
+          "test",
+          "heinzel"
         ],
         "title": "NoticeKind",
         "type": "string"
@@ -9447,6 +9505,11 @@
             "description": "Machine CPU usage, 0 to 100 percent.",
             "title": "Cpu Percent"
           },
+          "hostname": {
+            "description": "Hostname of the machine running hz.",
+            "title": "Hostname",
+            "type": "string"
+          },
           "load_1m": {
             "anyOf": [
               {
@@ -9503,6 +9566,7 @@
           }
         },
         "required": [
+          "hostname",
           "sampled_at",
           "cpu_percent",
           "memory_percent",
@@ -9541,7 +9605,7 @@
         "type": "object"
       },
       "Restarted": {
-        "description": "What `restart` did.",
+        "description": "What `restart` asked the service manager to reload; a later tick reports the code that actually ran.",
         "properties": {
           "interval_minutes": {
             "anyOf": [
@@ -9561,7 +9625,7 @@
             "type": "boolean"
           },
           "version": {
-            "description": "The hz version the daemon runs with now.",
+            "description": "The hz version in the unit the service manager was asked to load.",
             "title": "Version",
             "type": "string"
           }
@@ -14422,6 +14486,111 @@
         "title": "heinzel_profile_Input",
         "type": "object"
       },
+      "heinzel_propose_check_in_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "request_id": {
+            "description": "A stable client request id; reuse it only for an exact retry.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "session_id": {
+            "description": "The stable personal session id returned by new-chat or sessions.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "timezone": {
+            "default": "UTC",
+            "description": "The IANA time zone for the schedule preview.",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Timezone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "request_id"
+        ],
+        "title": "heinzel_propose_check_in_Input",
+        "type": "object"
+      },
+      "heinzel_schedule_control_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "description": "Explicitly activate the proposal, pause it, or resume a paused schedule.",
+            "enum": [
+              "activate",
+              "pause",
+              "resume"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "approval_proof": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Human-issued exact-intent proof required to activate or resume; never returned by reads. On CLI, pass `-` to read it from hidden input or stdin.",
+            "title": "Approval Proof"
+          },
+          "expected_contract_version": {
+            "default": 1,
+            "description": "The contract version in the schedule preview.",
+            "minimum": 1.0,
+            "title": "Expected Contract Version",
+            "type": "integer"
+          },
+          "expected_preview_hash": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The preview hash shown for this exact schedule.",
+            "title": "Expected Preview Hash"
+          },
+          "expected_revision": {
+            "description": "The schedule revision you last inspected.",
+            "minimum": 1.0,
+            "title": "Expected Revision",
+            "type": "integer"
+          },
+          "request_id": {
+            "description": "A stable client request id; reuse it only for an exact retry.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "session_id": {
+            "description": "The stable personal session id returned by new-chat or sessions.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "request_id",
+          "expected_revision",
+          "action"
+        ],
+        "title": "heinzel_schedule_control_Input",
+        "type": "object"
+      },
       "system_state_push_Input": {
         "additionalProperties": false,
         "properties": {},
@@ -15163,6 +15332,90 @@
           }
         },
         "summary": "Save this Heinzel's name or look against the exact profile revision you saw.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/propose-check-in": {
+      "post": {
+        "description": "Propose local five-minute check-ins; the schedule stays inactive until activated.",
+        "operationId": "heinzel_propose_check_in",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/heinzel_propose_check_in_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionSnapshot"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Propose local five-minute check-ins; the schedule stays inactive until activated.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/schedule-control": {
+      "post": {
+        "description": "Pause a schedule; activation and resume require an exact-intent approval from a trusted issuer.\n\nRaises:\n    HeinzelError: If the schedule is stale or approval is invalid or unavailable.",
+        "operationId": "heinzel_schedule_control",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/heinzel_schedule_control_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionSnapshot"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Pause a schedule; activation and resume require an exact-intent approval from a trusted issuer.",
         "tags": [
           "heinzel"
         ]
@@ -16338,7 +16591,7 @@
     },
     "/system/daemon/status": {
       "get": {
-        "description": "Show whether the daemon is installed, loaded and paused, its last tick and failing jobs.",
+        "description": "Check-ins need a resumed daemon with 5m ticks and a matching service version.\n\nFor five-minute check-ins, the daemon must be installed and tick every five minutes or faster. If it is absent,\n`hz system daemon install --interval 5m` installs a persistent login service; the schedule stays dormant until\nit is installed and a service-managed tick is observed. If paused, run `hz system daemon resume`. If its service\ntick version is unknown or mismatched, run `hz system daemon restart` and wait until a service-managed tick\nrecords the installed version; a manual tick cannot establish that proof. Use the install command to correct a\nslower cadence.",
         "operationId": "system_daemon_status",
         "responses": {
           "200": {
@@ -16352,7 +16605,7 @@
             "description": "Successful Response"
           }
         },
-        "summary": "Show whether the daemon is installed, loaded and paused, its last tick and failing jobs.",
+        "summary": "Check-ins need a resumed daemon with 5m ticks and a matching service version.",
         "tags": [
           "system"
         ]
@@ -17348,6 +17601,62 @@
         ]
       }
     },
+    "/system/runner/chat/authorize-for-mcp": {
+      "post": {
+        "description": "Authorize one reviewed schedule action for a single MCP run; keep its proof private.\n\nCLI requires an interactive terminal and an action-scoped typed confirmation. The paired web action is the\nbrowser's explicit review button.\n\nRaises:\n    HeinzelError: If CLI lacks a controlling terminal or the action was not confirmed.",
+        "operationId": "system_runner_chat_authorize_for_mcp",
+        "parameters": [
+          {
+            "description": "The chat session's id, from `hz chat list`.",
+            "in": "query",
+            "name": "session",
+            "required": true,
+            "schema": {
+              "description": "The chat session's id, from `hz chat list`.",
+              "title": "Session",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The proposed action's id, e.g. `a1`.",
+            "in": "query",
+            "name": "action",
+            "required": true,
+            "schema": {
+              "description": "The proposed action's id, e.g. `a1`.",
+              "title": "Action",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatSession"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Authorize one reviewed schedule action for a single MCP run; keep its proof private.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
     "/system/runner/chat/confirm": {
       "post": {
         "description": "Run an action the agent proposed, with exactly the arguments shown; only you can confirm.\n\nRaises:\n    HeinzelError: If there is no such pending action.",
@@ -17556,6 +17865,233 @@
         ]
       }
     },
+    "/system/runner/chat/open-check-in": {
+      "post": {
+        "description": "Open a runner chat bound to this owner's durable session and current conversation history.",
+        "operationId": "system_runner_chat_open_check_in",
+        "parameters": [
+          {
+            "description": "The durable personal session id from `hz heinzel sessions` or the personal Heinzel page.",
+            "in": "query",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "description": "The durable personal session id from `hz heinzel sessions` or the personal Heinzel page.",
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "A stable id for opening or resuming this scoped chat.",
+            "in": "query",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "description": "A stable id for opening or resuming this scoped chat.",
+              "title": "Request Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The IANA time zone to use for this schedule preview.",
+            "in": "query",
+            "name": "timezone",
+            "required": true,
+            "schema": {
+              "description": "The IANA time zone to use for this schedule preview.",
+              "title": "Timezone",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatSession"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Open a runner chat bound to this owner's durable session and current conversation history.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/runner/chat/propose-schedule-control": {
+      "post": {
+        "description": "Stage a schedule action for review in chat; creating the proposal never changes or activates it.",
+        "operationId": "system_runner_chat_propose_schedule_control",
+        "parameters": [
+          {
+            "description": "The personal Heinzel whose schedule you read.",
+            "in": "query",
+            "name": "durable_session",
+            "required": true,
+            "schema": {
+              "description": "The personal Heinzel whose schedule you read.",
+              "title": "Durable Session",
+              "type": "string"
+            }
+          },
+          {
+            "description": "A stable id for this schedule action.",
+            "in": "query",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "description": "A stable id for this schedule action.",
+              "title": "Request Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The schedule revision you inspected.",
+            "in": "query",
+            "name": "expected_revision",
+            "required": true,
+            "schema": {
+              "description": "The schedule revision you inspected.",
+              "title": "Expected Revision",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "The exact schedule change to review.",
+            "in": "query",
+            "name": "action",
+            "required": true,
+            "schema": {
+              "description": "The exact schedule change to review.",
+              "enum": [
+                "activate",
+                "resume"
+              ],
+              "title": "Action",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The contract version shown in the preview.",
+            "in": "query",
+            "name": "expected_contract_version",
+            "required": true,
+            "schema": {
+              "description": "The contract version shown in the preview.",
+              "title": "Expected Contract Version",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "The preview hash shown in the schedule details.",
+            "in": "query",
+            "name": "expected_preview_hash",
+            "required": true,
+            "schema": {
+              "description": "The preview hash shown in the schedule details.",
+              "title": "Expected Preview Hash",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatSession"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Stage a schedule action for review in chat; creating the proposal never changes or activates it.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/runner/chat/recover": {
+      "post": {
+        "description": "Check an interrupted confirmation without running it again; unresolved outcomes stay blocked.\n\nRaises:\n    HeinzelError: If the chat is busy or the selected action is not interrupted.",
+        "operationId": "system_runner_chat_recover",
+        "parameters": [
+          {
+            "description": "The chat session's id, from `hz chat list`.",
+            "in": "query",
+            "name": "session",
+            "required": true,
+            "schema": {
+              "description": "The chat session's id, from `hz chat list`.",
+              "title": "Session",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The proposed action's id, e.g. `a1`.",
+            "in": "query",
+            "name": "action",
+            "required": true,
+            "schema": {
+              "description": "The proposed action's id, e.g. `a1`.",
+              "title": "Action",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatSession"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Check an interrupted confirmation without running it again; unresolved outcomes stay blocked.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
     "/system/runner/chat/remove": {
       "post": {
         "description": "Delete a chat session and everything it holds; returns the sessions left.\n\nRaises:\n    HeinzelError: If there is no such session.",
@@ -17692,6 +18228,24 @@
               ],
               "description": "The effort this chat uses from now on: low, medium, high, xhigh or max; empty: the default.",
               "title": "Effort"
+            }
+          },
+          {
+            "description": "Stable id for a safe exact-message retry.",
+            "in": "query",
+            "name": "request_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Stable id for a safe exact-message retry.",
+              "title": "Request Id"
             }
           }
         ],

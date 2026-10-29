@@ -6,6 +6,7 @@ from mcp import Client
 
 from heinzel import HeinzelError, Module, Skills
 from heinzel.heads import mcp
+from heinzel.modules.system.runner.chat._service import ChatService
 
 pytestmark = pytest.mark.unit
 
@@ -41,6 +42,7 @@ def test_stdio_serves_each_skill_as_a_prompt_and_its_files_as_resources(make_ker
 @pytest.mark.parametrize(("transport", "chat"), [("streamable-http", None), ("stdio", "0123456789abcdef")])
 def test_http_and_chat_servers_offer_no_skills(make_kernel, tmp_path, transport, chat):
     kernel = make_kernel(builtins=True, notes=notes(tmp_path))
+    chat = kernel.resolve(ChatService).open(None).id if chat is not None else None
 
     async def listed() -> tuple[int, int]:
         async with Client(mcp.build(kernel, transport, chat=chat)) as client:
@@ -67,6 +69,7 @@ def test_a_file_changed_since_import_is_a_resource_error(make_kernel, tmp_path):
 @pytest.mark.parametrize("chat", [None, "0123456789abcdef"])
 def test_no_mcp_tool_lists_or_shows_skills_so_a_chat_reads_only_its_own(make_kernel, tmp_path, chat):
     kernel = make_kernel(builtins=True, notes=notes(tmp_path))
+    chat = kernel.resolve(ChatService).open(None).id if chat is not None else None
 
     async def tools() -> set[str]:
         async with Client(mcp.build(kernel, chat=chat)) as client:

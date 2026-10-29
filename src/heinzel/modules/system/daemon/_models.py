@@ -110,10 +110,10 @@ class Installed(BaseModel):
 
 
 class Restarted(BaseModel):
-    """What `restart` did."""
+    """What `restart` asked the service manager to reload; a later tick reports the code that actually ran."""
 
     restarted: bool = Field(description="Whether the daemon was reloaded; false if it isn't installed.")
-    version: str = Field(description="The hz version the daemon runs with now.")
+    version: str = Field(description="The hz version in the unit the service manager was asked to load.")
     interval_minutes: int | None = Field(description="Minutes between ticks, as installed; none if not installed.")
 
 
@@ -138,13 +138,18 @@ class DaemonStatus(BaseModel):
     failing: list[str] = Field(description="Jobs whose last run failed or that can't run.")
     version: str | None = Field(
         default=None,
-        description="The hz version the daemon was started with (installed or last restarted); none if it isn't "
-        "installed or was installed by an older hz.",
+        description="The hz version observed in the last tick whose PID matched the installed service manager; none "
+        "when the process manager could not verify the invocation.",
+    )
+    installed_version: str | None = Field(
+        default=None,
+        description="The hz version in the last install marker; a successful service-manager command is not proof "
+        "that this code ran.",
     )
     version_mismatch: bool = Field(
         default=False,
-        description="Whether `version` differs from the hz that answers: after `hz system update` the daemon should "
-        "be restarted (`hz system daemon restart`).",
+        description="Whether the install marker or the last observed tick differs from the hz that answers, or "
+        "whether the tick and install marker disagree.",
     )
 
 

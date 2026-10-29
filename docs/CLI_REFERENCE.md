@@ -233,13 +233,39 @@ $ hz chat [OPTIONS] COMMAND [ARGS]...
 
 **Commands**:
 
+* `authorize-for-mcp`: Authorize one reviewed schedule action for...
 * `confirm`: Run an action the agent proposed, with...
+* `confirm-authorized-mcp`: Run a schedule action once after a person...
 * `decline`: Decline an action the agent proposed; it...
 * `list`: List chat sessions, most recent first;...
 * `open`: Open a chat session, optionally about a...
+* `open-check-in`: Open a runner chat bound to this owner&#x27;s...
+* `propose-schedule-control`: Stage a schedule action for review in...
+* `recover`: Check an interrupted confirmation without...
 * `remove`: (expert) Delete a chat session and...
 * `send`: Send a message in a chat session and wait...
 * `show`: (expert) Show a chat session: its context,...
+
+### `hz chat authorize-for-mcp`
+
+Authorize one reviewed schedule action for a single MCP run; keep its proof private.
+
+**Usage**:
+
+```console
+$ hz chat authorize-for-mcp [OPTIONS] {session} {action}
+```
+
+**Arguments**:
+
+* `session`: The chat session&#x27;s id, from `hz chat list`.  [required]
+* `action`: The proposed action&#x27;s id, e.g. `a1`.  [required]
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
 
 ### `hz chat confirm`
 
@@ -249,6 +275,27 @@ Run an action the agent proposed, with exactly the arguments shown; only you can
 
 ```console
 $ hz chat confirm [OPTIONS] {session} {action}
+```
+
+**Arguments**:
+
+* `session`: The chat session&#x27;s id, from `hz chat list`.  [required]
+* `action`: The proposed action&#x27;s id, e.g. `a1`.  [required]
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz chat confirm-authorized-mcp`
+
+Run a schedule action once after a person authorized it; accept no proof here.
+
+**Usage**:
+
+```console
+$ hz chat confirm-authorized-mcp [OPTIONS] {session} {action}
 ```
 
 **Arguments**:
@@ -317,6 +364,74 @@ $ hz chat open [OPTIONS]
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
 
+### `hz chat open-check-in`
+
+Open a runner chat bound to this owner&#x27;s durable session and current conversation history.
+
+**Usage**:
+
+```console
+$ hz chat open-check-in [OPTIONS] {session_id} {request_id} {timezone}
+```
+
+**Arguments**:
+
+* `session_id`: The durable personal session id from `hz heinzel sessions` or the personal Heinzel page.  [required]
+* `request_id`: A stable id for opening or resuming this scoped chat.  [required]
+* `timezone`: The IANA time zone to use for this schedule preview.  [required]
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz chat propose-schedule-control`
+
+Stage a schedule action for review in chat; creating the proposal never changes or activates it.
+
+**Usage**:
+
+```console
+$ hz chat propose-schedule-control [OPTIONS] {durable_session} {request_id} {expected_revision} {action}:<activate|resume> {expected_contract_version} {expected_preview_hash}
+```
+
+**Arguments**:
+
+* `durable_session`: The personal Heinzel whose schedule you read.  [required]
+* `request_id`: A stable id for this schedule action.  [required]
+* `expected_revision`: The schedule revision you inspected.  [required]
+* `action:<activate|resume>`: The exact schedule change to review.  [required]
+* `expected_contract_version`: The contract version shown in the preview.  [required]
+* `expected_preview_hash`: The preview hash shown in the schedule details.  [required]
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz chat recover`
+
+Check an interrupted confirmation without running it again; unresolved outcomes stay blocked.
+
+**Usage**:
+
+```console
+$ hz chat recover [OPTIONS] {session} {action}
+```
+
+**Arguments**:
+
+* `session`: The chat session&#x27;s id, from `hz chat list`.  [required]
+* `action`: The proposed action&#x27;s id, e.g. `a1`.  [required]
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
 ### `hz chat remove`
 
 (expert) Delete a chat session and everything it holds; returns the sessions left.
@@ -357,6 +472,7 @@ $ hz chat send [OPTIONS] {session} {message}
 * `--budget-usd <float>`: Most this answer may cost in US dollars, within the per-message and session caps.
 * `--model <str>`: The model this chat uses from now on, one `hz ai models` lists, e.g. `sonnet`; empty goes back to the default.
 * `--effort <|low|medium|high|xhigh|max>`: The effort this chat uses from now on: low, medium, high, xhigh or max; empty: the default.
+* `--request-id <str>`: Stable id for a safe exact-message retry.
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
@@ -531,7 +647,9 @@ $ hz heinzel [OPTIONS] COMMAND [ARGS]...
 * `new-chat`: Create a durable personal Heinzel with an...
 * `playbooks`: (expert) List the playbooks plugins...
 * `profile`: Save this Heinzel&#x27;s name or look against...
+* `propose-check-in`: Propose local five-minute check-ins; the...
 * `prune`: (expert) Delete drafts and records older...
+* `schedule-control`: Pause a schedule; activation and resume...
 * `sent`: (expert) Record how much of a draft you...
 * `session`: Open one durable Heinzel and an ordered...
 * `sessions`: List your durable personal Heinzels,...
@@ -734,6 +852,28 @@ $ hz heinzel profile [OPTIONS] {session_id} {request_id} {expected_revision}
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
 
+### `hz heinzel propose-check-in`
+
+Propose local five-minute check-ins; the schedule stays inactive until activated.
+
+**Usage**:
+
+```console
+$ hz heinzel propose-check-in [OPTIONS] {session_id} {request_id}
+```
+
+**Arguments**:
+
+* `session_id`: [required]
+* `request_id`: [required]
+
+**Options**:
+
+* `--timezone <str>`: The IANA time zone for the schedule preview.  [default: UTC]
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
 ### `hz heinzel prune`
 
 (expert) Delete drafts and records older than ` retention_days` (default 90); receipts are kept.
@@ -747,6 +887,32 @@ $ hz heinzel prune [OPTIONS]
 **Options**:
 
 * `--dry-run / --no-dry-run`: Only list what would be deleted; delete nothing.  [default: no-dry-run]
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz heinzel schedule-control`
+
+Pause a schedule; activation and resume require an exact-intent approval from a trusted issuer.
+
+**Usage**:
+
+```console
+$ hz heinzel schedule-control [OPTIONS] {session_id} {request_id} {expected_revision} {action}:<activate|pause|resume>
+```
+
+**Arguments**:
+
+* `session_id`: [required]
+* `request_id`: [required]
+* `expected_revision`: The schedule revision you last inspected.  [required]
+* `action:<activate|pause|resume>`: Explicitly activate the proposal, pause it, or resume a paused schedule.  [required]
+
+**Options**:
+
+* `--approval-proof <str>`: Human-issued exact-intent proof required to activate or resume; never returned by reads. On CLI, pass `-` to read it from hidden input or stdin.
+* `--expected-contract-version <int>`: The contract version in the schedule preview.  [default: 1]
+* `--expected-preview-hash <str>`: The preview hash shown for this exact schedule.
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
@@ -1690,7 +1856,7 @@ $ hz system daemon [OPTIONS] COMMAND [ARGS]...
 * `pause`: (expert) Pause the daemon: ticks run no...
 * `restart`: (expert) Restart the daemon so it runs...
 * `resume`: (expert) Resume a paused daemon.
-* `status`: (expert) Show whether the daemon is...
+* `status`: (expert) Check-ins need a resumed daemon...
 * `tick`: (expert) Run the jobs that are due and...
 * `uninstall`: (expert) Unload and remove the daemon&#x27;s...
 
@@ -1795,7 +1961,7 @@ $ hz system daemon resume [OPTIONS]
 
 #### `hz system daemon status`
 
-(expert) Show whether the daemon is installed, loaded and paused, its last tick and failing jobs.
+(expert) Check-ins need a resumed daemon with 5m ticks and a matching service version.
 
 **Usage**:
 
@@ -2532,7 +2698,7 @@ $ hz system serve mcp [OPTIONS]
 * `--port <int>`: Port for streamable-http.  [default: 8765]
 * `--chat SESSION`: Serve the tools of this chat session: reads run, everything else waits for your confirmation in the chat. Started by `hz chat` for its agent, over stdio only.
 * `--project <path>`: Read the configuration as if started in this directory (its hz.toml), as the chat does.
-* `--chat-tools <everyday|all>`: With --chat: the everyday operations as tools (cheaper messages), or all of them.  [default: everyday]
+* `--chat-tools <everyday|all|personal-check-in>`: With --chat: the everyday operations as tools (cheaper messages), or all of them.  [default: everyday]
 * `--help`: Show this message and exit.
 
 ### `hz system skill`

@@ -26,6 +26,7 @@ def daemon(**fields: object) -> DaemonStatus:
         "jobs": 3,
         "failing": [],
         "version": __version__,
+        "installed_version": __version__,
     }
     return DaemonStatus.model_validate(values | fields)
 
@@ -38,7 +39,12 @@ def test_running_says_when_it_ticks_next():
     item = status_item(daemon(), NOW)
     assert (item.text, item.tone, labels(item)) == ("Daemon running · next tick", "ok", ["Logs", "Pause", "Uninstall"])
     assert item.live == LiveTime(at=NOW + timedelta(minutes=3))
-    assert [line.text for line in item.detail] == ["Jobs: 3", f"Daemon version {__version__}", "Last tick 2 min ago"]
+    assert [line.text for line in item.detail] == [
+        "Jobs: 3",
+        f"Last service tick ran hz {__version__}",
+        f"Unit records hz {__version__}",
+        "Last tick 2 min ago",
+    ]
 
 
 def test_paused_warns_and_offers_resume():
@@ -89,25 +95,31 @@ def test_other_platforms_are_unsupported():
     assert (item.text, item.actions) == ("Daemon unsupported here", [])
 
 
-def test_the_version_the_daemon_started_with_is_shown():
+def test_the_version_reported_by_the_last_tick_is_shown():
     item = status_item(daemon(version=__version__), NOW)
-    assert [line.text for line in item.detail][1] == f"Daemon version {__version__}"
+    assert [line.text for line in item.detail][1] == f"Last service tick ran hz {__version__}"
     assert (item.text, item.tone, labels(item)) == ("Daemon running · next tick", "ok", ["Logs", "Pause", "Uninstall"])
 
 
-def test_an_old_install_without_a_version_can_be_restarted_to_record_it():
+def test_unknown_last_tick_version_offers_a_restart():
     item = status_item(daemon(version=None), NOW)
-    assert "Daemon version unknown · restart it to record its version" in [line.text for line in item.detail]
+    assert "Service tick version unknown · restart and wait for a tick to record it" in [
+        line.text for line in item.detail
+    ]
     assert labels(item)[0] == "Restart daemon"
     assert item.tone == "ok"
 
 
-def test_a_daemon_from_an_older_hz_warns_and_offers_a_restart():
-    item = status_item(daemon(version="0.0.1", version_mismatch=True), NOW)
+def test_a_tick_from_an_older_hz_warns_and_offers_a_restart():
+    item = status_item(daemon(version="0.0.1", installed_version="0.0.1", version_mismatch=True), NOW)
     assert (item.text, item.tone, labels(item)) == (
-        "Daemon needs a restart", "warn", ["Restart daemon", "Logs", "Pause", "Uninstall"],
+        "Daemon version mismatch · restart and wait for a tick",
+        "warn",
+        ["Restart daemon", "Logs", "Pause", "Uninstall"],
     )  # fmt: skip
-    assert f"Daemon runs hz 0.0.1, not the installed {__version__}: restart it" in [line.text for line in item.detail]
+    assert f"Unit 0.0.1; service tick 0.0.1; current {__version__}: restart and wait for tick" in [
+        line.text for line in item.detail
+    ]
     restart = item.actions[0].effect
     assert isinstance(restart, RunOperation)
     assert restart.operation == "restart"

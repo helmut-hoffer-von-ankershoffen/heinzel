@@ -33,6 +33,8 @@ from heinzel.kernel._session_io import (
     encoded,
     identifier,
     open_file,
+    read_checkpoint,
+    replace_checkpoint,
     scan,
     temporary_name,
 )
@@ -387,6 +389,22 @@ class SessionWriter:
         if not self.active:
             msg = "A session writer can only be used inside its writer context"
             raise HeinzelError(msg)
+
+    def checkpoint(self, name: str) -> dict[str, JsonValue] | None:
+        """Read a scoped atomic checkpoint while holding this session's writer lock."""
+        self._require_active()
+        return read_checkpoint(self.folder, name)
+
+    def replace_checkpoint(self, name: str, value: dict[str, JsonValue]) -> None:
+        """Durably replace a bounded session checkpoint without appending audit-history events.
+
+        Raises:
+            HeinzelError: If the checkpoint name or payload is unsafe or exceeds the storage limit.
+            OSError: If the private file cannot be atomically replaced or synced.
+        """
+        self._require_active()
+        payload = PROJECTION.validate_python(value, strict=True)
+        replace_checkpoint(self.folder, name, payload)
 
     def append(
         self,
