@@ -21,6 +21,7 @@ from heinzel.kernel._approval import (
     arguments_hash,
     consume_approval,
 )
+from heinzel.modules.heinzel._configured_api_binding import ConfiguredApiSnapshot
 from heinzel.modules.heinzel._session_bodies import immutable_body
 from heinzel.modules.heinzel._session_crud import SessionCrud
 from heinzel.modules.heinzel._session_models import RequestId, SessionId
@@ -35,6 +36,7 @@ class ModelGrant(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     request_id: RequestId
     revision: int = Field(ge=1)
+    binding: ConfiguredApiSnapshot | None = None
     access: str = Field(min_length=1, max_length=100)
     model: str = Field(min_length=1, max_length=128)
     requests: int = Field(ge=1, le=100)
@@ -172,6 +174,7 @@ class ModelGrants:
                     exclude=(
                         ({"allowed_tools"} if not grant.allowed_tools else set())
                         | ({"allowed_skill_tools"} if not grant.allowed_skill_tools else set())
+                        | ({"binding"} if grant.binding is None else set())
                     ),
                 )
             ),

@@ -26,7 +26,7 @@ export function ModelPolicyReviewCard({ action, sessionId }: { action: SchemaCha
       <pre className="overflow-x-auto whitespace-pre-wrap break-all rounded bg-background p-2 text-xs">
         {JSON.stringify(review, null, 2)}
       </pre>
-      <p>Approval is unavailable until the selected access and account binding can be verified.</p>
+      <p>Approval is unavailable here until the selected access and credential binding are verified.</p>
     </section>
   );
 }

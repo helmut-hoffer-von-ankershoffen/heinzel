@@ -19,6 +19,7 @@ from heinzel import CurrentUser, HeinzelError, SessionEvent
 from heinzel.modules.ai.access._pydantic import PydanticAiAccess
 from heinzel.modules.heinzel._budget_reservation import initialize_budget
 from heinzel.modules.heinzel._claude_subscription_model import ClaudeSubscriptionModel
+from heinzel.modules.heinzel._configured_api_binding import ConfiguredApiBinding
 from heinzel.modules.heinzel._engine import EngineCheckpoint, TurnAuthority, TurnDeps, TurnLimits, run_turn
 from heinzel.modules.heinzel._host_tools import HostToolCatalog, OperationFailedError
 from heinzel.modules.heinzel._model_admission import ConnectedModelFactory, connected_model
@@ -139,7 +140,14 @@ class InteractiveTurn:
         ):
             msg = "The reserved model binding cannot be verified"
             raise HeinzelError(msg)
-        model = factory.priced_turn_model(current, grant.model)
+        approved_binding = grant.binding
+        if approved_binding is None:
+            msg = "This model grant has no configured access binding"
+            raise HeinzelError(msg)
+        binding = ConfiguredApiBinding(current, factory)
+        lease = binding.lease()
+        model = lease.build_approved(approved_binding)
+        binding.recheck(approved_binding)
         costs = self._crud.costs()
         if costs.unknown_turns or costs.spent_usd:
             msg = "Existing model usage requires reconciliation before a reserved turn"
@@ -147,6 +155,7 @@ class InteractiveTurn:
         initialize_budget(self._crud.repository, session_id)
 
         def verify_grant() -> None:
+            binding.recheck(approved_binding)
             if ModelGrants(self._crud).approved(session_id) != grant:
                 msg = "The approved model grant changed during this turn"
                 raise HeinzelError(msg)

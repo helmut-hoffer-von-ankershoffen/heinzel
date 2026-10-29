@@ -16,8 +16,9 @@ from heinzel.kernel import (
     Kernel,
 )
 from heinzel.kernel._approval import ApprovalConfirmation, ApprovalIssuer
+from heinzel.modules.heinzel._configured_api_binding import ConfiguredApiBinding
 from heinzel.modules.heinzel._model_grants import ModelGrants
-from heinzel.modules.heinzel._model_policy_operations import register_model_policy_operations
+from heinzel.modules.heinzel._model_policy_operations import ModelPolicyService, register_model_policy_operations
 from heinzel.modules.heinzel._models import HeinzelSettings
 from heinzel.modules.heinzel._session_crud import SessionCrud
 from heinzel.modules.heinzel._session_models import (
@@ -61,9 +62,10 @@ def _crud(current: CurrentUser) -> SessionCrud:
 class _SessionApprovalIssuer(ApprovalIssuer):
     """Require a current version observed in a daemon tick before issuing exact schedule approval."""
 
-    def __init__(self, service: SessionCrud, daemon: DaemonAttestation | None) -> None:
+    def __init__(self, service: SessionCrud, daemon: DaemonAttestation | None, kernel: Kernel | None = None) -> None:
         self.service = service
         self.daemon = daemon
+        self.kernel = kernel
 
     def _check_daemon(self, module: str, operation: str, arguments: dict[str, JsonValue]) -> None:
         if (
@@ -101,14 +103,21 @@ class _SessionApprovalIssuer(ApprovalIssuer):
 
     def review(self, module: str, operation: str, arguments: dict[str, JsonValue]) -> dict[str, JsonValue]:
         if module == "heinzel" and operation == "approve-model-grant":
-            return ModelGrants(self.service).review(*self._model_args(arguments)).model_dump(mode="json")
+            if self.kernel is None:
+                msg = "Configured model policy review is unavailable"
+                raise HeinzelError(msg)
+            return (
+                ModelPolicyService(self.service, self.kernel.resolve(ConfiguredApiBinding))
+                .review(*self._model_args(arguments))
+                .proposal
+            )
         self._check_daemon(module, operation, arguments)
         return self.service.review(module, operation, arguments)
 
     def issue(self, module: str, operation: str, arguments: dict[str, JsonValue], provenance: str) -> str:
         if module == "heinzel" and operation == "approve-model-grant":
             session, request = self._model_args(arguments)
-            if arguments.get("review") != ModelGrants(self.service).review(session, request).model_dump(mode="json"):
+            if arguments.get("review") != self.review(module, operation, arguments):
                 msg = "The reviewed model policy changed"
                 raise HeinzelError(msg)
             return ModelGrants(self.service).issue(session, request, provenance)
@@ -124,7 +133,7 @@ class _SessionApprovalIssuer(ApprovalIssuer):
 def _approval_issuer(service: SessionCrud, kernel: Kernel) -> ApprovalIssuer:
     """Expose the internal issuer only as a kernel service, never as a callable operation."""
     daemon = kernel.resolve(DaemonAttestation) if kernel.provides(DaemonAttestation) else None
-    return _SessionApprovalIssuer(service, daemon)
+    return _SessionApprovalIssuer(service, daemon, kernel)
 
 
 def _approval_confirmation() -> ApprovalConfirmation:

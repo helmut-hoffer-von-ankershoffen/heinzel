@@ -5,8 +5,11 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field, JsonValue, ValidationError
 
-from heinzel import HeinzelError, Module
+from heinzel import Credentials, CurrentUser, HeinzelError, Module, Settings
 from heinzel.kernel._approval import ApprovalConfirmation
+from heinzel.modules.ai.access._models import AccessSettings
+from heinzel.modules.ai.access._pydantic import PydanticAiAccess
+from heinzel.modules.heinzel._configured_api_binding import ConfiguredApiBinding
 from heinzel.modules.heinzel._model_grants import ModelGrant, ModelGrants
 from heinzel.modules.heinzel._priced_model import MODEL, resolve_pricing
 from heinzel.modules.heinzel._session_crud import SessionCrud
@@ -27,8 +30,9 @@ class ModelPolicyReview(BaseModel):
 class ModelPolicyService:
     """Validate and stage a policy, or consume a trusted confirmation of its exact intent."""
 
-    def __init__(self, crud: SessionCrud) -> None:
+    def __init__(self, crud: SessionCrud, binding: ConfiguredApiBinding) -> None:
         self.crud = crud
+        self.binding = binding
 
     @staticmethod
     def _supported(grant: ModelGrant, billing: str) -> None:
@@ -46,12 +50,19 @@ class ModelPolicyService:
         Raises:
             HeinzelError: If the proposal is invalid or unsupported.
         """
+        if "binding" in proposal:
+            msg = "Model policy binding is supplied only by the host"
+            raise HeinzelError(msg)
         try:
             grant = ModelGrant.model_validate(proposal)
         except ValidationError:
             msg = "The model policy proposal is invalid"
             raise HeinzelError(msg) from None
         self._supported(grant, billing)
+        grant = grant.model_copy(update={"binding": self.binding.capture()})
+        if grant.binding is None or grant.binding.access != grant.access or grant.binding.model != grant.model:
+            msg = "The model policy does not match the selected access"
+            raise HeinzelError(msg)
         saved = ModelGrants(self.crud).propose(session, grant)
         status: Literal["approved", "proposed"] = (
             "approved" if ModelGrants(self.crud).applied(session, saved.request_id) else "proposed"
@@ -59,9 +70,17 @@ class ModelPolicyService:
         return ModelPolicyReview(session_id=session, status=status, proposal=saved.model_dump(mode="json"))
 
     def review(self, session: str, request: str) -> ModelPolicyReview:
-        """Read a current owner-private proposal, without issuing a proof."""
+        """Read a current owner-private proposal, without issuing a proof.
+
+        Raises:
+            HeinzelError: If the selected access differs from the reviewed binding.
+        """
         grant = ModelGrants(self.crud).review(session, request)
         self._supported(grant, "api-priced")
+        if grant.binding is None:
+            msg = "The model policy has no verified configured access binding"
+            raise HeinzelError(msg)
+        self.binding.recheck(grant.binding)
         return ModelPolicyReview(session_id=session, proposal=grant.model_dump(mode="json"))
 
     def confirm(
@@ -88,32 +107,42 @@ class ModelPolicyService:
         return ModelPolicyReview(session_id=session, status="approved", proposal=grant.model_dump(mode="json"))
 
 
+def _configured_binding(
+    current: CurrentUser, credentials: Credentials, settings: Settings, access: AccessSettings
+) -> ConfiguredApiBinding:
+    return ConfiguredApiBinding(current, PydanticAiAccess(access, credentials, settings))
+
+
 def register_model_policy_operations(module: Module) -> None:
     """Register private policy review; trusted confirmation must stage and issue its own exact proof."""
+    module.service(ConfiguredApiBinding, _configured_binding)
 
     @module.operation(private=True, read_only=False, heads={"web", "api-private"}, audience="everyday")
     def propose_model_policy(
         service: SessionCrud,
+        binding: ConfiguredApiBinding,
         session_id: Annotated[SessionId, Field(description="Owner-bound durable agent session.")],
         billing: Annotated[str, Field(description="Billing policy; only api-priced is currently supported.")],
         proposal: Annotated[dict[str, JsonValue], Field(description="Exact model grant terms and request identity.")],
     ) -> ModelPolicyReview:
         """Stage an inert model policy for independent human review."""
-        return ModelPolicyService(service).propose(session_id, billing, proposal)
+        return ModelPolicyService(service, binding).propose(session_id, billing, proposal)
 
     @module.operation(private=True, heads={"web", "api-private"}, audience="everyday")
     def model_policy(
         service: SessionCrud,
+        binding: ConfiguredApiBinding,
         session_id: Annotated[SessionId, Field(description="Owner-bound durable agent session.")],
         request_id: Annotated[RequestId, Field(description="The exact proposed policy request id.")],
     ) -> ModelPolicyReview:
         """Read the current exact proposed policy; no permission is granted."""
-        return ModelPolicyService(service).review(session_id, request_id)
+        return ModelPolicyService(service, binding).review(session_id, request_id)
 
     @module.operation(private=True, read_only=False, heads={"web", "api-private"}, audience="everyday")
     def approve_model_grant(  # noqa: PLR0913, PLR0917 - exact reviewed terms and trusted proof
         service: SessionCrud,
         confirmation: ApprovalConfirmation,
+        binding: ConfiguredApiBinding,
         session_id: Annotated[SessionId, Field(description="Owner-bound durable agent session.")],
         request_id: Annotated[RequestId, Field(description="The exact proposed policy request id.")],
         review: Annotated[dict[str, JsonValue], Field(description="Exact policy terms displayed in the action card.")],
@@ -122,4 +151,6 @@ def register_model_policy_operations(module: Module) -> None:
         ],
     ) -> ModelPolicyReview:
         """Apply an exact human-confirmed policy; direct callers cannot issue or consume approval."""
-        return ModelPolicyService(service).confirm(confirmation, session_id, request_id, review, approval_proof)
+        return ModelPolicyService(service, binding).confirm(
+            confirmation, session_id, request_id, review, approval_proof
+        )

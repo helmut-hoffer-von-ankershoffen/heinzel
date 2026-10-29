@@ -19,7 +19,6 @@ from heinzel.modules.heinzel._model_grants import ModelGrant, ModelGrants
 from heinzel.modules.heinzel._priced_model import CHECKED
 from heinzel.modules.heinzel._session_crud import SessionCrud
 from heinzel.modules.heinzel._session_models import MessageRequest, SessionCosts
-from heinzel.modules.heinzel._session_operations import _SessionApprovalIssuer
 from heinzel.modules.heinzel._session_repository import PersonalSessionRepository
 
 pytestmark = pytest.mark.unit
@@ -75,15 +74,22 @@ def test_approved_owner_binding_drives_fake_transport_and_survives_restart(tmp_p
     model = OpenAIResponsesModel(
         "gpt-4.1-mini-2025-04-14", provider=OpenAIProvider(api_key="test-only", http_client=client)
     )
-    monkeypatch.setattr("heinzel.modules.ai.access._pydantic.build_reserved_openai", lambda _key: model)
+    from heinzel.modules.heinzel._configured_api_binding import ConfiguredApiBinding
 
+    monkeypatch.setattr(
+        _interactive_turn,
+        "ConfiguredApiBinding",
+        lambda current, access: ConfiguredApiBinding(current, access, build=lambda _key: model),
+    )
+
+    selected = ["pydantic-ai"]
     access = PydanticAiAccess(
         AccessSettings(model="openai:gpt-4.1-mini-2025-04-14"),
         Credentials(EnvironmentBackend(), [("ai.access", API_KEY)]),
         Config.empty().settings(Settings, "hz"),
         build=lambda *_: model,
         installed=lambda _: True,
-        binding=lambda: "pydantic-ai",
+        binding=lambda: selected[0],
         current_settings=lambda: AccessSettings(model="openai:gpt-4.1-mini-2025-04-14"),
     )
     with current.local("cli"):
@@ -95,6 +101,7 @@ def test_approved_owner_binding_drives_fake_transport_and_survives_restart(tmp_p
         grant = ModelGrant(
             request_id="grant-one",
             revision=1,
+            binding=ConfiguredApiBinding(current, access).capture(),
             access="pydantic-ai",
             model="openai:gpt-4.1-mini-2025-04-14",
             requests=2,
@@ -108,21 +115,22 @@ def test_approved_owner_binding_drives_fake_transport_and_survives_restart(tmp_p
         grants.propose(session, grant)
         with pytest.raises(HeinzelError, match="no approved"):
             asyncio.run(InteractiveTurn(crud).run_granted(session, "one", current, access))
-        issuer = _SessionApprovalIssuer(crud, None)
-        arguments = {"session_id": session, "request_id": "grant-one"}
-        assert issuer.review("heinzel", "approve-model-grant", arguments) == grant.model_dump(mode="json")
-        proof = issuer.issue(
-            "heinzel",
-            "approve-model-grant",
-            {**arguments, "review": grant.model_dump(mode="json")},
-            "test-human-decision",
-        )
+        proof = grants.issue(session, "grant-one", "test-human-decision")
         assert grants.approve(session, "grant-one", proof) == grant
         assert grants.approve(session, "grant-one", proof) == grant
         reopened = SessionCrud(
             PersonalSessionRepository(current), lambda: SessionCosts(session_max_usd=2, message_max_usd=0.6)
         )
         assert ModelGrants(reopened).approved(session) == grant
+        monkeypatch.setenv("OPENAI_API_KEY", "rotated-secret")
+        with pytest.raises(HeinzelError, match="binding"):
+            asyncio.run(InteractiveTurn(reopened).run_granted(session, "one", current, access))
+        monkeypatch.setenv("OPENAI_API_KEY", "test-only-secret")
+        selected[0] = "claude-code"
+        with pytest.raises(HeinzelError, match="binding"):
+            asyncio.run(InteractiveTurn(reopened).run_granted(session, "one", current, access))
+        selected[0] = "pydantic-ai"
+        assert not calls
         result = asyncio.run(InteractiveTurn(reopened).run_granted(session, "one", current, access))
         assert result.text == "A durable answer"
         assert calls == ["/v1/responses"]

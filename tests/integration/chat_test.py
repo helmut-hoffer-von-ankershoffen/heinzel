@@ -1609,9 +1609,24 @@ def test_ambiguous_personal_chat_associations_fail_closed(kernel):
             service.open_check_in(session.session_id, "new-open", "UTC", "")
 
 
-def test_model_policy_heads_cannot_self_approve(kernel, tmp_path):
+def configured_policy_binding(kernel, monkeypatch):
+    """Use a real local credential resolver with fixture values; never contact a provider."""
+    from heinzel.modules.ai.access._models import AccessSettings
+    from heinzel.modules.heinzel._configured_api_binding import ConfiguredApiBinding
+    from heinzel.modules.heinzel._priced_model import MODEL
+    from tests.unit.modules.configured_api_binding_test import service as fake_access
+
+    monkeypatch.setenv("OPENAI_API_KEY", "test-policy-key")
+    current = kernel.resolve(CurrentUser)
+    assert isinstance(kernel.resolve(ConfiguredApiBinding), ConfiguredApiBinding)
+    binding = ConfiguredApiBinding(current, fake_access(["pydantic-ai"], [AccessSettings(model=MODEL)]))
+    kernel._instances[ConfiguredApiBinding] = binding
+
+
+def test_model_policy_heads_cannot_self_approve(kernel, tmp_path, monkeypatch):
     from heinzel.modules.heinzel._priced_model import MODEL
 
+    configured_policy_binding(kernel, monkeypatch)
     client = web_client(kernel, tmp_path)
     created = client.post("/api/heinzel/new-chat", headers=AUTH, json={"request_id": "policy-session"})
     assert created.status_code == 200
@@ -1635,7 +1650,8 @@ def test_model_policy_heads_cannot_self_approve(kernel, tmp_path):
     assert client.post("/api/heinzel/propose-model-policy", json=body).status_code == 401
     proposed = client.post("/api/heinzel/propose-model-policy", headers=AUTH, json=body)
     assert proposed.status_code == 200, proposed.text
-    assert proposed.json()["proposal"] == grant
+    assert all(proposed.json()["proposal"][key] == value for key, value in grant.items())
+    reviewed = proposed.json()["proposal"]
     read = client.get(
         "/api/heinzel/model-policy", headers=AUTH, params={"session_id": session_id, "request_id": "policy-request"}
     )
@@ -1644,15 +1660,16 @@ def test_model_policy_heads_cannot_self_approve(kernel, tmp_path):
     denied = client.post(
         "/api/heinzel/approve-model-grant",
         headers=AUTH,
-        json={"session_id": session_id, "request_id": "policy-request", "review": grant, "approval_proof": "fake"},
+        json={"session_id": session_id, "request_id": "policy-request", "review": reviewed, "approval_proof": "fake"},
     )
     assert denied.status_code == 400
     assert "heinzel_approve_model_grant" not in {item.name for item in exposed(kernel, "mcp-stdio")}
 
 
-def test_model_policy_action_card_requires_human_and_never_runs_model(kernel, tmp_path, ran):  # noqa: PLR0915 - one complete decision and replay journey
+def test_model_policy_action_card_requires_human_and_never_runs_model(kernel, tmp_path, ran, monkeypatch):  # noqa: PLR0915 - one complete decision and replay journey
     from heinzel.modules.heinzel._priced_model import MODEL
 
+    configured_policy_binding(kernel, monkeypatch)
     client = web_client(kernel, tmp_path)
     session_id = client.post("/api/heinzel/new-chat", headers=AUTH, json={"request_id": "policy-card"}).json()[
         "session_id"
@@ -1698,7 +1715,7 @@ def test_model_policy_action_card_requires_human_and_never_runs_model(kernel, tm
     chat = staged.json()
     action = next(item for item in chat["actions"] if item["arguments"]["request_id"] == "policy-review")
     assert action["status"] == "pending"
-    assert action["arguments"]["review"] == grant
+    assert action["arguments"]["review"] == proposed.json()["proposal"]
     assert "approval_proof" not in action["arguments"]
     again = client.post("/api/system/runner/chat/propose-model-policy", headers=AUTH, params=params)
     assert again.json()["id"] == chat["id"]
@@ -1724,6 +1741,9 @@ def test_model_policy_action_card_requires_human_and_never_runs_model(kernel, tm
     anyio.run(no_model_authority)
     decision = {"session": chat["id"], "action": action["id"]}
     assert client.post("/api/system/runner/chat/confirm", params=decision).status_code == 401
+    monkeypatch.setenv("OPENAI_API_KEY", "different-policy-key")
+    assert client.post("/api/system/runner/chat/confirm", headers=AUTH, params=decision).status_code == 400
+    monkeypatch.setenv("OPENAI_API_KEY", "test-policy-key")
     confirmed = client.post("/api/system/runner/chat/confirm", headers=AUTH, params=decision)
     assert confirmed.status_code == 200, confirmed.text
     finished = next(item for item in confirmed.json()["actions"] if item["id"] == action["id"])

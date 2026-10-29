@@ -93,7 +93,7 @@ describe("personal conversation links", () => {
     const panel = within(await screen.findByRole("complementary", { name: "Chat" }));
     const card = within(await panel.findByRole("region", { name: "Model policy review" }));
     expect(panel.getAllByRole("region", { name: "Model policy review" })).toHaveLength(1);
-    expect(card.getByText(/selected access and account binding/)).toBeInTheDocument();
+    expect(card.getByText(/selected access and credential binding/)).toBeInTheDocument();
     expect(card.getByText(/openai:example/)).toHaveTextContent('"request_id": "policy-one"');
     expect(card.queryByRole("button")).not.toBeInTheDocument();
     expect(calls.filter((request) => request.method === "POST")).toHaveLength(0);
