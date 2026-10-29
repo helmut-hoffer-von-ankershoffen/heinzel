@@ -19,7 +19,7 @@ try {
   await page.getByRole("button", { name: "Continue to schedule setup" }).click();
   await page.getByLabel("Message your Heinzel").fill("notify me every 5 minutes");
   await page.getByRole("button", { name: "Prepare schedule review" }).click();
-  await page.getByRole("button", { name: "Confirm" }).first().waitFor();
+  await page.getByText(/configured agent runner could not answer/i).waitFor();
 
   const readSchedule = async () =>
     await page.evaluate(async () => {
@@ -31,14 +31,16 @@ try {
       if (!response.ok) throw new Error(`Isolated schedule read failed: ${response.status}`);
       return response.json();
     });
-  const beforeProposalApproval = await readSchedule();
-  if (beforeProposalApproval.schedule !== null) throw new Error("Schedule changed before the proposal was confirmed");
+  const beforeProposal = await readSchedule();
+  if (beforeProposal.schedule !== null) throw new Error("An unverified runner changed the schedule");
+  if (await page.getByRole("button", { name: "Confirm", exact: true }).count())
+    throw new Error("An unverified runner produced an approval action");
 
-  await page.getByRole("button", { name: "Confirm" }).first().click();
+  await page.getByRole("button", { name: "Propose check-in schedule" }).click();
   await page.getByText("proposed", { exact: true }).waitFor();
   const inactive = await readSchedule();
   if (inactive.schedule?.status !== "proposed")
-    throw new Error("First confirmation did not leave an inactive proposal");
+    throw new Error("Explicit proposal did not leave the schedule inactive");
   await page.getByRole("button", { name: "Review activation in chat" }).click();
   await page.getByRole("button", { name: "Confirm" }).first().waitFor();
   const beforeActivationApproval = await readSchedule();
@@ -46,7 +48,7 @@ try {
   await page.getByRole("button", { name: "Confirm" }).first().click();
   await page.getByText("active", { exact: true }).waitFor();
   const active = await readSchedule();
-  if (active.schedule?.status !== "active") throw new Error("Second human confirmation did not activate schedule");
+  if (active.schedule?.status !== "active") throw new Error("Human confirmation did not activate schedule");
   console.log(JSON.stringify({ browser: "approved", session: active.session_id }));
 } catch (error) {
   const message = error instanceof Error ? (error.stack ?? error.message) : String(error);
