@@ -134,6 +134,11 @@ try {
   }
   await page.keyboard.press("Escape");
   await wizard.waitFor({ state: "detached" });
+  // Closing the modal can restore focus to a footer trigger, whose viewport popover may cover the account menu.
+  // Dismiss that real overlay and wait for its leave behavior before beginning the next pointer interaction.
+  await page.keyboard.press("Escape");
+  await page.mouse.move(0, 0);
+  await page.getByRole("region", { name: /^v\d/ }).waitFor({ state: "hidden" });
   // Doctor is hz itself, not work: it is in the account menu, not the navigation.
   await page.getByRole("button", { name: /Mira/ }).click();
   await page.getByRole("menuitem", { name: "Check this machine" }).click();
