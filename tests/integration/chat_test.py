@@ -316,47 +316,21 @@ def test_runner_chat_can_only_propose_the_bound_inactive_check_in(kernel, script
             "message-checkin-001",
             "--json",
         )
-        assert sent.exit_code == 0, sent.output
-        answer = json.loads(sent.output)
-        assert "Keep our notes local." in script.contracts[-1]
-        assert "only prepare the standard local five-minute check-in" in script.contracts[-1]
-        assert answer["actions"][0]["status"] == "pending"
-        assert answer["actions"][0]["module"] == "heinzel"
-        assert answer["actions"][0]["operation"] == "propose-check-in"
-        assert answer["actions"][0]["arguments"] == {
-            "session_id": durable.session_id,
-            "request_id": "runner-checkin-001",
-            "timezone": timezone,
-        }
-        prompt_count = len(script.prompts)
-        retried = hz(
-            kernel,
-            "chat",
-            "send",
-            chat["id"],
-            "notify me every 5 minutes",
-            "--request-id",
-            "message-checkin-001",
-            "--json",
-        )
-        assert retried.exit_code == 0, retried.output
-        assert len(script.prompts) == prompt_count
-        changed = hz(
-            kernel,
-            "chat",
-            "send",
-            chat["id"],
-            "notify me every ten minutes",
-            "--request-id",
-            "message-checkin-001",
-            "--json",
-        )
-        assert changed.exit_code == 1
-        assert "already identifies different message text" in changed.output
-        assert len(script.prompts) == prompt_count
-        confirmed = service.confirm(chat["id"], answer["actions"][0]["id"])
-        assert confirmed.actions[0].status == "done"
-        assert crud.snapshot(durable.session_id).schedule.status == "proposed"
+        assert sent.exit_code == 1
+        assert "runner isolation and grants are verified" in sent.output
+        assert script.prompts == []
+        unchanged = service._store.load(chat["id"])
+        assert not unchanged.messages
+        assert not unchanged.actions
+        assert unchanged.costs.spent_usd == 0
+        with pytest.raises(HeinzelError, match="runner isolation and grants"):
+            service._run(None, unchanged, 1.0)  # type: ignore[arg-type]  # direct internal launch is also blocked
+        # A retry stays blocked without recording or sending the private prompt.
+        retried = hz(kernel, "chat", "send", chat["id"], "private prompt", "--request-id", "retry-001")
+        assert retried.exit_code == 1
+        assert "private prompt" not in retried.output
+        assert not service._store.load(chat["id"]).messages
+        assert script.prompts == []
 
 
 def test_unanswered_check_in_runner_turn_cannot_be_replayed_after_reload(kernel, script):

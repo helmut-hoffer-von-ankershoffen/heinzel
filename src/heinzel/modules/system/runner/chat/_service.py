@@ -336,7 +336,7 @@ class ChatService:
         lines = [found.title, found.body, f"Shown at {found.route}; in a terminal: {found.command}"]
         return "\n".join(line for line in lines if line)[:4000]
 
-    def send(  # noqa: PLR0913 - a message and how to answer it
+    def send(  # noqa: C901, PLR0913 - a message and how to answer it
         self,
         runner: AgentRunner,
         session: str,
@@ -363,6 +363,11 @@ class ChatService:
             _guard_check_in_retry(chat)
             if retried := _completed_retry(chat, text, request_id):
                 return retried
+            if chat.personal_session_id is not None:
+                # A tool profile is only an adapter request, not proof that ambient tools, writes, budget and
+                # timeout are enforced. No trusted verifier and owner-bound grant are wired to this path yet.
+                msg = "This personal agent cannot run until its runner isolation and grants are verified"
+                raise HeinzelError(msg)
             if len(chat.messages) >= MAX_MESSAGES:
                 msg = f"This chat has {len(chat.messages)} messages, the most it keeps; open a new one."
                 raise HeinzelError(msg)
@@ -396,6 +401,9 @@ class ChatService:
             )  # with what the agent proposed
 
     def _run(self, runner: AgentRunner, chat: ChatSession, cap: float) -> AgentResult:
+        if chat.personal_session_id is not None:
+            msg = "This personal agent cannot run until its runner isolation and grants are verified"
+            raise HeinzelError(msg)
         # No files of yours: an empty working directory and no built-in tools, only hz's, through the gate.
         with tempfile.TemporaryDirectory(prefix="hz-chat-") as directory:
             tools_set = (
