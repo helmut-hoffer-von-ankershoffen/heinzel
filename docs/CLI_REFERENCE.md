@@ -236,7 +236,6 @@ $ hz chat [OPTIONS] COMMAND [ARGS]...
 
 * `authorize-for-mcp`: Authorize one reviewed schedule action for...
 * `confirm`: Run an action the agent proposed, with...
-* `confirm-authorized-mcp`: Run a schedule action once after a person...
 * `decline`: Decline an action the agent proposed; it...
 * `list`: List chat sessions, most recent first;...
 * `open`: Open a chat session, optionally about a...
@@ -276,27 +275,6 @@ Run an action the agent proposed, with exactly the arguments shown; only you can
 
 ```console
 $ hz chat confirm [OPTIONS] {session} {action}
-```
-
-**Arguments**:
-
-* `session`: The chat session&#x27;s id, from `hz chat list`.  [required]
-* `action`: The proposed action&#x27;s id, e.g. `a1`.  [required]
-
-**Options**:
-
-* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
-* `--json`: Shorthand for --format json, for scripts and agents.
-* `--help`: Show this message and exit.
-
-### `hz chat confirm-authorized-mcp`
-
-Run a schedule action once after a person authorized it; accept no proof here.
-
-**Usage**:
-
-```console
-$ hz chat confirm-authorized-mcp [OPTIONS] {session} {action}
 ```
 
 **Arguments**:
