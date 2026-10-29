@@ -154,7 +154,7 @@ describe("personal conversation links", () => {
     await waitFor(() => expect(panel.queryByRole("region", { name: "Model policy review" })).not.toBeInTheDocument());
   });
 
-  it("does not confirm if the reviewed binding changed", async () => {
+  it.each(["binding", "session"])("does not confirm if the reviewed %s changed", async (changedField) => {
     const review = {
       request_id: "policy-one",
       revision: 1,
@@ -183,10 +183,10 @@ describe("personal conversation links", () => {
       "/api/heinzel/session": snapshot,
       "/api/system/runner/chat/show": chat,
       "/api/heinzel/model-policy": {
-        session_id: sessionId,
+        session_id: changedField === "session" ? "hz-01ARZ3NDEKTSV4RRFFQ69G5FAW" : sessionId,
         status: "proposed",
         billing: "api-priced",
-        proposal: changed,
+        proposal: changedField === "binding" ? changed : review,
       },
     });
     renderAt(`/heinzel?chat=${sessionId}&agent-chat=${chat.id}`);
