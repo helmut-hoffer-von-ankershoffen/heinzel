@@ -38,8 +38,9 @@ contract.
 
 The first scheduled personal Heinzel stores one immutable versioned check-in contract and its five-minute schedule in
 the same private control journal as its identity. Proposing it does not start work. Inspect the returned contract and
-schedule. Pause is available directly; activation and resume require the web chat approval flow. The schedule
-revision, contract version and preview hash are bound into the short-lived proof issued after that confirmation.
+schedule. Pause is available directly; activation and resume require trusted human approval of the exact schedule
+intent. The web chat flow is one way to provide that approval. The schedule revision, contract version and preview
+hash are bound into the short-lived proof issued after confirmation.
 
 ```bash
 hz heinzel propose-check-in <session-id> check-in-v1 --timezone Europe/Berlin --json
