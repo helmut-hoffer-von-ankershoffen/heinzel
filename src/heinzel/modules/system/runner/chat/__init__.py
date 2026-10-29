@@ -287,6 +287,20 @@ def propose_agent_contract(
     return service.propose_agent_contract(durable_session, request_id)
 
 
+@module.operation(read_only=False, heads=HEADS, audience="everyday")
+def propose_agent_schedule_review(
+    service: ChatService,
+    durable_session: Annotated[
+        str, Field(pattern=r"^hz-[0-9A-HJKMNP-TV-Z]{26}$", description="The personal agent session.")
+    ],
+    request_id: Annotated[
+        str, Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$", description="The schedule proposal request id.")
+    ],
+) -> ChatSession:
+    """Stage the exact current agent schedule for human review; no schedule is approved yet."""
+    return service.propose_agent_schedule_review(durable_session, request_id)
+
+
 @module.operation(heads=HEADS)
 def show(store: ChatStore, session: Session) -> ChatSession:
     """Show a chat session: its context, messages, actions and costs.

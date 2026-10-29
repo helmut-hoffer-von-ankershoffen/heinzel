@@ -193,6 +193,7 @@ class InteractiveTurn:
         allow_ungranted_tools: bool = True,
         backend_binding: BackendBinding | None = None,
         user_proposal_policy: Callable[[], bool] | None = None,
+        prepare: Callable[[], None] | None = None,
     ) -> SessionMessage:
         """Execute one accepted message; an interrupted attempt never automatically re-executes.
 
@@ -207,6 +208,8 @@ class InteractiveTurn:
         turn = _turn_id(request_id)
         with repo.main_writer(session_id) as turn_writer:
             self._check_owner()
+            if prepare is not None:
+                prepare()
             if isinstance(model, (ReservedModel, ClaudeSubscriptionModel)):
                 model.bind_fence(TurnAuthorityFence(repo, session_id, turn_writer))
             events = repo.control_read(session_id).events
@@ -229,6 +232,9 @@ class InteractiveTurn:
             prior = next((e for e in events if e.kind == "message.replied" and e.key == turn), None)
             if prior is not None:
                 return self._crud._message(session_id, prior)  # noqa: SLF001 - verify the authoritative body
+            if any(e.kind == "interactive.abandoned" and e.key == turn for e in events):
+                msg = "This turn was set aside and will not be retried"
+                raise HeinzelError(msg)
             if any(e.kind == "interactive.started" and e.key == turn for e in events):
                 msg = "This interrupted turn has an uncertain outcome and cannot be retried automatically"
                 raise HeinzelError(msg)
@@ -257,12 +263,23 @@ class InteractiveTurn:
                             or abandoned[0].data.get("message_id") != incoming_id
                             or abandoned[0].data.get("owner") != repo.principal_id
                             or abandoned[0].data.get("origin") not in {"cli", "api-bearer", "web-session", "web-device"}
-                            or not any(
-                                e.kind == "interactive.started"
-                                and e.key == _turn_id(incoming_id)
-                                and e.seq < abandoned[0].seq
-                                and e.data.get("message_id") == incoming_id
-                                for e in events
+                            or not (
+                                (
+                                    abandoned[0].data.get("unstarted") is True
+                                    and incoming.data.get("origin") == "daemon"
+                                    and abandoned[0].seq > incoming.seq
+                                    and not any(
+                                        e.kind == "interactive.started" and e.key == _turn_id(incoming_id)
+                                        for e in events
+                                    )
+                                )
+                                or any(
+                                    e.kind == "interactive.started"
+                                    and e.key == _turn_id(incoming_id)
+                                    and e.seq < abandoned[0].seq
+                                    and e.data.get("message_id") == incoming_id
+                                    for e in events
+                                )
                             )
                         ):
                             msg = "An earlier turn has an invalid resolution record"
