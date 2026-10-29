@@ -730,4 +730,30 @@ describe("personal conversation links", () => {
     expect(panel.queryByRole("button", { name: "Confirm" })).not.toBeInTheDocument();
     expect(panel.queryByRole("button", { name: "Check outcome without rerunning" })).not.toBeInTheDocument();
   });
+
+  it("explains when an active schedule is dormant because the daemon is not installed", async () => {
+    mockApi({
+      ...shell,
+      "/api/heinzel/session": { ...snapshot, schedule: { ...proposedSchedule, status: "active" } },
+      "/api/system/daemon/status": {
+        executable: null,
+        failing: [],
+        installed: false,
+        installed_version: null,
+        interval_minutes: null,
+        jobs: 0,
+        last_tick: null,
+        loaded: false,
+        paused: false,
+        platform: "darwin",
+        version: null,
+        version_mismatch: false,
+      },
+    });
+    renderAt(`/heinzel?chat=${sessionId}`);
+    const panel = within(await screen.findByRole("complementary", { name: "Chat" }));
+    expect(await panel.findByText(/no background daemon is installed, so check-ins are dormant/i)).toBeInTheDocument();
+    expect(panel.getByRole("link", { name: "Open daemon settings" })).toHaveAttribute("href", "/?settings=daemon");
+    expect(panel.queryByRole("button", { name: "Install" })).not.toBeInTheDocument();
+  });
 });

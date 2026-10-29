@@ -1,9 +1,10 @@
 // A durable personal session has a different id and service from the legacy runner chat.
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
-import { useSearchParams } from "react-router";
+import { Link, useSearchParams } from "react-router";
 import { chatKey, sendChat } from "@/api/chat";
 import { api, problem, type SchemaSessionSnapshot } from "@/api/client";
+import { useDaemonStatus } from "@/api/daemon";
 import { ActionCard } from "@/chat/Conversation";
 import { useDurableDraft } from "@/chat/durableDraft";
 import { Button } from "@/components/ui/button";
@@ -54,6 +55,7 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
     queryFn: () => result(api.GET("/heinzel/session", { params: { query: { session_id: sessionId } } })),
     retry: false,
   });
+  const daemonStatus = useDaemonStatus(query.data?.schedule?.status === "active");
   const approvalChatId = params.get("approval-chat");
   const agentChatId = params.get("agent-chat");
   const agentChatQuery = useQuery({
@@ -572,6 +574,41 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
               </dl>
             ) : (
               <p className="text-sm text-muted-foreground">{t("durable.scheduleEmpty")}</p>
+            )}
+            {query.data.schedule?.status === "active" &&
+              daemonStatus.data &&
+              (!daemonStatus.data.installed ? (
+                <p className="text-sm text-warn" role="status">
+                  {t("durable.daemonAbsent")}{" "}
+                  <Link className="underline" to="/?settings=daemon">
+                    {t("durable.daemonSettings")}
+                  </Link>
+                </p>
+              ) : daemonStatus.data.paused ? (
+                <p className="text-sm text-warn" role="status">
+                  {t("durable.daemonPaused")}{" "}
+                  <Link className="underline" to="/?settings=daemon">
+                    {t("durable.daemonSettings")}
+                  </Link>
+                </p>
+              ) : !daemonStatus.data.loaded ||
+                !daemonStatus.data.version ||
+                daemonStatus.data.version_mismatch ||
+                daemonStatus.data.failing.length > 0 ? (
+                <p className="text-sm text-warn" role="status">
+                  {t("durable.daemonNeedsCheck")}{" "}
+                  <Link className="underline" to="/?settings=daemon">
+                    {t("durable.daemonSettings")}
+                  </Link>
+                </p>
+              ) : null)}
+            {query.data.schedule?.status === "active" && daemonStatus.isError && (
+              <p className="text-sm text-warn" role="status">
+                {t("durable.daemonStatusUnavailable")}{" "}
+                <Link className="underline" to="/?settings=daemon">
+                  {t("durable.daemonSettings")}
+                </Link>
+              </p>
             )}
             {(query.data.schedule?.status === "proposed" || query.data.schedule?.status === "paused") &&
             !scheduleApprovalNeedsAttention &&

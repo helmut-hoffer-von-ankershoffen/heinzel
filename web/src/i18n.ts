@@ -43,6 +43,14 @@ const en = {
   "durable.scheduleStatus": "Status",
   "durable.scheduleCadence": "Cadence",
   "durable.schedulePreview": "Preview hash",
+  "durable.daemonAbsent":
+    "The schedule is saved, but no background daemon is installed, so check-ins are dormant. Installing it changes what starts automatically when you sign in; confirm that change in Settings.",
+  "durable.daemonPaused": "The schedule is saved, but the background daemon is paused, so check-ins are dormant.",
+  "durable.daemonNeedsCheck":
+    "The schedule is saved, but the background daemon is not verified ready. Check its status before relying on check-ins.",
+  "durable.daemonStatusUnavailable":
+    "The schedule is saved, but the background daemon status could not be verified. Check it before relying on check-ins.",
+  "durable.daemonSettings": "Open daemon settings",
   "durable.schedulePropose": "Propose check-in schedule",
   "durable.schedulePrepare": "Prepare schedule review",
   "durable.scheduleIntentPrepared":
