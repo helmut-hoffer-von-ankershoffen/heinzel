@@ -446,7 +446,8 @@ function Layout() {
               data-placement={beside ? "beside" : "below"}
               data-active={selectedPanel}
               className={cn(
-                "workspace-panel flex min-h-0 flex-col bg-background",
+                "workspace-panel flex flex-col bg-background",
+                flowingWorkspace && panelViews.some((view) => view.id === selectedPanel) ? "min-h-full" : "min-h-0",
                 full
                   ? "absolute inset-0"
                   : beside

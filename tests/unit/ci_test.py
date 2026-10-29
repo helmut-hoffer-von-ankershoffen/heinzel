@@ -167,10 +167,22 @@ def test_plugin_only_changes_skip_core_work_and_keep_required_plugin_checks(tmp_
     assert values["contracts"] == str(not plugin_only).lower()
     if plugin_only:
         assert values["notifier"] == values["electron"] == "false"
-    for name in ("lint", "setup", "audit", "test", "coverage", "perf", "e2e", "build"):
+    for name in ("lint", "setup", "audit", "test", "coverage", "perf", "e2e", "build", "core-wheel"):
         assert "needs.changes.outputs.core == 'true'" in jobs[name]["if"]
     assert "local-plugin-check" in jobs["ci-ok"]["needs"]
     assert "needs.changes.outputs.plugins == 'true'" in jobs["local-plugin-plan"]["if"]
+
+
+def test_plugin_compatibility_does_not_wait_for_core_native_packaging_or_test_matrix():
+    jobs = yaml.safe_load((REPO / ".github/workflows/ci.yml").read_text())["jobs"]
+    assert jobs["core-wheel"]["needs"] == "changes"
+    assert jobs["consumer-plan"]["needs"] == ["changes", "core-wheel"]
+    assert "build" not in jobs["local-plugin-check"]["needs"]
+    assert {"build", "notifier", "core-wheel", "consumer-check"} <= set(jobs["ci-ok"]["needs"])
+    upload = next(
+        step for step in jobs["core-wheel"]["steps"] if step.get("uses", "").startswith("actions/upload-artifact")
+    )
+    assert upload["with"]["name"] == "plugin-core"
 
 
 def test_electron_sandbox_archive_hash_mismatch_is_rejected():

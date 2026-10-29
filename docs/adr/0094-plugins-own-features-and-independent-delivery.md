@@ -151,6 +151,8 @@ never skip the entire required workflow through path filters, which leave requir
   consumes only public contracts and interchangeable providers. Core/web/native
   matrices are skipped for plugin-only changes. Documentation and packaging hooks are scoped too.
 - Core contract changes produce a versioned artifact and run affected consumer compatibility tests against it.
+  A fast core-wheel job provides this artifact independently of native packaging and the core test matrix. The
+  complete core/native build and tests still gate core merge/release; consumer feedback never waits for them.
   Breaking changes require an explicit compatibility/version decision and migration before default profiles select
   them. The default app composition is a required focused release check; broad ecosystem sweeps are separate from routine
   edit loops. No required checks or coverage are weakened.

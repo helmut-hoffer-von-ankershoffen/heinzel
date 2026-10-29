@@ -1,5 +1,5 @@
 // A synthetic contribution exercises the host contract without any installed feature plugin.
-export async function contributePanel(page) {
+export async function contributePanel(page, { delay = 0 } = {}) {
   const bundle = `/plugin-assets/specimen/inspector/${"a".repeat(64)}/index.js`;
   await page.route("**/api/system/ui/views**", (route) =>
     route.fulfill({
@@ -44,8 +44,9 @@ export async function contributePanel(page) {
       ],
     }),
   );
-  await page.route(`**${bundle}`, (route) =>
-    route.fulfill({
+  await page.route(`**${bundle}`, async (route) => {
+    if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
+    await route.fulfill({
       contentType: "text/javascript",
       body: `
     export default sdk => function Specimen({onClose}) {
@@ -55,6 +56,6 @@ export async function contributePanel(page) {
           e("h2",null,"Specimen"),e(sdk.Button,{onClick:onClose,"aria-label":"Close Specimen"},"Close")),
         e("div",{style:{minHeight:620,padding:16}},"A synthetic contributed panel"));
     }`,
-    }),
-  );
+    });
+  });
 }

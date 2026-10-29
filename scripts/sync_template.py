@@ -154,6 +154,7 @@ def ci_workflow() -> str:
     # Consumer compatibility belongs to core's public-contract release, never a plugin's own edit loop.
     text = re.sub(r"\n  consumer-(?:plan|check):\n.*?(?=\n  [a-z-]+:)", "\n", text, flags=re.DOTALL)
     text = re.sub(r"\n  local-plugin-(?:plan|check):\n.*?(?=\n  [a-z-]+:)", "\n", text, flags=re.DOTALL)
+    text = re.sub(r"\n  core-wheel:\n.*?(?=\n  [a-z-]+:)", "\n", text, flags=re.DOTALL)
     text = text.replace(", consumer-plan, consumer-check]", "]")
     # Removed jobs must also disappear from the stable required aggregate, irrespective of list order.
     removed = {
@@ -165,6 +166,7 @@ def ci_workflow() -> str:
         "consumer-check",
         "local-plugin-plan",
         "local-plugin-check",
+        "core-wheel",
     }
     text = re.sub(
         r"(?m)^    needs: \[([^\n]+)\]$",

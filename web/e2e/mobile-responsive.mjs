@@ -751,7 +751,7 @@ try {
       return scroll.apply(this, args);
     };
   });
-  await contributePanel(scrollPage);
+  await contributePanel(scrollPage, { delay: 350 });
   await scrollPage.goto(url);
   await scrollPage.getByRole("heading", { name: "Today" }).waitFor();
   const workspaceScroll = scrollPage.locator(".workspace-scroll");
@@ -782,6 +782,7 @@ try {
   };
   const lastScroll = async () => scrollPage.evaluate(() => window.workspaceScrollCalls.at(-1));
   await scrollPage.getByRole("button", { name: "Specimen", exact: true }).tap();
+  await scrollPage.getByRole("heading", { name: "Specimen", exact: true }).waitFor();
   await atPanel("specimen:inspector");
   assert.equal((await lastScroll()).behavior, "smooth", "contributed header scrolls smoothly");
   await workspaceScroll.evaluate((element) => {
