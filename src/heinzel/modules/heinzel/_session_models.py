@@ -412,6 +412,19 @@ class HeinzelAppearance(BaseModel):
     )
 
 
+class ProfileProposal(BaseModel):
+    """Private suggested identity and appearance; applying it requires a separate user save."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    session_id: SessionId
+    request_id: RequestId
+    expected_revision: int = Field(ge=1)
+    name: str = Field(min_length=1, max_length=100)
+    appearance: HeinzelAppearance
+    status: Literal["proposed"] = "proposed"
+    preview_sha256: Digest
+
+
 class WakeScheduleView(BaseModel):
     """An authoritative schedule preview or active contract; the browser never runs its own wake timer."""
 
