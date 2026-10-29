@@ -1780,3 +1780,98 @@ def test_model_policy_action_card_requires_human_and_never_runs_model(kernel, tm
         == 400
     )
     assert ran == []
+
+
+def test_contract_review_accepts_exact_owner_bound_terms_without_activation(kernel, tmp_path, ran):
+    client = web_client(kernel, tmp_path)
+    session = client.post("/api/heinzel/new-chat", headers=AUTH, json={"request_id": "contract-review-test"}).json()[
+        "session_id"
+    ]
+    proposal = client.post(
+        "/api/heinzel/propose-scheduled-agent",
+        headers=AUTH,
+        json={
+            "session_id": session,
+            "request_id": "contract-1",
+            "contract": "Review my document",
+            "max_usd": 0.2,
+            "timeout_seconds": 30,
+        },
+    ).json()
+    params = {"durable_session": session, "request_id": "contract-1"}
+    staged = client.post("/api/system/runner/chat/propose-agent-contract", headers=AUTH, params=params)
+    assert staged.status_code == 200, staged.text
+    chat = staged.json()
+    action = next(a for a in chat["actions"] if a["operation"] == "accept-agent-contract")
+    assert action["arguments"]["review"] == proposal
+    direct = client.post(
+        "/api/heinzel/accept-agent-contract",
+        headers=AUTH,
+        json={
+            "session_id": session,
+            "request_id": "contract-1",
+            "review": proposal,
+            "approval_proof": "fake",
+        },
+    )
+    assert direct.status_code == 400
+    assert "heinzel_accept_agent_contract" not in {item.name for item in exposed(kernel, "mcp-stdio")}
+    decision = {"session": chat["id"], "action": action["id"]}
+    assert client.post("/api/system/runner/chat/confirm", params=decision).status_code == 401
+    result = client.post("/api/system/runner/chat/confirm", headers=AUTH, params=decision)
+    assert result.status_code == 200, result.text
+    assert next(a for a in result.json()["actions"] if a["id"] == action["id"])["status"] == "done"
+    review = client.get(
+        "/api/heinzel/agent-contract-review",
+        headers=AUTH,
+        params={
+            "session_id": session,
+            "request_id": "contract-1",
+        },
+    )
+    assert review.status_code == 200, review.text
+    assert review.json() == {"proposal": proposal, "accepted": True}
+    assert client.post("/api/system/runner/chat/confirm", headers=AUTH, params=decision).status_code == 400
+    assert (
+        client.post("/api/system/runner/chat/propose-agent-contract", headers=AUTH, params=params).json()["id"]
+        == chat["id"]
+    )
+    assert client.get("/api/heinzel/session", headers=AUTH, params={"session_id": session}).json()["schedule"] is None
+    assert ran == []
+
+
+def test_contract_review_rejects_superseded_and_foreign_actions(kernel, tmp_path, ran):
+    from heinzel import CallIdentity, Principal
+
+    client = web_client(kernel, tmp_path)
+    session = client.post("/api/heinzel/new-chat", headers=AUTH, json={"request_id": "contract-stale-test"}).json()[
+        "session_id"
+    ]
+    base = {"session_id": session, "contract": "Original", "max_usd": 0.2, "timeout_seconds": 30}
+    first = client.post("/api/heinzel/propose-scheduled-agent", headers=AUTH, json={**base, "request_id": "one"}).json()
+    staged = client.post(
+        "/api/system/runner/chat/propose-agent-contract",
+        headers=AUTH,
+        params={"durable_session": session, "request_id": "one"},
+    ).json()
+    action = next(a for a in staged["actions"] if a["operation"] == "accept-agent-contract")
+    amended = client.post(
+        "/api/heinzel/amend-scheduled-agent",
+        headers=AUTH,
+        json={**base, "request_id": "two", "expected_revision": first["revision"], "contract": "Changed"},
+    )
+    assert amended.status_code == 200, amended.text
+    stranger = CallIdentity(Principal("u-" + "a" * 32), "api-bearer", "other", "private", frozenset({"private:read"}))
+    with kernel.resolve(CurrentUser).using(stranger):
+        with pytest.raises(HeinzelError):
+            kernel.resolve(ChatService).confirm(staged["id"], action["id"])
+        with pytest.raises(HeinzelError):
+            kernel.resolve(ChatService).propose_agent_contract(session, "two")
+    decision = {"session": staged["id"], "action": action["id"]}
+    result = client.post("/api/system/runner/chat/confirm", headers=AUTH, params=decision)
+    assert result.status_code == 400
+    review = client.get(
+        "/api/heinzel/agent-contract-review", headers=AUTH, params={"session_id": session, "request_id": "one"}
+    )
+    assert review.json()["accepted"] is False
+    assert ran == []

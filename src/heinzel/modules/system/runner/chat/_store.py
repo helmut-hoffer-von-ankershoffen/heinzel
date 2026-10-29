@@ -176,9 +176,11 @@ class ChatStore(McpChatSessions):
         chat.actions += [action for action in self.proposals(session) if action.id not in known]
         for action in chat.actions:  # what the person reads is derived from what runs, never stored text
             self._check_personal_action(chat, action.module, action.operation, action.arguments)
-            if action.module == "heinzel" and action.operation == "approve-model-grant":
+            if action.module == "heinzel" and action.operation in {"approve-model-grant", "accept-agent-contract"}:
                 # The review remains visible in the action, not in model-visible transcript text.
-                action.command = "Review model policy"
+                action.command = (
+                    "Review agent contract" if action.operation == "accept-agent-contract" else "Review model policy"
+                )
             else:
                 action.command = describe(action.module, action.operation, action.arguments)
         chat.costs = self.costs(chat.messages)
@@ -188,7 +190,8 @@ class ChatStore(McpChatSessions):
         self, chat: ChatSession, module: str, operation: str, arguments: dict[str, JsonValue]
     ) -> None:
         if chat.personal_session_id is not None and (
-            module != "heinzel" or operation not in {"schedule-control", "propose-check-in", "approve-model-grant"}
+            module != "heinzel"
+            or operation not in {"schedule-control", "propose-check-in", "approve-model-grant", "accept-agent-contract"}
         ):
             msg = "This personal chat cannot authorize that action"
             raise HeinzelError(msg)
@@ -544,7 +547,7 @@ class StoreGate(ActionGate):
             HeinzelError: If a chat may never run it, there is no such session, or it has too many proposals.
         """
         chat = self._store.load(call.session)
-        if call.module == "heinzel" and call.operation == "approve-model-grant":
+        if call.module == "heinzel" and call.operation in {"approve-model-grant", "accept-agent-contract"}:
             msg = "Only the human review surface can stage a model policy approval"
             raise HeinzelError(msg)
         if chat.context is not None and chat.context.kind == "check-in":

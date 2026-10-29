@@ -372,6 +372,56 @@ class ChatService:
             )
             return self._store.load(personal_chat.id)
 
+    def propose_agent_contract(self, durable_session: str, request_id: str) -> ChatSession:
+        """Stage the exact owner-private agent contract for a human decision, without granting it.
+
+        Raises:
+            HeinzelError: If the owner, current proposal or existing action cannot be verified.
+        """
+        if not self._kernel.provides(ApprovalIssuer):
+            msg = "Agent contract review is unavailable"
+            raise HeinzelError(msg)
+        issuer = self._kernel.resolve(ApprovalIssuer)
+        base: dict[str, JsonValue] = {"session_id": durable_session, "request_id": request_id}
+        with self._store.proposal_request_lock():
+            prior = self._store.find_proposal("heinzel", "accept-agent-contract", durable_session, request_id)
+            if prior is not None:
+                chat, found = prior
+                # Returning the original owner-bound action does not reissue or consume a proof. The issuer
+                # still rechecks current intent when a pending action is confirmed.
+                if (
+                    chat.personal_session_id != durable_session
+                    or set(found.arguments) != {"session_id", "request_id", "review"}
+                    or not isinstance(found.arguments.get("review"), dict)
+                ):
+                    msg = "This contract review no longer matches its original action"
+                    raise HeinzelError(msg)
+                return chat
+            preview = issuer.review("heinzel", "accept-agent-contract", base)
+            arguments: dict[str, JsonValue] = {**base, "review": preview}
+            personal_chat = self._store.find_personal_chat(durable_session)
+            if personal_chat is None:
+                personal_chat = self._store.create(
+                    ChatContext(
+                        kind="text",
+                        ref=durable_session,
+                        owner_id=self._store.personal_owner(),
+                        detail="Review agent contract for this personal agent.",
+                    ),
+                    personal_session_id=durable_session,
+                )
+            self._store.propose(
+                ProposedCall(
+                    session=personal_chat.id,
+                    module="heinzel",
+                    operation="accept-agent-contract",
+                    tool="heinzel_accept_agent_contract",
+                    arguments=arguments,
+                    command="Review agent contract",
+                )
+            )
+            return self._store.load(personal_chat.id)
+
     def _notice(self, event: str) -> str:
         """What the notice `event` says, from the notifications every head reads (ADR 0043); empty if unknown."""
         if not self._kernel.provides(Notifications):
@@ -629,7 +679,7 @@ class ChatService:
         confirmation: ApprovalConfirmation | None = None
         if found.module == "heinzel" and (
             (found.operation == "schedule-control" and found.arguments.get("action") in {"activate", "resume"})
-            or found.operation == "approve-model-grant"
+            or found.operation in {"approve-model-grant", "accept-agent-contract"}
         ):
             if "approval_proof" in found.arguments or not self._kernel.provides(ApprovalIssuer):
                 msg = "Approval is invalid or unavailable"
@@ -654,6 +704,8 @@ class ChatService:
             text = (
                 "The model policy approval was recorded. No model request was started."
                 if found.module == "heinzel" and found.operation == "approve-model-grant"
+                else "The contract acceptance was recorded. No schedule or access was activated."
+                if found.module == "heinzel" and found.operation == "accept-agent-contract"
                 else redact_emails(dumps(to_jsonable_python(value, fallback=str)))
             )  # The resulting action message may later be sent to a model.
             found.status, found.result = "done", text[:RESULT_LIMIT]
@@ -679,7 +731,7 @@ class ChatService:
     def _is_reconciled_confirmation(found: ChatAction) -> bool:
         return found.module == "heinzel" and (
             (found.operation == "schedule-control" and found.arguments.get("action") in {"activate", "resume"})
-            or found.operation == "approve-model-grant"
+            or found.operation in {"approve-model-grant", "accept-agent-contract"}
         )
 
     def _reconcile_schedule_confirmation(self, found: ChatAction) -> None:
@@ -699,6 +751,8 @@ class ChatService:
             found.result = (
                 "The exact schedule change is recorded. It was not run again."
                 if found.operation == "schedule-control"
+                else "The exact contract acceptance is recorded. It was not run again."
+                if found.operation == "accept-agent-contract"
                 else "The exact model policy approval is recorded. It was not run again."
             )
         else:
@@ -738,6 +792,8 @@ class ChatService:
                     found.result = (
                         "The exact schedule change is recorded. It was not run again."
                         if found.operation == "schedule-control"
+                        else "The exact contract acceptance is recorded. It was not run again."
+                        if found.operation == "accept-agent-contract"
                         else "The exact model policy approval is recorded. It was not run again."
                     )
                 else:
@@ -788,7 +844,7 @@ class ChatService:
                 )
                 trusted_policy = (
                     action.module == "heinzel"
-                    and action.operation == "approve-model-grant"
+                    and action.operation in {"approve-model-grant", "accept-agent-contract"}
                     and chat.personal_session_id == action.arguments.get("session_id")
                     and chat.personal_owner_id is not None
                 )
