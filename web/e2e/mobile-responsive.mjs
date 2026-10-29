@@ -525,8 +525,7 @@ try {
     assert.ok(await topbar.isVisible(), `${spec.name}: header hidden with Chat selected`);
     const chatFooter = await footerPane(page, "@version", /^v/);
     await assertContained(page, chatFooter, `${spec.name}: footer in chat`);
-    await page.mouse.click(3, 3);
-    await chatFooter.waitFor({ state: "hidden" });
+    await dismissFooterPane(page);
     assert.equal(await page.getByRole("textbox", { name: "Your message" }).inputValue(), "A draft to keep.");
     await page
       .getByRole("tablist", { name: "Workspace panels" })
@@ -547,8 +546,7 @@ try {
     await terminal.getByRole("button", { name: "Leave full screen", exact: true }).click();
     const terminalFooter = await footerPane(page, "@version", /^v/);
     await assertContained(page, terminalFooter, `${spec.name}: footer after full screen`);
-    await page.mouse.click(3, 3);
-    await terminalFooter.waitFor({ state: "hidden" });
+    await dismissFooterPane(page);
     await terminal.getByRole("button", { name: "Close the terminal", exact: true }).click();
     await page.getByRole("button", { name: "Close the chat", exact: true }).first().click();
     await showPage(page);
