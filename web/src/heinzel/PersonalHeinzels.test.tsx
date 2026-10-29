@@ -97,6 +97,40 @@ describe("personal identities", () => {
     expect(saved[0]?.appearance).toMatchObject({ accessories: ["umbrella", "sunglasses"] });
   });
 
+  it("restores an unsaved name and look after reload without leaking them to another Heinzel", async () => {
+    const firstDraft = `hz.personal-heinzel.profile-draft.${first}`;
+    const secondDraft = `hz.personal-heinzel.profile-draft.${second}`;
+    sessionStorage.removeItem(firstDraft);
+    sessionStorage.removeItem(secondDraft);
+    mockApi({
+      ...shell,
+      "/api/heinzel/sessions": { sessions },
+      "/api/heinzel/session": (request: Request) => {
+        const id = new URL(request.url).searchParams.get("session_id");
+        return snapshot(id === second ? second : first, id === second ? "Beta" : "Alpha");
+      },
+    });
+    const firstView = renderAt("/heinzel");
+    let section = within(await screen.findByRole("region", { name: "Personal Heinzels" }));
+    fireEvent.change(await section.findByLabelText("Personal Heinzel"), { target: { value: first } });
+    const name = await section.findByLabelText("Name");
+    fireEvent.change(name, { target: { value: "Styled Alpha" } });
+    fireEvent.click(section.getByLabelText("Umbrella"));
+    await waitFor(() => expect(sessionStorage.getItem(firstDraft)).not.toBeNull());
+    firstView.unmount();
+
+    renderAt("/heinzel");
+    section = within(await screen.findByRole("region", { name: "Personal Heinzels" }));
+    fireEvent.change(await section.findByLabelText("Personal Heinzel"), { target: { value: first } });
+    await waitFor(() => expect(section.getByLabelText("Name")).toHaveValue("Styled Alpha"));
+    expect(section.getByLabelText("Umbrella")).toBeChecked();
+    fireEvent.change(section.getByLabelText("Personal Heinzel"), { target: { value: second } });
+    await waitFor(() => expect(section.getByLabelText("Name")).toHaveValue("Beta"));
+    expect(section.getByLabelText("Umbrella")).not.toBeChecked();
+    sessionStorage.removeItem(firstDraft);
+    sessionStorage.removeItem(secondDraft);
+  });
+
   it("continues to schedule setup only after the selected profile is saved", async () => {
     let stored = { ...snapshot(first, "Alpha"), messages: [], schedule: null };
     mockApi({

@@ -1,6 +1,6 @@
 // Personal identities use the durable private session API; they are distinct from the existing workflow list and chat.
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import { api, problem, type SchemaHeinzelAppearance, type SchemaSessionSnapshot } from "@/api/client";
 import { HeinzelAvatar } from "@/components/HeinzelAvatar";
@@ -10,7 +10,49 @@ import { t } from "@/i18n";
 
 const sessionsKey = ["heinzel", "sessions"] as const;
 const pendingCreation = "hz.personal-heinzel.creation";
+const profileDraftKey = (sessionId: string) => `hz.personal-heinzel.profile-draft.${sessionId}`;
 const field = "block w-full rounded border border-border bg-background px-2 py-1 text-sm";
+
+type ProfileDraft = { name: string; appearance: SchemaHeinzelAppearance };
+
+function readProfileDraft(sessionId: string): ProfileDraft | null {
+  try {
+    const stored: unknown = JSON.parse(sessionStorage.getItem(profileDraftKey(sessionId)) ?? "null");
+    if (!stored || typeof stored !== "object" || !("name" in stored) || typeof stored.name !== "string") return null;
+    if (!("appearance" in stored) || !stored.appearance || typeof stored.appearance !== "object") return null;
+    const appearance = stored.appearance as Record<string, unknown>;
+    const age = appearance.age;
+    const build = appearance.build;
+    if (!AGES.includes(age as (typeof AGES)[number]) || !BUILDS.includes(build as (typeof BUILDS)[number])) return null;
+    const beard = appearance.beard;
+    const hat = appearance.hat;
+    const shirt = appearance.shirt;
+    const accessories = appearance.accessories ?? [];
+    if (
+      (beard !== undefined && beard !== null && !BEARDS.includes(beard as (typeof BEARDS)[number])) ||
+      (hat !== undefined && hat !== null && !Object.hasOwn(HATS, String(hat))) ||
+      (shirt !== undefined && shirt !== null && !Object.hasOwn(SHIRTS, String(shirt))) ||
+      !Array.isArray(accessories) ||
+      !accessories.every(
+        (item) => typeof item === "string" && ACCESSORIES.includes(item as (typeof ACCESSORIES)[number]),
+      )
+    )
+      return null;
+    return {
+      name: stored.name,
+      appearance: {
+        age: age as SchemaHeinzelAppearance["age"],
+        build: build as SchemaHeinzelAppearance["build"],
+        ...(beard === undefined ? {} : { beard: beard as SchemaHeinzelAppearance["beard"] }),
+        ...(hat === undefined ? {} : { hat: hat as SchemaHeinzelAppearance["hat"] }),
+        ...(shirt === undefined ? {} : { shirt: shirt as SchemaHeinzelAppearance["shirt"] }),
+        accessories: accessories as SchemaHeinzelAppearance["accessories"],
+      },
+    };
+  } catch {
+    return null;
+  }
+}
 
 // These private mutations do not use the API's 503-as-result convention: a non-2xx response is always uncertain.
 async function personalResult<T>(call: Promise<{ data?: T; error?: unknown; response: Response }>): Promise<T> {
@@ -112,9 +154,13 @@ export function PersonalHeinzels() {
 function ProfileEditor({ initial, onLock }: { initial: SchemaSessionSnapshot; onLock: (locked: boolean) => void }) {
   const client = useQueryClient();
   const navigate = useNavigate();
+  const [draftStorageFailed, setDraftStorageFailed] = useState(false);
+  const [draft] = useState(() => readProfileDraft(initial.session_id));
   const [snapshot, setSnapshot] = useState(initial);
-  const [name, setName] = useState(initial.name);
-  const [look, setLook] = useState<SchemaHeinzelAppearance>(initial.appearance ?? { age: "grown", build: "regular" });
+  const [name, setName] = useState(draft?.name ?? initial.name);
+  const [look, setLook] = useState<SchemaHeinzelAppearance>(
+    draft?.appearance ?? initial.appearance ?? { age: "grown", build: "regular" },
+  );
   const [pending, setPending] = useState<{
     request_id: string;
     name: string;
@@ -124,6 +170,18 @@ function ProfileEditor({ initial, onLock }: { initial: SchemaSessionSnapshot; on
   const [busy, setBusy] = useState(false);
   const savingNow = useRef(false);
   const [error, setError] = useState(false);
+
+  useEffect(() => {
+    const key = profileDraftKey(snapshot.session_id);
+    const savedLook = snapshot.appearance ?? { age: "grown", build: "regular" };
+    try {
+      if (name === snapshot.name && JSON.stringify(look) === JSON.stringify(savedLook)) sessionStorage.removeItem(key);
+      else sessionStorage.setItem(key, JSON.stringify({ name, appearance: look }));
+      setDraftStorageFailed(false);
+    } catch {
+      setDraftStorageFailed(true);
+    }
+  }, [look, name, snapshot]);
 
   const save = async () => {
     if (savingNow.current) return;
@@ -321,6 +379,7 @@ function ProfileEditor({ initial, onLock }: { initial: SchemaSessionSnapshot; on
         </fieldset>
       </fieldset>
       {error && <p role="alert">{t("personal.saveError")}</p>}
+      {draftStorageFailed && <p role="status">{t("personal.draftStorageFailed")}</p>}
       <div className="flex flex-wrap gap-2">
         <Button type="submit" disabled={busy || !name.trim()}>
           {pending ? t("personal.retrySave") : t("personal.save")}
