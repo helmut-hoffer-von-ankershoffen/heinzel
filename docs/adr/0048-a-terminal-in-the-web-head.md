@@ -41,8 +41,12 @@ as the rest of the web head, with no new process to manage.
   message within five seconds and is compared in constant time.
 - Each connection starts the user's login shell (`$SHELL` when absolute and executable, else `sh`) with `-l` in their
   home directory, in a session of its own whose controlling terminal is a new pseudo-terminal. Binary frames carry
-  keystrokes and output; text frames carry `{"resize": [cols, rows]}`. At most eight terminals run at once; one more
+  keystrokes and output; text frames carry `{"resize": [cols, rows]}` from the browser and `{"agent_title": ...}`
+  from the server when the foreground agent supplies a session name. At most eight terminals run at once; one more
   is closed with code 1013 (try again later).
+- For Claude Code, the server reads only the foreground process's local session metadata, checks its process identity
+  and start time, and sends the name to that terminal's socket. A missing or unrecognised record leaves the terminal's
+  own title in place. Other programs can set their terminal title and report status through standard terminal sequences.
 - The forked child runs no Python, because `preexec_fn` is unsafe once the server has threads: `start_new_session`
   makes it a session leader, and it execs a fresh `python -I -S` that takes the pseudo-terminal as its controlling
   terminal (`TIOCSCTTY`, which macOS and Linux both need) and then execs the shell. The cost is one interpreter
