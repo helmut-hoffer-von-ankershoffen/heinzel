@@ -69,13 +69,21 @@ if git fetch --quiet origin "$branch" 2>/dev/null; then
     exit 2
   fi
 fi
-[ -n "${NO_PREFLIGHT:-}" ] || make --no-print-directory preflight BASE="$base/main"
+if [ -z "${NO_PREFLIGHT:-}" ]; then
+  if [ -f scripts/scoped_checks.py ]; then
+    uv run --no-project --script scripts/scoped_checks.py preflight --base "$base/main"
+  else
+    make --no-print-directory preflight BASE="$base/main"
+  fi
+fi
 
 if [ -n "${BODY_FILE:-}" ]; then body="$(cat "$BODY_FILE")"; else body="${BODY:-}"; fi
 [ -n "$body" ] || body="$(git log --reverse --format='- %s' "$base/main..HEAD")"
 uv run --quiet --script scripts/check_confidentiality.py --text "$body"
 
-[ -z "$remote_branch" ] || git rebase --quiet "$remote_branch"
+if [ -n "$remote_branch" ] && ! git merge-base --is-ancestor "$remote_branch" HEAD; then
+  git rebase --quiet "$remote_branch"
+fi
 git push --quiet --set-upstream origin HEAD
 url="$(gh pr list --repo "$repo" --head "$branch" --state open --json url,headRepositoryOwner \
   --jq "map(select(.headRepositoryOwner.login == \"$owner\"))[0].url // empty")"

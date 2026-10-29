@@ -1,9 +1,0 @@
-# Hyper Focus, a stream on YouTube (ADR 0058): a core soundscape, never on by default.
-# By default, played in YouTube's privacy-enhanced player; nothing from YouTube loads until you press Play.
-name = "hyper-focus"
-title = "Hyper Focus"
-kind = "stream"
-
-[stream]
-provider = "youtube"
-video = "uNw_a7HFwvg"

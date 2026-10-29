@@ -229,32 +229,14 @@ def test_install_from_git_like_users_do(sandbox):
 
 
 def installed_from_git(sandbox) -> None:
-    """Core installed from this checkout's HEAD, so first-party plugins come from the same repository and revision."""
+    """Core installed from this checkout's HEAD; plugin artifacts and revisions are selected independently."""
     if not HEAD:
         pytest.skip("needs a git checkout with at least one commit")
     sandbox.run("uv", "tool", "install", f"git+file://{REPO}@{HEAD}")
 
 
-def test_a_first_party_plugin_is_added_by_name_and_the_previews_hint_works_pasted(sandbox):
-    installed_from_git(sandbox)
-    preview = sandbox.hz("system", "plugin", "add", "clock")
-    assert "Not installed yet" in preview
-    assert "not reviewed" not in preview  # first-party: no community warning
-    [hint] = [line for line in preview.splitlines() if line.startswith("To install: ")]
-    command = shlex.split(hint.removeprefix("To install: "))
-    assert command[0] == "hz"
-    operation_id = command[command.index("--operation-id") + 1]
-    assert re.fullmatch(r"[A-Za-z0-9_-]{40,50}", operation_id)
-    assert "Installed heinzel-clock" in sandbox.run(sandbox.hz_bin, *command[1:])
-    assert [p["distribution"] for p in json.loads(sandbox.hz("system", "plugin", "list", "--json"))] == [
-        "heinzel-clock"
-    ]
-    assert sandbox.hz("clock", "--help")  # the plugin loads
-
-
-def test_a_plugin_from_a_git_repository_is_added_with_confirm(sandbox, tmp_path):
-    """A git spec over https, served from a local bare repository through git's insteadOf (no network)."""
-    installed_from_git(sandbox)
+def dummy_git_source(sandbox, tmp_path):
+    """A synthetic HTTPS source backed by a local bare repository; no real plugin or network."""
     work = tmp_path / "work"
     subprocess.run(["cp", "-R", str(DUMMY_PLUGIN), str(work)], check=True, timeout=60)
     git = ["git", "-C", str(work), "-c", "user.name=t", "-c", "user.email=t@example.com"]
@@ -268,25 +250,45 @@ def test_a_plugin_from_a_git_repository_is_added_with_confirm(sandbox, tmp_path)
         "GIT_CONFIG_KEY_0": f"url.{bare}.insteadOf",
         "GIT_CONFIG_VALUE_0": "https://git.example.test/acme/heinzel-dummy",
     }
-    spec = "git+https://git.example.test/acme/heinzel-dummy@main"
+    spec = "heinzel-dummy @ git+https://git.example.test/acme/heinzel-dummy@main"
+    return spec, rewrite
+
+
+def test_a_plugin_preview_hint_works_pasted_with_its_operation_receipt(sandbox, tmp_path):
+    installed_from_git(sandbox)
+    spec, rewrite = dummy_git_source(sandbox, tmp_path)
+    preview = sandbox.run(sandbox.hz_bin, "system", "plugin", "add", spec, **rewrite)
+    assert "Not installed yet" in preview
+    [hint] = [line for line in preview.splitlines() if line.startswith("To install: ")]
+    command = shlex.split(hint.removeprefix("To install: "))
+    assert command[0] == "hz"
+    operation_id = command[command.index("--operation-id") + 1]
+    assert re.fullmatch(r"[A-Za-z0-9_-]{40,50}", operation_id)
+    assert "Installed heinzel-dummy" in sandbox.run(sandbox.hz_bin, *command[1:], **rewrite)
+    assert [p["distribution"] for p in json.loads(sandbox.hz("system", "plugin", "list", "--json"))] == [
+        "heinzel-dummy"
+    ]
+    assert sandbox.hz("dummy", "--help")  # the plugin loads
+
+
+def test_a_plugin_from_a_git_repository_is_added_with_confirm(sandbox, tmp_path):
+    """A git spec over https, served from a local bare repository through git's insteadOf (no network)."""
+    installed_from_git(sandbox)
+    spec, rewrite = dummy_git_source(sandbox, tmp_path)
     preview = sandbox.run(sandbox.hz_bin, "system", "plugin", "add", spec, **rewrite)
     assert "Not installed yet" in preview
     assert "✓ Installed" in sandbox.run(sandbox.hz_bin, "system", "plugin", "add", spec, "--confirm", **rewrite)
     assert sandbox.hz("dummy", "hello").strip() == "hello from dummy"
 
 
-def test_the_web_head_installs_a_first_party_catalog_entry_by_its_install_spec(sandbox):
+def test_the_web_head_streams_an_independent_plugin_installation(sandbox, tmp_path):
     import httpx
 
     installed_from_git(sandbox)
-    entry = next(
-        p
-        for p in json.loads(sandbox.hz("system", "plugin", "search", "--text", "clock", "--json"))["plugins"]
-        if p["short_name"] == "clock"
-    )
+    spec, rewrite = dummy_git_source(sandbox, tmp_path)
     ui = subprocess.Popen(
         [str(sandbox.hz_bin), "ui", "--port", "0"],
-        env={**sandbox.env, "BROWSER": "true"},
+        env={**sandbox.env, **rewrite, "BROWSER": "true"},
         stderr=subprocess.PIPE,
         text=True,
     )
@@ -297,9 +299,9 @@ def test_the_web_head_installs_a_first_party_catalog_entry_by_its_install_spec(s
         base, token = url.split("#token=")
         auth = {"Authorization": f"Bearer {token}"}
         add = f"{base.rstrip('/')}/api/system/plugin/add"
-        shown = httpx.post(add, params={"spec": entry["install_spec"]}, headers=auth, timeout=120).json()
+        shown = httpx.post(add, params={"spec": spec}, headers=auth, timeout=120).json()
         assert shown["done"] is False
-        assert shown["candidate"]["first_party"] is True
+        assert shown["candidate"]["first_party"] is False
         # The UI streams installation so the task appears immediately and quiet builds stay alive across proxies.
         events: list[tuple[str, dict]] = []
         event_name = ""
@@ -323,7 +325,7 @@ def test_the_web_head_installs_a_first_party_catalog_entry_by_its_install_spec(s
                     event_name = data = ""
                     if events[-1][0] in {"result", "error"}:
                         break
-        assert events[0] == ("task", {"text": "Adding plugin heinzel-clock"})
+        assert events[0] == ("task", {"text": "Adding plugin heinzel-dummy"})
         assert events[-1][0] == "result", events
         assert events[-1][1]["data"]["done"] is True
     finally:
@@ -331,4 +333,4 @@ def test_the_web_head_installs_a_first_party_catalog_entry_by_its_install_spec(s
         ui.wait(30)
         if ui.stderr is not None:
             ui.stderr.close()
-    assert sandbox.hz("clock", "--help")
+    assert sandbox.hz("dummy", "--help")

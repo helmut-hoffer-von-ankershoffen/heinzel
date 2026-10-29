@@ -1,4 +1,5 @@
 ---
+amended-by: 0094
 status: proposed
 date: 2026-10-25
 decision-makers: maintainer, architect and security reviewer

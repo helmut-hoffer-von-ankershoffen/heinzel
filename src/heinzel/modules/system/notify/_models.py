@@ -35,6 +35,11 @@ class NotifySettings(ModuleSettings):
     release: bool = Field(
         default=False, title="New releases", description="Notify when a newer release of Heinzelmännchen is out."
     )
+    plugin: bool = Field(
+        default=True,
+        title="Plugin notices",
+        description="Notify when an installed plugin reports something that needs attention.",
+    )
     quiet: bool = Field(
         default=False,
         title="Quiet mode",
@@ -77,6 +82,7 @@ class NotifySettings(ModuleSettings):
             "failed",
             "doctor",
             "release",
+            "plugin",
             "quiet",
             "working_hours",
             "per_hour",

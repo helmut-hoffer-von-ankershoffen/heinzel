@@ -85,7 +85,7 @@ class SoundStreamView(BaseModel):
     """A stream in the official player of an allowed host."""
 
     provider: str = Field(description="The host, e.g. `youtube`.")
-    video: str = Field(description="The video's id, e.g. `tRsQsTMvPNg`.")
+    video: str = Field(description="The video's id, e.g. `abcdefghijk`.")
     embed_url: str = Field(
         description="The player to frame after Play, e.g. `https://www.youtube-nocookie.com/embed/...`."
     )
@@ -96,7 +96,7 @@ class SoundStreamView(BaseModel):
 class SoundscapeView(BaseModel):
     """One available soundscape, ready for the web app to play."""
 
-    name: str = Field(description="What `hz system sound use` takes, e.g. `claude-fm`; `off` is no sound.")
+    name: str = Field(description="The installed soundscape's name; `off` is no sound.")
     title: str = Field(description="What people pick it by, e.g. `Claude FM`.")
     kind: Literal["off", "layers", "stream"] = Field(description="`off`, `layers` (files mixed live) or `stream`.")
     module: str | None = Field(description="The qualified name of the module offering it; none for `off`.")

@@ -17,7 +17,7 @@ classifiers = [
     "Typing :: Typed",
 ]
 # Heinzelmännchen resolves to the installed Heinzelmännchen when the plugin is added with `hz system plugin add`.
-dependencies = ["heinzel>=[[ heinzel_version ]],<1"]
+dependencies = ["heinzel>=[[ heinzel_version ]],<[[ heinzel_upper_bound ]]"]
 
 [project.entry-points."heinzel.modules"]
 [[ plugin_name ]] = "[[ package_name ]]"
@@ -29,20 +29,7 @@ Issues = "https://github.com/[[ github_owner ]]/[[ project_name ]]/issues"
 
 [dependency-groups]
 # What the unit, integration and e2e tests need, and no more: CI installs only this group for the test matrix.
-test = [
-    "heinzel @ git+https://github.com/[[ heinzel_owner ]]/heinzel@v[[ heinzel_version ]]",
-    "coverage>=7.12",
-    "httpx>=0.28",
-    "hypothesis>=6.140",
-    "jsonschema>=4.26",
-    # OpenAI's client, so the ChatGPT sign-in flow and a test turn through Pydantic AI run in tests (ADR 0057).
-    "pydantic-ai-slim[openai]==2.61.0",
-    "prek>=0.2",
-    "pytest>=9.0.3,<10",
-    "pytest-timeout>=2.4.0,<3",
-    "pytest-xdist>=3.8",
-    "types-psutil>=7.2.2.20260906",
-]
+test = ["heinzel==[[ heinzel_version ]]", "editables>=0.5", "coverage>=7.12", "httpx>=0.28", "pytest>=9.0.3,<10", "pytest-timeout>=2.4.0,<3", "pytest-xdist>=3.8"]
 dev = [
     { include-group = "test" },
     "actionlint-py>=1.7.12",
@@ -74,6 +61,10 @@ packages = ["src/[[ package_name ]]"]
 
 [tool.uv]
 required-version = ">=0.13.0"
+
+[tool.heinzel.plugin]
+requires = ["core:plugin-api@1"]
+provides = []
 
 [tool.ruff]
 line-length = 120
@@ -279,4 +270,4 @@ Prompty = "Prompty" # a prompt file format, cited in docs/research/workflow-cont
 intoto = "intoto" # in-toto attestations, as in provenance.intoto.jsonl
 
 [tool.typos.files]
-extend-exclude = ["ATTRIBUTIONS.md", "site"] # third-party license texts, quoted as their authors wrote them; the built site
+extend-exclude = ["ATTRIBUTIONS.md", "site"] # independent plugin checks own their sources and docs

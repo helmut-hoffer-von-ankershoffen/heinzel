@@ -68,6 +68,8 @@ nav:
       - Bootstrap your team: guides/manager.md
       - Join your team: guides/joining.md
   - Plugins:
+      - Create a public or private plugin: PLUGIN_AUTHORING.md
+      - Extension contracts: PLUGINS.md
       - Gallery: plugins/README.md
       - heinzel-atlassian: plugins/heinzel-atlassian/index.md
       - heinzel-clock: plugins/heinzel-clock/index.md

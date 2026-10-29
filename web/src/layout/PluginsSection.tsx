@@ -640,7 +640,7 @@ function Yours({ query, onChange }: { query: string; onChange: (pending: Pending
                 {kind ? t("plugins.noneOfKind") : t("plugins.none")}
               </p>
             ) : (
-              <ul>
+              <ul className="@container">
                 {shown.map((plugin) => {
                   const entry = known.get(plugin.distribution);
                   const url = plugin.source_url ?? plugin.homepage ?? null;
@@ -649,13 +649,13 @@ function Yours({ query, onChange }: { query: string; onChange: (pending: Pending
                   return (
                     <li
                       key={plugin.distribution}
-                      className="flex items-center gap-3 border-b border-border/70 py-3 last:border-b-0"
+                      className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-3 border-b border-border/70 py-3 last:border-b-0 @md:flex"
                     >
                       <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted">
                         <Package aria-hidden className="size-(--icon) text-icon" />
                       </span>
                       <span className="min-w-0 flex-1">
-                        <span className="flex flex-wrap items-center gap-2 text-ui">
+                        <span className="flex min-w-0 flex-wrap items-center gap-2 text-ui [overflow-wrap:anywhere]">
                           {displayName(
                             plugin.name ?? plugin.distribution.replace(/^heinzel-/, ""),
                             plugin.summary || entry?.description,
@@ -670,41 +670,45 @@ function Yours({ query, onChange }: { query: string; onChange: (pending: Pending
                         </span>
                         <RepositoryLine url={url} />
                       </span>
-                      {/* Where it comes from and its version: their own column, flush right and aligned across rows. */}
-                      <span className="flex shrink-0 items-center gap-2">
-                        {!enabled && (
-                          <span className="rounded-md border border-warn/50 px-1.5 text-[11px] text-muted-foreground">
-                            {t("plugins.disabled")}
+                      {/* Narrow settings panels keep provenance and controls below the name instead of clipping. */}
+                      <div className="col-span-2 flex min-w-0 flex-wrap items-center justify-end gap-2 @md:contents">
+                        <span className="mr-auto flex min-w-0 flex-wrap items-center gap-2 @md:mr-0 @md:shrink-0">
+                          {!enabled && (
+                            <span className="rounded-md border border-warn/50 px-1.5 text-[11px] text-muted-foreground">
+                              {t("plugins.disabled")}
+                            </span>
+                          )}
+                          <span className="rounded-md border border-border px-1.5 text-[11px] text-muted-foreground">
+                            {source}
                           </span>
-                        )}
-                        <span className="rounded-md border border-border px-1.5 text-[11px] text-muted-foreground">
-                          {source}
+                          <span className={VERSION}>v{plugin.version}</span>
                         </span>
-                        <span className={VERSION}>v{plugin.version}</span>
-                      </span>
-                      {sourceLink(url, plugin.distribution)}
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => onChange({ action: enabled ? "disable" : "enable", name: plugin.distribution })}
-                        aria-label={t(enabled ? "plugins.disableName" : "plugins.enableName", {
-                          name: plugin.distribution,
-                        })}
-                        title={enabled ? t("plugins.disable") : t("plugins.enable")}
-                        className="text-icon"
-                      >
-                        {enabled ? <PowerOff aria-hidden /> : <Power aria-hidden />}
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => onChange({ action: "remove", name: plugin.distribution })}
-                        aria-label={t("plugins.removeName", { name: plugin.distribution })}
-                        title={t("plugins.remove")}
-                        className="text-icon"
-                      >
-                        <Trash2 aria-hidden />
-                      </Button>
+                        {sourceLink(url, plugin.distribution)}
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() =>
+                            onChange({ action: enabled ? "disable" : "enable", name: plugin.distribution })
+                          }
+                          aria-label={t(enabled ? "plugins.disableName" : "plugins.enableName", {
+                            name: plugin.distribution,
+                          })}
+                          title={enabled ? t("plugins.disable") : t("plugins.enable")}
+                          className="text-icon"
+                        >
+                          {enabled ? <PowerOff aria-hidden /> : <Power aria-hidden />}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => onChange({ action: "remove", name: plugin.distribution })}
+                          aria-label={t("plugins.removeName", { name: plugin.distribution })}
+                          title={t("plugins.remove")}
+                          className="text-icon"
+                        >
+                          <Trash2 aria-hidden />
+                        </Button>
+                      </div>
                     </li>
                   );
                 })}

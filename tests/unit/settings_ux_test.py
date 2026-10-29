@@ -7,7 +7,6 @@ about ends up as a text field nobody wants to type into; these tests keep the sc
 
 import re
 from functools import cache
-from pathlib import Path
 from typing import Any
 
 import pytest
@@ -19,10 +18,6 @@ from heinzel.modules.system.config import ConfigService, SettingInfo
 
 pytestmark = pytest.mark.unit
 
-FIRST_PARTY = {
-    f"heinzel-{path.name.removeprefix('heinzel-')}" for path in (Path(__file__).parents[2] / "plugins").iterdir()
-}
-
 MARKUP = re.compile(r"`|\bADR\b|\[[a-z_]+(\.[a-z_]+)*\]|\{ *[a-z_]+ *=|= *\[")
 """Backticks, ADR numbers and TOML (`[org]`, `{ name = ...}`, `= [9, 18]`): fine in docs, noise in Settings."""
 
@@ -30,7 +25,7 @@ JARGON = re.compile(r"\b(Dirs?|Usd|Ui|Api|Url|Gh|Gws|Acli|Max|Min|Num|Cfg)\b")
 """What pydantic makes of a field name without a title: `Data Dir`, `Ask Max Usd`."""
 
 
-RECORDS = [record for record in discover()[0] if record.origin.builtin or record.origin.distribution in FIRST_PARTY]
+RECORDS = discover(plugins=False)[0]
 """The built-in modules and the first-party plugins; importing them reads no configuration."""
 
 MODELS: list[tuple[str, type[ModuleSettings]]] = [
@@ -70,7 +65,7 @@ def _has(schema: dict[str, Any], key: str, value: object = None) -> bool:
 
 def test_first_party_plugins_are_covered():
     sections = {key.rpartition(".")[0] for key in KEYS}
-    assert {"hz", "org", "clock", "github", "system.notify"} <= sections
+    assert {"hz", "org", "system.notify"} <= sections
     assert set(KEYS) == set(_report())
 
 

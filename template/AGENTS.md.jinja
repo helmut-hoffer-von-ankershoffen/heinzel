@@ -7,7 +7,7 @@ Instructions for coding agents and humans working on [[ project_name ]], a plugi
 
 1. **Intent before code.** Changes serve [INTENT.md](INTENT.md) and respect the ADRs in [docs/adr/](docs/adr/).
 2. **Follow [docs/CODING_STANDARDS.md](docs/CODING_STANDARDS.md)** (shared with Heinzelmännchen, updated by
-   `make update-template`). Plugins import only Heinzelmännchen's public API: `hz` and `heinzel.kernel`.
+   `make update-template`). Plugins import only Heinzelmännchen's public API: `heinzel` and `heinzel.kernel`.
 3. **Every change is tested** as `unit`, `integration` or `e2e`; the suite refuses anything else.
 4. **Conventional commits**, always. Versions and the changelog are derived from them.
 5. **Review before you finish** with the `review` skill and resolve every Critical and Required finding.
@@ -43,7 +43,7 @@ docs/           CODING_STANDARDS.md (from Heinzelmännchen), adr/, scenes.toml (
 
 The entry point `[project.entry-points."heinzel.modules"]` names the root package. Heinzelmännchen walks it: every package that
 declares `module = Module(name, summary)` is a module, nested ones are submodules, and their `@module.operation`
-functions become commands (and later MCP tools and REST endpoints). Services are injected by type. See Heinzelmännchen's
+functions become CLI commands, MCP tools and REST endpoints. Services are injected by type. See Heinzelmännchen's
 [ARCHITECTURE.md](https://github.com/[[ heinzel_owner ]]/heinzel/blob/main/docs/ARCHITECTURE.md).
 
 ## Don'ts

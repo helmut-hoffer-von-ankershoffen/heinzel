@@ -19,8 +19,8 @@ fetches a font for `FontFace` or `@font-face` itself and can't add a header. The
 checks each file again as it reads it (ADR 0044). Themes' logos are served the same way at
 `/theme-assets/<theme>/<light|dark|mark>.svg`, as `image/svg+xml` under a CSP of their own that loads and runs nothing.
 Soundscapes' audio files are served the same way at `/sound-assets/<name>/<layer-n|earcon-kind>.<ext>`, typed by their
-checked signature (ADR 0058). The page itself (`index.html`) admits only fixed frame origins from code: the map origin
-only while a weather module is installed, and a stream origin only while the soundscape in effect is a stream. The
+checked signature (ADR 0058). The page itself (`index.html`) admits only fixed media frame origins from code:
+a stream origin only while the soundscape in effect is a stream. The
 configuration is read for each page, and any error admits no stream origin.
 
 `POST /api/restart` restarts the server in place, for changes a running process can't load, such as an added plugin
@@ -75,6 +75,8 @@ from heinzel.kernel import (
     Settings,
     SoundAssets,
     ThemeFonts,
+    ViewLet,
+    read_view_asset,
 )
 
 HEAD = "web"
@@ -239,6 +241,8 @@ def build(  # noqa: PLR0913 - all but the kernel by keyword
     add_pairing(endpoints, paired)
     add_updates(endpoints, kernel, static, restartable=restart is not None)
     add_stream(endpoints, kernel, stopping)  # behind the same middleware: Host, Origin and the token
+
+    add_views(app, kernel)
     app.mount("/api", endpoints)
     add_fonts(app, kernel)
     add_logos(app, kernel)
@@ -265,19 +269,52 @@ def build(  # noqa: PLR0913 - all but the kernel by keyword
     return app
 
 
-OSM_FRAME_ORIGIN = "https://www.openstreetmap.org"
-"""The fixed map document origin, admitted only while a weather module is installed."""
+def add_views(app: FastAPI, kernel: Kernel) -> None:
+    """Serve only bounded immutable assets of active provider declarations."""
+
+    @app.get("/plugin-sdk/v1/{name}.js", include_in_schema=False)
+    def sdk_asset(name: str) -> Response:
+        allowed = {"react", "react-dom", "react-router", "jsx-runtime"}
+        if name not in allowed:
+            return Response(status_code=404)
+        # Fixed core files, never a caller-selected path or a plugin's source tree.
+        from importlib.resources import files  # noqa: PLC0415 - no optional runtime initialization
+
+        content = files("heinzel.kernel").joinpath("assets", "plugin-sdk", "v1", f"{name}.js").read_bytes()
+        return Response(content, media_type="text/javascript", headers={"Cache-Control": "no-cache"})
+
+    @app.get("/plugin-assets/{owner}/{name}/{fingerprint}/{asset:path}", include_in_schema=False)
+    def plugin_asset(owner: str, name: str, fingerprint: str, asset: str) -> Response:
+        # Module requests cannot carry bearer headers. Only active, fingerprinted installed assets are served;
+        # the existing exact-origin middleware still guards this same-origin script endpoint.
+        for record, declaration in kernel.lets(ViewLet):
+            try:
+                view = declaration.prepared()
+            except (OSError, ValueError):
+                continue
+            if record.qualname == owner and view.name == name and view.fingerprint == fingerprint:
+                try:
+                    content = read_view_asset(view, asset)
+                except (OSError, ValueError):
+                    break
+                media = (
+                    "text/javascript"
+                    if asset.endswith(".js")
+                    else "text/css"
+                    if asset.endswith(".css")
+                    else "application/octet-stream"
+                )
+                return Response(content, media_type=media, headers={"Cache-Control": "no-cache"})
+        return Response(status_code=404)
 
 
 def page_csp(kernel: Kernel) -> str:
     """The page CSP admits only fixed origins needed by currently installed capabilities.
 
-    A map is available only with a weather plugin, and a streaming frame only while a known stream is in effect. No
+    A streaming frame is available only while a known stream is in effect. No
     origin comes from plugin, user, or configuration input.
     """
     origins: list[str] = []
-    if any(record.qualname == "weather" or record.qualname.startswith("weather.") for record in kernel.modules):
-        origins.append(OSM_FRAME_ORIGIN)
     try:
         provider = kernel.resolve(SoundAssets).stream_provider() if kernel.provides(SoundAssets) else None
     except Exception:  # noqa: BLE001 - fail closed: the page loads with the strict CSP, sound just can't stream

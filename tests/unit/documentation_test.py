@@ -7,11 +7,6 @@ from pathlib import Path
 from typing import Annotated, get_args, get_origin
 from urllib.parse import quote
 
-import heinzel_atlassian
-import heinzel_clock
-import heinzel_github
-import heinzel_google
-import heinzel_zoom
 import pytest
 from pydantic import BaseModel, Field
 from pydantic.fields import FieldInfo
@@ -28,6 +23,7 @@ WEB_BUILD = REPO / "src/heinzel/heads/web/static"
 MARKDOWN = sorted(
     p
     for p in REPO.rglob("*.md")
+    if not p.is_relative_to(REPO / "plugins")
     if not {".venv", "node_modules", ".pytest_cache", "worktrees"} & set(p.relative_to(REPO).parts)
     and not p.is_relative_to(WEB_BUILD)
     and p.is_file()
@@ -197,11 +193,6 @@ def test_adr_index_and_links_match_the_records(directory):
 def test_every_parameter_setting_and_module_is_described(make_kernel):
     kernel = make_kernel(
         builtins=True,
-        atlassian=heinzel_atlassian.module,
-        clock=heinzel_clock.module,
-        github=heinzel_github.module,
-        google=heinzel_google.module,
-        zoom=heinzel_zoom.module,
     )  # first-party plugins too
     missing = [r.qualname for r in kernel.modules if not r.module.summary]
     for item in exposed(kernel, "cli"):
@@ -271,11 +262,6 @@ def test_operation_summaries_are_one_short_sentence_and_module_names_singular(ma
     """Summaries are the help line, the MCP tool description and the OpenAPI summary; they must read well in all."""
     kernel = make_kernel(
         builtins=True,
-        atlassian=heinzel_atlassian.module,
-        clock=heinzel_clock.module,
-        github=heinzel_github.module,
-        google=heinzel_google.module,
-        zoom=heinzel_zoom.module,
     )  # first-party plugins too
     problems = [
         f"{record.qualname} {operation.name}: {problem}"

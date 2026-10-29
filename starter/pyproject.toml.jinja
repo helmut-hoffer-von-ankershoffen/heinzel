@@ -1,0 +1,54 @@
+[project]
+name = "[[ project_name ]]"
+version = "0.0.0"
+description = [[ plugin_summary | tojson ]]
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.12"
+dependencies = ["heinzel>=[[ heinzel_version ]],<[[ heinzel_upper_bound ]]"]
+
+[project.entry-points."heinzel.modules"]
+[[ plugin_name ]] = "[[ package_name ]]"
+
+[build-system]
+requires = ["hatchling>=1.29.0"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+test = ["editables>=0.5", "pytest>=9.0.3,<10", "pytest-timeout>=2.4.0,<3", "ruff==0.17.2", "mypy>=1.19.0,<3", "coverage>=7.12", "pyright[nodejs]==1.1.414"]
+
+[tool.heinzel.plugin]
+layout = "[[ layout ]]"
+requires = ["core:plugin-api@1"]
+provides = []
+
+[tool.mypy]
+strict = true
+files = ["src"]
+plugins = ["pydantic.mypy"]
+
+[tool.pyright]
+typeCheckingMode = "strict"
+include = ["src"]
+pythonVersion = "3.12"
+
+[tool.pytest]
+testpaths = ["tests"]
+addopts = ["--import-mode=importlib"]
+filterwarnings = ["error"]
+markers = ["unit: Isolated behavior.", "integration: Public contracts across layers.", "e2e: Installed artifacts.", "perf: Explicit timing tests.", "long_running: Extended end-to-end budget."]
+
+[tool.coverage.run]
+source = ["[[ package_name ]]"]
+branch = true
+
+[tool.coverage.report]
+fail_under = 90
+show_missing = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/[[ package_name ]]"]
+
+[tool.hatch.build.targets.sdist]
+exclude = [".venv", ".acceptance", ".preview", "dist", "**/__pycache__", ".pytest_cache", ".mypy_cache", ".coverage*"]

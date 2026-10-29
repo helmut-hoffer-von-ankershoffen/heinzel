@@ -4,20 +4,13 @@
 
 | Plugin | Kind | What it does |
 | --- | --- | --- |
-| [`heinzel-atlassian`](heinzel-atlassian/index.md) | connector | Read Jira issues and Confluence pages through acli: the tracker and documents capabilities. |
-| [`heinzel-clock`](heinzel-clock/index.md) | capability | What time it is for everyone on the team: a Heinzelmännchen plugin. |
-| [`heinzel-github`](heinzel-github/index.md) | connector | Read pull requests and issues from GitHub: the code-host and tracker capabilities. |
-| [`heinzel-google`](heinzel-google/index.md) | connector, capability | Google Docs, Sheets, Drive, Calendar and Gmail: the documents, calendar and mail capabilities. |
-| [`heinzel-tailscale`](heinzel-tailscale/index.md) | capability | Share the authenticated web app privately through Tailscale Serve: a Heinzelmännchen plugin. |
-| [`heinzel-zoom`](heinzel-zoom/index.md) | connector | Read meetings from Zoom's meeting-summary emails: the meetings capability. |
 
 Every page is generated from the installed plugin by `hz system plugin docs build` (ADR 0082); CI fails when one is out of date. A plugin's own repository documents it the same way: `make docs-plugins` there writes the same page, `make docs-record` its recordings.
 
 ## More plugins
 
-Plugins in repositories of their own, installed with `hz system plugin add <spec> --confirm`; a community plugin lists itself in [registry.toml](registry.toml) with a pull request, and `hz system plugin search` finds any repository with the topic `heinzel-plugin`.
+Install a discovered plugin with `hz system plugin add <spec> --confirm`. `hz system plugin search` discovers plugin metadata in configured repository directories and external repositories with the topic `heinzel-plugin`; no registry pull request is needed. The optional [registry.toml](registry.toml) curates additional documentation links below.
 
 | Plugin | What it does | Repository | Documentation |
 | --- | --- | --- | --- |
-| `heinzel-acme` | Acme, a made-up company: the reference layers (company, org, team, site), adapters bound by configuration, a weekly-report playbook and onboarding end to end (ADR 0040). | <https://github.com/helmut-hoffer-von-ankershoffen/heinzel-acme> | [page](https://github.com/helmut-hoffer-von-ankershoffen/heinzel-acme/blob/main/docs/plugins/heinzel-acme/index.md) |
 | `heinzel-weather` | Weather conditions, forecasts and themes from the community plugin collection. | <https://github.com/helmut-hoffer-von-ankershoffen/heinzel-contrib> | [README](https://github.com/helmut-hoffer-von-ankershoffen/heinzel-contrib#readme) |

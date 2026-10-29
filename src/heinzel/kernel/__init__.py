@@ -67,6 +67,7 @@ from heinzel.kernel._contributions import (
     Slot,
     StatusItem,
     StatusLet,
+    StatusMeter,
     ToggleControl,
     Tone,
     Widget,
@@ -187,6 +188,7 @@ from heinzel.kernel._protocols import (
     plain_addresses,
 )
 from heinzel.kernel._release import ReleaseCache, ReleaseSource
+from heinzel.kernel._services import ServiceContract
 from heinzel.kernel._session import SessionEvent, SessionHead, SessionProjector, SessionRead
 from heinzel.kernel._session_store import SessionStore, SessionWriter
 from heinzel.kernel._settings import Settings
@@ -255,6 +257,7 @@ from heinzel.kernel._themes import (
     ThemeVariant,
     font_stack_problem,
 )
+from heinzel.kernel._views import ViewLet, ViewSlot, read_view_asset
 
 __all__ = [
     "BUILTIN_PACKAGE",
@@ -439,6 +442,7 @@ __all__ = [
     "ScriptedPrompter",
     "SectionReplacement",
     "SentMail",
+    "ServiceContract",
     "ServiceLet",
     "SessionEvent",
     "SessionHead",
@@ -469,6 +473,7 @@ __all__ = [
     "Status",
     "StatusItem",
     "StatusLet",
+    "StatusMeter",
     "StreamProvider",
     "TeamGraph",
     "TeamPromise",
@@ -500,6 +505,8 @@ __all__ = [
     "UsageEntry",
     "UsageLog",
     "Verb",
+    "ViewLet",
+    "ViewSlot",
     "Weather",
     "Widget",
     "WidgetAction",
@@ -530,6 +537,7 @@ __all__ = [
     "public_parameters",
     "read_skill",
     "read_skill_file",
+    "read_view_asset",
     "record_usage",
     "redact_emails",
     "requirement_from_receipt",
