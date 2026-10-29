@@ -46,8 +46,12 @@ const en = {
   "durable.daemonAbsent":
     "The schedule is saved, but no background daemon is installed, so check-ins are dormant. Installing it changes what starts automatically when you sign in; confirm that change in Settings.",
   "durable.daemonPaused": "The schedule is saved, but the background daemon is paused, so check-ins are dormant.",
+  "durable.daemonCadence":
+    "The daemon cadence is unknown or slower than five minutes. Check-ins need a tick every five minutes; use `hz system daemon install --interval 5m` to set that cadence.",
+  "durable.daemonVersionNeedsCheck":
+    "The daemon is not verified running the installed Heinzel version. Restart it in Settings and wait for a service-managed tick before relying on check-ins.",
   "durable.daemonNeedsCheck":
-    "The schedule is saved, but the background daemon is not verified ready. Check its status before relying on check-ins.",
+    "The schedule is saved, but daemon jobs are failing or ticks have stopped. Check daemon status and logs before relying on check-ins.",
   "durable.daemonStatusUnavailable":
     "The schedule is saved, but the background daemon status could not be verified. Check it before relying on check-ins.",
   "durable.daemonSettings": "Open daemon settings",

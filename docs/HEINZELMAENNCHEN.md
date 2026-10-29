@@ -81,6 +81,15 @@ If no daemon unit is installed, activation can preconfigure the schedule, but it
 until a daemon is installed, started and observed running the current version. The install marker and service-manager
 reload result are not treated as proof that the new code ran. The tick version records the code that executed in that
 invocation, not proof about a separate manually launched process.
+
+From the CLI, use `hz system daemon status --json` to inspect `installed`, `loaded`, `paused`, `interval_minutes`,
+`version`, `installed_version` and `version_mismatch`. An absent daemon leaves this schedule dormant; install one with
+`hz system daemon install --interval 5m` only if you want the persistent login service. A paused daemon can be resumed
+with `hz system daemon resume`. If the service is unloaded, or its tick version is unknown or mismatched, run
+`hz system daemon restart` and wait for `version` to match `installed_version` before relying on check-ins. A manual
+`hz system daemon tick` does not provide that service-managed version proof. Five-minute schedules require an interval
+of five minutes or less; reinstall with `--interval 5m` if the reported cadence is slower.
+
 Advisory file locks cannot fence a process that
 appends without taking the lock, and this journal has no writer epoch or compare-and-swap append to stop one. Stop
 any such process before enabling scheduled check-ins; concurrent unlocked writes are unsupported and can leave

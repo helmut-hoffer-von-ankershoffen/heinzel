@@ -72,7 +72,15 @@ def restart(service: DaemonService) -> Restarted:
 
 @module.operation
 def status(service: DaemonService) -> DaemonStatus:
-    """Show whether the daemon is installed, loaded and paused, its last tick and failing jobs."""
+    """Check-ins need a resumed daemon with 5m ticks and a matching service version.
+
+    For five-minute check-ins, the daemon must be installed and tick every five minutes or faster. If it is absent,
+    `hz system daemon install --interval 5m` installs a persistent login service; the schedule stays dormant until
+    it is installed and a service-managed tick is observed. If paused, run `hz system daemon resume`. If its service
+    tick version is unknown or mismatched, run `hz system daemon restart` and wait until a service-managed tick
+    records the installed version; a manual tick cannot establish that proof. Use the install command to correct a
+    slower cadence.
+    """
     return service.status()
 
 

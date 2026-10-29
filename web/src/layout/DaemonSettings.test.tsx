@@ -208,6 +208,16 @@ describe("Daemon Settings", () => {
     expect(calls.filter((request) => new URL(request.url).pathname.endsWith("/restart"))).toHaveLength(1);
   });
 
+  it("explains a daemon version mismatch and offers the confirmed restart", async () => {
+    const { user } = show({ version: "1.0.0", installed_version: "2.0.0", version_mismatch: true });
+    expect(
+      await screen.findByText("Restart the daemon and wait for a tick from the installed hz version."),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Restart" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Restart" }));
+    expect(await screen.findByRole("alertdialog")).toBeInTheDocument();
+  });
+
   it("keeps state and reports a refused pause instead of claiming success or retrying", async () => {
     const { calls, user } = show({}, true);
     await user.click(await screen.findByRole("button", { name: "Pause" }));

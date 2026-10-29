@@ -756,4 +756,36 @@ describe("personal conversation links", () => {
     expect(panel.getByRole("link", { name: "Open daemon settings" })).toHaveAttribute("href", "/?settings=daemon");
     expect(panel.queryByRole("button", { name: "Install" })).not.toBeInTheDocument();
   });
+
+  it.each([
+    ["paused", { paused: true }, /background daemon is paused, so check-ins are dormant/i],
+    ["version mismatch", { version_mismatch: true }, /not verified running the installed Heinzel version/i],
+    ["slow cadence", { interval_minutes: 10 }, /cadence is unknown or slower than five minutes/i],
+    ["unknown cadence", { interval_minutes: null }, /cadence is unknown or slower than five minutes/i],
+    ["stale tick", { last_tick: "2000-01-01T00:00:00Z" }, /daemon jobs are failing or ticks have stopped/i],
+  ])("directs an active check-in to daemon recovery when readiness is %s", async (_case, change, copy) => {
+    mockApi({
+      ...shell,
+      "/api/heinzel/session": { ...snapshot, schedule: { ...proposedSchedule, status: "active" } },
+      "/api/system/daemon/status": {
+        executable: "/usr/local/bin/hz",
+        failing: [],
+        installed: true,
+        installed_version: "1.2.3",
+        interval_minutes: 5,
+        jobs: 1,
+        last_tick: new Date().toISOString(),
+        loaded: true,
+        paused: false,
+        platform: "darwin",
+        version: "1.2.3",
+        version_mismatch: false,
+        ...change,
+      },
+    });
+    renderAt(`/heinzel?chat=${sessionId}`);
+    const panel = within(await screen.findByRole("complementary", { name: "Chat" }));
+    expect(await panel.findByText(copy)).toBeInTheDocument();
+    expect(panel.getByRole("link", { name: "Open daemon settings" })).toHaveAttribute("href", "/?settings=daemon");
+  });
 });

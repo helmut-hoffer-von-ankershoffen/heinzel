@@ -73,6 +73,28 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
     retry: false,
   });
   const approvalChat = approvalChatId === null ? undefined : approvalQuery.data;
+  const activeDaemon = query.data?.schedule?.status === "active" ? daemonStatus.data : undefined;
+  const staleDaemonTick =
+    activeDaemon?.installed === true &&
+    activeDaemon.interval_minutes !== null &&
+    activeDaemon.last_tick !== null &&
+    Date.now() - Date.parse(activeDaemon.last_tick) > activeDaemon.interval_minutes * 2 * 60_000;
+  const daemonReadinessMessage = activeDaemon
+    ? !activeDaemon.installed
+      ? t("durable.daemonAbsent")
+      : activeDaemon.paused
+        ? t("durable.daemonPaused")
+        : activeDaemon.interval_minutes === null || activeDaemon.interval_minutes > 5
+          ? t("durable.daemonCadence")
+          : !activeDaemon.loaded ||
+              !activeDaemon.version ||
+              !activeDaemon.installed_version ||
+              activeDaemon.version_mismatch
+            ? t("durable.daemonVersionNeedsCheck")
+            : activeDaemon.failing.length > 0 || staleDaemonTick
+              ? t("durable.daemonNeedsCheck")
+              : null
+    : null;
   const agentActions = (agentChat?.actions ?? []).filter(
     (action) =>
       action.module === "heinzel" &&
@@ -575,33 +597,14 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
             ) : (
               <p className="text-sm text-muted-foreground">{t("durable.scheduleEmpty")}</p>
             )}
-            {query.data.schedule?.status === "active" &&
-              daemonStatus.data &&
-              (!daemonStatus.data.installed ? (
-                <p className="text-sm text-warn" role="status">
-                  {t("durable.daemonAbsent")}{" "}
-                  <Link className="underline" to="/?settings=daemon">
-                    {t("durable.daemonSettings")}
-                  </Link>
-                </p>
-              ) : daemonStatus.data.paused ? (
-                <p className="text-sm text-warn" role="status">
-                  {t("durable.daemonPaused")}{" "}
-                  <Link className="underline" to="/?settings=daemon">
-                    {t("durable.daemonSettings")}
-                  </Link>
-                </p>
-              ) : !daemonStatus.data.loaded ||
-                !daemonStatus.data.version ||
-                daemonStatus.data.version_mismatch ||
-                daemonStatus.data.failing.length > 0 ? (
-                <p className="text-sm text-warn" role="status">
-                  {t("durable.daemonNeedsCheck")}{" "}
-                  <Link className="underline" to="/?settings=daemon">
-                    {t("durable.daemonSettings")}
-                  </Link>
-                </p>
-              ) : null)}
+            {daemonReadinessMessage && (
+              <p className="text-sm text-warn" role="status">
+                {daemonReadinessMessage}{" "}
+                <Link className="underline" to="/?settings=daemon">
+                  {t("durable.daemonSettings")}
+                </Link>
+              </p>
+            )}
             {query.data.schedule?.status === "active" && daemonStatus.isError && (
               <p className="text-sm text-warn" role="status">
                 {t("durable.daemonStatusUnavailable")}{" "}
