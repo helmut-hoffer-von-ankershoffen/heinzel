@@ -64,7 +64,10 @@ describe("World clock", () => {
     vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
     show();
     const state = (await screen.findAllByRole("img", { name: "Off duty · time for fun" }))[0];
-    expect(state).toHaveAttribute("title", expect.stringContaining("Mon–Fri 09:00–18:00"));
+    expect(state).toHaveAttribute(
+      "title",
+      "Off duty · time for fun · Starts in 21h · 1d 19h since end · Mon–Fri 09:00–18:00 · Starts Mon 09:00",
+    );
   });
   it("keeps unknown browser zones in place without moving the primary label", async () => {
     vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
