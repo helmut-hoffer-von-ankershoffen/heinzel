@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 from pydantic import JsonValue, TypeAdapter
 
 from heinzel import CurrentUser, HeinzelError, SessionHead, SessionRead, SessionStore, SessionWriter
+from heinzel.kernel._identity import Authentication
 from heinzel.modules.heinzel._session_models import Digest, RequestId, SessionId
 
 _SESSION = TypeAdapter(SessionId)
@@ -41,6 +42,11 @@ class PersonalSessionRepository:
     def principal_id(self) -> str:
         """The trusted active principal; unauthenticated calls never fall back to installation ownership."""
         return self.current.principal().id
+
+    @property
+    def authentication(self) -> Authentication:
+        """Read the actual trusted call context, without recording credentials or audience."""
+        return self.current.context().authentication
 
     def _store(self, namespace: str) -> SessionStore:
         root = self.current.directory.parent / "heinzel-sessions" / self.principal_id / namespace

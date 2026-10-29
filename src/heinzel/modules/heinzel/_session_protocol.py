@@ -6,6 +6,7 @@ from typing import Protocol
 from pydantic import JsonValue
 
 from heinzel import SessionHead, SessionRead, SessionWriter
+from heinzel.kernel._identity import Authentication
 
 
 class SessionRepository(Protocol):
@@ -18,6 +19,11 @@ class SessionRepository(Protocol):
     @property
     def principal_id(self) -> str:
         """The current trusted principal; absence of a trusted context is an error, never an owner fallback."""
+        ...
+
+    @property
+    def authentication(self) -> Authentication:
+        """The verified current call's channel; never a request argument or approval claim."""
         ...
 
     def heads(self) -> list[SessionHead]:

@@ -8455,6 +8455,13 @@ export interface components {
              */
             id: string;
             /**
+             * Origin
+             * @description Authenticated acceptance channel if recorded; not proof of human authorship or permission.
+             * @default unknown
+             * @enum {string}
+             */
+            origin: "unknown" | "cli" | "mcp-stdio" | "daemon" | "api-bearer" | "web-session" | "web-device";
+            /**
              * Role
              * @description Who produced this visible message.
              * @enum {string}

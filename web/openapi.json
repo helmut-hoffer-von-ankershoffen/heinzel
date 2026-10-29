@@ -10304,6 +10304,21 @@
             "title": "Id",
             "type": "string"
           },
+          "origin": {
+            "default": "unknown",
+            "description": "Authenticated acceptance channel if recorded; not proof of human authorship or permission.",
+            "enum": [
+              "unknown",
+              "cli",
+              "mcp-stdio",
+              "daemon",
+              "api-bearer",
+              "web-session",
+              "web-device"
+            ],
+            "title": "Origin",
+            "type": "string"
+          },
           "role": {
             "description": "Who produced this visible message.",
             "enum": [

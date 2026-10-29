@@ -17,6 +17,7 @@ SessionId = Annotated[str, Field(pattern=r"^hz-[0-9A-HJKMNP-TV-Z]{26}$")]
 RequestId = Annotated[str, Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$")]
 Digest = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
 BackendMode = Literal["api", "cli-model", "native-cli"]
+MessageOrigin = Literal["unknown", "cli", "mcp-stdio", "daemon", "api-bearer", "web-session", "web-device"]
 MAX_DRAFT_FILES = 16
 MAX_DRAFT_PATH = 160
 MAX_DRAFT_FILE_BYTES = 24 * 1024
@@ -264,6 +265,10 @@ class SessionMessage(BaseModel):
     seq: int = Field(description="The authoritative control-journal position; gaps are permitted.", ge=1)
     turn_id: str | None = Field(default=None, description="The owning turn id, when one has been assigned.")
     role: Literal["user", "assistant", "tool", "system"] = Field(description="Who produced this visible message.")
+    origin: MessageOrigin = Field(
+        default="unknown",
+        description="Authenticated acceptance channel if recorded; not proof of human authorship or permission.",
+    )
     text: str = Field(default="", description="The portable plain-text content.")
     blocks: list[ResultBlock] = Field(
         description="Validated rich blocks with portable text fallbacks.", default_factory=list[ResultBlock]

@@ -36,6 +36,7 @@ from heinzel.modules.heinzel._session_models import (
     ContractVersion,
     HeinzelAppearance,
     MessageAccepted,
+    MessageOrigin,
     MessageRequest,
     PersonalArtifact,
     PersonalArtifacts,
@@ -56,6 +57,7 @@ from heinzel.modules.heinzel._session_models import (
 )
 from heinzel.modules.heinzel._session_protocol import SessionRepository
 
+_ORIGIN = TypeAdapter(MessageOrigin)
 _REQUEST = TypeAdapter(RequestId)
 _SESSION_ID = TypeAdapter(SessionId)
 _REVISION = TypeAdapter(int)
@@ -600,7 +602,12 @@ class SessionCrud(ApprovalIssuer):
                 event = writer.append(
                     "message.accepted",
                     key=f"message-{request.request_id}",
-                    data={"message_id": request.request_id, "request_hash": digest, **body.model_dump(mode="json")},
+                    data={
+                        "message_id": request.request_id,
+                        "request_hash": digest,
+                        "origin": _ORIGIN.validate_python(self.repository.authentication, strict=True),
+                        **body.model_dump(mode="json"),
+                    },
                 )
         return MessageAccepted(
             request_id=request.request_id, session_id=session_id, disposition="queued", inbox_position=event.seq
@@ -1551,6 +1558,13 @@ class SessionCrud(ApprovalIssuer):
         except ValidationError:
             msg = "This message checkpoint has an invalid message identity"
             raise HeinzelError(msg) from None
+        origin: MessageOrigin = "unknown"
+        if event.kind == "message.accepted" and "origin" in event.data:
+            try:
+                origin = _ORIGIN.validate_python(event.data["origin"], strict=True)
+            except ValidationError:
+                msg = "This message checkpoint has invalid acceptance provenance"
+                raise HeinzelError(msg) from None
         try:
             value = self._body(session_id, event)
         except FileNotFoundError:
@@ -1558,6 +1572,7 @@ class SessionCrud(ApprovalIssuer):
                 id=message_id,
                 seq=event.seq,
                 role="user" if event.kind == "message.accepted" else "assistant",
+                origin=origin,
                 at=event.ts,
                 status="expired",
                 text="This private message body is no longer retained.",
@@ -1571,6 +1586,7 @@ class SessionCrud(ApprovalIssuer):
                 id=request.request_id,
                 seq=event.seq,
                 role="user",
+                origin=origin,
                 text=request.text,
                 attachment_ids=request.attachment_ids,
                 at=event.ts,
