@@ -24,6 +24,7 @@ const en = {
   "personal.retrySave": "Retry save",
   "personal.reload": "Reload saved profile",
   "personal.saveError": "Could not confirm the save. Retry the same request or reload the saved profile.",
+  "personal.draftStorageFailed": "This tab could not preserve your unsaved name and look after a reload.",
   "personal.openSchedule": "Continue to schedule setup",
   "personal.saveBeforeSchedule": "Save the name and look before continuing to schedule setup.",
   "durable.title": "Personal conversation",
