@@ -7,6 +7,7 @@ import re
 import select
 import threading
 import time
+import tty
 
 import anyio
 import pytest
@@ -175,6 +176,7 @@ def test_schedule_approval_reads_the_fresh_challenge_from_the_controlling_termin
         "action": "activate",
         "expected_contract_version": 1,
         "expected_preview_hash": "a" * 64,
+        "current_schedule": {"name": "bad\u009b\u202eprofile"},
     }
     result: list[Exception] = []
 
@@ -198,6 +200,10 @@ def test_schedule_approval_reads_the_fresh_challenge_from_the_controlling_termin
     shown = prompt.decode("utf-8")
     assert arguments["session_id"] in shown
     assert arguments["expected_preview_hash"] in shown
+    assert "\\u009b" in shown
+    assert "\\u202e" in shown
+    assert "\u009b" not in shown
+    assert "\u202e" not in shown
     match = re.search(r"Type exactly: ([^\r\n]+)", shown)
     assert match is not None
     os.write(master, f"{match.group(1)}\n".encode())
@@ -206,6 +212,38 @@ def test_schedule_approval_reads_the_fresh_challenge_from_the_controlling_termin
     os.close(slave)
     assert not worker.is_alive()
     assert result == [None]
+
+
+def test_schedule_approval_partial_raw_terminal_input_respects_the_remaining_deadline(monkeypatch):
+    master, slave = pty.openpty()
+    tty.setraw(slave)
+    os.set_blocking(slave, False)
+    os.write(master, b"approve schedule")
+    monotonic = iter((10.0, 14.0))
+    timeouts: list[float] = []
+    readiness = iter((([slave], [], []), ([], [], [])))
+
+    def select_ready(_read, _write, _error, timeout):
+        timeouts.append(timeout)
+        return next(readiness)
+
+    with pytest.MonkeyPatch.context() as patcher:
+        patcher.setattr(mcp.time, "monotonic", lambda: next(monotonic))
+        patcher.setattr(mcp.select, "select", select_ready)
+        assert not mcp._read_tty_challenge(slave, "approve schedule 123456", 20.0)
+    os.close(master)
+    os.close(slave)
+    assert timeouts == [10.0, 6.0]
+
+
+def test_schedule_approval_lock_wait_is_bounded(monkeypatch):
+    assert mcp._SCHEDULE_APPROVAL_LOCK.acquire(blocking=False)
+    monkeypatch.setattr(mcp, "_SCHEDULE_APPROVAL_TIMEOUT_SECONDS", 0.01)
+    try:
+        with pytest.raises(HeinzelError, match="before its deadline"):
+            mcp._confirm_schedule_on_tty({"action": "activate"})
+    finally:
+        mcp._SCHEDULE_APPROVAL_LOCK.release()
 
 
 def test_schedule_approval_rejects_a_wrong_terminal_challenge_and_missing_tty(monkeypatch):

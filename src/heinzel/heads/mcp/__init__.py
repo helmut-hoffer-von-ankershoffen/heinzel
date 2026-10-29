@@ -24,6 +24,7 @@ import secrets
 import select
 import shlex
 import stat
+import time
 from collections.abc import Callable
 from dataclasses import replace
 from threading import Lock
@@ -56,6 +57,8 @@ from heinzel.kernel._approval import ApprovalIssuer
 HEAD = "mcp"
 log = logging.getLogger(__name__)
 _SCHEDULE_APPROVAL_LOCK = Lock()
+_SCHEDULE_APPROVAL_TIMEOUT_SECONDS = 60
+_SCHEDULE_APPROVAL_INPUT_LIMIT = 256
 INSTRUCTIONS = (
     "Heinzelmännchen helps product development teams with the busywork of running a team. Tools are named after "
     "their command path: `system_doctor` is `hz system doctor`. Start with `system_info` or `system_doctor`; tools "
@@ -253,36 +256,73 @@ def _confirm_schedule_on_tty(arguments: dict[str, Any]) -> None:
     Raises:
         HeinzelError: If no controlling terminal exists, the challenge is declined or its 60-second window expires.
     """
-    challenge = f"approve schedule {secrets.token_hex(3)}"
-    review = json.dumps(arguments, ensure_ascii=False, sort_keys=True, indent=2)
-    with _SCHEDULE_APPROVAL_LOCK:
-        descriptor = -1
+    deadline = time.monotonic() + _SCHEDULE_APPROVAL_TIMEOUT_SECONDS
+    if not _SCHEDULE_APPROVAL_LOCK.acquire(timeout=_SCHEDULE_APPROVAL_TIMEOUT_SECONDS):
+        msg = "MCP schedule approval was not confirmed before its deadline"
+        raise HeinzelError(msg)
+    descriptor = -1
+    terminal_fd = -1
+    try:
+        challenge = f"approve schedule {secrets.token_hex(3)}"
+        # ASCII JSON escapes C1, bidi and other non-ASCII code points so profile text cannot reorder or control
+        # the terminal. The owner can still inspect the exact code points shown in the escaped representation.
+        review = json.dumps(arguments, ensure_ascii=True, sort_keys=True, indent=2)
+        descriptor = os.open("/dev/tty", os.O_RDWR | os.O_NOCTTY | os.O_CLOEXEC)
+        _require_controlling_tty(descriptor)
+        terminal_fd = os.dup(descriptor)
+        raw = io.FileIO(terminal_fd, "r+")
         terminal_fd = -1
+        with io.TextIOWrapper(raw, encoding="ascii", errors="strict", line_buffering=True) as terminal:
+            terminal.write("Human approval requested for this exact schedule action:\n")
+            terminal.write(review)
+            terminal.write("\nPress Ctrl-D or enter any other text to cancel.\n")
+            terminal.write(f"\nType exactly: {challenge}\n> ")
+            terminal.flush()
+        # Do not use TextIOWrapper.readline(): select readiness can mean only one byte is available on a raw TTY.
+        # Nonblocking os.read plus a monotonic deadline keeps partial input from extending this prompt indefinitely.
+        os.set_blocking(descriptor, False)
+        confirmed = _read_tty_challenge(descriptor, challenge, deadline)
+    except (OSError, UnicodeError):
+        msg = "MCP schedule approval needs a controlling terminal; use the paired web review instead"
+        raise HeinzelError(msg) from None
+    finally:
         try:
-            descriptor = os.open("/dev/tty", os.O_RDWR | os.O_NOCTTY | os.O_CLOEXEC)
-            _require_controlling_tty(descriptor)
-            terminal_fd = os.dup(descriptor)
-            raw = io.FileIO(terminal_fd, "r+")
-            terminal_fd = -1
-            with io.TextIOWrapper(raw, encoding="utf-8", errors="strict", line_buffering=True) as terminal:
-                terminal.write("Human approval requested for this exact schedule action:\n")
-                terminal.write(review)
-                terminal.write("\nPress Ctrl-D or enter any other text to cancel.\n")
-                terminal.write(f"\nType exactly: {challenge}\n> ")
-                terminal.flush()
-                ready, _, _ = select.select([descriptor], [], [], 60)
-                answer = terminal.readline(256) if ready else ""
-        except (OSError, UnicodeError):
-            msg = "MCP schedule approval needs a controlling terminal; use the paired web review instead"
-            raise HeinzelError(msg) from None
-        finally:
             if terminal_fd >= 0:
                 os.close(terminal_fd)
-            if descriptor >= 0:
-                os.close(descriptor)
-    if not answer.endswith("\n") or not secrets.compare_digest(answer.rstrip("\r\n"), challenge):
+        finally:
+            try:
+                if descriptor >= 0:
+                    os.close(descriptor)
+            finally:
+                _SCHEDULE_APPROVAL_LOCK.release()
+    if not confirmed:
         msg = "MCP schedule approval was not confirmed"
         raise HeinzelError(msg)
+
+
+def _read_tty_challenge(descriptor: int, challenge: str, deadline: float) -> bool:
+    expected = challenge.encode("ascii")
+    answer = bytearray()
+    while len(answer) <= _SCHEDULE_APPROVAL_INPUT_LIMIT:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return False
+        ready, _, _ = select.select([descriptor], [], [], remaining)
+        if not ready:
+            return False
+        try:
+            chunk = os.read(descriptor, _SCHEDULE_APPROVAL_INPUT_LIMIT + 1 - len(answer))
+        except BlockingIOError:
+            continue
+        if not chunk:
+            return False
+        terminators = [position for position in (chunk.find(b"\n"), chunk.find(b"\r")) if position >= 0]
+        if terminators:
+            position = min(terminators)
+            answer.extend(chunk[:position])
+            return not chunk[position + 1 :] and secrets.compare_digest(bytes(answer), expected)
+        answer.extend(chunk)
+    return False
 
 
 def _require_controlling_tty(descriptor: int) -> None:
