@@ -19,6 +19,7 @@ CPU_PERCENT = psutil.cpu_percent
 def probe(monkeypatch):
     from heinzel.modules.system import resource as resources
 
+    monkeypatch.setattr(resources, "gethostname", lambda: "workshop.local")
     calls = []
     monkeypatch.setattr(resources.psutil, "cpu_percent", lambda *, interval: calls.append(interval) or 12.5)
     monkeypatch.setattr(resources.psutil, "virtual_memory", lambda: SimpleNamespace(percent=40.0))
@@ -38,10 +39,13 @@ def test_concurrent_callers_share_one_sample(probe):
     sample = samples[0]
     assert (sample.cpu_percent, sample.memory_percent, sample.load_1m, sample.logical_cores) == (12.5, 40, 3, 10)
     assert sample.sampled_at.utcoffset().total_seconds() == 0
+    assert sample.hostname == "workshop.local"
     assert sample.problems == []
     console = Console(record=True)
     console.print(render(sample))
-    assert "CPU" in console.export_text()
+    output = console.export_text()
+    assert "workshop.local" in output
+    assert "CPU" in output
 
 
 def test_expired_cache_collects_again(probe, monkeypatch):
@@ -122,6 +126,7 @@ def test_resource_model_rejects_nonfinite_json_values():
 
     with pytest.raises(ValidationError):
         Resources(
+            hostname="workshop.local",
             sampled_at=datetime(2026, 10, 25, tzinfo=UTC),
             cpu_percent=float("nan"),
             memory_percent=1,

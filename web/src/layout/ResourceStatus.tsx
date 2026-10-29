@@ -54,7 +54,9 @@ export function ResourceStatus() {
       }
     >
       <div className="space-y-2 px-1.5 pb-1.5">
-        <p className="text-xs text-muted-foreground">{t("resource.host")}</p>
+        <p className="break-words text-xs text-muted-foreground">
+          {t("resource.host", { hostname: report?.hostname ?? t("resource.unknown") })}
+        </p>
         <dl className="grid grid-cols-2 gap-x-2 gap-y-1 tabular-nums">
           <dt>{t("resource.cpu")}</dt>
           <dd>{percent(cpu)}</dd>

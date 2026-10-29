@@ -9447,6 +9447,11 @@
             "description": "Machine CPU usage, 0 to 100 percent.",
             "title": "Cpu Percent"
           },
+          "hostname": {
+            "description": "Hostname of the machine running hz.",
+            "title": "Hostname",
+            "type": "string"
+          },
           "load_1m": {
             "anyOf": [
               {
@@ -9503,6 +9508,7 @@
           }
         },
         "required": [
+          "hostname",
           "sampled_at",
           "cpu_percent",
           "memory_percent",
