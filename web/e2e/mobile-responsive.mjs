@@ -355,6 +355,7 @@ try {
     const visitedRoutes = new Set([...destinations, ...routePaths]);
     for (const destination of visitedRoutes) {
       await page.goto(`${new URL(destination, url).href}${new URL(url).hash}`);
+      await page.locator("#splash").waitFor({ state: "hidden", timeout: 15_000 });
       await page.locator("main").waitFor();
       for (const detail of await page
         .locator('main a[href^="/contracts/"]')
