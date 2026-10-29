@@ -8,6 +8,42 @@ import { expectAccessible, mockApi, renderAt } from "@/test/render";
 afterEach(() => sessionStorage.clear());
 
 describe("ChatPanel", () => {
+  it("clears the prior agent links when closing and creating another personal conversation", async () => {
+    const previous = "hz-01ARZ3NDEKTSV4RRFFQ69G5FAV";
+    const next = "hz-01ARZ3NDEKTSV4RRFFQ69G5FAW";
+    const oldChat = { ...empty, personal_session_id: previous };
+    const { calls } = mockApi({
+      ...base,
+      "/api/heinzel/session": (request: Request) => {
+        const id = new URL(request.url).searchParams.get("session_id");
+        return {
+          session_id: id,
+          heinzel_id: id,
+          name: id === next ? "New personal helper" : "Previous helper",
+          messages: [],
+        };
+      },
+      "/api/heinzel/new-chat": { session_id: next, heinzel_id: next, name: "New personal helper", messages: [] },
+      "/api/heinzel/sessions": { sessions: [] },
+      "/api/system/runner/chat/show": oldChat,
+    });
+    const user = userEvent.setup();
+    renderAt(
+      `/doctor?chat=${previous}&agent-chat=${oldChat.id}&approval-chat=${oldChat.id}&approval-request=old&agent-open-request=old`,
+    );
+    await user.click(await screen.findByRole("button", { name: "Back to chat" }));
+    await user.click(await screen.findByRole("button", { name: /switch chats/ }));
+    await user.click(await screen.findByRole("button", { name: /^Create a personal Heinzel$/ }));
+    const panel = within(await screen.findByRole("complementary", { name: "Chat" }));
+    expect(await panel.findByRole("heading", { name: "New personal helper" })).toBeInTheDocument();
+    await user.type(await panel.findByLabelText("Message your Heinzel"), "Keep this in the new conversation");
+    expect(panel.getByRole("button", { name: "Queue message" })).toBeEnabled();
+    const created = calls.findIndex((request) => new URL(request.url).pathname.endsWith("/heinzel/new-chat"));
+    expect(
+      calls.slice(created + 1).some((request) => new URL(request.url).pathname.endsWith("/runner/chat/show")),
+    ).toBe(false);
+  });
+
   it("names the per-message and per-chat caps before anything is sent", async () => {
     mockApi(base);
     renderAt("/doctor");

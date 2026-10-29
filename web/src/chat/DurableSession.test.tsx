@@ -61,6 +61,87 @@ const approvedChat = {
 afterEach(() => sessionStorage.clear());
 
 describe("personal conversation links", () => {
+  it("pages to newer queued messages and back without presenting the first page as complete", async () => {
+    const { calls } = mockApi({
+      ...shell,
+      "/api/heinzel/session": (request: Request) =>
+        new URL(request.url).searchParams.get("cursor") === "opaque-page-51"
+          ? {
+              ...snapshot,
+              messages: [{ id: "new", seq: 52, role: "user", text: "A newer queued message", status: "pending" }],
+              has_more: false,
+              next_cursor: null,
+            }
+          : { ...snapshot, has_more: true, next_cursor: "opaque-page-51" },
+    });
+    renderAt(`/heinzel?chat=${sessionId}`);
+    const panel = within(await screen.findByRole("complementary", { name: "Chat" }));
+    expect(await panel.findByText("Hello")).toBeInTheDocument();
+    expect(panel.getByRole("navigation", { name: "Conversation history" })).toHaveTextContent("More messages follow");
+    fireEvent.click(panel.getByRole("button", { name: "Newer messages" }));
+    expect(await panel.findByText("A newer queued message")).toBeInTheDocument();
+    expect(panel.queryByText("Hello")).not.toBeInTheDocument();
+    fireEvent.click(panel.getByRole("button", { name: "Earlier messages" }));
+    expect(await panel.findByText("Hello")).toBeInTheDocument();
+    expect(calls.some((request) => new URL(request.url).searchParams.get("cursor") === "opaque-page-51")).toBe(true);
+  });
+
+  it("keeps one artifact and skill section across repeated session refreshes", async () => {
+    const client = queryClient();
+    mockApi({
+      "/api/heinzel/session": snapshot,
+      "/api/heinzel/personal-artifacts": { session_id: sessionId, artifacts: [] },
+    });
+    const router = createMemoryRouter(
+      [{ path: "/", element: <DurableSession sessionId={sessionId} onClose={() => {}} /> }],
+      { initialEntries: ["/"] },
+    );
+    render(
+      <Providers client={client}>
+        <RouterProvider router={router} />
+      </Providers>,
+    );
+    await screen.findByText("Hello");
+    for (let refresh = 0; refresh < 3; refresh++) {
+      await act(async () => {
+        await client.invalidateQueries({ queryKey: ["heinzel", "session", sessionId] });
+      });
+    }
+    expect(screen.getAllByRole("heading", { name: "Associated files" })).toHaveLength(1);
+    expect(screen.getAllByText("Skill draft", { exact: true })).toHaveLength(1);
+  });
+
+  it("offers explicit inactive setup after a definitive pre-acceptance runner rejection", async () => {
+    let stored = { ...snapshot, schedule: null as null | typeof proposedSchedule };
+    const chat = { ...reviewChat, actions: [] };
+    mockApi({
+      ...shell,
+      "/api/heinzel/session": () => stored,
+      "/api/system/runner/chat/open-check-in": chat,
+      "/api/system/runner/chat/show": chat,
+      "/api/stream/system/runner/chat/send": {
+        status: 400,
+        body: { error: "This personal agent cannot run until its runner isolation and grants are verified" },
+      },
+      "/api/heinzel/propose-check-in": () => {
+        stored = { ...stored, schedule: proposedSchedule };
+        return stored;
+      },
+    });
+    renderAt(`/heinzel?chat=${sessionId}`);
+    const panel = within(await screen.findByRole("complementary", { name: "Chat" }));
+    const box = await panel.findByLabelText("Message your Heinzel");
+    fireEvent.change(box, { target: { value: "notify me every 5 minutes" } });
+    fireEvent.click(panel.getByRole("button", { name: "Prepare schedule review" }));
+    const propose = await panel.findByRole("button", { name: "Propose check-in schedule" });
+    await waitFor(() => expect(propose).toBeEnabled());
+    expect(box).toHaveValue("notify me every 5 minutes");
+    expect(stored.schedule).toBeNull();
+    fireEvent.click(propose);
+    expect(await panel.findByText("proposed", { exact: true })).toBeInTheDocument();
+    expect(panel.getByRole("button", { name: "Review activation in chat" })).toBeInTheDocument();
+  });
+
   it.each([null, "hz-01ARZ3NDEKTSV4RRFFQ69G5FAW"])(
     "does not display or send to a linked conversation with binding %s",
     async (binding) => {

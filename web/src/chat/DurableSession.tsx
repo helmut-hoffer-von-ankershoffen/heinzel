@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { chatKey, sendChat } from "@/api/chat";
-import { api, problem, type SchemaChatSession, type SchemaSessionSnapshot } from "@/api/client";
+import { ApiError, api, problem, type SchemaChatSession, type SchemaSessionSnapshot } from "@/api/client";
 import { useDaemonStatus } from "@/api/daemon";
 import { AgentProposal } from "@/chat/AgentProposal";
 import { ActionCard } from "@/chat/Conversation";
@@ -27,6 +27,14 @@ function requirePersonalChat(chat: SchemaChatSession, sessionId: string, chatId?
     throw new Error("This conversation does not belong to the selected Heinzel.");
   }
   return chat;
+}
+
+function rejectedBeforeAcceptance(reason: unknown): boolean {
+  return (
+    reason instanceof ApiError &&
+    reason.status === 400 &&
+    reason.message === "This personal agent cannot run until its runner isolation and grants are verified"
+  );
 }
 
 /** Recognize only the fixed five-minute request supported by this local scheduling flow. */
@@ -55,6 +63,8 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
   const [scheduleError, setScheduleError] = useState(false);
   const [scheduleErrorMessage, setScheduleErrorMessage] = useState<string | null>(null);
   const [intentNotice, setIntentNotice] = useState(false);
+  const [historyCursors, setHistoryCursors] = useState<Array<string | null>>([null]);
+  const historyCursor = historyCursors.at(-1) ?? null;
   const clearScheduleError = () => {
     setScheduleError(false);
     setScheduleErrorMessage(null);
@@ -66,13 +76,18 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
   const controlRequest = useRef<string | null>(params.get("approval-request"));
   const running = useRef(false);
   const query = useQuery({
-    queryKey: ["heinzel", "session", sessionId],
+    queryKey: ["heinzel", "session", sessionId, ...(historyCursor ? [historyCursor] : [])],
     queryFn: async () => {
-      const snapshot = await result(api.GET("/heinzel/session", { params: { query: { session_id: sessionId } } }));
+      const snapshot = await result(
+        api.GET("/heinzel/session", {
+          params: { query: { session_id: sessionId, cursor: historyCursor ?? undefined } },
+        }),
+      );
       if (snapshot.session_id !== sessionId) throw new Error("Unexpected personal session");
       return snapshot;
     },
     retry: false,
+    placeholderData: (previous) => previous,
   });
   const daemonStatus = useDaemonStatus(query.data?.schedule?.status === "active");
   const approvalChatId = params.get("approval-chat");
@@ -264,7 +279,8 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
           updateComposer({ agentPending: null, text: "" });
           setIntentNotice(true);
         }
-      } catch {
+      } catch (reason) {
+        if (rejectedBeforeAcceptance(reason)) updateComposer({ agentPending: null });
         setError(true);
         setScheduleError(true);
         setScheduleErrorMessage(t("durable.agentUnavailable"));
@@ -309,7 +325,8 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
         } else {
           updateComposer({ agentPending: null, text: "" });
         }
-      } catch {
+      } catch (reason) {
+        if (rejectedBeforeAcceptance(reason)) updateComposer({ agentPending: null });
         setError(true);
         setScheduleError(true);
         setScheduleErrorMessage(t("durable.agentUnavailable"));
@@ -572,7 +589,7 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
           </details>
         )}
         {query.data?.session_id === sessionId && (
-          <PersonalArtifactLinks key={sessionId} sessionId={sessionId} compact />
+          <PersonalArtifactLinks key={`artifacts:${sessionId}`} sessionId={sessionId} compact />
         )}
         {query.data?.session_id === sessionId &&
           (query.data.contracts ?? []).some((contract) => contract.status === "approved") && (
@@ -587,7 +604,47 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
                 ))}
             </section>
           )}
-        {query.data?.session_id === sessionId && <SkillDraftPanel key={sessionId} sessionId={sessionId} />}
+        {query.data?.session_id === sessionId && <SkillDraftPanel key={`skills:${sessionId}`} sessionId={sessionId} />}
+        {(historyCursors.length > 1 || query.data?.has_more) && (
+          <nav aria-label="Conversation history" className="space-y-2 rounded border border-border p-2 text-sm">
+            {query.isFetching && <p role="status">Loading this message page…</p>}
+            <p>
+              {query.data?.has_more
+                ? "More messages follow this page, including any newer queued messages."
+                : "You are viewing the latest message page."}
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {historyCursors.length > 1 && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={query.isFetching || busy || profileLocked}
+                  onClick={() => setHistoryCursors((cursors) => cursors.slice(0, -1))}
+                >
+                  Earlier messages
+                </Button>
+              )}
+              {query.data?.has_more && typeof query.data.next_cursor === "string" && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={
+                    query.isFetching || busy || profileLocked || historyCursors.includes(query.data.next_cursor)
+                  }
+                  onClick={() => {
+                    const next = query.data?.next_cursor;
+                    if (typeof next === "string" && next && !historyCursors.includes(next))
+                      setHistoryCursors((cursors) => [...cursors, next]);
+                  }}
+                >
+                  Newer messages
+                </Button>
+              )}
+            </div>
+          </nav>
+        )}
         {query.data?.messages?.map((message) => (
           <p key={`${message.seq}-${message.id}`} className="whitespace-pre-wrap text-sm">
             <strong>{message.role === "tool" ? "Tool activity" : message.role}:</strong>{" "}
