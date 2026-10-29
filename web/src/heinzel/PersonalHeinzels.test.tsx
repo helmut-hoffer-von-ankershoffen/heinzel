@@ -86,11 +86,11 @@ describe("personal identities", () => {
     renderAt("/heinzel");
     const section = within(await screen.findByRole("region", { name: "Personal Heinzels" }));
     fireEvent.change(await section.findByLabelText("Personal Heinzel"), { target: { value: first } });
-    const scarf = await section.findByLabelText("Scarf");
+    const scarf = await section.findByLabelText("scarf");
     expect(scarf).toBeChecked();
     fireEvent.click(scarf);
-    fireEvent.click(section.getByLabelText("Umbrella"));
-    fireEvent.click(section.getByLabelText("Sunglasses"));
+    fireEvent.click(section.getByLabelText("umbrella"));
+    fireEvent.click(section.getByLabelText("sunglasses"));
     expect(section.getByRole("img", { name: /with an umbrella, wearing sunglasses/ })).toBeInTheDocument();
     fireEvent.click(section.getByRole("button", { name: "Save name and look" }));
     await waitFor(() => expect(saved).toHaveLength(1));
@@ -115,7 +115,7 @@ describe("personal identities", () => {
     fireEvent.change(await section.findByLabelText("Personal Heinzel"), { target: { value: first } });
     const name = await section.findByLabelText("Name");
     fireEvent.change(name, { target: { value: "Styled Alpha" } });
-    fireEvent.click(section.getByLabelText("Umbrella"));
+    fireEvent.click(section.getByLabelText("umbrella"));
     await waitFor(() => expect(sessionStorage.getItem(firstDraft)).not.toBeNull());
     firstView.unmount();
 
@@ -123,10 +123,10 @@ describe("personal identities", () => {
     section = within(await screen.findByRole("region", { name: "Personal Heinzels" }));
     fireEvent.change(await section.findByLabelText("Personal Heinzel"), { target: { value: first } });
     await waitFor(() => expect(section.getByLabelText("Name")).toHaveValue("Styled Alpha"));
-    expect(section.getByLabelText("Umbrella")).toBeChecked();
+    expect(section.getByLabelText("umbrella")).toBeChecked();
     fireEvent.change(section.getByLabelText("Personal Heinzel"), { target: { value: second } });
     await waitFor(() => expect(section.getByLabelText("Name")).toHaveValue("Beta"));
-    expect(section.getByLabelText("Umbrella")).not.toBeChecked();
+    expect(section.getByLabelText("umbrella")).not.toBeChecked();
     sessionStorage.removeItem(firstDraft);
     sessionStorage.removeItem(secondDraft);
   });
@@ -294,7 +294,7 @@ describe("personal identities", () => {
     await waitFor(() => expect(sessionStorage.getItem(key)).toBeNull());
   });
 
-  it("reconciles a committed profile save after reload without sending it again", async () => {
+  it("retains a committed but unacknowledged save after reload without sending it again", async () => {
     let attempts = 0;
     const key = `hz.personal-heinzel.profile-save.${first}`;
     sessionStorage.removeItem(key);
@@ -322,12 +322,12 @@ describe("personal identities", () => {
     section = within(await screen.findByRole("region", { name: "Personal Heinzels" }));
     fireEvent.change(await section.findByLabelText("Personal Heinzel"), { target: { value: first } });
     await waitFor(() => expect(section.getByLabelText("Name")).toHaveValue("Committed Alpha"));
-    expect(section.queryByRole("button", { name: "Retry save" })).not.toBeInTheDocument();
+    expect(section.getByRole("button", { name: "Retry save" })).toBeEnabled();
     expect(attempts).toBe(1);
-    await waitFor(() => expect(sessionStorage.getItem(key)).toBeNull());
+    expect(sessionStorage.getItem(key)).not.toBeNull();
   });
 
-  it("blocks retry when a profile changed differently while an old save was unresolved", async () => {
+  it("allows an explicit retry when a profile changed while an old save was unresolved", async () => {
     const attempts: unknown[] = [];
     const key = `hz.personal-heinzel.profile-save.${first}`;
     sessionStorage.setItem(
@@ -347,9 +347,9 @@ describe("personal identities", () => {
     const section = within(await screen.findByRole("region", { name: "Personal Heinzels" }));
     fireEvent.change(await section.findByLabelText("Personal Heinzel"), { target: { value: first } });
     expect(await section.findByRole("alert")).toHaveTextContent(/profile changed while this save was unresolved/i);
-    expect(section.getByRole("button", { name: "Retry save" })).toBeDisabled();
+    expect(section.getByRole("button", { name: "Retry save" })).toBeEnabled();
     expect(attempts).toHaveLength(0);
-    fireEvent.click(section.getByRole("button", { name: "Reload saved profile" }));
+    fireEvent.click(section.getByRole("button", { name: "Discard pending save and reload profile" }));
     await waitFor(() => expect(section.getByLabelText("Name")).toHaveValue("Updated elsewhere"));
     expect(sessionStorage.getItem(key)).toBeNull();
   });
@@ -395,7 +395,7 @@ describe("personal identities", () => {
     fireEvent.change(await section.findByLabelText("Personal Heinzel"), { target: { value: first } });
     fireEvent.change(await section.findByLabelText("Name"), { target: { value: "My draft" } });
     fireEvent.click(section.getByRole("button", { name: "Save name and look" }));
-    fireEvent.click(await section.findByRole("button", { name: "Reload saved profile" }));
+    fireEvent.click(await section.findByRole("button", { name: "Discard pending save and reload profile" }));
     await waitFor(() => expect(section.getByLabelText("Name")).toHaveValue("Updated elsewhere"));
     await expectAccessible(container);
   });

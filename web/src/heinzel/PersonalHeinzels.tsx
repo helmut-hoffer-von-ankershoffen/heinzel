@@ -157,7 +157,13 @@ export function PersonalHeinzels() {
   });
   const session = useQuery({
     queryKey: ["heinzel", "session", selected],
-    queryFn: () => personalResult(api.GET("/heinzel/session", { params: { query: { session_id: selected ?? "" } } })),
+    queryFn: async () => {
+      const result = await personalResult(
+        api.GET("/heinzel/session", { params: { query: { session_id: selected ?? "" } } }),
+      );
+      if (!selected || result.session_id !== selected) throw new Error("Invalid profile response");
+      return result;
+    },
     enabled: selected !== null,
     retry: false,
   });
@@ -239,31 +245,16 @@ export function ProfileEditor({
   const [draftStorageFailed, setDraftStorageFailed] = useState(false);
   const [draft] = useState(() => readProfileDraft(initial.session_id));
   const [snapshot, setSnapshot] = useState(initial);
-  const [name, setName] = useState(draft?.name ?? initial.name);
-  const [look, setLook] = useState<SchemaHeinzelAppearance>(
-    draft?.appearance ?? initial.appearance ?? { age: "grown", build: "regular" },
-  );
   const [savedRequest] = useState(() => readProfileSave(initial.session_id));
+  const [name, setName] = useState(savedRequest.pending?.name ?? draft?.name ?? initial.name);
+  const [look, setLook] = useState<SchemaHeinzelAppearance>(
+    savedRequest.pending?.appearance ?? draft?.appearance ?? initial.appearance ?? { age: "grown", build: "regular" },
+  );
   const [pending, setPending] = useState<ProfileSave | null>(savedRequest.pending);
   const [pendingStorageInvalid, setPendingStorageInvalid] = useState(savedRequest.invalid);
   const [busy, setBusy] = useState(false);
   const savingNow = useRef(false);
   const [error, setError] = useState(false);
-
-  useEffect(() => {
-    if (!pending || !profileSaveApplied(pending, snapshot)) return;
-    setSnapshot(snapshot);
-    setName(snapshot.name);
-    setLook(snapshot.appearance ?? { age: "grown", build: "regular" });
-    setPending(null);
-    setPendingStorageInvalid(false);
-    setError(false);
-    try {
-      sessionStorage.removeItem(profileSaveKey(snapshot.session_id));
-    } catch {
-      setDraftStorageFailed(true);
-    }
-  }, [pending, snapshot]);
 
   useEffect(() => {
     const key = profileDraftKey(snapshot.session_id);
@@ -288,7 +279,10 @@ export function ProfileEditor({
     };
     try {
       // Persist the id and exact body before sending. A reload can then retry idempotently or reconcile a lost ACK.
-      sessionStorage.setItem(profileSaveKey(snapshot.session_id), JSON.stringify(request));
+      const serialized = JSON.stringify(request);
+      sessionStorage.setItem(profileSaveKey(snapshot.session_id), serialized);
+      if (sessionStorage.getItem(profileSaveKey(snapshot.session_id)) !== serialized)
+        throw new Error("Profile recovery unavailable");
     } catch {
       savingNow.current = false;
       setDraftStorageFailed(true);
@@ -362,16 +356,14 @@ export function ProfileEditor({
       setBusy(false);
     }
   };
-  const pendingApplied = pending !== null && profileSaveApplied(pending, snapshot);
   const pendingNeedsReload =
-    pendingStorageInvalid ||
-    (pending !== null && !pendingApplied && snapshot.profile_revision !== pending.expected_revision);
+    pendingStorageInvalid || (pending !== null && snapshot.profile_revision !== pending.expected_revision);
   const disabled = busy || pending !== null || pendingStorageInvalid;
   const savedLook = snapshot.appearance ?? { age: "grown" as const, build: "regular" as const };
   const hasUncommittedChanges = name !== snapshot.name || JSON.stringify(look) !== JSON.stringify(savedLook);
   useEffect(() => {
-    onLock(hasUncommittedChanges || pending !== null || busy);
-  }, [hasUncommittedChanges, pending, busy, onLock]);
+    onLock(hasUncommittedChanges || pending !== null || pendingStorageInvalid || busy);
+  }, [hasUncommittedChanges, pending, pendingStorageInvalid, busy, onLock]);
   return (
     <form
       className="space-y-3 border-t border-border pt-4"
@@ -508,7 +500,7 @@ export function ProfileEditor({
       {pendingNeedsReload && <p role="alert">{t("personal.saveOutcomeChanged")}</p>}
       {draftStorageFailed && <p role="status">{t("personal.draftStorageFailed")}</p>}
       <div className="flex flex-wrap gap-2">
-        <Button type="submit" disabled={busy || pendingNeedsReload || pendingApplied || !name.trim()}>
+        <Button type="submit" disabled={busy || pendingStorageInvalid || (!pending && !name.trim())}>
           {pending ? t("personal.retrySave") : t("personal.save")}
         </Button>
         {(pending || pendingStorageInvalid) && (
