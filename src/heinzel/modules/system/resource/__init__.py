@@ -3,6 +3,7 @@
 from collections.abc import Callable
 from datetime import UTC, datetime
 from math import isfinite
+from socket import gethostname
 from threading import Lock
 from time import monotonic
 
@@ -23,6 +24,7 @@ class Resources(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid", allow_inf_nan=False)
 
+    hostname: str = Field(description="Hostname of the machine running hz.")
     sampled_at: AwareDatetime = Field(description="When the measurements were collected, in UTC.")
     cpu_percent: float | None = Field(ge=0, le=100, description="Machine CPU usage, 0 to 100 percent.")
     memory_percent: float | None = Field(ge=0, le=100, description="Machine memory usage, 0 to 100 percent.")
@@ -52,6 +54,7 @@ class ResourceService:
             load = _read(lambda: psutil.getloadavg()[0], "Load average", problems)
             cores = _read(lambda: psutil.cpu_count() or 0, "Core count", problems, minimum=1)
             self._sample = Resources(
+                hostname=gethostname(),
                 sampled_at=datetime.now(UTC),
                 cpu_percent=cpu,
                 memory_percent=memory,
@@ -88,6 +91,7 @@ module.service(ResourceService)
 def render(sample: Resources) -> Table:
     """The same three measurements and detected capacity in a small table."""
     table = Table("Resource", "Usage")
+    table.add_row("Hostname", sample.hostname)
     table.add_row("CPU", f"{sample.cpu_percent:g}%" if sample.cpu_percent is not None else "Unavailable")
     table.add_row("Memory", f"{sample.memory_percent:g}%" if sample.memory_percent is not None else "Unavailable")
     table.add_row("Load (1 min)", f"{sample.load_1m:g}" if sample.load_1m is not None else "Unavailable")
