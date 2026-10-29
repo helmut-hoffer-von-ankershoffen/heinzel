@@ -1749,6 +1749,13 @@ def test_model_policy_action_card_requires_human_and_never_runs_model(kernel, tm
     finished = next(item for item in confirmed.json()["actions"] if item["id"] == action["id"])
     assert finished["status"] == "done"
     assert "approval_proof" not in json.dumps(confirmed.json())
+    from heinzel.modules.system.runner.chat._service import transcript
+
+    action_messages = [ChatMessage.model_validate(item) for item in confirmed.json()["messages"]]
+    text = transcript(action_messages)
+    assert action["arguments"]["review"]["binding"]["credential_fingerprint"] not in text
+    assert action["arguments"]["review"]["binding"]["owner"] not in text
+    assert "approval_proof" not in text
     assert client.post("/api/system/runner/chat/confirm", headers=AUTH, params=decision).status_code == 400
     # A lost staging acknowledgement can be recovered even after this exact action is decided.
     recovered = client.post("/api/system/runner/chat/propose-model-policy", headers=AUTH, params=params)

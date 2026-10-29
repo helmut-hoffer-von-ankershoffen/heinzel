@@ -651,7 +651,11 @@ class ChatService:
             else:
                 with confirmation.using(found.module, found.operation, arguments):
                     value = self._kernel.invoke(operation, **arguments)
-            text = redact_emails(dumps(to_jsonable_python(value, fallback=str)))  # it goes into prompts
+            text = (
+                "The model policy approval was recorded. No model request was started."
+                if found.module == "heinzel" and found.operation == "approve-model-grant"
+                else redact_emails(dumps(to_jsonable_python(value, fallback=str)))
+            )  # The resulting action message may later be sent to a model.
             found.status, found.result = "done", text[:RESULT_LIMIT]
         except HeinzelError as exc:
             if self._is_reconciled_confirmation(found):

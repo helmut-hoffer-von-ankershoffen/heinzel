@@ -176,7 +176,11 @@ class ChatStore(McpChatSessions):
         chat.actions += [action for action in self.proposals(session) if action.id not in known]
         for action in chat.actions:  # what the person reads is derived from what runs, never stored text
             self._check_personal_action(chat, action.module, action.operation, action.arguments)
-            action.command = describe(action.module, action.operation, action.arguments)
+            if action.module == "heinzel" and action.operation == "approve-model-grant":
+                # The review remains visible in the action, not in model-visible transcript text.
+                action.command = "Review model policy"
+            else:
+                action.command = describe(action.module, action.operation, action.arguments)
         chat.costs = self.costs(chat.messages)
         return chat
 
