@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
 import { connectTerminal, followSize } from "@/lib/terminal";
 import { cn } from "@/lib/utils";
+import { desktopState } from "@/notifications/desktop";
 
 /** The palette of the dark theme, so the terminal reads as part of the app. */
 const theme = {
@@ -37,7 +38,7 @@ function loadOptions(): Options {
   }
 }
 
-type Tab = { id: number; title: string };
+type Tab = { id: number; title: string; notice?: string; status?: string };
 type Props = { onClose: () => void; full: boolean; onToggleFull: () => void };
 
 export function TerminalPanel({ onClose, full, onToggleFull }: Props) {
@@ -45,6 +46,7 @@ export function TerminalPanel({ onClose, full, onToggleFull }: Props) {
   const [active, setActive] = useState(1);
   const [options, setOptions] = useState<Options>(loadOptions);
   const nextId = useRef(2);
+  const panelRef = useRef<HTMLElement>(null);
   const change = (patch: Partial<Options>) =>
     setOptions((current) => {
       const next = { ...current, ...patch };
@@ -60,6 +62,8 @@ export function TerminalPanel({ onClose, full, onToggleFull }: Props) {
     setTabs((current) => [...current, { id, title: `${t("terminal.title")} ${id}` }]);
     setActive(id);
   };
+  const updateTab = (id: number, patch: Partial<Tab>) =>
+    setTabs((current) => current.map((tab) => (tab.id === id ? { ...tab, ...patch } : tab)));
   const close = (id: number) => {
     const rest = tabs.filter((tab) => tab.id !== id);
     const last = rest.at(-1);
@@ -71,7 +75,7 @@ export function TerminalPanel({ onClose, full, onToggleFull }: Props) {
     if (active === id) setActive(last.id);
   };
   return (
-    <section aria-label={t("terminal.title")} className="flex h-full min-h-0 flex-col bg-background">
+    <section ref={panelRef} aria-label={t("terminal.title")} className="flex h-full min-h-0 flex-col bg-background">
       <div className="flex h-10 shrink-0 items-center gap-1 px-3">
         <div
           role="tablist"
@@ -90,10 +94,22 @@ export function TerminalPanel({ onClose, full, onToggleFull }: Props) {
                 type="button"
                 role="tab"
                 aria-selected={tab.id === active}
-                onClick={() => setActive(tab.id)}
+                onClick={() => {
+                  setActive(tab.id);
+                  updateTab(tab.id, { notice: undefined });
+                }}
                 className="px-3.5 py-1"
               >
                 {tab.title}
+                {tab.status && <span className="ml-2 text-xs text-muted-foreground">{tab.status}</span>}
+                {tab.notice && (
+                  <span
+                    role="img"
+                    aria-label={t("terminal.attention")}
+                    title={tab.notice}
+                    className="ml-2 inline-block size-2 rounded-full bg-primary"
+                  />
+                )}
               </button>
               {tabs.length > 1 && (
                 <button
@@ -142,7 +158,39 @@ export function TerminalPanel({ onClose, full, onToggleFull }: Props) {
       </div>
       <div className="relative min-h-0 flex-1">
         {tabs.map((tab) => (
-          <TerminalView key={tab.id} active={tab.id === active} full={full} options={options} />
+          <TerminalView
+            key={tab.id}
+            active={tab.id === active}
+            full={full}
+            options={options}
+            onTitle={(title) =>
+              updateTab(tab.id, {
+                title: title || (tab.id === 1 ? t("terminal.title") : `${t("terminal.title")} ${tab.id}`),
+              })
+            }
+            onNotice={(notice) => {
+              updateTab(tab.id, { notice });
+              const hidden = tab.id !== active || !document.hasFocus() || !!panelRef.current?.closest("[hidden]");
+              if (hidden && desktopState() === "on") {
+                try {
+                  const notification = new Notification(tab.title, { body: notice });
+                  notification.onclick = () => {
+                    window.focus();
+                    setActive(tab.id);
+                    notification.close();
+                  };
+                } catch {
+                  // The in-app indicator remains available when desktop delivery fails.
+                }
+              }
+            }}
+            onStatus={(status) =>
+              updateTab(tab.id, {
+                status,
+                ...(/^(waiting|blocked)$/i.test(status.trim()) ? { notice: status } : {}),
+              })
+            }
+          />
         ))}
       </div>
     </section>
@@ -152,7 +200,23 @@ export function TerminalPanel({ onClose, full, onToggleFull }: Props) {
 type State = "connecting" | "open" | "closed";
 
 /** One shell in one tab; it keeps running while another tab is shown. */
-function TerminalView({ active, full, options }: { active: boolean; full: boolean; options: Options }) {
+function TerminalView({
+  active,
+  full,
+  options,
+  onTitle,
+  onNotice,
+  onStatus,
+}: {
+  active: boolean;
+  full: boolean;
+  options: Options;
+  onTitle: (title: string) => void;
+  onNotice: (notice: string) => void;
+  onStatus: (status: string) => void;
+}) {
+  const callbacks = useRef({ onTitle, onNotice, onStatus });
+  callbacks.current = { onTitle, onNotice, onStatus };
   const host = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const refitRef = useRef<(() => void) | null>(null);
@@ -199,11 +263,103 @@ function TerminalView({ active, full, options }: { active: boolean; full: boolea
     };
     socket.onclose = (event) => {
       senderRef.current = null;
+      callbacks.current.onStatus("");
+      callbacks.current.onTitle("");
       setState("closed");
       setReason(event.reason);
     };
     const typed = terminal.onData((data) => {
       if (socket.readyState === WebSocket.OPEN) socket.send(encoder.encode(data));
+    });
+    const titled = terminal.onTitleChange((title) =>
+      callbacks.current.onTitle(
+        Array.from(title)
+          .filter((char) => {
+            const code = char.codePointAt(0) ?? 0;
+            return (
+              code >= 32 &&
+              !(code >= 127 && code <= 159) &&
+              ![0x200e, 0x200f].includes(code) &&
+              !(code >= 0x202a && code <= 0x202e) &&
+              !(code >= 0x2066 && code <= 0x2069)
+            );
+          })
+          .join("")
+          .trim()
+          .slice(0, 240),
+      ),
+    );
+    const notice9 = terminal.parser.registerOscHandler(9, (message) => {
+      if (!message || /^\d+;/.test(message)) return false;
+      callbacks.current.onNotice(message.slice(0, 240));
+      return true;
+    });
+    const notice777 = terminal.parser.registerOscHandler(777, (message) => {
+      if (!message.startsWith("notify;")) return false;
+      callbacks.current.onNotice(message.slice(7, 247).replace(";", ": "));
+      return true;
+    });
+    let programState = "";
+    const programRecords = new Map<string, string>();
+    const program = terminal.parser.registerOscHandler(7501, (message) => {
+      if (message === "?") {
+        if (socket.readyState === WebSocket.OPEN) {
+          socket.send(
+            encoder.encode("\x1b]7501;?:states=idle,working,done,blocked,error:kinds=permission,question,auth\x1b\\"),
+          );
+        }
+        return true;
+      }
+      if (message.length > 4096) return false;
+      const fields = Object.fromEntries(
+        message.split(":").map((entry) => {
+          const split = entry.indexOf("=");
+          return split < 0 ? ["", ""] : [entry.slice(0, split), entry.slice(split + 1)];
+        }),
+      );
+      const id = fields.id ?? "";
+      if (id.length > 128 || (id && !/^[A-Za-z0-9_.+-]{1,32}(\/[A-Za-z0-9_.+-]{1,32}){0,7}$/.test(id))) return false;
+      if (!["idle", "working", "done", "blocked", "error", "clear"].includes(fields.state ?? "")) return false;
+      const state = fields.state ?? "";
+      if (state === "clear") {
+        for (const key of programRecords.keys())
+          if (!id || key === id || key.startsWith(`${id}/`)) programRecords.delete(key);
+      } else {
+        programRecords.delete(id);
+        programRecords.set(id, state);
+        if (programRecords.size > 256) programRecords.delete(programRecords.keys().next().value ?? "");
+      }
+      const priority = ["blocked", "error", "working", "done", "idle"];
+      const shown = priority.find((candidate) => [...programRecords.values()].includes(candidate)) ?? "";
+      if (shown !== programState) {
+        programState = shown;
+        const labels: Record<string, string> = {
+          idle: t("terminal.agent.idle"),
+          working: t("terminal.agent.working"),
+          done: t("terminal.agent.done"),
+          blocked: t("terminal.agent.blocked"),
+          error: t("terminal.agent.error"),
+          clear: "",
+        };
+        callbacks.current.onStatus(labels[shown] ?? "");
+        if (shown === "blocked") callbacks.current.onNotice(t("terminal.agent.blocked"));
+      }
+      return true;
+    });
+    const status = terminal.parser.registerOscHandler(21337, (message) => {
+      const field = message.split(";").find((part) => part.startsWith("status="));
+      if (field !== undefined) callbacks.current.onStatus(field.slice(7, 107));
+      return true;
+    });
+    const prompt = terminal.parser.registerOscHandler(133, (message) => {
+      if (message === "A" || message.startsWith("A;")) {
+        for (const [id, value] of programRecords) {
+          if (value === "working" || value === "blocked") programRecords.delete(id);
+        }
+        programState = "";
+        callbacks.current.onStatus("");
+      }
+      return false;
     });
     const selected = terminal.onSelectionChange(() => {
       if (copyOnSelect.current && terminal.hasSelection()) void navigator.clipboard?.writeText(terminal.getSelection());
@@ -212,6 +368,12 @@ function TerminalView({ active, full, options }: { active: boolean; full: boolea
       follower.dispose();
       refitRef.current = null;
       typed.dispose();
+      titled.dispose();
+      notice9.dispose();
+      notice777.dispose();
+      program.dispose();
+      status.dispose();
+      prompt.dispose();
       selected.dispose();
       socket.onclose = null;
       senderRef.current = null;
