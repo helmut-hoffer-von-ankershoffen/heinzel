@@ -29,8 +29,7 @@ const en = {
   "durable.title": "Personal conversation",
   "durable.close": "Back to chat",
   "durable.unavailable": "This personal conversation could not be loaded.",
-  "durable.queued":
-    "Messages are queued here. Personal agent replies are not available yet.",
+  "durable.queued": "Messages are queued here. Personal agent replies are not available yet.",
   "durable.message": "Message your Heinzel",
   "durable.send": "Queue message",
   "durable.retry": "Retry the same message",
