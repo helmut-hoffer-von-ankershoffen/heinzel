@@ -765,6 +765,11 @@ describe("personal conversation links", () => {
     ["stale tick", { last_tick: "2000-01-01T00:00:00Z" }, /has not reported a recent valid tick/i],
     ["missing heartbeat", { last_tick: null }, /has not reported a recent valid tick/i],
     ["invalid heartbeat", { last_tick: "not-a-timestamp" }, /has not reported a recent valid tick/i],
+    [
+      "future heartbeat",
+      { last_tick: new Date(Date.now() + 5 * 60_000).toISOString() },
+      /has not reported a recent valid tick/i,
+    ],
   ])("directs an active check-in to daemon recovery when readiness is %s", async (_case, change, copy) => {
     mockApi({
       ...shell,
@@ -789,5 +794,30 @@ describe("personal conversation links", () => {
     const panel = within(await screen.findByRole("complementary", { name: "Chat" }));
     expect(await panel.findByText(copy)).toBeInTheDocument();
     expect(panel.getByRole("link", { name: "Open daemon settings" })).toHaveAttribute("href", "/?settings=daemon");
+  });
+
+  it("tolerates a small future heartbeat skew without claiming a daemon failure", async () => {
+    mockApi({
+      ...shell,
+      "/api/heinzel/session": { ...snapshot, schedule: { ...proposedSchedule, status: "active" } },
+      "/api/system/daemon/status": {
+        executable: "/usr/local/bin/hz",
+        failing: [],
+        installed: true,
+        installed_version: "1.2.3",
+        interval_minutes: 5,
+        jobs: 1,
+        last_tick: new Date(Date.now() + 30_000).toISOString(),
+        loaded: true,
+        paused: false,
+        platform: "darwin",
+        version: "1.2.3",
+        version_mismatch: false,
+      },
+    });
+    renderAt(`/heinzel?chat=${sessionId}`);
+    const panel = within(await screen.findByRole("complementary", { name: "Chat" }));
+    expect(await panel.findByText("active")).toBeInTheDocument();
+    expect(panel.queryByRole("link", { name: "Open daemon settings" })).not.toBeInTheDocument();
   });
 });

@@ -16,6 +16,8 @@ async function result<T>(call: Promise<{ data?: T; error?: unknown; response: Re
   throw problem(response.status, error);
 }
 
+const DAEMON_TICK_CLOCK_SKEW_MS = 60_000;
+
 /** Recognize only the fixed five-minute request supported by this local scheduling flow. */
 function asksForFiveMinuteCheckIn(message: string): boolean {
   return /^(?:please\s+)?(?:(?:schedule|set up)\s+(?:a\s+)?check[ -]?in|(?:remind me to )?check[ -]?in|notify me|send me (?:a )?notification)\s+every\s+(?:5|five)\s+minutes?[.!]?$/i.test(
@@ -79,6 +81,7 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
     activeDaemon?.installed === true &&
     (daemonTickAgeMs === null ||
       !Number.isFinite(daemonTickAgeMs) ||
+      daemonTickAgeMs < -DAEMON_TICK_CLOCK_SKEW_MS ||
       (activeDaemon.interval_minutes !== null && daemonTickAgeMs > activeDaemon.interval_minutes * 2 * 60_000));
   const daemonReadinessMessage = activeDaemon
     ? !activeDaemon.installed
