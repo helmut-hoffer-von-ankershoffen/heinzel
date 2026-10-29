@@ -107,3 +107,41 @@ def test_corrupt_owner_budget_ledger_fails_closed(tmp_path):
             writer.append("model.reserved", key="bogus", data={"amount": "0"})
         with pytest.raises(HeinzelError, match="invalid reservation"):
             reserve(repo, session, "request")
+
+
+def test_initialize_refuses_known_previous_model_work_and_is_owner_scoped(tmp_path):
+    from heinzel.modules.heinzel._budget_reservation import initialize_budget
+
+    current = CurrentUser(tmp_path / "identity")
+    with current.local("cli"):
+        repo = PersonalSessionRepository(current)
+        crud = SessionCrud(repo, lambda: SessionCosts(session_max_usd=2, message_max_usd=0.2))
+        one = crud.new_chat("one").session_id
+        two = crud.new_chat("two").session_id
+        with repo.control_writer(one) as writer:
+            writer.append("interactive.started", key="old", data={})
+        with pytest.raises(HeinzelError, match="Prior model work"):
+            initialize_budget(repo, two)
+        assert repo.budget_read(two).events == []
+
+
+def test_initialized_ledger_counts_multiple_requests_against_same_message_cap(tmp_path):
+    from heinzel.modules.heinzel._budget_reservation import initialize_budget
+
+    current = CurrentUser(tmp_path / "identity")
+    with current.local("cli"):
+        repo = PersonalSessionRepository(current)
+        crud = SessionCrud(repo, lambda: SessionCosts(session_max_usd=2, message_max_usd=0.2))
+        session = crud.new_chat("one").session_id
+        initialize_budget(repo, session)
+        initialize_budget(repo, session)
+        options = {
+            "turn_id": "turn",
+            "require_initialized": True,
+            "message_cap": Decimal("0.09"),
+            "session_cap": Decimal(1),
+            "owner_cap": Decimal(1),
+        }
+        assert reserve_model_spend(repo, session, "call-one", envelope(), **options).disposition == "reserved"
+        with pytest.raises(HeinzelError, match="budget cap"):
+            reserve_model_spend(repo, session, "call-two", envelope(), **options)

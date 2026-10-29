@@ -16,6 +16,7 @@ from heinzel.kernel import (
     Kernel,
 )
 from heinzel.kernel._approval import ApprovalConfirmation, ApprovalIssuer
+from heinzel.modules.heinzel._model_grants import ModelGrants
 from heinzel.modules.heinzel._models import HeinzelSettings
 from heinzel.modules.heinzel._session_crud import SessionCrud
 from heinzel.modules.heinzel._session_models import (
@@ -78,15 +79,34 @@ class _SessionApprovalIssuer(ApprovalIssuer):
                 )
                 raise HeinzelError(msg)
 
+    @staticmethod
+    def _model_args(arguments: dict[str, JsonValue]) -> tuple[str, str]:
+        session, request = arguments.get("session_id"), arguments.get("request_id")
+        if (
+            set(arguments) != {"session_id", "request_id"}
+            or not isinstance(session, str)
+            or not isinstance(request, str)
+        ):
+            msg = "Approval is invalid or unavailable"
+            raise HeinzelError(msg)
+        return session, request
+
     def review(self, module: str, operation: str, arguments: dict[str, JsonValue]) -> dict[str, JsonValue]:
+        if module == "heinzel" and operation == "approve-model-grant":
+            return ModelGrants(self.service).review(*self._model_args(arguments)).model_dump(mode="json")
         self._check_daemon(module, operation, arguments)
         return self.service.review(module, operation, arguments)
 
     def issue(self, module: str, operation: str, arguments: dict[str, JsonValue], provenance: str) -> str:
+        if module == "heinzel" and operation == "approve-model-grant":
+            session, request = self._model_args(arguments)
+            return ModelGrants(self.service).issue(session, request, provenance)
         self._check_daemon(module, operation, arguments)
         return self.service.issue(module, operation, arguments, provenance)
 
     def applied(self, module: str, operation: str, arguments: dict[str, JsonValue]) -> bool:
+        if module == "heinzel" and operation == "approve-model-grant":
+            return ModelGrants(self.service).applied(*self._model_args(arguments))
         return self.service.applied(module, operation, arguments)
 
 

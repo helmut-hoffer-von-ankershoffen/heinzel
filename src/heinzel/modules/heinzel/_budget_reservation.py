@@ -66,6 +66,55 @@ class ReservationResult(BaseModel):
     owner_reserved: Decimal
 
 
+def initialize_budget(repository: SessionRepository, session_id: str) -> None:
+    """Create an owner ledger only if no known prior model work needs reconciliation.
+
+    This checks the durable personal session journals; it cannot discover older unrelated chat stores or model
+    usage that bypassed those journals. Do not treat it as complete legacy migration or expose it as such.
+
+    Raises:
+        HeinzelError: If historical model work, existing uninitialized ledger entries or journal damage is found.
+    """
+    owner = repository.principal_id
+    with repository.budget_writer(session_id) as writer:
+        ledger = repository.budget_read(session_id).events
+        initialized = bool(
+            ledger and ledger[0].kind == "model.ledger-initialized" and ledger[0].data == {"owner": owner}
+        )
+        if ledger and not initialized:
+            msg = "Existing budget usage requires reconciliation before initialization"
+            raise HeinzelError(msg)
+        accounted: set[tuple[str, str]] = set()
+        for event in ledger[1:]:
+            if event.kind != "model.reserved":
+                msg = "The owner budget ledger contains an unknown record"
+                raise HeinzelError(msg)
+            try:
+                record = _Reservation.model_validate(event.data)
+            except ValueError:
+                msg = "The owner budget ledger contains an invalid reservation"
+                raise HeinzelError(msg) from None
+            expected = hashlib.sha256(f"{record.session}\0{record.request_id}".encode()).hexdigest()
+            if record.owner != owner or record.amount != record.envelope.maximum() or event.key != expected:
+                msg = "The owner budget ledger contains an invalid reservation"
+                raise HeinzelError(msg)
+            accounted.add((record.session, record.turn_id))
+        for head in repository.heads():
+            if head.problem:
+                msg = "A personal session needs repair before budget initialization"
+                raise HeinzelError(msg)
+            events = repository.control_read(head.session).events
+            if any(
+                event.kind in {"message.replied", "interactive.started"}
+                and (event.turn is None or (head.session, event.turn) not in accounted)
+                for event in events
+            ):
+                msg = "Prior model work requires usage reconciliation before budget initialization"
+                raise HeinzelError(msg)
+        if not initialized:
+            writer.append("model.ledger-initialized", key="initialized", data={"owner": owner})
+
+
 def reserve_model_spend(  # noqa: PLR0913, PLR0912, PLR0915, C901 - one atomic policy and ledger boundary
     repository: SessionRepository,
     session_id: str,
@@ -73,6 +122,7 @@ def reserve_model_spend(  # noqa: PLR0913, PLR0912, PLR0915, C901 - one atomic p
     envelope: PriceEnvelope,
     *,
     message_cap: Decimal,
+    require_initialized: bool = False,
     turn_id: str | None = None,
     session_cap: Decimal,
     owner_cap: Decimal,
@@ -106,9 +156,17 @@ def reserve_model_spend(  # noqa: PLR0913, PLR0912, PLR0915, C901 - one atomic p
     with repository.budget_writer(session_id) as writer:
         events = repository.budget_read(session_id).events
         records: list[_Reservation] = []
+        initialized = bool(
+            events and events[0].kind == "model.ledger-initialized" and events[0].data == {"owner": owner}
+        )
+        if require_initialized and not initialized:
+            msg = "The owner budget ledger requires initialization and usage reconciliation"
+            raise HeinzelError(msg)
         prior = None
         try:
             for event in events:
+                if event.kind == "model.ledger-initialized" and event == events[0] and initialized:
+                    continue
                 if event.kind != "model.reserved":
                     msg = "The owner budget ledger contains an unknown record"
                     raise HeinzelError(msg)

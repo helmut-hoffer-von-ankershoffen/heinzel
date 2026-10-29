@@ -8,14 +8,18 @@ import hashlib
 import json
 from collections.abc import Callable
 from datetime import UTC, datetime
+from decimal import Decimal
 from typing import Literal, cast
 
 from pydantic import BaseModel, JsonValue, TypeAdapter
 from pydantic_ai.models import Model
 
 from heinzel import CurrentUser, HeinzelError, SessionEvent
+from heinzel.modules.heinzel._budget_reservation import initialize_budget
 from heinzel.modules.heinzel._engine import EngineCheckpoint, TurnAuthority, TurnDeps, TurnLimits, run_turn
 from heinzel.modules.heinzel._model_admission import ConnectedModelFactory, connected_model
+from heinzel.modules.heinzel._model_grants import ModelGrant, ModelGrants
+from heinzel.modules.heinzel._priced_model import ReservedModel
 from heinzel.modules.heinzel._session_bodies import immutable_body
 from heinzel.modules.heinzel._session_crud import SessionCrud
 from heinzel.modules.heinzel._session_models import SessionMessage
@@ -95,8 +99,65 @@ class InteractiveTurn:
         )
         return await self.run(session_id, request_id, model, limits=limits)
 
+    async def run_granted(
+        self, session_id: str, request_id: str, current: CurrentUser, factory: ConnectedModelFactory
+    ) -> SessionMessage:
+        """Use only the latest owner-approved grant; still internal pending dollar-policy enforcement.
+
+        Raises:
+            HeinzelError: If no approved model grant or configured matching model exists.
+        """
+        grant = ModelGrants(self._crud).approved(session_id)
+        limits = TurnLimits(
+            requests=grant.requests,
+            total_tokens=grant.total_tokens,
+            output_tokens=grant.output_tokens,
+            timeout_seconds=grant.timeout_seconds,
+        )
+        model = connected_model(
+            self._crud.repository,
+            current,
+            factory,
+            session_id=session_id,
+            owner=self._owner,
+            selected_access=grant.access,
+            approved_access=grant.access,
+            approved_model=grant.model,
+            limits=limits,
+        )
+        costs = self._crud.costs()
+        if costs.unknown_turns or costs.spent_usd:
+            msg = "Existing model usage requires reconciliation before a reserved turn"
+            raise HeinzelError(msg)
+        initialize_budget(self._crud.repository, session_id)
+
+        def verify_grant() -> None:
+            if ModelGrants(self._crud).approved(session_id) != grant:
+                msg = "The approved model grant changed during this turn"
+                raise HeinzelError(msg)
+
+        wrapped = ReservedModel.for_openai(
+            model,
+            self._crud.repository,
+            session_id,
+            _turn_id(request_id),
+            max_requests=limits.requests,
+            message_cap=min(grant.message_cap_usd, Decimal(str(costs.message_max_usd))),
+            session_cap=min(grant.session_cap_usd, Decimal(str(costs.session_max_usd))),
+            owner_cap=grant.owner_cap_usd,
+            now=lambda: datetime.now(UTC),
+            verify_authority=verify_grant,
+        )
+        return await self.run(session_id, request_id, wrapped, limits=limits, expected_grant=grant)
+
     async def run(  # noqa: C901, PLR0915 - one lock and state boundary for the entire turn
-        self, session_id: str, request_id: str, model: Model, *, limits: TurnLimits
+        self,
+        session_id: str,
+        request_id: str,
+        model: Model,
+        *,
+        limits: TurnLimits,
+        expected_grant: ModelGrant | None = None,
     ) -> SessionMessage:
         """Execute one accepted message; an interrupted attempt never automatically re-executes.
 
@@ -112,6 +173,9 @@ class InteractiveTurn:
         with repo.main_writer(session_id):
             self._check_owner()
             events = repo.control_read(session_id).events
+            if expected_grant is not None and ModelGrants(self._crud).approved(session_id) != expected_grant:
+                msg = "The approved model grant changed before the turn started"
+                raise HeinzelError(msg)
             accepted = next(
                 (e for e in events if e.kind == "message.accepted" and e.key == f"message-{request_id}"), None
             )

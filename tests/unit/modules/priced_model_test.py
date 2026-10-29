@@ -153,3 +153,43 @@ def test_fake_provider_completes_chat_after_reservation(tmp_path):
         assert result.text == "Completed safely"
         assert calls == [1]
         assert len(repo.budget_read(session).events) == 1
+
+
+def test_changed_authority_after_reservation_blocks_provider_call(tmp_path):
+    current = CurrentUser(tmp_path / "identity")
+    checks = []
+    calls = []
+
+    def verify():
+        checks.append(1)
+        if len(checks) > 1:
+            msg = "grant revoked"
+            raise HeinzelError(msg)
+
+    def reply(_messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        calls.append(1)
+        return ModelResponse([ToolCallPart(info.output_tools[0].name, {"report": "never"})])
+
+    with current.local("cli"):
+        repo = PersonalSessionRepository(current)
+        crud = SessionCrud(repo, lambda: SessionCosts(session_max_usd=2, message_max_usd=0.2))
+        session = crud.new_chat("create").session_id
+        crud.accept(session, MessageRequest(request_id="one", text="Hello"))
+        wrapped = ReservedModel(
+            CountedModel(reply),
+            repo,
+            session,
+            "turn",
+            max_requests=1,
+            message_cap=Decimal(1),
+            session_cap=Decimal(2),
+            owner_cap=Decimal(3),
+            now=lambda: CHECKED,
+            verify_authority=verify,
+        )
+        with pytest.raises(HeinzelError, match="grant revoked"):
+            asyncio.run(
+                InteractiveTurn(crud).run(session, "one", wrapped, limits=TurnLimits(requests=1, output_tokens=200))
+            )
+        assert calls == []
+        assert len(repo.budget_read(session).events) == 1

@@ -58,8 +58,12 @@ class ReservedModel(WrapperModel):
         session_cap: Decimal,
         owner_cap: Decimal,
         now: Callable[[], datetime],
+        require_initialized: bool = False,
+        verify_authority: Callable[[], None] | None = None,
     ) -> None:
         super().__init__(model)
+        self._verify_authority = verify_authority
+        self._require_initialized = require_initialized
         self._repository = repository
         self._session = session
         self._turn = turn
@@ -88,6 +92,7 @@ class ReservedModel(WrapperModel):
         session_cap: Decimal,
         owner_cap: Decimal,
         now: Callable[[], datetime],
+        verify_authority: Callable[[], None] | None = None,
     ) -> "ReservedModel":
         """Accept only the pinned direct OpenAI Responses model and canonical endpoint.
 
@@ -112,9 +117,11 @@ class ReservedModel(WrapperModel):
             session_cap=session_cap,
             owner_cap=owner_cap,
             now=now,
+            require_initialized=True,
+            verify_authority=verify_authority,
         )
 
-    async def request(  # noqa: C901 - one request must pass every limit before dispatch
+    async def request(  # noqa: C901, PLR0912 - one request passes every limit before dispatch
         self,
         messages: list[ModelMessage],
         model_settings: ModelSettings | None,
@@ -128,6 +135,8 @@ class ReservedModel(WrapperModel):
         if self._repository.principal_id != self._owner:
             msg = "The model reservation belongs to a different owner"
             raise HeinzelError(msg)
+        if self._verify_authority is not None:
+            self._verify_authority()
         input_rate, output_rate = resolve_pricing(MODEL, "standard", self._now())
         if self._calls >= self._max_requests:
             msg = "The model request limit has been reached"
@@ -175,10 +184,13 @@ class ReservedModel(WrapperModel):
             envelope,
             turn_id=self._turn,
             message_cap=self._message_cap,
+            require_initialized=self._require_initialized,
             session_cap=self._session_cap,
             owner_cap=self._owner_cap,
         )
         if reserved.disposition != "reserved":
             msg = "A prior reservation cannot authorize another model request"
             raise HeinzelError(msg)
+        if self._verify_authority is not None:
+            self._verify_authority()
         return await self.wrapped.request(messages, settings, model_request_parameters)  # type: ignore[arg-type]
