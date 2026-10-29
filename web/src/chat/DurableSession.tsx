@@ -8,6 +8,7 @@ import { useDaemonStatus } from "@/api/daemon";
 import { AgentProposal } from "@/chat/AgentProposal";
 import { ActionCard } from "@/chat/Conversation";
 import { useDurableDraft } from "@/chat/durableDraft";
+import { SkillDraftPanel } from "@/chat/SkillDraftPanel";
 import { Button } from "@/components/ui/button";
 import { ProfileEditor } from "@/heinzel/PersonalHeinzels";
 import { t } from "@/i18n";
@@ -558,6 +559,7 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
                 ))}
             </section>
           )}
+        {query.data?.session_id === sessionId && <SkillDraftPanel key={sessionId} sessionId={sessionId} />}
         {query.data?.messages?.map((message) => (
           <p key={`${message.seq}-${message.id}`} className="whitespace-pre-wrap text-sm">
             <strong>{message.role === "tool" ? "Tool activity" : message.role}:</strong>{" "}
