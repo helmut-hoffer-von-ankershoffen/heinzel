@@ -9,6 +9,11 @@ Soundscapes work the same way ([ADR 0058](adr/0058-soundscapes-are-data-a-plugin
 offers its own with `module.soundscape(Path(__file__).parent / "soundscapes")`, and they appear in `hz system sound
 list` and the web app's picker beside the built-in soundscapes.
 
+A theme plugin can declare both themes and soundscapes in its own module, ship their TOML and audio/font/logo
+assets, and set a soundscape's `pairs_with` to its theme names. No core edit or central theme/soundscape registry
+entry is required. Core discovers public `ThemeLet` and `SoundscapeLet` contributions; Sound follows the selected
+theme through the optional public `ThemeChoice` contract, without importing a concrete theme plugin.
+
 The sound options include volume, softer sound while typing and muting during meetings. A stream's mini-player
 starts in the sidebar; pop it out, drag it near the sidebar to dock it again, or move the floating player with its
 arrow-key button. Docking, undocking and collapsing the sidebar keep the stream playing.
