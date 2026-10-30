@@ -12,7 +12,7 @@ from typing import Annotated
 from pydantic import Field
 
 from heinzel import AgentResult, AgentRunner, Budget, Check, HeinzelError, Kernel, Module, Status, ToolProfile
-from heinzel.kernel import CapabilityView, UsageEntry, record_usage
+from heinzel.kernel import CapabilityView, RunnerSnapshotProvider, UsageEntry, record_usage
 from heinzel.modules.system.runner._access import ClaudeCodeAccess
 from heinzel.modules.system.runner._claude import BIND_COMMAND_RUNNER, HOSTS, ClaudeCodeRunner, login_check
 from heinzel.modules.system.runner._claude import DOCS as CLAUDE_CODE_DOCS
@@ -21,9 +21,11 @@ from heinzel.modules.system.runner._codex import NAME as CODEX
 from heinzel.modules.system.runner._codex import CodexAccess, CodexRunner
 from heinzel.modules.system.runner._command import SET_COMMAND, TRUST_COMMAND, CommandRunner
 from heinzel.modules.system.runner._models import RunnerSettings
+from heinzel.modules.system.runner._snapshot import RunnerSnapshotService
 
 module = Module("runner", "Run bounded agent sessions with Claude Code or a configured command.")
 module.settings(RunnerSettings)
+module.service(RunnerSnapshotProvider, RunnerSnapshotService)
 module.provides("agent-runner", modes={"read"}, hosts=HOSTS, name="claude-code")(ClaudeCodeRunner)
 module.provides("agent-runner", modes={"read"}, name="command")(CommandRunner)
 # The same CLI as an AI access option, which names the runner above (ADR 0057).

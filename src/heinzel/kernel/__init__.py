@@ -17,6 +17,8 @@ from heinzel.kernel._agents import (
 from heinzel.kernel._ai import AccessStatus, AccessTest, AiAccess, UsageCause, UsageEntry, UsageLog, record_usage
 from heinzel.kernel._bindings import HOWS, Adapters, CapabilityView, How, Requester
 from heinzel.kernel._boot import boot
+from heinzel.kernel._bounded_process import MAX_OUTPUT as PROCESS_MAX_OUTPUT
+from heinzel.kernel._bounded_process import ProcessExecute, ProcessOutcome, run_bounded_process, signal_process_group
 from heinzel.kernel._capabilities import CAPABILITIES, MODES, NO_ADAPTER, Capability, Mode, Requirement
 from heinzel.kernel._chat import ActionGate, ProposedCall
 from heinzel.kernel._chat_services import (
@@ -138,6 +140,7 @@ from heinzel.kernel._lets import (
     schedule_problem,
 )
 from heinzel.kernel._local_web import LocalWebRuntime
+from heinzel.kernel._metadata_verifier import CoreMetadataVerifier
 from heinzel.kernel._module import Module
 from heinzel.kernel._notifications import Delivery, Notice, NoticeKind, Notifications
 from heinzel.kernel._org import OrgContext, Recommendation, RecommendationKind, TeamPromise, TeamPromises
@@ -188,6 +191,7 @@ from heinzel.kernel._protocols import (
     plain_addresses,
 )
 from heinzel.kernel._release import ReleaseCache, ReleaseSource
+from heinzel.kernel._runner_snapshot import RunnerSnapshot, RunnerSnapshotProvider
 from heinzel.kernel._services import ServiceContract
 from heinzel.kernel._session import SessionEvent, SessionHead, SessionProjector, SessionRead
 from heinzel.kernel._session_store import SessionStore, SessionWriter
@@ -283,6 +287,7 @@ __all__ = [
     "MCP_STDIO",
     "MODES",
     "NO_ADAPTER",
+    "PROCESS_MAX_OUTPUT",
     "PROJECT_FILENAME",
     "RESPONSES",
     "SETUP_PHASES",
@@ -327,6 +332,7 @@ __all__ = [
     "ConfirmedLines",
     "ContractTemplate",
     "ContributionLet",
+    "CoreMetadataVerifier",
     "CorePin",
     "CredentialBackend",
     "CredentialLet",
@@ -419,6 +425,8 @@ __all__ = [
     "PostedMessage",
     "Presence",
     "Principal",
+    "ProcessExecute",
+    "ProcessOutcome",
     "Progress",
     "ProgressWidget",
     "Prompter",
@@ -438,6 +446,8 @@ __all__ = [
     "RunGitCommand",
     "RunOperation",
     "RunStatus",
+    "RunnerSnapshot",
+    "RunnerSnapshotProvider",
     "ScriptExhausted",
     "ScriptedPrompter",
     "SectionReplacement",
@@ -542,7 +552,9 @@ __all__ = [
     "redact_emails",
     "requirement_from_receipt",
     "restricts",
+    "run_bounded_process",
     "schedule_problem",
+    "signal_process_group",
     "skill_frame",
     "skill_instructions",
     "skill_name_problem",

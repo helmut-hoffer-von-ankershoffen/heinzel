@@ -16,6 +16,9 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from heinzel import Config, CurrentUser, HeinzelError
+from heinzel.kernel import ProcessOutcome as Outcome
+from heinzel.kernel import RunnerSnapshot, RunnerSnapshotProvider
+from heinzel.kernel import run_bounded_process as run_bounded
 from heinzel.kernel._bindings import CapabilitySettings
 from heinzel.kernel._identity import PRIVATE_WRITE
 from heinzel.modules.heinzel._claude_subscription_model import (
@@ -32,8 +35,6 @@ from heinzel.modules.heinzel._models import HeinzelSettings
 from heinzel.modules.heinzel._session_crud import SessionCrud
 from heinzel.modules.heinzel._session_models import BackendBinding, RequestId, SessionId, SessionMessage
 from heinzel.modules.heinzel._subscription_slots import SubscriptionSlots
-from heinzel.modules.system.runner._models import RunnerSettings
-from heinzel.modules.system.runner._process import Outcome, run_bounded
 
 _HEADS = frozenset({"cli", "api-bearer", "web-session", "web-device"})
 _MAX_REQUESTS = 4
@@ -98,17 +99,18 @@ class UserChatService:
         self,
         crud: SessionCrud,
         current: CurrentUser,
+        runner_settings: RunnerSnapshotProvider,
         *,
         load: Callable[[], Config] = lambda: Config.load(Path.home()),
-        which: Callable[[str], str | None] = shutil.which,
         execute: Callable[..., Outcome] = run_bounded,
     ) -> None:
-        self._crud, self._current, self._load, self._which, self._execute = crud, current, load, which, execute
+        self._crud, self._current, self._load, self._which, self._execute = crud, current, load, shutil.which, execute
+        self._runner_settings = runner_settings
 
-    def _selected(self) -> tuple[HeinzelSettings, RunnerSettings]:
+    def _selected(self) -> tuple[HeinzelSettings, RunnerSnapshot]:
         config = self._load()
         choices = config.settings(CapabilitySettings, "capabilities")
-        runner = config.settings(RunnerSettings, "system.runner")
+        runner = self._runner_settings.snapshot(config)
         limits = config.settings(HeinzelSettings, "heinzel")
         if choices.ai_access != "claude-code" or choices.agent_runner != "claude-code":
             msg = "The selected AI access is not the supported Claude Code subscription"

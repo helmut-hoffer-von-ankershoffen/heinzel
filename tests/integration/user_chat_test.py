@@ -5,6 +5,7 @@ import pytest
 from heinzel import CurrentUser
 from heinzel.modules.heinzel._session_crud import SessionCrud
 from heinzel.modules.heinzel._user_chat import UserChatService
+from heinzel.modules.system.runner._snapshot import RunnerSnapshotService
 from tests.integration.chat_test import AUTH, web_client
 from tests.unit.modules.user_chat_test import FixtureConfig, fake_claude
 
@@ -16,7 +17,9 @@ def test_private_answer_and_activity_operations_use_durable_request(make_kernel,
     current = kernel.resolve(CurrentUser)
     crud = kernel.resolve(SessionCrud)
     executable = fake_claude(tmp_path)
-    kernel.bind(UserChatService, UserChatService(crud, current, load=lambda: FixtureConfig(executable)))
+    kernel.bind(
+        UserChatService, UserChatService(crud, current, RunnerSnapshotService(), load=lambda: FixtureConfig(executable))
+    )
     client = web_client(kernel, tmp_path)
     created = client.post("/api/heinzel/new-chat", headers=AUTH, json={"request_id": "new"})
     assert created.status_code == 200, created.text
@@ -52,7 +55,9 @@ def test_profile_suggestion_is_owner_private_and_never_applied_by_model(make_ker
             "appearance": {"age": "grown", "build": "round"},
         },
     )
-    kernel.bind(UserChatService, UserChatService(crud, current, load=lambda: FixtureConfig(executable)))
+    kernel.bind(
+        UserChatService, UserChatService(crud, current, RunnerSnapshotService(), load=lambda: FixtureConfig(executable))
+    )
     client = web_client(kernel, tmp_path)
     created = client.post("/api/heinzel/new-chat", headers=AUTH, json={"request_id": "new", "name": "Original"})
     assert created.status_code == 200, created.text
@@ -112,7 +117,10 @@ def test_subscription_quota_error_has_safe_code_and_is_not_replayed(make_kernel,
         )
 
     kernel.bind(
-        UserChatService, UserChatService(crud, current, load=lambda: FixtureConfig(executable), execute=execute)
+        UserChatService,
+        UserChatService(
+            crud, current, RunnerSnapshotService(), load=lambda: FixtureConfig(executable), execute=execute
+        ),
     )
     client = web_client(kernel, tmp_path)
     session = client.post("/api/heinzel/new-chat", headers=AUTH, json={"request_id": "quota"}).json()["session_id"]
@@ -153,7 +161,10 @@ def test_owner_explicitly_sets_aside_uncertain_turn_and_can_continue(make_kernel
         return run_bounded(command, **kwargs)
 
     kernel.bind(
-        UserChatService, UserChatService(crud, current, load=lambda: FixtureConfig(executable), execute=execute)
+        UserChatService,
+        UserChatService(
+            crud, current, RunnerSnapshotService(), load=lambda: FixtureConfig(executable), execute=execute
+        ),
     )
     client = web_client(kernel, tmp_path)
     session = client.post("/api/heinzel/new-chat", headers=AUTH, json={"request_id": "resume"}).json()["session_id"]
