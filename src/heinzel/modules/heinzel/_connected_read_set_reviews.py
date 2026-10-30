@@ -26,10 +26,12 @@ class ReadSetReview(BaseModel):
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
-    request_id: RequestId
-    revision: int = Field(strict=True, ge=1)
-    provenance: Literal["host-observed"] = "host-observed"
-    proposal: ReadSetProposal
+    request_id: RequestId = Field(description="The stable request identifying this exact review.")
+    revision: int = Field(strict=True, ge=1, description="The recorded review revision.")
+    provenance: Literal["host-observed"] = Field(
+        default="host-observed", description="The host re-observed each selected provider and account."
+    )
+    proposal: ReadSetProposal = Field(description="The whole exact proposal covered by this review.")
 
 
 def read_set_intent(review: ReadSetReview) -> ApprovalIntent:
@@ -136,6 +138,23 @@ class ConnectedReadSetReviews:
                 body = immutable_body(writer, "connected-set-review", result.model_dump(mode="json"), control=True)
                 writer.append("connected-set.reviewed", key=request, data=body.model_dump(mode="json"))
                 return result.model_copy(deep=True)
+
+    def current(self, session: str, request: str) -> ReadSetReview:
+        """Return the current host-reviewed set, re-observing each selected source.
+
+        Raises:
+            HeinzelError: If the exact review or its source is no longer current.
+        """
+        self.sets.latest(session)
+        _REQUEST.validate_python(request)
+        with self.sets.crud.repository.main_writer(session) as writer:
+            events = self.sets.crud.repository.control_read(session).events
+            reviews = [event for event in events if event.kind == "connected-set.reviewed"]
+            if not reviews or reviews[-1].key != request:
+                msg = "The read-set review changed; review it again"
+                raise HeinzelError(msg)
+            saved = self._body(session, reviews[-1])
+            return self.review_intent_locked(session, writer, request, saved.revision)[0].model_copy(deep=True)
 
     def approval_intent(self, session: str, review_request: str, review_revision: int) -> ApprovalIntent:
         """Prepare an exact inert intent after freshly re-observing every selected source.

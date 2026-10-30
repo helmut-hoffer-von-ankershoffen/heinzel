@@ -180,6 +180,7 @@ class ChatStore(McpChatSessions):
                 "approve-model-grant",
                 "accept-agent-contract",
                 "approve-connected-read",
+                "approve-connected-read-set",
                 "approve-agent-schedule",
                 "queue-agent-notification",
             }:
@@ -188,7 +189,7 @@ class ChatStore(McpChatSessions):
                     "Review notification"
                     if action.operation == "queue-agent-notification"
                     else "Review connected read"
-                    if action.operation == "approve-connected-read"
+                    if action.operation in {"approve-connected-read", "approve-connected-read-set"}
                     else "Review agent schedule"
                     if action.operation == "approve-agent-schedule"
                     else "Review agent contract"
@@ -212,6 +213,7 @@ class ChatStore(McpChatSessions):
                 "approve-model-grant",
                 "accept-agent-contract",
                 "approve-connected-read",
+                "approve-connected-read-set",
                 "approve-agent-schedule",
                 "queue-agent-notification",
             }
@@ -574,6 +576,7 @@ class StoreGate(ActionGate):
             "approve-model-grant",
             "accept-agent-contract",
             "approve-connected-read",
+            "approve-connected-read-set",
             "approve-agent-schedule",
             "queue-agent-notification",
         }:

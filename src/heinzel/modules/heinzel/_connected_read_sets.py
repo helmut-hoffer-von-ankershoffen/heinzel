@@ -3,30 +3,44 @@
 import secrets
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, model_validator
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, model_validator
 
 from heinzel import ConnectedReadReview, CurrentUser, HeinzelError, SessionEvent
 from heinzel.kernel import PRIVATE_WRITE
 from heinzel.kernel._approval import arguments_hash
-from heinzel.modules.heinzel._connected_grants import RollingWindowPolicy
+from heinzel.modules.heinzel._connected_grants import ConnectedReadGrants, RollingWindowPolicy
 from heinzel.modules.heinzel._session_bodies import immutable_body
 from heinzel.modules.heinzel._session_crud import SessionCrud
 from heinzel.modules.heinzel._session_models import Digest, RequestId, SessionId
 
+_MAX_SET_ENTRIES = 4
 _HEADS = frozenset({"cli", "api-bearer", "web-session", "web-device"})
 _REQUEST = TypeAdapter(RequestId)
 _SESSION = TypeAdapter(SessionId)
+
+
+class ReadSetSelection(BaseModel):
+    """The owner's requested fixed capability and arguments; it is not a source review."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    capability: str = Field(min_length=1, max_length=128, description="The configured capability to inspect.")
+    method: str = Field(min_length=1, max_length=128, description="The fixed read operation to review.")
+    fixed_arguments: dict[str, JsonValue] = Field(max_length=32, description="Exact arguments proposed for this read.")
 
 
 class ReadSetTerms(BaseModel):
     """Unverified proposed terms, not a provider observation or a grant."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
-    capability: str = Field(min_length=1, max_length=128)
-    method: str = Field(min_length=1, max_length=128)
-    binding_sha256: Digest
-    review: ConnectedReadReview
-    window_policy: RollingWindowPolicy | None = None
+    capability: str = Field(min_length=1, max_length=128, description="The selected configured capability.")
+    method: str = Field(min_length=1, max_length=128, description="The selected read operation.")
+    binding_sha256: Digest = Field(description="The proposed provider binding, rechecked by the host before approval.")
+    review: ConnectedReadReview = Field(
+        description="Proposed source, account, scopes and read arguments; not independent evidence."
+    )
+    window_policy: RollingWindowPolicy | None = Field(
+        default=None, description="Optional proposed rolling bounds; their presence does not authorize a schedule."
+    )
 
     @model_validator(mode="after")
     def operation_matches(self) -> "ReadSetTerms":
@@ -45,20 +59,22 @@ class ReadSetEntry(BaseModel):
     """An opaque host-issued selector and its proposed terms."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
-    handle: str = Field(pattern=r"^read-[0-9a-f]{32}$")
-    terms: ReadSetTerms
+    handle: str = Field(pattern=r"^read-[0-9a-f]{32}$", description="An opaque host selector for this exact entry.")
+    terms: ReadSetTerms = Field(description="The exact proposed read terms, without approval.")
 
 
 class ReadSetProposal(BaseModel):
     """A private proposal; its existence does not authorize any access."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
-    request_id: RequestId
-    revision: int = Field(strict=True, ge=1)
-    owner: str = Field(pattern=r"^u-[0-9a-f]{32}$")
-    session: SessionId
-    provenance: Literal["owner-request"] = "owner-request"
-    entries: tuple[ReadSetEntry, ...] = Field(min_length=1, max_length=4)
+    request_id: RequestId = Field(description="The stable request identifying this proposal.")
+    revision: int = Field(strict=True, ge=1, description="The recorded proposal revision.")
+    owner: str = Field(pattern=r"^u-[0-9a-f]{32}$", description="The authenticated owner of this private proposal.")
+    session: SessionId = Field(description="The owner's agent conversation receiving these proposed sources.")
+    provenance: Literal["owner-request"] = Field(default="owner-request", description="How this proposal was staged.")
+    entries: tuple[ReadSetEntry, ...] = Field(
+        min_length=1, max_length=_MAX_SET_ENTRIES, description="The bounded sources proposed for review together."
+    )
 
     @model_validator(mode="after")
     def consistent_entries(self) -> "ReadSetProposal":
@@ -130,6 +146,34 @@ class ConnectedReadSets:
         events = self.crud.repository.control_read(session).events
         proposals = [event for event in events if event.kind == "connected-set.proposed"]
         return self._body(session, proposals[-1]) if proposals else None
+
+    def propose_selected(
+        self, grants: ConnectedReadGrants, session: str, request: str, selections: tuple[ReadSetSelection, ...]
+    ) -> ReadSetProposal:
+        """Observe an owner's bounded selected reads without granting or executing them.
+
+        Raises:
+            HeinzelError: If owner, selection or selected source cannot be verified.
+        """
+        self._human()
+        if (
+            grants.crud is not self.crud
+            or grants.current is not self.current
+            or not 1 <= len(selections) <= _MAX_SET_ENTRIES
+        ):
+            msg = "The read-set selection is invalid"
+            raise HeinzelError(msg)
+        terms: list[ReadSetTerms] = []
+        for selection in selections:
+            binding, review = grants.observe_set_candidate(
+                session, selection.capability, selection.method, selection.fixed_arguments
+            )
+            terms.append(
+                ReadSetTerms(
+                    capability=selection.capability, method=selection.method, binding_sha256=binding, review=review
+                )
+            )
+        return self.propose(session, request, tuple(terms))
 
     def propose(self, session: str, request: str, terms: tuple[ReadSetTerms, ...]) -> ReadSetProposal:
         """Persist a draft; exact retries return its original selectors.

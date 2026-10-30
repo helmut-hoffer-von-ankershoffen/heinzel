@@ -522,6 +522,19 @@ class ConnectedReadGrants:
             observed["fixed_arguments"] = expected["fixed_arguments"]
         return arguments_hash(observed) == arguments_hash(expected)
 
+    def observe_set_candidate(
+        self, session: str, capability: str, method: str, fixed: dict[str, JsonValue]
+    ) -> tuple[str, ConnectedReadReview]:
+        """Observe one owner-selected fixed read without creating a legacy proposal or granting access.
+
+        Raises:
+            HeinzelError: If the owner, session, selected source or arguments cannot be verified.
+        """
+        self._human()
+        _SESSION.validate_python(session)
+        self.crud.repository.control_read(session)
+        return self._observe(session, capability, method, fixed)
+
     def verify_proposed_terms(self, session: str, grant: ConnectedGrant) -> None:
         """Re-observe proposed terms; this issues no approval and never invokes a read.
 

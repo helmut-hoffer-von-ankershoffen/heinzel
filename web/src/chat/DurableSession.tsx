@@ -9,6 +9,7 @@ import { AgentProposal } from "@/chat/AgentProposal";
 import { AgentProposalSummary } from "@/chat/AgentProposalSummary";
 import { AgentSchedules } from "@/chat/AgentSchedules";
 import { ConnectedReadReview } from "@/chat/ConnectedReadReview";
+import { ConnectedReadSetReview } from "@/chat/ConnectedReadSetReview";
 import { ContractHistory } from "@/chat/ContractHistory";
 import { ActionCard } from "@/chat/Conversation";
 import { useDurableDraft } from "@/chat/durableDraft";
@@ -94,6 +95,7 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
     return message.startsWith("Check-ins are blocked because the daemon unit version") ? message : null;
   };
   const controlRequest = useRef<string | null>(params.get("approval-request"));
+  const composerInput = useRef<HTMLTextAreaElement>(null);
   const running = useRef(false);
   const query = useQuery({
     queryKey: ["heinzel", "session", sessionId, ...(historyCursor ? [historyCursor] : [])],
@@ -460,6 +462,7 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
       await client.invalidateQueries({ queryKey: ["heinzel", "profile-proposal", sessionId] });
       await client.invalidateQueries({ queryKey: ["heinzel", "latest-schedule-suggestion", sessionId] });
       await client.invalidateQueries({ queryKey: ["heinzel", "latest-source-suggestion", sessionId] });
+      await client.invalidateQueries({ queryKey: ["heinzel", "connected-read-set", sessionId] });
     } catch (reason) {
       if (acceptedConfirmed && reason instanceof ApiError && reason.code === "subscription_usage_limit") {
         updateComposer({ pending: { ...request, accepted: true, outcome: "subscription_usage_limit" } });
@@ -703,7 +706,14 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
           <NotificationPanel key={`notification:${sessionId}`} sessionId={sessionId} />
         )}
         {query.data?.session_id === sessionId && (
-          <ConnectedReadReview key={`connected:${sessionId}`} sessionId={sessionId} />
+          <>
+            <ConnectedReadReview key={`connected:${sessionId}`} sessionId={sessionId} />
+            <ConnectedReadSetReview
+              key={`connected-set:${sessionId}`}
+              sessionId={sessionId}
+              onAsk={() => composerInput.current?.focus()}
+            />
+          </>
         )}
         {query.data?.session_id === sessionId && <ContractHistory contracts={query.data.contracts ?? []} />}
         {query.data?.session_id === sessionId && <SkillDraftPanel key={`skills:${sessionId}`} sessionId={sessionId} />}
@@ -1153,6 +1163,7 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
         <label className="block space-y-1 text-sm">
           <span>{t("durable.message")}</span>
           <textarea
+            ref={composerInput}
             className="w-full rounded border border-border bg-background p-2"
             value={text}
             maxLength={4000}
@@ -1188,6 +1199,7 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
               void client.invalidateQueries({ queryKey: ["heinzel", "profile-proposal", sessionId] });
               void client.invalidateQueries({ queryKey: ["heinzel", "latest-schedule-suggestion", sessionId] });
               void client.invalidateQueries({ queryKey: ["heinzel", "latest-source-suggestion", sessionId] });
+              void client.invalidateQueries({ queryKey: ["heinzel", "connected-read-set", sessionId] });
             }}
           />
         )}

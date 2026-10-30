@@ -26,21 +26,26 @@ Chosen option: **record a distinct inert, bounded read-set proposal**, because p
   terms and a host-issued selector; repeated selectors or repeated source/account/operation/arguments are refused.
 - Proposals are immutable, versioned separately, replay only with identical terms, and are projected separately from
   single-grant history. Their recorded origin is provenance, never an authority or approval.
+- A direct user chat may suggest up to four fixed reads in a separate inert, versioned draft. The person can inspect
+  and select those terms for preparation; suggesting them contacts no provider and confers no approval. Preparation
+  observes the selected providers, and the subsequent exact review still needs separate human confirmation.
 - An internal host-observed review rechecks every selected provider and account; it is not an atomic multi-provider
   snapshot. A separately scoped trusted human confirmation may issue and consume a one-use, expiring proof of the
   exact current review, recording the whole set approval atomically. Any changed entry requires a new review and
   approval; revocation applies to the whole set. Neither source text, a model nor a legacy single grant can approve it.
 - An internal executor may read one exact approved entry for an authenticated human-owned active turn, after
   rechecking its source, account and approval. It records a private per-entry receipt before returning a value; an
-  interrupted attempt is not replayed automatically. It provides no public operation, model tool, daemon or schedule
-  integration, item-evidence effect or notification authority.
+  interrupted attempt is not replayed automatically. The private interactive route exposes only approved opaque handles
+  after an accepted turn starts; the host binds the requested handle to the attempt and receipt. A separate trusted
+  human confirmation stages and approves the exact reviewed set; a model cannot stage that confirmation. This route
+  does not grant daemon or scheduled execution, item-evidence effects or notification authority.
 - Existing fixed and rolling grant approvals, histories, schedules and digests retain their meanings. No legacy grant
   or accepted artifact becomes an approval for a read set.
 
 ### Consequences
 
 - Good: a bounded proposal can be inspected without granting external access.
-- Bad: an approved set alone cannot execute a multi-source journey; receipts, scheduling and effect controls remain.
+- Bad: scheduling, item evidence and effect controls require separate authority and design.
 
 ### Confirmation
 
@@ -50,4 +55,6 @@ observations and exact intents. `tests/unit/modules/connected_read_set_approval_
 consumption, replay, revocation and legacy isolation. `tests/unit/modules/connected_read_set_input_test.py` and
 `tests/unit/modules/connected_read_set_key_test.py` check turn/handle binding, receipts, fail-closed key recovery and
 legacy compatibility; `tests/integration/source_read_set_prototype_test.py` checks captured-source failure.
-Review confirms there is no public tool, daemon, schedule or notification route for the internal executor.
+`tests/integration/read_set_interactive_prototype_test.py` exercises private human confirmation and a receipted fake
+interactive read as well as a draft-only chat suggestion. The mounted chat component tests cover explicit review and
+uncertain confirmation recovery. Review confirms there is no daemon, schedule or notification route for this executor.
