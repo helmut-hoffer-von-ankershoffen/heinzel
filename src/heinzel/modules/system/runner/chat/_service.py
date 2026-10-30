@@ -270,7 +270,7 @@ class ChatService:
         durable_session: str,
         request_id: str,
         expected_revision: int,
-        action: Literal["activate", "resume"],
+        action: Literal["activate", "pause", "resume"],
         expected_contract_version: int,
         expected_preview_hash: str,
     ) -> ChatSession:
@@ -908,7 +908,7 @@ class ChatService:
     @staticmethod
     def _is_reconciled_confirmation(found: ChatAction) -> bool:
         return found.module == "heinzel" and (
-            (found.operation == "schedule-control" and found.arguments.get("action") in {"activate", "resume"})
+            (found.operation == "schedule-control" and found.arguments.get("action") in {"activate", "pause", "resume"})
             or found.operation
             in {
                 "approve-model-grant",

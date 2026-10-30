@@ -240,7 +240,9 @@ def propose_schedule_control(  # noqa: PLR0913, PLR0917 - each argument binds th
         str, Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$", description="A stable id for this schedule action.")
     ],
     expected_revision: Annotated[int, Field(strict=True, ge=1, description="The schedule revision you inspected.")],
-    action: Annotated[Literal["activate", "resume"], Field(description="The exact schedule change to review.")],
+    action: Annotated[
+        Literal["activate", "pause", "resume"], Field(description="The exact schedule change to review.")
+    ],
     expected_contract_version: Annotated[
         int, Field(strict=True, ge=1, description="The contract version shown in the preview.")
     ],
