@@ -208,13 +208,19 @@ def test_schedule_card_and_daemon_registry_run_one_owner_bound_fake_turn(make_ke
     from heinzel.modules.heinzel._autonomous_schedule import AutonomousSchedules
     from heinzel.modules.system.daemon import DaemonService, DaemonSettings
 
+    executable = fake_claude(tmp_path)
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    monkeypatch.setenv("HZ_SYSTEM_RUNNER__CLAUDE_EXECUTABLE", str(executable))
+    monkeypatch.setenv("HZ_CAPABILITIES__AI_ACCESS", "claude-code")
+    monkeypatch.setenv("HZ_CAPABILITIES__AGENT_RUNNER", "claude-code")
     kernel = make_kernel(builtins=True)
     current = kernel.resolve(CurrentUser)
     crud = kernel.resolve(SessionCrud)
-    executable = fake_claude(tmp_path)
-    chat_service = UserChatService(crud, current, load=lambda: FixtureConfig(executable))
-    kernel.bind(UserChatService, chat_service)
-    kernel.bind(AutonomousSchedules, AutonomousSchedules(crud, chat_service))
+    kernel.resolve(UserChatService)
+    kernel.resolve(AutonomousSchedules)
     client = web_client(kernel, tmp_path)
     session = client.post("/api/heinzel/new-chat", headers=AUTH, json={"request_id": "job"}).json()["session_id"]
     with current.local("cli"):

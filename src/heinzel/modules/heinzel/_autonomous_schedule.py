@@ -13,6 +13,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator
 
 from heinzel import HeinzelError, SessionEvent, SessionWriter
+from heinzel.kernel import PRIVATE_WRITE
 from heinzel.kernel._approval import (
     ApprovalConfirmation,
     ApprovalEvidence,
@@ -22,7 +23,6 @@ from heinzel.kernel._approval import (
     arguments_hash,
     consume_approval,
 )
-from heinzel.kernel._identity import PRIVATE_WRITE
 from heinzel.modules.heinzel._contract_review import ContractReview
 from heinzel.modules.heinzel._interactive_turn import _turn_id
 from heinzel.modules.heinzel._session_bodies import immutable_body
@@ -97,6 +97,7 @@ def _fingerprint(chat: UserChatService) -> str:
         "digest": digest,
         "budget_mode": limits.subscription_budget_mode,
         "model": runner.model,
+        "runner_revision": runner.revision,
     }
     return hashlib.sha256(json.dumps(terms, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 

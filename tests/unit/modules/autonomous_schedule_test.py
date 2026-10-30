@@ -13,6 +13,7 @@ from heinzel.modules.heinzel._session_crud import SessionCrud
 from heinzel.modules.heinzel._session_models import SessionCosts
 from heinzel.modules.heinzel._session_repository import PersonalSessionRepository
 from heinzel.modules.heinzel._user_chat import UserChatService
+from heinzel.modules.system.runner._snapshot import RunnerSnapshotService
 from tests.unit.modules.user_chat_test import FixtureConfig, fake_claude
 
 pytestmark = pytest.mark.unit
@@ -29,7 +30,7 @@ def test_separate_consent_daemon_occurrence_dedup_and_pause(tmp_path, monkeypatc
         contract = ContractReview(crud)
         contract.accept(session, "contract", contract.issue(session, "contract", "test-confirm"))
         executable = fake_claude(tmp_path)
-        chat = UserChatService(crud, current, load=lambda: FixtureConfig(executable))
+        chat = UserChatService(crud, current, RunnerSnapshotService(), load=lambda: FixtureConfig(executable))
         schedules = AutonomousSchedules(crud, chat)
         binding = schedules.propose(session, "schedule", "contract", 60, 4, 30)
         assert binding.contract_sha256 == proposal.preview_sha256
@@ -91,7 +92,8 @@ def test_separate_consent_daemon_occurrence_dedup_and_pause(tmp_path, monkeypatc
                 PersonalSessionRepository(current), lambda: SessionCosts(session_max_usd=2, message_max_usd=0.2)
             )
             schedules = AutonomousSchedules(
-                reopened, UserChatService(reopened, current, load=lambda: FixtureConfig(executable))
+                reopened,
+                UserChatService(reopened, current, RunnerSnapshotService(), load=lambda: FixtureConfig(executable)),
             )
             assert asyncio.run(schedules.tick(session, "schedule", now)) == "A real recorded reply"
             assert (tmp_path / "model-calls").read_text() == count
@@ -105,7 +107,17 @@ def test_separate_consent_daemon_occurrence_dedup_and_pause(tmp_path, monkeypatc
             asyncio.run(schedules.tick(session, "schedule", now))
 
 
-def test_cancelled_occurrence_never_relaunches_and_changed_access_refuses(tmp_path, monkeypatch):
+def test_cancelled_occurrence_never_relaunches_and_changed_access_refuses(tmp_path, monkeypatch):  # noqa: PLR0915
+    import heinzel.modules.heinzel._autonomous_schedule as schedule_module
+
+    fixed = datetime.now(UTC)
+
+    class FixedClock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return fixed
+
+    monkeypatch.setattr(schedule_module, "datetime", FixedClock)
     current = CurrentUser(tmp_path / "identity")
     with current.local("cli"):
         crud = SessionCrud(
@@ -116,7 +128,7 @@ def test_cancelled_occurrence_never_relaunches_and_changed_access_refuses(tmp_pa
         contract = ContractReview(crud)
         contract.accept(session, "contract", contract.issue(session, "contract", "test-confirm"))
         executable = fake_claude(tmp_path, pause=True)
-        chat = UserChatService(crud, current, load=lambda: FixtureConfig(executable))
+        chat = UserChatService(crud, current, RunnerSnapshotService(), load=lambda: FixtureConfig(executable))
         schedules = AutonomousSchedules(crud, chat)
         binding = schedules.propose(session, "schedule", "contract", 60, 4, 30)
         proof = schedules.issue(session, "schedule", "chat-confirm:test:schedule")
@@ -143,8 +155,6 @@ def test_cancelled_occurrence_never_relaunches_and_changed_access_refuses(tmp_pa
             with pytest.raises(HeinzelError, match="uncertain"):
                 asyncio.run(schedules.tick(session, "schedule", now))
             from datetime import timedelta
-
-            import heinzel.modules.heinzel._autonomous_schedule as schedule_module
 
             later = now + timedelta(seconds=60)
 
@@ -182,7 +192,9 @@ def test_amended_contract_invalidates_old_schedule_without_model_launch(tmp_path
         contract = ContractReview(crud)
         contract.accept(session, "contract", contract.issue(session, "contract", "test-confirm"))
         executable = fake_claude(tmp_path)
-        schedules = AutonomousSchedules(crud, UserChatService(crud, current, load=lambda: FixtureConfig(executable)))
+        schedules = AutonomousSchedules(
+            crud, UserChatService(crud, current, RunnerSnapshotService(), load=lambda: FixtureConfig(executable))
+        )
         binding = schedules.propose(session, "schedule", "contract", 60, 4, 30)
         proof = schedules.issue(session, "schedule", "test-confirm")
         marker = ApprovalConfirmation()
@@ -206,7 +218,7 @@ def test_owner_can_resolve_unstarted_daemon_occurrence_without_replaying_it(tmp_
         )
         session = crud.new_chat("gap-test").session_id
         executable = fake_claude(tmp_path)
-        chat = UserChatService(crud, current, load=lambda: FixtureConfig(executable))
+        chat = UserChatService(crud, current, RunnerSnapshotService(), load=lambda: FixtureConfig(executable))
         with current.local("daemon"):
             crud.accept(session, MessageRequest(request_id="scheduled-gap", text="Scheduled instruction"))
         assert chat.turn_state(session, "scheduled-gap").status == "pending"
@@ -252,7 +264,9 @@ def test_expired_occurrence_cannot_launch_after_auth_delays(tmp_path, monkeypatc
                 clock[0] = start + timedelta(seconds=60)
             return result
 
-        chat = UserChatService(crud, current, load=lambda: FixtureConfig(executable), execute=execute)
+        chat = UserChatService(
+            crud, current, RunnerSnapshotService(), load=lambda: FixtureConfig(executable), execute=execute
+        )
         schedules = AutonomousSchedules(crud, chat)
         binding = schedules.propose(session, "schedule", "contract", 60, 4, 30)
         proof = schedules.issue(session, "schedule", "test-confirm")
@@ -281,7 +295,7 @@ def test_failure_after_acceptance_before_start_can_be_resolved(tmp_path, monkeyp
         contract = ContractReview(crud)
         contract.accept(session, "contract", contract.issue(session, "contract", "test-confirm"))
         executable = fake_claude(tmp_path)
-        chat = UserChatService(crud, current, load=lambda: FixtureConfig(executable))
+        chat = UserChatService(crud, current, RunnerSnapshotService(), load=lambda: FixtureConfig(executable))
         schedules = AutonomousSchedules(crud, chat)
         binding = schedules.propose(session, "schedule", "contract", 60, 4, 30)
         proof = schedules.issue(session, "schedule", "test-confirm")
@@ -321,7 +335,9 @@ def test_unstarted_resolution_must_follow_accepted_daemon_message(tmp_path, monk
         repo = PersonalSessionRepository(current)
         crud = SessionCrud(repo, lambda: SessionCosts(session_max_usd=2, message_max_usd=0.2))
         session = crud.new_chat("resolution-order").session_id
-        chat = UserChatService(crud, current, load=lambda: FixtureConfig(fake_claude(tmp_path)))
+        chat = UserChatService(
+            crud, current, RunnerSnapshotService(), load=lambda: FixtureConfig(fake_claude(tmp_path))
+        )
         with current.local("daemon"):
             crud.accept(session, MessageRequest(request_id="scheduled", text="Scheduled"))
         chat.abandon(session, "scheduled")
@@ -336,3 +352,29 @@ def test_unstarted_resolution_must_follow_accepted_daemon_message(tmp_path, monk
             chat.turn_state(session, "scheduled")
         with pytest.raises(HeinzelError, match="invalid resolution"):
             asyncio.run(InteractiveTurn(crud).run(session, "next", FunctionModel(lambda *_: None), limits=TurnLimits()))
+
+
+def test_schedule_binding_tracks_full_runner_configuration(tmp_path):
+    from heinzel.modules.heinzel._autonomous_schedule import _fingerprint
+    from heinzel.modules.system.runner._models import RunnerSettings
+
+    class ConfigWithRunnerChange(FixtureConfig):
+        def __init__(self, executable, codex_model):
+            super().__init__(executable)
+            self.codex_model = codex_model
+
+        def settings(self, cls, section):
+            result = super().settings(cls, section)
+            return result.model_copy(update={"codex_model": self.codex_model}) if cls is RunnerSettings else result
+
+    current = CurrentUser(tmp_path / "identity")
+    with current.local("cli"):
+        crud = SessionCrud(
+            PersonalSessionRepository(current), lambda: SessionCosts(session_max_usd=2, message_max_usd=0.2)
+        )
+        executable = fake_claude(tmp_path)
+        config = [ConfigWithRunnerChange(executable, None)]
+        chat = UserChatService(crud, current, RunnerSnapshotService(), load=lambda: config[0])
+        original = _fingerprint(chat)
+        config[0] = ConfigWithRunnerChange(executable, "changed-model")
+        assert _fingerprint(chat) != original
