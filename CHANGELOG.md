@@ -4,7 +4,7 @@ All notable changes to Heinzelmännchen, newest first. Versions follow [Semantic
 
 ## [0.9.7](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/releases/tag/v0.9.7) - 2026-10-30
 
-Scheduled agents can use separately reviewed item-based notification policies to suppress repeated attempts across overlapping reads and restarts. CLI discovery emits the actual executable command tree and schemas without running operations. Interrupted local checks now stop their owned child processes. Item identities remain provider-reported, and fixed reminders retain their prior consent.
+Scheduled agents can use separately reviewed item-based notification policies to suppress repeated attempts across overlapping reads and restarts. CLI discovery emits the actual executable command tree and schemas without running operations. Interrupted local checks now stop their owned child processes, and the plugin import guard avoids unnecessary package scans. Item identities remain provider-reported, and fixed reminders retain their prior consent.
 
 ### ✨ Features
 
@@ -14,6 +14,10 @@ Scheduled agents can use separately reviewed item-based notification policies to
 ### 🐛 Bug fixes
 
 - **ci:** Stop owned steps on interruption ([#289](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/289)) ([2cb85d1](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/2cb85d107bed1567200a3c8a20947abfa5891f1b))
+
+### ⚡ Performance
+
+- **ci:** Avoid unnecessary plugin package scans ([#293](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/293)) ([621370f](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/621370f08900b1ddfd684775b85dd0777bc4166c))
 
 ## [0.9.6](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/releases/tag/v0.9.6) - 2026-10-30
 
