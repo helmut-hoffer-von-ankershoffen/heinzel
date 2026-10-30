@@ -209,6 +209,13 @@ class AutonomousSchedules:
                 msg = "The connected read grant changed"
                 raise HeinzelError(msg)
             grants.verify_approved(session, connected_grant)
+        if notification_policy is not None and notification_policy.item_evidence is not None:
+            identity = connected_grant.review.item_identity if connected_grant is not None else None
+            if identity is None or (
+                notification_policy.item_evidence.deduplicate_by == "revision" and identity.revision_field is None
+            ):
+                msg = "Item notifications require a separately approved source with matching item identity evidence"
+                raise HeinzelError(msg)
         binding = ScheduleBinding(
             session_id=session,
             request_id=request,

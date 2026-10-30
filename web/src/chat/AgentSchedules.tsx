@@ -5,6 +5,7 @@ import type { components } from "@/api/schema";
 import { AgentScheduleReview } from "@/chat/AgentScheduleReview";
 import { ScheduledNotificationAttempts } from "@/chat/ScheduledNotificationAttempts";
 import {
+  type NotificationMode,
   notificationPolicy,
   ScheduledNotificationConsent,
   sameNotificationPolicy,
@@ -38,9 +39,11 @@ export function AgentSchedules({ sessionId }: { sessionId: string }) {
   const [requests, setRequests] = useState(1);
   const [seconds, setSeconds] = useState(30);
   const [includeConnected, setIncludeConnected] = useState(false);
+  const [selectedRead, setSelectedRead] = useState<string | null>(null);
   const [includeNotifications, setIncludeNotifications] = useState(false);
   const [noticeMax, setNoticeMax] = useState(3);
   const [noticeCooldown, setNoticeCooldown] = useState(3600);
+  const [noticeMode, setNoticeMode] = useState<NotificationMode>("topic");
   const suggestion = useQuery({
     queryKey: ["heinzel", "latest-schedule-suggestion", sessionId],
     queryFn: async () => {
@@ -151,9 +154,19 @@ export function AgentSchedules({ sessionId }: { sessionId: string }) {
     },
     retry: false,
   });
+  const sourceAvailable =
+    connected.data?.status === "approved" && !!selectedRead && connected.data.proposal?.request_id === selectedRead;
+  const itemIdentity = sourceAvailable ? connected.data?.proposal?.review.item_identity : null;
+  const itemAvailable = includeConnected && !!itemIdentity;
+  const revisionAvailable = itemAvailable && !!itemIdentity?.revision_field;
+  const modeAvailable = noticeMode === "topic" || (noticeMode === "item" ? itemAvailable : revisionAvailable);
   const propose = async () => {
     if (busy || saved.invalid || (!pending && (!proposal.data || !contract.data?.accepted))) return;
-    if (!pending && !proposal.data) return;
+    if (
+      !pending &&
+      (!proposal.data || (includeConnected && !sourceAvailable) || (includeNotifications && !modeAvailable))
+    )
+      return;
     const request = pending ?? {
       session_id: sessionId,
       request_id: crypto.randomUUID(),
@@ -161,9 +174,8 @@ export function AgentSchedules({ sessionId }: { sessionId: string }) {
       cadence_seconds: minutes * 60,
       max_requests: requests,
       timeout_seconds: seconds,
-      connected_request_id:
-        includeConnected && connected.data?.status === "approved" ? connected.data.proposal?.request_id : undefined,
-      notification_policy: includeNotifications ? notificationPolicy(noticeMax, noticeCooldown) : undefined,
+      connected_request_id: includeConnected && sourceAvailable ? selectedRead : undefined,
+      notification_policy: includeNotifications ? notificationPolicy(noticeMax, noticeCooldown, noticeMode) : undefined,
     };
     setBusy(true);
     setError(false);
@@ -270,12 +282,18 @@ export function AgentSchedules({ sessionId }: { sessionId: string }) {
                 type="checkbox"
                 checked={pending ? !!pending.connected_request_id : includeConnected}
                 disabled={!!pending || busy}
-                onChange={(event) => setIncludeConnected(event.target.checked)}
+                onChange={(event) => {
+                  setIncludeConnected(event.target.checked);
+                  setSelectedRead(event.target.checked ? (connected.data?.proposal?.request_id ?? null) : null);
+                }}
               />{" "}
               Allow the separately approved {connected.data.proposal.capability}.{connected.data.proposal.method} read
               during these scheduled turns. The schedule will stop if its exact account, source, arguments or grant
               changes.
             </label>
+          )}
+          {includeConnected && !sourceAvailable && !pending && (
+            <p role="alert">The approved read changed. Clear the selection and choose the current read again.</p>
           )}
           {connected.isError && (
             <p role="alert">Connected read status could not be verified; scheduled reads are unavailable.</p>
@@ -285,6 +303,10 @@ export function AgentSchedules({ sessionId }: { sessionId: string }) {
             maxPer24h={pending?.notification_policy?.max_per_24h ?? noticeMax}
             cooldown={pending?.notification_policy?.topic_cooldown_seconds ?? noticeCooldown}
             disabled={!!pending || busy}
+            mode={pending?.notification_policy?.item_evidence?.deduplicate_by ?? (pending ? "topic" : noticeMode)}
+            itemAvailable={pending ? !!pending.connected_request_id : itemAvailable}
+            revisionAvailable={pending ? !!pending.connected_request_id : revisionAvailable}
+            onMode={setNoticeMode}
             onEnabled={setIncludeNotifications}
             onMax={setNoticeMax}
             onCooldown={setNoticeCooldown}
@@ -336,7 +358,10 @@ export function AgentSchedules({ sessionId }: { sessionId: string }) {
                   (!contract.data?.accepted ||
                     !proposal.data ||
                     proposal.data.max_usd !== null ||
-                    (includeNotifications && !validNotificationPolicy(notificationPolicy(noticeMax, noticeCooldown))) ||
+                    (includeConnected && !sourceAvailable) ||
+                    (includeNotifications &&
+                      (!modeAvailable ||
+                        !validNotificationPolicy(notificationPolicy(noticeMax, noticeCooldown, noticeMode)))) ||
                     !Number.isInteger(minutes) ||
                     minutes < 1 ||
                     minutes > 1440 ||
@@ -377,8 +402,11 @@ export function AgentSchedules({ sessionId }: { sessionId: string }) {
               {binding.notification_policy && (
                 <p>
                   Local notifications: up to {binding.notification_policy.max_per_24h} attempts per rolling 24 hours,
-                  one per turn, with {binding.notification_policy.topic_cooldown_seconds} seconds between the same
-                  model-chosen topic. Queued does not mean shown.
+                  one per turn.{" "}
+                  {binding.notification_policy.item_evidence
+                    ? `At most one attempt per observed ${binding.notification_policy.item_evidence.deduplicate_by} for this approved source and contract.`
+                    : `At least ${binding.notification_policy.topic_cooldown_seconds} seconds between the same model-chosen topic.`}{" "}
+                  Queued does not mean shown.
                 </p>
               )}
               {status === "proposed" && <AgentScheduleReview sessionId={sessionId} proposal={binding} />}

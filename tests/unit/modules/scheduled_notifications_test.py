@@ -283,3 +283,34 @@ def test_policy_is_bounded_and_rejects_boolean_or_float_limit():
     ):
         with pytest.raises(ValidationError):
             ScheduledNotificationPolicy.model_validate(values)
+
+
+def test_observed_item_policy_cannot_activate_without_separate_approved_source(tmp_path):
+    from heinzel.modules.heinzel._scheduled_notifications import ItemNotificationPolicy
+
+    current = CurrentUser(tmp_path / "identity")
+    with current.local("cli"):
+        crud = SessionCrud(
+            PersonalSessionRepository(current), lambda: SessionCosts(session_max_usd=2, message_max_usd=0.2)
+        )
+        session = crud.new_chat("item-policy").session_id
+        crud.propose_scheduled_agent(session, "contract", "Inspect the approved source", None, 30)
+        contracts = ContractReview(crud)
+        contracts.accept(session, "contract", contracts.issue(session, "contract", "owner"))
+        executable = fake_claude(tmp_path)
+        service = UserChatService(crud, current, RunnerSnapshotService(), load=lambda: FixtureConfig(executable))
+        schedules = AutonomousSchedules(crud, service)
+        policy = ScheduledNotificationPolicy(
+            max_per_24h=2,
+            topic_cooldown_seconds=60,
+            item_evidence=ItemNotificationPolicy(deduplicate_by="item"),
+            disclosure=(
+                "Content may appear on this device. Item identities are provider-reported "
+                "and not completeness guarantees."
+            ),
+        )
+        with pytest.raises(HeinzelError, match="separately approved source"):
+            schedules.propose(session, "schedule", "contract", 60, 2, 30, notification_policy=policy)
+        assert not any(
+            event.kind == "agent.schedule-proposed" for event in crud.repository.control_read(session).events
+        )
