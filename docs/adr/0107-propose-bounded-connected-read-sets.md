@@ -26,17 +26,23 @@ Chosen option: **record a distinct inert, bounded read-set proposal**, because p
   terms and a host-issued selector; repeated selectors or repeated source/account/operation/arguments are refused.
 - Proposals are immutable, versioned separately, replay only with identical terms, and are projected separately from
   single-grant history. Their recorded origin is provenance, never an authority or approval.
-- This initial slice cannot approve a set, invoke a provider, register a model tool or change a schedule. Any later
-  execution requires an explicit human review of the exact set and independent source/account checks for every read.
+- An internal host-observed review rechecks every selected provider and account; it is not an atomic multi-provider
+  snapshot. A separately scoped trusted human confirmation may issue and consume a one-use, expiring proof of the
+  exact current review, recording the whole set approval atomically. Any changed entry requires a new review and
+  approval; revocation applies to the whole set. Neither source text, a model nor a legacy single grant can approve it.
+- This slice has no public approval issuer or operation, provider read execution, model tool or schedule integration.
+  Any later execution must freshly revalidate every relevant source, account and approval at the read boundary.
 - Existing fixed and rolling grant approvals, histories, schedules and digests retain their meanings. No legacy grant
   or accepted artifact becomes an approval for a read set.
 
 ### Consequences
 
 - Good: a bounded proposal can be inspected without granting external access.
-- Bad: the proposal alone cannot execute a multi-source journey; separate review, receipts and effect controls remain.
+- Bad: an approved set alone cannot execute a multi-source journey; receipts, scheduling and effect controls remain.
 
 ### Confirmation
 
 `tests/unit/modules/connected_read_set_test.py` checks proposal bounds, duplicate terms, owner/session binding,
-idempotency, projection and legacy isolation. Review confirms that no provider execution or approval path is added.
+idempotency, projection and legacy isolation. `tests/unit/modules/connected_read_set_review_test.py` checks fresh
+observations and exact intents. `tests/unit/modules/connected_read_set_approval_test.py` checks trusted proof,
+consumption, replay, revocation and legacy isolation. Review confirms that no provider read execution is added.
