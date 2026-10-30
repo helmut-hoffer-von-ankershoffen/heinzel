@@ -4,7 +4,7 @@ date: 2026-10-30
 related: 0078, 0099
 ---
 
-# 0105: Bind connected providers to source-only loading
+# 0106: Bind connected providers to source-only loading
 
 ## Context and Problem Statement
 
