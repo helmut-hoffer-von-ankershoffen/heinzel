@@ -85,12 +85,18 @@ try {
 }
 
 async function waitForConnected(page) {
-  try {
-    await page.waitForFunction(() => document.querySelector("#status")?.textContent?.startsWith("Connected · version "), null, { timeout: 10_000 });
-  } catch {
-    const status = await page.locator("#status").textContent().catch(() => "unavailable");
-    throw new Error(`The native window did not connect: ${status}`);
-  }
+  await page.getByRole("heading", { name: "Today", exact: true }).waitFor({ timeout: 30_000 });
+  assert.equal(new URL(page.url()).hostname, "127.0.0.1");
+  assert.equal(new URL(page.url()).hash, "", "The web head must adopt and remove its initial fragment.");
+  assert.equal(await page.evaluate(() => typeof window.require), "undefined");
+  assert.equal(await page.evaluate(() => typeof window.process), "undefined");
+  const state = await page.evaluate(async () => {
+    const credential = sessionStorage.getItem("hz.token");
+    if (!credential) return null;
+    const response = await fetch("/api/lifecycle", { headers: { Authorization: `Bearer ${credential}` } });
+    return response.ok ? response.json() : null;
+  });
+  assert.ok(state?.instance && state?.version, "The actual web UI must authenticate its API calls.");
 }
 
 async function exists(path) {
