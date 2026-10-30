@@ -32,7 +32,7 @@ await writeFile(cli, `#!${process.execPath}\nconst fs=require('node:fs');\nfs.wr
 let instance, child, safe = true;
 try {
   instance = await electron.launch({ executablePath: executable, args:[fileURLToPath(new URL('./native-consent-bootstrap.mjs', import.meta.url))], cwd:root, timeout:30000,
-    env:{ PATH:`${join(root,'bin')}${delimiter}/usr/bin:/bin`, HOME:join(root,'home'), TMPDIR:join(root,'tmp'), USER:process.env.USER||'', LOGNAME:process.env.LOGNAME||'', LANG:'en_US.UTF-8', XDG_CONFIG_HOME:join(root,'config'), XDG_STATE_HOME:join(root,'state'), XDG_DATA_HOME:join(root,'data'), XDG_CACHE_HOME:join(root,'cache'), HZ_NATIVE_TEST_ROOT:root, HZ_TEST_URL:`http://127.0.0.1:${server.address().port}/#token=${token}` } });
+    env:{ PATH:`${join(root,'bin')}${delimiter}/usr/bin:/bin`, HOME:join(root,'home'), TMPDIR:join(root,'tmp'), USER:process.env.USER||'', LOGNAME:process.env.LOGNAME||'', LANG:'en_US.UTF-8', ...(process.env.DISPLAY ? {DISPLAY:process.env.DISPLAY} : {}), ...(process.env.XAUTHORITY ? {XAUTHORITY:process.env.XAUTHORITY} : {}), XDG_CONFIG_HOME:join(root,'config'), XDG_STATE_HOME:join(root,'state'), XDG_DATA_HOME:join(root,'data'), XDG_CACHE_HOME:join(root,'cache'), HZ_NATIVE_TEST_ROOT:root, HZ_TEST_URL:`http://127.0.0.1:${server.address().port}/#token=${token}` } });
   child = instance.process();
   const page = await instance.firstWindow({timeout:30000});
   await page.click('#notification');

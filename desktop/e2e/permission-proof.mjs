@@ -25,7 +25,7 @@ let safeToRemove = true;
 try {
   for (const name of ['profile', 'config', 'state', 'cache', 'data']) await mkdir(join(root, name));
   instance = await electron.launch({executablePath: executable, args: [fileURLToPath(new URL('./permission-proof-bootstrap.mjs', import.meta.url))], cwd: root, timeout: 10000,
-    env: {PATH: '/usr/bin:/bin', HOME: root, TMPDIR: root, USER: process.env.USER || '', LOGNAME: process.env.LOGNAME || '', LANG: 'en_US.UTF-8', XDG_CONFIG_HOME: join(root, 'config'), XDG_STATE_HOME: join(root, 'state'), XDG_CACHE_HOME: join(root, 'cache'), XDG_DATA_HOME: join(root, 'data'), HZ_TEST_PROFILE: join(root, 'profile'), HZ_TEST_ORIGIN: origin}});
+    env: {PATH: '/usr/bin:/bin', HOME: root, TMPDIR: root, USER: process.env.USER || '', LOGNAME: process.env.LOGNAME || '', LANG: 'en_US.UTF-8', ...(process.env.DISPLAY ? {DISPLAY: process.env.DISPLAY} : {}), ...(process.env.XAUTHORITY ? {XAUTHORITY: process.env.XAUTHORITY} : {}), XDG_CONFIG_HOME: join(root, 'config'), XDG_STATE_HOME: join(root, 'state'), XDG_CACHE_HOME: join(root, 'cache'), XDG_DATA_HOME: join(root, 'data'), HZ_TEST_PROFILE: join(root, 'profile'), HZ_TEST_ORIGIN: origin}});
   child = instance.process();
   const page = await instance.firstWindow({ timeout: 10000 });
   for (const id of ['notification', 'microphone']) {
