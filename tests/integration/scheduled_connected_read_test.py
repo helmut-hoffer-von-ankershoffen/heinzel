@@ -56,7 +56,7 @@ def _fixture(make_kernel, tmp_path, monkeypatch):
 
         def read(self, _arguments):
             state["reads"] += 1
-            return {"events": []}
+            return {"events": state.get("events", [])}
 
         def close(self):
             _fail_if(state, "close")
@@ -406,3 +406,178 @@ def test_item_notification_policy_needs_exact_separate_schedule_confirmation(mak
         approved = kernel.resolve(AutonomousSchedules).approved(session, "schedule")
     assert approved.notification_policy.item_evidence.deduplicate_by == "revision"
     assert state["reads"] == 0
+
+
+def _propose_item_schedule(client, kernel, current, session, state):
+    _approve_read(client, kernel, current, session, state, rolling=True)
+    with current.local("cli"):
+        crud = kernel.resolve(ConnectedReadGrants).crud
+        crud.propose_scheduled_agent(session, "contract", "Inspect the approved source", None, 30)
+    card = client.post(
+        "/api/system/runner/chat/propose-agent-contract",
+        headers=AUTH,
+        params={"durable_session": session, "request_id": "contract"},
+    ).json()
+    action = next(a for a in card["actions"] if a["operation"] == "accept-agent-contract")
+    assert (
+        client.post(
+            "/api/system/runner/chat/confirm", headers=AUTH, params={"session": card["id"], "action": action["id"]}
+        ).status_code
+        == 200
+    )
+    policy = {
+        "max_per_24h": 3,
+        "topic_cooldown_seconds": 60,
+        "item_evidence": {"deduplicate_by": "revision"},
+        "disclosure": (
+            "Content may appear on this device. Item identities are provider-reported and not completeness guarantees."
+        ),
+    }
+    proposed = client.post(
+        "/api/heinzel/propose-agent-schedule",
+        headers=AUTH,
+        json={
+            "session_id": session,
+            "request_id": "schedule",
+            "contract_request_id": "contract",
+            "cadence_seconds": 300,
+            "max_requests": 4,
+            "timeout_seconds": 30,
+            "connected_request_id": "grant-one",
+            "notification_policy": policy,
+        },
+    )
+    assert proposed.status_code == 200, proposed.text
+    return proposed.json()
+
+
+def _confirm_item_schedule(client, session, expected):
+    staged = client.post(
+        "/api/system/runner/chat/propose-agent-schedule-review",
+        headers=AUTH,
+        params={"durable_session": session, "request_id": "schedule"},
+    ).json()
+    action = next(a for a in staged["actions"] if a["operation"] == "approve-agent-schedule")
+    assert action["arguments"]["review"] == expected
+    assert (
+        client.post(
+            "/api/system/runner/chat/confirm", headers=AUTH, params={"session": staged["id"], "action": action["id"]}
+        ).status_code
+        == 200
+    )
+
+
+def test_compiled_rolling_read_item_revision_notices_survive_restart_and_revoke(
+    make_kernel, tmp_path, monkeypatch, settings
+):
+    """A real daemon turn uses only host-observed item references and separately approved limits."""
+    import asyncio
+    import sys
+    from datetime import UTC, datetime
+    from typing import override
+
+    import heinzel.modules.heinzel._autonomous_schedule as schedule_module
+    from heinzel import ConnectedItemIdentity, Notifications
+    from heinzel.modules.heinzel._autonomous_schedule import AutonomousSchedules
+
+    class Notices(Notifications):
+        def __init__(self):
+            self.calls = []
+
+        @override
+        def emit_once(self, _kind, title, body, *, route, command, key):
+            self.calls.append((title, body, key))
+            return True
+
+    client, kernel, current, session, state = _fixture(make_kernel, tmp_path, monkeypatch)
+    state["item_identity"] = ConnectedItemIdentity(collection=("events",), identity_field="id", revision_field="rev")
+    state["events"] = [{"id": "provider-item", "rev": "one"}]
+    notices = Notices()
+    kernel.bind(Notifications, notices)
+    executable = tmp_path / "fake-claude"
+    executable.write_text(
+        f"""#!{sys.executable}
+import json,sys
+if sys.argv[1:] == ['auth','status','--json']:
+ print(json.dumps({{'loggedIn':True,'authMethod':'claude.ai','apiProvider':'firstParty'}})); raise SystemExit
+if sys.argv[1:] == ['--version']:
+ print('2.1.312 (Claude Code)'); raise SystemExit
+assert '--safe-mode' in sys.argv and '--restricted' in sys.argv and '--strict-mcp-config' in sys.argv
+assert sys.argv[sys.argv.index('--tools')+1] == '' and sys.argv[sys.argv.index('--allowed-tools')+1] == ''
+payload=json.load(sys.stdin)
+parts=[p for m in payload['messages'] for p in m['parts'] if p.get('part_kind') == 'tool-return']
+if not parts:
+ name='use_tool'; args={{'name':'connected_read','arguments':{{}}}}
+elif len(parts) == 1:
+ value=json.loads(parts[0]['content'])
+ ref=value['observed_items'][0]['reference']
+ name='use_tool'; args={{'name':'notification:send','arguments':{{'item_ref':ref,'title':'Title','body':'Body'}}}}
+else:
+ name=next(t['name'] for t in payload['tools'] if 'report' in t['schema'].get('properties',{{}}))
+ args={{'report':'Done'}}
+wire={{'kind':'tool','name':name,'arguments':args,'text':None}}
+print(json.dumps({{'type':'result','subtype':'success','is_error':False,'permission_denials':[],'structured_output':wire}}))
+""",
+        encoding="utf-8",
+    )
+    executable.chmod(0o700)
+    proposed = _propose_item_schedule(client, kernel, current, session, state)
+    now = [datetime.now(UTC)]
+
+    class Clock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return now[0]
+
+    monkeypatch.setattr(schedule_module, "datetime", Clock)
+    with current.local("daemon"), pytest.raises(HeinzelError):
+        asyncio.run(kernel.resolve(AutonomousSchedules).tick(session, "schedule", now[0]))
+    assert state["reads"] == 0
+    assert notices.calls == []
+    _confirm_item_schedule(client, session, proposed)
+
+    _exercise_item_ticks((client, kernel, current, session, state, notices, settings, monkeypatch, now))
+
+
+def _exercise_item_ticks(context):
+    from datetime import UTC, timedelta
+
+    from heinzel.kernel import CompiledJobs
+    from heinzel.modules.system.daemon import DaemonService, DaemonSettings
+
+    client, kernel, current, session, state, notices, settings, monkeypatch, now = context
+    with current.local("daemon"):
+        job = next(job for job in kernel.resolve(CompiledJobs).jobs if job.name.startswith("agent-" + session.lower()))
+
+        def tick():
+            daemon = DaemonService(kernel, settings, DaemonSettings(), clock=lambda: now[0], zone=UTC)
+            registered = [item for item in daemon._jobs() if item.id == "heinzel:" + job.name]
+            monkeypatch.setattr(daemon, "_jobs", lambda: registered)
+            monkeypatch.setattr(daemon, "_post_notices", lambda _log: None)
+            return daemon.tick()
+
+        report = tick()
+        assert any(run.disposition == "rendered" for run in report.runs), report
+        assert state["reads"] == 1, report
+        assert len(notices.calls) == 1, report
+        tick()  # Fresh daemon, same slot: no replay.
+        assert state["reads"] == 1
+        assert len(notices.calls) == 1
+        now[0] += timedelta(minutes=5)
+        report = tick()  # Same provider item and revision in the overlapping window.
+        assert any(run.disposition == "rendered" for run in report.runs), report
+        assert state["reads"] == 2
+        assert len(notices.calls) == 1
+        state["events"] = [{"id": "provider-item", "rev": "two"}]
+        now[0] += timedelta(minutes=5)
+        report = tick()
+        assert any(run.disposition == "rendered" for run in report.runs), report
+        assert state["reads"] == 3
+        assert len(notices.calls) == 2
+        assert notices.calls[0][2] != notices.calls[1][2]
+    _invalidate_grant(client, session, "revoked")
+    now[0] += timedelta(minutes=5)
+    with current.local("daemon"):
+        tick()
+    assert state["reads"] == 3
+    assert len(notices.calls) == 2
