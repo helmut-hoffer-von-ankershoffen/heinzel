@@ -107,3 +107,63 @@ describe("The chat's session switcher", () => {
     expect(ago("2026-10-24T08:00:00Z", Date.parse("2026-10-24T10:00:00Z"))).toBe("2 hours ago");
   });
 });
+
+it("creates a personal Heinzel from the chat and opens its durable session", async () => {
+  const id = "hz-01ARZ3NDEKTSV4RRFFQ69G5FAV";
+  const saved = {
+    session_id: id,
+    heinzel_id: id,
+    name: "New Heinzel",
+    messages: [],
+    schedule: null,
+    contracts: [],
+    appearance: { age: "grown", build: "regular" },
+    profile_revision: 1,
+  };
+  const { calls } = mockApi({
+    ...base,
+    "/api/system/runner/chat/list": [],
+    "/api/heinzel/new-chat": saved,
+    "/api/heinzel/session": saved,
+    "/api/heinzel/latest-scheduled-agent-proposal": null,
+  });
+  const user = userEvent.setup();
+  renderAt("/doctor");
+  await user.click(await screen.findByRole("button", { name: "New chat: switch chats" }));
+  await user.click(
+    within(screen.getByRole("dialog", { name: "Your chats" })).getByRole("button", {
+      name: "Create a personal Heinzel",
+    }),
+  );
+  expect(await screen.findByText("New Heinzel")).toBeInTheDocument();
+  const created = calls.find((call) => new URL(call.url).pathname === "/api/heinzel/new-chat");
+  expect(await created?.clone().json()).toMatchObject({ name: "New Heinzel", request_id: expect.any(String) });
+  expect(localStorage.getItem("hz.personal-heinzel.creation")).toBeNull();
+});
+
+it("opens an existing personal Heinzel's continuous chat from the switcher", async () => {
+  const id = "hz-01ARZ3NDEKTSV4RRFFQ69G5FAV";
+  const saved = {
+    session_id: id,
+    heinzel_id: id,
+    name: "Atlas",
+    messages: [],
+    schedule: null,
+    contracts: [],
+    appearance: { age: "grown", build: "regular" },
+    profile_revision: 1,
+  };
+  mockApi({
+    ...base,
+    "/api/system/runner/chat/list": [],
+    "/api/heinzel/sessions": { sessions: [{ session_id: id, name: "Atlas", state: "proposed" }] },
+    "/api/heinzel/session": saved,
+  });
+  const user = userEvent.setup();
+  renderAt("/doctor");
+  await user.click(await screen.findByRole("button", { name: "New chat: switch chats" }));
+  await user.click(
+    await within(screen.getByRole("region", { name: "Your Heinzels" })).findByRole("button", { name: /Atlas/ }),
+  );
+  expect(await screen.findByRole("heading", { name: "Atlas" })).toBeInTheDocument();
+});

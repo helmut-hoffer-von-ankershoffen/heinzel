@@ -40,7 +40,8 @@ def approve_schedule(call, session, schedule, request_id, action="activate"):
         str(schedule["contract_version"]),
         schedule["preview_hash"],
     )
-    return call("chat", "confirm", staged["id"], staged["actions"][0]["id"])
+    pending = next(item for item in staged["actions"] if item["arguments"].get("request_id") == request_id)
+    return call("chat", "confirm", staged["id"], pending["id"])
 
 
 def legacy_check_in(crud, session, notifications, slot, *, recorded, cleanup=True):  # noqa: PLR0913

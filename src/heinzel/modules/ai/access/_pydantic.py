@@ -23,10 +23,10 @@ import urllib.parse
 from collections.abc import Callable
 from typing import Any, cast
 
-from heinzel import AccessStatus, AccessTest, CredentialLet, Credentials, Settings
+from heinzel import AccessStatus, AccessTest, Config, CredentialLet, Credentials, CurrentUser, HeinzelError, Settings
 from heinzel.kernel import clean_text
 from heinzel.modules.ai.access._discovery import Fetch, ModelCache, fetch, is_local, listing, safe_for_key
-from heinzel.modules.ai.access._models import AccessSettings
+from heinzel.modules.ai.access._models import AccessSettings, Bindings
 
 NAME = "pydantic-ai"
 TITLE = "Model API"
@@ -86,6 +86,28 @@ def build_model(model: str, key: str | None, base_url: str | None = None) -> Any
     return infer_model(model, provider_factory=provider)
 
 
+def build_reserved_openai(key: str) -> Any:  # noqa: ANN401 - optional provider
+    """Construct the pinned direct client without ambient proxies, redirects, retries or custom headers.
+
+    Raises:
+        HeinzelError: If ambient SDK headers could alter the approved request.
+    """
+    if any(os.environ.get(name) for name in ("OPENAI_CUSTOM_HEADERS", "OPENAI_ORG_ID", "OPENAI_PROJECT_ID")):
+        msg = "Custom OpenAI headers or account selectors are not supported for reserved turns"
+        raise HeinzelError(msg)
+    import httpx2  # noqa: PLC0415
+    from pydantic_ai.models.openai import OpenAIResponsesModel  # noqa: PLC0415
+    from pydantic_ai.providers.openai import OpenAIProvider  # noqa: PLC0415
+
+    provider = OpenAIProvider(
+        api_key=key,
+        base_url="https://api.openai.com/v1",
+        http_client=httpx2.AsyncClient(trust_env=False, follow_redirects=False),
+    )
+    client = provider.client.with_options(max_retries=0)
+    return OpenAIResponsesModel("gpt-4.1-mini-2025-04-14", provider=OpenAIProvider(openai_client=client))
+
+
 VENDOR_HOSTS = {
     "anthropic": "api.anthropic.com",
     "openai": "api.openai.com",
@@ -127,6 +149,14 @@ def _installed(package: str) -> bool:
         return False
 
 
+def _selected_access() -> str | None:
+    return Config.load().settings(Bindings, "capabilities").ai_access
+
+
+def _current_model_settings() -> AccessSettings:
+    return Config.load().settings(AccessSettings, "ai.access")
+
+
 class PydanticAiAccess:
     """The `pydantic-ai` option of `ai-access`."""
 
@@ -139,6 +169,8 @@ class PydanticAiAccess:
         build: ModelFactory = build_model,
         installed: Callable[[str], bool] = _installed,
         get: Fetch = fetch,
+        binding: Callable[[], str | None] = _selected_access,
+        current_settings: Callable[[], AccessSettings] = _current_model_settings,
     ) -> None:
         """Create the option; settings and credentials are injected, the rest replace the world in tests."""
         self._settings = settings
@@ -146,6 +178,8 @@ class PydanticAiAccess:
         self._build = build
         self._installed = installed
         self._get = get
+        self._binding = binding
+        self._current_settings = current_settings
         self._cache = ModelCache(kernel_settings.state_dir / "ai")
 
     @property
@@ -162,6 +196,33 @@ class PydanticAiAccess:
         if variable and os.environ.get(variable):
             return os.environ[variable], variable
         return None, ""
+
+    def check_reserved_configuration(self, expected_model: str) -> None:
+        """Verify the current owner-selected pinned configuration without resolving a credential.
+
+        Raises:
+            HeinzelError: If the selected adapter or exact configured endpoint has changed.
+        """
+        settings = self._current_settings()
+        if (
+            self._binding() != "pydantic-ai"
+            or settings != self._settings
+            or settings.model != expected_model
+            or settings.base_url is not None
+        ):
+            msg = "The configured API binding is unavailable or changed"
+            raise HeinzelError(msg)
+
+    def with_reserved_credential[T](self, expected_model: str, consume: Callable[[str | None, str], T]) -> T:
+        """Pass the single current credential read to a trusted local consumer; not a head operation.
+
+        Raises:
+            HeinzelError: If the selected configuration changed.
+        """
+        self.check_reserved_configuration(expected_model)
+        credential, source = self._key()
+        self.check_reserved_configuration(expected_model)
+        return consume(credential, source)
 
     def status(self) -> AccessStatus:  # noqa: PLR0911 - one answer per thing that can be missing
         """Whether a model is configured, its client installed and a key present where one is needed; offline."""
@@ -202,6 +263,61 @@ class PydanticAiAccess:
             return status.model_copy(update=update)
         detail = f"{model}; key from {source}"
         return status.model_copy(update={"installed": True, "signed_in": True, "detail": detail, "billing": "api"})
+
+    def turn_model(self, current: CurrentUser, expected_model: str) -> Any:  # noqa: ANN401 - optional Pydantic model
+        """Build only the installation owner's exactly configured model using the declared credential.
+
+        This factory does not grant the turn, enforce its limits, or validate any third-party tool.
+
+        Raises:
+            HeinzelError: If identity, model configuration or credentials cannot be established safely.
+        """
+        key = self._turn_key(current, expected_model)
+        return self._build(expected_model, key, self._settings.base_url)
+
+    def priced_turn_model(self, current: CurrentUser, expected_model: str) -> Any:  # noqa: ANN401 - optional provider
+        """Build the host-owned pinned direct client for the internal reserved path.
+
+        Raises:
+            HeinzelError: If the configured binding is not the pinned direct model.
+        """
+        key = self._turn_key(current, expected_model)
+        if expected_model != "openai:gpt-4.1-mini-2025-04-14" or self._settings.base_url is not None or not key:
+            msg = "This model binding is not supported for reserved turns"
+            raise HeinzelError(msg)
+        return build_reserved_openai(key)
+
+    def _turn_key(self, current: CurrentUser, expected_model: str) -> str | None:
+        if current.principal() != current.owner():
+            msg = "This AI credential belongs to the installation owner"
+            raise HeinzelError(msg)
+        if self._binding() != NAME:
+            msg = "The selected AI access no longer matches the configured model binding"
+            raise HeinzelError(msg)
+        settings = self._settings
+        latest = self._current_settings()
+        if (latest.model, latest.base_url) != (settings.model, settings.base_url):
+            msg = "The configured model or endpoint changed; reload the access service"
+            raise HeinzelError(msg)
+        if not settings.model or settings.model != expected_model:
+            msg = "The approved model no longer matches the configured model"
+            raise HeinzelError(msg)
+        status = self.status()
+        if not status.installed or status.signed_in is False:
+            msg = "The configured model or credential is unavailable"
+            raise HeinzelError(msg)
+        key, _ = self._key()
+        if settings.base_url is not None:
+            if key and not safe_for_key(settings.base_url):
+                msg = "The configured model endpoint cannot safely receive credentials"
+                raise HeinzelError(msg)
+            if key is None and not is_local(settings.base_url):
+                msg = "A remote model endpoint requires a configured credential"
+                raise HeinzelError(msg)
+        elif key is None:
+            msg = "The configured model credential is unavailable"
+            raise HeinzelError(msg)
+        return key
 
     def _discover(self, key: str | None) -> str:
         """List the API's models and keep them; a note on what happened, empty when they were listed."""

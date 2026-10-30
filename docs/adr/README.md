@@ -193,3 +193,4 @@ of inventing them. Two factual corrections came with it: ADR 0004 names the plug
 | [0095](0095-standard-heinzel-theme-owns-bundled-soundscapes.md) | The standard Heinzelmännchen theme owns the bundled soundscapes | accepted | 2026-10-29 |
 | [0096](0096-release-plugin-boundary-at-the-first-unused-version.md) | Release the plugin boundary at the first unused version | accepted | 2026-10-29 |
 | [0097](0097-plugin-authors-use-one-small-artifact-based-toolchain.md) | Plugin authors use one small artifact-based toolchain | proposed | 2026-10-29 |
+| [0098](0098-pages-showcases-the-product-and-discovers-public-plugin-metadata.md) | Pages showcases the product and discovers public plugin metadata | proposed | 2026-10-30 |

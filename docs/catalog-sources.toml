@@ -1,0 +1,8 @@
+# Canonical collection locations; individual plugin identities are always discovered from project metadata.
+# Additional public repositories join automatically through GitHub's heinzel-plugin topic.
+composition_repository = "helmut-hoffer-von-ankershoffen/heinzel-plugins"
+repositories = [
+  "helmut-hoffer-von-ankershoffen/heinzel",
+  "helmut-hoffer-von-ankershoffen/heinzel-contrib",
+  "helmut-hoffer-von-ankershoffen/heinzel-plugins",
+]

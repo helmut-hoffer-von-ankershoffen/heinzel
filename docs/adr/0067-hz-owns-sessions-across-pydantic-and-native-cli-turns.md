@@ -51,7 +51,8 @@ can choose their paid access without delegating history, grants or approval auth
    ambient native plugins, hooks, MCP sources and unrelated filesystem or network authority. An unknown or
    unenforceable boundary refuses the binding with a fix. Disabling one shell feature alone is insufficient proof.
    Use documented CLI authentication, never extract or reuse raw subscription tokens. Subscription usage is not an
-   API dollar charge; unknown cost remains unknown, and an unenforceable hard cap refuses the requested policy.
+   API dollar charge; subscription plans use the provider's limits and unknown cost remains unknown. USD caps govern
+   direct APIs; an explicitly requested hard USD cap on a subscription refuses the binding when unenforceable.
 5. A binding change applies between turns, with a new recorded revision and backend epoch. It preserves the hz id
    and portable visible history, not hidden reasoning, native caches or unfinished native calls. Pending or uncertain
    effects require reconciliation before switching. A waiting question or approval is stored state, with no active

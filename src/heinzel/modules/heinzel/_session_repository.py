@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 from pydantic import JsonValue, TypeAdapter
 
 from heinzel import CurrentUser, HeinzelError, SessionHead, SessionRead, SessionStore, SessionWriter
+from heinzel.kernel import Authentication
 from heinzel.modules.heinzel._session_models import Digest, RequestId, SessionId
 
 _SESSION = TypeAdapter(SessionId)
@@ -41,6 +42,11 @@ class PersonalSessionRepository:
     def principal_id(self) -> str:
         """The trusted active principal; unauthenticated calls never fall back to installation ownership."""
         return self.current.principal().id
+
+    @property
+    def authentication(self) -> Authentication:
+        """Read the actual trusted call context, without recording credentials or audience."""
+        return self.current.context().authentication
 
     def _store(self, namespace: str) -> SessionStore:
         root = self.current.directory.parent / "heinzel-sessions" / self.principal_id / namespace
@@ -93,6 +99,44 @@ class PersonalSessionRepository:
         }
         return [head for head in self._store("main").heads() if head.session in owned]
 
+    def budget_read(self, session_id: str) -> SessionRead:
+        """Read the current owner's shared budget ledger after checking session ownership."""
+        self._owned(session_id)
+        try:
+            return _verified(self._store("budget").read("reservations"))
+        except FileNotFoundError:
+            return SessionRead()
+
+    @contextmanager
+    def budget_writer(self, session_id: str) -> Generator[SessionWriter]:
+        """Serialize reservations across this owner's sessions after verifying session ownership.
+
+        Yields:
+            The exclusively locked owner budget writer.
+        """
+        self._owned(session_id)
+        with self._store("budget").writer("reservations", wait=True) as writer:
+            yield writer
+
+    def subscription_read(self, session_id: str) -> SessionRead:
+        """Read an owner-scoped slot ledger only after checking session ownership."""
+        self._owned(session_id)
+        try:
+            return _verified(self._store("subscription").read("slots"))
+        except FileNotFoundError:
+            return SessionRead()
+
+    @contextmanager
+    def subscription_writer(self, session_id: str) -> Generator[SessionWriter]:
+        """Serialize slots across an owner's sessions.
+
+        Yields:
+            The exclusively locked owner slot writer.
+        """
+        self._owned(session_id)
+        with self._store("subscription").writer("slots", wait=True) as writer:
+            yield writer
+
     def main_read(self, session_id: str) -> SessionRead:
         """Read only after ownership is established; damaged prefixes cannot authorize resumed work."""
         self._owned(session_id)
@@ -113,6 +157,11 @@ class PersonalSessionRepository:
         self._owned(session_id)
         with self._store("main").writer(session_id, wait=wait) as writer:
             yield writer
+
+    def is_main_writer(self, session_id: str, writer: SessionWriter) -> bool:
+        """Check the scoped active owner/session writer before dispatching a granted operation."""
+        self._owned(session_id)
+        return writer.active and writer.session == session_id and writer.store.root == self._store("main").root
 
     @contextmanager
     def control_writer(self, session_id: str) -> Generator[SessionWriter]:

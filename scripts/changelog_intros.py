@@ -6,8 +6,9 @@
 
 git-cliff writes each release's entries from the commits, so prose a maintainer wrote between a `## [x.y.z]` heading
 and its first `### ` section would be lost on the next release. The release script saves the changelog, regenerates
-it, and runs this to restore every introduction, plus the new release's from `--intro`. An introduction is plain
-prose: a line starting with `## ` or `### ` ends it.
+it, and runs this to restore the published release sections verbatim, plus the new release's introduction from
+`--intro`. Published history can include entries from commits that are no longer reachable from the release tag.
+An introduction is plain prose: a line starting with `## ` or `### ` ends it.
 
 Usage: uv run --script scripts/changelog_intros.py PREVIOUS CHANGELOG [--version X.Y.Z --intro TEXT]
 """
@@ -49,6 +50,36 @@ def restore(changelog: str, kept: dict[str, str]) -> str:
     return "".join(out)
 
 
+def preserve_history(generated: str, previous: str, version: str) -> str:
+    """Keep the new generated release and the previously published sections byte for byte.
+
+    Raises:
+        ValueError: If release headings are missing or ambiguous.
+    """
+    version = version.removeprefix("v")
+    generated_headings = list(re.finditer(r"(?m)^## \[([^\]]+)\].*$", generated))
+    previous_headings = list(re.finditer(r"(?m)^## \[([^\]]+)\].*$", previous))
+    if not generated_headings or generated_headings[0].group(1) != version:
+        msg = "generated changelog must begin with the new release"
+        raise ValueError(msg)
+    if sum(match.group(1) == version for match in generated_headings) != 1:
+        msg = "new release heading is ambiguous"
+        raise ValueError(msg)
+    if any(match.group(1) == version for match in previous_headings):
+        msg = "previous changelog contains the new release heading"
+        raise ValueError(msg)
+    if len({match.group(1) for match in previous_headings}) != len(previous_headings):
+        msg = "previous changelog has duplicate release headings"
+        raise ValueError(msg)
+    if any(match.group(1) == "Unreleased" for match in previous_headings[1:]):
+        msg = "unreleased heading must precede published releases"
+        raise ValueError(msg)
+    published = [match for match in previous_headings if match.group(1) != "Unreleased"]
+    end = generated_headings[1].start() if len(generated_headings) > 1 else len(generated)
+    new_release = generated[:end].rstrip("\n") + "\n"
+    return new_release + "\n" + previous[published[0].start() :] if published else new_release
+
+
 def _blocks(lines: list[str]) -> dict[str, tuple[str, int]]:
     """Per release heading: its introduction, and the index of the line that ends it."""
     blocks: dict[str, tuple[str, int]] = {}
@@ -75,7 +106,13 @@ def main(argv: list[str] | None = None) -> int:
     kept = intros(args.previous.read_text(encoding="utf-8")) if args.previous.is_file() else {}
     if args.intro.strip():
         kept[args.version.removeprefix("v")] = args.intro
-    args.changelog.write_text(restore(args.changelog.read_text(encoding="utf-8"), kept), encoding="utf-8")
+    generated = restore(args.changelog.read_text(encoding="utf-8"), kept)
+    if args.version and args.previous.is_file():
+        try:
+            generated = preserve_history(generated, args.previous.read_text(encoding="utf-8"), args.version)
+        except ValueError as exc:
+            parser.error(str(exc))
+    args.changelog.write_text(generated, encoding="utf-8")
     return 0
 
 

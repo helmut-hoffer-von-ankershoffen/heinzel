@@ -556,7 +556,7 @@ def test_release_docs_only_publish_existing_recordings_even_when_the_caller_was_
     assert release["jobs"]["docs"].get("with", {}).get("site_only") is True
     assert docs[True]["workflow_call"]["inputs"]["site_only"]["default"] is False
     assert docs["jobs"]["record"]["if"] == (
-        "inputs.site_only != true && (github.event_name == 'push' || inputs.record == true)"
+        "inputs.site_only != true && inputs.record == true && github.event_name != 'pull_request'"
     )
 
 
