@@ -47,6 +47,7 @@ try {
   }
   await panel.getByRole("button", { name: "Prepare review" }).click();
   await panel.getByText("Account: fixture-account").waitFor();
+  await panel.getByText("Provider-reported candidate read: Candidate metadata may be filtered locally.").waitFor();
   await panel.getByRole("button", { name: "Review access" }).click();
   await panel.getByRole("heading", { name: "Review connected read" }).waitFor();
   await page.evaluate(axe);
@@ -66,6 +67,7 @@ try {
   await schedule.getByLabel("Requests per turn").fill("4");
   await schedule.getByRole("button", { name: "Propose recurring turns" }).click();
   await schedule.getByRole("button", { name: "Review this schedule" }).click();
+  await schedule.getByText("Provider-reported candidate read: Candidate metadata may be filtered locally.").waitFor();
   const card = schedule.getByRole("heading", { name: "Review agent schedule" }).locator("../..");
   assert.match(await card.innerText(), /420/);
   assert.match(await card.innerText(), /fixture-account/);
