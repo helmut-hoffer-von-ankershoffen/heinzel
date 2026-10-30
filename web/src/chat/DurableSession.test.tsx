@@ -705,7 +705,16 @@ describe("personal conversation links", () => {
       "/api/heinzel/session": snapshot,
       "/api/heinzel/tool-activity": {
         session_id: sessionId,
-        items: [{ seq: 10, at: "2026-10-30T00:00:00Z", turn_id: "turn-1", tool: "example:read", status: "completed", arguments: { secret: "private-argument" } }],
+        items: [
+          {
+            seq: 10,
+            at: "2026-10-30T00:00:00Z",
+            turn_id: "turn-1",
+            tool: "example:read",
+            status: "completed",
+            arguments: { secret: "private-argument" },
+          },
+        ],
       },
     });
     renderAt(`/heinzel?chat=${sessionId}`);
@@ -877,6 +886,112 @@ describe("personal conversation links", () => {
     expect(resolutions).toBe(1);
     fireEvent.click(await screen.findByRole("button", { name: "Continue conversation" }));
     expect(await screen.findByLabelText("Message your Heinzel")).toBeEnabled();
+  });
+
+  it("refuses a schedule listing from another personal session", async () => {
+    mockApi({
+      ...shell,
+      "/api/heinzel/session": snapshot,
+      "/api/heinzel/agent-schedules": { session_id: "hz-01ARZ3NDEKTSV4RRFFQ69G5FAW", items: [], next_cursor: null },
+    });
+    renderAt(`/heinzel?chat=${sessionId}`);
+    fireEvent.click(await screen.findByText("Recurring agent turns"));
+    expect(await screen.findByText("Saved schedules are unavailable.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Pause future turns" })).not.toBeInTheDocument();
+  });
+
+  it("keeps the exact recurring proposal across a lost acknowledgement and reload", async () => {
+    const contract = {
+      session_id: sessionId,
+      request_id: "contract-one",
+      revision: 1,
+      based_on_revision: 0,
+      contract: "Prepare a draft",
+      max_usd: null,
+      timeout_seconds: 30,
+      permitted_tools: [],
+      status: "proposed",
+      preview_sha256: "b".repeat(64),
+    };
+    const attempts: Array<Record<string, unknown>> = [];
+    const answers = {
+      ...shell,
+      "/api/heinzel/session": snapshot,
+      "/api/heinzel/latest-scheduled-agent-proposal": contract,
+      "/api/heinzel/agent-contract-review": { proposal: contract, accepted: true },
+      "/api/heinzel/agent-schedules": { session_id: sessionId, items: [], next_cursor: null },
+      "/api/heinzel/propose-agent-schedule": async (request: Request) => {
+        const body = await request.json();
+        attempts.push(body);
+        if (attempts.length === 1) return { status: 503, body: { error: "lost" } };
+        return {
+          ...body,
+          owner: "u-" + "a".repeat(32),
+          contract_revision: 1,
+          contract_sha256: contract.preview_sha256,
+          access: "claude-code-subscription",
+          access_fingerprint: "c".repeat(64),
+          first_run: "current-slot-after-approval",
+          status: "proposed",
+        };
+      },
+    };
+    const { calls } = mockApi(answers);
+    const first = renderAt(`/heinzel?chat=${sessionId}`);
+    fireEvent.click(await screen.findByText("Recurring agent turns"));
+    const button = screen.getByRole("button", { name: "Propose recurring turns" });
+    await waitFor(() => expect(button).toBeEnabled());
+    fireEvent.click(button);
+    expect(await screen.findByText(/schedule request could not be confirmed/)).toBeInTheDocument();
+    first.unmount();
+    mockApi(answers);
+    renderAt(`/heinzel?chat=${sessionId}`);
+    fireEvent.click(await screen.findByText("Recurring agent turns"));
+    fireEvent.click(screen.getByRole("button", { name: "Retry same proposal" }));
+    await waitFor(() => expect(attempts).toHaveLength(2));
+    expect(attempts[1]).toEqual(attempts[0]);
+    expect(calls.some((request) => new URL(request.url).pathname.endsWith("/confirm"))).toBe(false);
+  });
+
+  it("lets an owner inspect and set aside an unstarted daemon occurrence", async () => {
+    let abandoned = false;
+    let posts = 0;
+    mockApi({
+      ...shell,
+      "/api/heinzel/session": {
+        ...snapshot,
+        messages: [{ id: "wake", seq: 1, role: "user", origin: "daemon", text: "Wake", status: "pending" }],
+      },
+      "/api/heinzel/chat-turn-state": { session_id: sessionId, request_id: "wake", status: "pending" },
+    });
+    const originalFetch = globalThis.fetch;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (request: Request) => {
+        const pathname = new URL(request.url).pathname;
+        if (pathname === "/api/heinzel/chat-turn-state")
+          return Response.json({
+            session_id: sessionId,
+            request_id: "wake",
+            status: abandoned ? "abandoned" : "pending",
+          });
+        if (pathname === "/api/heinzel/abandon-chat-turn") {
+          posts++;
+          abandoned = true;
+          return Response.json({ session_id: sessionId, request_id: "wake", status: "abandoned" });
+        }
+        return originalFetch(request);
+      }),
+    );
+    renderAt(`/heinzel?chat=${sessionId}`);
+    fireEvent.click(await screen.findByRole("button", { name: "Inspect daemon turn" }));
+    expect(await screen.findByText(/No model work has been recorded as started/)).toBeInTheDocument();
+    const action = screen.getByRole("button", { name: "Set aside this unstarted turn" });
+    expect(action).toBeDisabled();
+    fireEvent.click(screen.getByRole("checkbox", { name: /unstarted daemon turn will be set aside/ }));
+    fireEvent.click(action);
+    expect(await screen.findByText(/This turn was set aside/)).toBeInTheDocument();
+    expect(posts).toBe(1);
   });
 
   it("identifies a daemon-origin message without presenting it as a user message", async () => {
