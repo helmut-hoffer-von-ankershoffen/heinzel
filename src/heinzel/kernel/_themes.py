@@ -533,6 +533,13 @@ class Theme(BaseModel):
     title: Annotated[str, AfterValidator(_one_line)] = Field(
         min_length=1, max_length=MAX_TITLE, description="What people pick it by, e.g. `Acme`."
     )
+    default_priority: int | None = Field(
+        default=None,
+        strict=True,
+        ge=0,
+        le=1000,
+        description="Opt into automatic theme selection; higher wins, ties use module and theme name. None opts out.",
+    )
     heinzel: ThemeHeinzel | None = Field(default=None, description="The core avatar palette and decorations.")
     light: ThemeColours = Field(description="The colours in light mode.")
     dark: ThemeColours = Field(description="The colours in dark mode.")

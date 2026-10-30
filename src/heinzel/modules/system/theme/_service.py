@@ -74,6 +74,26 @@ class Available:
     conflicts: list[str]
 
 
+def _recommended(available: Available) -> str:
+    """Resolve explicit provider preferences after layer conflicts, with a stable identity tie-break."""
+    candidates = [
+        offered
+        for offered in available.themes.values()
+        if offered.record is not None and offered.theme.default_priority is not None
+    ]
+    if not candidates:
+        return DEFAULT_THEME.name
+    chosen = min(
+        candidates,
+        key=lambda offered: (
+            -(offered.theme.default_priority or 0),
+            offered.record.qualname if offered.record else "",
+            offered.theme.name,
+        ),
+    )
+    return chosen.theme.name
+
+
 def _branch(stack: LayerStack, layer: str) -> str | None:
     """`site` for the site, `org` for a layer beside it on the org line, None for the company and the team."""
     if layer == stack.site:
@@ -178,28 +198,35 @@ class ThemeService(ThemeFonts, ThemeChoice):
         # Read now, not from the settings of boot: `hz ui` keeps running while a terminal switches the theme.
         config = Config.load()
         available = self.available()
+        recommended = _recommended(available)
         note, next_steps = None, list[str]()
+        automatic = True
         try:
-            configured = config.settings(ThemeSettings, SECTION).name
+            settings = config.settings(ThemeSettings, SECTION)
+            configured = settings.name
+            automatic = "name" not in settings.model_fields_set
         except ValidationError:
             configured, note = (
                 DEFAULT_THEME.name,
                 (
                     f"`[system.theme] name` (or {VARIABLE}) isn't a theme name: lowercase words joined by dashes; the "
-                    "default is in effect."
+                    f"recommended theme {available.themes[recommended].theme.title!r} is in effect."
                 ),
             )
             next_steps = [f"hz system theme use {DEFAULT_THEME.name}"]
-        selected = configured
+        selected = recommended if automatic else configured
         if configured not in available.themes:
-            selected = DEFAULT_THEME.name
+            selected = recommended
             note = (
-                f"No installed plugin offers the theme {configured!r}; the default is in effect until you pick "
-                "another or install its plugin."
+                f"No installed plugin offers the theme {configured!r}; "
+                f"{available.themes[selected].theme.title} is in effect until you pick another or install its plugin."
             )
-            next_steps = [f"hz system theme use {DEFAULT_THEME.name}"]
+            next_steps = [f"hz system theme use {selected}"]
         if note is None and configured != self._from_files(config):
             note = f"{VARIABLE} in your environment decides the theme ({configured}); unset it to switch."
+            next_steps = [f"unset {VARIABLE}"]
+        elif note is not None and VARIABLE in os.environ:
+            note += f" {VARIABLE} in your environment overrides saved choices; unset it to switch."
             next_steps = [f"unset {VARIABLE}"]
         if not next_steps:
             next_steps = [f"hz system theme use {name}" for name in available.themes if name != selected][:1]
@@ -208,7 +235,7 @@ class ThemeService(ThemeFonts, ThemeChoice):
             themes=[
                 ThemeView(
                     name=name,
-                    title=offered.theme.title,
+                    title=offered.theme.title if offered.record else "Built-in fallback",
                     module=offered.record.qualname if offered.record else None,
                     plugin=offered.record.origin.distribution if offered.record else None,
                     selected=name == selected,
@@ -234,6 +261,7 @@ class ThemeService(ThemeFonts, ThemeChoice):
                     shadows=offered.shadows,
                 )
                 for name, offered in available.themes.items()
+                if offered.record is not None or name == selected or recommended == DEFAULT_THEME.name
             ],
             conflicts=available.conflicts,
             note=note,

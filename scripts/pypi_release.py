@@ -14,6 +14,8 @@ import sys
 import tarfile
 import tomllib
 import zipfile
+from configparser import ConfigParser
+from configparser import Error as ConfigError
 from email.parser import BytesParser
 from pathlib import Path
 
@@ -23,11 +25,27 @@ TAG = re.compile(r"v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)")
 ARTIFACT_COUNT = 2
 COMMIT = re.compile(r"[0-9a-f]{40}")
 NOTIFIER = "heinzel/modules/system/notify/macos/HeinzelNotifier.app/Contents/MacOS/notifier"
-REQUIRED = ("heinzel/__init__.py", "heinzel/CHANGELOG.md", "heinzel/heads/web/static/index.html", NOTIFIER)
+REQUIRED = (
+    "_heinzel_launcher.py",
+    "heinzel/__init__.py",
+    "heinzel/CHANGELOG.md",
+    "heinzel/heads/web/static/index.html",
+    NOTIFIER,
+)
+CONSOLE_SCRIPTS = {
+    "heinzel": "_heinzel_launcher:main",
+    "hz": "_heinzel_launcher:cli",
+    "hz-install": "_heinzel_launcher:install",
+}
 
 
 class ReleaseError(ValueError):
     """The source or distributions are not a verifiable core release."""
+
+
+class _EntryParser(ConfigParser):
+    def optionxform(self, optionstr: str) -> str:
+        return optionstr
 
 
 def version_for(tag: str) -> str:
@@ -95,6 +113,20 @@ def _metadata(data: bytes, version: str) -> None:
         raise ReleaseError(msg)
 
 
+def _console_scripts(archive: zipfile.ZipFile, version: str) -> None:
+    try:
+        entries = archive.read(f"heinzel-{version}.dist-info/entry_points.txt").decode("utf-8")
+        parser = _EntryParser(interpolation=None, strict=True)
+        parser.read_string(entries)
+        commands = dict(parser.items("console_scripts", raw=True))
+    except (KeyError, UnicodeError, ConfigError) as error:
+        msg = "The wheel does not provide the expected console scripts."
+        raise ReleaseError(msg) from error
+    if parser.defaults() or commands != CONSOLE_SCRIPTS:
+        msg = "The wheel does not provide the expected console scripts."
+        raise ReleaseError(msg)
+
+
 def _wheel(path: Path, version: str) -> None:
     if path.name != f"heinzel-{version}-py3-none-any.whl":
         msg = "Expected exactly the core's universal wheel for this version."
@@ -109,9 +141,9 @@ def _wheel(path: Path, version: str) -> None:
             msg = "The core wheel metadata is missing."
             raise ReleaseError(msg)
         _metadata(archive.read(metadata), version)
-        entries = archive.read(f"heinzel-{version}.dist-info/entry_points.txt").decode()
-        if not re.search(r"^hz\s*=\s*heinzel\.heads\.cli:main\s*$", entries, re.MULTILINE):
-            msg = "The wheel does not provide the expected hz command."
+        _console_scripts(archive, version)
+        if not stat.S_ISREG(archive.getinfo("_heinzel_launcher.py").external_attr >> 16):
+            msg = "The packaged launcher must be a regular file."
             raise ReleaseError(msg)
         if any(stat.S_IFMT(archive.getinfo(name).external_attr >> 16) not in {0, stat.S_IFREG} for name in REQUIRED):
             msg = "Required wheel payloads must be regular files."

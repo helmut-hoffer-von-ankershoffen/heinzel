@@ -5,7 +5,7 @@ from typing import Annotated
 from pydantic import Field
 
 from heinzel import Check, Module
-from heinzel.kernel import DaemonAttestation, parse_duration
+from heinzel.kernel import DaemonAttestation, DaemonInstallationLifecycle, parse_duration
 from heinzel.modules.system.daemon._models import (
     DaemonSettings,
     DaemonStatus,
@@ -31,11 +31,26 @@ module.service(DaemonService, DaemonService.for_user)
 
 
 def _attestation(service: DaemonService) -> DaemonAttestation:
-    """Expose the existing daemon service through a shared read-only module boundary."""
+    """Expose only read-only daemon status through the existing permission boundary."""
     return DaemonAttestation(status=service.status)
 
 
+def _installation_lifecycle(service: DaemonService) -> DaemonInstallationLifecycle:
+    """Expose separate trusted installation handover; this is not an operation or an approval."""
+    return DaemonInstallationLifecycle(
+        capture=service.capture_handover,
+        request=service.request_handover,
+        observation=service.handover_observation,
+        assess=service.assess_handover,
+        admission=service.admission_guard,
+        quiescent=service.quiescence_guard,
+        recover_quiescent=service.recover_quiescent_install,
+        mutation=service.mutation_guard,
+    )
+
+
 module.service(DaemonAttestation, _attestation)
+module.service(DaemonInstallationLifecycle, _installation_lifecycle)
 
 INTERVAL_PATTERN = r"^[1-9][0-9]*m$|^1h$"
 

@@ -9,6 +9,7 @@ import base64
 import contextlib
 import hashlib
 import json
+import re
 import shlex
 import subprocess
 import tempfile
@@ -16,9 +17,10 @@ import threading
 import tomllib
 import urllib.error
 from collections.abc import Collection, Generator, Mapping, Sequence
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from http import HTTPStatus
-from importlib.metadata import Distribution, entry_points
+from importlib.metadata import Distribution, distributions, entry_points
 from importlib.resources import files
 from pathlib import Path
 from typing import Any, Literal, cast
@@ -26,6 +28,7 @@ from urllib.parse import urlencode, urlsplit
 
 from packaging.requirements import InvalidRequirement, Requirement
 from packaging.utils import canonicalize_name
+from packaging.version import InvalidVersion, Version
 
 from heinzel import HeinzelError, Kernel, __version__
 from heinzel.kernel import (
@@ -33,6 +36,8 @@ from heinzel.kernel import (
     ENTRY_POINT_GROUP,
     KERNEL_SECTION,
     ConfigEditor,
+    DaemonInstallationLifecycle,
+    DaemonMutationScope,
     Installation,
     LayerLet,
     ModuleRecord,
@@ -130,14 +135,29 @@ def short_name(distribution: str) -> str:
     return canonicalize_name(distribution).removeprefix(PREFIX)
 
 
+@dataclass
+class _PackageMutation:
+    scope: DaemonMutationScope
+    initial: str
+    generation: str | None = None
+
+
 class PluginService:
     """Lists, adds, removes, enables, disables and scaffolds plugins."""
 
-    def __init__(self, kernel: Kernel, installation: Installation, settings: PluginSettings) -> None:
+    def __init__(
+        self,
+        kernel: Kernel,
+        installation: Installation,
+        settings: PluginSettings,
+        *,
+        lifecycle: DaemonInstallationLifecycle | None = None,
+    ) -> None:
         """Create the service; the kernel, the installation and the settings are injected."""
         self._kernel = kernel
         self._installation = installation
         self._settings = settings
+        self._lifecycle = lifecycle
         self._changing = threading.Lock()
         self._receipts = PluginReceipts(kernel.settings.state_dir)
         self.github_api: JsonGetter = github_getter(settings.github_token)
@@ -275,6 +295,7 @@ class PluginService:
                 metadata = from_pypi(source, self.pypi)
             elif source.github is not None:
                 metadata = from_github(source, self.github_api)
+                source = replace(source, subdirectory=metadata.subdirectory or source.subdirectory)
             else:
                 warnings.append(
                     f"{urlsplit(source.url or '').hostname} isn't GitHub: its name, version and publisher can't be "
@@ -288,6 +309,8 @@ class PluginService:
             msg = f"Add {source.requirement.name} without extras or environment markers; a plugin brings what it needs."
             raise HeinzelError(msg)
         distribution = metadata.name or source.name
+        _refuse_core_distribution(distribution)
+        _require_git_distribution(source.kind, distribution)
         page: str | None
         if source.kind == "pypi" and source.requirement is not None:
             pinned = f"{distribution}=={metadata.version}" if metadata.version else str(source.requirement)
@@ -334,6 +357,9 @@ class PluginService:
             if receipt.status == "running":
                 msg = "This plugin operation is still running; check its receipt before continuing."
                 raise HeinzelError(msg)
+            _refuse_core_distribution(candidate.distribution)
+            _require_git_distribution(candidate.source, candidate.distribution)
+            _refuse_core_distribution(parse(candidate.requirement).name)
             if receipt.status == "unknown":
                 # A read-only receipt lookup may infer this from a dead owner. Persist it on this explicit write path
                 # before refusing replay, so status reads remain truthful to their read-only operation metadata.
@@ -358,23 +384,30 @@ class PluginService:
                 next=[f"hz system plugin add {shlex.quote(handle)} --confirm --operation-id {receipt.operation_id}"],
                 operation_id=receipt.operation_id,
             )
-        with self._receipts.installing(), self._exclusive():
-            self._installation.run(
+        with self._mutation() as mutation, self._receipts.installing(), self._exclusive():
+            before = self._host_list() if _requires_change(candidate) else []
+            generation = self._run_package_change(
                 self.add_command(candidate.requirement),
                 f"Failed to add plugin {spec!r}.",
                 f"Adding plugin {candidate.distribution or spec}",
                 self._git_environment(),
+                context=(mutation, ()),
             )
+            installed = self._verify_added(candidate, before)
+            self._verify_candidate_generation(mutation)
+            change = self._changed("add", installed.distribution, candidate)
+            self._verify_candidate_generation(mutation)
             self._record(
                 "add",
-                candidate.distribution,
+                installed.distribution,
                 requirement=candidate.requirement,
                 source=candidate.source,
                 version=candidate.version,
                 publisher=candidate.publisher,
                 private_repository=candidate.private,
             )
-            return self._changed("add", candidate.distribution, candidate)
+            self._remember_package_change(generation)
+            return change
 
     def operation(self, operation_id: str) -> PluginOperation:
         """Read the durable status of a preview receipt without repeating its mutation."""
@@ -390,22 +423,29 @@ class PluginService:
                         return receipt.result
                     _raise_not_replayable(receipt.status)
                 claimed = True
-                self._installation.run(
-                    self.add_command(candidate.requirement),
-                    f"Failed to add plugin {candidate.spec!r}.",
-                    f"Adding plugin {candidate.distribution or candidate.spec}",
-                    self._git_environment(),
-                )
-                self._record(
-                    "add",
-                    candidate.distribution,
-                    requirement=candidate.requirement,
-                    source=candidate.source,
-                    version=candidate.version,
-                    publisher=candidate.publisher,
-                    private_repository=candidate.private,
-                )
-                result = self._changed("add", candidate.distribution, candidate)
+                with self._mutation() as mutation:
+                    before = self._host_list() if _requires_change(candidate) else []
+                    generation = self._run_package_change(
+                        self.add_command(candidate.requirement),
+                        f"Failed to add plugin {candidate.spec!r}.",
+                        f"Adding plugin {candidate.distribution or candidate.spec}",
+                        self._git_environment(),
+                        context=(mutation, ()),
+                    )
+                    installed = self._verify_added(candidate, before)
+                    self._verify_candidate_generation(mutation)
+                    result = self._changed("add", installed.distribution, candidate)
+                    self._verify_candidate_generation(mutation)
+                    self._record(
+                        "add",
+                        installed.distribution,
+                        requirement=candidate.requirement,
+                        source=candidate.source,
+                        version=candidate.version,
+                        publisher=candidate.publisher,
+                        private_repository=candidate.private,
+                    )
+                    self._remember_package_change(generation)
                 completed = self._receipts.complete(operation_id, result)
                 if completed.result is None:
                     _raise_missing_result()
@@ -432,14 +472,21 @@ class PluginService:
         except (tomllib.TOMLDecodeError, KeyError) as exc:
             msg = f"{pyproject} names no project ({exc}); is it a plugin's checkout?"
             raise HeinzelError(msg) from exc
-        with self._receipts.installing(), self._exclusive():
-            self._installation.run(
+        _refuse_core_distribution(name)
+        with self._mutation() as mutation, self._receipts.installing(), self._exclusive():
+            generation = self._run_package_change(
                 self.add_command(f"{name} @ {directory.as_uri()}"),
                 f"Failed to add plugin {path}.",
                 f"Adding plugin {name}",
+                context=(mutation, ()),
             )
+            self._verify_developed(directory, name, str(version) if version is not None else None)
+            self._verify_candidate_generation(mutation)
+            change = self._changed("develop", name, None)
+            self._verify_candidate_generation(mutation)
             self._record("develop", name, requirement=str(directory), source="path", version=version and str(version))
-            return self._changed("develop", name, None)
+            self._remember_package_change(generation)
+            return change
 
     def add_command(self, spec: str) -> list[str]:
         """The command that installs the plugin `spec`: a requirement, a git URL or a path, as given."""
@@ -477,16 +524,24 @@ class PluginService:
         Raises:
             HeinzelError: If it isn't an installed plugin, or uninstalling fails.
         """
-        with self._receipts.installing(), self._exclusive():
+        with self._mutation() as mutation, self._receipts.installing(), self._exclusive():
             version = next((p.version for p in self.installed() if _same(p.distribution, distribution)), None)
-            self._installation.run(
+            generation = self._run_package_change(
                 self.remove_command(distribution),
                 f"Failed to remove plugin {distribution!r}.",
                 f"Removing {distribution}",
                 self._git_environment(),  # reinstalling fetches the other git plugins again, private ones too
+                context=(mutation, (canonicalize_name(distribution),)),
             )
+            if any(_same(item.distribution, distribution) for item in self._host_list(plugins_only=False)):
+                msg = "The requested plugin is still installed; nothing was recorded as a successful removal."
+                raise HeinzelError(msg)
+            self._verify_candidate_generation(mutation)
+            change = self._changed("remove", canonicalize_name(distribution), None)
+            self._verify_candidate_generation(mutation)
             self._record("remove", canonicalize_name(distribution), version=version)
-            return self._changed("remove", canonicalize_name(distribution), None)
+            self._remember_package_change(generation)
+            return change
 
     def enable(self, distribution: str) -> PluginChange:
         """Switch a disabled plugin's modules on again in your user configuration.
@@ -939,11 +994,200 @@ class PluginService:
     def _history_path(self) -> Path:
         return self._kernel.settings.data_dir / HISTORY
 
+    @contextlib.contextmanager
+    def _mutation(self) -> Generator[_PackageMutation | None]:
+        """Hold the trusted lifecycle and original tool authority through the complete change.
+
+        Yields:
+            The scoped tool mutation, or None for a non-tool development environment.
+
+        Raises:
+            HeinzelError: If lifecycle authority or the resulting generation is unavailable.
+            OSError: If the continuity record cannot be written.
+        """
+        if not self._installation.is_tool:
+            yield None
+            return
+        if self._lifecycle is None:
+            msg = "The daemon lifecycle boundary is unavailable; the plugin was not changed."
+            raise HeinzelError(msg)
+        with self._lifecycle.mutation(
+            self._installation.startup_state_matches, self._installation.rollback_identity
+        ) as scope:
+            plan = scope.capture()
+            try:
+                with self._installation.tool_transaction():
+                    mutation = _PackageMutation(scope, self._installation.startup_fingerprint())
+                    yield mutation
+                    self._complete_mutation(mutation)
+                    scope.request(plan)
+            except (HeinzelError, OSError):
+                with contextlib.suppress(HeinzelError, OSError):
+                    scope.abort_unchanged()
+                raise
+
+    def _complete_mutation(self, mutation: _PackageMutation) -> None:
+        if mutation.generation is None:
+            msg = "The plugin installation was not verified; explicit recovery is required."
+            raise HeinzelError(msg)
+        if mutation.scope.checkpoint_matched:
+            self._installation.record_startup_state(expected=mutation.generation)
+        mutation.scope.verified_complete(mutation.generation)
+
+    def _run_package_change(
+        self,
+        command: list[str],
+        failure: str,
+        activity: str,
+        environment: Mapping[str, str] | None = None,
+        *,
+        context: tuple[_PackageMutation | None, tuple[str, ...]] = (None, ()),
+    ) -> str | None:
+        """Capture the changed tool before independently checking its installed identity and runtime.
+
+        Raises:
+            HeinzelError: If installation or the host inspection fails.
+        """
+        # A genuine SDK tool is not necessarily the standard app. Only its verified installer may seed continuity.
+        mutation, forbidden = context
+        managed = self._installation.is_tool and self._installation.startup_state_matches()
+        if mutation is None:
+            self._installation.run(command, failure, activity, environment)
+            return self._installation.startup_fingerprint() if managed else None
+        policy = self._installation.capture_tool_constraint_policy()
+        version = self._installation.installed_core_version()
+        guard = f"heinzel=={version}"
+        constraints = (*self._installation.tool_constraints(), guard)
+        python = command.index("--python")
+        selected = [
+            command[python + 2],
+            *(command[index + 1] for index, part in enumerate(command) if part == "--with"),
+        ]
+        self._installation.validate_install_constraints(selected, constraints)
+        if self._installation.startup_fingerprint() != mutation.initial:
+            msg = "The plugin installation changed before mutation; inspect and retry."
+            raise HeinzelError(msg)
+        self._installation.run(command, failure, activity, environment, additional_constraints=(guard,))
+        generation = self._installation.startup_fingerprint()
+        self._installation.verify_installed_requirements(
+            selected, expected_version=version, forbidden=forbidden, constraints=constraints
+        )
+        if self._installation.startup_fingerprint() != generation:
+            msg = "The plugin installation changed during verification; explicit recovery is required."
+            raise HeinzelError(msg)
+        mutation.generation = self._installation.remove_transient_tool_constraint(
+            expected=generation, original=policy, added=guard
+        )
+        return None
+
+    def _remember_package_change(self, generation: str | None) -> None:
+        """Bind only a successfully checked and recorded package change to its original observation.
+
+        Raises:
+            HeinzelError: If the checked installation generation changed.
+            OSError: If the private continuity record cannot be persisted.
+        """
+        if generation is not None:
+            self._installation.record_startup_state(expected=generation)
+
+    def _verify_candidate_generation(self, mutation: _PackageMutation | None) -> None:
+        if mutation is not None and (
+            mutation.generation is None or self._installation.startup_fingerprint() != mutation.generation
+        ):
+            msg = "The plugin installation changed during verification; explicit recovery is required."
+            raise HeinzelError(msg)
+
+    def _verify_added(self, candidate: PluginCandidate, before: list[PluginInfo]) -> PluginInfo:
+        """Verify the requested distribution before recording or reporting a successful add.
+
+        Raises:
+            HeinzelError: If the requested plugin is absent after the installer returned success.
+        """
+        after = self._host_list()
+        previous = {(item.distribution, item.version, item.revision, item.source_url) for item in before}
+        requires_change = _requires_change(candidate)
+        matches = [
+            item
+            for item in after
+            if _matches_candidate(item, candidate)
+            and (
+                not requires_change or (item.distribution, item.version, item.revision, item.source_url) not in previous
+            )
+        ]
+        if len(matches) != 1:
+            msg = (
+                "The requested plugin identity is not present after installation; "
+                "nothing was recorded as a successful add."
+            )
+            raise HeinzelError(msg)
+        return matches[0]
+
+    def _host_distributions(self) -> list[Distribution]:
+        """Read selected-prefix metadata without running its Python or providers."""
+        roots = [str(path) for path in self._installation.prefix.glob("lib/python*/site-packages")]
+        return list(distributions(path=roots))
+
+    def _host_list(self, *, plugins_only: bool = True) -> list[PluginInfo]:
+        """Read only facts needed for post-install identity checks before any new target execution.
+
+        Raises:
+            HeinzelError: If installed plugin metadata cannot be inspected.
+        """
+        try:
+            result: list[PluginInfo] = []
+            for distribution in self._host_distributions():
+                if plugins_only and not any(entry.group == ENTRY_POINT_GROUP for entry in distribution.entry_points):
+                    continue
+                name = canonicalize_name(distribution.name)
+                kind, url, revision = _source_of(distribution)
+                result.append(
+                    PluginInfo(
+                        distribution=name,
+                        version=distribution.version,
+                        modules=[],
+                        name=short_name(name),
+                        source_kind=kind,
+                        source_url=url,
+                        revision=revision,
+                    )
+                )
+        except (OSError, ValueError, TypeError, KeyError) as exc:
+            msg = "The installed plugin metadata could not be inspected safely; no successful change was recorded."
+            raise HeinzelError(msg) from exc
+        return result
+
+    def _verify_developed(self, directory: Path, name: str, version: str | None) -> None:
+        """Require the requested local source and declared plugin identity before executing the changed target.
+
+        Raises:
+            HeinzelError: If local installation did not leave exactly that source and identity.
+        """
+        try:
+            matches = [
+                distribution
+                for distribution in self._host_distributions()
+                if _same(distribution.name, name)
+                and (version is None or Version(distribution.version) == Version(version))
+                and any(entry.group == ENTRY_POINT_GROUP for entry in distribution.entry_points)
+            ]
+            document: object = json.loads(matches[0].read_text("direct_url.json") or "{}") if len(matches) == 1 else {}
+            provenance = cast("dict[str, Any]", document) if isinstance(document, dict) else {}
+            if provenance.get("url") == directory.as_uri() and isinstance(provenance.get("dir_info"), dict):
+                return
+        except (OSError, ValueError, TypeError, KeyError) as exc:
+            msg = "The installed local plugin source could not be inspected; no successful change was recorded."
+            raise HeinzelError(msg) from exc
+        msg = "The requested local plugin source is not present after installation; no successful change was recorded."
+        raise HeinzelError(msg)
+
     def _changed(self, action: Action, distribution: str | None, candidate: PluginCandidate | None) -> PluginChange:
         """A carried-out change, with the plugins as a fresh `hz` sees them; this process still has the old ones.
 
         The fresh `hz` also removes skill exports whose skill went or changed (ADR 0061); it never adds one, and a
         failure there is a next step, not a failed change.
+
+        Raises:
+            HeinzelError: If fresh discovery fails.
         """
         change = PluginChange(
             action=action,
@@ -954,6 +1198,11 @@ class PluginService:
             restart_required=True,
             next=[],
         )
+        if action in {"add", "develop"} and distribution is not None:
+            # Runtime discovery precedes history persistence, so project this operation's verified source visibility.
+            for plugin in change.plugins:
+                if _same(plugin.distribution, distribution):
+                    plugin.private_repository = candidate.private if candidate is not None else None
         try:
             self._installation.hz("system", "skill", "export", "--sync", "--json")
         except HeinzelError:
@@ -970,6 +1219,31 @@ class PluginService:
 def _raise_not_replayable(status: str) -> None:
     msg = f"This plugin operation is {status}; it will not be replayed."
     raise HeinzelError(msg)
+
+
+def _refuse_core_distribution(distribution: str | None) -> None:
+    """Keep core changes on the explicit update path, before plugin mutation or receipt claim.
+
+    Raises:
+        HeinzelError: If the proposed distribution is the core.
+    """
+    if distribution is not None and canonicalize_name(distribution) == CORE_DISTRIBUTION:
+        msg = "Heinzelmännchen itself is updated with `hz system update`, not as a plugin."
+        raise HeinzelError(msg)
+
+
+def _require_git_distribution(source: str, distribution: str | None) -> None:
+    """Require an explicit distribution when metadata cannot establish a repository's identity.
+
+    Raises:
+        HeinzelError: If a git repository has no known distribution name.
+    """
+    if source == "git" and distribution is None:
+        msg = (
+            "The repository's distribution name could not be verified. Supply its actual package name as a named "
+            "requirement, for example `heinzel-example @ git+https://example.com/repository`."
+        )
+        raise HeinzelError(msg)
 
 
 def _raise_missing_result() -> None:
@@ -998,6 +1272,48 @@ def _table(document: dict[str, object], key: str) -> dict[str, object]:
     """The table under `key`; empty if there is none."""
     value = document.get(key)
     return cast("dict[str, object]", value) if isinstance(value, dict) else {}
+
+
+def _known_revision(candidate: PluginCandidate) -> str | None:
+    """A resolved revision or an explicitly requested commit, never a guessed branch/tag identity."""
+    if candidate.revision or candidate.source != "git":
+        return candidate.revision
+    ref = parse(candidate.requirement).ref
+    return ref.lower() if ref and re.fullmatch(r"[a-fA-F0-9]{7,40}", ref) else None
+
+
+def _requires_change(candidate: PluginCandidate) -> bool:
+    """Unresolved names or Git refs need a fresh change as well as a matching recorded origin."""
+    return candidate.distribution is None or (candidate.source == "git" and _known_revision(candidate) is None)
+
+
+def _matches_git_origin(plugin: PluginInfo, candidate: PluginCandidate) -> bool:
+    """A known repository and subdirectory must match actual PEP 610 provenance after installation."""
+    if candidate.source != "git":
+        return True
+    source = parse(candidate.requirement)
+    revision = _known_revision(candidate)
+    expected = installed_repository_url(source.url, plugin.revision, source.subdirectory)
+    return (
+        plugin.source_kind == "git"
+        and plugin.revision is not None
+        and plugin.source_url == expected
+        and (revision is None or plugin.revision.startswith(revision))
+    )
+
+
+def _matches_candidate(plugin: PluginInfo, candidate: PluginCandidate) -> bool:
+    """Check the full known installed identity; a matching existing identity remains idempotent."""
+    try:
+        requested = Requirement(candidate.requirement) if candidate.source == "pypi" else None
+        return (
+            (candidate.distribution is None or _same(plugin.distribution, candidate.distribution))
+            and (candidate.version is None or Version(plugin.version) == Version(candidate.version))
+            and (requested is None or (plugin.source_kind == "pypi" and Version(plugin.version) in requested.specifier))
+            and _matches_git_origin(plugin, candidate)
+        )
+    except (InvalidVersion, InvalidRequirement):
+        return False
 
 
 def _same(a: str, b: str) -> bool:

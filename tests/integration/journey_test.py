@@ -221,19 +221,18 @@ def test_join_finds_you_in_the_roster_and_sets_up_the_rest(settings, found, plac
     assert said[0].startswith("hz keeps your profile")
     assert "The roster lists you as mira (engineer)." in said
     invite = next(line for line in said if line.startswith("  invite the next one"))
-    assert invite.startswith("  invite the next one post the same line: uvx --from git+https://github.com/")
-    assert invite.endswith(f"heinzel join {URL}")
+    assert invite == f"  invite the next one post the same line: uvx heinzel@latest join {URL}"
     assert user_config()["note"] == {"text": "hi"}
 
 
-def test_the_joining_guide_quotes_the_emitted_keep_command(settings, found, place, monkeypatch):
+def test_the_joining_guide_quotes_the_emitted_open_command(settings, found, place, monkeypatch):
     terminal(monkeypatch)
     result, _, said = join_with(settings, {"Mira-Example": "mira"}, ["engineer", "", ""])
     assert result.exit_code == 0, result.output
     guide = Path(__file__).resolve().parents[2] / "docs" / "guides" / "joining.md"
     quoted = guide.read_text(encoding="utf-8").split("```text\n", 1)[1].split("\n```", 1)[0]
-    emitted_keep = next(line for line in said if line.startswith("  keep hz"))
-    quoted_keep = next(line for line in quoted.splitlines() if line.startswith("  keep hz"))
+    emitted_keep = next(line for line in said if line.startswith("  open hz"))
+    quoted_keep = next(line for line in quoted.splitlines() if line.startswith("  open hz"))
     assert quoted_keep == emitted_keep
 
 

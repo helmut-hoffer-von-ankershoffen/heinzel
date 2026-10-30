@@ -31,7 +31,10 @@ def artifacts(tmp_path):
     wheel = dict.fromkeys(release.REQUIRED, b"payload")
     wheel[release.NOTIFIER] = b"\xca\xfe\xba\xbepayload"
     wheel[f"heinzel-{VERSION}.dist-info/METADATA"] = b"Name: heinzel\nVersion: 1.2.3\n"
-    wheel[f"heinzel-{VERSION}.dist-info/entry_points.txt"] = b"[console_scripts]\nhz = heinzel.heads.cli:main\n"
+    wheel[f"heinzel-{VERSION}.dist-info/entry_points.txt"] = (
+        b"[console_scripts]\nheinzel = _heinzel_launcher:main\nhz = _heinzel_launcher:cli\n"
+        b"hz-install = _heinzel_launcher:install\n[pytest11]\nheinzel = heinzel.testing\n"
+    )
     source = {
         f"heinzel-{VERSION}/src/{name}": b"payload" for name in release.REQUIRED if name != "heinzel/CHANGELOG.md"
     }
@@ -39,7 +42,14 @@ def artifacts(tmp_path):
     source[f"heinzel-{VERSION}/PKG-INFO"] = b"Name: heinzel\nVersion: 1.2.3\n"
     source[f"heinzel-{VERSION}/pyproject.toml"] = b'[project]\nname="heinzel"\nversion="1.2.3"\n'
 
-    def write(*, wheel_changes=None, source_changes=None, notifier_mode=stat.S_IFREG | 0o755):
+    def write(
+        *,
+        wheel_changes=None,
+        source_changes=None,
+        notifier_mode=stat.S_IFREG | 0o755,
+        launcher_mode=stat.S_IFREG | 0o644,
+        source_launcher_symlink=False,
+    ):
         for names, changes in ((wheel, wheel_changes), (source, source_changes)):
             for name, value in (changes or {}).items():
                 if value is None:
@@ -49,11 +59,23 @@ def artifacts(tmp_path):
         with zipfile.ZipFile(dist / f"heinzel-{VERSION}-py3-none-any.whl", "w") as archive:
             for name, value in wheel.items():
                 info = zipfile.ZipInfo(name)
-                info.external_attr = (notifier_mode if name == release.NOTIFIER else stat.S_IFREG | 0o644) << 16
+                mode = (
+                    notifier_mode
+                    if name == release.NOTIFIER
+                    else launcher_mode
+                    if name == "_heinzel_launcher.py"
+                    else stat.S_IFREG | 0o644
+                )
+                info.external_attr = mode << 16
                 archive.writestr(info, value)
         with tarfile.open(dist / f"heinzel-{VERSION}.tar.gz", "w:gz") as archive:
             for name, value in source.items():
                 info = tarfile.TarInfo(name)
+                if source_launcher_symlink and name == f"heinzel-{VERSION}/src/_heinzel_launcher.py":
+                    info.type = tarfile.SYMTYPE
+                    info.linkname = "other.py"
+                    archive.addfile(info)
+                    continue
                 info.size = len(value)
                 archive.addfile(info, io.BytesIO(value))
         return dist
@@ -71,6 +93,62 @@ def test_complete_core_artifacts_have_exact_identity_and_sha256_manifest(artifac
         "commit": COMMIT,
         "files": {path.name: hashlib.sha256(path.read_bytes()).hexdigest() for path in sorted(dist.iterdir())},
     }
+
+
+@pytest.mark.parametrize(
+    "entries",
+    [
+        b"[console_scripts]\nhz = heinzel.heads.cli:main\n",
+        b"[console_scripts]\nhz = _heinzel_launcher:cli\nheinzel = _heinzel_launcher:main\n",
+        b"[console_scripts]\nhz = _heinzel_launcher:cli\nheinzel = _heinzel_launcher:main\nhz-install = wrong:target\n",
+        (
+            b"[console_scripts]\nhz = _heinzel_launcher:cli\nhz = _heinzel_launcher:cli\n"
+            b"heinzel = _heinzel_launcher:main\nhz-install = _heinzel_launcher:install\n"
+        ),
+        (
+            b"[pytest11]\nhz = _heinzel_launcher:cli\nheinzel = _heinzel_launcher:main\n"
+            b"hz-install = _heinzel_launcher:install\n"
+        ),
+        (
+            b"[DEFAULT]\nhz = _heinzel_launcher:cli\nheinzel = _heinzel_launcher:main\n"
+            b"hz-install = _heinzel_launcher:install\n[console_scripts]\n"
+        ),
+    ],
+)
+def test_wrong_missing_duplicate_or_misplaced_console_scripts_are_refused(artifacts, entries):
+    dist = artifacts(wheel_changes={f"heinzel-{VERSION}.dist-info/entry_points.txt": entries})
+    with pytest.raises(release.ReleaseError, match="console scripts"):
+        release.verify_artifacts(dist, "v1.2.3", COMMIT)
+
+
+def test_empty_launcher_payload_is_refused(artifacts):
+    dist = artifacts(wheel_changes={"_heinzel_launcher.py": b""})
+    with pytest.raises(release.ReleaseError, match="empty"):
+        release.verify_artifacts(dist, "v1.2.3", COMMIT)
+
+
+def test_symlink_launcher_payload_is_refused(artifacts):
+    dist = artifacts(launcher_mode=stat.S_IFLNK | 0o777)
+    with pytest.raises(release.ReleaseError, match="regular"):
+        release.verify_artifacts(dist, "v1.2.3", COMMIT)
+
+
+def test_empty_source_launcher_is_refused(artifacts):
+    dist = artifacts(source_changes={f"heinzel-{VERSION}/src/_heinzel_launcher.py": b""})
+    with pytest.raises(release.ReleaseError, match="nonempty"):
+        release.verify_artifacts(dist, "v1.2.3", COMMIT)
+
+
+def test_symlink_source_launcher_is_refused(artifacts):
+    dist = artifacts(source_launcher_symlink=True)
+    with pytest.raises(release.ReleaseError, match="regular"):
+        release.verify_artifacts(dist, "v1.2.3", COMMIT)
+
+
+def test_missing_source_launcher_is_refused(artifacts):
+    dist = artifacts(source_changes={f"heinzel-{VERSION}/src/_heinzel_launcher.py": None})
+    with pytest.raises(release.ReleaseError, match="incomplete"):
+        release.verify_artifacts(dist, "v1.2.3", COMMIT)
 
 
 @pytest.mark.parametrize("missing", release.REQUIRED)

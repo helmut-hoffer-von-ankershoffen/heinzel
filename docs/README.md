@@ -19,7 +19,9 @@ hide:
 [Install Heinzel ↗](guides/install.md){ .hz-button }
 [Explore plugins](CATALOG.md){ .hz-button .hz-button-quiet }
 </div>
-<p class="hz-caption">MIT licensed · Python 3.12+ · CLI, MCP, REST and a web workspace</p>
+<p class="hz-caption">MIT licensed · macOS and Linux · CLI, MCP, REST and a web workspace</p>
+
+[No uv yet? The guided installer sets up prerequisites for you.](guides/install.md)
 </div>
 <div class="hz-hero-art">
 <picture><source media="(prefers-color-scheme: dark)" srcset="assets/hero-dark.svg"><img src="assets/hero-light.svg" alt="A small crowd of Heinzelmännchen helpers walking together" width="1000" height="360"></picture>
@@ -78,7 +80,7 @@ Start with clocks, system resources, private connectivity and the Heinzelmännch
 </div>
 <figure>
 <img src="assets/website/product-workspace.jpg" alt="Team graph in the released Heinzel standard app" width="1440" loading="lazy">
-<figcaption>The standard 0.9.2 app with fictional team data. Optional services are unconfigured.</figcaption>
+<figcaption>The standard app with fictional team data. Optional services are unconfigured.</figcaption>
 </figure>
 </section>
 

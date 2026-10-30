@@ -2594,7 +2594,7 @@ $ hz system plugin add [OPTIONS] {spec}
 
 **Arguments**:
 
-* `spec`: A first-party plugin by name (`github`, `acme`), a PyPI package named heinzel-&lt;name&gt; (`heinzel-crm==1.2.0`), or a git repository over https (`git+https://github.com/acme-example/heinzel-crm@v1.0.0`); private GitHub repositories use your gh login. Pass `requirement` from an earlier answer to install exactly what it showed.  [required]
+* `spec`: A first-party plugin by name (`github`, `acme`), a PyPI package named heinzel-&lt;name&gt; (`heinzel-crm==1.2.0`), or a git repository over https (`git+https://github.com/acme-example/heinzel-crm@v1.0.0`); private GitHub repositories use your gh login. If the repository&#x27;s distribution name cannot be resolved, provide its actual name in a named requirement, such as `heinzel-example @ git+https://example.com/repository`. Pass `requirement` from an earlier answer to install exactly what it showed.  [required]
 
 **Options**:
 

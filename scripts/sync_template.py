@@ -28,6 +28,8 @@ def makefile() -> str:
     text = text.replace(" (KEEP=dir keeps it)", "")
     text = re.sub(r"\n(template-test|template-sync|docs|attributions|fuzz|demo|icons):.*?\n(?:\t.*\n)+", "\n", text)
     text = re.sub(r"(?m)^(\.PHONY:.*?) icons\b", r"\1", text)
+    text = re.sub(r"\nlinux-user-manager-proof:.*?\n(?:\t.*\n)+", "\n", text)
+    text = text.replace(" linux-user-manager-proof", "")
     # The core's generate_docs.py writes the plugin pages with everything else; a plugin runs the builder (ADR 0082).
     text = text.replace(
         '"&docs=env -u HZ_SYSTEM_AGENT__SKILL_DIRS uv run python scripts/generate_docs.py --check"',
@@ -135,6 +137,13 @@ def ci_workflow() -> str:
         "",
     )
     text = re.sub(r"\n      - run: make managed-backend-[^\n]*", "", text)
+    # Only the core daemon uses the host's user service manager; plugins ship no such probe.
+    text = re.sub(
+        r"\n      - name: Inspect the Linux user manager without starting services\n.*?(?=\n      - )",
+        "",
+        text,
+        flags=re.DOTALL,
+    )
     text = re.sub(r"\n      - name: Check the wheel ships the attributions\n[^\n]*", "", text)
     text = re.sub(r"\n      - name: Check the wheel ships the web app\n[^\n]*", "", text)
     text = text.replace("      - run: uv build --all-packages\n", "      - run: uv build\n")

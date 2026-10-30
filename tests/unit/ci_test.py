@@ -824,6 +824,15 @@ def test_plugin_template_makefile_excludes_all_electron_only_targets():
     assert "sudo chown root:root" not in generated
 
 
+def test_plugin_ci_excludes_the_core_linux_user_manager_probe():
+    generated = _template_sync_module().ci_workflow()
+    core = (REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    assert "make linux-user-manager-proof" in core
+    assert "linux_user_manager_probe.py" not in generated
+    assert "Inspect the Linux user manager" not in generated
+    assert "linux-user-manager-proof" not in _template_sync_module().makefile()
+
+
 def test_plugin_ci_has_no_core_only_jobs_and_every_need_exists():
     jobs = _generated_plugin_ci()["jobs"]
     for name, job in jobs.items():

@@ -1,15 +1,30 @@
 import os
 import subprocess
 import sys
+import tomllib
+from pathlib import Path
 
 import pytest
 
 from heinzel import HeinzelError, Progress
-from heinzel.kernel import Installation, _installation, requirement_from_receipt
+from heinzel.kernel import Installation, ToolConstraintPolicy, _installation, requirement_from_receipt
 
 pytestmark = pytest.mark.unit
 
-PYTHON = f"{sys.version_info.major}.{sys.version_info.minor}"
+PYTHON = ""
+
+
+@pytest.fixture(autouse=True)
+def isolated_python(tmp_path, monkeypatch):
+    base = tmp_path / "base-python"
+    assert base.parent.resolve() == tmp_path.resolve()
+    assert not base.exists()
+    assert not base.is_symlink()
+    base.write_text("#!/bin/sh\nprintf 'hz 0.2.0\\n'\n")
+    base.chmod(0o700)
+    monkeypatch.setitem(globals(), "PYTHON", str(base))
+
+
 RECEIPT = """
 [tool]
 requirements = [
@@ -47,8 +62,11 @@ def test_requirement_from_receipt(entry, expected):
 
 
 def test_tool_environment(tmp_path):
-    (tmp_path / "uv-receipt.toml").write_text(RECEIPT, encoding="utf-8")
-    installation = Installation(Progress(), prefix=tmp_path, uv="uv")
+    prefix, bin_dir = _target_fixture(tmp_path)
+    (prefix / "uv-receipt.toml").write_text(
+        RECEIPT + f"entrypoints = [{{ name = 'hz', install-path = {str(bin_dir / 'hz')!r} }}]\n", encoding="utf-8"
+    )
+    installation = Installation(Progress(), prefix=prefix, uv="uv")
     assert installation.is_tool
     assert installation.requirements() == [
         "heinzel @ git+https://github.com/org/heinzel@v0.1.0",
@@ -103,8 +121,8 @@ def test_hz_runs_a_fresh_interpreter(tmp_path, monkeypatch):
     with pytest.raises(HeinzelError, match="failed after the change:\nboom"):
         installation.hz("no-such-command")
     assert commands == [
-        [sys.executable, "-m", "heinzel", "--version"],
-        [sys.executable, "-m", "heinzel", "no-such-command"],
+        [sys.executable, "-I", "-m", "heinzel", "--version"],
+        [sys.executable, "-I", "-m", "heinzel", "no-such-command"],
     ]
 
 
@@ -230,6 +248,7 @@ def _target_fixture(tmp_path):
     scripts = prefix / "bin"
     scripts.mkdir(parents=True)
     (scripts / "hz").write_text("fixture", encoding="utf-8")
+    (scripts / "python").symlink_to(PYTHON)
     bin_dir = tmp_path / "installed-bin"
     bin_dir.mkdir()
     (bin_dir / "hz").symlink_to(scripts / "hz")
@@ -325,12 +344,14 @@ def test_tool_target_reaches_guarded_subprocess_and_drops_credentials(tmp_path, 
     ],
 )
 def test_tool_source_explicitly_names_heinzel_before_uv(tmp_path, source, expected):
-    installation = Installation(Progress(), prefix=tmp_path, uv="fake-uv")
+    prefix, _ = _target_fixture(tmp_path)
+    installation = Installation(Progress(), prefix=prefix, uv="fake-uv")
     assert installation.tool_install_command(source, [])[-1] == expected
 
 
 def test_tool_source_accepts_existing_local_wheel_and_directory(tmp_path):
-    installation = Installation(Progress(), prefix=tmp_path, uv="fake-uv")
+    prefix, _ = _target_fixture(tmp_path)
+    installation = Installation(Progress(), prefix=prefix, uv="fake-uv")
     wheel = tmp_path / "heinzel-0.9.6-py3-none-any.whl"
     wheel.touch()
     assert installation.tool_install_command(str(wheel), [])[-1] == f"heinzel @ {wheel.as_uri()}"
@@ -394,12 +415,71 @@ def test_failed_plugin_change_restores_tool_after_receipt_and_shim_disappear(tmp
         return subprocess.CompletedProcess(command, 0, "", "")
 
     installation = Installation(Progress(), prefix=prefix, uv="fake-uv", runner=fake_uv)
-    installation.hz = lambda *_args: "hz 0.9.6"  # type: ignore[method-assign]
+    probes = []
+    installation.hz = lambda *args: probes.append(args) or "hz 0.9.6"  # type: ignore[method-assign]
     with pytest.raises(HeinzelError, match="previous tool was restored"):
         installation.run(installation.tool_install_command("heinzel", ["plugin"]), "Add failed", "Adding")
     assert len(calls) == 2
+    assert probes == [("--version",)]
     assert calls[1][0] == installation.tool_install_command("heinzel", [])
     assert calls[0][1] == calls[1][1] == {"UV_TOOL_DIR": str(prefix.parent), "UV_TOOL_BIN_DIR": str(bin_dir)}
+
+
+def test_failed_plugin_change_never_probes_a_different_restored_generation(tmp_path):
+    prefix, bin_dir = _target_fixture(tmp_path)
+    receipt = prefix / "uv-receipt.toml"
+    original = receipt.read_text()
+    calls = []
+    probes = []
+
+    def fake_uv(command, environment):
+        calls.append(command)
+        if len(calls) == 1:
+            receipt.unlink()
+            (bin_dir / "hz").unlink()
+            return subprocess.CompletedProcess(command, 1, "", "failed")
+        receipt.write_text(original)
+        (prefix / "bin/hz").write_text("different installed content")
+        (bin_dir / "hz").symlink_to(prefix / "bin/hz")
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    installation = Installation(Progress(), prefix=prefix, uv="fake-uv", runner=fake_uv)
+    installation.hz = lambda *args: probes.append(args) or "hz 0.9.6"  # type: ignore[method-assign]
+    with pytest.raises(HeinzelError, match="restore it with"):
+        installation.run(installation.tool_install_command("heinzel", ["plugin"]), "Add failed", "Adding")
+    assert len(calls) == 2
+    assert probes == []
+
+
+def test_failed_plugin_change_never_probes_without_original_generation(tmp_path, monkeypatch):
+    prefix, bin_dir = _target_fixture(tmp_path)
+    receipt = prefix / "uv-receipt.toml"
+    original = receipt.read_text()
+    calls = []
+    probes = []
+
+    def fake_uv(command, environment):
+        calls.append(command)
+        if len(calls) == 1:
+            receipt.unlink()
+            (bin_dir / "hz").unlink()
+            return subprocess.CompletedProcess(command, 1, "", "failed")
+        receipt.write_text(original)
+        (bin_dir / "hz").symlink_to(prefix / "bin/hz")
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    installation = Installation(Progress(), prefix=prefix, uv="fake-uv", runner=fake_uv)
+    installation.hz = lambda *args: probes.append(args) or "hz 0.9.6"  # type: ignore[method-assign]
+
+    def unavailable():
+        msg = "Cannot inspect original generation"
+        raise HeinzelError(msg)
+
+    monkeypatch.setattr(installation, "startup_fingerprint", unavailable)
+    with pytest.raises(HeinzelError, match="restore it with"):
+        installation.run(installation.tool_install_command("heinzel", ["plugin"]), "Add failed", "Adding")
+    assert len(calls) == 2
+    assert probes == []
 
 
 def test_opt_in_current_installed_receipt_target_read_only():
@@ -494,3 +574,428 @@ def test_hz_probe_reports_missing_interpreter_as_heinzel_error(tmp_path, monkeyp
     monkeypatch.setattr(subprocess, "run", missing)
     with pytest.raises(HeinzelError, match="could not start after the change"):
         Installation(Progress(), prefix=tmp_path, uv="fake-uv").hz("--version")
+
+
+def test_rollback_identity_detects_same_bytes_rebuilt_file(tmp_path):
+    prefix, _ = _target_fixture(tmp_path)
+    installation = Installation(Progress(), prefix=prefix, uv="fake-uv")
+    before = installation.startup_fingerprint()
+    identity = installation.rollback_identity()
+    target = prefix / "bin/hz"
+    replacement = tmp_path / "replacement"
+    replacement.write_bytes(target.read_bytes())
+    replacement.chmod(target.stat().st_mode)
+    replacement.replace(target)
+    assert installation.startup_fingerprint() == before
+    assert installation.rollback_identity() != identity
+
+
+def test_tool_constraints_preserve_existing_markers_and_reject_unknown_receipt_fields(tmp_path):
+    prefix, _ = _target_fixture(tmp_path)
+    receipt = prefix / "uv-receipt.toml"
+    original = receipt.read_text()
+    receipt.write_text(
+        original + 'constraints = [{ name = "example", specifier = "<3", marker = "python_version >= \'3.10\'" }]\n'
+    )
+    installation = Installation(Progress(), prefix=prefix, uv="fake-uv")
+    assert installation.tool_constraints() == ['example<3; python_version >= "3.10"']
+    receipt.write_text(original + 'constraints = [{ name = "example", mystery = "unknown" }]\n')
+    with pytest.raises(HeinzelError, match="constraints cannot be safely preserved"):
+        installation.tool_constraints()
+
+
+@pytest.mark.parametrize("plugins", [["new-plugin"], []])
+def test_generic_tool_change_preserves_receipt_constraints(tmp_path, plugins):
+    prefix, _ = _target_fixture(tmp_path)
+    receipt = prefix / "uv-receipt.toml"
+    receipt.write_text(receipt.read_text() + 'constraints = [{ name = "example", specifier = "<3" }]\n')
+    paths = []
+
+    def fake_uv(command, environment):
+        assert command.count("--constraints") == 1
+        path = Path(command[command.index("--constraints") + 1])
+        paths.append(path)
+        assert path.read_text() == "example<3\n"
+        assert path.stat().st_mode & 0o777 == 0o600
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    installation = Installation(Progress(), prefix=prefix, uv="fake-uv", runner=fake_uv)
+    installation.run(installation.tool_install_command("heinzel", plugins), "Failed", "Changing")
+    assert len(paths) == 1
+    assert not paths[0].exists()
+
+
+def test_generic_tool_restore_keeps_captured_constraints_after_receipt_loss(tmp_path):
+    prefix, bin_dir = _target_fixture(tmp_path)
+    receipt = prefix / "uv-receipt.toml"
+    receipt.write_text(receipt.read_text() + 'constraints = [{ name = "example", specifier = "<3" }]\n')
+    original = receipt.read_text()
+    paths = []
+    environments = []
+
+    def fake_uv(command, environment):
+        path = Path(command[command.index("--constraints") + 1])
+        assert path.read_text() == "example<3\n"
+        paths.append(path)
+        environments.append(environment)
+        if len(paths) == 1:
+            receipt.unlink()
+            (bin_dir / "hz").unlink()
+            return subprocess.CompletedProcess(command, 1, "", "failed")
+        receipt.write_text(original)
+        (bin_dir / "hz").symlink_to(prefix / "bin" / "hz")
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    installation = Installation(Progress(), prefix=prefix, uv="fake-uv", runner=fake_uv)
+    probes = []
+    installation.hz = lambda *args: probes.append(args) or "ok"  # type: ignore[method-assign]
+    with pytest.raises(HeinzelError, match="previous tool was restored"):
+        installation.run(
+            installation.tool_install_command("heinzel", ["plugin"]), "Failed", "Changing", {"GIT_CONFIG_COUNT": "1"}
+        )
+    assert len(paths) == 2
+    assert paths[0] == paths[1]
+    assert not paths[0].exists()
+    assert environments[0] == environments[1]
+    assert environments[0]["GIT_CONFIG_COUNT"] == "1"
+    assert probes == [("--version",)]
+
+
+@pytest.mark.parametrize(
+    "policy",
+    [
+        'overrides = [{ name = "example" }]',
+        'excludes = ["example"]',
+        'build-constraint-dependencies = [{ name = "example" }]',
+        'options = { index = "example" }',
+        'overrides = "invalid"',
+        "unknown-policy = []",
+    ],
+)
+def test_generic_tool_refuses_unsupported_receipt_policy_before_uv(tmp_path, policy):
+    prefix, _ = _target_fixture(tmp_path)
+    receipt = prefix / "uv-receipt.toml"
+    receipt.write_text(receipt.read_text() + policy + "\n")
+    calls = []
+    installation = Installation(Progress(), prefix=prefix, uv="fake-uv", runner=lambda *args: calls.append(args))
+    with pytest.raises(HeinzelError, match=r"[Ii]nspect.*manually"):
+        installation.run(installation.tool_install_command("heinzel", ["plugin"]), "Failed", "Changing")
+    assert calls == []
+
+
+def test_generic_tool_refuses_to_mix_explicit_and_receipt_constraints(tmp_path):
+    prefix, _ = _target_fixture(tmp_path)
+    receipt = prefix / "uv-receipt.toml"
+    receipt.write_text(receipt.read_text() + 'constraints = [{ name = "example", specifier = "<3" }]\n')
+    calls = []
+    installation = Installation(Progress(), prefix=prefix, uv="fake-uv", runner=lambda *args: calls.append(args))
+    command = [*installation.tool_install_command("heinzel", ["plugin"]), "--constraints", "other.txt"]
+    with pytest.raises(HeinzelError, match="Cannot combine"):
+        installation.run(command, "Failed", "Changing")
+    assert calls == []
+
+
+def test_remove_only_verified_tool_overrides_and_return_projected_generation(tmp_path):
+    prefix, _ = _target_fixture(tmp_path)
+    receipt = prefix / "uv-receipt.toml"
+    wheel = tmp_path / "fixture.whl"
+    receipt.write_text(receipt.read_text() + f'overrides = [{{name="heinzel", path="{wheel}"}}]\n')
+    metadata = prefix / "direct_url.json"
+    metadata.write_text('{"url":"file:///fixture.whl"}')
+    installation = Installation(Progress(), prefix=prefix)
+    original = installation.startup_fingerprint()
+    installation.record_startup_state(expected=original)
+    prior_record = (prefix / ".heinzel-startup-state").read_bytes()
+    projected = installation.remove_tool_overrides(expected=original, overrides={"heinzel": wheel})
+    assert projected != original
+    assert projected == installation.startup_fingerprint()
+    assert "overrides" not in tomllib.loads(receipt.read_text())["tool"]
+    assert metadata.read_text() == '{"url":"file:///fixture.whl"}'
+    assert (prefix / ".heinzel-startup-state").read_bytes() == prior_record
+    assert not installation.startup_state_matches()
+    assert not (prefix / ".heinzel-startup-pending").exists()
+
+
+@pytest.mark.parametrize(
+    ("entries", "selection"),
+    [
+        ('{name="heinzel", path="/fixture/right.whl"}', {"heinzel": Path("/fixture/wrong.whl")}),
+        ('{name="other", path="/fixture/right.whl"}', {"heinzel": Path("/fixture/right.whl")}),
+        ('{name="heinzel", path="/fixture/right.whl", marker="extra"}', {"heinzel": Path("/fixture/right.whl")}),
+        (
+            '{name="heinzel", path="/fixture/right.whl"}, {name="heinzel", path="/fixture/right.whl"}',
+            {"heinzel": Path("/fixture/right.whl")},
+        ),
+        ('{name="heinzel", url="file:///fixture/right.whl"}', {"heinzel": Path("/fixture/right.whl")}),
+    ],
+)
+def test_remove_overrides_refuses_unverified_set_without_writing(tmp_path, entries, selection):
+    prefix, _ = _target_fixture(tmp_path)
+    receipt = prefix / "uv-receipt.toml"
+    receipt.write_text(receipt.read_text() + f"overrides = [{entries}]\n")
+    original = receipt.read_bytes()
+    installation = Installation(Progress(), prefix=prefix)
+    with pytest.raises(HeinzelError, match="overrides do not match"):
+        installation.remove_tool_overrides(expected=installation.startup_fingerprint(), overrides=selection)
+    assert receipt.read_bytes() == original
+    assert not (prefix / ".heinzel-startup-pending").exists()
+
+
+def test_remove_overrides_rejects_stale_generation(tmp_path):
+    prefix, _ = _target_fixture(tmp_path)
+    receipt = prefix / "uv-receipt.toml"
+    receipt.write_text(receipt.read_text() + 'overrides = [{name="heinzel", path="/fixture/a.whl"}]\n')
+    installation = Installation(Progress(), prefix=prefix)
+    with pytest.raises(HeinzelError, match="no longer matches"):
+        installation.remove_tool_overrides(expected="0" * 64, overrides={"heinzel": Path("/fixture/a.whl")})
+    assert "overrides" in tomllib.loads(receipt.read_text())["tool"]
+    assert not (prefix / ".heinzel-startup-pending").exists()
+
+
+def test_remove_overrides_requires_entire_multi_artifact_set(tmp_path):
+    prefix, _ = _target_fixture(tmp_path)
+    receipt = prefix / "uv-receipt.toml"
+    one, two = tmp_path / "core.whl", tmp_path / "plugin.whl"
+    receipt.write_text(
+        receipt.read_text() + f'overrides = [{{name="heinzel", path="{one}"}}, {{name="heinzel-demo", path="{two}"}}]\n'
+    )
+    installation = Installation(Progress(), prefix=prefix)
+    original = installation.startup_fingerprint()
+    with pytest.raises(HeinzelError, match="overrides do not match"):
+        installation.remove_tool_overrides(expected=original, overrides={"heinzel": one})
+    updated = installation.remove_tool_overrides(expected=original, overrides={"heinzel": one, "heinzel-demo": two})
+    assert updated == installation.startup_fingerprint()
+    assert "overrides" not in tomllib.loads(receipt.read_text())["tool"]
+
+
+def test_remove_overrides_interleaved_content_change_remains_pending(tmp_path, monkeypatch):
+    prefix, _ = _target_fixture(tmp_path)
+    receipt = prefix / "uv-receipt.toml"
+    receipt.write_text(receipt.read_text() + 'overrides = [{name="heinzel", path="/fixture/a.whl"}]\n')
+    installation = Installation(Progress(), prefix=prefix)
+    expected = installation.startup_fingerprint()
+    real_replace = _installation._installation_continuity.os.replace
+
+    def replace_then_change(*args, **kwargs):
+        real_replace(*args, **kwargs)
+        (prefix / "bin" / "hz").write_text("changed")
+
+    monkeypatch.setattr(_installation._installation_continuity.os, "replace", replace_then_change)
+    with pytest.raises(HeinzelError, match="could not be verified"):
+        installation.remove_tool_overrides(expected=expected, overrides={"heinzel": Path("/fixture/a.whl")})
+    assert (prefix / ".heinzel-startup-pending").exists()
+    assert not installation.startup_state_matches()
+
+
+def test_remove_overrides_sync_failure_after_replace_retains_pending(tmp_path, monkeypatch):
+    prefix, _ = _target_fixture(tmp_path)
+    receipt = prefix / "uv-receipt.toml"
+    wheel = tmp_path / "a.whl"
+    receipt.write_text(receipt.read_text() + f'overrides = [{{name="heinzel", path="{wheel}"}}]\n')
+    installation = Installation(Progress(), prefix=prefix)
+    expected = installation.startup_fingerprint()
+    real_replace = _installation._installation_continuity.os.replace
+    real_sync = _installation._installation_continuity.os.fsync
+    replaced = []
+
+    def replace(*args, **kwargs):
+        real_replace(*args, **kwargs)
+        replaced.append(True)
+
+    def sync(fd):
+        if replaced:
+            msg = "fixture fsync denied"
+            raise OSError(msg)
+        return real_sync(fd)
+
+    monkeypatch.setattr(_installation._installation_continuity.os, "replace", replace)
+    monkeypatch.setattr(_installation._installation_continuity.os, "fsync", sync)
+    with pytest.raises(OSError, match="fixture fsync denied"):
+        installation.remove_tool_overrides(expected=expected, overrides={"heinzel": wheel})
+    assert (prefix / ".heinzel-startup-pending").exists()
+    assert not installation.startup_state_matches()
+
+
+@pytest.mark.parametrize("prior", [None, [], [{"name": "heinzel", "specifier": "==0.9.7"}]])
+def test_remove_transient_constraint_preserves_exact_original_policy_and_duplicate(tmp_path, prior):
+    prefix, _ = _target_fixture(tmp_path)
+    receipt = prefix / "uv-receipt.toml"
+    if prior is not None:
+        entries = ", ".join('{name="heinzel", specifier="==0.9.7"}' for _ in prior)
+        receipt.write_text(receipt.read_text() + f"constraints = [{entries}]\n")
+    installation = Installation(Progress(), prefix=prefix)
+    policy = installation.capture_tool_constraint_policy()
+    content = receipt.read_text()
+    if prior is not None:
+        content = content[: content.index("constraints =")]
+    entries = ", ".join('{name="heinzel", specifier="==0.9.7"}' for _ in range(len(prior or []) + 1))
+    receipt.write_text(content + f"constraints = [{entries}]\n")
+    before = tomllib.loads(receipt.read_text())
+    expected = installation.startup_fingerprint()
+    projected = installation.remove_transient_tool_constraint(
+        expected=expected, original=policy, added="heinzel==0.9.7"
+    )
+    actual = tomllib.loads(receipt.read_text())
+    if prior is None:
+        del before["tool"]["constraints"]
+    else:
+        before["tool"]["constraints"] = prior
+    assert actual == before
+    assert projected == installation.startup_fingerprint() != expected
+    assert not (prefix / ".heinzel-startup-pending").exists()
+
+
+@pytest.mark.parametrize("extra", ["other==1", "heinzel==0.9.8", "heinzel>=0.9.7"])
+def test_remove_transient_constraint_refuses_wrong_or_extra_policy(tmp_path, extra):
+    prefix, _ = _target_fixture(tmp_path)
+    receipt = prefix / "uv-receipt.toml"
+    installation = Installation(Progress(), prefix=prefix)
+    policy = installation.capture_tool_constraint_policy()
+    receipt.write_text(receipt.read_text() + f'constraints = ["heinzel==0.9.7", "{extra}"]\n')
+    raw = receipt.read_bytes()
+    with pytest.raises(HeinzelError, match="constraints changed"):
+        installation.remove_transient_tool_constraint(
+            expected=installation.startup_fingerprint(), original=policy, added="heinzel==0.9.7"
+        )
+    assert receipt.read_bytes() == raw
+    assert not (prefix / ".heinzel-startup-pending").exists()
+
+
+def test_remove_transient_constraint_fails_closed_after_interleaved_file_change(tmp_path, monkeypatch):
+    prefix, _ = _target_fixture(tmp_path)
+    receipt = prefix / "uv-receipt.toml"
+    installation = Installation(Progress(), prefix=prefix)
+    policy = installation.capture_tool_constraint_policy()
+    receipt.write_text(receipt.read_text() + 'constraints = [{name="heinzel", specifier="==0.9.7"}]\n')
+    expected = installation.startup_fingerprint()
+    real_replace = _installation._installation_continuity.os.replace
+
+    def replace_then_change(*args, **kwargs):
+        real_replace(*args, **kwargs)
+        (prefix / "bin" / "hz").write_text("changed")
+
+    monkeypatch.setattr(_installation._installation_continuity.os, "replace", replace_then_change)
+    with pytest.raises(HeinzelError, match="could not be verified"):
+        installation.remove_transient_tool_constraint(expected=expected, original=policy, added="heinzel==0.9.7")
+    assert (prefix / ".heinzel-startup-pending").exists()
+    assert not installation.startup_state_matches()
+
+
+def test_remove_transient_constraint_rejects_stale_generation(tmp_path):
+    prefix, _ = _target_fixture(tmp_path)
+    receipt = prefix / "uv-receipt.toml"
+    installation = Installation(Progress(), prefix=prefix)
+    policy = installation.capture_tool_constraint_policy()
+    receipt.write_text(receipt.read_text() + 'constraints = [{name="heinzel", specifier="==0.9.7"}]\n')
+    raw = receipt.read_bytes()
+    with pytest.raises(HeinzelError, match="no longer matches"):
+        installation.remove_transient_tool_constraint(expected="0" * 64, original=policy, added="heinzel==0.9.7")
+    assert receipt.read_bytes() == raw
+    assert not (prefix / ".heinzel-startup-pending").exists()
+
+
+def test_remove_transient_constraint_refuses_inconsistent_snapshot(tmp_path):
+    prefix, _ = _target_fixture(tmp_path)
+    receipt = prefix / "uv-receipt.toml"
+    receipt.write_text(
+        receipt.read_text() + 'constraints = [{name="other", specifier="<3"}, {name="heinzel", specifier="==0.9.7"}]\n'
+    )
+    installation = Installation(Progress(), prefix=prefix)
+    malformed = ToolConstraintPolicy(present=False, entries=('{"name":"other","specifier":"<3"}',))
+    assert "other" not in repr(malformed)
+    raw = receipt.read_bytes()
+    with pytest.raises(HeinzelError, match="constraints changed"):
+        installation.remove_transient_tool_constraint(
+            expected=installation.startup_fingerprint(), original=malformed, added="heinzel==0.9.7"
+        )
+    assert receipt.read_bytes() == raw
+    assert not (prefix / ".heinzel-startup-pending").exists()
+
+
+def test_remove_transient_constraint_sync_failure_retains_pending(tmp_path, monkeypatch):
+    prefix, _ = _target_fixture(tmp_path)
+    receipt = prefix / "uv-receipt.toml"
+    installation = Installation(Progress(), prefix=prefix)
+    policy = installation.capture_tool_constraint_policy()
+    receipt.write_text(receipt.read_text() + 'constraints = [{name="heinzel", specifier="==0.9.7"}]\n')
+    expected = installation.startup_fingerprint()
+    real_replace = _installation._installation_continuity.os.replace
+    real_sync = _installation._installation_continuity.os.fsync
+    replaced = []
+
+    def replace(*args, **kwargs):
+        real_replace(*args, **kwargs)
+        replaced.append(True)
+
+    def sync(fd):
+        if replaced:
+            msg = "fixture fsync denied"
+            raise OSError(msg)
+        return real_sync(fd)
+
+    monkeypatch.setattr(_installation._installation_continuity.os, "replace", replace)
+    monkeypatch.setattr(_installation._installation_continuity.os, "fsync", sync)
+    with pytest.raises(OSError, match="fixture fsync denied"):
+        installation.remove_transient_tool_constraint(expected=expected, original=policy, added="heinzel==0.9.7")
+    assert (prefix / ".heinzel-startup-pending").exists()
+    assert not installation.startup_state_matches()
+
+
+def test_tool_install_preserves_verified_external_interpreter_through_removed_prefix_link(tmp_path):
+    prefix, _ = _target_fixture(tmp_path)
+    calls = []
+    installation = Installation(
+        Progress(),
+        prefix=prefix,
+        uv="fake-uv",
+        runner=lambda command, env: calls.append(command) or subprocess.CompletedProcess(command, 0, "", ""),
+    )
+    with installation.tool_transaction():
+        command = installation.tool_install_command("heinzel", [])
+        assert command[command.index("--python") + 1] == PYTHON
+        link = prefix / "bin/python"
+        assert link.resolve().is_relative_to(tmp_path.resolve())
+        assert not link.samefile(sys.executable)
+        assert not link.samefile(sys._base_executable)
+        link.unlink()
+        installation.attempt(command, "restore", recovery=True)
+    assert calls[0][calls[0].index("--python") + 1] == PYTHON
+
+
+def test_tool_install_rejects_external_interpreter_replacement_before_uv(tmp_path):
+    prefix, _ = _target_fixture(tmp_path)
+    installation = Installation(Progress(), prefix=prefix, uv="fake-uv", runner=lambda *_: pytest.fail("uv ran"))
+    with installation.tool_transaction():
+        command = installation.tool_install_command("heinzel", [])
+        original = Path(PYTHON)
+        assert original.resolve().is_relative_to(tmp_path.resolve())
+        assert not original.samefile(sys.executable)
+        assert not original.samefile(sys._base_executable)
+        replacement = original.with_name("replacement-python")
+        assert replacement.parent.resolve().is_relative_to(tmp_path.resolve())
+        assert not replacement.exists()
+        assert not replacement.is_symlink()
+        replacement.write_bytes(original.read_bytes())
+        replacement.chmod(0o700)
+        replacement.replace(original)
+        with pytest.raises(HeinzelError, match="interpreter changed"):
+            installation.attempt(command, "update")
+
+
+def test_tool_install_rejects_stale_command_after_interpreter_switch(tmp_path):
+    prefix, _ = _target_fixture(tmp_path)
+    installation = Installation(Progress(), prefix=prefix, uv="fake-uv", runner=lambda *_: pytest.fail("uv ran"))
+    command = installation.tool_install_command("heinzel", [])
+    other = tmp_path / "other-python"
+    assert not other.exists()
+    assert not other.is_symlink()
+    other.write_text("#!/bin/sh\nexit 0\n")
+    other.chmod(0o700)
+    link = prefix / "bin/python"
+    assert link.resolve().is_relative_to(tmp_path.resolve())
+    assert not link.samefile(sys.executable)
+    assert not link.samefile(sys._base_executable)
+    link.unlink()
+    link.symlink_to(other)
+    with installation.tool_transaction(), pytest.raises(HeinzelError, match="selected tool interpreter changed"):
+        installation.attempt(command, "update")

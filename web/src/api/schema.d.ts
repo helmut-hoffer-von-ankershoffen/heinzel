@@ -11633,6 +11633,11 @@ export interface components {
             /** @description The colours in dark mode. */
             dark: components["schemas"]["ThemeColours"];
             /**
+             * Default Priority
+             * @description Opt into automatic theme selection; higher wins, ties use module and theme name. None opts out.
+             */
+            default_priority?: number | null;
+            /**
              * Font Mono
              * @description The font-family stack of code, installed or shipped fonts, e.g. `ui-monospace, monospace`.
              */
@@ -12031,7 +12036,7 @@ export interface components {
             selected: string;
             /**
              * Themes
-             * @description The built-in `default` first, then the plugins' themes.
+             * @description Available themes; an inactive Core fallback is omitted when a provider recommends a default.
              */
             themes: components["schemas"]["ThemeView"][];
         };
@@ -17460,7 +17465,7 @@ export interface operations {
     system_plugin_add: {
         parameters: {
             query: {
-                /** @description A first-party plugin by name (`github`, `acme`), a PyPI package named heinzel-<name> (`heinzel-crm==1.2.0`), or a git repository over https (`git+https://github.com/acme-example/heinzel-crm@v1.0.0`); private GitHub repositories use your gh login. Pass `requirement` from an earlier answer to install exactly what it showed. */
+                /** @description A first-party plugin by name (`github`, `acme`), a PyPI package named heinzel-<name> (`heinzel-crm==1.2.0`), or a git repository over https (`git+https://github.com/acme-example/heinzel-crm@v1.0.0`); private GitHub repositories use your gh login. If the repository's distribution name cannot be resolved, provide its actual name in a named requirement, such as `heinzel-example @ git+https://example.com/repository`. Pass `requirement` from an earlier answer to install exactly what it showed. */
                 spec: string;
                 /** @description Install it. Without it, nothing is installed: the answer shows the source, version and publisher to confirm first, because a plugin runs with your rights. */
                 confirm?: boolean;

@@ -15,6 +15,52 @@ const answers = {
 
 describe("Mounted footer measurements", () => {
   afterEach(() => vi.restoreAllMocks());
+  it("places the last contributed status after native controls and overflow in DOM and keyboard order", async () => {
+    mockApi({
+      ...answers,
+      "/api/system/ui/status": [
+        {
+          id: "external:first",
+          module: "external",
+          plugin: "example-provider",
+          order: 10,
+          refresh: 60,
+          problem: null,
+          slots: { footer: true },
+          item: {
+            text: "First generic status",
+            tone: "neutral",
+            icon: "bot",
+            detail: [{ text: "First", tone: "neutral" }],
+          },
+        },
+        {
+          id: "external:last",
+          module: "external",
+          plugin: "example-provider",
+          order: 900,
+          refresh: 60,
+          problem: null,
+          slots: { footer: true },
+          item: {
+            text: "Last generic status",
+            tone: "neutral",
+            icon: "clock",
+            detail: [{ text: "Last", tone: "neutral" }],
+          },
+        },
+      ],
+      "/api/heinzel/sessions": { sessions: [] },
+    });
+    renderAt("/doctor");
+    const footer = await screen.findByRole("contentinfo");
+    const last = await within(footer).findByRole("button", { name: "Last generic status, off" });
+    const buttons = within(footer).getAllByRole("button");
+    expect(buttons.at(-1)).toBe(last);
+    expect(buttons.indexOf(last)).toBeGreaterThan(
+      buttons.indexOf(within(footer).getByRole("button", { name: /System health/ })),
+    );
+  });
   it("keeps the mounted durable Heinzel control visible alongside resources and health at 375px", async () => {
     vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (this: Element) {
       const id = this.getAttribute("data-footer-content");

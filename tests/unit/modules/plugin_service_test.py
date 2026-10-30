@@ -9,19 +9,36 @@ import sys
 import time
 import types
 import urllib.error
+from contextlib import contextmanager
 
 import pytest
 
 from heinzel import HeinzelError, Kernel, Module, ModuleRecord, Progress, Settings, Theme
 from heinzel.kernel import DEFAULT_THEME, Installation, Origin
 from heinzel.modules.system.plugin import _receipts, _service, _sources
-from heinzel.modules.system.plugin._models import PluginSettings
+from heinzel.modules.system.plugin._models import PluginCandidate, PluginInfo, PluginSettings
 from heinzel.modules.system.plugin._receipts import PluginReceipts
 from heinzel.modules.system.plugin._service import PluginService, distributions_in_spec
 
 pytestmark = pytest.mark.unit
 
-PYTHON = f"{sys.version_info.major}.{sys.version_info.minor}"
+PYTHON = ""
+
+
+@pytest.fixture(autouse=True)
+def isolated_python(tmp_path, monkeypatch):
+    base = tmp_path / "base-python"
+    assert base.parent.resolve() == tmp_path.resolve()
+    assert not base.exists()
+    assert not base.is_symlink()
+    base.write_text("#!/bin/sh\nexit 0\n")
+    assert base.resolve().is_relative_to(tmp_path.resolve())
+    assert not base.samefile(sys.executable)
+    assert not base.samefile(sys._base_executable)
+    base.chmod(0o700)
+    monkeypatch.setitem(globals(), "PYTHON", str(base))
+
+
 RECEIPT = """
 [tool]
 requirements = [
@@ -49,6 +66,7 @@ def tool_env(tmp_path):
     prefix = tmp_path / "tools" / "heinzel"
     (prefix / "bin").mkdir(parents=True)
     (prefix / "bin" / "hz").write_text("fixture", encoding="utf-8")
+    (prefix / "bin" / "python").symlink_to(PYTHON)
     entrypoints = tmp_path / "entrypoints"
     entrypoints.mkdir()
     shim = entrypoints / "hz"
@@ -56,6 +74,9 @@ def tool_env(tmp_path):
     (prefix / "uv-receipt.toml").write_text(
         RECEIPT + f"entrypoints = [{{ name = 'hz', install-path = {str(shim)!r} }}]\n", encoding="utf-8"
     )
+    metadata = prefix / "lib/python3.12/site-packages/heinzel-0.1.0.dist-info"
+    metadata.mkdir(parents=True)
+    (metadata / "METADATA").write_text("Metadata-Version: 2.1\nName: heinzel\nVersion: 0.1.0\n")
     return prefix
 
 
@@ -66,7 +87,24 @@ def service_for(make_kernel, prefix, runner=None, kernel=None, settings=None):
         old = ModuleRecord("old", Module("old", "An old plugin."), Origin("heinzel-old", "1.0.0", builtin=False))
         kernel = Kernel(make_kernel().settings, [old])
     configured = settings or PluginSettings(github_token=None, catalog_sources=[])
-    service = PluginService(kernel, installation, configured)
+
+    @contextmanager
+    def mutation(checkpoint, _identity):
+        scope = types.SimpleNamespace(
+            checkpoint_matched=checkpoint(),
+            capture=object,
+            verified_complete=lambda _generation: None,
+            request=lambda _plan: None,
+            abort_unchanged=lambda: None,
+        )
+        yield scope
+
+    # Unit collaborator: actual source/receipt/lifecycle enforcement has separate integration coverage.
+    installation.verify_installed_requirements = lambda *_args, **_kwargs: {}  # type: ignore[method-assign]
+    installation.remove_transient_tool_constraint = (  # type: ignore[method-assign]
+        lambda **_kwargs: installation.startup_fingerprint()
+    )
+    service = PluginService(kernel, installation, configured, lifecycle=types.SimpleNamespace(mutation=mutation))
     service.github_api = lambda path: _sources.get_json(f"https://api.github.com/{path}", configured.github_token, 10)
     return service
 
@@ -404,7 +442,8 @@ class FakeGitHubApi:
     def __init__(self, *, private=False, name="heinzel-crm", version="1.2.0", subdirectory=None):
         pyproject = f'[project]\nname = "{name}"\nversion = "{version}"\ndescription = "CRM notes."\n'
         pyproject += 'authors = [{ name = "Ada Example" }]\n'
-        content = {"content": base64.b64encode(pyproject.encode()).decode()}
+        pyproject += '[project.entry-points."heinzel.modules"]\ncrm = "crm"\n'
+        content = {"type": "file", "content": base64.b64encode(pyproject.encode()).decode()}
         where = f"{subdirectory}/pyproject.toml" if subdirectory else "pyproject.toml"
         base = "repos/acme-example/heinzel-crm"
         self.answers = {
@@ -430,9 +469,10 @@ class FakeGitHubApi:
         return self.answers[path]
 
 
-def installing(make_kernel, prefix, monkeypatch, gh=None):
-    """A service whose uv runs are recorded and whose fresh `hz system plugin list` answers nothing new."""
+def installing(make_kernel, prefix, monkeypatch, gh=None, identity=("1.1.0", None)):
+    """A service whose uv runs are recorded and whose fresh interpreter recognizes the installed fixture plugin."""
     runs = []
+    version, revision = identity
 
     def runner(command, environment=None):
         runs.append((command, environment))
@@ -440,7 +480,38 @@ def installing(make_kernel, prefix, monkeypatch, gh=None):
 
     monkeypatch.setattr(_sources.shutil, "which", lambda name: gh if name == "gh" else None)
     service = service_for(make_kernel, prefix, runner)
-    monkeypatch.setattr(service._installation, "hz", lambda *args: "[]")
+    monkeypatch.setattr(
+        service._installation,
+        "hz",
+        lambda *args: (
+            json.dumps(
+                [
+                    {
+                        "distribution": "heinzel-crm",
+                        "version": version,
+                        "revision": revision,
+                        "source_kind": "git" if revision else "pypi",
+                        "source_url": f"https://github.com/acme-example/heinzel-crm/tree/{revision}"
+                        if revision
+                        else None,
+                        "modules": ["crm"],
+                        "name": "crm",
+                    }
+                ]
+            )
+            if args[:3] == ("system", "plugin", "list")
+            else "[]"
+        ),
+    )
+    # Fixture-only host inventory follows its mocked package-manager state; production never forks here.
+    monkeypatch.setattr(
+        service,
+        "_host_list",
+        lambda **_kwargs: [
+            PluginInfo.model_validate(item)
+            for item in json.loads(service._installation.hz("system", "plugin", "list", "--json"))
+        ],
+    )
     return service, runs
 
 
@@ -478,7 +549,11 @@ def test_confirmed_add_installs_exactly_what_was_shown_and_records_it(make_kerne
     change = service.add("heinzel-crm", confirm=True)
     assert (change.done, change.restart_required, change.action) == (True, True, "add")
     [(command, environment)] = runs
-    assert command[-2:] == ["--with", "heinzel-crm==1.1.0"]
+    assert command[command.index("heinzel-crm==1.1.0") - 1 : command.index("heinzel-crm==1.1.0") + 1] == [
+        "--with",
+        "heinzel-crm==1.1.0",
+    ]
+    assert "--constraints" in command
     assert environment == {
         "UV_TOOL_DIR": str(tool_env.parent),
         "UV_TOOL_BIN_DIR": str(tool_env.parent.parent / "entrypoints"),
@@ -492,6 +567,253 @@ def test_confirmed_add_installs_exactly_what_was_shown_and_records_it(make_kerne
         "1.1.0",
         "Ada Example",
     )
+
+
+@pytest.mark.parametrize("receipted", [False, True])
+def test_uv_success_without_the_requested_plugin_is_not_a_successful_add(make_kernel, tool_env, monkeypatch, receipted):
+    service, runs = installing(make_kernel, tool_env, monkeypatch)
+    service.pypi = lambda _url: pypi_project("heinzel-crm", "1.1.0")
+    monkeypatch.setattr(service._installation, "hz", lambda *_args: "[]")
+    preview = service.add("heinzel-crm") if receipted else None
+    with pytest.raises(HeinzelError, match="not present after installation"):
+        service.add("heinzel-crm", confirm=True, operation_id=preview.operation_id if preview else None)
+    assert len(runs) == 1
+    assert service.history() == []
+    if preview:
+        assert service.operation(preview.operation_id).status == "unknown"
+
+
+@pytest.mark.parametrize("receipted", [False, True])
+@pytest.mark.parametrize("case", [(offline, source) for offline in (False, True) for source in ("path", "git", None)])
+def test_a_same_version_foreign_source_cannot_satisfy_a_pypi_add(make_kernel, tool_env, monkeypatch, receipted, case):
+    offline, source_kind = case
+    service, runs = installing(make_kernel, tool_env, monkeypatch)
+    service.pypi = raising(OSError("offline fixture")) if offline else lambda _url: pypi_project("heinzel-crm", "1.1.0")
+    inventory = [
+        {
+            "distribution": "heinzel-crm",
+            "version": "1.1.0",
+            "modules": ["crm"],
+            "name": "crm",
+            "source_kind": source_kind,
+            "revision": "a" * 40 if source_kind == "git" else None,
+            "source_url": "https://github.com/acme-example/heinzel-crm/tree/" + "a" * 40
+            if source_kind == "git"
+            else None,
+        }
+    ]
+    monkeypatch.setattr(service._installation, "hz", lambda *_args: json.dumps(inventory))
+    spec = "heinzel-crm==1.1.0"
+    preview = service.add(spec) if receipted else None
+    with pytest.raises(HeinzelError, match="identity is not present"):
+        service.add(spec, confirm=True, operation_id=preview.operation_id if preview else None)
+    assert len(runs) == 1
+    assert service.history() == []
+    if preview:
+        assert service.operation(preview.operation_id).status == "unknown"
+
+
+def test_host_identity_checks_never_start_the_changed_target_before_matching_its_source(
+    make_kernel, tool_env, monkeypatch
+):
+    service = service_for(
+        make_kernel, tool_env, lambda command, environment=None: subprocess.CompletedProcess(command, 0, "", "")
+    )
+    service.pypi = lambda _url: pypi_project("heinzel-crm", "1.1.0")
+    metadata = tool_env / "lib/python3.12/site-packages/heinzel_crm-1.1.0.dist-info"
+    metadata.mkdir(parents=True)
+    (metadata / "METADATA").write_text("Name: heinzel-crm\nVersion: 1.1.0\n")
+    (metadata / "entry_points.txt").write_text("[heinzel.modules]\ncrm = must_not_be_imported\n")
+    (metadata / "direct_url.json").write_text(
+        json.dumps(
+            {
+                "url": "https://github.com/acme-example/heinzel-crm",
+                "vcs_info": {"vcs": "git", "commit_id": "a" * 40},
+            }
+        )
+    )
+    monkeypatch.setattr(service._installation, "hz", lambda *_args: pytest.fail("Unverified target must never start"))
+    with pytest.raises(HeinzelError, match="identity is not present"):
+        service.add("heinzel-crm", confirm=True)
+    assert service.history() == []
+
+
+def test_checkpoint_is_bound_before_identity_checks_and_completed_only_after_runtime_and_history(
+    make_kernel, tool_env, monkeypatch
+):
+    service, runs = installing(make_kernel, tool_env, monkeypatch)
+    service.pypi = lambda _url: pypi_project("heinzel-crm", "1.1.0")
+    preview = service.add("heinzel-crm")
+    order = []
+    verify, changed, record, complete = (
+        service._verify_added,
+        service._changed,
+        service._record,
+        service._receipts.complete,
+    )
+
+    def fingerprint():
+        order.append("capture")
+        return "a" * 64
+
+    def identity(*args):
+        order.append("host")
+        return verify(*args)
+
+    def runtime(*args):
+        order.append("runtime")
+        return changed(*args)
+
+    def history(*args, **kwargs):
+        order.append("history")
+        return record(*args, **kwargs)
+
+    def checkpoint(*, expected):
+        assert expected == "a" * 64
+        assert service.history()[0].distribution == "heinzel-crm"
+        assert service.operation(preview.operation_id).status == "running"
+        order.append("checkpoint")
+
+    def completed(*args):
+        order.append("complete")
+        return complete(*args)
+
+    monkeypatch.setattr(service._installation, "startup_fingerprint", fingerprint, raising=False)
+    monkeypatch.setattr(service._installation, "startup_state_matches", lambda: True, raising=False)
+    monkeypatch.setattr(service._installation, "record_startup_state", checkpoint, raising=False)
+    monkeypatch.setattr(service, "_verify_added", identity)
+    monkeypatch.setattr(service, "_changed", runtime)
+    monkeypatch.setattr(service, "_record", history)
+    monkeypatch.setattr(service._receipts, "complete", completed)
+    assert service.add("heinzel-crm", confirm=True, operation_id=preview.operation_id).done
+    assert order[0] == "capture"
+    assert [step for step in order if step != "capture"] == ["host", "runtime", "history", "checkpoint", "complete"]
+    assert order.index("host") < order.index("runtime") < order.index("history") < order.index("checkpoint")
+    assert len(runs) == 1
+
+
+def test_a_failed_generation_commit_leaves_an_unknown_nonreplayable_add_receipt(make_kernel, tool_env, monkeypatch):
+    service, runs = installing(make_kernel, tool_env, monkeypatch)
+    service.pypi = lambda _url: pypi_project("heinzel-crm", "1.1.0")
+    preview = service.add("heinzel-crm")
+    monkeypatch.setattr(service._installation, "startup_fingerprint", lambda: "a" * 64, raising=False)
+    monkeypatch.setattr(service._installation, "startup_state_matches", lambda: True, raising=False)
+
+    def changed_generation(*, expected):
+        assert expected == "a" * 64
+        msg = "The independently checked generation changed."
+        raise HeinzelError(msg)
+
+    monkeypatch.setattr(service._installation, "record_startup_state", changed_generation, raising=False)
+    with pytest.raises(HeinzelError, match="generation changed"):
+        service.add("heinzel-crm", confirm=True, operation_id=preview.operation_id)
+    assert service.operation(preview.operation_id).status == "unknown"
+    with pytest.raises(HeinzelError, match="unknown"):
+        service.add("heinzel-crm", confirm=True, operation_id=preview.operation_id)
+    assert len(runs) == 1
+
+
+@pytest.mark.parametrize("previously_verified", [False, True])
+def test_only_a_previously_verified_standard_app_can_refresh_continuity(
+    make_kernel, tool_env, monkeypatch, previously_verified
+):
+    service, runs = installing(make_kernel, tool_env, monkeypatch)
+    service.pypi = lambda _url: pypi_project("heinzel-crm", "1.1.0")
+    order = []
+
+    def prior_state():
+        assert runs == [], "Eligibility must be captured before uv replaces the prefix and its marker"
+        order.append("prior")
+        return previously_verified
+
+    def fingerprint():
+        order.append("capture-after" if runs else "capture-before")
+        return "a" * 64
+
+    def checkpoint(*, expected):
+        assert expected == "a" * 64
+        order.append("record")
+
+    monkeypatch.setattr(service._installation, "startup_state_matches", prior_state, raising=False)
+    monkeypatch.setattr(service._installation, "startup_fingerprint", fingerprint, raising=False)
+    monkeypatch.setattr(service._installation, "record_startup_state", checkpoint, raising=False)
+    assert service.add("heinzel-crm", confirm=True).done
+    assert order.index("prior") < order.index("capture-before") < order.index("capture-after")
+    assert ("record" in order) is previously_verified
+    if previously_verified:
+        assert order.index("capture-after") < order.index("record")
+    assert len(runs) == 1
+
+
+def test_uv_noop_removal_cannot_record_success_or_start_the_target(make_kernel, tool_env, monkeypatch):
+    service, runs = installing(make_kernel, tool_env, monkeypatch)
+    monkeypatch.setattr(
+        service,
+        "_host_list",
+        lambda **_kwargs: [
+            PluginInfo(distribution="heinzel-old", name="old", version="1.0.0", modules=[], source_kind="pypi")
+        ],
+    )
+    monkeypatch.setattr(service._installation, "hz", lambda *_args: pytest.fail("Failed removal must not probe"))
+    with pytest.raises(HeinzelError, match="still installed"):
+        service.remove("heinzel-old")
+    assert len(runs) == 1
+    assert service.history() == []
+
+
+def test_removal_still_fails_when_distribution_remains_without_plugin_entrypoints(make_kernel, tool_env, monkeypatch):
+    service = service_for(
+        make_kernel, tool_env, lambda command, environment=None: subprocess.CompletedProcess(command, 0, "", "")
+    )
+    metadata = tool_env / "lib/python3.12/site-packages/heinzel_old-1.0.0.dist-info"
+    metadata.mkdir(parents=True)
+    (metadata / "METADATA").write_text("Name: heinzel-old\nVersion: 1.0.0\n")
+    monkeypatch.setattr(service._installation, "hz", lambda *_args: pytest.fail("Failed removal must not probe"))
+    with pytest.raises(HeinzelError, match="still installed"):
+        service.remove("heinzel-old")
+    assert service.history() == []
+
+
+def test_an_unverified_repository_noop_cannot_report_an_existing_plugin_as_new(make_kernel, tool_env, monkeypatch):
+    service, runs = installing(make_kernel, tool_env, monkeypatch)
+    # Another terminal installed a plugin after this kernel booted; it is not evidence that this add worked.
+    original = json.dumps(
+        [
+            *[item.model_dump(mode="json") for item in service.installed()],
+            {"distribution": "heinzel-harbor", "version": "2.0.0", "modules": ["harbor"], "name": "harbor"},
+        ]
+    )
+    monkeypatch.setattr(service._installation, "hz", lambda *_args: original)
+    with pytest.raises(HeinzelError, match="not present after installation"):
+        service.add("heinzel-harbor @ git+https://git.example.org/team/collection", confirm=True)
+    assert len(runs) == 1
+    assert service.history() == []
+
+
+@pytest.mark.parametrize("receipted", [False, True])
+@pytest.mark.parametrize("case", [(False, False), (False, True), (True, False), (True, True)])
+def test_add_verifies_pinned_identity_and_keeps_exact_reinstalls_idempotent(
+    make_kernel, tool_env, monkeypatch, receipted, case
+):
+    git, matching = case
+    version = "1.2.0" if git else ("1.1.0" if matching else "1.0.0")
+    revision = ("a" if matching else "b") * 40 if git else None
+    service, runs = installing(make_kernel, tool_env, monkeypatch, identity=(version, revision))
+    service.pypi = lambda _url: pypi_project("heinzel-crm", "1.1.0")
+    service.github_api = FakeGitHubApi()
+    spec = "https://github.com/acme-example/heinzel-crm" if git else "heinzel-crm"
+    preview = service.add(spec) if receipted else None
+    operation_id = preview.operation_id if preview else None
+    if matching:
+        assert service.add(spec, confirm=True, operation_id=operation_id).done
+        assert len(service.history()) == 1
+    else:
+        with pytest.raises(HeinzelError, match="identity is not present"):
+            service.add(spec, confirm=True, operation_id=operation_id)
+        assert service.history() == []
+        if preview:
+            assert service.operation(preview.operation_id).status == "unknown"
+    assert len(runs) == 1
 
 
 def test_preview_receipt_binds_candidate_and_duplicate_confirmation_returns_durable_result(
@@ -523,6 +845,116 @@ def test_preview_receipt_binds_candidate_and_duplicate_confirmation_returns_dura
     assert again == result
     assert reloaded.operation(preview.operation_id).status == "completed"
     assert reloaded.operation(preview.operation_id).result == result
+
+
+@pytest.mark.parametrize("constraint", ["==2.0.0", ">=2"])
+def test_offline_metadata_does_not_erase_an_explicit_package_constraint(make_kernel, tool_env, monkeypatch, constraint):
+    service, runs = installing(make_kernel, tool_env, monkeypatch, identity=("1.0.0", None))
+    service.pypi = raising(OSError("offline fixture"))
+    spec = "heinzel-crm" + constraint
+    preview = service.add(spec)
+    assert preview.candidate.version is None
+    with pytest.raises(HeinzelError, match="identity is not present"):
+        service.add(spec, confirm=True, operation_id=preview.operation_id)
+    assert len(runs) == 1
+    assert service.history() == []
+    assert service.operation(preview.operation_id).status == "unknown"
+
+
+@pytest.mark.parametrize("git_copy", [False, True])
+def test_a_named_unresolved_git_ref_cannot_be_satisfied_by_an_unchanged_copy(
+    make_kernel, tool_env, monkeypatch, git_copy
+):
+    service, runs = installing(make_kernel, tool_env, monkeypatch)
+    if git_copy:
+        existing = [
+            {
+                "distribution": "heinzel-crm",
+                "version": "1.1.0",
+                "modules": ["crm"],
+                "name": "crm",
+                "source_kind": "git",
+                "revision": "a" * 40,
+                "source_url": "https://git.example.org/team/plugin",
+            }
+        ]
+        monkeypatch.setattr(service._installation, "hz", lambda *_args: json.dumps(existing))
+    with pytest.raises(HeinzelError, match="identity is not present"):
+        service.add("heinzel-crm @ git+https://git.example.org/team/plugin@v2", confirm=True)
+    assert len(runs) == 1
+    assert service.history() == []
+
+
+@pytest.mark.parametrize("named", [False, True])
+def test_an_unverified_repository_records_the_actual_verified_plugin_identity(
+    make_kernel, tool_env, monkeypatch, named
+):
+    service, runs = installing(make_kernel, tool_env, monkeypatch)
+    actual = [
+        {
+            "distribution": "heinzel-crm",
+            "version": "2.0.0",
+            "modules": ["crm"],
+            "name": "crm",
+            "source_kind": "git",
+            "revision": "a" * 40,
+            "source_url": "https://git.example.org/team/plugin",
+        }
+    ]
+    monkeypatch.setattr(
+        service._installation,
+        "hz",
+        lambda *args: json.dumps(actual if runs else []) if args[:3] == ("system", "plugin", "list") else "[]",
+    )
+    source = ("heinzel-crm @ git+" if named else "") + "https://git.example.org/team/plugin"
+    if not named:
+        with pytest.raises(HeinzelError, match="distribution name could not be verified"):
+            service.add(source, confirm=True)
+        assert runs == []
+        assert service.history() == []
+        return
+    result = service.add(source, confirm=True)
+    assert result.distribution == "heinzel-crm"
+    assert result.plugins[0].revision == "a" * 40
+    assert service.history()[0].distribution == "heinzel-crm"
+
+
+@pytest.mark.parametrize("confirm", [False, True])
+def test_unresolved_git_name_is_refused_before_receipt_or_uv(make_kernel, tool_env, monkeypatch, confirm):
+    service, runs = installing(make_kernel, tool_env, monkeypatch)
+    with pytest.raises(HeinzelError, match="named requirement"):
+        service.add("git+https://git.example.org/team/plugin", confirm=confirm)
+    assert runs == []
+    assert service.history() == []
+    assert not list(service._receipts.directory.glob("*.json"))
+
+
+def test_old_unnamed_preview_is_refused_without_claim_or_uv(make_kernel, tool_env, monkeypatch):
+    service, runs = installing(make_kernel, tool_env, monkeypatch)
+    candidate = PluginCandidate(
+        spec="git+https://git.example.org/team/plugin",
+        requirement="git+https://git.example.org/team/plugin",
+        distribution=None,
+        version=None,
+        summary="",
+        source="git",
+        url="https://git.example.org/team/plugin",
+        publisher=None,
+        first_party=False,
+        private=None,
+        revision=None,
+        installed_version=None,
+        warnings=[],
+    )
+    preview = service._receipts.create(candidate)
+    path = service._receipts._path(preview.operation_id)
+    before = path.read_bytes()
+    with pytest.raises(HeinzelError, match="named requirement"):
+        service.add(candidate.spec, confirm=True, operation_id=preview.operation_id)
+    assert path.read_bytes() == before
+    assert service.operation(preview.operation_id).status == "previewed"
+    assert runs == []
+    assert service.history() == []
 
 
 def test_receipt_marked_unknown_after_owner_process_exits(make_kernel, tool_env, monkeypatch):
@@ -673,8 +1105,8 @@ def test_a_missing_repository_ref_or_package_is_refused_before_anything_is_insta
 
 def test_another_git_host_is_installed_as_given_with_a_warning(make_kernel, tool_env, monkeypatch):
     service, _ = installing(make_kernel, tool_env, monkeypatch)
-    candidate = service.candidate("git+https://git.example.org/team/heinzel-notes@v1")
-    assert candidate.requirement == "git+https://git.example.org/team/heinzel-notes@v1"
+    candidate = service.candidate("heinzel-notes @ git+https://git.example.org/team/heinzel-notes@v1")
+    assert candidate.requirement == "heinzel-notes @ git+https://git.example.org/team/heinzel-notes@v1"
     assert (candidate.version, candidate.publisher) == (None, None)
     assert "git.example.org isn't GitHub" in candidate.warnings[0]
 
@@ -707,7 +1139,7 @@ def test_external_themes_have_the_same_provenance_rules_as_other_plugins(make_ke
 
 
 def test_with_gh_git_asks_gh_for_github_credentials_and_no_token_passes_through(make_kernel, tool_env, monkeypatch):
-    service, runs = installing(make_kernel, tool_env, monkeypatch, gh="/opt/bin/gh")
+    service, runs = installing(make_kernel, tool_env, monkeypatch, gh="/opt/bin/gh", identity=("1.2.0", "a" * 40))
     service.github_api = FakeGitHubApi(private=True)
     monkeypatch.setenv("GIT_CONFIG_COUNT", "2")
     service.add("git+https://github.com/acme-example/heinzel-crm", confirm=True)
@@ -742,9 +1174,15 @@ def test_develop_installs_a_checkout_under_its_project_name(make_kernel, tool_en
     checkout = tmp_path / "work"
     checkout.mkdir()
     (checkout / "pyproject.toml").write_text('[project]\nname = "heinzel_Crm"\nversion = "0.1.0"\n', encoding="utf-8")
+    metadata = tool_env / "lib/python3.12/site-packages/heinzel_crm-0.1.0.dist-info"
+    metadata.mkdir(parents=True)
+    (metadata / "METADATA").write_text("Name: heinzel-crm\nVersion: 0.1.0\n")
+    (metadata / "entry_points.txt").write_text("[heinzel.modules]\ncrm = must_not_be_imported\n")
+    (metadata / "direct_url.json").write_text(json.dumps({"url": checkout.as_uri(), "dir_info": {}}))
     change = service.develop(checkout)
     assert (change.action, change.distribution) == ("develop", "heinzel-crm")
-    assert runs[0][0][-1] == f"heinzel-crm @ {checkout.resolve().as_uri()}"
+    assert f"heinzel-crm @ {checkout.resolve().as_uri()}" in runs[0][0]
+    assert "--constraints" in runs[0][0]
     assert [(e.action, e.source, e.version) for e in service.history()] == [("develop", "path", "0.1.0")]
     empty = tmp_path / "empty"
     empty.mkdir()
@@ -753,6 +1191,32 @@ def test_develop_installs_a_checkout_under_its_project_name(make_kernel, tool_en
     (empty / "pyproject.toml").write_text("[tool.x]\n", encoding="utf-8")
     with pytest.raises(HeinzelError, match="names no project"):
         service.develop(empty)
+
+
+@pytest.mark.parametrize("case", ["missing", "wrong-source", "wrong-version", "missing-entrypoint", "malformed"])
+def test_develop_never_executes_a_target_with_unmatched_local_identity(
+    make_kernel, tool_env, monkeypatch, tmp_path, case
+):
+    service = service_for(
+        make_kernel, tool_env, lambda command, environment=None: subprocess.CompletedProcess(command, 0, "", "")
+    )
+    checkout = tmp_path / "work"
+    checkout.mkdir()
+    (checkout / "pyproject.toml").write_text('[project]\nname = "heinzel-crm"\nversion = "0.1.0"\n')
+    if case != "missing":
+        metadata = tool_env / "lib/python3.12/site-packages/heinzel_crm-0.1.0.dist-info"
+        metadata.mkdir(parents=True)
+        version = "0.2.0" if case == "wrong-version" else "0.1.0"
+        (metadata / "METADATA").write_text(f"Name: heinzel-crm\nVersion: {version}\n")
+        if case != "missing-entrypoint":
+            (metadata / "entry_points.txt").write_text("[heinzel.modules]\ncrm = must_not_be_imported\n")
+        source = (tmp_path / "different").as_uri() if case == "wrong-source" else checkout.as_uri()
+        provenance = [] if case == "malformed" else {"url": source, "dir_info": {}}
+        (metadata / "direct_url.json").write_text(json.dumps(provenance))
+    monkeypatch.setattr(service._installation, "hz", lambda *_args: pytest.fail("Unverified target must never start"))
+    with pytest.raises(HeinzelError, match="local plugin source is not present"):
+        service.develop(checkout)
+    assert service.history() == []
 
 
 def test_history_skips_lines_it_cannot_read(make_kernel, tmp_path):
@@ -1257,3 +1721,54 @@ def test_installed_sdk_export_is_versioned_and_never_overwrites_files(make_kerne
     assert "interface PluginSDK" in (destination / "index.d.ts").read_text()
     with pytest.raises(HeinzelError, match="new writable SDK directory"):
         service_for(make_kernel, tmp_path).sdk(destination)
+
+
+@pytest.mark.parametrize("confirm", [False, True])
+@pytest.mark.parametrize("name", ["heinzel", "HeInZeL"])
+def test_named_git_core_is_refused_before_receipt_or_uv(make_kernel, tool_env, monkeypatch, confirm, name):
+    service, runs = installing(make_kernel, tool_env, monkeypatch)
+    with pytest.raises(HeinzelError, match="hz system update"):
+        service.add(f"{name} @ git+https://git.example.org/team/repository", confirm=confirm)
+    assert runs == []
+    assert service.history() == []
+    assert not list(service._receipts.directory.glob("*.json"))
+
+
+@pytest.mark.parametrize("mismatched", [False, True])
+def test_old_core_git_preview_is_refused_without_claim_or_uv(make_kernel, tool_env, monkeypatch, mismatched):
+    service, runs = installing(make_kernel, tool_env, monkeypatch)
+    candidate = PluginCandidate(
+        spec="heinzel @ git+https://git.example.org/team/repository",
+        requirement="heinzel @ git+https://git.example.org/team/repository",
+        distribution="heinzel-plugin" if mismatched else "heinzel",
+        version=None,
+        summary="",
+        source="git",
+        url="https://git.example.org/team/repository",
+        publisher=None,
+        first_party=False,
+        private=None,
+        revision=None,
+        installed_version=None,
+        warnings=[],
+    )
+    preview = service._receipts.create(candidate)
+    path = service._receipts._path(preview.operation_id)
+    before = path.read_bytes()
+    with pytest.raises(HeinzelError, match="hz system update"):
+        service.add(candidate.spec, confirm=True, operation_id=preview.operation_id)
+    assert path.read_bytes() == before
+    assert service.operation(preview.operation_id).status == "previewed"
+    assert runs == []
+    assert service.history() == []
+
+
+def test_develop_core_is_refused_before_mutation(make_kernel, tool_env, monkeypatch, tmp_path):
+    service, runs = installing(make_kernel, tool_env, monkeypatch)
+    checkout = tmp_path / "core"
+    checkout.mkdir()
+    (checkout / "pyproject.toml").write_text('[project]\nname = "HeInZeL"\nversion = "0.1.0"\n')
+    with pytest.raises(HeinzelError, match="hz system update"):
+        service.develop(checkout)
+    assert runs == []
+    assert service.history() == []

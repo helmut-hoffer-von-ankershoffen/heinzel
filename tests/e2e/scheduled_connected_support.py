@@ -9,7 +9,14 @@ from heinzel.kernel import CompiledJobs
 from heinzel.modules.system.daemon import DaemonService, DaemonSettings
 
 
-def start_daemon_probe(kernel, directory):
+def _wait_for_slot(cadence_seconds, now, wait):
+    """Keep the real-clock test turn away from the host's intended expiry boundary."""
+    remaining = cadence_seconds - now().timestamp() % cadence_seconds
+    if remaining < 10:
+        wait(remaining + 0.1)
+
+
+def start_daemon_probe(kernel, directory, *, cadence_seconds=420):
     result = {"failure": None, "deduplicated": False}
 
     def run():
@@ -26,6 +33,7 @@ def start_daemon_probe(kernel, directory):
             with current.local("daemon"):
                 jobs = kernel.resolve(CompiledJobs).jobs
                 job = next(job for job in jobs if job.name.startswith("agent-" + session.lower()))
+                _wait_for_slot(cadence_seconds, lambda: datetime.now(UTC), ready.wait)
                 now = datetime.now(UTC)
                 daemon = DaemonService(kernel, kernel.settings, DaemonSettings(), clock=lambda: now, zone=UTC)
                 registered = [item for item in daemon._jobs() if item.id == "heinzel:" + job.name]

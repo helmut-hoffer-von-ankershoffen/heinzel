@@ -18,8 +18,11 @@ version it has if that still resolves, and otherwise taken out of the installati
 import json
 import re
 import shlex
-from collections.abc import Mapping, Sequence
+import tempfile
+from collections.abc import Generator, Mapping, Sequence
+from contextlib import AbstractContextManager, contextmanager, nullcontext
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Literal
 
 from packaging.requirements import InvalidRequirement, Requirement
@@ -27,7 +30,15 @@ from packaging.utils import canonicalize_name
 from packaging.version import InvalidVersion, Version
 
 from heinzel import HeinzelError, __version__
-from heinzel.kernel import CorePin, Installation, ReleaseSource, subprocess_environment
+from heinzel.kernel import (
+    CorePin,
+    DaemonHandoverPlan,
+    DaemonInstallationLifecycle,
+    DaemonMutationScope,
+    Installation,
+    ReleaseSource,
+    subprocess_environment,
+)
 from heinzel.modules.system._models import PluginUpdate, UpdateResult
 from heinzel.modules.system._service import DEFAULT_REPOSITORY, RELEASE_TIMEOUT
 from heinzel.modules.system.plugin._sources import git_credentials
@@ -90,10 +101,111 @@ class Installed:
 class UpdateService:
     """Updates the uv tool environment Heinzelmännchen runs in, keeping its plugins."""
 
-    def __init__(self, installation: Installation, releases: ReleaseSource) -> None:
-        """Create the service; both are injected."""
+    def __init__(
+        self,
+        installation: Installation,
+        releases: ReleaseSource,
+        *,
+        lifecycle: DaemonInstallationLifecycle | None = None,
+        require_lifecycle: bool = False,
+    ) -> None:
+        """Create the service with an optional trusted lifecycle boundary."""
         self._installation = installation
         self._releases = releases
+        self._lifecycle = lifecycle
+        self._require_lifecycle = require_lifecycle
+
+    def _mutation(self) -> AbstractContextManager[DaemonMutationScope | None]:
+        if self._lifecycle is not None:
+            return self._lifecycle.mutation(
+                self._installation.startup_state_matches, self._installation.rollback_identity
+            )
+        if self._require_lifecycle:
+            msg = "The daemon lifecycle boundary is unavailable; the installation was not changed."
+            raise HeinzelError(msg)
+        return nullcontext(None)
+
+    def _require_running_version(self, current: str) -> None:
+        try:
+            installed = self._installation.installed_core_version()
+            matched = Version(installed) == Version(current)
+        except (HeinzelError, InvalidVersion) as exc:
+            msg = "The installed core version cannot be verified; reload the application before updating."
+            raise HeinzelError(msg) from exc
+        if not matched:
+            msg = (
+                f"This process is running hz {current}, but the installation is hz {installed}; reload before updating."
+            )
+            raise HeinzelError(msg)
+
+    def _automatic_generation(self, current: str) -> str | None:
+        if self._lifecycle is None:
+            self._require_running_version(current)
+            return None
+        before = self._installation.startup_fingerprint()
+        self._require_running_version(current)
+        if self._installation.startup_fingerprint() != before:
+            msg = "The installation changed while checking its version; reload before updating."
+            raise HeinzelError(msg)
+        return before
+
+    def _require_generation(self, current: str, initial: str | None) -> None:
+        if initial is not None and self._installation.startup_fingerprint() != initial:
+            msg = "The installation changed since this update was prepared; reload before updating."
+            raise HeinzelError(msg)
+        self._require_running_version(current)
+        if initial is not None and self._installation.startup_fingerprint() != initial:
+            msg = "The installation changed while checking its version; reload before updating."
+            raise HeinzelError(msg)
+
+    def _verify_automatic_generation(
+        self, current: str, initial: str | None, scope: DaemonMutationScope | None
+    ) -> None:
+        try:
+            self._require_generation(current, initial)
+        except HeinzelError:
+            if scope is not None:
+                self._abort_or_leave_pending(scope)
+            raise
+
+    def _verify_selection(self, pin: CorePin, plugins: list[CorePin], scope: DaemonMutationScope | None) -> None:
+        if self._installation.core_pin() != pin or self._installation.plugin_pins() != plugins:
+            if scope is not None:
+                self._abort_or_leave_pending(scope)
+            msg = "The installation requirements changed before the update; review them and retry."
+            raise HeinzelError(msg)
+        try:
+            names = [canonicalize_name(Requirement(plugin.requirement).name) for plugin in plugins]
+        except InvalidRequirement as exc:
+            if scope is not None:
+                self._abort_or_leave_pending(scope)
+            msg = "The installed plugin requirements are invalid; inspect them before updating."
+            raise HeinzelError(msg) from exc
+        if "heinzel" in names or len(set(names)) != len(names):
+            if scope is not None:
+                self._abort_or_leave_pending(scope)
+            msg = "The installed tool requirements name the same distribution more than once; inspect them first."
+            raise HeinzelError(msg)
+
+    @staticmethod
+    def _abort_or_leave_pending(scope: DaemonMutationScope) -> bool:
+        try:
+            scope.abort_unchanged()
+        except (HeinzelError, OSError):
+            return False
+        return True
+
+    def _finish_mutation(
+        self, scope: DaemonMutationScope, plan: DaemonHandoverPlan, candidate: str, result: UpdateResult
+    ) -> UpdateResult:
+        if scope.checkpoint_matched:
+            self._installation.record_startup_state(expected=candidate)
+        scope.verified_complete(candidate)
+        handover = scope.request(plan)
+        if handover.requested:
+            message = f"{result.message}\nThe daemon handover was requested; a fresh service tick is pending."
+            return result.model_copy(update={"message": message})
+        return result
 
     def update(
         self, source: str | None = None, current: str = __version__, channel: Literal["release", "main"] = "release"
@@ -114,19 +226,29 @@ class UpdateService:
             raise HeinzelError(msg)
         plugins = self._installation.plugin_pins()
         if source is not None:
-            return self._install(source, pin, plugins, current=current, latest=None, target=source)
+            return self._install(source, pin, plugins, current=current, latest=None, target=source, automatic=False)
+        generation = self._automatic_generation(current)
         if channel == "main":
             result = self._install(
-                self._at(pin, DEFAULT_BRANCH), pin, plugins, current=current, latest=None, target=None, channel="main"
+                self._at(pin, DEFAULT_BRANCH),
+                pin,
+                plugins,
+                current=current,
+                latest=None,
+                target=None,
+                channel="main",
+                generation=generation,
             )
             return self._with_release_hint(pin, result)
         if pin.kind == "release":
-            return self._to_latest_release(pin, plugins, current)
+            return self._to_latest_release(pin, plugins, current, generation)
         if pin.kind == "ref" and pin.ref == DEFAULT_BRANCH:
-            return self._switch_to_releases(pin, plugins, current)
+            return self._switch_to_releases(pin, plugins, current, generation)
         if pin.kind in ("default", "index"):
-            return self._install(pin.requirement, pin, plugins, current=current, latest=None, target=None)
-        return self._with_plugins(self._pinned(pin, current), pin, plugins)
+            return self._install(
+                pin.requirement, pin, plugins, current=current, latest=None, target=None, generation=generation
+            )
+        return self._with_plugins(self._pinned(pin, current), pin, plugins, generation)
 
     @staticmethod
     def _at(pin: CorePin, ref: str) -> str:
@@ -135,7 +257,9 @@ class UpdateService:
             return pin.at(ref)
         return f"{pin.name} @ git+https://github.com/{DEFAULT_REPOSITORY}@{ref}"
 
-    def _switch_to_releases(self, pin: CorePin, plugins: list[CorePin], current: str) -> UpdateResult:
+    def _switch_to_releases(
+        self, pin: CorePin, plugins: list[CorePin], current: str, generation: str | None
+    ) -> UpdateResult:
         """Reinstall from the newest release's tag, unless that is a downgrade.
 
         Raises:
@@ -155,7 +279,7 @@ class UpdateService:
             ahead = UpdateResult(
                 before=current, after=current, latest=latest, pinned_to=pin.ref, updated=False, message=message, next=[]
             )
-            return self._with_plugins(ahead, pin, plugins)
+            return self._with_plugins(ahead, pin, plugins, generation)
         return self._install(
             self._at(pin, f"v{latest}"),
             pin,
@@ -164,9 +288,12 @@ class UpdateService:
             latest=latest,
             target=f"v{latest}",
             channel="releases",
+            generation=generation,
         )
 
-    def _to_latest_release(self, pin: CorePin, plugins: list[CorePin], current: str) -> UpdateResult:
+    def _to_latest_release(
+        self, pin: CorePin, plugins: list[CorePin], current: str, generation: str | None
+    ) -> UpdateResult:
         try:
             latest = self._latest(current)
         # Isolation boundary: whatever the package source raises, the user gets one error with what to do.
@@ -187,8 +314,16 @@ class UpdateService:
                 message=f"hz {current} is up to date (releases).",
                 next=[],
             )
-            return self._with_plugins(current_release, pin, plugins)
-        return self._install(pin.at(f"v{latest}"), pin, plugins, current=current, latest=latest, target=f"v{latest}")
+            return self._with_plugins(current_release, pin, plugins, generation)
+        return self._install(
+            pin.at(f"v{latest}"),
+            pin,
+            plugins,
+            current=current,
+            latest=latest,
+            target=f"v{latest}",
+            generation=generation,
+        )
 
     def _release_hint(self, pin: CorePin, after: str) -> tuple[str | None, str | None]:
         """The newest release, and the command that moves to it, if it is newer than `after`; else None for both."""
@@ -251,11 +386,29 @@ class UpdateService:
         latest: str | None,
         target: str | None,
         channel: str | None = None,
+        automatic: bool = True,
+        generation: str | None = None,
     ) -> UpdateResult:
-        with self._installation.tool_transaction():
-            return self._install_scoped(
-                core, pin, plugins, current=current, latest=latest, target=target, channel=channel
-            )
+        with self._mutation() as scope:
+            plan = scope.capture() if scope is not None else None
+            with self._installation.tool_transaction():
+                self._verify_selection(pin, plugins, scope)
+                if automatic:
+                    self._verify_automatic_generation(current, generation, scope)
+                result, candidate = self._install_scoped(
+                    core,
+                    pin,
+                    plugins,
+                    current=current,
+                    latest=latest,
+                    target=target,
+                    channel=channel,
+                    scope=scope,
+                    explicit_source=not automatic,
+                )
+                if scope is not None and plan is not None and candidate is not None:
+                    result = self._finish_mutation(scope, plan, candidate, result)
+                return result
 
     def _install_scoped(  # noqa: PLR0913 - what is installed, from where, with which plugins, and what for
         self,
@@ -267,7 +420,9 @@ class UpdateService:
         latest: str | None,
         target: str | None,
         channel: str | None = None,
-    ) -> UpdateResult:
+        scope: DaemonMutationScope | None = None,
+        explicit_source: bool = False,
+    ) -> tuple[UpdateResult, str | None]:
         """Install `core` with every plugin in one run; a plugin that blocks it is kept or taken out, never blocking.
 
         Raises:
@@ -276,28 +431,79 @@ class UpdateService:
         before = self._plugin_versions()
         activity = f"Updating Heinzelmännchen{f' to {target}' if target else ''}"
         environment = git_credentials(subprocess_environment())
-        modes, reasons, failure = self._converge(
-            core, plugins, before, activity, environment=environment, may_drop=True
-        )
+        original = self._original_generation()
+        with self._install_constraints(
+            core, current, self._constraint_candidates(core, plugins, before), enabled=not explicit_source, scope=scope
+        ) as (constraints, captured_constraints):
+            modes, reasons, failure = self._converge(
+                core, plugins, before, activity, environment=environment, may_drop=True, constraints=constraints
+            )
         if modes is None:
-            raise HeinzelError(self._failure(pin, plugins, current, target, failure, environment=environment))
+            constraint_hint = (
+                " Inspect existing constraints; to change them intentionally, choose an explicit uv command."
+                if explicit_source and constraints is not None
+                else ""
+            )
+            if scope is not None:
+                unchanged = self._abort_or_leave_pending(scope)
+                detail = (
+                    "The original installation remains unchanged."
+                    if unchanged
+                    else "The installation is uncertain; explicit recovery is required."
+                )
+                msg = f"Could not update hz {current}: {failure}\n{detail}{constraint_hint}"
+                raise HeinzelError(msg)
+            failure_message = self._failure(
+                pin, plugins, current, target, failure, environment=environment, original=original
+            )
+            msg = f"{failure_message}{constraint_hint}"
+            raise HeinzelError(msg)
+        candidate = self._installation.startup_fingerprint() if scope is not None else None
+        selected = self._selected_requirements(core, plugins, modes, before)
+        metadata = self._installation.verify_installed_requirements(
+            selected,
+            expected_version=target.removeprefix("v")
+            if target and re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+(?:[a-zA-Z0-9.+-]*)?", target)
+            else None,
+            forbidden=tuple(plugin.name for plugin in plugins if modes[canonicalize_name(plugin.name)] == "drop"),
+            constraints=captured_constraints,
+        )
+        if not explicit_source and Version(metadata["heinzel"]) < Version(current):
+            msg = (
+                "The resolved automatic update is older than the installed core; "
+                "no changed code was started and explicit recovery is required."
+            )
+            raise HeinzelError(msg)
         try:
             after = self._version()
         except HeinzelError as exc:
             installed = f"uv installed {target}" if target else "uv upgraded hz"
-            msg = f"{installed}, but hz doesn't start.\n{self._still_working(pin, plugins, current, environment)}"
+            recovery = (
+                "The installation is uncertain; explicit recovery is required."
+                if scope is not None
+                else self._still_working(pin, plugins, current, environment, original)
+            )
+            msg = f"{installed}, but hz doesn't start.\n{recovery}"
             raise HeinzelError(msg) from exc
+        if Version(after) != Version(metadata["heinzel"]):
+            msg = "The running hz version does not match its inspected metadata."
+            raise HeinzelError(msg)
         now = self._installation.core_pin()
         if target is None and after == current:  # nothing newer where the installation follows
             message = f"hz {current} is up to date{f' ({channel})' if channel else ''}."
         elif after == current:
             message = f"Reinstalled hz {current} from {target}"
+        elif explicit_source:
+            message = f"Installed hz {after} from {target}; this process is running hz {current}."
         else:
             message = f"Updated hz {current} → {after}."
-        updates = self._plugin_updates(plugins, modes, reasons, before, self._plugin_versions(), core)
+        after_plugins = self._plugin_versions(strict=True)
+        self._verify_plugin_versions(metadata, after_plugins)
+        updates = self._plugin_updates(plugins, modes, reasons, before, after_plugins, core)
         message = _with_summary(message, updates)
-        if after != current or target is not None:
-            message = self._restart_daemon(message)
+        if candidate is not None and self._installation.startup_fingerprint() != candidate:
+            msg = "The installation changed during post-update verification."
+            raise HeinzelError(msg)
         return UpdateResult(
             before=current,
             after=after,
@@ -307,22 +513,11 @@ class UpdateService:
             message=message,
             next=[],
             plugins=updates,
-        )
+        ), candidate
 
-    def _restart_daemon(self, message: str) -> str:
-        """`message` and the service-manager reload result; a later tick reports the code it actually ran.
-
-        The reload result is not process attestation. Nothing is said when no daemon is installed.
-        """
-        try:
-            restarted = json.loads(self._installation.hz("system", "daemon", "restart", "--json")).get("restarted")
-        except (HeinzelError, ValueError, AttributeError):
-            return f"{message}\nThe daemon could not be restarted; run: hz system daemon restart"
-        if restarted:
-            return f"{message}\nThe daemon service manager accepted a reload request for the new hz."
-        return message
-
-    def _with_plugins(self, result: UpdateResult, pin: CorePin, plugins: list[CorePin]) -> UpdateResult:
+    def _with_plugins(
+        self, result: UpdateResult, pin: CorePin, plugins: list[CorePin], generation: str | None
+    ) -> UpdateResult:
         """`result` of an update that leaves hz as it is, with the plugins asked again.
 
         The ones that follow a branch or an index may have a newer version. hz stays where it is, so a plugin that
@@ -333,31 +528,150 @@ class UpdateService:
             p.kind in ("index", "default", "ref") for p in plugins
         ):
             return result
-        before = self._plugin_versions()
+        with self._mutation() as scope:
+            plan = scope.capture() if scope is not None else None
+            return self._refresh_plugins(result, pin, plugins, (scope, plan), generation)
+
+    def _refresh_plugins(
+        self,
+        result: UpdateResult,
+        pin: CorePin,
+        plugins: list[CorePin],
+        lifecycle: tuple[DaemonMutationScope | None, DaemonHandoverPlan | None],
+        generation: str | None,
+    ) -> UpdateResult:
+        scope, plan = lifecycle
         environment = git_credentials(subprocess_environment())
         with self._installation.tool_transaction():
-            modes, reasons, failure = self._converge(
-                pin.requirement, plugins, before, "Updating the plugins", environment=environment, may_drop=False
+            self._verify_selection(pin, plugins, scope)
+            self._verify_automatic_generation(result.before, generation, scope)
+            before = self._plugin_versions()
+            original = self._original_generation()
+            candidates = self._constraint_candidates(pin.requirement, plugins, before)
+            with self._install_constraints(pin.requirement, result.before, candidates, enabled=False, scope=scope) as (
+                constraints,
+                captured_constraints,
+            ):
+                modes, reasons, failure = self._converge(
+                    pin.requirement,
+                    plugins,
+                    before,
+                    "Updating the plugins",
+                    environment=environment,
+                    may_drop=False,
+                    constraints=constraints,
+                )
+            if modes is None:
+                if scope is not None:
+                    unchanged = self._abort_or_leave_pending(scope)
+                    if not unchanged:
+                        msg = "The plugin update was uncertain; explicit recovery is required."
+                        raise HeinzelError(msg)
+                    recovery = "The original installation remains unchanged."
+                else:
+                    recovery = self._still_working(pin, plugins, result.before, environment, original)
+                names = blocking_plugins([p.requirement for p in plugins], failure) or [
+                    canonicalize_name(p.name) for p in plugins
+                ]
+                reason = f"Not updated: {_reason(failure)}"
+                updates = [
+                    self._unchanged(p, before, reason if canonicalize_name(p.name) in names else None) for p in plugins
+                ]
+                return result.model_copy(
+                    update={"plugins": updates, "message": f"{_with_summary(result.message, updates)}\n{recovery}"}
+                )
+            candidate = self._installation.startup_fingerprint() if scope is not None else None
+            selected = self._selected_requirements(pin.requirement, plugins, modes, before)
+            metadata = self._installation.verify_installed_requirements(
+                selected, expected_version=pin.version, constraints=captured_constraints
             )
-            recovery = self._still_working(pin, plugins, result.before, environment) if modes is None else None
-        if modes is None:  # nothing changed: uv replaces an environment only once the new one is installed
-            names = blocking_plugins([p.requirement for p in plugins], failure) or [
-                canonicalize_name(p.name) for p in plugins
-            ]
-            reason = f"Not updated: {_reason(failure)}"
-            updates = [
-                self._unchanged(p, before, reason if canonicalize_name(p.name) in names else None) for p in plugins
-            ]
-            message = _with_summary(result.message, updates)
-            return result.model_copy(update={"plugins": updates, "message": f"{message}\n{recovery}"})
-        updates = self._plugin_updates(plugins, modes, reasons, before, self._plugin_versions(), pin.requirement)
-        return result.model_copy(
-            update={
-                "plugins": updates,
-                "message": _with_summary(result.message, updates),
-                "updated": result.updated or any(u.status == "upgraded" for u in updates),
-            }
+            if Version(metadata["heinzel"]) < Version(result.before):
+                msg = (
+                    "The resolved automatic update is older than the installed core; "
+                    "no changed code was started and explicit recovery is required."
+                )
+                raise HeinzelError(msg)
+            if Version(self._version()) != Version(metadata["heinzel"]):
+                msg = "The running hz version does not match its inspected metadata."
+                raise HeinzelError(msg)
+            after = self._plugin_versions(strict=True)
+            self._verify_plugin_versions(metadata, after)
+            updates = self._plugin_updates(plugins, modes, reasons, before, after, pin.requirement)
+            refreshed = result.model_copy(
+                update={
+                    "plugins": updates,
+                    "message": _with_summary(result.message, updates),
+                    "updated": result.updated or any(u.status == "upgraded" for u in updates),
+                }
+            )
+            if candidate is not None:
+                if self._installation.startup_fingerprint() != candidate:
+                    msg = "The installation changed during post-update verification."
+                    raise HeinzelError(msg)
+                if scope is not None and plan is not None:
+                    refreshed = self._finish_mutation(scope, plan, candidate, refreshed)
+            return refreshed
+
+    def _selected_requirements(
+        self, core: str, plugins: list[CorePin], modes: dict[str, Mode], before: dict[str, Installed]
+    ) -> list[str]:
+        return [
+            self._installation.core_requirement(core),
+            *(
+                self._spec(
+                    plugin, modes[canonicalize_name(plugin.name)], core, before.get(canonicalize_name(plugin.name))
+                )
+                for plugin in plugins
+                if modes[canonicalize_name(plugin.name)] != "drop"
+            ),
+        ]
+
+    @contextmanager
+    def _install_constraints(
+        self, core: str, current: str, candidates: list[str], *, enabled: bool, scope: DaemonMutationScope | None
+    ) -> Generator[tuple[Path | None, tuple[str, ...]], None, None]:
+        """Preserve prior constraints and add an automatic index floor where needed.
+
+        Yields:
+            A private constraints file when needed and the exact captured policy.
+
+        Raises:
+            HeinzelError: If existing constraints or the selected source cannot be preserved safely.
+            OSError: If the private constraints file cannot be written or removed.
+        """
+        requirement = Requirement(self._installation.core_requirement(core))
+        pinned = any(
+            item.operator in {"==", "==="} and not item.version.endswith(".*") for item in requirement.specifier
         )
+        try:
+            constraints = self._installation.tool_constraints()
+            if enabled and requirement.url is None and not pinned:
+                constraints.append(f"heinzel>={Version(current)}")
+            captured = tuple(constraints)
+            # Candidates include new and keep alternatives for each plugin, not one simultaneous selection.
+            for candidate in candidates:
+                self._installation.validate_install_constraints([candidate], captured)
+            if not constraints:
+                yield None, captured
+                return
+            with tempfile.TemporaryDirectory(prefix="heinzel-update-") as directory:
+                path = Path(directory) / "constraints.txt"
+                path.write_text("\n".join(constraints) + "\n", encoding="utf-8")
+                yield path, captured
+        except (HeinzelError, OSError):
+            if scope is not None:
+                self._abort_or_leave_pending(scope)
+            raise
+
+    def _constraint_candidates(self, core: str, plugins: list[CorePin], before: dict[str, Installed]) -> list[str]:
+        return [
+            self._installation.core_requirement(core),
+            *(
+                self._spec(plugin, mode, core, before.get(canonicalize_name(plugin.name)))
+                for plugin in plugins
+                for mode in ("new", "keep")
+            ),
+        ]
 
     def _converge(  # noqa: PLR0913 - same credentials are used for the operation and recovery
         self,
@@ -368,6 +682,7 @@ class UpdateService:
         *,
         environment: Mapping[str, str],
         may_drop: bool,
+        constraints: Path | None = None,
     ) -> tuple[dict[str, Mode] | None, dict[str, str], str]:
         """Install `core` and every plugin; each plugin that blocks it is stepped down until the install works.
 
@@ -387,6 +702,8 @@ class UpdateService:
                 if modes[n] != "drop"
             ]
             command = self._installation.tool_install_command(core, specs, refresh=True)
+            if constraints is not None:
+                command.extend(["--constraints", str(constraints)])
             try:
                 result = self._installation.attempt(command, activity, environment)
             except HeinzelError as exc:
@@ -495,16 +812,30 @@ class UpdateService:
             reason=failure,
         )
 
-    def _plugin_versions(self) -> dict[str, Installed]:
-        """The plugins a fresh `hz` has, by distribution; empty if it can't be asked (a report must not fail)."""
+    def _plugin_versions(self, *, strict: bool = False) -> dict[str, Installed]:
+        """Get plugin versions; ordinary pre-update reports can tolerate an unavailable runtime.
+
+        Raises:
+            HeinzelError: If strict post-update inspection cannot read the inventory.
+        """
         try:
             items = json.loads(self._installation.hz("system", "plugin", "list", "--json"))
             return {
                 canonicalize_name(str(i["distribution"])): Installed(str(i["version"]), i.get("revision"))
                 for i in items
             }
-        except (HeinzelError, ValueError, KeyError, TypeError):
+        except (HeinzelError, ValueError, KeyError, TypeError) as exc:
+            if strict:
+                msg = "The updated plugin inventory could not be verified."
+                raise HeinzelError(msg) from exc
             return {}
+
+    @staticmethod
+    def _verify_plugin_versions(metadata: dict[str, str], actual: dict[str, Installed]) -> None:
+        for name, version in metadata.items():
+            if name != "heinzel" and (name not in actual or Version(actual[name].version) != Version(version)):
+                msg = "The updated plugin inventory does not match its inspected metadata."
+                raise HeinzelError(msg)
 
     def _failure(  # noqa: PLR0913 - retain the exact environment for recovery
         self,
@@ -515,6 +846,7 @@ class UpdateService:
         output: str,
         *,
         environment: Mapping[str, str],
+        original: str | None,
     ) -> str:
         """What failed, which plugins are named in it, and that the previous hz still works or was put back."""
         to = f" to {target}" if target else ""
@@ -525,26 +857,39 @@ class UpdateService:
             else ""
         )
         headline = f"Could not update hz {current}{to}.{named}"
-        return "\n".join(filter(None, [headline, self._still_working(pin, plugins, current, environment), output]))
+        recovery = self._still_working(pin, plugins, current, environment, original)
+        return "\n".join(filter(None, [headline, recovery, output]))
 
-    def _still_working(self, pin: CorePin, plugins: list[CorePin], current: str, environment: Mapping[str, str]) -> str:
-        """Check that hz still starts; if it doesn't, reinstall what the receipt had before.
+    def _still_working(
+        self, pin: CorePin, plugins: list[CorePin], current: str, environment: Mapping[str, str], original: str | None
+    ) -> str:
+        """Probe only the captured generation; otherwise try restoring the old receipt without executing it.
 
         uv replaces a tool environment only once the new one resolved and installed, so a failed `uv tool install`
-        leaves the previous one in place; this is the safety net if it ever doesn't.
+        usually leaves the previous one in place. A restore is not proof that the old bytes were restored.
         """
-        try:
-            return f"hz {self._version()} is still installed, with every plugin."
-        except HeinzelError:
-            pass
+        if self._same_generation(original):
+            try:
+                return f"hz {self._version()} is still installed, with every plugin."
+            except HeinzelError:
+                pass
         restore = self._installation.tool_install_command(pin.requirement, [p.requirement for p in plugins])
         try:
             restored = self._installation.attempt(restore, f"Restoring hz {current}", environment, recovery=True)
-            if restored.returncode == 0:
+            if restored.returncode == 0 and self._same_generation(original):
                 return f"hz {self._version()} was restored, with every plugin."
         except HeinzelError:
             pass
         return f"hz may not start; restore it with: {self._installation.tool_restore_hint(restore)}"
+
+    def _original_generation(self) -> str | None:
+        try:
+            return self._installation.startup_fingerprint()
+        except HeinzelError:
+            return None
+
+    def _same_generation(self, expected: str | None) -> bool:
+        return expected is not None and self._original_generation() == expected
 
     def _latest(self, current: str) -> str:
         """The highest release, pre-releases included only when `current` is one."""
