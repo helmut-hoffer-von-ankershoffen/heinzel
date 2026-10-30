@@ -469,6 +469,9 @@ function Terms({ proposal }: { proposal: SchemaConnectedGrantProposal | SchemaRo
       <p>Provider-reported source revision: {terms.source_revision}</p>
       <p>Operation: {terms.operation}</p>
       <p>Provider-reported scopes: {terms.provider_scopes.join(", ") || "none"}</p>
+      {terms.candidate_read_disclosure && (
+        <p className="break-words">Provider-reported candidate read: {terms.candidate_read_disclosure}</p>
+      )}
       {"window_policy" in proposal && (
         <p>
           Rolling window: {proposal.window_policy.lookback_seconds} seconds before and{" "}

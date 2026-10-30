@@ -42,6 +42,14 @@ class ConnectedReadReview(BaseModel):
         max_length=128, description="Observed provider scopes, which may exceed the host read grant."
     )
     fixed_arguments: dict[str, JsonValue] = Field(max_length=32, description="Exact host-constrained read arguments.")
+    candidate_read_disclosure: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=2000,
+        strict=True,
+        exclude_if=lambda value: value is None,
+        description="Provider-reported description of candidate data read before local filtering, when supplied.",
+    )
 
     @model_validator(mode="after")
     def bounded(self) -> "ConnectedReadReview":
@@ -55,6 +63,10 @@ class ConnectedReadReview(BaseModel):
             or any(
                 not scope or len(scope) > _MAX_SCOPE_LENGTH or not scope.isascii() or not scope.isprintable()
                 for scope in self.provider_scopes
+            )
+            or (
+                self.candidate_read_disclosure is not None
+                and (not self.candidate_read_disclosure.strip() or not self.candidate_read_disclosure.isprintable())
             )
             or len(json.dumps(self.model_dump(mode="json"), ensure_ascii=True).encode()) > _MAX_REVIEW_BYTES
         ):
