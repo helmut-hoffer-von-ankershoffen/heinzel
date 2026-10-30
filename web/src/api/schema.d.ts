@@ -314,6 +314,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/heinzel/approve-connected-read-set": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Record an exact trusted human-confirmed read-set approval; do not execute a read.
+         * @description Record an exact trusted human-confirmed read-set approval; do not execute a read.
+         */
+        post: operations["heinzel_approve_connected_read_set"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/heinzel/approve-model-grant": {
         parameters: {
             query?: never;
@@ -454,6 +474,86 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/heinzel/connected-read-set-approval": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Inspect the latest valid, unrevoked whole-set approval without executing a read.
+         * @description Inspect the latest valid, unrevoked whole-set approval without executing a read.
+         */
+        get: operations["heinzel_connected_read_set_approval"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/heinzel/connected-read-set-context": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Bind local review recovery state to the authenticated owner and session.
+         * @description Bind local review recovery state to the authenticated owner and session.
+         */
+        get: operations["heinzel_connected_read_set_context"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/heinzel/connected-read-set-proposal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Inspect the latest private read-set proposal; this is not an approval.
+         * @description Inspect the latest private read-set proposal; this is not an approval.
+         */
+        get: operations["heinzel_connected_read_set_proposal"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/heinzel/connected-read-set-review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Inspect the latest exact set review after fresh source and account checks.
+         * @description Inspect the latest exact set review after fresh source and account checks.
+         */
+        get: operations["heinzel_connected_read_set_review"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/heinzel/connected-read-state": {
         parameters: {
             query?: never;
@@ -586,6 +686,26 @@ export interface paths {
          * @description Read the current inert proposal for the personal session, if one exists.
          */
         get: operations["heinzel_latest_scheduled_agent_proposal"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/heinzel/latest-source-set-suggestion-view": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Inspect the latest inert suggested sources; no provider was contacted or approved.
+         * @description Inspect the latest inert suggested sources; no provider was contacted or approved.
+         */
+        get: operations["heinzel_latest_source_set_suggestion_view"];
         put?: never;
         post?: never;
         delete?: never;
@@ -794,6 +914,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/heinzel/prepare-connected-read-set-review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Re-observe the exact current set; this does not issue or consume approval.
+         * @description Re-observe the exact current set; this does not issue or consume approval.
+         */
+        post: operations["heinzel_prepare_connected_read_set_review"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/heinzel/prepare-suggested-source": {
         parameters: {
             query?: never;
@@ -888,6 +1028,26 @@ export interface paths {
          * @description Observe and propose exact connected-read terms; this grants no access.
          */
         post: operations["heinzel_propose_connected_read"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/heinzel/propose-connected-read-set": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Observe the selected fixed reads and propose them together without granting access.
+         * @description Observe the selected fixed reads and propose them together without granting access.
+         */
+        post: operations["heinzel_propose_connected_read_set"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1048,6 +1208,26 @@ export interface paths {
          * @description Revoke this exact connected-read grant before future tool calls.
          */
         post: operations["heinzel_revoke_connected_read"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/heinzel/revoke-connected-read-set": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Revoke the complete exact set before any later reads.
+         * @description Revoke the complete exact set before any later reads.
+         */
+        post: operations["heinzel_revoke_connected_read_set"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2596,6 +2776,26 @@ export interface paths {
          * @description Stage current connected-read terms for an explicit human decision.
          */
         post: operations["system_runner_chat_propose_connected_read_review"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/runner/chat/propose-connected-read-set-review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Stage the current read-set review for an explicit human decision.
+         * @description Stage the current read-set review for an explicit human decision.
+         */
+        post: operations["system_runner_chat_propose_connected_read_set_review"];
         delete?: never;
         options?: never;
         head?: never;
@@ -8880,6 +9080,132 @@ export interface components {
             turn_id: string;
         };
         /**
+         * ReadSetEntry
+         * @description An opaque host-issued selector and its proposed terms.
+         */
+        ReadSetEntry: {
+            /**
+             * Handle
+             * @description An opaque host selector for this exact entry.
+             */
+            handle: string;
+            /** @description The exact proposed read terms, without approval. */
+            terms: components["schemas"]["ReadSetTerms"];
+        };
+        /**
+         * ReadSetProposal
+         * @description A private proposal; its existence does not authorize any access.
+         */
+        ReadSetProposal: {
+            /**
+             * Entries
+             * @description The bounded sources proposed for review together.
+             */
+            entries: components["schemas"]["ReadSetEntry"][];
+            /**
+             * Owner
+             * @description The authenticated owner of this private proposal.
+             */
+            owner: string;
+            /**
+             * Provenance
+             * @description How this proposal was staged.
+             * @default owner-request
+             * @constant
+             */
+            provenance: "owner-request";
+            /**
+             * Request Id
+             * @description The stable request identifying this proposal.
+             */
+            request_id: string;
+            /**
+             * Revision
+             * @description The recorded proposal revision.
+             */
+            revision: number;
+            /**
+             * Session
+             * @description The owner's agent conversation receiving these proposed sources.
+             */
+            session: string;
+        };
+        /**
+         * ReadSetReview
+         * @description Bounded host observations, without approval, read authority or an atomic multi-provider snapshot.
+         *
+         *     Any later grant or read must freshly revalidate each selected source and account.
+         */
+        ReadSetReview: {
+            /** @description The whole exact proposal covered by this review. */
+            proposal: components["schemas"]["ReadSetProposal"];
+            /**
+             * Provenance
+             * @description The host re-observed each selected provider and account.
+             * @default host-observed
+             * @constant
+             */
+            provenance: "host-observed";
+            /**
+             * Request Id
+             * @description The stable request identifying this exact review.
+             */
+            request_id: string;
+            /**
+             * Revision
+             * @description The recorded review revision.
+             */
+            revision: number;
+        };
+        /**
+         * ReadSetSelection
+         * @description The owner's requested fixed capability and arguments; it is not a source review.
+         */
+        ReadSetSelection: {
+            /**
+             * Capability
+             * @description The configured capability to inspect.
+             */
+            capability: string;
+            /**
+             * Fixed Arguments
+             * @description Exact arguments proposed for this read.
+             */
+            fixed_arguments: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            /**
+             * Method
+             * @description The fixed read operation to review.
+             */
+            method: string;
+        };
+        /**
+         * ReadSetTerms
+         * @description Unverified proposed terms, not a provider observation or a grant.
+         */
+        ReadSetTerms: {
+            /**
+             * Binding Sha256
+             * @description The proposed provider binding, rechecked by the host before approval.
+             */
+            binding_sha256: string;
+            /**
+             * Capability
+             * @description The selected configured capability.
+             */
+            capability: string;
+            /**
+             * Method
+             * @description The selected read operation.
+             */
+            method: string;
+            /** @description Proposed source, account, scopes and read arguments; not independent evidence. */
+            review: components["schemas"]["ConnectedReadReview"];
+            /** @description Optional proposed rolling bounds; their presence does not authorize a schedule. */
+            window_policy?: components["schemas"]["RollingWindowPolicy"] | null;
+        };
+        /**
          * RecipientPreview
          * @description A resolved recipient in the exact snapshot awaiting human review.
          */
@@ -10664,6 +10990,67 @@ export interface components {
              * @description What people pick it by, e.g. `Claude FM`.
              */
             title: string;
+        };
+        /**
+         * SourceSetItem
+         * @description One unverified model-suggested fixed read.
+         */
+        SourceSetItem: {
+            /**
+             * Capability
+             * @description The suggested configured capability.
+             */
+            capability: string;
+            /**
+             * Fixed Arguments
+             * @description Suggested arguments for the person to inspect.
+             */
+            fixed_arguments: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            /**
+             * Method
+             * @description The suggested fixed read operation.
+             */
+            method: string;
+        };
+        /**
+         * SourceSetSuggestion
+         * @description Owner-private inert suggestion, with host-derived identity.
+         */
+        SourceSetSuggestion: {
+            /**
+             * Based On Revision
+             * @description The previous revision this suggestion replaces.
+             */
+            based_on_revision: number;
+            /**
+             * Entries
+             * @description Unverified sources suggested for the person to select and review.
+             */
+            entries: components["schemas"]["SourceSetItem"][];
+            /**
+             * Request Id
+             * @description The host-derived identity of this exact suggestion.
+             */
+            request_id: string;
+            /**
+             * Revision
+             * @description The recorded suggestion revision.
+             */
+            revision: number;
+            /**
+             * Session Id
+             * @description The owner's private agent conversation.
+             */
+            session_id: string;
+            /**
+             * Status
+             * @description A draft suggestion, never an approval.
+             * @default suggested
+             * @constant
+             */
+            status: "suggested";
         };
         /**
          * SourceSuggestion
@@ -12853,6 +13240,25 @@ export interface components {
              */
             session_id: string;
         };
+        /** heinzel_approve_connected_read_set_Input */
+        heinzel_approve_connected_read_set_Input: {
+            /** Approval Proof */
+            approval_proof: string;
+            /**
+             * Request Id
+             * @description A stable client request id; reuse it only for an exact retry.
+             */
+            request_id: string;
+            /** Review */
+            review: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            /**
+             * Session Id
+             * @description The stable personal session id returned by new-chat or sessions.
+             */
+            session_id: string;
+        };
         /** heinzel_approve_model_grant_Input */
         heinzel_approve_model_grant_Input: {
             /**
@@ -12945,6 +13351,26 @@ export interface components {
         };
         /** heinzel_pause_agent_schedule_Input */
         heinzel_pause_agent_schedule_Input: {
+            /**
+             * Request Id
+             * @description A stable client request id; reuse it only for an exact retry.
+             */
+            request_id: string;
+            /**
+             * Session Id
+             * @description The stable personal session id returned by new-chat or sessions.
+             */
+            session_id: string;
+        };
+        /** heinzel_prepare_connected_read_set_review_Input */
+        heinzel_prepare_connected_read_set_review_Input: {
+            /**
+             * Proposal Request
+             * @description A stable client request id; reuse it only for an exact retry.
+             */
+            proposal_request: string;
+            /** Proposal Revision */
+            proposal_revision: number;
             /**
              * Request Id
              * @description A stable client request id; reuse it only for an exact retry.
@@ -13077,6 +13503,21 @@ export interface components {
              * @description A stable client request id; reuse it only for an exact retry.
              */
             request_id: string;
+            /**
+             * Session Id
+             * @description The stable personal session id returned by new-chat or sessions.
+             */
+            session_id: string;
+        };
+        /** heinzel_propose_connected_read_set_Input */
+        heinzel_propose_connected_read_set_Input: {
+            /**
+             * Request Id
+             * @description A stable client request id; reuse it only for an exact retry.
+             */
+            request_id: string;
+            /** Selections */
+            selections: components["schemas"]["ReadSetSelection"][];
             /**
              * Session Id
              * @description The stable personal session id returned by new-chat or sessions.
@@ -13260,6 +13701,19 @@ export interface components {
         };
         /** heinzel_revoke_connected_read_Input */
         heinzel_revoke_connected_read_Input: {
+            /**
+             * Request Id
+             * @description A stable client request id; reuse it only for an exact retry.
+             */
+            request_id: string;
+            /**
+             * Session Id
+             * @description The stable personal session id returned by new-chat or sessions.
+             */
+            session_id: string;
+        };
+        /** heinzel_revoke_connected_read_set_Input */
+        heinzel_revoke_connected_read_set_Input: {
             /**
              * Request Id
              * @description A stable client request id; reuse it only for an exact retry.
@@ -13480,6 +13934,11 @@ export type SchemaProgressWidget = components['schemas']['ProgressWidget'];
 export type SchemaPublishStatus = components['schemas']['PublishStatus'];
 export type SchemaPushed = components['schemas']['Pushed'];
 export type SchemaQuestion = components['schemas']['Question'];
+export type SchemaReadSetEntry = components['schemas']['ReadSetEntry'];
+export type SchemaReadSetProposal = components['schemas']['ReadSetProposal'];
+export type SchemaReadSetReview = components['schemas']['ReadSetReview'];
+export type SchemaReadSetSelection = components['schemas']['ReadSetSelection'];
+export type SchemaReadSetTerms = components['schemas']['ReadSetTerms'];
 export type SchemaRecipientPreview = components['schemas']['RecipientPreview'];
 export type SchemaRecommendationView = components['schemas']['RecommendationView'];
 export type SchemaRecording = components['schemas']['Recording'];
@@ -13529,6 +13988,8 @@ export type SchemaSoundLayerView = components['schemas']['SoundLayerView'];
 export type SchemaSoundList = components['schemas']['SoundList'];
 export type SchemaSoundStreamView = components['schemas']['SoundStreamView'];
 export type SchemaSoundscapeView = components['schemas']['SoundscapeView'];
+export type SchemaSourceSetItem = components['schemas']['SourceSetItem'];
+export type SchemaSourceSetSuggestion = components['schemas']['SourceSetSuggestion'];
 export type SchemaSourceSuggestion = components['schemas']['SourceSuggestion'];
 export type SchemaStackView = components['schemas']['StackView'];
 export type SchemaStateStatus = components['schemas']['StateStatus'];
@@ -13590,16 +14051,19 @@ export type SchemaHeinzelAmendScheduledAgentInput = components['schemas']['heinz
 export type SchemaHeinzelAnswerChatInput = components['schemas']['heinzel_answer_chat_Input'];
 export type SchemaHeinzelApproveAgentScheduleInput = components['schemas']['heinzel_approve_agent_schedule_Input'];
 export type SchemaHeinzelApproveConnectedReadInput = components['schemas']['heinzel_approve_connected_read_Input'];
+export type SchemaHeinzelApproveConnectedReadSetInput = components['schemas']['heinzel_approve_connected_read_set_Input'];
 export type SchemaHeinzelApproveModelGrantInput = components['schemas']['heinzel_approve_model_grant_Input'];
 export type SchemaHeinzelAssociateArtifactInput = components['schemas']['heinzel_associate_artifact_Input'];
 export type SchemaHeinzelChatInput = components['schemas']['heinzel_chat_Input'];
 export type SchemaHeinzelNewChatInput = components['schemas']['heinzel_new_chat_Input'];
 export type SchemaHeinzelPauseAgentScheduleInput = components['schemas']['heinzel_pause_agent_schedule_Input'];
+export type SchemaHeinzelPrepareConnectedReadSetReviewInput = components['schemas']['heinzel_prepare_connected_read_set_review_Input'];
 export type SchemaHeinzelPrepareSuggestedSourceInput = components['schemas']['heinzel_prepare_suggested_source_Input'];
 export type SchemaHeinzelProfileInput = components['schemas']['heinzel_profile_Input'];
 export type SchemaHeinzelProposeAgentScheduleInput = components['schemas']['heinzel_propose_agent_schedule_Input'];
 export type SchemaHeinzelProposeCheckInInput = components['schemas']['heinzel_propose_check_in_Input'];
 export type SchemaHeinzelProposeConnectedReadInput = components['schemas']['heinzel_propose_connected_read_Input'];
+export type SchemaHeinzelProposeConnectedReadSetInput = components['schemas']['heinzel_propose_connected_read_set_Input'];
 export type SchemaHeinzelProposeModelPolicyInput = components['schemas']['heinzel_propose_model_policy_Input'];
 export type SchemaHeinzelProposeRollingConnectedReadInput = components['schemas']['heinzel_propose_rolling_connected_read_Input'];
 export type SchemaHeinzelProposeScheduledAgentInput = components['schemas']['heinzel_propose_scheduled_agent_Input'];
@@ -13608,6 +14072,7 @@ export type SchemaHeinzelProposeSkillSharingInput = components['schemas']['heinz
 export type SchemaHeinzelQueueAgentNotificationInput = components['schemas']['heinzel_queue_agent_notification_Input'];
 export type SchemaHeinzelResolveScheduledNotificationInput = components['schemas']['heinzel_resolve_scheduled_notification_Input'];
 export type SchemaHeinzelRevokeConnectedReadInput = components['schemas']['heinzel_revoke_connected_read_Input'];
+export type SchemaHeinzelRevokeConnectedReadSetInput = components['schemas']['heinzel_revoke_connected_read_set_Input'];
 export type SchemaHeinzelScheduleControlInput = components['schemas']['heinzel_schedule_control_Input'];
 export type SchemaSystemStatePushInput = components['schemas']['system_state_push_Input'];
 export type SchemaSystemStateResetInput = components['schemas']['system_state_reset_Input'];
@@ -14084,6 +14549,39 @@ export interface operations {
             };
         };
     };
+    heinzel_approve_connected_read_set: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["heinzel_approve_connected_read_set_Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReadSetReview"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     heinzel_approve_model_grant: {
         parameters: {
             query?: never;
@@ -14319,6 +14817,133 @@ export interface operations {
             };
         };
     };
+    heinzel_connected_read_set_approval: {
+        parameters: {
+            query: {
+                session_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReadSetReview"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    heinzel_connected_read_set_context: {
+        parameters: {
+            query: {
+                session_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: string;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    heinzel_connected_read_set_proposal: {
+        parameters: {
+            query: {
+                session_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReadSetProposal"] | null;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    heinzel_connected_read_set_review: {
+        parameters: {
+            query: {
+                session_id: string;
+                request_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReadSetReview"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     heinzel_connected_read_state: {
         parameters: {
             query: {
@@ -14527,6 +15152,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ScheduledAgentProposal"] | null;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    heinzel_latest_source_set_suggestion_view: {
+        parameters: {
+            query: {
+                session_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SourceSetSuggestion"] | null;
                 };
             };
             /** @description Validation Error */
@@ -14855,6 +15511,39 @@ export interface operations {
             };
         };
     };
+    heinzel_prepare_connected_read_set_review: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["heinzel_prepare_connected_read_set_review_Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReadSetReview"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     heinzel_prepare_suggested_source: {
         parameters: {
             query?: never;
@@ -15007,6 +15696,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ConnectedGrantProposal"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    heinzel_propose_connected_read_set: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["heinzel_propose_connected_read_set_Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReadSetProposal"];
                 };
             };
             /** @description Validation Error */
@@ -15261,6 +15983,39 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["heinzel_revoke_connected_read_Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": boolean;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    heinzel_revoke_connected_read_set: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["heinzel_revoke_connected_read_set_Input"];
             };
         };
         responses: {
@@ -17340,6 +18095,40 @@ export interface operations {
                 /** @description The personal agent session. */
                 durable_session: string;
                 /** @description The connected read proposal request id. */
+                request_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatSession"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_runner_chat_propose_connected_read_set_review: {
+        parameters: {
+            query: {
+                /** @description The personal agent session. */
+                durable_session: string;
+                /** @description The exact read-set review request id. */
                 request_id: string;
             };
             header?: never;

@@ -19,6 +19,9 @@ from heinzel import ConfiguredApiAccess, CurrentUser, HeinzelError, Kernel, Sess
 from heinzel.modules.heinzel._budget_reservation import initialize_budget
 from heinzel.modules.heinzel._claude_subscription_model import ClaudeSubscriptionModel
 from heinzel.modules.heinzel._connected_grants import ConnectedReadFailedError, ConnectedReadGrants
+from heinzel.modules.heinzel._connected_read_set_approvals import ConnectedReadSetApprovals
+from heinzel.modules.heinzel._connected_read_set_inputs import ReadSetCall
+from heinzel.modules.heinzel._connected_read_set_preview import read_set_tool_preview
 from heinzel.modules.heinzel._engine import EngineCheckpoint, TurnAuthority, TurnDeps, TurnLimits, run_turn
 from heinzel.modules.heinzel._host_tools import HostToolCatalog, OperationFailedError
 from heinzel.modules.heinzel._input_receipts import ApprovedInputSnapshots
@@ -30,6 +33,7 @@ from heinzel.modules.heinzel._scheduled_notifications import ScheduledNotificati
 from heinzel.modules.heinzel._session_bodies import immutable_body
 from heinzel.modules.heinzel._session_crud import SessionCrud
 from heinzel.modules.heinzel._session_models import BackendBinding, SessionMessage
+from heinzel.modules.heinzel._source_set_suggestions import SourceSetSuggestionTools, source_set_suggestion_schemas
 from heinzel.modules.heinzel._source_suggestions import SourceSuggestionTools, source_suggestion_schemas
 from heinzel.modules.heinzel._turn_authority_fence import TurnAuthorityFence
 from heinzel.modules.heinzel._turn_skill_adapter import TurnSkillAdapter, skill_tool_schemas
@@ -196,6 +200,7 @@ class InteractiveTurn:
         backend_binding: BackendBinding | None = None,
         user_proposal_policy: Callable[[], bool] | None = None,
         connected: ConnectedReadGrants | None = None,
+        connected_set: ConnectedReadSetApprovals | None = None,
         scheduled_notifications: ScheduledNotifications | None = None,
         prepare: Callable[[], None] | None = None,
     ) -> SessionMessage:
@@ -349,6 +354,12 @@ class InteractiveTurn:
                     data={"message_id": request_id, **({"billing": "plan"} if backend_binding else {})},
                 )
 
+            set_schema = (
+                read_set_tool_preview(connected_set, session_id, turn_writer)
+                if connected_set is not None and connected_set.reviews.grants is connected
+                else None
+            )
+
             calls = 0
             user_tools = (
                 UserProposalTools(
@@ -373,6 +384,11 @@ class InteractiveTurn:
                 if user_proposal_policy is not None
                 else None
             )
+            source_set_tools = (
+                SourceSetSuggestionTools(self._crud, session_id, turn, self._owner, turn_writer, user_proposal_policy)
+                if user_proposal_policy is not None
+                else None
+            )
 
             def dispatch_general(name: str, arguments: dict[str, JsonValue]) -> str:  # noqa: C901, PLR0911, PLR0912 - closed dispatch cases
                 nonlocal calls
@@ -381,8 +397,12 @@ class InteractiveTurn:
                 args = _JSON.validate_python(arguments, strict=True)
                 if len(json.dumps(args, ensure_ascii=False).encode()) > _MAX_ARGUMENT_BYTES:
                     return "Tool request is too large."
-                proposal_tools = source_tools if name in {"source:current", "source:propose"} else schedule_tools
-                if proposal_tools is not None and name in schedule_names | {"source:current", "source:propose"}:
+                source_names = {"source:current", "source:propose"}
+                set_names = {"source-set:current", "source-set:propose"}
+                proposal_tools = (
+                    source_set_tools if name in set_names else source_tools if name in source_names else schedule_tools
+                )
+                if proposal_tools is not None and name in schedule_names | source_names | set_names:
                     self._event(session_id, turn, calls, name, "requested")
                     try:
                         result = proposal_tools.dispatch(name, args, calls)
@@ -440,6 +460,44 @@ class InteractiveTurn:
                 self._event(session_id, turn, calls, "unavailable", "denied")
                 return "Tool unavailable: no host-authorized implementation is registered."
 
+            def dispatch_set(arguments: dict[str, JsonValue]) -> str:
+                nonlocal calls
+                name = "connected_read_set"
+                self._check_owner()
+                calls += 1
+                try:
+                    args = _JSON.validate_python(arguments, strict=True)
+                    handle = args.get("handle")
+                    if (
+                        connected is None
+                        or connected_set is None
+                        or set_schema is None
+                        or set(args) != {"handle"}
+                        or not isinstance(handle, str)
+                    ):
+                        raise ValueError  # noqa: TRY301
+                    call = ReadSetCall(handle=handle, turn=turn, call=calls)
+                except (ValueError, HeinzelError):
+                    self._event(session_id, turn, calls, name, "denied")
+                    return "Connected read unavailable or its approval changed."
+                with repo.control_writer(session_id) as writer:
+                    writer.append(
+                        "interactive.tool",
+                        key=f"{turn}-{calls}-requested",
+                        turn=turn,
+                        data={"tool": name, "status": "requested", "handle": call.handle},
+                    )
+                try:
+                    value, _receipt = connected.read_set_entry(session_id, turn_writer, call, connected_set)
+                except ConnectedReadFailedError:
+                    self._event(session_id, turn, calls, name, "failed")
+                    return "The connected read began but did not produce a usable result."
+                except HeinzelError:
+                    self._event(session_id, turn, calls, name, "denied")
+                    return "Connected read unavailable or its approval changed."
+                self._event(session_id, turn, calls, name, "completed")
+                return json.dumps(value, ensure_ascii=False)
+
             def dispatch(name: str, arguments: dict[str, JsonValue]) -> str:
                 nonlocal calls
                 if name == "notification:send":
@@ -457,7 +515,9 @@ class InteractiveTurn:
                     self._event(session_id, turn, calls, name, "completed" if outcome == "recorded" else "failed")
                     return text
                 if name != "connected_read":
-                    return dispatch_general(name, arguments)
+                    return (
+                        dispatch_set(arguments) if name == "connected_read_set" else dispatch_general(name, arguments)
+                    )
                 self._check_owner()
                 calls += 1
                 args = _JSON.validate_python(arguments, strict=True)
@@ -527,7 +587,9 @@ class InteractiveTurn:
                         + (user_proposal_schemas() if user_tools else [])
                         + (schedule_suggestion_schemas() if schedule_tools else [])
                         + (source_suggestion_schemas() if source_tools else [])
+                        + (source_set_suggestion_schemas() if source_set_tools else [])
                         + ([connected_schema] if connected_schema is not None else [])
+                        + ([set_schema] if set_schema is not None else [])
                         + ([scheduled_notifications.schema()] if scheduled_notifications is not None else []),
                         ensure_ascii=True,
                     )
@@ -623,7 +685,7 @@ class InteractiveTurn:
                 or not isinstance(name, str)
                 or (
                     name not in _READ_TOOLS
-                    and name not in {"unavailable", "hz.read", "connected_read"}
+                    and name not in {"unavailable", "hz.read", "connected_read", "connected_read_set"}
                     and re.fullmatch(r"[a-z][a-z0-9_.-]{0,127}:[a-z][a-z0-9-]{0,127}", name) is None
                 )
                 or status not in {"requested", "completed", "failed", "denied"}

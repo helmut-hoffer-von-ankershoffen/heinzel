@@ -373,6 +373,7 @@ Chat with the agent runner about where you are; it acts through hz once you conf
 | Stage current agent contract terms for human review. | `hz chat propose-agent-contract` | — | — | `POST /api/system/runner/chat/propose-agent-contract` | yes |  |
 | Stage one exact notification draft for a human decision; no notice is sent. | `hz chat propose-agent-notification` | — | — | `POST /api/system/runner/chat/propose-agent-notification` | yes |  |
 | Stage current connected-read terms for an explicit human decision. | `hz chat propose-connected-read-review` | — | — | `POST /api/system/runner/chat/propose-connected-read-review` | yes |  |
+| Stage the current read-set review for an explicit human decision. | `hz chat propose-connected-read-set-review` | — | — | `POST /api/system/runner/chat/propose-connected-read-set-review` | yes |  |
 | Stage the exact current agent schedule for human review; no schedule is approved yet. | `hz chat propose-agent-schedule-review` | — | — | `POST /api/system/runner/chat/propose-agent-schedule-review` | yes |  |
 | Show a chat session: its context, messages, actions and costs. | `hz chat show` | — | — | `GET /api/system/runner/chat/show` |  | expert |
 | List chat sessions, most recent first; they are kept for system.runner.chat.keep_days. | `hz chat list` | — | — | `GET /api/system/runner/chat/list` |  |  |

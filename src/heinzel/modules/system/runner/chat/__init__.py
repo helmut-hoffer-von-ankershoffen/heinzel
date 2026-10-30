@@ -316,6 +316,20 @@ def propose_connected_read_review(
 
 
 @module.operation(read_only=False, heads=HEADS, audience="everyday")
+def propose_connected_read_set_review(
+    service: ChatService,
+    durable_session: Annotated[
+        str, Field(pattern=r"^hz-[0-9A-HJKMNP-TV-Z]{26}$", description="The personal agent session.")
+    ],
+    request_id: Annotated[
+        str, Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$", description="The exact read-set review request id.")
+    ],
+) -> ChatSession:
+    """Stage the current read-set review for an explicit human decision."""
+    return service.propose_connected_read_set_review(durable_session, request_id)
+
+
+@module.operation(read_only=False, heads=HEADS, audience="everyday")
 def propose_agent_schedule_review(
     service: ChatService,
     durable_session: Annotated[
