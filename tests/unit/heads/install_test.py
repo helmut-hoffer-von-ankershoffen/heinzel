@@ -148,16 +148,26 @@ def test_standard_receipt_preserves_ordinary_index_updates(tmp_path, monkeypatch
     assert "heinzel @ file:" in overrides.read_text()
     assert "app-artifacts" in str(overrides)
     assert "cache" not in overrides.parts
-    # This is uv's observed receipt shape for unbounded requested names plus installation-only wheel overrides.
-    (tmp_path / "uv-receipt.toml").write_text(
+    # uv records index requirements and wheel overrides alongside the installed entrypoint.
+    prefix = tmp_path / "tools" / "heinzel"
+    (prefix / "bin").mkdir(parents=True)
+    (prefix / "bin" / "hz").write_text("fixture", encoding="utf-8")
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    shim = bin_dir / "hz"
+    shim.symlink_to(prefix / "bin" / "hz")
+    (prefix / "uv-receipt.toml").write_text(
         '[tool]\nrequirements=[{name="heinzel"}]\noverrides=[{name="heinzel", path="verified.whl"}]\n'
+        f"entrypoints=[{{name='hz', install-path={str(shim)!r}}}]\n",
+        encoding="utf-8",
     )
-    target = Installation(
-        Progress(),
-        prefix=tmp_path,
-        uv="uv",
-        runner=lambda args, environment=None: subprocess.CompletedProcess(args, 0, "", ""),
-    )
+    updates = []
+
+    def update_runner(args, environment):
+        updates.append((args, environment))
+        return subprocess.CompletedProcess(args, 0, "", "")
+
+    target = Installation(Progress(), prefix=prefix, uv="uv", runner=update_runner)
     assert target.core_pin().kind == "index"
     assert target.core_pin().requirement == "heinzel"
     monkeypatch.setattr(target, "hz", lambda *args: "hz 0.9.1" if args == ("--version",) else "[]")
@@ -169,3 +179,6 @@ def test_standard_receipt_preserves_ordinary_index_updates(tmp_path, monkeypatch
     result = UpdateService(target, Releases()).update(current="0.9.0")
     assert result.updated
     assert result.after == "0.9.1"
+    assert updates[0][0][-1] == "heinzel"
+    assert updates[0][1]["UV_TOOL_DIR"] == str(prefix.parent)
+    assert updates[0][1]["UV_TOOL_BIN_DIR"] == str(bin_dir)
