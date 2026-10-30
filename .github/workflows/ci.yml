@@ -375,9 +375,13 @@ jobs:
         run: make desktop-electron-sandbox
       - name: Linux Electron native window smoke test
         if: runner.os == 'Linux'
+        env:
+          HZ_DISPOSABLE_NATIVE_CI: '1'
         run: make desktop-electron-native
       - name: macOS Electron native window smoke test
         if: runner.os == 'macOS'
+        env:
+          HZ_DISPOSABLE_NATIVE_CI: '1'
         run: make desktop-electron-native
 
   build:
