@@ -56,7 +56,6 @@ try {
   await panel.getByText(/Recorded state: approved/).waitFor();
   const schedule = page.locator("details").filter({ has: page.getByText("Recurring agent turns", { exact: true }) });
   await schedule.getByText("Recurring agent turns", { exact: true }).click();
-  await schedule.getByRole("button", { name: "Refresh suggestion" }).click();
   await schedule.getByText(/Suggested interval: every 7 minutes/).waitFor();
   assert.equal(await schedule.getByLabel("Every (minutes)").inputValue(), "5");
   await schedule.getByRole("button", { name: "Use interval in preview" }).click();
