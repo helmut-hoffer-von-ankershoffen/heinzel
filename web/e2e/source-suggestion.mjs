@@ -27,7 +27,7 @@ try {
   await page.getByRole("button", { name: "Create Heinzel and take this message" }).click();
   const panel = page.getByRole("region", { name: "Connected read review" });
   await page.getByRole("button", { name: "Queue message" }).click();
-  await page.getByText("Read complete.").waitFor({ timeout: 30000 });
+  await page.getByText("Suggestion recorded.").waitFor({ timeout: 30000 });
   await panel.getByText(/has not contacted a provider/).waitFor();
   await panel.getByText("documents.read", { exact: true }).waitFor();
   assert.equal(reviewRequests, 0, "Suggestion must not contact the provider");
@@ -40,6 +40,10 @@ try {
   assert.deepEqual(violations, []);
   await panel.getByRole("button", { name: "Confirm" }).click();
   await panel.getByText(/Recorded state: approved/).waitFor();
+  await page.getByLabel("Message your Heinzel").fill("Read the approved source now.");
+  await page.getByRole("button", { name: "Queue message" }).click();
+  await page.getByText("Source read finished.").waitFor({ timeout: 30000 });
+  await page.getByText("Approved read: first recorded result.").waitFor();
   await page.reload();
   await page.getByRole("tab", { name: "Chat", exact: true }).click();
   await panel.getByText(/Recorded state: approved/).waitFor();

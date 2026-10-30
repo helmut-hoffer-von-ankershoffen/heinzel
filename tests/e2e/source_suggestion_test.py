@@ -118,9 +118,12 @@ open({str(marker)!r},'a').write('x')
 if n == 0:
  name='source:propose'
  wire={{'kind':'tool','name':'use_tool','arguments':{{'name':name,'arguments':{{'expected_revision':0,'capability':'documents','method':'read','fixed_arguments':{{'ref':'https://fixture.invalid/document'}}}}}},'text':None}}
+elif n == 2:
+ wire={{'kind':'tool','name':'use_tool','arguments':{{'name':'connected_read','arguments':{{}}}},'text':None}}
 else:
  name=next(t['name'] for t in payload['tools'] if t['name'] != 'use_tool')
- wire={{'kind':'tool','name':name,'arguments':{{'report':'Read complete.','summary':'Read complete.'}},'text':None}}
+ summary='Source read finished.' if n == 3 else 'Suggestion recorded.'
+ wire={{'kind':'tool','name':name,'arguments':{{'report':summary,'summary':summary}},'text':None}}
 print(json.dumps({{'type':'result','subtype':'success','is_error':False,'permission_denials':[],'structured_output':wire}}))
 """,
         encoding="utf-8",
@@ -171,8 +174,8 @@ print(json.dumps({{'type':'result','subtype':'success','is_error':False,'permiss
         if run.returncode:
             pytest.fail((run.stderr + "\n" + run.stdout).replace(token, "<redacted-session>"))
         assert json.loads(run.stdout.strip().splitlines()[-1])["accepted"] is True
-        assert marker.read_text() == "xx"
-        assert reads == []
+        assert marker.read_text() == "xxxx"
+        assert reads == [{}]
         assert opens
         assert all(
             item[1:] == ("capability-method:documents.read", {"ref": "https://fixture.invalid/document"})
