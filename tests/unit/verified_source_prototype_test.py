@@ -275,6 +275,28 @@ def _exercise_guarded_lease(catalog, binding, entry, old, new):
     assert closed[-1] == {"read": "opened"}
 
 
+def _exercise_captured_resources(captured, ep, entry, old):
+    from importlib.resources import files
+
+    resource = files(ep.module).joinpath("metadata.txt")
+    assert resource.read_text() == "captured resource"
+    with pytest.raises(ValueError, match="requires mode"):
+        files(ep.module).joinpath("new.txt").open("w")
+    reader = captured.finder.get_resource_reader(ep.module)
+    assert reader is not None
+    with reader.open_resource("metadata.txt") as stream:
+        assert stream.read() == b"captured resource"
+    with pytest.raises(FileNotFoundError):
+        reader.open_resource("../metadata.txt")
+    with pytest.raises(FileNotFoundError):
+        reader.resource_path("metadata.txt")
+    entry.write_text(old)
+    with pytest.raises(HeinzelError, match="changed"):
+        files(ep.module)
+    with pytest.raises(HeinzelError, match="changed"):
+        reader.open_resource("metadata.txt")
+
+
 def test_real_entry_point_records_and_registered_provider_use_captured_source(tmp_path):
     root = tmp_path / "fake_bound_plugin"
     root.mkdir()
@@ -336,10 +358,7 @@ module.provides("calendar", modes={"read"}, name="fixture", hosts=["fixture.inva
         entry.write_text(new)
         assert sys.modules[ep.module].__file__ == str(entry)
         assert list(sys.modules[ep.module].__path__) == [str(root)]
-        from importlib.resources import files
-
-        assert files(ep.module).joinpath("metadata.txt").read_text() == "captured resource"
-        entry.write_text(old)
+        _exercise_captured_resources(captured, ep, entry, old)
         with pytest.raises(HeinzelError, match="changed"):
             captured.service(kernel, record, ConnectedReadService)
     finally:

@@ -11,11 +11,13 @@ import os
 import stat
 import sys
 import sysconfig
-from collections.abc import Callable, Iterator, Mapping
+import zipfile
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
+from importlib import machinery
 from importlib.machinery import ModuleSpec
 from importlib.metadata import EntryPoint, distribution
-from importlib.resources.abc import ResourceReader
+from importlib.resources.abc import Traversable, TraversableResources
 from pathlib import Path
 from types import MappingProxyType, ModuleType
 from typing import cast
@@ -200,9 +202,7 @@ class SealedRuntime:
             raise HeinzelError(msg)
         origin = spec.origin
         if origin in {"built-in", "frozen"}:
-            expected = (
-                importlib.machinery.BuiltinImporter if origin == "built-in" else importlib.machinery.FrozenImporter
-            )
+            expected = machinery.BuiltinImporter if origin == "built-in" else machinery.FrozenImporter
             canonical = expected.find_spec(spec.name)
             if cast("object", spec.loader) is not expected or canonical is None or canonical.origin != origin:
                 msg = "A host runtime loader changed"
@@ -227,9 +227,9 @@ class SealedRuntime:
             if not valid or not isinstance(
                 spec.loader,
                 (
-                    importlib.machinery.SourceFileLoader,
-                    importlib.machinery.SourcelessFileLoader,
-                    importlib.machinery.ExtensionFileLoader,
+                    machinery.SourceFileLoader,
+                    machinery.SourcelessFileLoader,
+                    machinery.ExtensionFileLoader,
                 ),
             ):
                 msg = f"A declared host runtime origin is unverified: {name}"
@@ -238,10 +238,10 @@ class SealedRuntime:
         self.specs[name] = (spec, spec.loader, spec.origin, vars(module).get("__file__"))
         search = vars(module).get("__path__")
         if search is not None:
-            if not isinstance(search, (list, tuple)) or not isinstance(origin, str):
+            if not isinstance(search, (list, tuple)):
                 msg = "A host runtime package path is unsupported"
                 raise HeinzelError(msg)
-            paths = tuple(search)
+            paths = tuple(cast("Sequence[object]", search))
             if (
                 len(paths) != 1
                 or not isinstance(paths[0], str)
@@ -249,7 +249,7 @@ class SealedRuntime:
             ):
                 msg = "A host runtime package path changed"
                 raise HeinzelError(msg)
-            self.paths[name] = paths
+            self.paths[name] = (paths[0],)
         else:
             self.paths[name] = None
         return module
@@ -316,7 +316,8 @@ class SealedRuntime:
                 or spec.loader is not loader
                 or spec.origin != origin
                 or vars(module).get("__file__") != file
-                or (tuple(path) if isinstance(path, (list, tuple)) else None) != self.paths[name]
+                or (tuple(cast("Sequence[object]", path)) if isinstance(path, (list, tuple)) else None)
+                != self.paths[name]
             ):
                 msg = "The sealed host runtime module changed"
                 raise HeinzelError(msg)
@@ -353,28 +354,37 @@ class SealedRuntime:
         return result
 
 
-class _CapturedResources(ResourceReader):
+class _CapturedResources(TraversableResources):
     """Read package resources from captured bytes, never from the later disk state."""
 
     def __init__(self, snapshot: SourceSnapshot, package_path: str) -> None:
         self.snapshot = snapshot
         self.prefix = package_path + "/" if package_path else ""
 
-    def open_resource(self, resource: str) -> io.BytesIO:
+    def files(self) -> Traversable:
+        """Expose an immutable in-memory archive of the captured resource bytes."""
+        self.snapshot.verify()
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_STORED) as archive:
+            for name, data in self.snapshot.files:
+                archive.writestr(name, data)
+        return zipfile.Path(zipfile.ZipFile(buffer, "r"), at=self.prefix)
+
+    def open_resource(self, resource: str) -> io.BufferedReader:
         self.snapshot.verify()
         if "/" in resource or resource in {"", ".", ".."}:
             raise FileNotFoundError
         data = dict(self.snapshot.files).get(self.prefix + resource)
         if data is None:
             raise FileNotFoundError
-        return io.BytesIO(data)
+        return io.BufferedReader(io.BytesIO(data))
 
     def resource_path(self, resource: str) -> str:
         raise FileNotFoundError(resource)
 
-    def is_resource(self, name: str) -> bool:
+    def is_resource(self, path: str) -> bool:
         self.snapshot.verify()
-        return "/" not in name and self.prefix + name in dict(self.snapshot.files)
+        return "/" not in path and self.prefix + path in dict(self.snapshot.files)
 
     def contents(self) -> Iterator[str]:
         self.snapshot.verify()
@@ -709,7 +719,7 @@ def _validate_distribution_source(
         raise HeinzelError(msg)
     direct_url = dist.read_text("direct_url.json")
     if direct_url is not None:
-        metadata = json.loads(direct_url)
+        metadata = cast("JsonValue", json.loads(direct_url))
         directory = metadata.get("dir_info", {}) if isinstance(metadata, dict) else None
         if not isinstance(directory, dict) or directory.get("editable", False):
             msg = "Editable source distributions cannot be source-bound"
@@ -723,7 +733,7 @@ def _validate_distribution_source(
     ):
         msg = "The selected source root is not owned by the installed distribution"
         raise HeinzelError(msg)
-    manifest = set()
+    manifest: set[Path] = set()
     for item in dist.files:
         location = dist.locate_file(item)
         if not isinstance(location, Path):
@@ -852,10 +862,12 @@ class SourceGuardedConnectedService(ConnectedReadService):
 
     def supported_reads(self) -> tuple[ConnectedReadMethod, ...]:
         value = self._discovery.catalog.guarded_call(self._binding, lambda service: service.supported_reads())
-        if not isinstance(value, tuple) or any(not isinstance(item, ConnectedReadMethod) for item in value):
+        if not isinstance(value, tuple) or any(
+            not isinstance(item, ConnectedReadMethod) for item in cast("tuple[object, ...]", value)
+        ):
             msg = "The source-bound provider returned invalid methods"
             raise HeinzelError(msg)
-        return value
+        return cast("tuple[ConnectedReadMethod, ...]", value)
 
     def open_lease(self, session: str, operation: str, fixed_arguments: Mapping[str, JsonValue]) -> ConnectedReadLease:
         lease = open_source_lease(
