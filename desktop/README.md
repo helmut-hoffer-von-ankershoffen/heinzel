@@ -12,7 +12,14 @@ pnpm test
 ```
 
 Run `pnpm test:native` to launch the real Electron 45 app against a temporary loopback lifecycle endpoint. On Linux,
-run it in a graphical session or under Xvfb.
+run it in a graphical session or under Xvfb. The packaged-app variant is restricted to explicitly disposable CI
+because its profile isolation is not yet verified; local native tests use the isolated development bootstrap.
+
+To exercise the installed CLI rather than the fake lifecycle server, first run the repository's `make setup` and
+`pnpm install` here, then run `HZ_REAL_CLI="$(command -v hz)" pnpm test:real-backend`. This opt-in smoke uses a
+temporary Electron profile and temporary CLI home, configuration, data, state and cache directories. It verifies
+authenticated lifecycle, reload, and owned-child shutdown on a fresh loopback port, and reports the installed CLI
+version. It does not test a packaged, signed or notarized app.
 
 ## Local unsigned packaging
 
