@@ -301,7 +301,6 @@ jobs:
           cache-dependency-glob: uv.lock
           save-cache: ${{ github.ref == 'refs/heads/main' }} # pull requests reuse main's cache
       - name: Install browser runtimes and host dependencies
-        if: runner.os == 'Linux'
         run: make test-browser-deps
       # Keep the full pytest traceback in CI logs when a browser interaction flakes; the step wrapper's default tail
       # can otherwise hide the test name and the action that timed out.

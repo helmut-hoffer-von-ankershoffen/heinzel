@@ -184,8 +184,12 @@ test-integration: ## Run integration tests
 test-perf: ## Run the performance tests (timing assertions such as linear time); CI only, they flake on a loaded machine
 	$(STEPS) "perf=uv run pytest -m perf -q --session-timeout=120"
 
-test-browser-deps: ## Install browser runtimes and host libraries for Linux browser tests
-	@$(WEB) exec playwright-core install --with-deps chromium webkit
+test-browser-deps: ## Install Chromium and WebKit; include Linux host libraries when needed
+	@if [ "$$(uname -s)" = Linux ]; then \
+		$(WEB) exec playwright-core install --with-deps chromium webkit; \
+	else \
+		$(WEB) exec playwright-core install chromium webkit; \
+	fi
 
 test-e2e: ## Run end-to-end tests (needs network), on 3 workers
 	$(STEPS) "e2e=uv run pytest -m e2e -n 3 -q --session-timeout=600"
