@@ -4,12 +4,17 @@ All notable changes to Heinzelmännchen, newest first. Versions follow [Semantic
 
 ## [0.9.2](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/releases/tag/v0.9.2) - 2026-10-30
 
-Custom plugins now set up correctly with the Make version bundled with macOS. The authoring guide covers creating, testing and publishing plugins from separate public or private repositories. Cold parallel builds now share the frontend build instead of clearing each other's assets, keeping installation and release checks reliable.
+Custom plugins now set up correctly with the Make version bundled with macOS. The authoring guide covers creating, testing and publishing plugins from separate public or private repositories. Cold parallel builds share the frontend build instead of clearing each other's assets. The desktop app also handles reload identity and backend shutdown outcomes more reliably.
 
 ### 🐛 Bug fixes
 
 - **plugin:** Bootstrap the default authoring toolkit ([#274](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/274)) ([20818ed](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/20818ed40af66a153c4a17f33408aaa867483214))
 - **web:** Reuse the locked frontend build during packaging ([66fc2cb](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/66fc2cb93f342e9e79a7d9a87f1c292c3b6f03c0))
+- **heads:** Preserve desktop reload and shutdown outcomes ([#252](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/252)) ([b628f40](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/b628f40f60f7c0fa8bd945b36c129309f7405f94))
+
+### 🧪 Testing
+
+- **web:** Start packaging regression with fresh processes ([5ae075b](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/5ae075b22916d2dfd624ac4242d7596543948431))
 
 ## [0.9.1](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/releases/tag/v0.9.1) - 2026-10-29
 
