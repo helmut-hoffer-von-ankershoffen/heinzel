@@ -33,6 +33,9 @@ from heinzel.modules.heinzel._connected_grants import (
     RollingConnectedGrantProposal,
     RollingWindowPolicy,
 )
+from heinzel.modules.heinzel._connected_read_set_approvals import ConnectedReadSetApprovals
+from heinzel.modules.heinzel._connected_read_set_reviews import ConnectedReadSetReviews, ReadSetReview
+from heinzel.modules.heinzel._connected_read_sets import ConnectedReadSets, ReadSetProposal, ReadSetSelection
 from heinzel.modules.heinzel._contract_review import ContractReview, ContractReviewView
 from heinzel.modules.heinzel._input_receipts import InputSnapshotPage, snapshot_history
 from heinzel.modules.heinzel._model_grants import ModelGrants
@@ -71,6 +74,7 @@ from heinzel.modules.heinzel._session_models import (
     SkillSharingProposal,
 )
 from heinzel.modules.heinzel._session_repository import PersonalSessionRepository
+from heinzel.modules.heinzel._source_set_suggestions import SourceSetSuggestion, latest_source_set_suggestion
 from heinzel.modules.heinzel._source_suggestions import SourceSuggestion, latest_source_suggestion
 from heinzel.modules.heinzel._user_chat import (
     UserChatAnswer,
@@ -141,6 +145,15 @@ class _SessionApprovalIssuer(ApprovalIssuer):
             raise HeinzelError(msg)
         return session, request
 
+    def _set_approvals(self) -> ConnectedReadSetApprovals:
+        if self.kernel is None:
+            msg = "Connected read-set review is unavailable"
+            raise HeinzelError(msg)
+        current = self.kernel.resolve(CurrentUser)
+        sets = ConnectedReadSets(self.service, current)
+        grants = ConnectedReadGrants(self.service, current, self.kernel)
+        return ConnectedReadSetApprovals(ConnectedReadSetReviews(sets, grants))
+
     def review(self, module: str, operation: str, arguments: dict[str, JsonValue]) -> dict[str, JsonValue]:
         if module == "heinzel" and operation == "queue-agent-notification":
             if self.kernel is None:
@@ -149,15 +162,8 @@ class _SessionApprovalIssuer(ApprovalIssuer):
             session, request = self._model_args(arguments)
             current = self.kernel.resolve(CurrentUser)
             return NotificationProposals(self.service).get(session, request, current).model_dump(mode="json")
-        if module == "heinzel" and operation == "approve-connected-read":
-            if self.kernel is None:
-                msg = "Connected read review is unavailable"
-                raise HeinzelError(msg)
-            return (
-                ConnectedReadGrants(self.service, self.kernel.resolve(CurrentUser), self.kernel)
-                .review(*self._model_args(arguments))
-                .model_dump(mode="json")
-            )
+        if module == "heinzel" and operation in {"approve-connected-read", "approve-connected-read-set"}:
+            return self._review_connected_action(operation, arguments)
         if module == "heinzel" and operation == "approve-agent-schedule":
             if self.kernel is None:
                 msg = "Schedule review is unavailable"
@@ -178,6 +184,30 @@ class _SessionApprovalIssuer(ApprovalIssuer):
             )
         self._check_daemon(module, operation, arguments)
         return self.service.review(module, operation, arguments)
+
+    def _review_connected_action(self, operation: str, arguments: dict[str, JsonValue]) -> dict[str, JsonValue]:
+        session, request = self._model_args(arguments)
+        if operation == "approve-connected-read-set":
+            return self._set_approvals().reviews.current(session, request).model_dump(mode="json")
+        if self.kernel is None:
+            msg = "Connected read review is unavailable"
+            raise HeinzelError(msg)
+        return (
+            ConnectedReadGrants(self.service, self.kernel.resolve(CurrentUser), self.kernel)
+            .review(session, request)
+            .model_dump(mode="json")
+        )
+
+    def _issue_set(self, arguments: dict[str, JsonValue], provenance: str) -> str:
+        session, request = self._model_args(arguments)
+        review = arguments.get("review")
+        if not isinstance(review, dict) or arguments_hash(review) != arguments_hash(
+            self.review("heinzel", "approve-connected-read-set", arguments)
+        ):
+            msg = "The reviewed read set changed"
+            raise HeinzelError(msg)
+        exact = ReadSetReview.model_validate(review)
+        return self._set_approvals().issue(session, request, exact.revision, provenance)
 
     def _issue_connected(self, arguments: dict[str, JsonValue], provenance: str) -> str:
         if self.kernel is None:
@@ -219,8 +249,12 @@ class _SessionApprovalIssuer(ApprovalIssuer):
     def issue(self, module: str, operation: str, arguments: dict[str, JsonValue], provenance: str) -> str:
         if module == "heinzel" and operation == "queue-agent-notification":
             return self._issue_notification(arguments, provenance)
-        if module == "heinzel" and operation == "approve-connected-read":
-            return self._issue_connected(arguments, provenance)
+        if module == "heinzel" and operation in {"approve-connected-read", "approve-connected-read-set"}:
+            return (
+                self._issue_set(arguments, provenance)
+                if operation.endswith("-set")
+                else self._issue_connected(arguments, provenance)
+            )
         if module == "heinzel" and operation == "approve-agent-schedule":
             if self.kernel is None:
                 msg = "Schedule review is unavailable"
@@ -255,11 +289,21 @@ class _SessionApprovalIssuer(ApprovalIssuer):
         grant = ConnectedReadGrants(self.service, self.kernel.resolve(CurrentUser), self.kernel).approved(session)
         return grant.request_id == request and arguments_hash(grant.model_dump(mode="json")) == arguments_hash(expected)
 
+    def _applied_set(self, arguments: dict[str, JsonValue]) -> bool:
+        session, request = self._model_args(arguments)
+        expected = arguments.get("review")
+        if not isinstance(expected, dict):
+            return False
+        approved = self._set_approvals().approved(session)
+        return approved.request_id == request and arguments_hash(approved.model_dump(mode="json")) == arguments_hash(
+            expected
+        )
+
     def applied(self, module: str, operation: str, arguments: dict[str, JsonValue]) -> bool:
         if module == "heinzel" and operation == "queue-agent-notification":
             return self._applied_notification(arguments)
-        if module == "heinzel" and operation == "approve-connected-read":
-            return self._applied_connected(arguments)
+        if module == "heinzel" and operation in {"approve-connected-read", "approve-connected-read-set"}:
+            return self._applied_set(arguments) if operation.endswith("-set") else self._applied_connected(arguments)
         if module == "heinzel" and operation == "approve-agent-schedule":
             if self.kernel is None:
                 return False
@@ -502,6 +546,80 @@ def _register_connected_read_operations(module: Module) -> None:
         return service.approve(session_id, request_id, review, approval_proof, confirmation)
 
 
+def _register_connected_read_set_operations(module: Module) -> None:
+    """Register owner-private set preparation and exact human confirmation, not execution."""
+
+    @module.operation(private=True, heads={"web", "api-private"}, audience="everyday")
+    def connected_read_set_context(service: ConnectedReadSets, session_id: Identity) -> dict[str, str]:
+        """Bind local review recovery state to the authenticated owner and session."""
+        service.latest(session_id)
+        return {"session_id": session_id, "owner": service.owner}
+
+    @module.operation(private=True, heads={"web", "api-private"}, audience="everyday")
+    def latest_source_set_suggestion_view(service: SessionCrud, session_id: Identity) -> SourceSetSuggestion | None:
+        """Inspect the latest inert suggested sources; no provider was contacted or approved."""
+        return latest_source_set_suggestion(service, session_id)
+
+    @module.operation(private=True, heads={"web", "api-private"}, audience="everyday")
+    def connected_read_set_proposal(service: ConnectedReadSets, session_id: Identity) -> ReadSetProposal | None:
+        """Inspect the latest private read-set proposal; this is not an approval."""
+        return service.latest(session_id)
+
+    @module.operation(private=True, read_only=False, heads={"web", "api-private"}, audience="everyday")
+    def propose_connected_read_set(
+        service: ConnectedReadSets,
+        grants: ConnectedReadGrants,
+        session_id: Identity,
+        request_id: Request,
+        selections: Annotated[tuple[ReadSetSelection, ...], Field(min_length=1, max_length=4)],
+    ) -> ReadSetProposal:
+        """Observe the selected fixed reads and propose them together without granting access."""
+        return service.propose_selected(grants, session_id, request_id, selections)
+
+    @module.operation(private=True, read_only=False, heads={"web", "api-private"}, audience="everyday")
+    def prepare_connected_read_set_review(
+        service: ConnectedReadSetReviews,
+        session_id: Identity,
+        request_id: Request,
+        proposal_request: Request,
+        proposal_revision: Annotated[int, Field(ge=1, strict=True)],
+    ) -> ReadSetReview:
+        """Re-observe the exact current set; this does not issue or consume approval."""
+        return service.prepare(session_id, request_id, proposal_request, proposal_revision)
+
+    @module.operation(private=True, heads={"web", "api-private"}, audience="everyday")
+    def connected_read_set_review(
+        service: ConnectedReadSetReviews, session_id: Identity, request_id: Request
+    ) -> ReadSetReview:
+        """Inspect the latest exact set review after fresh source and account checks."""
+        return service.current(session_id, request_id)
+
+    @module.operation(private=True, heads={"web", "api-private"}, audience="everyday")
+    def connected_read_set_approval(service: ConnectedReadSetApprovals, session_id: Identity) -> ReadSetReview:
+        """Inspect the latest valid, unrevoked whole-set approval without executing a read."""
+        return service.approved(session_id)
+
+    @module.operation(private=True, read_only=False, heads={"web", "api-private"}, audience="everyday")
+    def approve_connected_read_set(  # noqa: PLR0913, PLR0917 - exact human confirmation
+        service: ConnectedReadSetApprovals,
+        confirmation: ApprovalConfirmation,
+        session_id: Identity,
+        request_id: Request,
+        review: dict[str, JsonValue],
+        approval_proof: str,
+    ) -> ReadSetReview:
+        """Record an exact trusted human-confirmed read-set approval; do not execute a read."""
+        return service.approve(session_id, request_id, review, approval_proof, confirmation)
+
+    @module.operation(private=True, read_only=False, heads={"web", "api-private"}, audience="everyday")
+    def revoke_connected_read_set(
+        service: ConnectedReadSetApprovals, session_id: Identity, request_id: Request
+    ) -> bool:
+        """Revoke the complete exact set before any later reads."""
+        service.revoke(session_id, request_id)
+        return True
+
+
 def _register_autonomous_schedule_operations(module: Module) -> None:
     """Register owner-private schedule review, independent of legacy notices."""
 
@@ -715,8 +833,12 @@ def _register_notification_operations(module: Module) -> None:
 
 def _register_review_services(module: Module) -> None:
     module.service(ConnectedReadGrants)
+    module.service(ConnectedReadSets)
+    module.service(ConnectedReadSetReviews)
+    module.service(ConnectedReadSetApprovals)
     module.service(AutonomousSchedules)
     _register_connected_read_operations(module)
+    _register_connected_read_set_operations(module)
     _register_autonomous_schedule_operations(module)
 
 

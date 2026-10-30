@@ -27,6 +27,9 @@ from heinzel.modules.heinzel._claude_subscription_model import (
     subscription_environment,
 )
 from heinzel.modules.heinzel._connected_grants import ConnectedReadGrants
+from heinzel.modules.heinzel._connected_read_set_approvals import ConnectedReadSetApprovals
+from heinzel.modules.heinzel._connected_read_set_reviews import ConnectedReadSetReviews
+from heinzel.modules.heinzel._connected_read_sets import ConnectedReadSets
 from heinzel.modules.heinzel._engine import TurnLimits
 from heinzel.modules.heinzel._interactive_turn import InteractiveTurn, ToolActivity, interactive_turn_id
 from heinzel.modules.heinzel._models import HeinzelSettings
@@ -296,6 +299,12 @@ class UserChatService:
                 verify=verify,
                 connected=self.connected_grants() if notification_policy.item_evidence is not None else None,
             )
+        connected = self._connected() if (user_proposals or connected_allowed) and self._connected else None
+        connected_set = (
+            ConnectedReadSetApprovals(ConnectedReadSetReviews(ConnectedReadSets(self._crud, self.current), connected))
+            if user_proposals and connected is not None
+            else None
+        )
         message = await InteractiveTurn(self._crud).run(
             session,
             request,
@@ -304,7 +313,8 @@ class UserChatService:
             allow_ungranted_tools=False,
             user_proposal_policy=unchanged if user_proposals else None,
             prepare=prepare,
-            connected=self._connected() if (user_proposals or connected_allowed) and self._connected else None,
+            connected=connected,
+            connected_set=connected_set,
             scheduled_notifications=scheduled_notice,
             backend_binding=BackendBinding(backend="claude-code", mode="cli-model", revision=1),
         )
