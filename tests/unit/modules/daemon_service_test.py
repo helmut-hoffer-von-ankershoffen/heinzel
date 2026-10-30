@@ -2,8 +2,10 @@
 
 import json
 import os
+import select
 import stat
 import subprocess
+import sys
 import threading
 import time
 from datetime import datetime, timedelta, timezone
@@ -1633,15 +1635,45 @@ def test_killed_mutator_leaves_admission_denied_after_fake_uv(make, bin_dir, tmp
     service = make(runner=Runner(bin_dir))
     service._continuity_fingerprint = lambda: "a" * 64
     fake_uv_output = tmp_path / "fake-uv-wrote"
-    child = os.fork()
-    if child == 0:
-        with service.mutation_guard(lambda: True, lambda: "b" * 64) as scope:
-            scope.capture()
-            fake_uv_output.write_text("fake mutation completed")
-            os._exit(19)
-    _, status = os.waitpid(child, 0)
-    assert os.waitstatus_to_exitcode(status) == 19
+    code = """import os, sys, time
+from pathlib import Path
+from heinzel import Kernel, Settings
+from heinzel.modules.system.daemon import DaemonService, DaemonSettings
+settings = Settings(state_dir=Path(sys.argv[1]), data_dir=Path(sys.argv[2]), log_dir=Path(sys.argv[3]))
+service = DaemonService(Kernel(settings, []), settings, DaemonSettings(unit_dir=Path(sys.argv[4])),
+                        platform="darwin", continuity_fingerprint=lambda: "a" * 64)
+with service.mutation_guard(lambda: True, lambda: "b" * 64) as scope:
+    scope.capture()
+    Path(sys.argv[5]).write_text("fake mutation completed")
+    os.write(1, b"R")
+    time.sleep(60)
+"""
+    child = subprocess.Popen(
+        [sys.executable, "-c", code, str(service.state_dir.parent), str(tmp_path / "data"),
+         str(tmp_path / "logs"), str(tmp_path / "units"), str(fake_uv_output)],
+        stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+    )  # fmt: skip
+    try:
+        assert child.stdout is not None
+        ready, _, _ = select.select([child.stdout], [], [], 3)
+        assert ready
+        assert os.read(child.stdout.fileno(), 1) == b"R"
+        assert fake_uv_output.read_text() == "fake mutation completed"
+        with lock(service.state_dir / "lifecycle.lock") as acquired:
+            assert not acquired
+        with pytest.raises(HeinzelError, match="changing or requires recovery"), service.admission_guard():
+            pytest.fail("an active mutation must hold the cross-process lifecycle lock")
+        child.kill()
+        assert child.wait(timeout=2) < 0
+    finally:
+        if child.poll() is None:
+            child.kill()
+            child.wait(timeout=2)
+        if child.stdout is not None:
+            child.stdout.close()
     assert fake_uv_output.read_text() == "fake mutation completed"
+    with lock(service.state_dir / "lifecycle.lock") as acquired:
+        assert acquired
     assert (service.state_dir / "mutation-pending.json").exists()
     with pytest.raises(HeinzelError, match="requires recovery"), service.admission_guard():
         pytest.fail("uncertain mutation must deny schedule admission")
