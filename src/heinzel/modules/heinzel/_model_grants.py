@@ -78,7 +78,7 @@ class ModelGrants:
         self.crud = crud
 
     def _body(self, session: str, event: SessionEvent) -> ModelGrant:
-        return ModelGrant.model_validate(self.crud._body(session, event))  # noqa: SLF001 - hash-verified private body
+        return ModelGrant.model_validate(self.crud.read_body(session, event))
 
     def _latest(self, session: str, events: list[SessionEvent]) -> ModelGrant | None:
         event = next((event for event in reversed(events) if event.kind == "model.grant-approved"), None)

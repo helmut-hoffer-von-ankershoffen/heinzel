@@ -5,7 +5,6 @@ default, except for bounded private proposal operations. Subscription usage rema
 """
 
 import asyncio
-import json
 import shutil
 import tempfile
 from collections.abc import Callable
@@ -13,7 +12,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, JsonValue, TypeAdapter
 
 from heinzel import Config, CurrentUser, HeinzelError
 from heinzel.kernel import PRIVATE_WRITE, CapabilitySettings, RunnerSnapshot, RunnerSnapshotProvider
@@ -28,7 +27,7 @@ from heinzel.modules.heinzel._claude_subscription_model import (
     subscription_environment,
 )
 from heinzel.modules.heinzel._engine import TurnLimits
-from heinzel.modules.heinzel._interactive_turn import InteractiveTurn, ToolActivity, _turn_id
+from heinzel.modules.heinzel._interactive_turn import InteractiveTurn, ToolActivity, interactive_turn_id
 from heinzel.modules.heinzel._models import HeinzelSettings
 from heinzel.modules.heinzel._session_crud import SessionCrud
 from heinzel.modules.heinzel._session_models import BackendBinding, RequestId, SessionId, SessionMessage
@@ -43,32 +42,38 @@ _MAX_OUTPUT = 128 * 1024
 class UserChatAnswer(BaseModel):
     """A persisted answer for exactly the accepted request; not a schedule or approval."""
 
-    session_id: SessionId
-    request_id: RequestId
-    message: SessionMessage
+    session_id: SessionId = Field(description="The authenticated owner's durable agent session.")
+    request_id: RequestId = Field(description="The accepted message request answered by this turn.")
+    message: SessionMessage = Field(description="The persisted assistant reply for this exact request.")
 
 
 class UserTurnResolution(BaseModel):
     """The exact stopped turn was explicitly set aside, not replayed or undone."""
 
-    session_id: SessionId
-    request_id: RequestId
-    status: Literal["abandoned"] = "abandoned"
+    session_id: SessionId = Field(description="The authenticated owner's durable agent session.")
+    request_id: RequestId = Field(description="The stopped request explicitly set aside by its owner.")
+    status: Literal["abandoned"] = Field(
+        default="abandoned", description="The turn was set aside without replaying or undoing possible effects."
+    )
 
 
 class UserTurnState(BaseModel):
     """The recorded state of one owner-bound turn; unresolved may still be running."""
 
-    session_id: SessionId
-    request_id: RequestId
-    status: Literal["pending", "unresolved", "abandoned", "completed"]
+    session_id: SessionId = Field(description="The authenticated owner's durable agent session.")
+    request_id: RequestId = Field(description="The accepted request whose journal state was inspected.")
+    status: Literal["pending", "unresolved", "abandoned", "completed"] = Field(
+        description="Recorded request state; an unresolved turn may still be running."
+    )
 
 
 class UserToolActivity(BaseModel):
     """Owner-private, host-observed tool decisions without arguments or secrets."""
 
-    session_id: SessionId
-    items: list[ToolActivity] = Field(max_length=100)
+    session_id: SessionId = Field(description="The authenticated owner's durable agent session.")
+    items: list[ToolActivity] = Field(
+        max_length=100, description="Recent host-recorded tool events, with no arguments or credentials."
+    )
 
 
 class _ClaudeVerifier:
@@ -149,11 +154,10 @@ class UserChatService:
                     timeout=10,
                     limit=16_384,
                 )
-            data = json.loads(result.stdout)
+            data = TypeAdapter(dict[str, JsonValue]).validate_json(result.stdout, strict=True)
             if (
                 result.returncode != 0
                 or result.truncated
-                or not isinstance(data, dict)
                 or data.get("loggedIn") is not True
                 or data.get("authMethod") != "claude.ai"
                 or data.get("apiProvider") != "firstParty"
@@ -181,10 +185,12 @@ class UserChatService:
         """
         self._owner(session, request)
         events = self._crud.repository.control_read(session).events
-        turn = _turn_id(request)
+        turn = interactive_turn_id(request)
         prior = next((event for event in events if event.kind == "message.replied" and event.key == turn), None)
         if prior is not None:
-            return UserChatAnswer(session_id=session, request_id=request, message=self._crud._message(session, prior))  # noqa: SLF001
+            return UserChatAnswer(
+                session_id=session, request_id=request, message=self._crud.read_message(session, prior)
+            )
         if any(event.kind == "interactive.started" and event.key == turn for event in events):
             msg = "This interrupted turn has an uncertain outcome and cannot be retried automatically"
             raise HeinzelError(msg)
@@ -237,7 +243,7 @@ class UserChatService:
         """
         self._owner(session, request)
         repo = self._crud.repository
-        turn = _turn_id(request)
+        turn = interactive_turn_id(request)
         events = repo.control_read(session).events
         starts = [e for e in events if e.kind == "interactive.started" and e.key == turn]
         replies = [e for e in events if e.kind == "message.replied" and e.key == turn]
@@ -260,7 +266,7 @@ class UserChatService:
                 raise HeinzelError(msg)
             status = "abandoned"
         elif replies:
-            self._crud._message(session, replies[0])  # noqa: SLF001 - verify private recorded reply
+            self._crud.read_message(session, replies[0])
             status = "completed"
         elif starts:
             if starts[0].data.get("message_id") != request:
@@ -277,7 +283,7 @@ class UserChatService:
         """
         self._owner(session, request)
         repo = self._crud.repository
-        turn = _turn_id(request)
+        turn = interactive_turn_id(request)
         with repo.main_writer(session):
             self._owner(session, request)
             with repo.control_writer(session) as writer:

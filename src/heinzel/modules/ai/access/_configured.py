@@ -34,15 +34,15 @@ def _private_key(current: CurrentUser) -> bytes:
     current.owner()  # creates and verifies the private identity directory
     directory = os.open(current.directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     try:
-        CurrentUser._private(os.fstat(directory), directory=True)  # noqa: SLF001 - same ownership fence as identity
-        lock = CurrentUser._open(directory, "owner.lock", os.O_RDWR | os.O_CREAT)  # noqa: SLF001
+        CurrentUser.verify_private(os.fstat(directory), directory=True)
+        lock = CurrentUser.open_private(directory, "owner.lock", os.O_RDWR | os.O_CREAT)
         try:
             fcntl.flock(lock, fcntl.LOCK_EX)
             try:
-                handle = CurrentUser._open(directory, _KEY_NAME, os.O_RDONLY)  # noqa: SLF001
+                handle = CurrentUser.open_private(directory, _KEY_NAME, os.O_RDONLY)
             except FileNotFoundError:
                 temporary = f".api-binding-{secrets.token_hex(12)}"
-                fd = CurrentUser._open(directory, temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL)  # noqa: SLF001
+                fd = CurrentUser.open_private(directory, temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL)
                 try:
                     with os.fdopen(fd, "wb") as stream:
                         stream.write(secrets.token_bytes(_KEY_BYTES))
@@ -53,7 +53,7 @@ def _private_key(current: CurrentUser) -> bytes:
                 finally:
                     with contextlib.suppress(FileNotFoundError):
                         os.unlink(temporary, dir_fd=directory)
-                handle = CurrentUser._open(directory, _KEY_NAME, os.O_RDONLY)  # noqa: SLF001
+                handle = CurrentUser.open_private(directory, _KEY_NAME, os.O_RDONLY)
             with os.fdopen(handle, "rb") as stream:
                 key = stream.read(_KEY_BYTES + 1)
             if len(key) != _KEY_BYTES:

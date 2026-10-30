@@ -283,7 +283,7 @@ def propose_agent_contract(
         str, Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$", description="The contract proposal request id.")
     ],
 ) -> ChatSession:
-    """Stage the exact current agent contract for human review; no schedule, access, or model call is granted."""
+    """Stage current agent contract terms for human review."""
     return service.propose_agent_contract(durable_session, request_id)
 
 

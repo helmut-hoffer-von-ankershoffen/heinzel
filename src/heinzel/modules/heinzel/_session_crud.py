@@ -505,7 +505,7 @@ class SessionCrud(ApprovalIssuer):
         if event is None:
             msg = "This Heinzel's creation is incomplete; retry its original creation request"
             raise HeinzelError(msg)
-        value = self._body(session_id, event)
+        value = self.read_body(session_id, event)
         try:
             profile = PersonalProfile.model_validate_json(_json(value))
             revision = _REVISION.validate_python(event.data["revision"], strict=True)
@@ -517,7 +517,13 @@ class SessionCrud(ApprovalIssuer):
             raise HeinzelError(msg)
         return profile, revision
 
-    def _body(self, session_id: str, event: SessionEvent) -> JsonValue:
+    def read_body(self, session_id: str, event: SessionEvent) -> JsonValue:
+        """Hydrate a hash-verified immutable body from this owner's private session repository.
+
+        Raises:
+            HeinzelError: If the checkpoint reference or immutable body is invalid.
+            FileNotFoundError: If the referenced body is no longer retained.
+        """
         try:
             ref = BodyRef.model_validate({key: event.data.get(key) for key in ("source", "body_id", "body_hash")})
         except ValidationError:
@@ -620,7 +626,7 @@ class SessionCrud(ApprovalIssuer):
             if event.kind not in {"contract.proposed", "schedule.activated"}:
                 continue
             try:
-                contract = _CheckInRecord.model_validate(self._body(session_id, event)).contract
+                contract = _CheckInRecord.model_validate(self.read_body(session_id, event)).contract
             except (TypeError, ValueError, ValidationError):
                 msg = "This Heinzel's saved contract version is invalid; restore its private snapshot"
                 raise HeinzelError(msg) from None
@@ -643,9 +649,9 @@ class SessionCrud(ApprovalIssuer):
             return None
         try:
             if event.kind in {"contract.proposed", "schedule.activated"}:
-                state = _CheckInRecord.model_validate(self._body(session_id, event)).schedule
+                state = _CheckInRecord.model_validate(self.read_body(session_id, event)).schedule
             else:
-                state = _ScheduleState.model_validate(self._body(session_id, event))
+                state = _ScheduleState.model_validate(self.read_body(session_id, event))
             return _validate_schedule_state(state, self._contracts(session_id, events))
         except (KeyError, TypeError, ValueError, ZoneInfoNotFoundError, ValidationError):
             msg = "This Heinzel's saved schedule is invalid; restore its private snapshot"
@@ -725,7 +731,7 @@ class SessionCrud(ApprovalIssuer):
 
     def _read_artifact(self, session_id: str, event: SessionEvent) -> PersonalArtifact:
         try:
-            artifact = PersonalArtifact.model_validate(self._body(session_id, event))
+            artifact = PersonalArtifact.model_validate(self.read_body(session_id, event))
         except (ValidationError, TypeError, ValueError):
             msg = "This artifact association is invalid; restore its private snapshot"
             raise HeinzelError(msg) from None
@@ -850,7 +856,7 @@ class SessionCrud(ApprovalIssuer):
 
     def _read_skill_sharing(self, session_id: str, request_id: str, event: SessionEvent) -> SkillSharingProposal:
         try:
-            proposal = SkillSharingProposal.model_validate(self._body(session_id, event))
+            proposal = SkillSharingProposal.model_validate(self.read_body(session_id, event))
             draft = self.skill_draft(session_id, proposal.draft_request_id)
         except (ValidationError, TypeError, ValueError):
             msg = "This private sharing proposal is invalid"
@@ -916,7 +922,7 @@ class SessionCrud(ApprovalIssuer):
 
     def _read_skill_draft(self, session_id: str, request_id: str, event: SessionEvent) -> SkillDraft:
         try:
-            draft = SkillDraft.model_validate(self._body(session_id, event))
+            draft = SkillDraft.model_validate(self.read_body(session_id, event))
             terms = draft.model_dump(mode="json", exclude={"preview_sha256"})
         except (ValidationError, TypeError, ValueError):
             msg = "This skill draft is invalid; restore its private snapshot"
@@ -970,7 +976,7 @@ class SessionCrud(ApprovalIssuer):
 
     def _read_profile_proposal(self, session_id: str, event: SessionEvent) -> ProfileProposal:
         try:
-            proposal = ProfileProposal.model_validate(self._body(session_id, event))
+            proposal = ProfileProposal.model_validate(self.read_body(session_id, event))
             terms = proposal.model_dump(mode="json", exclude={"preview_sha256"})
         except (ValidationError, TypeError, ValueError):
             msg = "This profile proposal is invalid"
@@ -1105,7 +1111,7 @@ class SessionCrud(ApprovalIssuer):
 
     def _read_agent_proposal(self, session_id: str, request_id: str, event: SessionEvent) -> ScheduledAgentProposal:
         try:
-            proposal = ScheduledAgentProposal.model_validate(self._body(session_id, event))
+            proposal = ScheduledAgentProposal.model_validate(self.read_body(session_id, event))
             terms = proposal.model_dump(mode="json", exclude={"preview_sha256"})
         except (ValidationError, TypeError, ValueError):
             msg = "This agent execution proposal is invalid; restore its private snapshot"
@@ -1613,7 +1619,12 @@ class SessionCrud(ApprovalIssuer):
             raise HeinzelError(msg)
         return parsed.after
 
-    def _message(self, session_id: str, event: SessionEvent) -> SessionMessage:
+    def read_message(self, session_id: str, event: SessionEvent) -> SessionMessage:
+        """Project an authoritative message event, including its verified private body and origin.
+
+        Raises:
+            HeinzelError: If the message identity or recorded provenance is invalid.
+        """
         try:
             message_id = _REQUEST.validate_python(event.data.get("message_id"), strict=True)
         except ValidationError:
@@ -1627,7 +1638,7 @@ class SessionCrud(ApprovalIssuer):
                 msg = "This message checkpoint has invalid acceptance provenance"
                 raise HeinzelError(msg) from None
         try:
-            value = self._body(session_id, event)
+            value = self.read_body(session_id, event)
         except FileNotFoundError:
             return SessionMessage(
                 id=message_id,
@@ -1698,7 +1709,7 @@ class SessionCrud(ApprovalIssuer):
             contracts=contracts,
             schedule=schedule,
             last_seq=events[-1].seq if events else 0,
-            messages=[self._message(session_id, event) for event in page],
+            messages=[self.read_message(session_id, event) for event in page],
             costs=costs.model_copy(
                 update={
                     "unknown_turns": costs.unknown_turns
@@ -1723,7 +1734,7 @@ class SessionCrud(ApprovalIssuer):
             raise HeinzelError(msg)
         events = self.repository.control_read(session_id).events
         messages = [
-            self._message(session_id, event)
+            self.read_message(session_id, event)
             for event in events
             if event.kind in {"message.accepted", "message.replied"}
         ]

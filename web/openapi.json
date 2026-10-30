@@ -9155,30 +9155,36 @@
         "description": "Private suggested identity and appearance; applying it requires a separate user save.",
         "properties": {
           "appearance": {
-            "$ref": "#/components/schemas/HeinzelAppearance"
+            "$ref": "#/components/schemas/HeinzelAppearance",
+            "description": "The suggested appearance, pending an explicit user save."
           },
           "expected_revision": {
+            "description": "The current profile revision this suggestion is based on.",
             "minimum": 1.0,
             "title": "Expected Revision",
             "type": "integer"
           },
           "name": {
+            "description": "The suggested display name, not yet applied.",
             "maxLength": 100,
             "minLength": 1,
             "title": "Name",
             "type": "string"
           },
           "preview_sha256": {
+            "description": "The digest binding the exact suggested profile for review.",
             "pattern": "^[0-9a-f]{64}$",
             "title": "Preview Sha256",
             "type": "string"
           },
           "request_id": {
+            "description": "The stable request identifying these exact suggested terms.",
             "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
             "title": "Request Id",
             "type": "string"
           },
           "session_id": {
+            "description": "The owner's agent receiving this suggested identity.",
             "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
             "title": "Session Id",
             "type": "string"
@@ -9186,6 +9192,7 @@
           "status": {
             "const": "proposed",
             "default": "proposed",
+            "description": "This suggestion has not been applied.",
             "title": "Status",
             "type": "string"
           }
@@ -14264,15 +14271,18 @@
         "description": "A redacted host-observed tool invocation or denial.",
         "properties": {
           "at": {
+            "description": "When the host recorded this event, in UTC.",
             "format": "date-time",
             "title": "At",
             "type": "string"
           },
           "seq": {
+            "description": "Sequence of this event in the owner's control journal.",
             "title": "Seq",
             "type": "integer"
           },
           "status": {
+            "description": "Whether dispatch was requested, completed, failed, or refused by the host.",
             "enum": [
               "requested",
               "completed",
@@ -14283,10 +14293,12 @@
             "type": "string"
           },
           "tool": {
+            "description": "The host-recorded tool name, without its arguments.",
             "title": "Tool",
             "type": "string"
           },
           "turn_id": {
+            "description": "The exact durable turn associated with this tool event.",
             "title": "Turn Id",
             "type": "string"
           }
@@ -14626,14 +14638,17 @@
         "description": "A persisted answer for exactly the accepted request; not a schedule or approval.",
         "properties": {
           "message": {
-            "$ref": "#/components/schemas/SessionMessage"
+            "$ref": "#/components/schemas/SessionMessage",
+            "description": "The persisted assistant reply for this exact request."
           },
           "request_id": {
+            "description": "The accepted message request answered by this turn.",
             "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
             "title": "Request Id",
             "type": "string"
           },
           "session_id": {
+            "description": "The authenticated owner's durable agent session.",
             "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
             "title": "Session Id",
             "type": "string"
@@ -14651,6 +14666,7 @@
         "description": "Owner-private, host-observed tool decisions without arguments or secrets.",
         "properties": {
           "items": {
+            "description": "Recent host-recorded tool events, with no arguments or credentials.",
             "items": {
               "$ref": "#/components/schemas/ToolActivity"
             },
@@ -14659,6 +14675,7 @@
             "type": "array"
           },
           "session_id": {
+            "description": "The authenticated owner's durable agent session.",
             "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
             "title": "Session Id",
             "type": "string"
@@ -14675,11 +14692,13 @@
         "description": "The exact stopped turn was explicitly set aside, not replayed or undone.",
         "properties": {
           "request_id": {
+            "description": "The stopped request explicitly set aside by its owner.",
             "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
             "title": "Request Id",
             "type": "string"
           },
           "session_id": {
+            "description": "The authenticated owner's durable agent session.",
             "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
             "title": "Session Id",
             "type": "string"
@@ -14687,6 +14706,7 @@
           "status": {
             "const": "abandoned",
             "default": "abandoned",
+            "description": "The turn was set aside without replaying or undoing possible effects.",
             "title": "Status",
             "type": "string"
           }
@@ -14702,16 +14722,19 @@
         "description": "The recorded state of one owner-bound turn; unresolved may still be running.",
         "properties": {
           "request_id": {
+            "description": "The accepted request whose journal state was inspected.",
             "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
             "title": "Request Id",
             "type": "string"
           },
           "session_id": {
+            "description": "The authenticated owner's durable agent session.",
             "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
             "title": "Session Id",
             "type": "string"
           },
           "status": {
+            "description": "Recorded request state; an unresolved turn may still be running.",
             "enum": [
               "pending",
               "unresolved",
@@ -17984,11 +18007,13 @@
             }
           },
           {
+            "description": "Maximum recent recorded tool events to return.",
             "in": "query",
             "name": "limit",
             "required": false,
             "schema": {
               "default": 30,
+              "description": "Maximum recent recorded tool events to return.",
               "title": "Limit",
               "type": "integer"
             }
@@ -20373,7 +20398,7 @@
     },
     "/system/runner/chat/propose-agent-contract": {
       "post": {
-        "description": "Stage the exact current agent contract for human review; no schedule, access, or model call is granted.",
+        "description": "Stage current agent contract terms for human review.",
         "operationId": "system_runner_chat_propose_agent_contract",
         "parameters": [
           {
@@ -20421,7 +20446,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Stage the exact current agent contract for human review; no schedule, access, or model call is granted.",
+        "summary": "Stage current agent contract terms for human review.",
         "tags": [
           "system"
         ]

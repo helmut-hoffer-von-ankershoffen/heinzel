@@ -342,7 +342,7 @@ def _register_user_chat_operations(module: Module) -> None:
     def tool_activity(
         service: UserChatService,
         session_id: Identity,
-        limit: Annotated[int, Field(ge=1, le=100)] = 30,
+        limit: Annotated[int, Field(ge=1, le=100, description="Maximum recent recorded tool events to return.")] = 30,
     ) -> UserToolActivity:
         """Show owner-private host-observed tool decisions, without their arguments."""
         return service.activity(session_id, limit)
