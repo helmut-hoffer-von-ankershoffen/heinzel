@@ -57,6 +57,9 @@ def makefile() -> str:
     )
     text = text.replace("check with coverage, template, build", "check with coverage, build")
     text = text.replace("lint, architecture contracts and workflows", "lint and workflows")
+    # Public product catalog and its browser suite are core website tooling, not plugin template dependencies.
+    text = text.replace(" docs-catalog docs-site-check", "")
+    text = re.sub(r"\n(docs-catalog|docs-site-check):.*?\n(?:\t.*\n)+", "\n", text)
     # The web head's app (web/, ADR 0039): plugins bring operations, not UI.
     text = text.replace(" web-build web-dev test-web", "").replace(" test-browser-deps", "")
     text = re.sub(r"\n# The web head's app in web/.*?\nWEB_TESTS := [^\n]*", "", text, flags=re.DOTALL)

@@ -1,0 +1,419 @@
+# /// script
+# requires-python = ">=3.12"
+# dependencies = ["packaging==26.3"]
+# ///
+"""Deterministic, escaped website views over the public catalog snapshot (no provider imports)."""
+
+import hashlib
+import html
+import json
+import os
+import posixpath
+import shlex
+from pathlib import Path
+from typing import Any
+
+from site_catalog import (
+    CATEGORIES,
+    COLOR,
+    MAX_PROJECTS,
+    NAME,
+    REPOSITORY,
+    REVISION,
+    SNAPSHOT,
+    VERSION,
+    Object,
+    relative,
+    text,
+)
+
+
+def load_snapshot(path: Path = SNAPSHOT) -> Object:
+    """Validate the offline/publication boundary before generating any website files.
+
+    Raises:
+        ValueError: If the snapshot contains an unverified identity or unsafe presentation.
+    """
+    data = json.loads(path.read_text())
+    if data.get("format") != 1 or not VERSION.fullmatch(str(data.get("release", {}).get("version", ""))):
+        msg = "The website requires a versioned catalog and a complete release recommendation"
+        raise ValueError(msg)
+    data["release"]["install"] = f"uvx --from heinzel=={data['release']['version']} hz-install"
+    if not 0 < len(data.get("plugins", [])) <= MAX_PROJECTS:
+        msg = "Catalog must be bounded and nonempty"
+        raise ValueError(msg)
+    sources = [checked_source(source) for source in data.get("sources", [])]
+    data["sources"] = sources
+    seen = set()
+    for project in data.get("plugins", []):
+        source = checked_source(project.get("source", {}))
+        project["source"] = source
+        if source not in sources:
+            msg = "Every project must belong to a confirmed-public snapshot source"
+            raise ValueError(msg)
+        if not REVISION.fullmatch(str(source.get("revision", ""))) or not NAME.fullmatch(project.get("name", "")):
+            msg = "Catalog entries need immutable source and distribution identities"
+            raise ValueError(msg)
+        key = f"{source['repository']}:{project['directory']}:{project['name']}"
+        identity = project["name"] + "-" + hashlib.sha256(key.encode()).hexdigest()[:10]
+        if project.get("id") != identity or identity in seen:
+            msg = "Catalog page identities must be unique and safe"
+            raise ValueError(msg)
+        seen.add(project["id"])
+        if project["directory"] != ".":
+            relative(project["directory"])
+        text(project["title"], 100)
+        text(project["summary"])
+        validate_presentation(project)
+
+    return data
+
+
+def checked_source(source: Object) -> Object:
+    """Return only public, immutable source identity fields.
+
+    Raises:
+        ValueError: If any source is private, incomplete or malformed.
+    """
+    if source.get("visibility") != "public" or not REPOSITORY.fullmatch(str(source.get("repository", ""))):
+        msg = "Only confirmed-public source identities may enter the website"
+        raise ValueError(msg)
+    if not REVISION.fullmatch(str(source.get("revision", ""))):
+        msg = "Public source identity must be immutable"
+        raise ValueError(msg)
+    return {key: source[key] for key in ("repository", "revision", "visibility")}
+
+
+MAX_DECLARATIONS = 24
+MAX_IMAGES = 8
+
+
+def validate_presentation(project: Object) -> None:
+    """Narrow presentation data and reconstruct links and commands from checked identity.
+
+    Raises:
+        ValueError: If untrusted declarations or artwork exceed their boundary.
+    """
+    source = project["source"]
+    for key in ("version", "core"):
+        text(project[key], 500)
+    for key in ("highlights", "provides", "requires"):
+        if len(project[key]) > MAX_DECLARATIONS:
+            msg = "Catalog declarations must be bounded"
+            raise ValueError(msg)
+        for value in project[key]:
+            text(value, 180)
+    project["category"] = project["category"] if project["category"] in CATEGORIES else "utilities"
+    folder = project["directory"]
+    project["url"] = f"https://github.com/{source['repository']}/tree/{source['revision']}/{folder}"
+    spec = f"git+https://github.com/{source['repository']}.git@{source['revision']}"
+    if folder != ".":
+        spec += f"#subdirectory={folder}"
+    project["install"] = f"hz system plugin add {shlex.quote(spec)}"
+    validate_assets(project)
+
+
+def validate_assets(project: Object) -> None:
+    """Validate bounded theme labels and immutable raster artwork.
+
+    Raises:
+        ValueError: If a supplied asset is unsafe to display.
+    """
+    source = project["source"]
+    if len(project["themes"]) > MAX_DECLARATIONS or len(project.get("artwork", [])) > MAX_IMAGES:
+        msg = "Catalog assets must be bounded"
+        raise ValueError(msg)
+    for theme in project["themes"]:
+        text(theme["title"], 100)
+    for artwork in project.get("artwork", []):
+        prefix = f"https://raw.githubusercontent.com/{source['repository']}/{source['revision']}/"
+        if not artwork["url"].startswith(prefix):
+            msg = "Artwork must come from its immutable public source"
+            raise ValueError(msg)
+        asset = relative(artwork["url"].removeprefix(prefix))
+        if Path(asset).suffix not in {".png", ".jpg", ".webp"}:
+            msg = "Supplier artwork must be raster images, never executable documents"
+            raise ValueError(msg)
+
+
+def escape(value: object) -> str:
+    """Escape metadata as text, including inside HTML attributes."""
+    return html.escape(str(value), quote=True)
+
+
+def href(target: str, page_url: str) -> str:
+    """A relative static-site URL that also works under GitHub Pages' project prefix."""
+    base = page_url.rstrip("/") if page_url.endswith("/") else posixpath.dirname(page_url)
+    return posixpath.relpath(target, base or ".") + ("/" if target.endswith("/") else "")
+
+
+def palette(theme: Object, mode: str, token: str, fallback: str) -> str:
+    """Only checked hex tokens can enter generated artwork or CSS."""
+    value = theme.get("palette", {}).get(mode, {}).get(token, "")
+    return value if isinstance(value, str) and COLOR.fullmatch(value) else fallback
+
+
+def theme_art(theme: Object, mode: str) -> str:
+    """An original inert UI illustration drawn from a declared palette, never supplier SVG."""
+    background = palette(theme, mode, "background", "#faf8f4")
+    card = palette(theme, mode, "card", "#ffffff")
+    foreground = palette(theme, mode, "foreground", "#242c29")
+    primary = palette(theme, mode, "primary", "#a4462d")
+    sidebar = palette(theme, mode, "sidebar", "#efece5")
+    border = palette(theme, mode, "border", "#d9ddd6")
+    return f"""<svg xmlns="http://www.w3.org/2000/svg" width="960" height="600" viewBox="0 0 960 600">
+<title>{escape(theme["title"])} · {mode} palette preview</title>
+<rect width="960" height="600" rx="28" fill="{background}"/>
+<circle cx="846" cy="62" r="170" fill="{primary}" opacity=".09"/>
+<rect x="52" y="54" width="856" height="492" rx="18" fill="{card}" stroke="{border}"/>
+<path d="M70 54h170v492H70a18 18 0 0 1-18-18V72a18 18 0 0 1 18-18" fill="{sidebar}"/>
+<circle cx="92" cy="96" r="16" fill="{primary}"/>
+<path d="m84 97 7-9 9 9-9 7Z" fill="{card}"/>
+<g fill="{foreground}" font-family="system-ui,sans-serif">
+<text x="120" y="102" font-size="16" font-weight="650">Heinzel</text>
+<text x="278" y="108" font-size="15">Your workspace</text>
+<text x="278" y="170" font-size="28" font-weight="650">Room for good work.</text>
+</g>
+<rect x="72" y="142" width="148" height="34" rx="7" fill="{primary}" opacity=".14"/>
+<g fill="{foreground}" opacity=".35">
+<rect x="89" y="156" width="81" height="7" rx="3"/>
+<rect x="89" y="202" width="93" height="7" rx="3"/>
+<rect x="89" y="248" width="66" height="7" rx="3"/>
+<rect x="89" y="294" width="102" height="7" rx="3"/>
+</g>
+<g stroke="{border}" fill="{background}">
+<rect x="278" y="206" width="290" height="134" rx="12"/>
+<rect x="588" y="206" width="280" height="134" rx="12"/>
+<rect x="278" y="360" width="590" height="144" rx="12"/>
+</g>
+<g fill="{primary}">
+<circle cx="310" cy="241" r="7"/>
+<rect x="310" y="289" width="188" height="10" rx="5" opacity=".2"/>
+<rect x="310" y="289" width="124" height="10" rx="5"/>
+<path d="m619 301 36-34 34 11 32-30 40 11 44-32 30 8" fill="none" stroke="{primary}" stroke-width="5"
+stroke-linecap="round"/>
+<rect x="310" y="391" width="34" height="34" rx="9" opacity=".15"/>
+<rect x="310" y="449" width="34" height="23" rx="7" opacity=".15"/>
+</g>
+<g fill="{foreground}" opacity=".7">
+<rect x="328" y="237" width="112" height="8" rx="4"/>
+<rect x="619" y="237" width="98" height="8" rx="4"/>
+<rect x="364" y="397" width="258" height="8" rx="4"/>
+<rect x="364" y="416" width="193" height="6" rx="3" opacity=".45"/>
+<rect x="364" y="454" width="224" height="8" rx="4"/>
+</g></svg>"""
+
+
+def command(value: str, identity: str) -> str:
+    """An accessible copy control with useful static text when JavaScript is unavailable."""
+    return f"""<div class="hz-command">
+<code id="{identity}">{escape(value)}</code>
+<button type="button" data-copy="{identity}" aria-label="Copy command">Copy</button></div>"""
+
+
+def cards(data: Object, page_url: str, *, featured: bool = False) -> str:
+    """A complete server-rendered collection; JavaScript only narrows what is already present."""
+    projects = sorted(data["plugins"], key=lambda p: (not bool(p["included_version"]), not p["maintained"], p["title"]))
+    if featured:
+        projects = [p for p in projects if p["included_version"]][:4]
+    result = []
+    for project in projects:
+        target = href(f"catalog/{project['id']}/", page_url)
+        category = project.get("category", "utilities")
+        badge = "Included in the app" if project["included_version"] else "Source plugin"
+        if project.get("artwork"):
+            art = project["artwork"][0]
+            visual = (
+                f'<img src="{escape(art["url"])}" alt="{escape(art["alt"])}" '
+                'loading="lazy" referrerpolicy="no-referrer">'
+            )
+        elif project["themes"]:
+            image = href(f"catalog/art/{project['id']}-0-light.svg", page_url)
+            visual = (
+                f'<img src="{image}" alt="{escape(project["themes"][0]["title"])} palette preview" '
+                'width="960" height="600" loading="lazy">'
+            )
+        else:
+            initials = "".join(part[:1] for part in project["title"].split()[:2])
+            visual = (
+                f'<span class="hz-monogram" aria-hidden="true">{escape(initials)}</span>'
+                f'<span class="hz-art-label">{escape(category)}</span>'
+            )
+        searchable = [
+            project["title"],
+            project["summary"],
+            project["name"],
+            *project["highlights"],
+            *project["provides"],
+            *project["requires"],
+        ]
+        searchable.extend(value for theme in project["themes"] for value in (theme["name"], theme["title"]))
+        search = " ".join(searchable).lower()
+        result.append(f"""<article class="hz-plugin" data-plugin data-category="{escape(category)}"
+data-search="{escape(search)}" data-included="{str(bool(project["included_version"])).lower()}">
+<a class="hz-plugin-art hz-art-{escape(category)}" href="{target}">{visual}</a>
+<div class="hz-plugin-body">
+<div class="hz-plugin-meta">
+<span>{escape(category)}</span>
+<span>{badge}</span>
+</div>
+<h3>
+<a href="{target}">{escape(project["title"])}</a>
+</h3>
+<p>{escape(project["summary"])}</p>
+<div class="hz-plugin-foot">
+<span>Source v{escape(project["version"])}</span>
+<a href="{target}" aria-label="Explore {escape(project["title"])}">Explore ↗</a>
+</div>
+</div></article>""")
+    return '<div class="hz-plugin-grid">' + "\n".join(result) + "</div>"
+
+
+def owner_art(project: Object) -> str:
+    """Show optional source-owned raster artwork for themes as well as capability plugins."""
+    images = "".join(
+        f'<figure><img src="{escape(art["url"])}" alt="{escape(art["alt"])}" '
+        'loading="lazy" referrerpolicy="no-referrer"><figcaption>Artwork from the owning plugin</figcaption></figure>'
+        for art in project.get("artwork", [])
+    )
+    return f'<div class="hz-owner-art">{images}</div>' if images else ""
+
+
+def theme_gallery(data: Object, page_url: str) -> str:
+    """Show every declared theme in light and dark with truthful palette-preview captions."""
+    result = []
+    for project in data["plugins"]:
+        for index, theme in enumerate(project["themes"]):
+            target = href(f"catalog/{project['id']}/", page_url)
+            images = "".join(
+                f'<img src="{href(f"catalog/art/{project['id']}-{index}-{mode}.svg", page_url)}" '
+                f'alt="{escape(theme["title"])} {mode} palette preview" width="960" height="600" loading="lazy">'
+                for mode in ("light", "dark")
+            )
+            result.append(
+                f'<article class="hz-theme">{owner_art(project)}<div class="hz-theme-pair">{images}</div>'
+                '<div class="hz-theme-caption">'
+                f'<div><h3><a href="{target}">{escape(theme["title"])}</a></h3>'
+                "<p>Light + dark · declared palette preview</p></div>"
+                f'<a href="{target}">Explore theme ↗</a></div></article>'
+            )
+    return '<div class="hz-theme-gallery">' + "\n".join(result) + "</div>"
+
+
+def detail(project: Object) -> str:
+    """A searchable static detail page with immutable installation and source provenance."""
+    source = project["source"]
+    title = escape(project["title"])
+    included = project["included_version"]
+    status = (
+        f"Included in the standard app as version {escape(included)}."
+        if included
+        else "Optional plugin. Preview its source before installation."
+    )
+    highlights = "".join(f"<li>{escape(item)}</li>" for item in project["highlights"])
+    themes = "".join(
+        f'<h3>{escape(t["title"])}</h3><div class="hz-theme-pair">'
+        f'<img src="../art/{project["id"]}-{i}-light.svg" alt="Light palette preview" width="960" height="600">'
+        f'<img src="../art/{project["id"]}-{i}-dark.svg" alt="Dark palette preview" width="960" height="600"></div>'
+        for i, t in enumerate(project["themes"])
+    )
+    return f"""---
+title: {json.dumps(escape(project["title"]), ensure_ascii=False)}
+description: {json.dumps(escape(project["summary"]), ensure_ascii=False)}
+---
+<div class="hz-detail-lead">
+<p class="hz-eyebrow">{escape(project["category"])} / plugin</p>
+<h1>{title}</h1>
+<p class="hz-lead">{escape(project["summary"])}</p>
+<p>{status}</p>
+</div>
+
+{owner_art(project)}
+
+## What it brings
+
+<ul class="hz-highlights">{highlights or "<li>See the owning README for its declared operations and setup.</li>"}</ul>
+
+{themes}
+
+## Install and try
+
+{command(project["install"], "plugin-install")}
+
+This command previews the immutable source. Review it, then repeat with `--confirm` to install.
+Run `hz system doctor` afterward. [Install Heinzel first](../../guides/install.md).
+
+## Compatibility and ownership
+
+<table><thead><tr><th>Property</th><th>Declared metadata</th></tr></thead><tbody>
+<tr><td>Distribution</td><td><code>{escape(project["name"])}</code></td></tr>
+<tr><td>Source version</td><td>{escape(project["version"])}</td></tr>
+<tr><td>Core requirement</td><td><code>{escape(project["core"])}</code></td></tr>
+<tr><td>Provides</td><td>{escape(", ".join(project["provides"]) or "See owning documentation")}</td></tr>
+<tr><td>Requires</td><td>{escape(", ".join(project["requires"]) or "Public SDK")}</td></tr>
+</tbody></table>
+
+Compatibility is declared by the owner; catalog inclusion is not a certification. Runtime behavior and permissions
+are documented and tested in the owning repository. Theme illustrations show declared palettes,
+not a runtime screenshot.
+
+<div class="hz-source">
+<strong>Confirmed public during refresh.</strong>
+<br>
+<a href="{escape(project["url"])}">Read the source and README ↗</a> ·
+<a href="https://github.com/{source["repository"]}/commit/{source["revision"]}">Revision {source["revision"][:10]} ↗</a>
+</div>
+
+[← Explore the catalog](../../CATALOG.md) · [Build a plugin](../../PLUGIN_AUTHORING.md)
+"""
+
+
+def on_files(files: Any, config: Any) -> Any:  # noqa: ANN401 - MkDocs owns the event objects
+    """Generate public catalog pages and inert palette artwork from an explicit snapshot."""
+    from mkdocs.structure.files import File  # noqa: PLC0415 - docs-only dependency; unit rendering needs no MkDocs
+
+    snapshot = load_snapshot(Path(os.environ.get("HZ_SITE_CATALOG", str(SNAPSHOT))))
+    for project in snapshot["plugins"]:
+        files.append(File.generated(config, f"catalog/{project['id']}/index.md", content=detail(project)))
+        for index, theme in enumerate(project["themes"]):
+            for mode in ("light", "dark"):
+                files.append(
+                    File.generated(
+                        config, f"catalog/art/{project['id']}-{index}-{mode}.svg", content=theme_art(theme, mode)
+                    )
+                )
+    files.append(File.generated(config, "catalog.json", content=json.dumps(snapshot, ensure_ascii=False)))
+    config.extra["hz_release"] = snapshot["release"]
+    return files
+
+
+def on_page_markdown(markdown: str, *, page: Any, config: Any, **_: Any) -> str:  # noqa: ANN401 - MkDocs owns event objects
+    """Fill presentation markers while keeping the authored Markdown useful on GitHub."""
+    del config
+    if page.file.src_uri.startswith("plugins/"):
+        page.meta["search"] = {"exclude": True}
+    if "<!-- hz:" not in markdown:
+        return markdown
+    snapshot = load_snapshot(Path(os.environ.get("HZ_SITE_CATALOG", str(SNAPSHOT))))
+    renderers = {
+        "catalog": lambda: cards(snapshot, page.url),
+        "featured": lambda: cards(snapshot, page.url, featured=True),
+        "themes": lambda: theme_gallery(snapshot, page.url),
+        "install": lambda: command(snapshot["release"]["install"], "app-install"),
+        "freshness": lambda: (
+            '<p class="hz-freshness">Public metadata snapshot: '
+            f"<time>{escape(snapshot['refreshed_at'][:16].replace('T', ' '))} UTC</time>. "
+            "Refreshed hourly when GitHub Actions is available. "
+            f'<a href="{href("catalog.json", page.url)}">Source data ↗</a></p>'
+            + (
+                '<p class="hz-freshness">Some topic sources could not be indexed at this refresh.</p>'
+                if snapshot.get("notices")
+                else ""
+            )
+        ),
+    }
+    for name, render in renderers.items():
+        token = f"<!-- hz:{name} -->"
+        if token in markdown:
+            markdown = markdown.replace(token, render())
+    return markdown

@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help install setup release-local doctor tools-verify check check-fast preflight fix lint format typecheck test test-parallel commits test-all-pythons test-unit test-integration test-perf test-e2e test-browser-deps audit licenses secrets template-test template-sync docs attributions fuzz demo terminal-art notifier icons web-build web-dev test-web managed-backend-setup managed-backend-check desktop-electron-test desktop-electron-sandbox desktop-electron-native desktop-electron-package build pypi-clean-build-marker changelog ci-logs pr sync docs-plugins docs-record docs-site release clean
+.PHONY: help install setup release-local doctor tools-verify check check-fast preflight fix lint format typecheck test test-parallel commits test-all-pythons test-unit test-integration test-perf test-e2e test-browser-deps audit licenses secrets template-test template-sync docs attributions fuzz demo terminal-art notifier icons web-build web-dev test-web managed-backend-setup managed-backend-check desktop-electron-test desktop-electron-sandbox desktop-electron-native desktop-electron-package build pypi-clean-build-marker changelog ci-logs pr sync docs-plugins docs-record docs-site docs-catalog docs-site-check docs-publish-check release clean
 
 # Quiet by default: one line per passing step, the tail of a failing one. VERBOSE=1 streams everything.
 # A step starting with & runs concurrently with the one before it; the first failure cancels the rest.
@@ -223,7 +223,21 @@ docs-record: ## Record every plugin page's scenes (CLI with VHS, UI with Playwri
 	uv run --quiet --script scripts/docs_record.py --intro $(if $(PLUGIN),--plugin $(PLUGIN)) $(if $(SCENE),--scene $(SCENE))
 
 docs-site: ## Build the documentation site (MkDocs Material) into site/ from docs/; SERVE=1 serves it with reload instead
-	uv run --quiet --group docs mkdocs $(if $(SERVE),serve,build --strict)
+	uv run --quiet --script scripts/site_build.py $(if $(SERVE),serve,build --strict)
+
+docs-catalog: ## Refresh the public metadata-only website catalog; offline site builds use its checked-in snapshot
+	uv run --quiet --script scripts/site_catalog.py --output "$${HZ_SITE_CATALOG:-docs/_data/catalog.json}"
+
+docs-site-check: docs-site ## Check the built site's catalog, keyboard flow, mobile layout and accessibility
+	$(WEB) install
+	uv run --quiet --script scripts/site_check.py --install $(if $(CI),--with-deps)
+	uv run --quiet --script scripts/site_check.py
+
+docs-publish-check: ## Validate publication with fresh public metadata, or build a standalone plugin's ordinary docs
+	@if [ -f docs/catalog-sources.toml ]; then \
+		if [ "$${REFRESH_PUBLIC:-false}" = true ]; then $(MAKE) docs-catalog || exit $$?; else unset HZ_SITE_CATALOG; fi; \
+		$(MAKE) docs-site-check; \
+	else $(MAKE) docs-site; fi
 
 template-sync: ## Regenerate the template's Makefile, CI workflow and pyproject from Heinzelmännchen's
 	uv run --script scripts/sync_template.py
