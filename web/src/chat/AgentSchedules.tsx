@@ -279,8 +279,10 @@ export function AgentSchedules({ sessionId }: { sessionId: string }) {
               Every {binding.cadence_seconds / 60} minutes · {status} · contract revision {binding.contract_revision}
             </p>
             <p>
-              Up to {binding.max_requests} model requests and {binding.timeout_seconds} seconds per turn. No external
-              tools.
+              Up to {binding.max_requests} model requests and {binding.timeout_seconds} seconds per turn.{" "}
+              {binding.connected_grant
+                ? `Includes the approved ${binding.connected_grant.capability}.${binding.connected_grant.method} read.`
+                : "No external tools."}
             </p>
             {status === "proposed" && <AgentScheduleReview sessionId={sessionId} proposal={binding} />}
             {(status === "approved" || status === "stale") && (
