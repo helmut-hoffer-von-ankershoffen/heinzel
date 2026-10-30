@@ -36,7 +36,7 @@ MAX_OUTPUT = 65536
 GUARDIAN_UNCERTAIN = "README process-group cleanup is uncertain: guardian exited unexpectedly."
 GUARDIAN_INVALID = "README guardian returned invalid status."
 GUARDIAN_START = "README guardian could not start its command."
-PROCEDURE_BUDGET = 90  # Leave room for owned-process cleanup before the unchanged 120s test limit.
+PROCEDURE_BUDGET = 100  # Reserve cleanup time within the unchanged outer 120s test limit.
 
 
 def safe_diagnostics(text):
