@@ -226,7 +226,7 @@ def test_the_build_hook_builds_a_stale_app_and_skips_editable_installs(hook_modu
     built = []
     without_notifier(hook_module, monkeypatch)
     monkeypatch.setattr(build, "current", lambda: False)
-    monkeypatch.setattr(build, "build", lambda: built.append(True))
+    monkeypatch.setattr(build, "ensure_built", lambda: built.append(True))
     editable: dict[str, dict[str, str]] = {"force_include": {}}
     hook.initialize("editable", editable)
     assert editable["force_include"] == {}
@@ -241,7 +241,7 @@ def test_the_build_hook_refuses_a_wheel_without_the_app(hook_module, monkeypatch
         raise build.WebError(message)
 
     monkeypatch.setattr(build, "current", lambda: False)
-    monkeypatch.setattr(build, "build", broken)
+    monkeypatch.setattr(build, "ensure_built", broken)
     with pytest.raises(RuntimeError, match="no network"):
         hook_module.WebAppHook().initialize("standard", {"force_include": {}})
 
