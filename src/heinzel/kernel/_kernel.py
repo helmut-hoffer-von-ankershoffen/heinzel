@@ -295,6 +295,85 @@ class Kernel:
             raise HeinzelError(msg)
         return instance
 
+    def resolve_registered_service[T](self, kind: type[T], record: ModuleRecord) -> T:
+        """Resolve the exact class instance registered by this kernel's selected module record.
+
+        Selection must already come from trusted host configuration; this does not authenticate a publisher,
+        grant data access, or prove that an installed implementation is safe.
+
+        Raises:
+            HeinzelError: If the record, factory, or cached instance no longer matches the registration.
+        """
+        factory = self._factories.get(kind)
+        if (
+            self._records.get(record.qualname) is not record
+            or self._providers.get(kind) != record.qualname
+            or not isinstance(factory, type)
+        ):
+            msg = "The selected registered service is unavailable"
+            raise HeinzelError(msg)
+        instance = self.resolve(kind)
+        if type(instance) is not factory or self._factory_instances.get(kind) is not instance:
+            msg = "The selected registered service instance changed"
+            raise HeinzelError(msg)
+        return instance
+
+    def resolve_selected_service[T](self, contract: type[T], record: ModuleRecord) -> T:
+        """Resolve one concrete service offered by the exact host-selected module record.
+
+        Different modules may offer distinct concrete subclasses of one contract without competing for a global
+        service key. The caller must derive the selected record from trusted configuration; this is no grant or
+        publisher authentication.
+
+        Raises:
+            HeinzelError: If the record or its unique concrete class service is unavailable.
+        """
+        if self._records.get(record.qualname) is not record:
+            msg = "The selected registered service is unavailable"
+            raise HeinzelError(msg)
+        matches = [
+            let.provides
+            for owner, let in self.lets(ServiceLet)
+            if owner is record
+            and let.provides is not contract
+            and issubclass(let.provides, contract)
+            and let.factory is let.provides
+        ]
+        if len(matches) != 1:
+            msg = "The selected module does not provide exactly one eligible service"
+            raise HeinzelError(msg)
+        return self.resolve_registered_service(matches[0], record)
+
+    def selected_capability_service[T](self, contract: type[T], capability: str) -> tuple[ModuleRecord, T]:
+        """Resolve an installed read service from the actual capability binding in this kernel.
+
+        This identifies registered selection only. The caller must recheck current configuration, source and
+        human authorization before use; it establishes neither approval nor publisher authentication.
+
+        Raises:
+            HeinzelError: If the read adapter is unavailable, ambiguous, or lacks the requested service.
+        """
+        record, _provider = self.selected_capability_provider(capability)
+        return record, self.resolve_selected_service(contract, record)
+
+    def selected_capability_provider(self, capability: str) -> tuple[ModuleRecord, ProviderLet]:
+        """Identify the actual uniquely selected provider with read mode; this is not an access grant.
+
+        Raises:
+            HeinzelError: If the read adapter is unavailable or ambiguous.
+        """
+        selected = self._capabilities.bound(capability)
+        providers = self._capabilities.adapters.get((capability, selected), []) if selected is not None else []
+        if len(providers) != 1 or "read" not in providers[0].let.modes:
+            msg = "The selected read adapter is unavailable or ambiguous"
+            raise HeinzelError(msg)
+        provider = providers[0]
+        record = self._records[provider.module]
+        if not any(owner is record and item is provider.let for owner, item in self.lets(ProviderLet)):
+            msg = "The selected read adapter registration changed"
+            raise HeinzelError(msg)
+        return record, provider.let
+
     def handle_for(self, requester: Requester, capability: str) -> object:
         """A handle on `capability` for `requester`, for code that acts on its behalf without being its function.
 
