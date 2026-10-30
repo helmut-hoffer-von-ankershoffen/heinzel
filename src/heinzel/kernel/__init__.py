@@ -44,6 +44,7 @@ from heinzel.kernel._config import (
     user_config_dir,
 )
 from heinzel.kernel._connected_read import (
+    ConnectedItemIdentity,
     ConnectedReadLease,
     ConnectedReadMethod,
     ConnectedReadReview,
@@ -346,6 +347,7 @@ __all__ = [
     "ConfiguredApiLease",
     "ConfiguredApiSnapshot",
     "ConfirmedLines",
+    "ConnectedItemIdentity",
     "ConnectedReadLease",
     "ConnectedReadMethod",
     "ConnectedReadReview",

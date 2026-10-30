@@ -73,6 +73,7 @@ def connected(tmp_path, monkeypatch):
                 account_identity=state["account"],
                 provider_scopes=state["scopes"],
                 fixed_arguments={**self.fixed, **({"count": True} if state.get("coerce") else {})},
+                item_identity=state.get("item_identity"),
             )
 
         def read(self, arguments):
@@ -689,3 +690,259 @@ def test_preparation_fences_concurrent_suggestion_change_until_persisted(connect
     with pytest.raises(HeinzelError):
         grants.propose_suggestion(session, "other-prep", original["request_id"], 1)
     assert state["opens"] == 1
+
+
+def _assert_later_empty_read_invalidates_reference(context, prepare_turn, runner):
+    from heinzel.modules.heinzel._input_receipts import ApprovedInputSnapshots
+
+    current, crud, grants, session, state = context
+    with current.local("daemon"), crud.repository.main_writer(session) as writer:
+        turn, reference = prepare_turn("later-empty", writer)
+        state["result"] = {"events": [{}]}
+        with crud.repository.control_writer(session) as control:
+            control.append(
+                "interactive.tool",
+                turn=turn,
+                key=f"{turn}-2-requested",
+                data={"tool": "connected_read", "status": "requested"},
+            )
+        with pytest.raises(HeinzelError):
+            ApprovedInputSnapshots(grants, current).read(session, writer, turn=turn, call=2)
+        with pytest.raises(HeinzelError, match="no usable"):
+            runner(turn).send({"item_ref": reference, "title": "Title", "body": "Body"}, writer)
+        state["result"] = {"events": []}
+        with crud.repository.control_writer(session) as control:
+            control.append(
+                "interactive.tool",
+                turn=turn,
+                key=f"{turn}-3-requested",
+                data={"tool": "connected_read", "status": "requested"},
+            )
+        ApprovedInputSnapshots(grants, current).read(session, writer, turn=turn, call=3)
+        with pytest.raises(HeinzelError, match="unavailable"):
+            runner(turn).send({"item_ref": reference, "title": "Title", "body": "Body"}, writer)
+
+
+@pytest.mark.parametrize("mode", ["item", "revision"])
+@pytest.mark.parametrize("uncertain", [False, True])
+def test_current_item_evidence_dedupes_across_turns_and_rejects_forgery(connected, mode, uncertain):
+    from heinzel import ConnectedItemIdentity
+    from heinzel.modules.heinzel._input_receipts import ApprovedInputSnapshots
+    from heinzel.modules.heinzel._interactive_turn import interactive_turn_id
+    from heinzel.modules.heinzel._scheduled_notifications import (
+        ItemNotificationPolicy,
+        ScheduledNotificationPolicy,
+        ScheduledNotifications,
+    )
+    from tests.unit.modules.scheduled_notifications_test import FakeNotifications
+
+    current, crud, session, grants, fixed, state = connected
+    state["item_identity"] = ConnectedItemIdentity(collection=("events",), identity_field="id", revision_field="rev")
+    state["result"] = {"events": [{"id": "private-item-id", "rev": "v1"}]}
+    proposal = grants.propose(session, "item-grant", "calendar", "events", fixed)
+    proof = grants.issue(session, proposal.request_id, "human-confirmation")
+    confirmation = ApprovalConfirmation()
+    review = proposal.model_dump(mode="json")
+    args = {"session_id": session, "request_id": proposal.request_id, "review": review, "approval_proof": proof}
+    with confirmation.using("heinzel", "approve-connected-read", args):
+        grants.approve(session, proposal.request_id, review, proof, confirmation)
+    policy = ScheduledNotificationPolicy(
+        max_per_24h=10,
+        topic_cooldown_seconds=60,
+        item_evidence=ItemNotificationPolicy(deduplicate_by=mode),
+        disclosure=(
+            "Content may appear on this device. Item identities are provider-reported and not completeness guarantees."
+        ),
+    )
+    queue = FakeNotifications(result=not uncertain)
+
+    def prepare_turn(name, writer):
+        turn = interactive_turn_id(name)
+        with crud.repository.control_writer(session) as control:
+            control.append("interactive.started", turn=turn, data={"message_id": name})
+            control.append(
+                "interactive.tool",
+                turn=turn,
+                key=f"{turn}-1-requested",
+                data={"tool": "connected_read", "status": "requested"},
+            )
+        _, snapshot = ApprovedInputSnapshots(grants, current).read(session, writer, turn=turn, call=1)
+        return turn, snapshot.items[0].reference
+
+    def runner(turn):
+        return ScheduledNotifications(
+            crud,
+            current,
+            queue,
+            session=session,
+            turn=turn,
+            contract_sha256="a" * 64,
+            schedule_request="schedule",
+            schedule_sha256="b" * 64,
+            policy=policy,
+            verify=lambda: None,
+            connected=grants,
+        )
+
+    with current.local("daemon"), crud.repository.main_writer(session) as writer:
+        turn, ref = prepare_turn("first-item", writer)
+        with pytest.raises(HeinzelError):
+            runner(turn).send({"item_ref": "f" * 64, "title": "Title", "body": "Body"}, writer)
+        assert runner(turn).send({"item_ref": ref, "title": "Title", "body": "Body"}, writer)[0] == (
+            "uncertain" if uncertain else "recorded"
+        )
+    reopened = SessionCrud(PersonalSessionRepository(current), crud.costs)
+    crud, grants = reopened, ConnectedReadGrants(reopened, current, grants.kernel)
+    state["result"] = {"events": [{"id": "private-item-id", "rev": "v2"}]}
+    with current.local("daemon"), crud.repository.main_writer(session) as writer:
+        other, ref2 = prepare_turn("second-item", writer)
+        with pytest.raises(HeinzelError, match="unavailable"):
+            runner(other).send({"item_ref": ref, "title": "Title", "body": "Body"}, writer)
+        if mode == "item":
+            with pytest.raises(HeinzelError, match="already"):
+                runner(other).send({"item_ref": ref2, "title": "Title", "body": "Body"}, writer)
+        else:
+            assert runner(other).send({"item_ref": ref2, "title": "Title", "body": "Body"}, writer)[0] == (
+                "uncertain" if uncertain else "recorded"
+            )
+    with current.local("daemon"), crud.repository.main_writer(session) as writer:
+        third, ref3 = prepare_turn("third-item", writer)
+        with pytest.raises(HeinzelError, match="already"):
+            runner(third).send({"item_ref": ref3, "title": "Title", "body": "Body"}, writer)
+    _assert_later_empty_read_invalidates_reference((current, crud, grants, session, state), prepare_turn, runner)
+    assert len(queue.calls) == (1 if mode == "item" else 2)
+    assert "private-item-id" not in str([event.data for event in crud.repository.control_read(session).events])
+
+
+def test_item_references_are_returned_only_after_approved_read(connected):
+    from heinzel import ConnectedItemIdentity
+
+    _current, crud, session, grants, fixed, state = connected
+    state["item_identity"] = ConnectedItemIdentity(collection=("events",), identity_field="id")
+    state["result"] = {"events": [{"id": "private-id"}]}
+    proposal = grants.propose(session, "item-output", "calendar", "events", fixed)
+    proof = grants.issue(session, proposal.request_id, "human-confirmation")
+    confirmation = ApprovalConfirmation()
+    review = proposal.model_dump(mode="json")
+    args = {"session_id": session, "request_id": proposal.request_id, "review": review, "approval_proof": proof}
+    with confirmation.using("heinzel", "approve-connected-read", args):
+        grants.approve(session, proposal.request_id, review, proof, confirmation)
+    crud.accept(session, MessageRequest(request_id="item-output", text="Inspect the approved source."))
+    result = asyncio.run(
+        InteractiveTurn(crud).run(
+            session, "item-output", _model("observed_items", "Inspected."), limits=TurnLimits(), connected=grants
+        )
+    )
+    assert result.text == "Inspected."
+    events = crud.repository.control_read(session).events
+    observed = [event for event in events if event.kind == "input-item.observed"]
+    assert len(observed) == 1
+    assert "private-id" not in str(observed[0].data)
+
+
+def test_one_scheduled_turn_uses_actual_observed_reference_for_notification(connected):
+    import json
+
+    from heinzel import ConnectedItemIdentity
+    from heinzel.modules.heinzel._interactive_turn import interactive_turn_id
+    from heinzel.modules.heinzel._scheduled_notifications import (
+        ItemNotificationPolicy,
+        ScheduledNotificationPolicy,
+        ScheduledNotifications,
+    )
+    from tests.unit.modules.scheduled_notifications_test import FakeNotifications
+
+    current, crud, session, grants, fixed, state = connected
+    state["item_identity"] = ConnectedItemIdentity(collection=("events",), identity_field="id")
+    state["result"] = {"events": [{"id": "private-id"}]}
+    proposal = grants.propose(session, "model-item-grant", "calendar", "events", fixed)
+    proof = grants.issue(session, proposal.request_id, "human-confirmation")
+    confirmation = ApprovalConfirmation()
+    review = proposal.model_dump(mode="json")
+    args = {"session_id": session, "request_id": proposal.request_id, "review": review, "approval_proof": proof}
+    with confirmation.using("heinzel", "approve-connected-read", args):
+        grants.approve(session, proposal.request_id, review, proof, confirmation)
+    policy = ScheduledNotificationPolicy(
+        max_per_24h=2,
+        topic_cooldown_seconds=60,
+        item_evidence=ItemNotificationPolicy(deduplicate_by="item"),
+        disclosure=(
+            "Content may appear on this device. Item identities are provider-reported and not completeness guarantees."
+        ),
+    )
+    queue = FakeNotifications()
+    count = 0
+
+    def answer(messages, info):
+        nonlocal count
+        count += 1
+        if count == 1:
+            return ModelResponse([ToolCallPart("use_tool", {"name": "connected_read", "arguments": {}})])
+        if count == 2:
+            returned = [
+                part.content for message in messages for part in message.parts if isinstance(part, ToolReturnPart)
+            ]
+            result = next(
+                json.loads(content) for content in returned if isinstance(content, str) and "observed_items" in content
+            )
+            reference = result["observed_items"][0]["reference"]
+            return ModelResponse(
+                [
+                    ToolCallPart(
+                        "use_tool",
+                        {
+                            "name": "notification:send",
+                            "arguments": {"item_ref": reference, "title": "Title", "body": "Body"},
+                        },
+                    )
+                ]
+            )
+        return ModelResponse([ToolCallPart(info.output_tools[0].name, {"report": "Done", "summary": "Done"})])
+
+    request = "scheduled-item-test"
+    with current.local("daemon"):
+        crud.accept(session, MessageRequest(request_id=request, text="Inspect and notify if needed."))
+        notice = ScheduledNotifications(
+            crud,
+            current,
+            queue,
+            session=session,
+            turn=interactive_turn_id(request),
+            contract_sha256="a" * 64,
+            schedule_request="schedule",
+            schedule_sha256="b" * 64,
+            policy=policy,
+            verify=lambda: None,
+            connected=grants,
+        )
+        response = asyncio.run(
+            InteractiveTurn(crud).run(
+                session,
+                request,
+                FunctionModel(answer),
+                limits=TurnLimits(),
+                connected=grants,
+                scheduled_notifications=notice,
+            )
+        )
+    assert response.text == "Done"
+    assert len(queue.calls) == 1
+    assert state["reads"] == 1
+
+
+def test_changed_provider_item_identity_refuses_approved_read(connected):
+    from heinzel import ConnectedItemIdentity
+
+    _current, crud, session, grants, fixed, state = connected
+    state["item_identity"] = ConnectedItemIdentity(collection=("events",), identity_field="id")
+    proposal = grants.propose(session, "item-change", "calendar", "events", fixed)
+    proof = grants.issue(session, proposal.request_id, "human-confirmation")
+    confirmation = ApprovalConfirmation()
+    review = proposal.model_dump(mode="json")
+    args = {"session_id": session, "request_id": proposal.request_id, "review": review, "approval_proof": proof}
+    with confirmation.using("heinzel", "approve-connected-read", args):
+        grants.approve(session, proposal.request_id, review, proof, confirmation)
+    state["item_identity"] = ConnectedItemIdentity(collection=("events",), identity_field="other")
+    with crud.repository.main_writer(session) as writer, pytest.raises(HeinzelError):
+        grants.read(session, writer)
+    assert state["reads"] == 0

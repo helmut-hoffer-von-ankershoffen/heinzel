@@ -466,7 +466,7 @@ class InteractiveTurn:
                     if connected is None or connected_schema is None or args:
                         msg = "The connected read is unavailable or has dynamic arguments"
                         raise HeinzelError(msg)  # noqa: TRY301
-                    value, _snapshot = ApprovedInputSnapshots(connected, connected.current).read(
+                    value, snapshot = ApprovedInputSnapshots(connected, connected.current).read(
                         session_id, turn_writer, turn=turn, call=calls
                     )
                 except ConnectedReadFailedError:
@@ -476,7 +476,18 @@ class InteractiveTurn:
                     self._event(session_id, turn, calls, name, "denied")
                     return "Connected read unavailable or its approval changed."
                 self._event(session_id, turn, calls, name, "completed")
-                return json.dumps(value, ensure_ascii=False)
+                output: JsonValue = (
+                    {
+                        "result": value,
+                        "item_collection": list(snapshot.item_collection or ()),
+                        "observed_items": [
+                            {"index": item.index, "reference": item.reference} for item in snapshot.items
+                        ],
+                    }
+                    if snapshot.items
+                    else value
+                )
+                return json.dumps(output, ensure_ascii=False)
 
             def checkpoint(item: EngineCheckpoint) -> None:
                 self._check_owner()

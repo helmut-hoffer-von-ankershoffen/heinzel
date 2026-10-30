@@ -62,6 +62,130 @@ it("requires a separate opt-in and submits exact bounded terms for review", asyn
   expect(screen.getByText(/Topics are model-chosen, not verified source identities/)).toBeInTheDocument();
 });
 
+it("requires an explicitly selected approved read for item revision deduplication", async () => {
+  sessionStorage.clear();
+  let body: Record<string, unknown> | undefined;
+  const grant = {
+    request_id: "read-one",
+    capability: "calendar",
+    method: "events",
+    review: { session, item_identity: { collection: ["events"], identity_field: "id", revision_field: "version" } },
+  };
+  mockApi({
+    "/api/heinzel/latest-scheduled-agent-proposal": () => proposal,
+    "/api/heinzel/agent-contract-review": () => ({ proposal, accepted: true }),
+    "/api/heinzel/connected-read-state": () => ({ session_id: session, status: "approved", proposal: grant }),
+    "/api/heinzel/agent-schedules": () => ({ session_id: session, items: [], next_cursor: null }),
+    "/api/heinzel/scheduled-notification-attempts": () => ({ session_id: session, items: [], next_cursor: null }),
+    "/api/heinzel/propose-agent-schedule": async (request: Request) => {
+      body = await request.clone().json();
+      return { ...body, connected_grant: grant };
+    },
+  });
+  const user = userEvent.setup();
+  show(<AgentSchedules sessionId={session} />);
+  await user.click(screen.getByText("Recurring agent turns"));
+  await user.click(screen.getByRole("checkbox", { name: /Allow this agent to queue local notifications/ }));
+  const selector = screen.getByLabelText("Notification deduplication");
+  expect(screen.getByRole("option", { name: "Once per observed item revision" })).toBeDisabled();
+  await user.click(await screen.findByRole("checkbox", { name: /Allow the separately approved calendar.events read/ }));
+  await user.selectOptions(selector, "revision");
+  await user.click(screen.getByRole("button", { name: "Propose recurring turns" }));
+  expect(body).toMatchObject({
+    connected_request_id: "read-one",
+    notification_policy: {
+      item_evidence: {
+        deduplicate_by: "revision",
+        disclosure: "Only current-turn items count; deduplication is scoped to the approved source and contract.",
+      },
+    },
+  });
+});
+
+it("preserves the exact item proposal after a lost acknowledgment and retries only on request", async () => {
+  sessionStorage.clear();
+  const bodies: Record<string, unknown>[] = [];
+  const grant = {
+    request_id: "read-one",
+    capability: "calendar",
+    method: "events",
+    review: { session, item_identity: { collection: ["events"], identity_field: "id", revision_field: null } },
+  };
+  mockApi({
+    "/api/heinzel/latest-scheduled-agent-proposal": () => proposal,
+    "/api/heinzel/agent-contract-review": () => ({ proposal, accepted: true }),
+    "/api/heinzel/connected-read-state": () => ({ session_id: session, status: "approved", proposal: grant }),
+    "/api/heinzel/agent-schedules": () => ({ session_id: session, items: [], next_cursor: null }),
+    "/api/heinzel/scheduled-notification-attempts": () => ({ session_id: session, items: [], next_cursor: null }),
+    "/api/heinzel/propose-agent-schedule": async (request: Request) => {
+      const body = await request.clone().json();
+      bodies.push(body);
+      return bodies.length === 1 ? { status: 503, body: {} } : { ...body, connected_grant: grant };
+    },
+  });
+  const user = userEvent.setup();
+  const mounted = show(<AgentSchedules sessionId={session} />);
+  await user.click(screen.getByText("Recurring agent turns"));
+  await user.click(screen.getByRole("checkbox", { name: /Allow this agent to queue local notifications/ }));
+  await user.click(await screen.findByRole("checkbox", { name: /Allow the separately approved calendar.events read/ }));
+  expect(screen.getByRole("option", { name: "Once per observed item revision" })).toBeDisabled();
+  await user.selectOptions(screen.getByLabelText("Notification deduplication"), "item");
+  await user.click(screen.getByRole("button", { name: "Propose recurring turns" }));
+  await screen.findByRole("button", { name: "Retry same proposal" });
+  mounted.unmount();
+  show(<AgentSchedules sessionId={session} />);
+  await user.click(screen.getByText("Recurring agent turns"));
+  const retry = await screen.findByRole("button", { name: "Retry same proposal" });
+  expect(bodies).toHaveLength(1);
+  expect(screen.getByLabelText("Notification deduplication")).toHaveValue("item");
+  await user.click(retry);
+  expect(bodies).toHaveLength(2);
+  expect(bodies[1]).toEqual(bodies[0]);
+});
+
+it("requires the person to reselect a changed approved read before proposing", async () => {
+  sessionStorage.clear();
+  let requestId = "read-one";
+  const { calls } = mockApi({
+    "/api/heinzel/latest-scheduled-agent-proposal": () => proposal,
+    "/api/heinzel/agent-contract-review": () => ({ proposal, accepted: true }),
+    "/api/heinzel/connected-read-state": () => ({
+      session_id: session,
+      status: "approved",
+      proposal: {
+        request_id: requestId,
+        capability: "calendar",
+        method: "events",
+        review: { session, item_identity: { collection: ["events"], identity_field: "id", revision_field: "version" } },
+      },
+    }),
+    "/api/heinzel/agent-schedules": () => ({ session_id: session, items: [], next_cursor: null }),
+    "/api/heinzel/scheduled-notification-attempts": () => ({ session_id: session, items: [], next_cursor: null }),
+  });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const user = userEvent.setup();
+  render(
+    <QueryClientProvider client={client}>
+      <MemoryRouter>
+        <AgentSchedules sessionId={session} />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+  await user.click(screen.getByText("Recurring agent turns"));
+  const source = await screen.findByRole("checkbox", { name: /Allow the separately approved calendar.events read/ });
+  await user.click(source);
+  await user.click(screen.getByRole("checkbox", { name: /Allow this agent to queue local notifications/ }));
+  await user.selectOptions(screen.getByLabelText("Notification deduplication"), "revision");
+  requestId = "read-two";
+  await client.invalidateQueries({ queryKey: ["heinzel", "connected-read-state", session] });
+  expect(await screen.findByText(/The approved read changed/)).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Propose recurring turns" })).toBeDisabled();
+  expect(calls.some((call) => new URL(call.url).pathname.endsWith("propose-agent-schedule"))).toBe(false);
+  await user.click(source);
+  await user.click(source);
+  expect(screen.getByRole("button", { name: "Propose recurring turns" })).toBeEnabled();
+});
+
 it("requires acknowledgment for an unresolved attempt and never resends", async () => {
   let resolved = false;
   const { calls } = mockApi({
