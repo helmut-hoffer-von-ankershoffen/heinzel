@@ -9,12 +9,14 @@ import os
 import re
 import shlex
 import subprocess
+import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
 
 from tests.e2e._interpreter_diagnostics import interpreter_diagnostics
+from tests.e2e.uv_tool_collision_test import _fixture_wheel
 
 pytestmark = pytest.mark.e2e
 
@@ -24,10 +26,6 @@ HEAD = subprocess.run(
 ).stdout.strip()
 DUMMY_PLUGIN = REPO / "tests" / "fixtures" / "heinzel-dummy"
 SKILLS = REPO / "agent-skills" / "skills"
-# --color never: with FORCE_COLOR (as in CI) uv would wrap the path in escape codes.
-UV_PYTHON_DIR = subprocess.run(
-    ["uv", "--color", "never", "python", "dir"], capture_output=True, text=True, check=False, timeout=60
-).stdout.strip()
 MODULES_DIR = REPO / "src" / "heinzel" / "modules"
 
 
@@ -58,6 +56,8 @@ class Sandbox:
     """An isolated place to install Heinzelmännchen: uv tool and bin directories, configuration, data and skills."""
 
     root: Path
+    python_directory: Path
+    python: Path
     own_home: bool = False
     """Give the sandbox its own $HOME and let Heinzelmännchen use its default directories inside it."""
 
@@ -72,7 +72,8 @@ class Sandbox:
             "UV_TOOL_DIR": str(self.root / "tools"),
             "UV_TOOL_BIN_DIR": str(self.root / "bin"),
             "UV_CACHE_DIR": str(self.root / "uv-cache"),
-            "UV_PYTHON_INSTALL_DIR": UV_PYTHON_DIR,
+            "UV_PYTHON_INSTALL_DIR": str(self.python_directory),
+            "UV_PYTHON": str(self.python),
             "HZ_SYSTEM_AGENT__SKILL_DIRS": json.dumps([str(self.skills)]),
         }
         for name in ("VIRTUAL_ENV", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME", "XDG_STATE_HOME"):
@@ -134,13 +135,26 @@ class Sandbox:
 def test_sandboxes_keep_separate_uv_caches_and_normal_link_policy(tmp_path, monkeypatch):
     monkeypatch.setenv("UV_CACHE_DIR", str(tmp_path / "foreign-cache"))
     monkeypatch.delenv("UV_LINK_MODE", raising=False)
-    first = Sandbox(tmp_path / "one").env
-    second = Sandbox(tmp_path / "two", own_home=True).env
+    directory, python = tmp_path / "pythons", tmp_path / "pythons/python"
+    first = Sandbox(tmp_path / "one", directory, python).env
+    second = Sandbox(tmp_path / "two", directory, python, own_home=True).env
     assert first["UV_CACHE_DIR"] == str(tmp_path / "one/uv-cache")
     assert second["UV_CACHE_DIR"] == str(tmp_path / "two/uv-cache")
-    assert first["UV_PYTHON_INSTALL_DIR"] == second["UV_PYTHON_INSTALL_DIR"] == UV_PYTHON_DIR
+    assert first["UV_PYTHON_INSTALL_DIR"] == second["UV_PYTHON_INSTALL_DIR"] == str(directory)
+    assert first["UV_PYTHON"] == second["UV_PYTHON"] == str(python)
     assert "UV_LINK_MODE" not in first
     assert "UV_LINK_MODE" not in second
+
+
+def test_sandbox_selects_private_managed_python_without_receipt_options(sandbox, tmp_path):
+    wheels = tmp_path / "wheels"
+    wheels.mkdir()
+    wheel = _fixture_wheel(wheels, "1.0.0", ["fixture-owned"])
+    sandbox.run("uv", "tool", "install", "--offline", wheel)
+    prefix = sandbox.root / "tools/fixture-owned"
+    assert (prefix / "bin/python").resolve(strict=True) == sandbox.python
+    receipt = tomllib.loads((prefix / "uv-receipt.toml").read_text())
+    assert not receipt.get("tool", {}).get("options")
 
 
 @pytest.fixture(scope="module")
@@ -151,8 +165,8 @@ def wheel(tmp_path_factory) -> Path:
 
 
 @pytest.fixture
-def sandbox(tmp_path) -> Sandbox:
-    return Sandbox(tmp_path)
+def sandbox(tmp_path, fixture_managed_python) -> Sandbox:
+    return Sandbox(tmp_path, *fixture_managed_python)
 
 
 @pytest.mark.timeout(300)
@@ -199,9 +213,9 @@ def test_direct_lifecycle(sandbox, wheel):
     assert not sandbox.hz_bin.exists()
 
 
-def test_skill_lifecycle(tmp_path, wheel):
+def test_skill_lifecycle(tmp_path, wheel, fixture_managed_python):
     """What `/hz-init` and `/hz-uninstall --purge` do, through the scripts that ship with the skills."""
-    sandbox = Sandbox(tmp_path, own_home=True)
+    sandbox = Sandbox(tmp_path, *fixture_managed_python, own_home=True)
     sandbox.home.mkdir()
     output = sandbox.run(
         "bash", SKILLS / "hz-init" / "scripts" / "install.sh", "--plugin", DUMMY_PLUGIN, HZ_SOURCE=str(wheel)

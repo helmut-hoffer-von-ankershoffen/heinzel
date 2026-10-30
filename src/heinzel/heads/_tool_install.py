@@ -151,6 +151,39 @@ def target_installation(target: ToolTarget, uv: str) -> Installation:
     return _TargetInstallation(target.prefix, uv)
 
 
+def verify_fresh_python_policy(environment: Mapping[str, str]) -> None:
+    """Refuse a system-only preference before a standard-install pending marker is written.
+
+    Raises:
+        HeinzelError: If the current Python policy forbids managed Python.
+    """
+    if (
+        environment.get("UV_NO_MANAGED_PYTHON", "").casefold() in {"1", "true", "yes", "on"}
+        or environment.get("UV_PYTHON_PREFERENCE", "").casefold() == "only-system"
+    ):
+        msg = "The standard app needs a uv-managed Python. Remove the system-only Python preference and retry."
+        raise HeinzelError(msg)
+
+
+def _fresh_selection(command: list[str], target: ToolTarget) -> tuple[list[str], dict[str, str]]:
+    if any(item in {"--python", "--no-managed-python"} or item.startswith(("--python=", "-p")) for item in command[3:]):
+        msg = "A fresh standard installation requires a uv-managed Python."
+        raise HeinzelError(msg)
+    environment = subprocess_environment() | target.environment
+    verify_fresh_python_policy(environment)
+    # uv treats an explicit UV_PYTHON path as authoritative even with --managed-python. The fresh
+    # standard app must let uv select a managed interpreter compatible with the verified composition.
+    environment.pop("UV_PYTHON", None)
+    return [*command[:3], "--managed-python", *command[3:]], environment
+
+
+def _fresh_failure(target: ToolTarget, uv: str, environment: Mapping[str, str]) -> str:
+    problem = "The initial installation did not complete"
+    if environment.get("UV_PYTHON_DOWNLOADS", "").casefold() == "never":
+        problem += "; Python downloads are disabled, so ensure a compatible uv-managed Python is installed"
+    return inspection_guidance(target, uv, problem)
+
+
 def run_tool(  # noqa: PLR0913, PLR0917 - explicit selected installation and verified artifact inputs
     command: list[str],
     target: ToolTarget,
@@ -206,16 +239,17 @@ def run_tool(  # noqa: PLR0913, PLR0917 - explicit selected installation and ver
     if _identities(target) != identities or os.path.lexists(target.prefix):
         msg = "The installation destination changed; retry after other installations finish."
         raise HeinzelError(msg)
+    managed_command, environment = _fresh_selection(command, target)
     try:
         subprocess.run(  # noqa: S603 - verified wheel command, scoped target and no shell
-            command, env=subprocess_environment() | target.environment, stdout=sys.stderr, check=True, timeout=600
+            managed_command, env=environment, stdout=sys.stderr, check=True, timeout=600
         )
         generation = installation.startup_fingerprint()
         generation = _verify_and_normalize(target, expected, wheels, installation, preserved, (), generation)
     except (OSError, subprocess.SubprocessError, HeinzelError) as exc:
         # A newly appearing prefix may belong to a concurrent installer. A valid-looking receipt does not
         # establish operation ownership, so never recursively delete it or remove its executable links.
-        msg = inspection_guidance(target, command[0], "The initial installation did not complete")
+        msg = _fresh_failure(target, command[0], environment)
         raise HeinzelError(msg) from exc
     return generation
 

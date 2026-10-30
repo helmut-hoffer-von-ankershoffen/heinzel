@@ -322,7 +322,7 @@ def readme_phase(label, deadline):
         sys.stderr.write(f"README phase={label} elapsed={now - started:.1f}s remaining={deadline - now:.1f}s\n")
 
 
-def test_readme_instructions(tmp_path):
+def test_readme_instructions(tmp_path, fixture_managed_python):
     deadline = time.monotonic() + PROCEDURE_BUDGET
     with socket.socket() as listener:
         listener.bind(("127.0.0.1", 0))
@@ -377,8 +377,9 @@ def test_readme_instructions(tmp_path):
     }
     env.pop("VIRTUAL_ENV", None)
     env.pop("UV_OVERRIDE", None)
-    if python_directory := os.environ.get("UV_PYTHON_INSTALL_DIR"):
-        env["UV_PYTHON_INSTALL_DIR"] = python_directory
+    python_directory, python = fixture_managed_python
+    env["UV_PYTHON_INSTALL_DIR"] = str(python_directory)
+    env["UV_PYTHON"] = str(python)
     # A stale checkout is a common developer environment; all packaged heads must still use this wheel.
     shadow = tmp_path / "stale-source/heinzel"
     shadow.mkdir(parents=True)
@@ -390,6 +391,7 @@ def test_readme_instructions(tmp_path):
             with readme_phase("install-and-launch", deadline):
                 launch_documented_app(block, env, tmp_path, deadline, bootstrap_wheels=artifacts)
             assert (tmp_path / "data/standard-app.json").is_file()
+            assert (tmp_path / "tools/heinzel/bin/python").resolve(strict=True) == python
             continue
         with readme_phase("uninstall" if UNINSTALL in block else "documented-cli", deadline):
             # Bash expands SECONDS for each traced command, identifying a slow phase without extra operations.

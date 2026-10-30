@@ -24,7 +24,7 @@ from packaging.version import InvalidVersion, Version
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from heinzel import Config, HeinzelError, Progress, Settings
-from heinzel.heads._tool_install import resolve_target, run_tool, target_installation
+from heinzel.heads._tool_install import resolve_target, run_tool, target_installation, verify_fresh_python_policy
 from heinzel.kernel import DaemonInstallationLifecycle, Installation, boot, subprocess_environment
 
 PROFILE_ROOT = "https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/releases/download"
@@ -334,6 +334,8 @@ def _managed_install(
     """
     uv = uv_executable()
     target = resolve_target(uv)
+    if not os.path.lexists(target.prefix):
+        verify_fresh_python_policy(subprocess_environment())
     installation = target_installation(target, uv)
     kernel = boot(settings.model_copy(update={"plugins_enabled": False}))
     kernel.bind(Installation, installation)

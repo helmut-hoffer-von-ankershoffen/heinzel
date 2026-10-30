@@ -7,7 +7,6 @@ import io
 import os
 import shutil
 import subprocess
-import sys
 import tempfile
 import zipfile
 from pathlib import Path
@@ -45,7 +44,9 @@ def _fixture_wheel(directory, version, commands):
     return wheel
 
 
-def test_uv_reinstall_preserves_foreign_entrypoint_and_allows_restoration(tmp_path, monkeypatch):
+def test_uv_reinstall_preserves_foreign_entrypoint_and_allows_restoration(
+    tmp_path, monkeypatch, fixture_managed_python
+):
     uv = shutil.which("uv")
     if uv is None:
         pytest.skip("uv is not available")
@@ -76,7 +77,7 @@ def test_uv_reinstall_preserves_foreign_entrypoint_and_allows_restoration(tmp_pa
         "HZ_CACHE_DIR": str(root / "cache"),
         "HZ_LOG_DIR": str(root / "logs"),
     }
-    python = os.path.realpath(sys.executable)
+    python = str(fixture_managed_python[1])
     uv = os.path.realpath(uv)
 
     def run(wheel, *, reinstall):
