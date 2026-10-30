@@ -203,3 +203,39 @@ def test_checks_must_explain_problems():
     assert Check(name="ok", status=Status.UP).detail == ""
     with pytest.raises(ValueError, match="needs a detail"):
         Check(name="bad", status=Status.DOWN)
+
+
+def test_registered_service_requires_exact_kernel_record_and_factory_instance(settings):
+    class Contract:
+        pass
+
+    class Provider(Contract):
+        pass
+
+    module = Module("plug", "Installed plugin")
+    module.service(Contract, Provider)
+    record = ModuleRecord(
+        qualname="plug", module=module, origin=Origin(distribution="fictional-plugin", version="1", builtin=False)
+    )
+    kernel = Kernel(settings, [record])
+    selected = kernel.module("plug")
+    assert kernel.resolve_registered_service(Contract, selected) is kernel.resolve(Contract)
+    fabricated = ModuleRecord(qualname="plug", module=module, origin=record.origin)
+    with pytest.raises(HeinzelError):
+        kernel.resolve_registered_service(Contract, fabricated)
+    other = ModuleRecord(qualname="other", module=module, origin=record.origin)
+    with pytest.raises(HeinzelError):
+        kernel.resolve_registered_service(Contract, other)
+    kernel.bind(Contract, Provider())
+    with pytest.raises(HeinzelError):
+        kernel.resolve_registered_service(Contract, selected)
+
+    def factory() -> Contract:
+        return Provider()
+
+    other_module = Module("factory", "Factory plugin")
+    other_module.service(Contract, factory)
+    other_record = ModuleRecord(qualname="factory", module=other_module, origin=record.origin)
+    other_kernel = Kernel(settings, [other_record])
+    with pytest.raises(HeinzelError):
+        other_kernel.resolve_registered_service(Contract, other_kernel.module("factory"))

@@ -295,6 +295,29 @@ class Kernel:
             raise HeinzelError(msg)
         return instance
 
+    def resolve_registered_service[T](self, kind: type[T], record: ModuleRecord) -> T:
+        """Resolve the exact class instance registered by this kernel's selected module record.
+
+        Selection must already come from trusted host configuration; this does not authenticate a publisher,
+        grant data access, or prove that an installed implementation is safe.
+
+        Raises:
+            HeinzelError: If the record, factory, or cached instance no longer matches the registration.
+        """
+        factory = self._factories.get(kind)
+        if (
+            self._records.get(record.qualname) is not record
+            or self._providers.get(kind) != record.qualname
+            or not isinstance(factory, type)
+        ):
+            msg = "The selected registered service is unavailable"
+            raise HeinzelError(msg)
+        instance = self.resolve(kind)
+        if type(instance) is not factory or self._factory_instances.get(kind) is not instance:
+            msg = "The selected registered service instance changed"
+            raise HeinzelError(msg)
+        return instance
+
     def handle_for(self, requester: Requester, capability: str) -> object:
         """A handle on `capability` for `requester`, for code that acts on its behalf without being its function.
 
