@@ -13,6 +13,8 @@ import subprocess
 import sys
 import textwrap
 from pathlib import Path
+from urllib.parse import parse_qs, urlsplit
+from urllib.request import Request, urlopen
 
 import pytest
 
@@ -92,6 +94,27 @@ def verify_fixture_plugins(env: dict[str, str]) -> None:
         check=True,
         timeout=30,
     )
+
+
+def verify_stream_fixture(url: str) -> None:
+    """Check the real isolated backend before the browser substitutes its sound-list fixture."""
+    parsed = urlsplit(url)
+    assert parsed.scheme == "http"
+    assert parsed.hostname == "127.0.0.1"
+    assert parsed.port is not None
+    tokens = parse_qs(parsed.fragment).get("token", [])
+    assert len(tokens) == 1
+    assert tokens[0]
+    origin = f"http://127.0.0.1:{parsed.port}"
+    with urlopen(origin + "/", timeout=10) as response:  # noqa: S310 - validated loopback origin
+        directives = [part.split() for part in response.headers.get("Content-Security-Policy", "").split(";")]
+        frames = next((part[1:] for part in directives if part and part[0] == "frame-src"), [])
+        assert "https://www.youtube-nocookie.com" in frames
+    request = Request(origin + "/api/system/sound/list", headers={"Authorization": f"Bearer {tokens[0]}"})  # noqa: S310 - validated loopback origin
+    with urlopen(request, timeout=10) as response:  # noqa: S310 - validated loopback origin
+        sound = json.load(response)
+    assert sound["effective"] == "fixture-radio"
+    assert any(item["name"] == "fixture-radio" and item["stream"] for item in sound["soundscapes"])
 
 
 @pytest.fixture
@@ -270,7 +293,7 @@ def test_mobile_touch_viewports_keep_navigation_settings_and_chat_reachable(envi
     )
     shots = Path(os.environ.get("HZ_SCREENSHOTS", tmp_path / "screenshots"))
     ui = subprocess.Popen(
-        ["uv", "run", "hz", "ui", "--port", "0"], cwd=REPO, env=env, stderr=subprocess.PIPE, text=True
+        [sys.executable, "-m", "heinzel", "ui", "--port", "0"], cwd=REPO, env=env, stderr=subprocess.PIPE, text=True
     )
     try:
         assert ui.stderr is not None
@@ -281,6 +304,7 @@ def test_mobile_touch_viewports_keep_navigation_settings_and_chat_reachable(envi
         url = line.strip().rsplit(" ", 1)[-1]
         assert url.startswith("http://127.0.0.1:")
         assert "#token=" in url
+        verify_stream_fixture(url)
         driven = subprocess.run(
             [*run, "exec", "node", "e2e/mobile-responsive.mjs", url, str(shots)],
             cwd=REPO,
@@ -325,7 +349,7 @@ def test_docked_media_stays_below_every_overlay_in_mounted_chromium(environment,
     )
     shots = Path(os.environ.get("HZ_SCREENSHOTS", tmp_path / "screenshots"))
     ui = subprocess.Popen(
-        ["uv", "run", "hz", "ui", "--port", "0"], cwd=REPO, env=env, stderr=subprocess.PIPE, text=True
+        [sys.executable, "-m", "heinzel", "ui", "--port", "0"], cwd=REPO, env=env, stderr=subprocess.PIPE, text=True
     )
     try:
         assert ui.stderr is not None
@@ -336,6 +360,7 @@ def test_docked_media_stays_below_every_overlay_in_mounted_chromium(environment,
         url = line.strip().rsplit(" ", 1)[-1]
         assert url.startswith("http://127.0.0.1:")
         assert "#token=" in url
+        verify_stream_fixture(url)
         driven = subprocess.run(
             [*run, "exec", "node", "e2e/media-layers.mjs", url, str(shots)],
             cwd=REPO,
