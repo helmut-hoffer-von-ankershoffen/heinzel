@@ -8,6 +8,7 @@ import { tmpdir } from "node:os";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { _electron as electron } from "../../web/node_modules/playwright-core/index.mjs";
+import { cleanupHarness, withTimeout } from "./harness-cleanup.mjs";
 
 const electronDirectory = fileURLToPath(new URL("../node_modules/electron/", import.meta.url));
 const electronDist = join(electronDirectory, "dist");
@@ -22,6 +23,7 @@ await access(cli, constants.X_OK);
 const root = await mkdtemp(join(tmpdir(), "hz-electron-isolated-"));
 const dirs = ["bin", "home", "config", "data", "state", "cache", "logs", "electron-profile", "electron-session", "electron-logs", "tmp"];
 let app;
+let electronProcess;
 let ownedPid;
 let stopped = false;
 try {
@@ -43,6 +45,7 @@ try {
     env,
     timeout: 45_000,
   });
+  electronProcess = app.process();
   assert.equal(await app.evaluate(({ app: current }) => current.getPath("userData")), join(root, "electron-profile"));
   assert.equal(await app.evaluate(({ app: current }) => current.getPath("sessionData")), join(root, "electron-session"));
   const page = await app.firstWindow({ timeout: 45_000 });
@@ -54,13 +57,13 @@ try {
   assert.ok(Number.isSafeInteger(ownedPid) && ownedPid > 1);
   assert.ok(Number.isSafeInteger(port) && port > 0 && port <= 65535);
   const parent = spawnSync("/bin/ps", ["-o", "ppid=", "-p", String(ownedPid)], { encoding: "utf8" });
-  assert.equal(Number(parent.stdout.trim()), app.process().pid, "The observed hz process must belong to this Electron instance.");
+  assert.equal(Number(parent.stdout.trim()), electronProcess.pid, "The observed hz process must belong to this Electron instance.");
   await page.reload();
   await waitForConnected(page);
   const reloaded = await page.evaluate(() => window.heinzelDesktop.lifecycle());
   assert.equal(reloaded.instance, first.instance);
   assert.equal(reloaded.version, first.version);
-  const exited = new Promise((resolve) => app.process().once("exit", (code, signal) => resolve({ code, signal })));
+  const exited = new Promise((resolve) => electronProcess.once("exit", (code, signal) => resolve({ code, signal })));
   await page.close();
   const result = await withTimeout(exited, 15_000, "Electron did not exit after close.");
   stopped = true;
@@ -73,19 +76,12 @@ try {
   assert.equal(await listenerPresent(port), false, "The temporary loopback listener remained after the child exited.");
   console.log(`Isolated Electron opened and reloaded with installed hz ${first.version}; closing the window stopped its owned child.`);
 } finally {
-  if (app && !stopped) await app.close().catch(() => {});
-  if (!ownedPid && await exists(join(root, "owned-pid"))) ownedPid = Number(await readFile(join(root, "owned-pid"), "utf8"));
-  if (ownedPid && processExists(ownedPid)) throw new Error("The isolated owned child is still running; temporary state was retained for inspection.");
-  await rm(root, { recursive: true, force: true });
-}
-
-async function withTimeout(promise, milliseconds, message) {
-  let timer;
-  try {
-    return await Promise.race([promise, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(message)), milliseconds); })]);
-  } finally {
-    clearTimeout(timer);
-  }
+  await cleanupHarness({
+    app, electronProcess, stopped, root, ownedPid,
+    loadPid: async () => Number(await readFile(join(root, "owned-pid"), "utf8")),
+    processExists,
+    remove: (path) => rm(path, { recursive: true, force: true }),
+  });
 }
 
 async function waitForConnected(page) {

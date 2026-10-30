@@ -11,6 +11,8 @@ import { fileURLToPath } from "node:url";
 const packageRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const electronCli = join(packageRoot, "node_modules", "electron", "cli.js");
 const packagedExecutable = process.env.HEINZEL_ELECTRON_EXECUTABLE;
+if (packagedExecutable && !(process.env.CI === "true" && process.env.HZ_DISPOSABLE_NATIVE_CI === "1"))
+  throw new Error("Packaged native smoke requires an explicitly disposable CI environment; profile isolation is unverified.");
 const OUTPUT_LIMIT = 8192;
 const token = randomBytes(24).toString("base64url");
 const controlToken = randomBytes(24).toString("base64url");

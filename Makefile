@@ -152,7 +152,7 @@ desktop-electron-native: ## Launch the Electron window against a temporary authe
 		*) echo "Unsupported Electron native smoke-test host: $$(uname -s)"; exit 2 ;; \
 	esac; \
 	if [ ! -x "$$executable" ]; then echo "Packaged Electron executable is missing or not executable: $$executable"; exit 1; fi; \
-	HEINZEL_ELECTRON_EXECUTABLE="$$executable" $$runner pnpm --dir desktop test:native
+	HZ_DISPOSABLE_NATIVE_CI=1 HEINZEL_ELECTRON_EXECUTABLE="$$executable" $$runner pnpm --dir desktop test:native
 
 test: ## Run unit and integration tests with coverage on 4 workers (offline; what the CI Coverage job runs)
 	$(STEPS) \
