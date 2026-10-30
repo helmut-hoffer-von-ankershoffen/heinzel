@@ -10,6 +10,12 @@ second implementation to reach a person in a terminal, an agent through MCP, or 
 
 ```mermaid
 flowchart TB
+  accTitle: Heinzel architecture
+  accDescr {
+    People and agents use CLI, MCP, REST and web heads, which use the kernel.
+    Core modules and independent plugins use public contracts and extension points.
+    Plugins own operations, views, widgets, notifications and themes.
+  }
   People[People and agents] --> Heads[CLI · MCP · REST · Web]
   Heads --> Kernel[Kernel: discover · register · inject]
   Kernel --> Contracts[Public contracts and extension points]

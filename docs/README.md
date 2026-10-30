@@ -77,8 +77,8 @@ Start with clocks, system resources, private connectivity and the Heinzelmännch
 
 </div>
 <figure>
-<img src="assets/demo.png" alt="Heinzel terminal and web workspace example" width="1440" loading="lazy">
-<figcaption>A recorded product example. The foundation is available; richer team workflows are evolving.</figcaption>
+<img src="assets/website/product-workspace.jpg" alt="Team graph in the released Heinzel standard app" width="1440" loading="lazy">
+<figcaption>The standard 0.9.2 app with fictional team data. Optional services are unconfigured.</figcaption>
 </figure>
 </section>
 

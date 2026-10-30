@@ -125,3 +125,6 @@ body { font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFon
 /* Keep the product identity readable while scrolling long guides; avoid fading duplicate header titles. */
 .md-header__topic[data-md-component="header-topic"] { display:none; }
 .md-header .md-header__title .md-header__topic:first-child { opacity:1; transform:none; transition:none; }
+/* Repository facts arrive asynchronously; keep their text readable throughout that update. */
+.md-header .md-source,.md-header .md-source__facts,.md-header .md-source__fact { opacity:1; transition:none; animation:none; }
+.md-header .md-source__facts { color:var(--hz-muted); }

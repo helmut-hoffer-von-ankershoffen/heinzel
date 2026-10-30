@@ -40,6 +40,13 @@ def require(condition: bool, message: str) -> None:
 class Handler(SimpleHTTPRequestHandler):
     """Serve only built artifacts under the production project's path prefix."""
 
+    def handle(self) -> None:
+        """Treat a browser closing its keepalive connection as normal teardown."""
+        try:
+            super().handle()
+        except (ConnectionResetError, BrokenPipeError):
+            return
+
     def do_GET(self) -> None:
         """Map the deployed project prefix to the build root."""
         if not self.path.startswith("/heinzel/"):
@@ -129,6 +136,9 @@ def sweep(browser: "Browser", engine: str, base: str, axe: Path, total: int) -> 
                 response = page.goto(base + route)
                 require(response is not None and response.ok, f"Route must resolve: {route}")
                 page.locator("h1").first.wait_for()
+                if name == "architecture":
+                    # Material replaces the source PRE with its rendered diagram's closed-shadow host DIV.
+                    page.wait_for_function("document.querySelector('.mermaid')?.tagName === 'DIV'")
                 require(
                     page.evaluate("document.documentElement.scrollWidth <= innerWidth + 1"),
                     f"Horizontal overflow: {engine}/{width}/{mode}/{name}",

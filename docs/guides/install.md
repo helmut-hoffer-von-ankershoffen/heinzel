@@ -7,7 +7,7 @@ description: Install the standard Heinzel app, start the web workspace, and veri
 
 The standard app is the easiest start. It installs the core plus the default Clock, Resource, Tailscale and
 Heinzelmännchen theme plugins from a versioned profile. Install [uv](https://docs.astral.sh/uv/getting-started/installation/)
-and Python 3.12 or newer first. macOS and Linux are the documented command-line installation paths.
+first; uv brings a compatible Python (3.12 or newer). macOS and Linux are the documented command-line installation paths.
 
 ## Install the standard app
 

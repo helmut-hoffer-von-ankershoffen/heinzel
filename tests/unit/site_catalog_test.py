@@ -5,6 +5,7 @@ import importlib.util
 import json
 import sys
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import pytest
 import yaml
@@ -214,7 +215,9 @@ def test_recommendation_waits_for_every_profile_asset(monkeypatch):
                 ],
             }
 
-    monkeypatch.setattr(catalog, "public_json", lambda url: package if "pypi.org" in url else profile)
+    monkeypatch.setattr(
+        catalog, "public_json", lambda url: package if urlsplit(url).hostname == "pypi.org" else profile
+    )
     with pytest.raises(ValueError, match="complete"):
         catalog.recommended_release(Pending(), {})
 
@@ -327,7 +330,9 @@ def test_complete_app_is_found_even_after_hundreds_of_independent_plugin_release
                 "assets": [{"name": a["filename"], "digest": "sha256:" + a["sha256"]} for a in profile["artifacts"]],
             }
 
-    monkeypatch.setattr(catalog, "public_json", lambda url: package if "pypi.org" in url else profile)
+    monkeypatch.setattr(
+        catalog, "public_json", lambda url: package if urlsplit(url).hostname == "pypi.org" else profile
+    )
     result = catalog.recommended_release(IndependentReleases(), {"version": "0.9.2"})
     assert result["version"] == "0.9.2"
 
