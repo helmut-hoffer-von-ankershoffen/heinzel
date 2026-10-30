@@ -4,7 +4,7 @@ All notable changes to Heinzelmännchen, newest first. Versions follow [Semantic
 
 ## [0.9.3](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/releases/tag/v0.9.3) - 2026-10-30
 
-Durable Heinzel chats now retain identity, styling and proposed contracts across reloads. Review private contract, appearance and skill drafts in chat, follow recorded tool activity, and explicitly resolve interrupted turns. Claude subscription chats use provider limits with bounded requests and runtime; direct API infrastructure retains dollar reservations. Browser test setup now installs both engines on Linux and macOS. Scheduled connected workflows and complete Electron distribution remain in development.
+Durable Heinzel chats now retain identity, styling and proposed contracts across reloads. Review private contract, appearance and skill drafts in chat, follow recorded tool activity, and explicitly resolve interrupted turns. Claude subscription chats use provider limits with bounded requests and runtime; direct API infrastructure retains dollar reservations. Browser test setup now installs both engines on Linux and macOS, and release generation preserves published changelog history. Scheduled connected workflows and complete Electron distribution remain in development.
 
 ### ✨ Features
 
@@ -13,6 +13,7 @@ Durable Heinzel chats now retain identity, styling and proposed contracts across
 ### 🐛 Bug fixes
 
 - **ci:** Install both browser engines on every end-to-end host ([#277](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/277)) ([abfe56c](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/abfe56c66935d8a76dc4674ad15186d6addb6e53))
+- **release:** Preserve published changelog history ([#279](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/279)) ([e598a36](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/e598a36700b845c3c0410b162955a020e602fbbd))
 
 ## [0.9.2](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/releases/tag/v0.9.2) - 2026-10-30
 
