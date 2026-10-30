@@ -41,6 +41,7 @@ from heinzel.kernel._config import (
     toml_value,
     user_config_dir,
 )
+from heinzel.kernel._connected_read import ConnectedReadLease, ConnectedReadReview, ConnectedReadService
 from heinzel.kernel._contributions import (
     ICONS,
     ActionLet,
@@ -337,6 +338,9 @@ __all__ = [
     "ConfiguredApiLease",
     "ConfiguredApiSnapshot",
     "ConfirmedLines",
+    "ConnectedReadLease",
+    "ConnectedReadReview",
+    "ConnectedReadService",
     "ContractTemplate",
     "ContributionLet",
     "CoreMetadataVerifier",
