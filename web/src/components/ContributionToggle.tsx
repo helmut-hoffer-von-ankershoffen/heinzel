@@ -193,6 +193,9 @@ export function ContributionToggle({ control, refresh, applySettings }: Props) {
         <span id={labelId} className="min-w-0">
           {control.label}
         </span>
+        <span className="ml-auto text-xs text-muted-foreground">
+          {control.checked ? t("contrib.toggle.on") : t("contrib.toggle.off")}
+        </span>
         <button
           type="button"
           role="switch"
@@ -203,15 +206,15 @@ export function ContributionToggle({ control, refresh, applySettings }: Props) {
           disabled={pending || !actionable(operation)}
           onClick={() => void change()}
           className={cn(
-            "relative h-6 w-10 shrink-0 rounded-full transition-colors disabled:opacity-50",
-            control.checked ? "bg-switch" : requested ? "bg-warn/30" : "bg-accent",
+            "relative h-7 w-12 shrink-0 rounded-full border-2 border-foreground/40 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-50",
+            control.checked ? "bg-switch border-switch" : requested ? "bg-warn/30" : "bg-muted-foreground/30",
           )}
         >
           <span
             aria-hidden
             className={cn(
               "absolute top-0.5 left-0.5 size-5 rounded-full bg-white shadow transition-transform",
-              control.checked ? "translate-x-4" : requested && "translate-x-2",
+              control.checked ? "translate-x-5" : requested && "translate-x-2",
             )}
           />
         </button>

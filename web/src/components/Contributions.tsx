@@ -7,6 +7,7 @@ import {
   Activity,
   AlarmClock,
   Bell,
+  BriefcaseBusiness,
   Calendar,
   CalendarClock,
   ChartLine,
@@ -32,6 +33,8 @@ import {
   type LucideIcon,
   Mail,
   MessageSquare,
+  Moon,
+  PartyPopper,
   Play,
   Rocket,
   Star,
@@ -85,6 +88,7 @@ export const ICONS: Record<Icon, LucideIcon> = {
   "alarm-clock": AlarmClock,
   bell: Bell,
   bot: HeinzelFace,
+  "briefcase-business": BriefcaseBusiness,
   calendar: Calendar,
   "calendar-clock": CalendarClock,
   "chart-line": ChartLine,
@@ -109,6 +113,8 @@ export const ICONS: Record<Icon, LucideIcon> = {
   "list-checks": ListChecks,
   mail: Mail,
   "message-square": MessageSquare,
+  moon: Moon,
+  "party-popper": PartyPopper,
   play: Play,
   rocket: Rocket,
   star: Star,
@@ -349,6 +355,11 @@ function FooterStatus({
             <span aria-hidden className={cn("size-2 shrink-0 rounded-full", DOT[line.tone])} />
             <span className="min-w-0 flex-1" title={line.tooltip ?? undefined}>
               {line.text}
+              {line.badge && (
+                <span className="ml-2 rounded-md border border-primary/40 px-2 py-0.5 text-xs text-primary">
+                  {line.badge}
+                </span>
+              )}
               {line.secondary && <span className="block text-xs text-muted-foreground">{line.secondary}</span>}
             </span>
             <IconOf icon={line.icon} />
@@ -553,7 +564,17 @@ function SidebarStatusItem({
                           : "bg-muted-foreground/40",
                   )}
                 />
-                <span className="min-w-0 truncate">{line.text}</span>
+                <span className="min-w-0 flex-1" title={line.tooltip ?? undefined}>
+                  {line.text}
+                  {line.badge && (
+                    <span className="ml-2 rounded-md border border-primary/40 px-2 py-0.5 text-xs text-primary">
+                      {line.badge}
+                    </span>
+                  )}
+                  {line.secondary && <span className="block text-xs text-muted-foreground">{line.secondary}</span>}
+                </span>
+                <IconOf icon={line.icon} />
+                {line.live && <span className="font-mono tabular-nums">{liveText(line.live, now)}</span>}
               </li>
             ))}
           </ul>
