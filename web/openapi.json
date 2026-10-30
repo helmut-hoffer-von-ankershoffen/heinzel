@@ -3148,6 +3148,48 @@
         "title": "ConnectedGrantProposal",
         "type": "object"
       },
+      "ConnectedReadOption": {
+        "description": "Host-selected registered capability description; this conveys no read authority.",
+        "properties": {
+          "capability": {
+            "description": "Selected capability name.",
+            "title": "Capability",
+            "type": "string"
+          },
+          "input_schema": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "description": "Exact read method argument schema.",
+            "title": "Input Schema",
+            "type": "object"
+          },
+          "method": {
+            "description": "Selected read method.",
+            "title": "Method",
+            "type": "string"
+          },
+          "provider": {
+            "description": "Selected adapter name.",
+            "title": "Provider",
+            "type": "string"
+          },
+          "source": {
+            "description": "Registered module and distribution identity, not publisher verification.",
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "capability",
+          "method",
+          "provider",
+          "source",
+          "input_schema"
+        ],
+        "title": "ConnectedReadOption",
+        "type": "object"
+      },
       "ConnectedReadReview": {
         "additionalProperties": false,
         "description": "Private observed source/account and exact operation constraints for human review.\n\nThe host must independently bind the selected registry record and operation schema, verify the owner/session,\nand compare these same fields on a fresh lease before invoking. Provider scopes are reported separately from\nhost-granted arguments and may include previously granted rights that the host will not exercise.",
@@ -3235,6 +3277,59 @@
           "fixed_arguments"
         ],
         "title": "ConnectedReadReview",
+        "type": "object"
+      },
+      "ConnectedReadState": {
+        "description": "Latest owner-scoped proposal and recorded status, without querying the provider.",
+        "properties": {
+          "descriptor": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConnectedReadOption"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Currently selected matching schema, if available."
+          },
+          "proposal": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConnectedGrantProposal"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Latest recorded proposal, if any."
+          },
+          "session_id": {
+            "description": "Owner-bound personal session.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "status": {
+            "description": "Recorded state; source and account are revalidated before each read.",
+            "enum": [
+              "none",
+              "proposed",
+              "approved",
+              "revoked",
+              "stale"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "proposal",
+          "status",
+          "descriptor"
+        ],
+        "title": "ConnectedReadState",
         "type": "object"
       },
       "Connector": {
@@ -17097,6 +17192,53 @@
         ]
       }
     },
+    "/heinzel/connected-read-options": {
+      "get": {
+        "description": "List selected read methods without opening a provider.",
+        "operationId": "heinzel_connected_read_options",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ConnectedReadOption"
+                  },
+                  "title": "Response Heinzel Connected Read Options",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List selected read methods without opening a provider.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
     "/heinzel/connected-read-review": {
       "get": {
         "description": "Inspect current exact connected-read proposal; this does not approve it.",
@@ -17144,6 +17286,49 @@
           }
         },
         "summary": "Inspect current exact connected-read proposal; this does not approve it.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/connected-read-state": {
+      "get": {
+        "description": "Inspect the latest recorded connected-read state for this session.",
+        "operationId": "heinzel_connected_read_state",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectedReadState"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Inspect the latest recorded connected-read state for this session.",
         "tags": [
           "heinzel"
         ]

@@ -7,6 +7,7 @@ import { ApiError, api, problem, type SchemaChatSession, type SchemaSessionSnaps
 import { useDaemonStatus } from "@/api/daemon";
 import { AgentProposal } from "@/chat/AgentProposal";
 import { AgentProposalSummary } from "@/chat/AgentProposalSummary";
+import { ConnectedReadReview } from "@/chat/ConnectedReadReview";
 import { ContractHistory } from "@/chat/ContractHistory";
 import { ActionCard } from "@/chat/Conversation";
 import { useDurableDraft } from "@/chat/durableDraft";
@@ -663,6 +664,9 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
           <PersonalArtifactLinks key={`artifacts:${sessionId}`} sessionId={sessionId} compact />
         )}
         {query.data?.session_id === sessionId && <AgentProposalSummary sessionId={sessionId} />}
+        {query.data?.session_id === sessionId && (
+          <ConnectedReadReview key={`connected:${sessionId}`} sessionId={sessionId} />
+        )}
         {query.data?.session_id === sessionId && <ContractHistory contracts={query.data.contracts ?? []} />}
         {query.data?.session_id === sessionId && <SkillDraftPanel key={`skills:${sessionId}`} sessionId={sessionId} />}
         {(historyCursors.length > 1 || query.data?.has_more) && (

@@ -77,7 +77,7 @@ def connected(tmp_path, monkeypatch):
         def read(self, arguments):
             assert arguments == {}
             state["reads"] += 1
-            return {"events": ["fictional"]}
+            return state.get("result", {"events": ["fictional"]})
 
         def close(self):
             pass
@@ -121,7 +121,11 @@ def test_exact_approval_current_source_and_revoke(connected):  # noqa: PLR0915
         grants.propose(session, "bad", "calendar", "events", {"window": {**fixed["window"], "extra": "ignored"}})
     with pytest.raises(HeinzelError):
         grants.propose(session, "bad", "calendar", "create_event", fixed)
+    assert grants.state(session).status == "none"
+    assert any(o.capability == "calendar" and o.method == "events" for o in grants.options(session))
+    assert state["opens"] == 0
     proposal = grants.propose(session, "req-one", "calendar", "events", fixed)
+    assert grants.state(session).status == "proposed"
     with crud.repository.main_writer(session) as writer, pytest.raises(HeinzelError):
         grants.read(session, writer)
     assert state["reads"] == 0
@@ -142,6 +146,7 @@ def test_exact_approval_current_source_and_revoke(connected):  # noqa: PLR0915
     with confirmation.using("heinzel", "approve-connected-read", args):
         assert grants.approve(session, "req-one", review, proof, confirmation) == proposal
         assert grants.approve(session, "req-one", review, proof, confirmation) == proposal
+    assert grants.state(session).status == "approved"
     competing_args = {**args, "approval_proof": competing}
     with confirmation.using("heinzel", "approve-connected-read", competing_args), pytest.raises(HeinzelError):
         grants.approve(session, "req-one", review, competing, confirmation)
@@ -156,10 +161,15 @@ def test_exact_approval_current_source_and_revoke(connected):  # noqa: PLR0915
     with crud.repository.main_writer(session) as writer:
         assert grants.read(session, writer) == {"events": ["fictional"]}
     assert state["reads"] == 2
+    state["result"] = {"bad": float("nan")}
+    with crud.repository.main_writer(session) as writer, pytest.raises(HeinzelError):
+        grants.read(session, writer)
+    del state["result"]
+    assert state["reads"] == 3
     state["account"] = "account-b"
     with crud.repository.main_writer(session) as writer, pytest.raises(HeinzelError):
         grants.read(session, writer)
-    assert state["reads"] == 2
+    assert state["reads"] == 3
     state["account"] = "account-a"
     state["scopes"] = ("calendar", "drive", "different")
     with crud.repository.main_writer(session) as writer, pytest.raises(HeinzelError):
@@ -176,9 +186,10 @@ def test_exact_approval_current_source_and_revoke(connected):  # noqa: PLR0915
     with current.local("mcp-stdio"), pytest.raises(HeinzelError):
         grants.issue(session, "req-one", "model")
     grants.revoke(session, "req-one")
+    assert grants.state(session).status == "revoked"
     with crud.repository.main_writer(session) as writer, pytest.raises(HeinzelError):
         grants.read(session, writer)
-    assert state["reads"] == 2
+    assert state["reads"] == 3
 
 
 def test_unknown_or_foreign_session_never_opens_provider(connected):

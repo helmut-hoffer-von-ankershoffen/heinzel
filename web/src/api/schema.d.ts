@@ -354,6 +354,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/heinzel/connected-read-options": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List selected read methods without opening a provider.
+         * @description List selected read methods without opening a provider.
+         */
+        get: operations["heinzel_connected_read_options"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/heinzel/connected-read-review": {
         parameters: {
             query?: never;
@@ -366,6 +386,26 @@ export interface paths {
          * @description Inspect current exact connected-read proposal; this does not approve it.
          */
         get: operations["heinzel_connected_read_review"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/heinzel/connected-read-state": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Inspect the latest recorded connected-read state for this session.
+         * @description Inspect the latest recorded connected-read state for this session.
+         */
+        get: operations["heinzel_connected_read_state"];
         put?: never;
         post?: never;
         delete?: never;
@@ -4559,6 +4599,39 @@ export interface components {
             revision: number;
         };
         /**
+         * ConnectedReadOption
+         * @description Host-selected registered capability description; this conveys no read authority.
+         */
+        ConnectedReadOption: {
+            /**
+             * Capability
+             * @description Selected capability name.
+             */
+            capability: string;
+            /**
+             * Input Schema
+             * @description Exact read method argument schema.
+             */
+            input_schema: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            /**
+             * Method
+             * @description Selected read method.
+             */
+            method: string;
+            /**
+             * Provider
+             * @description Selected adapter name.
+             */
+            provider: string;
+            /**
+             * Source
+             * @description Registered module and distribution identity, not publisher verification.
+             */
+            source: string;
+        };
+        /**
          * ConnectedReadReview
          * @description Private observed source/account and exact operation constraints for human review.
          *
@@ -4614,6 +4687,27 @@ export interface components {
              * @description The provider-reported source continuity revision.
              */
             source_revision: string;
+        };
+        /**
+         * ConnectedReadState
+         * @description Latest owner-scoped proposal and recorded status, without querying the provider.
+         */
+        ConnectedReadState: {
+            /** @description Currently selected matching schema, if available. */
+            descriptor: components["schemas"]["ConnectedReadOption"] | null;
+            /** @description Latest recorded proposal, if any. */
+            proposal: components["schemas"]["ConnectedGrantProposal"] | null;
+            /**
+             * Session Id
+             * @description Owner-bound personal session.
+             */
+            session_id: string;
+            /**
+             * Status
+             * @description Recorded state; source and account are revalidated before each read.
+             * @enum {string}
+             */
+            status: "none" | "proposed" | "approved" | "revoked" | "stale";
         };
         /**
          * Connector
@@ -12159,7 +12253,9 @@ export type SchemaConfigReport = components['schemas']['ConfigReport'];
 export type SchemaConfigRevealed = components['schemas']['ConfigRevealed'];
 export type SchemaConflictView = components['schemas']['ConflictView'];
 export type SchemaConnectedGrantProposal = components['schemas']['ConnectedGrantProposal'];
+export type SchemaConnectedReadOption = components['schemas']['ConnectedReadOption'];
 export type SchemaConnectedReadReview = components['schemas']['ConnectedReadReview'];
+export type SchemaConnectedReadState = components['schemas']['ConnectedReadState'];
 export type SchemaConnector = components['schemas']['Connector'];
 export type SchemaConnectorCapability = components['schemas']['ConnectorCapability'];
 export type SchemaConnectorReport = components['schemas']['ConnectorReport'];
@@ -12922,6 +13018,37 @@ export interface operations {
             };
         };
     };
+    heinzel_connected_read_options: {
+        parameters: {
+            query: {
+                session_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectedReadOption"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     heinzel_connected_read_review: {
         parameters: {
             query: {
@@ -12941,6 +13068,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ConnectedGrantProposal"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    heinzel_connected_read_state: {
+        parameters: {
+            query: {
+                session_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectedReadState"];
                 };
             };
             /** @description Validation Error */

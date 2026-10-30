@@ -18,7 +18,12 @@ from heinzel.kernel import (
     RunnerSnapshotProvider,
 )
 from heinzel.kernel._approval import ApprovalConfirmation, ApprovalIssuer, arguments_hash
-from heinzel.modules.heinzel._connected_grants import ConnectedGrantProposal, ConnectedReadGrants
+from heinzel.modules.heinzel._connected_grants import (
+    ConnectedGrantProposal,
+    ConnectedReadGrants,
+    ConnectedReadOption,
+    ConnectedReadState,
+)
 from heinzel.modules.heinzel._contract_review import ContractReview, ContractReviewView
 from heinzel.modules.heinzel._model_grants import ModelGrants
 from heinzel.modules.heinzel._model_policy_operations import ModelPolicyService, register_model_policy_operations
@@ -338,6 +343,16 @@ def _register_contract_review_operations(module: Module) -> None:
 
 def _register_connected_read_operations(module: Module) -> None:
     """Register private review surfaces; human confirmation alone can consume an issued proof."""
+
+    @module.operation(private=True, heads={"web", "api-private"}, audience="everyday")
+    def connected_read_options(service: ConnectedReadGrants, session_id: Identity) -> list[ConnectedReadOption]:
+        """List selected read methods without opening a provider."""
+        return service.options(session_id)
+
+    @module.operation(private=True, heads={"web", "api-private"}, audience="everyday")
+    def connected_read_state(service: ConnectedReadGrants, session_id: Identity) -> ConnectedReadState:
+        """Inspect the latest recorded connected-read state for this session."""
+        return service.state(session_id)
 
     @module.operation(private=True, read_only=False, heads={"web", "api-private"}, audience="everyday")
     def propose_connected_read(  # noqa: PLR0913, PLR0917 - exact review parameters

@@ -570,7 +570,9 @@ $ hz heinzel [OPTIONS] COMMAND [ARGS]...
 * `chat`: Durably queue a message for this Heinzel;...
 * `chat-turn-state`: Read the recorded turn state; unresolved...
 * `check`: (expert) Check contracts and list every...
+* `connected-read-options`: List selected read methods without opening...
 * `connected-read-review`: Inspect current exact connected-read...
+* `connected-read-state`: Inspect the latest recorded connected-read...
 * `discover`: (expert) Find candidates for each...
 * `drafts`: List the drafts runs saved locally, newest...
 * `graph`: (expert) Show the workflow your contracts...
@@ -846,6 +848,26 @@ $ hz heinzel check [OPTIONS]
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
 
+### `hz heinzel connected-read-options`
+
+List selected read methods without opening a provider.
+
+**Usage**:
+
+```console
+$ hz heinzel connected-read-options [OPTIONS] {session_id}
+```
+
+**Arguments**:
+
+* `session_id`: [required]
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
 ### `hz heinzel connected-read-review`
 
 Inspect current exact connected-read proposal; this does not approve it.
@@ -860,6 +882,26 @@ $ hz heinzel connected-read-review [OPTIONS] {session_id} {request_id}
 
 * `session_id`: [required]
 * `request_id`: [required]
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz heinzel connected-read-state`
+
+Inspect the latest recorded connected-read state for this session.
+
+**Usage**:
+
+```console
+$ hz heinzel connected-read-state [OPTIONS] {session_id}
+```
+
+**Arguments**:
+
+* `session_id`: [required]
 
 **Options**:
 

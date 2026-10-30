@@ -20,6 +20,17 @@ from tests.integration.chat_test import AUTH, web_client
 pytestmark = pytest.mark.integration
 
 
+def _fail_if(state, where):
+    if state.get("failure") == where:
+        msg = f"secret-sentinel-{where}"
+        raise HeinzelError(msg)
+
+
+def _mutate_if_requested(state, fixed_arguments):
+    if state.get("failure") == "mutate":
+        fixed_arguments["window"]["since"] = "2025-01-01T00:00:00Z"
+
+
 def test_human_action_only_approves_exact_private_connected_read(make_kernel, tmp_path, monkeypatch):  # noqa: PLR0915
     state = {"opens": 0, "reads": 0, "account": "account-one"}
     holder = {}
@@ -29,6 +40,7 @@ def test_human_action_only_approves_exact_private_connected_read(make_kernel, tm
             self.session, self.operation, self.fixed = session, operation, fixed
 
         def review(self):
+            _fail_if(state, "review")
             descriptor = describe_capability_read(holder["kernel"], "calendar", "events")
             return ConnectedReadReview(
                 owner=holder["current"].principal().id,
@@ -46,11 +58,13 @@ def test_human_action_only_approves_exact_private_connected_read(make_kernel, tm
             return {"events": []}
 
         def close(self):
-            pass
+            _fail_if(state, "close")
 
     class Provider(ConnectedReadService):
         def open_lease(self, session, operation, fixed_arguments):
             state["opens"] += 1
+            _fail_if(state, "open")
+            _mutate_if_requested(state, fixed_arguments)
             return Lease(session, operation, dict(fixed_arguments))
 
     class Calendar:
@@ -92,9 +106,28 @@ def test_human_action_only_approves_exact_private_connected_read(make_kernel, tm
     )
     assert missing.status_code == 400
     assert state["opens"] == 0
+    assert client.get("/api/heinzel/connected-read-state", params={"session_id": session}).status_code == 401
+    options = client.get("/api/heinzel/connected-read-options", headers=AUTH, params={"session_id": session})
+    assert options.status_code == 200
+    assert any(option["capability"] == "calendar" and option["method"] == "events" for option in options.json())
+    assert state["opens"] == 0
+    assert (
+        client.get("/api/heinzel/connected-read-state", headers=AUTH, params={"session_id": session}).json()["status"]
+        == "none"
+    )
+    for failure in ("open", "review", "close", "mutate"):
+        state["failure"] = failure
+        failed = client.post("/api/heinzel/propose-connected-read", headers=AUTH, json=body)
+        assert failed.status_code == 400
+        assert "secret-sentinel" not in failed.text
+    state["failure"] = None
     proposed = client.post("/api/heinzel/propose-connected-read", headers=AUTH, json=body)
     assert proposed.status_code == 200, proposed.text
     assert state["reads"] == 0
+    assert (
+        client.get("/api/heinzel/connected-read-state", headers=AUTH, params={"session_id": session}).json()["status"]
+        == "proposed"
+    )
     params = {"durable_session": session, "request_id": "grant-one"}
     stage = client.post("/api/system/runner/chat/propose-connected-read-review", headers=AUTH, params=params)
     assert stage.status_code == 200, stage.text
