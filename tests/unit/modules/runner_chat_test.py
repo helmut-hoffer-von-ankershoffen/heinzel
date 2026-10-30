@@ -452,6 +452,20 @@ def test_a_setting_that_changes_nothing_that_runs_may_be_proposed(store, service
     assert StoreGate(store, kernel).propose(proposal) == "a1"
 
 
+def test_model_cannot_stage_read_set_human_confirmation(store, service, kernel):
+    chat = service.open(None)
+    proposal = ProposedCall(
+        session=chat.id,
+        module="heinzel",
+        operation="approve-connected-read-set",
+        tool="heinzel_approve_connected_read_set",
+        arguments={},
+        command="hz heinzel approve-connected-read-set",
+    )
+    with pytest.raises(HeinzelError, match="human review surface"):
+        StoreGate(store, kernel).propose(proposal)
+
+
 @pytest.mark.parametrize("operation", ["set", "unset"])
 @pytest.mark.parametrize("key", ["heinzel.retention_days", " HEINZEL.retention-days ", "heinzel.future_policy"])
 def test_heinzel_settings_are_guarded_even_without_registered_setting_metadata(operation, key):

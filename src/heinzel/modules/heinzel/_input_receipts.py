@@ -25,16 +25,81 @@ from heinzel.modules.heinzel._session_crud import SessionCrud
 from heinzel.modules.heinzel._session_models import SessionId
 
 _KEY = "input-receipt-key-v1"
+_KEY_GUARD = "input-receipt-key-id-v1"
 _KEY_BYTES = 32
 _MAX_HISTORY = 100
 _DIGEST = re.compile(r"[0-9a-f]{64}\Z", re.ASCII)
 
 
+def _owner_history(current: CurrentUser) -> list[SessionEvent]:
+    """Read every reserved owner journal, including incomplete or damaged sessions."""
+    from heinzel.modules.heinzel._session_repository import PersonalSessionRepository  # noqa: PLC0415 - avoid cycle
+
+    repository = PersonalSessionRepository(current)
+    events: list[SessionEvent] = []
+    sessions = repository.reserved_session_ids()
+    repository.verify_reserved_session_stores(sessions)
+    for session in sessions:
+        events.extend(
+            event
+            for event in repository.control_read(session).events
+            if event.kind in {"input-snapshot.observed", "connected-set-input.observed"}
+        )
+    return events
+
+
+def _key_id(key: bytes) -> str:
+    return hashlib.sha256(b"heinzel-input-receipt-v1\0" + key).hexdigest()
+
+
+def _write_guard(directory: int, key_id: str) -> None:
+    descriptor = CurrentUser.open_private(directory, _KEY_GUARD, os.O_WRONLY | os.O_CREAT | os.O_EXCL)
+    with os.fdopen(descriptor, "wb") as stream:
+        stream.write(key_id.encode("ascii"))
+        stream.flush()
+        os.fsync(stream.fileno())
+    os.fsync(directory)
+
+
+def _read_guard(directory: int) -> bytes | None:
+    try:
+        guard_fd = CurrentUser.open_private(directory, _KEY_GUARD, os.O_RDONLY)
+    except FileNotFoundError:
+        return None
+    with os.fdopen(guard_fd, "rb") as stream:
+        guard = stream.read(65)
+    if not re.fullmatch(rb"[0-9a-f]{64}", guard):
+        msg = "The private input receipt key needs repair"
+        raise HeinzelError(msg)
+    return guard
+
+
+def _create_key(directory: int) -> bytes:
+    key = secrets.token_bytes(_KEY_BYTES)
+    # The marker precedes the key: a crash at any later step leaves an explicit repair state.
+    _write_guard(directory, _key_id(key))
+    temporary = f".input-receipt-{secrets.token_hex(12)}"
+    fd = CurrentUser.open_private(directory, temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL)
+    try:
+        with os.fdopen(fd, "wb") as stream:
+            stream.write(key)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.rename(temporary, _KEY, src_dir_fd=directory, dst_dir_fd=directory)
+        os.fsync(directory)
+    finally:
+        with contextlib.suppress(FileNotFoundError):
+            os.unlink(temporary, dir_fd=directory)
+    return key
+
+
 def _load_key(current: CurrentUser, *, create: bool) -> bytes:
-    """Read or atomically create an owner-only stable fingerprint key.
+    """Load one owner-wide receipt key, never replacing a missing or changed initialized key.
+
+    The guard is durable loss detection, not protection from an actor controlling the owner's files.
 
     Raises:
-        HeinzelError: If identity storage or the existing key is damaged.
+        HeinzelError: If the key, guard or any owner history cannot be safely verified.
     """
     current.owner()
     directory = os.open(current.directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
@@ -43,28 +108,26 @@ def _load_key(current: CurrentUser, *, create: bool) -> bytes:
         lock = CurrentUser.open_private(directory, "owner.lock", os.O_RDWR | os.O_CREAT)
         try:
             fcntl.flock(lock, fcntl.LOCK_EX)
+            guard = _read_guard(directory)
             try:
                 fd = CurrentUser.open_private(directory, _KEY, os.O_RDONLY)
             except FileNotFoundError:
-                if not create:
+                if guard is not None or not create or _owner_history(current):
                     msg = "The private input snapshot history needs repair"
                     raise HeinzelError(msg) from None
-                temporary = f".input-receipt-{secrets.token_hex(12)}"
-                fd = CurrentUser.open_private(directory, temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL)
-                try:
-                    with os.fdopen(fd, "wb") as stream:
-                        stream.write(secrets.token_bytes(_KEY_BYTES))
-                        stream.flush()
-                        os.fsync(stream.fileno())
-                    os.rename(temporary, _KEY, src_dir_fd=directory, dst_dir_fd=directory)
-                    os.fsync(directory)
-                finally:
-                    with contextlib.suppress(FileNotFoundError):
-                        os.unlink(temporary, dir_fd=directory)
-                fd = CurrentUser.open_private(directory, _KEY, os.O_RDONLY)
+                return _create_key(directory)
             with os.fdopen(fd, "rb") as stream:
                 key = stream.read(_KEY_BYTES + 1)
             if len(key) != _KEY_BYTES:
+                msg = "The private input receipt key needs repair"
+                raise HeinzelError(msg)
+            actual = _key_id(key)
+            if guard is None:
+                if any(event.data.get("key_id") != actual for event in _owner_history(current)):
+                    msg = "The private input snapshot history needs repair"
+                    raise HeinzelError(msg)
+                _write_guard(directory, actual)
+            elif not hmac.compare_digest(guard, actual.encode("ascii")):
                 msg = "The private input receipt key needs repair"
                 raise HeinzelError(msg)
             return key
@@ -95,6 +158,16 @@ def existing_input_receipt_key(current: CurrentUser) -> bytes:
 def _fingerprint(key: bytes, value: object) -> str:
     encoded = json.dumps(value, ensure_ascii=True, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
     return hmac.new(key, encoded, hashlib.sha256).hexdigest()
+
+
+def input_receipt_key(current: CurrentUser, *, create: bool) -> bytes:
+    """Return the owner-private receipt key under its existing guarded creation rules."""
+    return _key(current, create=create)
+
+
+def input_receipt_fingerprint(key: bytes, value: object) -> str:
+    """Compute a domain-separated caller-specified private receipt fingerprint."""
+    return _fingerprint(key, value)
 
 
 @dataclass(frozen=True, slots=True)
