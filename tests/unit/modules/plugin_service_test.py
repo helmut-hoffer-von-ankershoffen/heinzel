@@ -46,8 +46,17 @@ def test_distributions_in_spec(spec, expected):
 
 @pytest.fixture
 def tool_env(tmp_path):
-    (tmp_path / "uv-receipt.toml").write_text(RECEIPT, encoding="utf-8")
-    return tmp_path
+    prefix = tmp_path / "tools" / "heinzel"
+    (prefix / "bin").mkdir(parents=True)
+    (prefix / "bin" / "hz").write_text("fixture", encoding="utf-8")
+    entrypoints = tmp_path / "entrypoints"
+    entrypoints.mkdir()
+    shim = entrypoints / "hz"
+    shim.symlink_to(prefix / "bin" / "hz")
+    (prefix / "uv-receipt.toml").write_text(
+        RECEIPT + f"entrypoints = [{{ name = 'hz', install-path = {str(shim)!r} }}]\n", encoding="utf-8"
+    )
+    return prefix
 
 
 def service_for(make_kernel, prefix, runner=None, kernel=None, settings=None):
@@ -131,7 +140,7 @@ def test_installed_first_party_classification_uses_exact_repository_not_reserved
 
 def test_add_in_tool_env_reinstalls_with_plugins(make_kernel, tool_env):
     assert service_for(make_kernel, tool_env).add_command("git+https://github.com/org/heinzel-new@v1.0.0") == [
-        "uv", "tool", "install", "--force", "--python", PYTHON,
+        "uv", "tool", "install", "--reinstall", "--python", PYTHON,
         "heinzel @ git+https://github.com/org/heinzel@v0.1.0",
         "--with", "heinzel-old @ git+https://github.com/org/heinzel-old",
         "--with", "git+https://github.com/org/heinzel-new@v1.0.0",
@@ -470,7 +479,10 @@ def test_confirmed_add_installs_exactly_what_was_shown_and_records_it(make_kerne
     assert (change.done, change.restart_required, change.action) == (True, True, "add")
     [(command, environment)] = runs
     assert command[-2:] == ["--with", "heinzel-crm==1.1.0"]
-    assert environment is None  # no gh: nothing to tell git
+    assert environment == {
+        "UV_TOOL_DIR": str(tool_env.parent),
+        "UV_TOOL_BIN_DIR": str(tool_env.parent.parent / "entrypoints"),
+    }
     [event] = service.history()
     assert (event.action, event.distribution, event.requirement, event.source, event.version, event.publisher) == (
         "add",
@@ -704,6 +716,8 @@ def test_with_gh_git_asks_gh_for_github_credentials_and_no_token_passes_through(
         "GIT_CONFIG_COUNT": "3",
         "GIT_CONFIG_KEY_2": "credential.https://github.com.helper",
         "GIT_CONFIG_VALUE_2": "!/opt/bin/gh auth git-credential",
+        "UV_TOOL_DIR": str(tool_env.parent),
+        "UV_TOOL_BIN_DIR": str(tool_env.parent.parent / "entrypoints"),
     }
 
 
