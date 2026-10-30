@@ -55,10 +55,10 @@ def test_tool_environment(tmp_path):
         "heinzel-old @ git+https://github.com/org/heinzel-old",
     ]
     assert installation.tool_install_command("heinzel", ["a", "b"]) == [
-        "uv", "tool", "install", "--force", "--python", PYTHON, "heinzel", "--with", "a", "--with", "b",
+        "uv", "tool", "install", "--reinstall", "--python", PYTHON, "heinzel", "--with", "a", "--with", "b",
     ]  # fmt: skip
     assert installation.tool_install_command("heinzel", ["a"], refresh=True) == [
-        "uv", "tool", "install", "--force", "--refresh", "--python", PYTHON, "heinzel", "--with", "a",
+        "uv", "tool", "install", "--reinstall", "--refresh", "--python", PYTHON, "heinzel", "--with", "a",
     ]  # fmt: skip
     assert [pin.requirement for pin in installation.plugin_pins()] == [
         "heinzel-old @ git+https://github.com/org/heinzel-old"
@@ -223,3 +223,274 @@ def test_attempt_returns_how_the_command_ended(tmp_path):
 
     result = Installation(Progress(), prefix=tmp_path, uv="uv", runner=failing).attempt(["uv"], "Doing")
     assert (result.returncode, result.stderr) == (1, "uv says no")
+
+
+def _target_fixture(tmp_path):
+    prefix = tmp_path / "tools" / "heinzel"
+    scripts = prefix / "bin"
+    scripts.mkdir(parents=True)
+    (scripts / "hz").write_text("fixture", encoding="utf-8")
+    bin_dir = tmp_path / "installed-bin"
+    bin_dir.mkdir()
+    (bin_dir / "hz").symlink_to(scripts / "hz")
+    receipt = (
+        '[tool]\nrequirements = [{ name = "heinzel" }]\nentrypoints = [{ name = "hz", install-path = '
+        + repr(str(bin_dir / "hz"))
+        + " }]\n"
+    )
+    (prefix / "uv-receipt.toml").write_text(receipt, encoding="utf-8")
+    return prefix, bin_dir
+
+
+def test_tool_install_binds_store_and_bin_to_running_receipt(tmp_path, monkeypatch):
+    prefix, bin_dir = _target_fixture(tmp_path)
+    monkeypatch.setenv("UV_TOOL_DIR", str(tmp_path / "other-tools"))
+    monkeypatch.setenv("UV_TOOL_BIN_DIR", str(tmp_path / "other-bin"))
+    calls = []
+
+    def spy(command, environment):
+        calls.append((command, environment))
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    installation = Installation(Progress(), prefix=prefix, uv="fake-uv", runner=spy)
+    command = installation.tool_install_command("heinzel", [])
+    installation.attempt(command, "fixture", {"EXAMPLE": "kept", "UV_TOOL_DIR": "/wrong"})
+    assert calls == [(command, {"EXAMPLE": "kept", "UV_TOOL_DIR": str(prefix.parent), "UV_TOOL_BIN_DIR": str(bin_dir)})]
+
+
+@pytest.mark.parametrize("damage", ["missing", "wrong_target", "multiple", "relative", "wrong_prefix"])
+def test_tool_install_refuses_unverified_target_without_running_uv(tmp_path, damage):
+    prefix, bin_dir = _target_fixture(tmp_path)
+    receipt = prefix / "uv-receipt.toml"
+    if damage == "missing":
+        receipt.write_text('[tool]\nrequirements = [{ name = "heinzel" }]\n', encoding="utf-8")
+    elif damage == "wrong_target":
+        (bin_dir / "hz").unlink()
+        (bin_dir / "hz").symlink_to(tmp_path / "other")
+    elif damage == "multiple":
+        receipt.write_text(
+            receipt.read_text(encoding="utf-8").replace(" }]\n", ' }, { name = "hz", install-path = "/wrong/hz" }]\n'),
+            encoding="utf-8",
+        )
+    elif damage == "relative":
+        receipt.write_text(
+            receipt.read_text(encoding="utf-8").replace(str(bin_dir / "hz"), "relative/hz"), encoding="utf-8"
+        )
+    else:
+        renamed = prefix.with_name("other")
+        prefix.rename(renamed)
+        prefix = renamed
+    installation = Installation(Progress(), prefix=prefix, uv="fake-uv", runner=lambda *_args: pytest.fail("uv ran"))
+    with pytest.raises(HeinzelError, match="Cannot verify the running uv tool"):
+        installation.attempt(installation.tool_install_command("heinzel", []), "fixture")
+
+
+def test_tool_target_reaches_guarded_subprocess_and_drops_credentials(tmp_path, monkeypatch):
+    import json
+
+    prefix, bin_dir = _target_fixture(tmp_path)
+    spy = tmp_path / "uv"
+    spy.write_text(
+        f"#!{sys.executable}\n"
+        "import json, os, sys\n"
+        "print(json.dumps({key: os.environ.get(key) for key in "
+        "('UV_TOOL_DIR', 'UV_TOOL_BIN_DIR', 'HZ_CREDENTIAL_EXAMPLE_TOKEN')}))\n"
+        "sys.exit(77)\n",
+        encoding="utf-8",
+    )
+    spy.chmod(0o700)
+    monkeypatch.setenv("UV_TOOL_DIR", str(tmp_path / "wrong-store"))
+    monkeypatch.setenv("UV_TOOL_BIN_DIR", str(tmp_path / "wrong-bin"))
+    monkeypatch.setenv("HZ_CREDENTIAL_EXAMPLE_TOKEN", "fictional-secret")
+    installation = Installation(Progress(), prefix=prefix, uv=str(spy))
+    result = installation.attempt(installation.tool_install_command("heinzel", []), "fake guarded uv")
+    assert result.returncode == 77  # The fake refuses to perform any mutation.
+    assert json.loads(result.stdout) == {
+        "UV_TOOL_DIR": str(prefix.parent),
+        "UV_TOOL_BIN_DIR": str(bin_dir),
+        "HZ_CREDENTIAL_EXAMPLE_TOKEN": None,
+    }
+
+
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    [
+        ("heinzel", "heinzel"),
+        ("heinzel>=0.9", "heinzel>=0.9"),
+        ("git+https://example.org/project.git@main", "heinzel @ git+https://example.org/project.git@main"),
+        (
+            "https://example.org/heinzel-0.9.6-py3-none-any.whl",
+            "heinzel @ https://example.org/heinzel-0.9.6-py3-none-any.whl",
+        ),
+    ],
+)
+def test_tool_source_explicitly_names_heinzel_before_uv(tmp_path, source, expected):
+    installation = Installation(Progress(), prefix=tmp_path, uv="fake-uv")
+    assert installation.tool_install_command(source, [])[-1] == expected
+
+
+def test_tool_source_accepts_existing_local_wheel_and_directory(tmp_path):
+    installation = Installation(Progress(), prefix=tmp_path, uv="fake-uv")
+    wheel = tmp_path / "heinzel-0.9.6-py3-none-any.whl"
+    wheel.touch()
+    assert installation.tool_install_command(str(wheel), [])[-1] == f"heinzel @ {wheel.as_uri()}"
+    assert installation.tool_install_command(str(tmp_path), [])[-1] == f"heinzel @ {tmp_path.as_uri()}"
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "another-package",
+        "another-package @ git+https://example.org/repo.git",
+        "https://example.org/other_package-1.0-py3-none-any.whl",
+        "heinzel @ https://example.org/other_package-1.0-py3-none-any.whl",
+        "--help",
+        "heinzel; python_version > '0'",
+    ],
+)
+def test_tool_source_rejects_wrong_name_without_running_uv(tmp_path, source):
+    installation = Installation(Progress(), prefix=tmp_path, uv="fake-uv", runner=lambda *_args: pytest.fail("uv ran"))
+    with pytest.raises(HeinzelError, match="must install the heinzel distribution"):
+        installation.tool_install_command(source, [])
+
+
+def test_copied_entrypoint_and_missing_receipt_refuse_update(tmp_path):
+    prefix, bin_dir = _target_fixture(tmp_path)
+    shim = bin_dir / "hz"
+    shim.unlink()
+    shim.write_text("fixture", encoding="utf-8")
+    installation = Installation(Progress(), prefix=prefix, uv="fake-uv", runner=lambda *_args: pytest.fail("uv ran"))
+    with pytest.raises(HeinzelError, match="Cannot verify the running uv tool"):
+        installation.attempt(installation.tool_install_command("heinzel", []), "fixture")
+    (prefix / "uv-receipt.toml").unlink()
+    with pytest.raises(HeinzelError, match="Cannot verify the running uv tool"):
+        installation.attempt(installation.tool_install_command("heinzel", []), "restore fixture")
+
+
+def test_scoped_target_refuses_replaced_bin_directory(tmp_path):
+    prefix, bin_dir = _target_fixture(tmp_path)
+    installation = Installation(Progress(), prefix=prefix, uv="fake-uv", runner=lambda *_args: pytest.fail("uv ran"))
+    with installation.tool_transaction():
+        bin_dir.rename(bin_dir.with_name("original"))
+        bin_dir.mkdir()
+        with pytest.raises(HeinzelError, match="verified uv tool target changed"):
+            installation.attempt(installation.tool_install_command("heinzel", []), "fixture")
+
+
+def test_failed_plugin_change_restores_tool_after_receipt_and_shim_disappear(tmp_path):
+    prefix, bin_dir = _target_fixture(tmp_path)
+    receipt = prefix / "uv-receipt.toml"
+    original = receipt.read_text(encoding="utf-8")
+    calls = []
+
+    def fake_uv(command, environment):
+        calls.append((command, environment))
+        if len(calls) == 1:
+            receipt.unlink()
+            (bin_dir / "hz").unlink()
+            return subprocess.CompletedProcess(command, 2, "", "foreign executable already exists")
+        receipt.write_text(original, encoding="utf-8")
+        (bin_dir / "hz").symlink_to(prefix / "bin" / "hz")
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    installation = Installation(Progress(), prefix=prefix, uv="fake-uv", runner=fake_uv)
+    installation.hz = lambda *_args: "hz 0.9.6"  # type: ignore[method-assign]
+    with pytest.raises(HeinzelError, match="previous tool was restored"):
+        installation.run(installation.tool_install_command("heinzel", ["plugin"]), "Add failed", "Adding")
+    assert len(calls) == 2
+    assert calls[1][0] == installation.tool_install_command("heinzel", [])
+    assert calls[0][1] == calls[1][1] == {"UV_TOOL_DIR": str(prefix.parent), "UV_TOOL_BIN_DIR": str(bin_dir)}
+
+
+def test_opt_in_current_installed_receipt_target_read_only():
+    from pathlib import Path
+
+    prefix = os.environ.get("HZ_READONLY_UV_PREFIX")
+    if not prefix:
+        pytest.skip("Set HZ_READONLY_UV_PREFIX to inspect an installed tool receipt without mutations")
+    installation = Installation(Progress(), prefix=Path(prefix), uv="unused")
+    target = installation._tool_target()
+    assert target["UV_TOOL_DIR"] == str(Path(prefix).resolve(strict=True).parent)
+    assert (Path(target["UV_TOOL_BIN_DIR"]) / "hz").resolve(strict=True) == (
+        Path(prefix).resolve(strict=True) / "bin" / "hz"
+    ).resolve(strict=True)
+
+
+def test_dangling_foreign_executable_refuses_before_runner(tmp_path):
+    prefix, bin_dir = _target_fixture(tmp_path)
+    dangling = bin_dir / "unrelated"
+    dangling.symlink_to(tmp_path / "absent")
+    installation = Installation(Progress(), prefix=prefix, uv="fake-uv", runner=lambda *_args: pytest.fail("uv ran"))
+    with pytest.raises(HeinzelError, match="unresolved uv executable symlinks"):
+        installation.attempt(installation.tool_install_command("heinzel", []), "fixture")
+    with pytest.raises(HeinzelError, match="unresolved uv executable symlinks"), installation.tool_transaction():
+        pytest.fail("transaction started")
+    assert dangling.is_symlink()
+    assert dangling.readlink() == tmp_path / "absent"
+
+
+def test_new_dangling_link_during_transaction_refuses_next_runner(tmp_path):
+    prefix, bin_dir = _target_fixture(tmp_path)
+    installation = Installation(Progress(), prefix=prefix, uv="fake-uv", runner=lambda *_args: pytest.fail("uv ran"))
+    with installation.tool_transaction():
+        dangling = bin_dir / "foreign"
+        dangling.symlink_to(tmp_path / "absent")
+        with pytest.raises(HeinzelError, match="unresolved uv executable symlinks"):
+            installation.attempt(installation.tool_install_command("heinzel", []), "fixture")
+        assert dangling.is_symlink()
+
+
+def test_valid_foreign_symlink_does_not_block_tool_target(tmp_path):
+    prefix, bin_dir = _target_fixture(tmp_path)
+    foreign_target = tmp_path / "foreign-target"
+    foreign_target.write_text("fixture", encoding="utf-8")
+    (bin_dir / "foreign").symlink_to(foreign_target)
+    calls = []
+
+    def fake_uv(command, environment):
+        calls.append((command, environment))
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    installation = Installation(Progress(), prefix=prefix, uv="fake-uv", runner=fake_uv)
+    installation.attempt(installation.tool_install_command("heinzel", []), "fixture")
+    assert len(calls) == 1
+
+
+def test_only_original_receipt_owned_link_can_be_dangling_for_scoped_recovery(tmp_path):
+    prefix, bin_dir = _target_fixture(tmp_path)
+    calls = []
+
+    def fake_uv(command, environment):
+        calls.append((command, environment))
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    installation = Installation(Progress(), prefix=prefix, uv="fake-uv", runner=fake_uv)
+    command = installation.tool_install_command("heinzel", [])
+    with installation.tool_transaction():
+        (prefix / "bin" / "hz").unlink()
+        with pytest.raises(HeinzelError, match="unresolved uv executable symlinks"):
+            installation.attempt(command, "ordinary retry")
+        installation.attempt(command, "restore", recovery=True)
+        foreign = bin_dir / "foreign"
+        foreign.symlink_to(tmp_path / "missing")
+        with pytest.raises(HeinzelError, match="unresolved uv executable symlinks"):
+            installation.attempt(command, "restore with foreign link", recovery=True)
+        foreign.unlink()
+        shim = bin_dir / "hz"
+        old = bin_dir / "old-shim"
+        shim.rename(old)
+        shim.symlink_to(prefix / "bin" / "hz")
+        old.unlink()
+        with pytest.raises(HeinzelError, match="unresolved uv executable symlinks"):
+            installation.attempt(command, "restore with replaced link", recovery=True)
+    assert len(calls) == 1
+
+
+def test_hz_probe_reports_missing_interpreter_as_heinzel_error(tmp_path, monkeypatch):
+    def missing(*_args, **_kwargs):
+        msg = "fixture interpreter removed"
+        raise FileNotFoundError(msg)
+
+    monkeypatch.setattr(subprocess, "run", missing)
+    with pytest.raises(HeinzelError, match="could not start after the change"):
+        Installation(Progress(), prefix=tmp_path, uv="fake-uv").hz("--version")
