@@ -75,7 +75,7 @@ def check_collection_message(log: Path) -> None:
         raise AssertionError(msg)
 
 
-def journey(core: str, toolkit: str, template: Path, destination: Path) -> None:
+def journey(core: str, toolkit: str | None, template: Path, destination: Path) -> None:
     """The documented commands must work without copying configuration or importing core sources.
 
     Raises:
@@ -87,6 +87,7 @@ def journey(core: str, toolkit: str, template: Path, destination: Path) -> None:
     for name in ("CONFIG_HOME", "DATA_DIR", "CACHE_DIR", "STATE_DIR", "LOG_DIR"):
         environment[f"HZ_{name}"] = str(destination / "state" / name.lower())
     timings: list[dict[str, str | float]] = []
+    make = ["make", f"CORE={core}", *([f"TOOLING={toolkit}"] if toolkit else [])]
 
     def run(command: list[str], cwd: Path, label: str) -> None:
         started = time.monotonic()
@@ -130,18 +131,18 @@ def journey(core: str, toolkit: str, template: Path, destination: Path) -> None:
             f"{preset}-scaffold",
         )
         for target in ("setup", "check-fast"):
-            run(["make", target, f"CORE={core}", f"TOOLING={toolkit}"], directory, f"{preset}-{target}")
+            run([*make, target], directory, f"{preset}-{target}")
         add_first_operation(directory)
-        run(["make", "fix", f"CORE={core}", f"TOOLING={toolkit}"], directory, f"{preset}-first-change")
+        run([*make, "fix"], directory, f"{preset}-first-change")
         for target in ("check", "build", "acceptance", "release"):
-            run(["make", target, f"CORE={core}", f"TOOLING={toolkit}"], directory, f"{preset}-{target}")
+            run([*make, target], directory, f"{preset}-{target}")
         check_layout(directory, collection=False)
 
     collection = destination / "collection"
     collection.mkdir()
     marker = collection / "README.md"
     marker.write_text("Existing collection; no registration edits.\n")
-    cli = ["uv", "run", "--no-project", "--with", toolkit, "hz-plugin"]
+    cli = ["uv", "run", "--no-project", "--with", toolkit or TOOLKIT, "hz-plugin"]
     for preset in ("minimal", "contributions"):
         name = f"collection-{preset}"
         run(
@@ -153,7 +154,6 @@ def journey(core: str, toolkit: str, template: Path, destination: Path) -> None:
         owning = collection / "plugins" / f"heinzel-{name}"
         check_layout(owning, collection=True)
         add_first_operation(owning)
-        make = ["make", f"CORE={core}", f"TOOLING={toolkit}"]
         run([*make, "setup"], owning, f"{name}-setup")
         run([*make, "fix"], owning, f"{name}-first-change")
         for command in ("check-fast", "check", "build", "acceptance", "release"):
@@ -170,7 +170,7 @@ def main() -> None:
     """Accept explicit candidate artifacts; normal CI consumes the versioned toolkit."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--core", required=True)
-    parser.add_argument("--toolkit", default=os.environ.get("PLUGIN_TOOLKIT") or TOOLKIT)
+    parser.add_argument("--toolkit", default=os.environ.get("PLUGIN_TOOLKIT"))
     parser.add_argument("--template", type=Path, default=Path(__file__).resolve().parents[1])
     parser.add_argument("--destination", type=Path)
     args = parser.parse_args()
