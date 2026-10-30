@@ -43,8 +43,33 @@ test("launches the installed CLI with fixed arguments and returns its verified U
   assert.equal(owned.currentConnection(), connection);
   assert.equal(JSON.stringify(connection).includes(url), false);
   assert.equal(child.stdout.listenerCount("data"), 0);
-  assert.equal(child.listenerCount("error"), 0);
+  assert.equal(child.listenerCount("error"), 1);
   assert.equal(child.listenerCount("exit"), 1);
+});
+
+test("keeps process errors guarded after startup and reports unclean stop evidence", async () => {
+  const child = makeChild();
+  const owned = createOwnedCli({ spawn: () => child });
+  const started = owned.start();
+  child.stdout.write(`${url}\n`);
+  await started;
+  child.emit("error", new Error("private diagnostic must not escape"));
+  assert.equal(owned.isRunning(), false);
+  assert.deepEqual(await owned.exited(), { code: null, signal: null, processError: true });
+  assert.deepEqual(await owned.stop(), { outcome: "abnormal", code: 0, signal: null, processError: true });
+  assert.equal(child.listenerCount("error"), 0);
+});
+
+test("keeps a guarded listener after a rejected startup until the child closes", async () => {
+  const child = makeChild();
+  const owned = createOwnedCli({ spawn: () => child });
+  const started = owned.start();
+  child.stdout.write("invalid\n");
+  await assert.rejects(started);
+  child.emit("error", new Error("late process failure"));
+  assert.equal(child.listenerCount("error"), 1);
+  await owned.stop();
+  assert.equal(child.listenerCount("error"), 0);
 });
 
 test("reports service exit after startup and exposes process liveness", async () => {
