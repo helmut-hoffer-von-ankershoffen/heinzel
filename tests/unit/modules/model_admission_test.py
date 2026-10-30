@@ -37,6 +37,40 @@ def test_reserved_direct_client_ignores_proxy_and_endpoint_environment(monkeypat
         build_reserved_openai("test-only")
 
 
+def test_reserved_provider_uses_captured_key_and_never_retries_http_failure(monkeypatch):
+    import httpx2
+    from openai import InternalServerError
+
+    from heinzel.modules.ai.access._pydantic import build_reserved_openai
+
+    requests = []
+    client_type = httpx2.AsyncClient
+
+    def respond(request):
+        requests.append((str(request.url), request.headers.get("authorization")))
+        return httpx2.Response(503, json={"error": {"message": "offline test"}})
+
+    class IsolatedClient(client_type):
+        def __init__(self, **kwargs):
+            assert kwargs == {"trust_env": False, "follow_redirects": False}
+            super().__init__(transport=httpx2.MockTransport(respond), **kwargs)
+
+    monkeypatch.delenv("OPENAI_CUSTOM_HEADERS", raising=False)
+    monkeypatch.setenv("OPENAI_API_KEY", "ambient-key-must-not-be-used")
+    monkeypatch.setattr(httpx2, "AsyncClient", IsolatedClient)
+    model = build_reserved_openai("captured-key")
+
+    async def request():
+        try:
+            with pytest.raises(InternalServerError):  # the offline 503 is intentionally surfaced
+                await model.client.responses.create(model="gpt-4.1-mini-2025-04-14", input="hi")
+        finally:
+            await model.client.close()
+
+    asyncio.run(request())
+    assert requests == [("https://api.openai.com/v1/responses", "Bearer captured-key")]
+
+
 def test_configured_owner_credential_drives_real_bounded_turn_without_live_billing(tmp_path, monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "example-private-key")
     current = CurrentUser(tmp_path / "state" / "identity")

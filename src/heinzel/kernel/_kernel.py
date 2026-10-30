@@ -24,7 +24,7 @@ from heinzel.kernel._capabilities import CAPABILITIES, Capability, capability_of
 from heinzel.kernel._config import KERNEL_SECTION, Config, ModuleSettings
 from heinzel.kernel._errors import HeinzelError
 from heinzel.kernel._identity import PRIVATE_READ, PRIVATE_WRITE, CurrentUser
-from heinzel.kernel._installation import Installation
+from heinzel.kernel._installation import CORE_DISTRIBUTION, Installation
 from heinzel.kernel._jobs import CompiledJobs
 from heinzel.kernel._layers import Declared, Label, LayerLet, LayerProblem, LayerProblemKind, Layers, LayerStack
 from heinzel.kernel._lets import (
@@ -263,6 +263,32 @@ class Kernel:
                 raise HeinzelError(msg)
             self._instances[kind] = self.call(self._factories[kind])
         return cast("T", self._instances[kind])
+
+    def resolve_builtin_service[T](self, kind: type[T], owner: str) -> T:
+        """Resolve a service only from its named built-in module and its exact registered class.
+
+        This checks registry origin and injection continuity, not a publisher signature or code attestation.
+
+        Raises:
+            HeinzelError: If the provider or bound instance is not the named built-in class.
+        """
+        record = self._records.get(owner)
+        factory = self._factories.get(kind)
+        if (
+            self._providers.get(kind) != owner
+            or record is None
+            or not record.origin.builtin
+            or record.origin.distribution != CORE_DISTRIBUTION
+            or not isinstance(factory, type)
+            or not factory.__module__.startswith(f"heinzel.modules.{owner}.")
+        ):
+            msg = "The expected built-in service provider is unavailable"
+            raise HeinzelError(msg)
+        instance = self.resolve(kind)
+        if type(instance) is not factory:
+            msg = "The expected built-in service instance changed"
+            raise HeinzelError(msg)
+        return instance
 
     def handle_for(self, requester: Requester, capability: str) -> object:
         """A handle on `capability` for `requester`, for code that acts on its behalf without being its function.

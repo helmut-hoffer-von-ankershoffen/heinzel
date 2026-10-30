@@ -9,7 +9,16 @@ import pytest
 from pydantic_ai.models.openai import OpenAIResponsesModel
 from pydantic_ai.providers.openai import OpenAIProvider
 
-from heinzel import CallIdentity, Config, Credentials, CurrentUser, HeinzelError, Principal, Settings
+from heinzel import (
+    CallIdentity,
+    Config,
+    ConfiguredApiAccess,
+    Credentials,
+    CurrentUser,
+    HeinzelError,
+    Principal,
+    Settings,
+)
 from heinzel.kernel._credentials import EnvironmentBackend
 from heinzel.modules.ai.access._models import AccessSettings
 from heinzel.modules.ai.access._pydantic import API_KEY, PydanticAiAccess
@@ -24,7 +33,7 @@ from heinzel.modules.heinzel._session_repository import PersonalSessionRepositor
 pytestmark = pytest.mark.unit
 
 
-def test_approved_owner_binding_drives_fake_transport_and_survives_restart(tmp_path, monkeypatch):
+def test_approved_owner_binding_drives_fake_transport_and_survives_restart(tmp_path, monkeypatch, make_kernel):  # noqa: PLR0915
     monkeypatch.setenv("OPENAI_API_KEY", "test-only-secret")
     monkeypatch.setattr(pydantic_ai.models, "ALLOW_MODEL_REQUESTS", True)
 
@@ -74,13 +83,7 @@ def test_approved_owner_binding_drives_fake_transport_and_survives_restart(tmp_p
     model = OpenAIResponsesModel(
         "gpt-4.1-mini-2025-04-14", provider=OpenAIProvider(api_key="test-only", http_client=client)
     )
-    from heinzel.modules.heinzel._configured_api_binding import ConfiguredApiBinding
-
-    monkeypatch.setattr(
-        _interactive_turn,
-        "ConfiguredApiBinding",
-        lambda current, access: ConfiguredApiBinding(current, access, build=lambda _key: model),
-    )
+    from heinzel.modules.ai.access._configured import ConfiguredApiBinding
 
     selected = ["pydantic-ai"]
     access = PydanticAiAccess(
@@ -92,6 +95,9 @@ def test_approved_owner_binding_drives_fake_transport_and_survives_restart(tmp_p
         binding=lambda: selected[0],
         current_settings=lambda: AccessSettings(model="openai:gpt-4.1-mini-2025-04-14"),
     )
+    binding = ConfiguredApiBinding(current, access, build=lambda _key: model)
+    kernel = make_kernel(builtins=True)
+    kernel.bind(ConfiguredApiAccess, binding)
     with current.local("cli"):
         repo = PersonalSessionRepository(current)
         crud = SessionCrud(repo, lambda: SessionCosts(session_max_usd=2, message_max_usd=0.6))
@@ -114,27 +120,36 @@ def test_approved_owner_binding_drives_fake_transport_and_survives_restart(tmp_p
         )
         grants.propose(session, grant)
         with pytest.raises(HeinzelError, match="no approved"):
-            asyncio.run(InteractiveTurn(crud).run_granted(session, "one", current, access))
+            asyncio.run(InteractiveTurn(crud).run_granted(session, "one", current, kernel))
         proof = grants.issue(session, "grant-one", "test-human-decision")
         assert grants.approve(session, "grant-one", proof) == grant
         assert grants.approve(session, "grant-one", proof) == grant
+
+        class UnverifiedBinding(ConfiguredApiAccess):
+            def lease(self):
+                raise AssertionError
+
+        kernel.bind(ConfiguredApiAccess, UnverifiedBinding())
+        with pytest.raises(HeinzelError, match="built-in service instance changed"):
+            asyncio.run(InteractiveTurn(crud).run_granted(session, "one", current, kernel))
+        kernel.bind(ConfiguredApiAccess, binding)
         reopened = SessionCrud(
             PersonalSessionRepository(current), lambda: SessionCosts(session_max_usd=2, message_max_usd=0.6)
         )
         assert ModelGrants(reopened).approved(session) == grant
         monkeypatch.setenv("OPENAI_API_KEY", "rotated-secret")
         with pytest.raises(HeinzelError, match="binding"):
-            asyncio.run(InteractiveTurn(reopened).run_granted(session, "one", current, access))
+            asyncio.run(InteractiveTurn(reopened).run_granted(session, "one", current, kernel))
         monkeypatch.setenv("OPENAI_API_KEY", "test-only-secret")
         selected[0] = "claude-code"
         with pytest.raises(HeinzelError, match="binding"):
-            asyncio.run(InteractiveTurn(reopened).run_granted(session, "one", current, access))
+            asyncio.run(InteractiveTurn(reopened).run_granted(session, "one", current, kernel))
         selected[0] = "pydantic-ai"
         assert not calls
-        result = asyncio.run(InteractiveTurn(reopened).run_granted(session, "one", current, access))
+        result = asyncio.run(InteractiveTurn(reopened).run_granted(session, "one", current, kernel))
         assert result.text == "A durable answer"
         assert calls == ["/v1/responses"]
-        replay = asyncio.run(InteractiveTurn(reopened).run_granted(session, "one", current, access))
+        replay = asyncio.run(InteractiveTurn(reopened).run_granted(session, "one", current, kernel))
         assert replay == result
         assert calls == ["/v1/responses"]
         stranger = CallIdentity(

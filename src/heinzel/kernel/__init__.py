@@ -15,6 +15,7 @@ from heinzel.kernel._agents import (
     ToolProfile,
 )
 from heinzel.kernel._ai import AccessStatus, AccessTest, AiAccess, UsageCause, UsageEntry, UsageLog, record_usage
+from heinzel.kernel._api_access import ConfiguredApiAccess, ConfiguredApiLease, ConfiguredApiSnapshot
 from heinzel.kernel._bindings import HOWS, Adapters, CapabilityView, How, Requester
 from heinzel.kernel._boot import boot
 from heinzel.kernel._capabilities import CAPABILITIES, MODES, NO_ADAPTER, Capability, Mode, Requirement
@@ -324,6 +325,9 @@ __all__ = [
     "ConfigEditor",
     "ConfigFile",
     "ConfigListChange",
+    "ConfiguredApiAccess",
+    "ConfiguredApiLease",
+    "ConfiguredApiSnapshot",
     "ConfirmedLines",
     "ContractTemplate",
     "ContributionLet",

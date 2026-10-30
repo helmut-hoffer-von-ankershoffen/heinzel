@@ -1611,16 +1611,17 @@ def test_ambiguous_personal_chat_associations_fail_closed(kernel):
 
 def configured_policy_binding(kernel, monkeypatch):
     """Use a real local credential resolver with fixture values; never contact a provider."""
+    from heinzel import ConfiguredApiAccess
+    from heinzel.modules.ai.access._configured import ConfiguredApiBinding
     from heinzel.modules.ai.access._models import AccessSettings
-    from heinzel.modules.heinzel._configured_api_binding import ConfiguredApiBinding
     from heinzel.modules.heinzel._priced_model import MODEL
     from tests.unit.modules.configured_api_binding_test import service as fake_access
 
     monkeypatch.setenv("OPENAI_API_KEY", "test-policy-key")
     current = kernel.resolve(CurrentUser)
-    assert isinstance(kernel.resolve(ConfiguredApiBinding), ConfiguredApiBinding)
+    assert isinstance(kernel.resolve(ConfiguredApiAccess), ConfiguredApiBinding)
     binding = ConfiguredApiBinding(current, fake_access(["pydantic-ai"], [AccessSettings(model=MODEL)]))
-    kernel._instances[ConfiguredApiBinding] = binding
+    kernel._instances[ConfiguredApiAccess] = binding
 
 
 def test_model_policy_heads_cannot_self_approve(kernel, tmp_path, monkeypatch):

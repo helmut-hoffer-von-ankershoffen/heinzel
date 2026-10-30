@@ -96,16 +96,15 @@ def build_reserved_openai(key: str) -> Any:  # noqa: ANN401 - optional provider
         msg = "Custom OpenAI headers are not supported for reserved turns"
         raise HeinzelError(msg)
     import httpx2  # noqa: PLC0415
-    from openai import AsyncOpenAI  # noqa: PLC0415
     from pydantic_ai.models.openai import OpenAIResponsesModel  # noqa: PLC0415
     from pydantic_ai.providers.openai import OpenAIProvider  # noqa: PLC0415
 
-    client = AsyncOpenAI(
+    provider = OpenAIProvider(
         api_key=key,
         base_url="https://api.openai.com/v1",
-        max_retries=0,
         http_client=httpx2.AsyncClient(trust_env=False, follow_redirects=False),
     )
+    client = provider.client.with_options(max_retries=0)
     return OpenAIResponsesModel("gpt-4.1-mini-2025-04-14", provider=OpenAIProvider(openai_client=client))
 
 

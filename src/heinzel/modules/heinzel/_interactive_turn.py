@@ -15,11 +15,9 @@ from typing import Literal, cast
 from pydantic import BaseModel, JsonValue, TypeAdapter
 from pydantic_ai.models import Model
 
-from heinzel import CurrentUser, HeinzelError, SessionEvent
-from heinzel.modules.ai.access._pydantic import PydanticAiAccess
+from heinzel import ConfiguredApiAccess, CurrentUser, HeinzelError, Kernel, SessionEvent
 from heinzel.modules.heinzel._budget_reservation import initialize_budget
 from heinzel.modules.heinzel._claude_subscription_model import ClaudeSubscriptionModel
-from heinzel.modules.heinzel._configured_api_binding import ConfiguredApiBinding
 from heinzel.modules.heinzel._engine import EngineCheckpoint, TurnAuthority, TurnDeps, TurnLimits, run_turn
 from heinzel.modules.heinzel._host_tools import HostToolCatalog, OperationFailedError
 from heinzel.modules.heinzel._model_admission import ConnectedModelFactory, connected_model
@@ -114,7 +112,7 @@ class InteractiveTurn:
         session_id: str,
         request_id: str,
         current: CurrentUser,
-        factory: ConnectedModelFactory,
+        kernel: Kernel,
         *,
         catalog: HostToolCatalog | None = None,
     ) -> SessionMessage:
@@ -136,18 +134,14 @@ class InteractiveTurn:
             timeout_seconds=grant.timeout_seconds,
         )
         self._check_owner()
-        if (
-            current.principal().id != self._owner
-            or type(factory) is not PydanticAiAccess
-            or grant.access != "pydantic-ai"
-        ):
+        if current.principal().id != self._owner or grant.access != "pydantic-ai":
             msg = "The reserved model binding cannot be verified"
             raise HeinzelError(msg)
         approved_binding = grant.binding
         if approved_binding is None:
             msg = "This model grant has no configured access binding"
             raise HeinzelError(msg)
-        binding = ConfiguredApiBinding(current, factory)
+        binding = kernel.resolve_builtin_service(ConfiguredApiAccess, "ai.access")
         lease = binding.lease()
         model = lease.build_approved(approved_binding)
         binding.recheck(approved_binding)

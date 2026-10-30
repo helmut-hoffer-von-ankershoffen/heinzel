@@ -8,7 +8,7 @@ from typing import Annotated, Literal
 
 from pydantic import Field, JsonValue
 
-from heinzel import Config, CurrentUser, HeinzelError, Module
+from heinzel import Config, ConfiguredApiAccess, CurrentUser, HeinzelError, Module
 from heinzel.kernel import (
     CheckInChatContext,
     CheckInChatContextSource,
@@ -17,7 +17,6 @@ from heinzel.kernel import (
     Kernel,
 )
 from heinzel.kernel._approval import ApprovalConfirmation, ApprovalIssuer
-from heinzel.modules.heinzel._configured_api_binding import ConfiguredApiBinding
 from heinzel.modules.heinzel._contract_review import ContractReview, ContractReviewView
 from heinzel.modules.heinzel._model_grants import ModelGrants
 from heinzel.modules.heinzel._model_policy_operations import ModelPolicyService, register_model_policy_operations
@@ -119,7 +118,7 @@ class _SessionApprovalIssuer(ApprovalIssuer):
                 msg = "Configured model policy review is unavailable"
                 raise HeinzelError(msg)
             return (
-                ModelPolicyService(self.service, self.kernel.resolve(ConfiguredApiBinding))
+                ModelPolicyService(self.service, self.kernel.resolve_builtin_service(ConfiguredApiAccess, "ai.access"))
                 .review(*self._model_args(arguments))
                 .proposal
             )

@@ -6,9 +6,9 @@ import pytest
 
 from heinzel import CallIdentity, Config, Credentials, CurrentUser, HeinzelError, Principal, Settings
 from heinzel.kernel._credentials import EnvironmentBackend, environment_variable
+from heinzel.modules.ai.access._configured import ConfiguredApiBinding
 from heinzel.modules.ai.access._models import AccessSettings
 from heinzel.modules.ai.access._pydantic import API_KEY, PydanticAiAccess
-from heinzel.modules.heinzel._configured_api_binding import ConfiguredApiBinding
 from heinzel.modules.heinzel._priced_model import MODEL
 
 pytestmark = pytest.mark.unit
