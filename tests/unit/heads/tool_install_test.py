@@ -102,7 +102,15 @@ def test_fresh_install_rejects_conflicting_python_selection_before_uv(target, mo
 
 
 @pytest.mark.parametrize(
-    ("variable", "value"), [("UV_NO_MANAGED_PYTHON", "1"), ("UV_PYTHON_PREFERENCE", "only-system")]
+    ("variable", "value"),
+    [
+        ("UV_NO_MANAGED_PYTHON", "1"),
+        ("UV_NO_MANAGED_PYTHON", "t"),
+        ("UV_NO_MANAGED_PYTHON", "y"),
+        ("UV_NO_MANAGED_PYTHON", "T"),
+        ("UV_NO_MANAGED_PYTHON", "Y"),
+        ("UV_PYTHON_PREFERENCE", "only-system"),
+    ],
 )
 def test_fresh_install_refuses_system_only_preference_before_uv(target, monkeypatch, variable, value):
     monkeypatch.setenv(variable, value)

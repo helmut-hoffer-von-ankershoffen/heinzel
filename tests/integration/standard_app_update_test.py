@@ -40,6 +40,8 @@ def test_standard_receipt_preserves_ordinary_index_updates(tmp_path, monkeypatch
     from heinzel.kernel import Installation, ReleaseSource
     from heinzel.modules.system._update import UpdateService
 
+    monkeypatch.delenv("UV_NO_MANAGED_PYTHON", raising=False)
+    monkeypatch.delenv("UV_PYTHON_PREFERENCE", raising=False)
     file = profile_file(tmp_path)
     commands = []
     monkeypatch.setattr(install, "uv_executable", lambda: "/trusted/bin/uv")

@@ -158,7 +158,7 @@ def verify_fresh_python_policy(environment: Mapping[str, str]) -> None:
         HeinzelError: If the current Python policy forbids managed Python.
     """
     if (
-        environment.get("UV_NO_MANAGED_PYTHON", "").casefold() in {"1", "true", "yes", "on"}
+        environment.get("UV_NO_MANAGED_PYTHON", "").casefold() in {"1", "true", "yes", "on", "t", "y"}
         or environment.get("UV_PYTHON_PREFERENCE", "").casefold() == "only-system"
     ):
         msg = "The standard app needs a uv-managed Python. Remove the system-only Python environment setting and retry."

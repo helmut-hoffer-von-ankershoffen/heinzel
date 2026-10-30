@@ -15,7 +15,8 @@ from tests.unit.heads.standard_install_lifecycle_test import _owned_candidate
 pytestmark = pytest.mark.integration
 
 
-def test_fresh_system_only_refusal_precedes_pending_and_allows_retry(tmp_path, monkeypatch):
+@pytest.mark.parametrize("system_only", ["1", "t", "y", "T", "Y"])
+def test_fresh_system_only_refusal_precedes_pending_and_allows_retry(tmp_path, monkeypatch, system_only):
     target, wheel, digest, _site = _owned_candidate(tmp_path)
     prepared = tmp_path / "prepared-prefix"
     assert target.prefix.resolve().is_relative_to(tmp_path.resolve())
@@ -71,7 +72,8 @@ def test_fresh_system_only_refusal_precedes_pending_and_allows_retry(tmp_path, m
     monkeypatch.setattr(install, "resolve_target", lambda _uv: target)
     monkeypatch.setattr(install, "boot", lambda _settings: bound)
     monkeypatch.setattr(install, "run_tool", run)
-    monkeypatch.setenv("UV_NO_MANAGED_PYTHON", "1")
+    monkeypatch.delenv("UV_PYTHON_PREFERENCE", raising=False)
+    monkeypatch.setenv("UV_NO_MANAGED_PYTHON", system_only)
     with pytest.raises(HeinzelError, match="Remove the system-only Python environment setting"):
         install._managed_install(profile, [artifact], [wheel], settings, set())
     assert events == []

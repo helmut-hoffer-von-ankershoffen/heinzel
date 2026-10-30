@@ -1,3 +1,4 @@
+import { preserveCleanupFailure } from "./controller-gate.mjs";
 // Isolated real-Electron navigation proof: no installed service or production profile is touched.
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
@@ -57,7 +58,7 @@ try {
 async function run(redirectOnStart) {
   initialRedirect = redirectOnStart;
   const root = await mkdtemp(join(tmpdir(), "hz-navigation-isolated-"));
-  let app, processHandle, stopped = false, launchAttempted = false;
+  let app, processHandle, stopped = false, launchAttempted = false, primary;
   try {
     const dirs = ["bin", "home", "config", "data", "state", "cache", "logs", "tmp", "electron-profile", "electron-session", "electron-logs"];
     await Promise.all(dirs.map((name) => mkdir(join(root, name), { mode: 0o700 })));
@@ -68,12 +69,19 @@ async function run(redirectOnStart) {
       USER: process.env.USER || "", LOGNAME: process.env.LOGNAME || "", LANG: "en_US.UTF-8",
       XDG_CONFIG_HOME: join(root, "config"), XDG_DATA_HOME: join(root, "data"), XDG_STATE_HOME: join(root, "state"), XDG_CACHE_HOME: join(root, "cache"),
       HZ_CONFIG_HOME: join(root, "config"), HZ_DATA_DIR: join(root, "data"), HZ_STATE_DIR: join(root, "state"), HZ_CACHE_DIR: join(root, "cache"), HZ_LOG_DIR: join(root, "logs"),
-      HZ_NATIVE_TEST_ROOT: root, HZ_TEST_URL: `http://127.0.0.1:${source.address().port}/#token=${token}`,
+      HZ_NATIVE_TEST_ROOT: root, HZ_NATIVE_TEST_CONTROLLER_GATE: "1", HZ_TEST_URL: `http://127.0.0.1:${source.address().port}/#token=${token}`,
       ...(process.env.DISPLAY ? { DISPLAY: process.env.DISPLAY } : {}), ...(process.env.XAUTHORITY ? { XAUTHORITY: process.env.XAUTHORITY } : {}),
     };
     launchAttempted = true;
+    const attachStarted = performance.now();
+    console.log(`Electron navigation phase: ${redirectOnStart ? "initial-redirect" : "page-navigation"} attach`);
     app = await electron.launch({ executablePath: executable, args: [fileURLToPath(new URL("./real-backend-bootstrap.mjs", import.meta.url))], cwd: root, env, timeout: 30_000 });
     processHandle = app.process();
+    // Playwright's node-context listener must settle before a deliberate early app exit.
+    await withTimeout(app.evaluate(() => true), Math.max(1, 30_000 - (performance.now() - attachStarted)),
+      "Electron test controller did not attach within the original launch budget.");
+    await writeFile(join(root, "controller-ready"), "ready", { flag: "wx", mode: 0o600 });
+    console.log(`Electron navigation phase: ${redirectOnStart ? "initial-redirect" : "page-navigation"} attached`);
     if (redirectOnStart) {
       const exited = processHandle.exitCode !== null || processHandle.signalCode !== null
         ? Promise.resolve({ code: processHandle.exitCode, signal: processHandle.signalCode })
@@ -110,10 +118,13 @@ async function run(redirectOnStart) {
       userData: join(root, "electron-profile"),
       sessionData: join(root, "electron-session"),
     });
+  } catch (error) {
+    primary = error;
+    throw error;
   } finally {
-    await cleanupHarness({ app, electronProcess: processHandle, stopped, root, launchAttempted,
+    await preserveCleanupFailure(primary, () => cleanupHarness({ app, electronProcess: processHandle, stopped, root, launchAttempted,
       loadPid: async () => Number(await readFile(join(root, "owned-pid"), "utf8")), processExists,
-      remove: (directory) => rm(directory, { recursive: true, force: true }) });
+      remove: (directory) => rm(directory, { recursive: true, force: true }) }));
   }
 }
 async function waitEvent(app, name, url) {

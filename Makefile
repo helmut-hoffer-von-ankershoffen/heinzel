@@ -175,7 +175,7 @@ test: ## Run unit and integration tests with coverage on 4 workers (offline; wha
 
 # Leave headroom under CI's 10-minute job timeout for the full unit/integration suite on slower runners.
 test-parallel: ## Unit and integration tests on 4 workers, stopping at the first failure; no coverage (the CI test matrix)
-	$(STEPS) "tests=uv run pytest -m '(unit or integration) and not perf' -n 4 -x -q --session-timeout=420"
+	$(STEPS) "tests=uv run pytest -m '(unit or integration) and not perf' -n 4 -x -q --session-timeout=420 --durations=20"
 
 commits: ## Commit messages since BASE, and $$TITLE and $$BRANCH when set: conventional, no confidential terms
 	$(STEPS) \
@@ -204,7 +204,7 @@ test-browser-deps: ## Install Chromium and WebKit; include Linux host libraries 
 	fi
 
 test-e2e: e2e-prepare ## Run end-to-end tests (needs network), on 3 workers
-	$(STEPS) "e2e=uv run pytest -m e2e -n 3 -q --session-timeout=600 -x"
+	$(STEPS) "e2e=uv run pytest -m e2e -n 3 -q --session-timeout=600 -x tests/e2e/docs_test.py::test_readme_instructions && uv run pytest -m e2e -n 3 -q --session-timeout=600 -x --deselect=tests/e2e/docs_test.py::test_readme_instructions"
 
 e2e-prepare: ## Prepare current build assets before end-to-end procedure deadlines
 	@set -eu; dir="$$(mktemp -d "$${TMPDIR:-/tmp}/heinzel-e2e.XXXXXXXX")"; trap 'rm -rf "$$dir"' EXIT; uv build --quiet --wheel --out-dir "$$dir"
