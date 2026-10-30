@@ -34,7 +34,7 @@
 | src/heinzel/kernel/\_duration.py                             |       52 |        1 |       18 |        1 |     97% |        76 |
 | src/heinzel/kernel/\_git.py                                  |      122 |        0 |       34 |        1 |     99% |227-\>exit |
 | src/heinzel/kernel/\_identity.py                             |      128 |        4 |       10 |        1 |     96% |45-46, 222-223 |
-| src/heinzel/kernel/\_installation.py                         |      154 |        2 |       40 |        0 |     99% |     85-86 |
+| src/heinzel/kernel/\_installation.py                         |      326 |       21 |      102 |       12 |     92% |84-85, 95, 98-99, 139-140, 308, 355, 363, 367, 370-372, 391, 396-\>395, 407, 441-442, 455-\>465, 458-\>463, 461-462, 464 |
 | src/heinzel/kernel/\_kernel.py                               |      398 |        5 |      134 |        3 |     98% |296-297, 379-380, 715 |
 | src/heinzel/kernel/\_local\_web.py                           |       23 |        1 |        4 |        1 |     93% |        39 |
 | src/heinzel/kernel/\_metadata\_verifier.py                   |        6 |        2 |        0 |        0 |     67% |     16-17 |
@@ -102,7 +102,7 @@
 | src/heinzel/modules/org/\_sync.py                            |      180 |        0 |       54 |        1 |     99% |143-\>exit |
 | src/heinzel/modules/system/\_metadata\_identity.py           |       68 |       13 |       18 |        6 |     78% |37-40, 45, 50-51, 66-67, 73-74, 113, 117 |
 | src/heinzel/modules/system/\_render.py                       |       53 |        0 |       20 |        1 |     99% |   35-\>37 |
-| src/heinzel/modules/system/\_update.py                       |      266 |        9 |       82 |        5 |     96% |136, 147-149, 222-\>234, 232-\>234, 303, 354-\>381, 505-506, 537-538 |
+| src/heinzel/modules/system/\_update.py                       |      277 |        9 |       82 |        5 |     96% |136, 147-149, 222-\>234, 232-\>234, 322, 383-\>412, 545-546, 577-578 |
 | src/heinzel/modules/system/agent/\_\_init\_\_.py             |       16 |        2 |        0 |        0 |     88% |    15, 27 |
 | src/heinzel/modules/system/agent/\_service.py                |       62 |        1 |       26 |        1 |     98% |        36 |
 | src/heinzel/modules/system/changelog/\_\_init\_\_.py         |       74 |        3 |       18 |        2 |     95% |109, 114-115 |
@@ -165,7 +165,7 @@
 | src/heinzel/modules/telemetry/\_render.py                    |       15 |       10 |        2 |        0 |     29% |11-17, 22-27 |
 | src/heinzel/modules/telemetry/\_service.py                   |      236 |        8 |       70 |        3 |     96% |146-\>152, 154-\>152, 162, 219-220, 289-291, 344-345 |
 | src/heinzel/testing.py                                       |      124 |        4 |       32 |        0 |     97% |   240-244 |
-| **TOTAL**                                                    | **33417** | **1845** | **8412** |  **770** | **93%** |           |
+| **TOTAL**                                                    | **33600** | **1864** | **8474** |  **782** | **93%** |           |
 
 133 files skipped due to complete coverage.
 
