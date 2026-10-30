@@ -48,6 +48,7 @@ def _setup_kernel(make_kernel, tmp_path, monkeypatch):
                 account_identity="fixture-account",
                 provider_scopes=("fixture-read",),
                 fixed_arguments=self.fixed,
+                candidate_read_disclosure="Candidate metadata may be filtered locally.",
             )
 
         def read(self, arguments):

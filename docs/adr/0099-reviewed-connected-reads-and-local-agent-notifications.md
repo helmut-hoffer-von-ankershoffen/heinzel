@@ -41,6 +41,9 @@ these decisions bind the authority a recurring turn needs without giving its mod
   a positive span of at most 31 days, and bounds derived from a host UTC instant. Changes to the approved source,
   account, argument policy or grant stop later reads. A provider-specific credential and installation boundary must
   be reviewed separately before enabling a real integration.
+- An optional bounded, provider-attributed candidate-read disclosure describes data a provider may inspect before
+  local filtering. When supplied, it is part of the exact review and must match on every later observation and read.
+  Absence remains absence rather than an inferred claim; legacy approvals retain their original digest.
 - A person separately confirms the exact contract and recurring schedule. A schedule may include an already approved
   connected read and an optional local-notification policy; omission grants neither. Existing fixed-notice schedules
   and older recurring schedule approvals do not acquire new capabilities. The daemon rechecks the current binding

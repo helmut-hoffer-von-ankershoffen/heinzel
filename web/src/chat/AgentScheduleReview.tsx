@@ -174,6 +174,11 @@ export function AgentScheduleReview({
           ? ` These turns may use the separately approved ${proposal.connected_grant.capability}.${proposal.connected_grant.method} read for ${proposal.connected_grant.review.account_display || proposal.connected_grant.review.account_identity}, with the exact source, scopes and argument policy in this review. A rolling policy derives a new UTC window for each read. It stops if the grant or source changes.`
           : " It grants no external tools or access."}
       </p>
+      {proposal.connected_grant?.review.candidate_read_disclosure && (
+        <p className="break-words">
+          Provider-reported candidate read: {proposal.connected_grant.review.candidate_read_disclosure}
+        </p>
+      )}
       {proposal.notification_policy && (
         <p>
           Local notifications are included: at most {proposal.notification_policy.max_per_24h} attempts per rolling 24

@@ -3226,6 +3226,20 @@
             "title": "Account Identity",
             "type": "string"
           },
+          "candidate_read_disclosure": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Provider-reported description of candidate data read before local filtering, when supplied.",
+            "title": "Candidate Read Disclosure"
+          },
           "fixed_arguments": {
             "additionalProperties": {
               "$ref": "#/components/schemas/JsonValue"

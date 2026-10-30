@@ -1,7 +1,7 @@
 """Connected-read review is data; it does not grant provider access."""
 
 import pytest
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
 from heinzel import (
     Config,
@@ -31,6 +31,20 @@ def test_review_is_closed_owner_bound_data():
     }
     review = ConnectedReadReview(**fields)
     assert review.provider_scopes == ("read", "previously-granted-scope")
+    assert "candidate_read_disclosure" not in review.model_dump(mode="json")
+    explicit_none = ConnectedReadReview(**fields, candidate_read_disclosure=None)
+    assert explicit_none.model_dump(mode="json") == review.model_dump(mode="json")
+
+    class StoredGrant(BaseModel):
+        review: ConnectedReadReview
+
+    legacy = StoredGrant(review=review)
+    assert "candidate_read_disclosure" not in legacy.model_dump(mode="json")["review"]
+    disclosed = ConnectedReadReview(**fields, candidate_read_disclosure="Candidate metadata is filtered locally.")
+    assert disclosed.model_dump(mode="json")["candidate_read_disclosure"] == "Candidate metadata is filtered locally."
+    for invalid in ("", "   ", "x\nhidden", "x" * 2001):
+        with pytest.raises(ValidationError):
+            ConnectedReadReview(**fields, candidate_read_disclosure=invalid)
     with pytest.raises(ValidationError):
         ConnectedReadReview(**{**fields, "owner": "untrusted"})
     with pytest.raises(ValidationError):

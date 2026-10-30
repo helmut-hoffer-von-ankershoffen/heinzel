@@ -33,7 +33,7 @@ def _mutate_if_requested(state, fixed_arguments):
 
 
 def test_human_action_only_approves_exact_private_connected_read(make_kernel, tmp_path, monkeypatch):  # noqa: PLR0915
-    state = {"opens": 0, "reads": 0, "account": "account-one"}
+    state = {"opens": 0, "reads": 0, "account": "account-one", "disclosure": "Candidate metadata is locally filtered."}
     holder = {}
 
     class Lease(ConnectedReadLease):
@@ -52,6 +52,7 @@ def test_human_action_only_approves_exact_private_connected_read(make_kernel, tm
                 account_identity=state["account"],
                 provider_scopes=("read",),
                 fixed_arguments=self.fixed,
+                candidate_read_disclosure=state["disclosure"],
             )
 
         def read(self, _arguments):
@@ -127,6 +128,7 @@ def test_human_action_only_approves_exact_private_connected_read(make_kernel, tm
     state["failure"] = None
     proposed = client.post("/api/heinzel/propose-connected-read", headers=AUTH, json=body)
     assert proposed.status_code == 200, proposed.text
+    assert proposed.json()["review"]["candidate_read_disclosure"] == state["disclosure"]
     assert state["reads"] == 0
     assert (
         client.get("/api/heinzel/connected-read-state", headers=AUTH, params={"session_id": session}).json()["status"]
@@ -161,12 +163,34 @@ def test_human_action_only_approves_exact_private_connected_read(make_kernel, tm
     assert stale.status_code == 400
     assert state["reads"] == 0
     state["account"] = "account-one"
+    state["disclosure"] = "Different candidate metadata."
+    changed = client.post(
+        "/api/system/runner/chat/confirm", headers=AUTH, params={"session": chat["id"], "action": action["id"]}
+    )
+    assert changed.status_code == 400
+    assert state["reads"] == 0
+    state["disclosure"] = "Candidate metadata is locally filtered."
     result = client.post(
         "/api/system/runner/chat/confirm", headers=AUTH, params={"session": chat["id"], "action": action["id"]}
     )
     assert result.status_code == 200, result.text
     assert next(item for item in result.json()["actions"] if item["id"] == action["id"])["status"] == "done"
     assert state["reads"] == 0
+    state["disclosure"] = "Different candidate metadata."
+    before_status = state["opens"]
+    assert (
+        client.get("/api/heinzel/connected-read-state", headers=AUTH, params={"session_id": session}).json()["status"]
+        == "approved"
+    )
+    assert state["opens"] == before_status
+    with (
+        current.local("cli"),
+        kernel.resolve(ConnectedReadGrants).crud.repository.main_writer(session) as writer,
+        pytest.raises(HeinzelError),
+    ):
+        kernel.resolve(ConnectedReadGrants).read(session, writer)
+    assert state["reads"] == 0
+    state["disclosure"] = "Candidate metadata is locally filtered."
     again = client.post("/api/system/runner/chat/propose-connected-read-review", headers=AUTH, params=params)
     assert again.json()["actions"] == result.json()["actions"]
     with current.local("cli"):

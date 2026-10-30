@@ -4956,6 +4956,11 @@ export interface components {
              */
             account_identity: string;
             /**
+             * Candidate Read Disclosure
+             * @description Provider-reported description of candidate data read before local filtering, when supplied.
+             */
+            candidate_read_disclosure?: string | null;
+            /**
              * Fixed Arguments
              * @description Exact host-constrained read arguments.
              */
