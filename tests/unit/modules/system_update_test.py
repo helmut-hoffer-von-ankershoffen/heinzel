@@ -559,3 +559,32 @@ def test_failed_plugin_refresh_restores_removed_tool_in_same_scope(tmp_path):
     assert len(uv.commands) == 2
     assert "was restored, with every plugin" in result.message
     assert result.plugins[0].status == "failed"
+
+
+@pytest.mark.parametrize("plugin_refresh", [False, True])
+def test_private_git_recovery_reuses_original_helper_environment(tmp_path, monkeypatch, plugin_refresh):
+    monkeypatch.setattr("shutil.which", lambda name: "/fixture/gh" if name == "gh" else None)
+    monkeypatch.setenv("HZ_CREDENTIAL_EXAMPLE_TOKEN", "fictional-token")
+    uv = FakeUv("0.4.0" if plugin_refresh else "0.2.0")
+    uv.failures, uv.hz_starts = ["network down"], False
+    current = "0.4.0" if plugin_refresh else "0.2.0"
+    target = installation(tmp_path, f'git = "{REPO}?rev=v{current}"', uv)
+    if plugin_refresh:
+        (target.prefix / "uv-receipt.toml").write_text(
+            f'[tool]\nrequirements = [{{ name = "heinzel", git = "{REPO}?rev=v{current}" }},'
+            ' { name = "heinzel-acme", specifier = ">=1" }]\n',
+            encoding="utf-8",
+        )
+        _bind_target(target)
+    service = UpdateService(target, FakeReleases("0.4.0"))
+    if plugin_refresh:
+        assert "was restored" in service.update(current=current).message
+    else:
+        with pytest.raises(HeinzelError, match="was restored") as raised:
+            service.update(current=current)
+        assert "fictional-token" not in str(raised.value)
+    assert len(uv.environments) == 2
+    first, restore = uv.environments
+    assert first == restore
+    assert first["GIT_CONFIG_VALUE_0"] == "!/fixture/gh auth git-credential"
+    assert "HZ_CREDENTIAL_EXAMPLE_TOKEN" not in first

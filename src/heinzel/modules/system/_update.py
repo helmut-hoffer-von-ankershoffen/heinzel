@@ -18,7 +18,7 @@ version it has if that still resolves, and otherwise taken out of the installati
 import json
 import re
 import shlex
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Literal
 
@@ -275,14 +275,17 @@ class UpdateService:
         """
         before = self._plugin_versions()
         activity = f"Updating Heinzelmännchen{f' to {target}' if target else ''}"
-        modes, reasons, failure = self._converge(core, plugins, before, activity, may_drop=True)
+        environment = git_credentials(subprocess_environment())
+        modes, reasons, failure = self._converge(
+            core, plugins, before, activity, environment=environment, may_drop=True
+        )
         if modes is None:
-            raise HeinzelError(self._failure(pin, plugins, current, target, failure))
+            raise HeinzelError(self._failure(pin, plugins, current, target, failure, environment=environment))
         try:
             after = self._version()
         except HeinzelError as exc:
             installed = f"uv installed {target}" if target else "uv upgraded hz"
-            msg = f"{installed}, but hz doesn't start.\n{self._still_working(pin, plugins, current)}"
+            msg = f"{installed}, but hz doesn't start.\n{self._still_working(pin, plugins, current, environment)}"
             raise HeinzelError(msg) from exc
         now = self._installation.core_pin()
         if target is None and after == current:  # nothing newer where the installation follows
@@ -331,11 +334,12 @@ class UpdateService:
         ):
             return result
         before = self._plugin_versions()
+        environment = git_credentials(subprocess_environment())
         with self._installation.tool_transaction():
             modes, reasons, failure = self._converge(
-                pin.requirement, plugins, before, "Updating the plugins", may_drop=False
+                pin.requirement, plugins, before, "Updating the plugins", environment=environment, may_drop=False
             )
-            recovery = self._still_working(pin, plugins, result.before) if modes is None else None
+            recovery = self._still_working(pin, plugins, result.before, environment) if modes is None else None
         if modes is None:  # nothing changed: uv replaces an environment only once the new one is installed
             names = blocking_plugins([p.requirement for p in plugins], failure) or [
                 canonicalize_name(p.name) for p in plugins
@@ -355,8 +359,15 @@ class UpdateService:
             }
         )
 
-    def _converge(
-        self, core: str, plugins: list[CorePin], before: dict[str, Installed], activity: str, *, may_drop: bool
+    def _converge(  # noqa: PLR0913 - same credentials are used for the operation and recovery
+        self,
+        core: str,
+        plugins: list[CorePin],
+        before: dict[str, Installed],
+        activity: str,
+        *,
+        environment: Mapping[str, str],
+        may_drop: bool,
     ) -> tuple[dict[str, Mode] | None, dict[str, str], str]:
         """Install `core` and every plugin; each plugin that blocks it is stepped down until the install works.
 
@@ -368,7 +379,6 @@ class UpdateService:
         names = [canonicalize_name(p.name) for p in plugins]
         modes: dict[str, Mode] = dict.fromkeys(names, "new")
         reasons: dict[str, str] = {}
-        environment = git_credentials(subprocess_environment())
         output = ""
         for _ in range(2 * len(plugins) + 2):
             specs = [
@@ -494,7 +504,16 @@ class UpdateService:
         except (HeinzelError, ValueError, KeyError, TypeError):
             return {}
 
-    def _failure(self, pin: CorePin, plugins: list[CorePin], current: str, target: str | None, output: str) -> str:
+    def _failure(  # noqa: PLR0913 - retain the exact environment for recovery
+        self,
+        pin: CorePin,
+        plugins: list[CorePin],
+        current: str,
+        target: str | None,
+        output: str,
+        *,
+        environment: Mapping[str, str],
+    ) -> str:
         """What failed, which plugins are named in it, and that the previous hz still works or was put back."""
         to = f" to {target}" if target else ""
         blocking = blocking_plugins([p.requirement for p in plugins], output)
@@ -504,9 +523,9 @@ class UpdateService:
             else ""
         )
         headline = f"Could not update hz {current}{to}.{named}"
-        return "\n".join(filter(None, [headline, self._still_working(pin, plugins, current), output]))
+        return "\n".join(filter(None, [headline, self._still_working(pin, plugins, current, environment), output]))
 
-    def _still_working(self, pin: CorePin, plugins: list[CorePin], current: str) -> str:
+    def _still_working(self, pin: CorePin, plugins: list[CorePin], current: str, environment: Mapping[str, str]) -> str:
         """Check that hz still starts; if it doesn't, reinstall what the receipt had before.
 
         uv replaces a tool environment only once the new one resolved and installed, so a failed `uv tool install`
@@ -518,7 +537,7 @@ class UpdateService:
             pass
         restore = self._installation.tool_install_command(pin.requirement, [p.requirement for p in plugins])
         try:
-            restored = self._installation.attempt(restore, f"Restoring hz {current}")
+            restored = self._installation.attempt(restore, f"Restoring hz {current}", environment)
             if restored.returncode == 0:
                 return f"hz {self._version()} was restored, with every plugin."
         except HeinzelError:
