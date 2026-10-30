@@ -1,5 +1,6 @@
 """Bounded local notification capability for separately approved scheduled agent turns."""
 
+import contextlib
 import hashlib
 import re
 from collections.abc import Callable
@@ -162,6 +163,8 @@ class ScheduledNotifications:
                     control.append("scheduled-notification.recorded", turn=self.turn, key=request_id, data={})
             except Exception:  # noqa: BLE001 - the queue may already contain this notice
                 return "uncertain", "The notification outcome is uncertain and will not be retried automatically."
+            with contextlib.suppress(Exception):
+                self.notifications.forget_completed({key})
             return "recorded", "The local notification was queued; it may be held and is not confirmed shown."
         return "uncertain", "The notification outcome is uncertain and will not be retried automatically."
 
@@ -348,4 +351,7 @@ class ScheduledNotificationRecovery:
                             "attempt_seq": attempt.seq,
                         },
                     )
+            if known is True:
+                with contextlib.suppress(Exception):
+                    self.notifications.forget_completed({key})
             return self.validated_view(session, attempt, repo.control_read(session).events)

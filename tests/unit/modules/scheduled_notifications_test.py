@@ -28,12 +28,18 @@ pytestmark = pytest.mark.unit
 class FakeNotifications(Notifications):
     def __init__(self, result=True):
         self.calls = []
+        self.compacted = []
         self.result = result
 
     @override
     def emit_once(self, _kind, title, body, *, route, command, key):
         self.calls.append((title, body, route, key))
         return self.result
+
+    @override
+    def forget_completed(self, keys):
+        self.compacted.extend(keys)
+        return True
 
 
 def test_rate_topic_uncertainty_and_daemon_ownership(tmp_path):
@@ -91,6 +97,8 @@ def test_rate_topic_uncertainty_and_daemon_ownership(tmp_path):
         ):
             runner("three").send(args, writer)
         assert len(unknown.calls) == 1
+        assert len(notice.compacted) == 1
+        assert unknown.compacted == []
         changed_contract = ScheduledNotifications(
             crud,
             current,
@@ -217,6 +225,7 @@ def test_prior_receipt_reconciles_without_repeat_and_rejects_foreign_recovery(tm
         resolved = recovery.resolve(session, attempt.proposal.request_id, acknowledge_uncertain=True)
         assert resolved.status == "recorded"
         assert len(provider.calls) == 1
+        assert len(provider.compacted) == 1
 
 
 def test_legacy_schedule_rejects_hallucinated_notification_tool(tmp_path):
