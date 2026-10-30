@@ -4,7 +4,7 @@ date: 2026-10-30
 related: 0049, 0099, 0104
 ---
 
-# 0105: Propose bounded connected read sets separately
+# 0107: Propose bounded connected read sets separately
 
 ## Context and Problem Statement
 
