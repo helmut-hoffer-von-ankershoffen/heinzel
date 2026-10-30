@@ -12,6 +12,7 @@ import os
 import re
 import shlex
 import shutil
+import stat
 import subprocess
 import sys
 import tomllib
@@ -33,11 +34,13 @@ from packaging.utils import (
 )
 from packaging.version import InvalidVersion, Version
 
+from heinzel.kernel import _installation_continuity
 from heinzel.kernel._credentials import subprocess_environment
 from heinzel.kernel._errors import HeinzelError
 from heinzel.kernel._progress import Progress
 
 RECEIPT_FILENAME = "uv-receipt.toml"
+_MAX_RECEIPT_BYTES = 1024 * 1024
 CORE_DISTRIBUTION = "heinzel"
 
 Runner = Callable[..., subprocess.CompletedProcess[str]]
@@ -47,6 +50,61 @@ variables to add to the environment."""
 
 COMMAND_TIMEOUT = 900  # seconds; a uv tool install that downloads a lot is slow, one that hangs is broken
 HZ_TIMEOUT = 120
+
+
+def _read_tool_receipt(prefix: Path) -> dict[str, Any]:
+    """Read a bounded regular receipt without following a receipt symlink.
+
+    Raises:
+        ValueError: If the receipt is unsafe, oversized or changes during the read.
+    """
+    directory = os.open(prefix, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        fd = os.open(RECEIPT_FILENAME, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory)
+        try:
+            info = os.fstat(fd)
+            if (
+                not stat.S_ISREG(info.st_mode)
+                or info.st_uid != os.getuid()
+                or info.st_mode & 0o022
+                or info.st_size > _MAX_RECEIPT_BYTES
+            ):
+                msg = "The uv tool receipt is unsafe or too large."
+                raise ValueError(msg)
+            parts: list[bytes] = []
+            remaining = _MAX_RECEIPT_BYTES + 1
+            while remaining:
+                chunk = os.read(fd, min(remaining, 65536))
+                if not chunk:
+                    break
+                parts.append(chunk)
+                remaining -= len(chunk)
+            data = b"".join(parts)
+            after = os.fstat(fd)
+            if len(data) > _MAX_RECEIPT_BYTES or (
+                info.st_dev,
+                info.st_ino,
+                info.st_size,
+                info.st_mode,
+                info.st_uid,
+                info.st_mtime_ns,
+                info.st_ctime_ns,
+            ) != (
+                after.st_dev,
+                after.st_ino,
+                after.st_size,
+                after.st_mode,
+                after.st_uid,
+                after.st_mtime_ns,
+                after.st_ctime_ns,
+            ):
+                msg = "The uv tool receipt changed during inspection."
+                raise ValueError(msg)
+        finally:
+            os.close(fd)
+    finally:
+        os.close(directory)
+    return tomllib.loads(data.decode("utf-8"))
 
 
 def _run(command: Sequence[str], environment: Mapping[str, str] | None = None) -> subprocess.CompletedProcess[str]:
@@ -251,6 +309,50 @@ class Installation:
         entries = self._receipt()
         return None if entries is None else [requirement_from_receipt(entry) for entry in entries]
 
+    def _continuity_authority(self) -> tuple[dict[str, str], tuple[tuple[int, int], ...]]:
+        target = self._tool_target()
+        return target, self._target_directories(target)
+
+    def startup_fingerprint(self) -> str:
+        """Inspect the owned tool without executing installed code.
+
+        Raises:
+            HeinzelError: If the installation cannot be inspected safely.
+        """
+        return _installation_continuity.fingerprint(self.prefix, self._continuity_authority)
+
+    def record_startup_state(self, *, expected: str) -> None:
+        """Record the exact fingerprint independently verified after an authorized installation change.
+
+        Capture `expected` after the change and before independent source, version and runtime checks; those checks
+        must all concern that same observed generation.
+
+        Raises:
+            HeinzelError: If inspection or confirmation after the write fails.
+            OSError: If the private record cannot be written or synchronized.
+        """
+        _installation_continuity.record(self.prefix, self._continuity_authority, expected=expected)
+
+    def startup_state_matches(self) -> bool:
+        """Check existing continuity evidence, without creating or refreshing it."""
+        return _installation_continuity.matches(self.prefix, self._continuity_authority)
+
+    def verify_tool_destination(self, store: Path, binary: Path) -> None:
+        """Verify requested uv store and executable directory against this tool's receipt.
+
+        Raises:
+            HeinzelError: If the tool or requested destinations cannot be verified.
+        """
+        msg = "The requested uv store or executable directory does not match the verified tool."
+        try:
+            target = self._tool_target()
+            if store.resolve(strict=True) != Path(target["UV_TOOL_DIR"]) or binary.resolve(strict=True) != Path(
+                target["UV_TOOL_BIN_DIR"]
+            ):
+                raise HeinzelError(msg)
+        except OSError as exc:
+            raise HeinzelError(msg) from exc
+
     def core_pin(self) -> CorePin | None:
         """Where the uv tool environment installs Heinzelmännchen from and what it is pinned to; None outside of one."""
         entries = self._receipt()
@@ -263,7 +365,7 @@ class Installation:
     def _receipt(self) -> list[dict[str, Any]] | None:
         if not self.is_tool:
             return None
-        data = tomllib.loads((self.prefix / RECEIPT_FILENAME).read_text(encoding="utf-8"))
+        data = _read_tool_receipt(self.prefix.resolve(strict=True))
         return list(data["tool"]["requirements"])
 
     def tool_install_command(self, core: str, plugins: Sequence[str], *, refresh: bool = False) -> list[str]:
@@ -302,7 +404,7 @@ class Installation:
             prefix = self.prefix.resolve(strict=True)
             if prefix.name != CORE_DISTRIBUTION:
                 raise HeinzelError(msg)
-            data = tomllib.loads((prefix / RECEIPT_FILENAME).read_text(encoding="utf-8"))
+            data = _read_tool_receipt(prefix)
             entries = data["tool"]["entrypoints"]
             if (prefix / "bin").is_symlink():
                 raise HeinzelError(msg)
@@ -354,7 +456,7 @@ class Installation:
             if self._tool_target() != target:
                 raise HeinzelError(msg)
             prefix = self.prefix.resolve(strict=True)
-            data = tomllib.loads((prefix / RECEIPT_FILENAME).read_text(encoding="utf-8"))
+            data = _read_tool_receipt(prefix)
             owned: dict[str, tuple[int, int, str]] = {}
             for entry in data["tool"]["entrypoints"]:
                 path = Path(entry["install-path"])
