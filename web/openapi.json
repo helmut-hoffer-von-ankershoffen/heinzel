@@ -3102,6 +3102,141 @@
         "title": "ConflictView",
         "type": "object"
       },
+      "ConnectedGrantProposal": {
+        "additionalProperties": false,
+        "description": "One private exact capability/source/account/window proposal; no access until trusted approval.",
+        "properties": {
+          "binding_sha256": {
+            "description": "Digest of selected source registration and read schema.",
+            "title": "Binding Sha256",
+            "type": "string"
+          },
+          "capability": {
+            "description": "The selected capability requiring human review.",
+            "title": "Capability",
+            "type": "string"
+          },
+          "method": {
+            "description": "The selected read-only capability method.",
+            "title": "Method",
+            "type": "string"
+          },
+          "request_id": {
+            "description": "The exact connected-read proposal request.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "review": {
+            "$ref": "#/components/schemas/ConnectedReadReview",
+            "description": "Exact private provider, account, scope and fixed-argument terms."
+          },
+          "revision": {
+            "description": "The owner-scoped proposal revision.",
+            "title": "Revision",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "request_id",
+          "revision",
+          "capability",
+          "method",
+          "binding_sha256",
+          "review"
+        ],
+        "title": "ConnectedGrantProposal",
+        "type": "object"
+      },
+      "ConnectedReadReview": {
+        "additionalProperties": false,
+        "description": "Private observed source/account and exact operation constraints for human review.\n\nThe host must independently bind the selected registry record and operation schema, verify the owner/session,\nand compare these same fields on a fresh lease before invoking. Provider scopes are reported separately from\nhost-granted arguments and may include previously granted rights that the host will not exercise.",
+        "properties": {
+          "account_display": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional provider-reported display name or address.",
+            "title": "Account Display"
+          },
+          "account_identity": {
+            "description": "Provider-reported identity of the selected account.",
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Account Identity",
+            "type": "string"
+          },
+          "fixed_arguments": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "description": "Exact host-constrained read arguments.",
+            "maxProperties": 32,
+            "title": "Fixed Arguments",
+            "type": "object"
+          },
+          "operation": {
+            "description": "The exact read capability and method.",
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Operation",
+            "type": "string"
+          },
+          "owner": {
+            "description": "The authenticated owner identity.",
+            "pattern": "^u-[0-9a-f]{32}$",
+            "title": "Owner",
+            "type": "string"
+          },
+          "provider_scopes": {
+            "description": "Observed provider scopes, which may exceed the host read grant.",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 128,
+            "title": "Provider Scopes",
+            "type": "array"
+          },
+          "schema_sha256": {
+            "description": "Digest of the reviewed capability schema.",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Schema Sha256",
+            "type": "string"
+          },
+          "session": {
+            "description": "The owner-bound personal agent session.",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Session",
+            "type": "string"
+          },
+          "source_revision": {
+            "description": "The provider-reported source continuity revision.",
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Source Revision",
+            "type": "string"
+          }
+        },
+        "required": [
+          "owner",
+          "session",
+          "operation",
+          "schema_sha256",
+          "source_revision",
+          "account_identity",
+          "provider_scopes",
+          "fixed_arguments"
+        ],
+        "title": "ConnectedReadReview",
+        "type": "object"
+      },
       "Connector": {
         "description": "A module that provides adapters, with its state, sign-in, tools and the commands that connect it.",
         "properties": {
@@ -15515,6 +15650,44 @@
         "title": "heinzel_answer_chat_Input",
         "type": "object"
       },
+      "heinzel_approve_connected_read_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "approval_proof": {
+            "description": "In-process proof from the human confirmation boundary.",
+            "title": "Approval Proof",
+            "type": "string"
+          },
+          "request_id": {
+            "description": "A stable client request id; reuse it only for an exact retry.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "review": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "description": "The exact reviewed provider, source, account and read terms.",
+            "title": "Review",
+            "type": "object"
+          },
+          "session_id": {
+            "description": "The stable personal session id returned by new-chat or sessions.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "request_id",
+          "review",
+          "approval_proof"
+        ],
+        "title": "heinzel_approve_connected_read_Input",
+        "type": "object"
+      },
       "heinzel_approve_model_grant_Input": {
         "additionalProperties": false,
         "properties": {
@@ -15756,6 +15929,50 @@
         "title": "heinzel_propose_check_in_Input",
         "type": "object"
       },
+      "heinzel_propose_connected_read_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "capability": {
+            "description": "The selected read capability.",
+            "title": "Capability",
+            "type": "string"
+          },
+          "fixed_arguments": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "description": "Exact fixed read arguments for review.",
+            "title": "Fixed Arguments",
+            "type": "object"
+          },
+          "method": {
+            "description": "The exact read method to review.",
+            "title": "Method",
+            "type": "string"
+          },
+          "request_id": {
+            "description": "A stable client request id; reuse it only for an exact retry.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "session_id": {
+            "description": "The stable personal session id returned by new-chat or sessions.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "request_id",
+          "capability",
+          "method",
+          "fixed_arguments"
+        ],
+        "title": "heinzel_propose_connected_read_Input",
+        "type": "object"
+      },
       "heinzel_propose_model_policy_Input": {
         "additionalProperties": false,
         "properties": {
@@ -15935,6 +16152,29 @@
           "draft_sha256"
         ],
         "title": "heinzel_propose_skill_sharing_Input",
+        "type": "object"
+      },
+      "heinzel_revoke_connected_read_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "request_id": {
+            "description": "A stable client request id; reuse it only for an exact retry.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "session_id": {
+            "description": "The stable personal session id returned by new-chat or sessions.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "request_id"
+        ],
+        "title": "heinzel_revoke_connected_read_Input",
         "type": "object"
       },
       "heinzel_schedule_control_Input": {
@@ -16574,6 +16814,48 @@
         ]
       }
     },
+    "/heinzel/approve-connected-read": {
+      "post": {
+        "description": "Record only a human-confirmed exact connected-read grant; does not execute it.",
+        "operationId": "heinzel_approve_connected_read",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/heinzel_approve_connected_read_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectedGrantProposal"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Record only a human-confirmed exact connected-read grant; does not execute it.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
     "/heinzel/approve-model-grant": {
       "post": {
         "description": "Apply an exact human-confirmed policy; direct callers cannot issue or consume approval.",
@@ -16810,6 +17092,58 @@
           }
         },
         "summary": "Check contracts and list every problem with file and line; exits with 1 on errors, so CI can gate.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/connected-read-review": {
+      "get": {
+        "description": "Inspect current exact connected-read proposal; this does not approve it.",
+        "operationId": "heinzel_connected_read_review",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectedGrantProposal"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Inspect current exact connected-read proposal; this does not approve it.",
         "tags": [
           "heinzel"
         ]
@@ -17352,6 +17686,48 @@
         ]
       }
     },
+    "/heinzel/propose-connected-read": {
+      "post": {
+        "description": "Observe and propose exact connected-read terms; this grants no access.",
+        "operationId": "heinzel_propose_connected_read",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/heinzel_propose_connected_read_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectedGrantProposal"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Observe and propose exact connected-read terms; this grants no access.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
     "/heinzel/propose-model-policy": {
       "post": {
         "description": "Stage an inert model policy for independent human review.",
@@ -17515,6 +17891,49 @@
           }
         },
         "summary": "Request review of exact private draft and target; membership and authority are unverified.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/revoke-connected-read": {
+      "post": {
+        "description": "Revoke this exact connected-read grant before future tool calls.",
+        "operationId": "heinzel_revoke_connected_read",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/heinzel_revoke_connected_read_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Heinzel Revoke Connected Read",
+                  "type": "boolean"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Revoke this exact connected-read grant before future tool calls.",
         "tags": [
           "heinzel"
         ]
@@ -20447,6 +20866,62 @@
           }
         },
         "summary": "Stage current agent contract terms for human review.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/runner/chat/propose-connected-read-review": {
+      "post": {
+        "description": "Stage current connected-read terms for an explicit human decision.",
+        "operationId": "system_runner_chat_propose_connected_read_review",
+        "parameters": [
+          {
+            "description": "The personal agent session.",
+            "in": "query",
+            "name": "durable_session",
+            "required": true,
+            "schema": {
+              "description": "The personal agent session.",
+              "title": "Durable Session",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The connected read proposal request id.",
+            "in": "query",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "description": "The connected read proposal request id.",
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatSession"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Stage current connected-read terms for an explicit human decision.",
         "tags": [
           "system"
         ]

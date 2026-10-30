@@ -5,7 +5,7 @@ import secrets
 from datetime import timedelta
 from pathlib import Path
 
-from pydantic import BaseModel, ConfigDict, JsonValue, TypeAdapter
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter
 
 from heinzel import (
     Config,
@@ -20,6 +20,7 @@ from heinzel import (
 )
 from heinzel.kernel import PRIVATE_WRITE, CapabilitySettings
 from heinzel.kernel._approval import (
+    ApprovalConfirmation,
     ApprovalEvidence,
     ApprovalIntent,
     ApprovalRecord,
@@ -47,12 +48,12 @@ class ConnectedGrantProposal(BaseModel):
     """One private exact capability/source/account/window proposal; no access until trusted approval."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
-    request_id: RequestId
-    revision: int
-    capability: str
-    method: str
-    binding_sha256: str
-    review: ConnectedReadReview
+    request_id: RequestId = Field(description="The exact connected-read proposal request.")
+    revision: int = Field(description="The owner-scoped proposal revision.")
+    capability: str = Field(description="The selected capability requiring human review.")
+    method: str = Field(description="The selected read-only capability method.")
+    binding_sha256: str = Field(description="Digest of selected source registration and read schema.")
+    review: ConnectedReadReview = Field(description="Exact private provider, account, scope and fixed-argument terms.")
 
 
 class ConnectedReadGrants:
@@ -118,7 +119,7 @@ class ConnectedReadGrants:
                 or review.session != session
                 or review.operation != f"capability-method:{capability}.{method}"
                 or review.schema_sha256 != schema_digest
-                or review.fixed_arguments != fixed
+                or arguments_hash(review.fixed_arguments) != arguments_hash(fixed)
             ):
                 msg = "The connected read source did not match its host review"
                 raise HeinzelError(msg)
@@ -127,7 +128,7 @@ class ConnectedReadGrants:
             lease.close()
 
     def _body(self, session: str, event: SessionEvent) -> ConnectedGrantProposal:
-        return ConnectedGrantProposal.model_validate(self.crud._body(session, event))  # noqa: SLF001
+        return ConnectedGrantProposal.model_validate(self.crud.read_body(session, event))
 
     def _intent(self, session: str, proposal: ConnectedGrantProposal) -> ApprovalIntent:
         return ApprovalIntent(
@@ -153,6 +154,8 @@ class ConnectedReadGrants:
         self._human()
         _SESSION.validate_python(session)
         _REQUEST.validate_python(request)
+        # Resolve the caller-owned session before any provider lease can export credentials or call an API.
+        self.crud.repository.control_read(session)
         binding, review = self._observe(session, capability, method, fixed)
         with self.crud.repository.main_writer(session), self.crud.repository.control_writer(session) as writer:
             events = self.crud.repository.control_read(session).events
@@ -167,7 +170,9 @@ class ConnectedReadGrants:
                     binding_sha256=binding,
                     review=review,
                 )
-                if proposal != candidate:
+                if arguments_hash(proposal.model_dump(mode="json")) != arguments_hash(
+                    candidate.model_dump(mode="json")
+                ):
                     msg = "This request identifies a different connected read"
                     raise HeinzelError(msg)
                 return proposal
@@ -193,7 +198,9 @@ class ConnectedReadGrants:
             raise HeinzelError(msg)
         proposal = self._body(session, matches[0])
         binding, review = self._observe(session, proposal.capability, proposal.method, proposal.review.fixed_arguments)
-        if binding != proposal.binding_sha256 or review != proposal.review:
+        if binding != proposal.binding_sha256 or arguments_hash(review.model_dump(mode="json")) != arguments_hash(
+            proposal.review.model_dump(mode="json")
+        ):
             msg = "The connected read source or account changed; review it again"
             raise HeinzelError(msg)
         return proposal
@@ -218,10 +225,33 @@ class ConnectedReadGrants:
             writer.append("approval.issued", key=digest, data=record.model_dump(mode="json"))
         return proof
 
-    def approve(self, session: str, request: str, proof: str) -> ConnectedGrantProposal:
-        """Consume an exact proof into private grant state; do not run any provider read."""
+    def review(self, session: str, request: str) -> ConnectedGrantProposal:
+        """Reobserve the exact current proposal for a trusted human review."""
         self._human()
+        return self._proposal(session, request)
+
+    def approve(
+        self, session: str, request: str, review: dict[str, JsonValue], proof: str, confirmation: ApprovalConfirmation
+    ) -> ConnectedGrantProposal:
+        """Consume exact human-confirmed evidence without running a provider read.
+
+        Raises:
+            HeinzelError: If no trusted confirmation covers the exact reviewed intent.
+        """
+        self._human()
+        args: dict[str, JsonValue] = {
+            "session_id": session,
+            "request_id": request,
+            "review": review,
+            "approval_proof": proof,
+        }
+        if not confirmation.matches("heinzel", "approve-connected-read", args):
+            msg = "Approval is invalid or unavailable"
+            raise HeinzelError(msg)
         proposal = self._proposal(session, request)
+        if arguments_hash(proposal.model_dump(mode="json")) != arguments_hash(review):
+            msg = "The reviewed connected read changed"
+            raise HeinzelError(msg)
 
         def current(events: list[SessionEvent]) -> ApprovalIntent:
             if any(
@@ -276,7 +306,8 @@ class ConnectedReadGrants:
             raise HeinzelError(msg) from None
         latest = [e for e in events if e.kind == "connected.proposed"]
         if (
-            self._body(session, proposed[0]) != grant
+            arguments_hash(self._body(session, proposed[0]).model_dump(mode="json"))
+            != arguments_hash(grant.model_dump(mode="json"))
             or not latest
             or latest[-1].key != grant.request_id
             or record.model_dump(mode="json").get("decision") != "approve"
@@ -296,20 +327,18 @@ class ConnectedReadGrants:
         return grant
 
     def tool_schema(self, session: str) -> dict[str, JsonValue] | None:
-        """Describe the approved read without exposing account or provider scope details.
-
-        Raises:
-            HeinzelError: If the saved grant or selected provider is invalid.
-        """
+        """Expose only a currently valid grant; an unavailable read does not prevent ordinary chat."""
         events = self.crud.repository.control_read(session).events
         if not any(event.kind == "connected.approved" for event in events):
             return None
-        grant = self.approved(session)
-        self._check_current_config(grant.capability)
-        descriptor = describe_capability_read(self.kernel, grant.capability, grant.method)
-        if descriptor.binding_sha256 != grant.binding_sha256:
-            msg = "The connected read provider changed"
-            raise HeinzelError(msg)
+        try:
+            grant = self.approved(session)
+            self._check_current_config(grant.capability)
+            descriptor = describe_capability_read(self.kernel, grant.capability, grant.method)
+            if descriptor.binding_sha256 != grant.binding_sha256:
+                return None
+        except HeinzelError:
+            return None
         return {
             "name": "connected_read",
             "description": f"Read the approved {grant.capability}.{grant.method} using the fixed reviewed arguments.",
@@ -358,7 +387,11 @@ class ConnectedReadGrants:
         lease = service.open_lease(session, grant.review.operation, grant.review.fixed_arguments)
         invoked = False
         try:
-            if lease.review() != grant.review or self.approved(session) != grant:
+            if arguments_hash(lease.review().model_dump(mode="json")) != arguments_hash(
+                grant.review.model_dump(mode="json")
+            ) or arguments_hash(self.approved(session).model_dump(mode="json")) != arguments_hash(
+                grant.model_dump(mode="json")
+            ):
                 msg = "The connected read approval or account changed"
                 raise HeinzelError(msg)
             self._check_current_config(grant.capability)

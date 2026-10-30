@@ -201,6 +201,7 @@ $ hz chat [OPTIONS] COMMAND [ARGS]...
 * `open`: Open a chat session, optionally about a...
 * `open-check-in`: Open a runner chat bound to this owner&#x27;s...
 * `propose-agent-contract`: Stage current agent contract terms for...
+* `propose-connected-read-review`: Stage current connected-read terms for an...
 * `propose-model-policy`: Stage the exact current model policy for...
 * `propose-schedule-control`: Stage a schedule action for review in...
 * `recover`: Check an interrupted confirmation without...
@@ -362,6 +363,27 @@ $ hz chat propose-agent-contract [OPTIONS] {durable_session} {request_id}
 
 * `durable_session`: The personal agent session.  [required]
 * `request_id`: The contract proposal request id.  [required]
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz chat propose-connected-read-review`
+
+Stage current connected-read terms for an explicit human decision.
+
+**Usage**:
+
+```console
+$ hz chat propose-connected-read-review [OPTIONS] {durable_session} {request_id}
+```
+
+**Arguments**:
+
+* `durable_session`: The personal agent session.  [required]
+* `request_id`: The connected read proposal request id.  [required]
 
 **Options**:
 
@@ -542,11 +564,13 @@ $ hz heinzel [OPTIONS] COMMAND [ARGS]...
 * `agent-contract-review`: Read an exact contract and its acceptance;...
 * `amend-scheduled-agent`: Propose revised terms; an independent...
 * `answer-chat`: Answer one authenticated user&#x27;s accepted...
+* `approve-connected-read`: Record only a human-confirmed exact...
 * `approve-model-grant`: Apply an exact human-confirmed policy;...
 * `associate-artifact`: Associate a Google file locally; no...
 * `chat`: Durably queue a message for this Heinzel;...
 * `chat-turn-state`: Read the recorded turn state; unresolved...
 * `check`: (expert) Check contracts and list every...
+* `connected-read-review`: Inspect current exact connected-read...
 * `discover`: (expert) Find candidates for each...
 * `drafts`: List the drafts runs saved locally, newest...
 * `graph`: (expert) Show the workflow your contracts...
@@ -560,11 +584,13 @@ $ hz heinzel [OPTIONS] COMMAND [ARGS]...
 * `playbooks`: (expert) List the playbooks plugins...
 * `profile`: Save this Heinzel&#x27;s name or look against...
 * `propose-check-in`: Propose local five-minute check-ins; the...
+* `propose-connected-read`: Observe and propose exact connected-read...
 * `propose-model-policy`: Stage an inert model policy for...
 * `propose-scheduled-agent`: Save an inert agent execution proposal; it...
 * `propose-skill-draft`: Store a private skill draft; no file is...
 * `propose-skill-sharing`: Request review of exact private draft and...
 * `prune`: (expert) Delete drafts and records older...
+* `revoke-connected-read`: Revoke this exact connected-read grant...
 * `schedule-control`: Pause a schedule; activation and resume...
 * `scheduled-agent-proposal`: Inspect the exact inert proposal; a...
 * `sent`: (expert) Record how much of a draft you...
@@ -690,6 +716,29 @@ $ hz heinzel answer-chat [OPTIONS] {session_id} {request_id}
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
 
+### `hz heinzel approve-connected-read`
+
+Record only a human-confirmed exact connected-read grant; does not execute it.
+
+**Usage**:
+
+```console
+$ hz heinzel approve-connected-read [OPTIONS] {session_id} {request_id} {JSON} {approval_proof}
+```
+
+**Arguments**:
+
+* `session_id`: [required]
+* `request_id`: [required]
+* `JSON`: The exact reviewed provider, source, account and read terms.  [required]
+* `approval_proof`: In-process proof from the human confirmation boundary.  [required]
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
 ### `hz heinzel approve-model-grant`
 
 Apply an exact human-confirmed policy; direct callers cannot issue or consume approval.
@@ -793,6 +842,27 @@ $ hz heinzel check [OPTIONS]
 **Options**:
 
 * `--path <path>`: A contract file, or a directory searched for *.prose.md; every contract found if none.
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz heinzel connected-read-review`
+
+Inspect current exact connected-read proposal; this does not approve it.
+
+**Usage**:
+
+```console
+$ hz heinzel connected-read-review [OPTIONS] {session_id} {request_id}
+```
+
+**Arguments**:
+
+* `session_id`: [required]
+* `request_id`: [required]
+
+**Options**:
+
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
@@ -1056,6 +1126,30 @@ $ hz heinzel propose-check-in [OPTIONS] {session_id} {request_id}
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
 
+### `hz heinzel propose-connected-read`
+
+Observe and propose exact connected-read terms; this grants no access.
+
+**Usage**:
+
+```console
+$ hz heinzel propose-connected-read [OPTIONS] {session_id} {request_id} {capability} {method} {JSON}
+```
+
+**Arguments**:
+
+* `session_id`: [required]
+* `request_id`: [required]
+* `capability`: The selected read capability.  [required]
+* `method`: The exact read method to review.  [required]
+* `JSON`: Exact fixed read arguments for review.  [required]
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
 ### `hz heinzel propose-model-policy`
 
 Stage an inert model policy for independent human review.
@@ -1163,6 +1257,27 @@ $ hz heinzel prune [OPTIONS]
 **Options**:
 
 * `--dry-run / --no-dry-run`: Only list what would be deleted; delete nothing.  [default: no-dry-run]
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz heinzel revoke-connected-read`
+
+Revoke this exact connected-read grant before future tool calls.
+
+**Usage**:
+
+```console
+$ hz heinzel revoke-connected-read [OPTIONS] {session_id} {request_id}
+```
+
+**Arguments**:
+
+* `session_id`: [required]
+* `request_id`: [required]
+
+**Options**:
+
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.

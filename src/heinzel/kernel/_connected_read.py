@@ -25,15 +25,23 @@ class ConnectedReadReview(BaseModel):
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
-    owner: str = Field(pattern=r"^u-[0-9a-f]{32}$")
-    session: str = Field(min_length=1, max_length=128)
-    operation: str = Field(min_length=1, max_length=256)
-    schema_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
-    source_revision: str = Field(min_length=1, max_length=256)
-    account_identity: str = Field(min_length=1, max_length=256)
-    account_display: str | None = Field(default=None, max_length=256)
-    provider_scopes: tuple[str, ...] = Field(max_length=128)
-    fixed_arguments: dict[str, JsonValue] = Field(max_length=32)
+    owner: str = Field(pattern=r"^u-[0-9a-f]{32}$", description="The authenticated owner identity.")
+    session: str = Field(min_length=1, max_length=128, description="The owner-bound personal agent session.")
+    operation: str = Field(min_length=1, max_length=256, description="The exact read capability and method.")
+    schema_sha256: str = Field(pattern=r"^[0-9a-f]{64}$", description="Digest of the reviewed capability schema.")
+    source_revision: str = Field(
+        min_length=1, max_length=256, description="The provider-reported source continuity revision."
+    )
+    account_identity: str = Field(
+        min_length=1, max_length=256, description="Provider-reported identity of the selected account."
+    )
+    account_display: str | None = Field(
+        default=None, max_length=256, description="Optional provider-reported display name or address."
+    )
+    provider_scopes: tuple[str, ...] = Field(
+        max_length=128, description="Observed provider scopes, which may exceed the host read grant."
+    )
+    fixed_arguments: dict[str, JsonValue] = Field(max_length=32, description="Exact host-constrained read arguments.")
 
     @model_validator(mode="after")
     def bounded(self) -> "ConnectedReadReview":

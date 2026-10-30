@@ -21,7 +21,7 @@ from heinzel import (
     Settings,
 )
 from heinzel.kernel import Origin
-from heinzel.kernel._approval import arguments_hash
+from heinzel.kernel._approval import ApprovalConfirmation, arguments_hash
 from heinzel.modules.heinzel._capability_review import describe_capability_read
 from heinzel.modules.heinzel._connected_grants import ConnectedReadGrants
 from heinzel.modules.heinzel._engine import TurnLimits
@@ -54,7 +54,7 @@ def _model(expected, summary):
 @pytest.fixture
 def connected(tmp_path, monkeypatch):
     current = CurrentUser(tmp_path / "identity")
-    state = {"account": "account-a", "source": "source-v1", "scopes": ("calendar", "drive"), "reads": 0}
+    state = {"account": "account-a", "source": "source-v1", "scopes": ("calendar", "drive"), "reads": 0, "opens": 0}
     holder = {}
 
     class Lease(ConnectedReadLease):
@@ -71,7 +71,7 @@ def connected(tmp_path, monkeypatch):
                 source_revision=state["source"],
                 account_identity=state["account"],
                 provider_scopes=state["scopes"],
-                fixed_arguments=self.fixed,
+                fixed_arguments={**self.fixed, **({"count": True} if state.get("coerce") else {})},
             )
 
         def read(self, arguments):
@@ -84,6 +84,7 @@ def connected(tmp_path, monkeypatch):
 
     class Provider(ConnectedReadService):
         def open_lease(self, session, operation, fixed_arguments):
+            state["opens"] += 1
             return Lease(session, operation, dict(fixed_arguments))
 
     class Calendar:
@@ -114,7 +115,7 @@ def connected(tmp_path, monkeypatch):
         yield current, crud, session, grants, fixed, state
 
 
-def test_exact_approval_current_source_and_revoke(connected):
+def test_exact_approval_current_source_and_revoke(connected):  # noqa: PLR0915
     current, crud, session, grants, fixed, state = connected
     with pytest.raises(HeinzelError):
         grants.propose(session, "bad", "calendar", "events", {"window": {**fixed["window"], "extra": "ignored"}})
@@ -133,10 +134,17 @@ def test_exact_approval_current_source_and_revoke(connected):
     assert state["reads"] == 0
     proof = grants.issue(session, "req-one", "human-confirmation")
     competing = grants.issue(session, "req-one", "human-confirmation")
-    assert grants.approve(session, "req-one", proof) == proposal
-    assert grants.approve(session, "req-one", proof) == proposal
+    confirmation = ApprovalConfirmation()
+    review = proposal.model_dump(mode="json")
+    args = {"session_id": session, "request_id": "req-one", "review": review, "approval_proof": proof}
     with pytest.raises(HeinzelError):
-        grants.approve(session, "req-one", competing)
+        grants.approve(session, "req-one", review, proof, confirmation)
+    with confirmation.using("heinzel", "approve-connected-read", args):
+        assert grants.approve(session, "req-one", review, proof, confirmation) == proposal
+        assert grants.approve(session, "req-one", review, proof, confirmation) == proposal
+    competing_args = {**args, "approval_proof": competing}
+    with confirmation.using("heinzel", "approve-connected-read", competing_args), pytest.raises(HeinzelError):
+        grants.approve(session, "req-one", review, competing, confirmation)
     crud.accept(session, MessageRequest(request_id="after", text="Read the approved source."))
     result = asyncio.run(
         InteractiveTurn(crud).run(
@@ -171,3 +179,42 @@ def test_exact_approval_current_source_and_revoke(connected):
     with crud.repository.main_writer(session) as writer, pytest.raises(HeinzelError):
         grants.read(session, writer)
     assert state["reads"] == 2
+
+
+def test_unknown_or_foreign_session_never_opens_provider(connected):
+    _current, _crud, _session, grants, fixed, state = connected
+    with pytest.raises(HeinzelError):
+        grants.propose("hz-01ARZ3NDEKTSV4RRFFQ69G5FAV", "req", "calendar", "events", fixed)
+    assert state["opens"] == 0
+
+
+def test_fixed_argument_comparison_rejects_json_type_coercion(monkeypatch):
+    from types import SimpleNamespace
+
+    from heinzel.modules.heinzel import _capability_review as module
+
+    class Protocol:
+        def read(self, count: int, flag: bool) -> None:
+            pass
+
+    monkeypatch.setattr(
+        module, "CAPABILITIES", {"example": SimpleNamespace(methods={"read": "read"}, protocol=Protocol)}
+    )
+    assert module.validate_capability_read_arguments("example", "read", {"count": 1, "flag": True}) == {
+        "count": 1,
+        "flag": True,
+    }
+    for value in ({"count": True, "flag": True}, {"count": 1.0, "flag": True}, {"count": 1, "flag": 1}):
+        with pytest.raises(HeinzelError):
+            module.validate_capability_read_arguments("example", "read", value)
+
+
+def test_provider_review_cannot_coerce_fixed_json_types(connected, monkeypatch):
+    from heinzel.modules.heinzel import _connected_grants as module
+
+    _current, _crud, session, grants, _fixed, state = connected
+    monkeypatch.setattr(module, "validate_capability_read_arguments", lambda _c, _m, fixed: fixed)
+    state["coerce"] = True
+    with pytest.raises(HeinzelError, match="did not match"):
+        grants.propose(session, "req-coercion", "calendar", "events", {"count": 1})
+    assert state["reads"] == 0

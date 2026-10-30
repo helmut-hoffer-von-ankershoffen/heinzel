@@ -550,7 +550,7 @@ class InteractiveTurn:
                 or not isinstance(name, str)
                 or (
                     name not in _READ_TOOLS
-                    and name not in {"unavailable", "hz.read"}
+                    and name not in {"unavailable", "hz.read", "connected_read"}
                     and re.fullmatch(r"[a-z][a-z0-9_.-]{0,127}:[a-z][a-z0-9-]{0,127}", name) is None
                 )
                 or status not in {"requested", "completed", "failed", "denied"}

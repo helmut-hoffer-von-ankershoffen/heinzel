@@ -26,6 +26,7 @@ from heinzel.modules.heinzel._claude_subscription_model import (
     executable_digest,
     subscription_environment,
 )
+from heinzel.modules.heinzel._connected_grants import ConnectedReadGrants
 from heinzel.modules.heinzel._engine import TurnLimits
 from heinzel.modules.heinzel._interactive_turn import InteractiveTurn, ToolActivity, interactive_turn_id
 from heinzel.modules.heinzel._models import HeinzelSettings
@@ -98,17 +99,19 @@ class _ClaudeVerifier:
 class UserChatService:
     """Dispatch one already accepted direct-user message using current selected access, never a schedule."""
 
-    def __init__(
+    def __init__(  # noqa: PLR0913 - independent host authority and model seams
         self,
         crud: SessionCrud,
         current: CurrentUser,
         runner_settings: RunnerSnapshotProvider,
         *,
+        connected: ConnectedReadGrants | None = None,
         load: Callable[[], Config] = lambda: Config.load(Path.home()),
         execute: Callable[..., Outcome] = run_bounded,
     ) -> None:
         self._crud, self._current, self._load, self._which, self._execute = crud, current, load, shutil.which, execute
         self._runner_settings = runner_settings
+        self._connected = connected
 
     def _selected(self) -> tuple[HeinzelSettings, RunnerSnapshot]:
         config = self._load()
@@ -231,6 +234,7 @@ class UserChatService:
             limits=TurnLimits(requests=_MAX_REQUESTS, total_tokens=None, output_tokens=None, timeout_seconds=_TIMEOUT),
             allow_ungranted_tools=False,
             user_proposal_policy=unchanged,
+            connected=self._connected,
             backend_binding=BackendBinding(backend="claude-code", mode="cli-model", revision=1),
         )
         return UserChatAnswer(session_id=session, request_id=request, message=message)

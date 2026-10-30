@@ -17,7 +17,8 @@ from heinzel.kernel import (
     Kernel,
     RunnerSnapshotProvider,
 )
-from heinzel.kernel._approval import ApprovalConfirmation, ApprovalIssuer
+from heinzel.kernel._approval import ApprovalConfirmation, ApprovalIssuer, arguments_hash
+from heinzel.modules.heinzel._connected_grants import ConnectedGrantProposal, ConnectedReadGrants
 from heinzel.modules.heinzel._contract_review import ContractReview, ContractReviewView
 from heinzel.modules.heinzel._model_grants import ModelGrants
 from heinzel.modules.heinzel._model_policy_operations import ModelPolicyService, register_model_policy_operations
@@ -112,6 +113,15 @@ class _SessionApprovalIssuer(ApprovalIssuer):
         return session, request
 
     def review(self, module: str, operation: str, arguments: dict[str, JsonValue]) -> dict[str, JsonValue]:
+        if module == "heinzel" and operation == "approve-connected-read":
+            if self.kernel is None:
+                msg = "Connected read review is unavailable"
+                raise HeinzelError(msg)
+            return (
+                ConnectedReadGrants(self.service, self.kernel.resolve(CurrentUser), self.kernel)
+                .review(*self._model_args(arguments))
+                .model_dump(mode="json")
+            )
         if module == "heinzel" and operation == "accept-agent-contract":
             return ContractReview(self.service).current(*self._model_args(arguments)).model_dump(mode="json")
         if module == "heinzel" and operation == "approve-model-grant":
@@ -127,6 +137,20 @@ class _SessionApprovalIssuer(ApprovalIssuer):
         return self.service.review(module, operation, arguments)
 
     def issue(self, module: str, operation: str, arguments: dict[str, JsonValue], provenance: str) -> str:
+        if module == "heinzel" and operation == "approve-connected-read":
+            if self.kernel is None:
+                msg = "Connected read review is unavailable"
+                raise HeinzelError(msg)
+            session, request = self._model_args(arguments)
+            review = arguments.get("review")
+            if not isinstance(review, dict) or arguments_hash(review) != arguments_hash(
+                self.review(module, operation, arguments)
+            ):
+                msg = "The reviewed connected read changed"
+                raise HeinzelError(msg)
+            return ConnectedReadGrants(self.service, self.kernel.resolve(CurrentUser), self.kernel).issue(
+                session, request, provenance
+            )
         if module == "heinzel" and operation == "accept-agent-contract":
             session, request = self._model_args(arguments)
             if arguments.get("review") != self.review(module, operation, arguments):
@@ -143,6 +167,17 @@ class _SessionApprovalIssuer(ApprovalIssuer):
         return self.service.issue(module, operation, arguments, provenance)
 
     def applied(self, module: str, operation: str, arguments: dict[str, JsonValue]) -> bool:
+        if module == "heinzel" and operation == "approve-connected-read":
+            if self.kernel is None:
+                return False
+            session, request = self._model_args(arguments)
+            expected = arguments.get("review")
+            if not isinstance(expected, dict):
+                return False
+            grant = ConnectedReadGrants(self.service, self.kernel.resolve(CurrentUser), self.kernel).approved(session)
+            return grant.request_id == request and arguments_hash(grant.model_dump(mode="json")) == arguments_hash(
+                expected
+            )
         if module == "heinzel" and operation == "accept-agent-contract":
             return ContractReview(self.service).applied(*self._model_args(arguments))
         if module == "heinzel" and operation == "approve-model-grant":
@@ -301,6 +336,49 @@ def _register_contract_review_operations(module: Module) -> None:
         return contracts.accept(session_id, request_id, approval_proof)
 
 
+def _register_connected_read_operations(module: Module) -> None:
+    """Register private review surfaces; human confirmation alone can consume an issued proof."""
+
+    @module.operation(private=True, read_only=False, heads={"web", "api-private"}, audience="everyday")
+    def propose_connected_read(  # noqa: PLR0913, PLR0917 - exact review parameters
+        service: ConnectedReadGrants,
+        session_id: Identity,
+        request_id: Request,
+        capability: Annotated[str, Field(description="The selected read capability.")],
+        method: Annotated[str, Field(description="The exact read method to review.")],
+        fixed_arguments: Annotated[dict[str, JsonValue], Field(description="Exact fixed read arguments for review.")],
+    ) -> ConnectedGrantProposal:
+        """Observe and propose exact connected-read terms; this grants no access."""
+        return service.propose(session_id, request_id, capability, method, fixed_arguments)
+
+    @module.operation(private=True, heads={"web", "api-private"}, audience="everyday")
+    def connected_read_review(
+        service: ConnectedReadGrants, session_id: Identity, request_id: Request
+    ) -> ConnectedGrantProposal:
+        """Inspect current exact connected-read proposal; this does not approve it."""
+        return service.review(session_id, request_id)
+
+    @module.operation(private=True, read_only=False, heads={"web", "api-private"}, audience="everyday")
+    def revoke_connected_read(service: ConnectedReadGrants, session_id: Identity, request_id: Request) -> bool:
+        """Revoke this exact connected-read grant before future tool calls."""
+        service.revoke(session_id, request_id)
+        return True
+
+    @module.operation(private=True, read_only=False, heads={"web", "api-private"}, audience="everyday")
+    def approve_connected_read(  # noqa: PLR0913, PLR0917 - exact human confirmation
+        service: ConnectedReadGrants,
+        confirmation: ApprovalConfirmation,
+        session_id: Identity,
+        request_id: Request,
+        review: Annotated[
+            dict[str, JsonValue], Field(description="The exact reviewed provider, source, account and read terms.")
+        ],
+        approval_proof: Annotated[str, Field(description="In-process proof from the human confirmation boundary.")],
+    ) -> ConnectedGrantProposal:
+        """Record only a human-confirmed exact connected-read grant; does not execute it."""
+        return service.approve(session_id, request_id, review, approval_proof, confirmation)
+
+
 def _register_user_chat_operations(module: Module) -> None:
     """Register private chat, tool activity and profile proposal projections."""
 
@@ -350,15 +428,17 @@ def _register_user_chat_operations(module: Module) -> None:
 
 def _user_chat_service(crud: SessionCrud, current: CurrentUser, kernel: Kernel) -> UserChatService:
     runner = kernel.resolve_builtin_service(RunnerSnapshotProvider, "system.runner")
-    return UserChatService(crud, current, runner)
+    return UserChatService(crud, current, runner, connected=kernel.resolve(ConnectedReadGrants))
 
 
 def register_session_operations(module: Module) -> None:  # noqa: C901 - operation declarations define one shared head surface
     """Register once on the owning module; constructing the service performs no private I/O."""
     module.service(SessionCrud, _crud)
+    module.service(ConnectedReadGrants)
     module.service(UserChatService, _user_chat_service)
     _register_skill_operations(module)
     _register_contract_review_operations(module)
+    _register_connected_read_operations(module)
     _register_user_chat_operations(module)
     register_model_policy_operations(module)
     module.service(ApprovalIssuer, _approval_issuer)

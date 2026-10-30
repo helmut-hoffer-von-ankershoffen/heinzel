@@ -234,6 +234,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/heinzel/approve-connected-read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Record only a human-confirmed exact connected-read grant; does not execute it.
+         * @description Record only a human-confirmed exact connected-read grant; does not execute it.
+         */
+        post: operations["heinzel_approve_connected_read"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/heinzel/approve-model-grant": {
         parameters: {
             query?: never;
@@ -326,6 +346,26 @@ export interface paths {
          * @description Check contracts and list every problem with file and line; exits with 1 on errors, so CI can gate.
          */
         get: operations["heinzel_check"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/heinzel/connected-read-review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Inspect current exact connected-read proposal; this does not approve it.
+         * @description Inspect current exact connected-read proposal; this does not approve it.
+         */
+        get: operations["heinzel_connected_read_review"];
         put?: never;
         post?: never;
         delete?: never;
@@ -554,6 +594,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/heinzel/propose-connected-read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Observe and propose exact connected-read terms; this grants no access.
+         * @description Observe and propose exact connected-read terms; this grants no access.
+         */
+        post: operations["heinzel_propose_connected_read"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/heinzel/propose-model-policy": {
         parameters: {
             query?: never;
@@ -628,6 +688,26 @@ export interface paths {
          * @description Request review of exact private draft and target; membership and authority are unverified.
          */
         post: operations["heinzel_propose_skill_sharing"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/heinzel/revoke-connected-read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Revoke this exact connected-read grant before future tool calls.
+         * @description Revoke this exact connected-read grant before future tool calls.
+         */
+        post: operations["heinzel_revoke_connected_read"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2096,6 +2176,26 @@ export interface paths {
          * @description Stage current agent contract terms for human review.
          */
         post: operations["system_runner_chat_propose_agent_contract"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/runner/chat/propose-connected-read-review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Stage current connected-read terms for an explicit human decision.
+         * @description Stage current connected-read terms for an explicit human decision.
+         */
+        post: operations["system_runner_chat_propose_connected_read_review"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4424,6 +4524,96 @@ export interface components {
             values: {
                 [key: string]: components["schemas"]["JsonValue"];
             };
+        };
+        /**
+         * ConnectedGrantProposal
+         * @description One private exact capability/source/account/window proposal; no access until trusted approval.
+         */
+        ConnectedGrantProposal: {
+            /**
+             * Binding Sha256
+             * @description Digest of selected source registration and read schema.
+             */
+            binding_sha256: string;
+            /**
+             * Capability
+             * @description The selected capability requiring human review.
+             */
+            capability: string;
+            /**
+             * Method
+             * @description The selected read-only capability method.
+             */
+            method: string;
+            /**
+             * Request Id
+             * @description The exact connected-read proposal request.
+             */
+            request_id: string;
+            /** @description Exact private provider, account, scope and fixed-argument terms. */
+            review: components["schemas"]["ConnectedReadReview"];
+            /**
+             * Revision
+             * @description The owner-scoped proposal revision.
+             */
+            revision: number;
+        };
+        /**
+         * ConnectedReadReview
+         * @description Private observed source/account and exact operation constraints for human review.
+         *
+         *     The host must independently bind the selected registry record and operation schema, verify the owner/session,
+         *     and compare these same fields on a fresh lease before invoking. Provider scopes are reported separately from
+         *     host-granted arguments and may include previously granted rights that the host will not exercise.
+         */
+        ConnectedReadReview: {
+            /**
+             * Account Display
+             * @description Optional provider-reported display name or address.
+             */
+            account_display?: string | null;
+            /**
+             * Account Identity
+             * @description Provider-reported identity of the selected account.
+             */
+            account_identity: string;
+            /**
+             * Fixed Arguments
+             * @description Exact host-constrained read arguments.
+             */
+            fixed_arguments: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            /**
+             * Operation
+             * @description The exact read capability and method.
+             */
+            operation: string;
+            /**
+             * Owner
+             * @description The authenticated owner identity.
+             */
+            owner: string;
+            /**
+             * Provider Scopes
+             * @description Observed provider scopes, which may exceed the host read grant.
+             */
+            provider_scopes: string[];
+            /**
+             * Schema Sha256
+             * @description Digest of the reviewed capability schema.
+             */
+            schema_sha256: string;
+            /**
+             * Session
+             * @description The owner-bound personal agent session.
+             */
+            session: string;
+            /**
+             * Source Revision
+             * @description The provider-reported source continuity revision.
+             */
+            source_revision: string;
         };
         /**
          * Connector
@@ -11565,6 +11755,31 @@ export interface components {
              */
             session_id: string;
         };
+        /** heinzel_approve_connected_read_Input */
+        heinzel_approve_connected_read_Input: {
+            /**
+             * Approval Proof
+             * @description In-process proof from the human confirmation boundary.
+             */
+            approval_proof: string;
+            /**
+             * Request Id
+             * @description A stable client request id; reuse it only for an exact retry.
+             */
+            request_id: string;
+            /**
+             * Review
+             * @description The exact reviewed provider, source, account and read terms.
+             */
+            review: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            /**
+             * Session Id
+             * @description The stable personal session id returned by new-chat or sessions.
+             */
+            session_id: string;
+        };
         /** heinzel_approve_model_grant_Input */
         heinzel_approve_model_grant_Input: {
             /**
@@ -11699,6 +11914,36 @@ export interface components {
              */
             timezone: string;
         };
+        /** heinzel_propose_connected_read_Input */
+        heinzel_propose_connected_read_Input: {
+            /**
+             * Capability
+             * @description The selected read capability.
+             */
+            capability: string;
+            /**
+             * Fixed Arguments
+             * @description Exact fixed read arguments for review.
+             */
+            fixed_arguments: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            /**
+             * Method
+             * @description The exact read method to review.
+             */
+            method: string;
+            /**
+             * Request Id
+             * @description A stable client request id; reuse it only for an exact retry.
+             */
+            request_id: string;
+            /**
+             * Session Id
+             * @description The stable personal session id returned by new-chat or sessions.
+             */
+            session_id: string;
+        };
         /** heinzel_propose_model_policy_Input */
         heinzel_propose_model_policy_Input: {
             /**
@@ -11806,6 +12051,19 @@ export interface components {
              */
             session_id: string;
         };
+        /** heinzel_revoke_connected_read_Input */
+        heinzel_revoke_connected_read_Input: {
+            /**
+             * Request Id
+             * @description A stable client request id; reuse it only for an exact retry.
+             */
+            request_id: string;
+            /**
+             * Session Id
+             * @description The stable personal session id returned by new-chat or sessions.
+             */
+            session_id: string;
+        };
         /** heinzel_schedule_control_Input */
         heinzel_schedule_control_Input: {
             /**
@@ -11900,6 +12158,8 @@ export type SchemaConfigFileInfo = components['schemas']['ConfigFileInfo'];
 export type SchemaConfigReport = components['schemas']['ConfigReport'];
 export type SchemaConfigRevealed = components['schemas']['ConfigRevealed'];
 export type SchemaConflictView = components['schemas']['ConflictView'];
+export type SchemaConnectedGrantProposal = components['schemas']['ConnectedGrantProposal'];
+export type SchemaConnectedReadReview = components['schemas']['ConnectedReadReview'];
 export type SchemaConnector = components['schemas']['Connector'];
 export type SchemaConnectorCapability = components['schemas']['ConnectorCapability'];
 export type SchemaConnectorReport = components['schemas']['ConnectorReport'];
@@ -12099,16 +12359,19 @@ export type SchemaHeinzelAbandonChatTurnInput = components['schemas']['heinzel_a
 export type SchemaHeinzelAcceptAgentContractInput = components['schemas']['heinzel_accept_agent_contract_Input'];
 export type SchemaHeinzelAmendScheduledAgentInput = components['schemas']['heinzel_amend_scheduled_agent_Input'];
 export type SchemaHeinzelAnswerChatInput = components['schemas']['heinzel_answer_chat_Input'];
+export type SchemaHeinzelApproveConnectedReadInput = components['schemas']['heinzel_approve_connected_read_Input'];
 export type SchemaHeinzelApproveModelGrantInput = components['schemas']['heinzel_approve_model_grant_Input'];
 export type SchemaHeinzelAssociateArtifactInput = components['schemas']['heinzel_associate_artifact_Input'];
 export type SchemaHeinzelChatInput = components['schemas']['heinzel_chat_Input'];
 export type SchemaHeinzelNewChatInput = components['schemas']['heinzel_new_chat_Input'];
 export type SchemaHeinzelProfileInput = components['schemas']['heinzel_profile_Input'];
 export type SchemaHeinzelProposeCheckInInput = components['schemas']['heinzel_propose_check_in_Input'];
+export type SchemaHeinzelProposeConnectedReadInput = components['schemas']['heinzel_propose_connected_read_Input'];
 export type SchemaHeinzelProposeModelPolicyInput = components['schemas']['heinzel_propose_model_policy_Input'];
 export type SchemaHeinzelProposeScheduledAgentInput = components['schemas']['heinzel_propose_scheduled_agent_Input'];
 export type SchemaHeinzelProposeSkillDraftInput = components['schemas']['heinzel_propose_skill_draft_Input'];
 export type SchemaHeinzelProposeSkillSharingInput = components['schemas']['heinzel_propose_skill_sharing_Input'];
+export type SchemaHeinzelRevokeConnectedReadInput = components['schemas']['heinzel_revoke_connected_read_Input'];
 export type SchemaHeinzelScheduleControlInput = components['schemas']['heinzel_schedule_control_Input'];
 export type SchemaSystemStatePushInput = components['schemas']['system_state_push_Input'];
 export type SchemaSystemStateResetInput = components['schemas']['system_state_reset_Input'];
@@ -12454,6 +12717,39 @@ export interface operations {
             };
         };
     };
+    heinzel_approve_connected_read: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["heinzel_approve_connected_read_Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectedGrantProposal"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     heinzel_approve_model_grant: {
         parameters: {
             query?: never;
@@ -12622,6 +12918,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CheckReport"];
+                };
+            };
+        };
+    };
+    heinzel_connected_read_review: {
+        parameters: {
+            query: {
+                session_id: string;
+                request_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectedGrantProposal"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -12970,6 +13298,39 @@ export interface operations {
             };
         };
     };
+    heinzel_propose_connected_read: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["heinzel_propose_connected_read_Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectedGrantProposal"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     heinzel_propose_model_policy: {
         parameters: {
             query?: never;
@@ -13089,6 +13450,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SkillSharingProposal"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    heinzel_revoke_connected_read: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["heinzel_revoke_connected_read_Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": boolean;
                 };
             };
             /** @description Validation Error */
@@ -15021,6 +15415,40 @@ export interface operations {
                 /** @description The personal agent session. */
                 durable_session: string;
                 /** @description The contract proposal request id. */
+                request_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatSession"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_runner_chat_propose_connected_read_review: {
+        parameters: {
+            query: {
+                /** @description The personal agent session. */
+                durable_session: string;
+                /** @description The connected read proposal request id. */
                 request_id: string;
             };
             header?: never;

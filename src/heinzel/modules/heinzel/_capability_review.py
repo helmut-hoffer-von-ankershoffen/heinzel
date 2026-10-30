@@ -104,7 +104,11 @@ def validate_capability_read_arguments(capability: str, method: str, arguments: 
                 fields[name] = (hints[name], ... if parameter.default is inspect.Parameter.empty else parameter.default)
         model = create_model("FixedCapabilityRead", __config__=ConfigDict(extra="forbid"), **fields)
         validated = model.model_validate(arguments).model_dump(mode="json", exclude_unset=True)
-        if validated != arguments:
+
+        def canonical(value: object) -> str:
+            return json.dumps(value, sort_keys=True, ensure_ascii=True, separators=(",", ":"), allow_nan=False)
+
+        if canonical(validated) != canonical(arguments):
             raise ValueError  # noqa: TRY301
     except Exception:  # noqa: BLE001 - input diagnostics may contain private arguments
         msg = "The connected read arguments do not match its capability schema"
