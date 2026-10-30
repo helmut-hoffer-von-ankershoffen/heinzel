@@ -140,7 +140,7 @@ def test_installed_first_party_classification_uses_exact_repository_not_reserved
 
 def test_add_in_tool_env_reinstalls_with_plugins(make_kernel, tool_env):
     assert service_for(make_kernel, tool_env).add_command("git+https://github.com/org/heinzel-new@v1.0.0") == [
-        "uv", "tool", "install", "--force", "--python", PYTHON,
+        "uv", "tool", "install", "--reinstall", "--python", PYTHON,
         "heinzel @ git+https://github.com/org/heinzel@v0.1.0",
         "--with", "heinzel-old @ git+https://github.com/org/heinzel-old",
         "--with", "git+https://github.com/org/heinzel-new@v1.0.0",

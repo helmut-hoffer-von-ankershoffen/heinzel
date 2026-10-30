@@ -241,7 +241,23 @@ class UpdateService:
             next=commands,
         )
 
-    def _install(  # noqa: PLR0913 - what is installed, from where, with which plugins, and what for
+    def _install(  # noqa: PLR0913 - preserve one validated target for update and recovery
+        self,
+        core: str,
+        pin: CorePin,
+        plugins: list[CorePin],
+        *,
+        current: str,
+        latest: str | None,
+        target: str | None,
+        channel: str | None = None,
+    ) -> UpdateResult:
+        with self._installation.tool_transaction():
+            return self._install_scoped(
+                core, pin, plugins, current=current, latest=latest, target=target, channel=channel
+            )
+
+    def _install_scoped(  # noqa: PLR0913 - what is installed, from where, with which plugins, and what for
         self,
         core: str,
         pin: CorePin,
@@ -315,9 +331,11 @@ class UpdateService:
         ):
             return result
         before = self._plugin_versions()
-        modes, reasons, failure = self._converge(
-            pin.requirement, plugins, before, "Updating the plugins", may_drop=False
-        )
+        with self._installation.tool_transaction():
+            modes, reasons, failure = self._converge(
+                pin.requirement, plugins, before, "Updating the plugins", may_drop=False
+            )
+            recovery = self._still_working(pin, plugins, result.before) if modes is None else None
         if modes is None:  # nothing changed: uv replaces an environment only once the new one is installed
             names = blocking_plugins([p.requirement for p in plugins], failure) or [
                 canonicalize_name(p.name) for p in plugins
@@ -326,7 +344,8 @@ class UpdateService:
             updates = [
                 self._unchanged(p, before, reason if canonicalize_name(p.name) in names else None) for p in plugins
             ]
-            return result.model_copy(update={"plugins": updates, "message": _with_summary(result.message, updates)})
+            message = _with_summary(result.message, updates)
+            return result.model_copy(update={"plugins": updates, "message": f"{message}\n{recovery}"})
         updates = self._plugin_updates(plugins, modes, reasons, before, self._plugin_versions(), pin.requirement)
         return result.model_copy(
             update={
@@ -498,13 +517,13 @@ class UpdateService:
         except HeinzelError:
             pass
         restore = self._installation.tool_install_command(pin.requirement, [p.requirement for p in plugins])
-        restored = self._installation.attempt(restore, f"Restoring hz {current}")
-        if restored.returncode == 0:
-            try:
+        try:
+            restored = self._installation.attempt(restore, f"Restoring hz {current}")
+            if restored.returncode == 0:
                 return f"hz {self._version()} was restored, with every plugin."
-            except HeinzelError:
-                pass
-        return f"hz may not start; restore it with: {shlex.join(restore)}"
+        except HeinzelError:
+            pass
+        return f"hz may not start; restore it with: {self._installation.tool_restore_hint(restore)}"
 
     def _latest(self, current: str) -> str:
         """The highest release, pre-releases included only when `current` is one."""

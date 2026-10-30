@@ -1,7 +1,7 @@
 """`hz system update` through the CLI with a fake `uv` on PATH, a uv tool receipt and a fake GitHub. Offline.
 
-The fake `uv` rewrites the receipt and the version a fresh `hz` reports, as a real `uv tool install --force` would, or
-fails resolving the way uv does when told to; the fresh `hz` is a script standing in for the tool's interpreter.
+The fake `uv` rewrites the receipt and the version a fresh `hz` reports, as a real `uv tool install --reinstall`
+would, or fails resolving the way uv does when told to; the fresh `hz` stands in for the tool's interpreter.
 """
 
 import json
@@ -115,7 +115,7 @@ def test_a_tag_pinned_install_updates_to_the_latest_release_and_keeps_plugins(ap
     assert result.exit_code == 0, result.output
     assert result.output.strip() == f"Updated hz {__version__} → 99.0.0.\nPlugins unchanged: heinzel-acme."
     [command] = uv_log(env)
-    assert command.startswith("tool install --force --refresh ")
+    assert command.startswith("tool install --reinstall --refresh ")
     assert command.endswith(f"heinzel @ git+{REPO}@v99.0.0 --with {PLUGIN}")
     assert "rev=v99.0.0" in (env / "uv-receipt.toml").read_text()
 

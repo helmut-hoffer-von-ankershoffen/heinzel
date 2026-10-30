@@ -105,7 +105,7 @@ def installation(tmp_path, core: str, uv: FakeUv) -> Installation:
 
 
 def install_command(core: str, *plugins: str, refresh: bool = True) -> list[str]:
-    command = ["uv", "tool", "install", "--force", *(["--refresh"] if refresh else []), "--python", PYTHON, core]
+    command = ["uv", "tool", "install", "--reinstall", *(["--refresh"] if refresh else []), "--python", PYTHON, core]
     for plugin in plugins:
         command += ["--with", plugin]
     return command
@@ -258,9 +258,11 @@ def test_an_upgrade_that_brings_a_newer_version_says_so(tmp_path):
 def test_source_reinstalls_from_there_keeping_plugins(tmp_path):
     uv = FakeUv("0.4.0")
     service = UpdateService(installation(tmp_path, f'git = "{REPO}?rev=main"', uv), FakeReleases())
-    result = service.update("/dist/heinzel.whl", current="0.4.0")
-    assert uv.commands == [install_command("/dist/heinzel.whl", PLUGIN)]
-    assert (result.message.splitlines()[0], result.updated) == ("Reinstalled hz 0.4.0 from /dist/heinzel.whl", True)
+    wheel = tmp_path / "heinzel-0.4.0-py3-none-any.whl"
+    wheel.touch()
+    result = service.update(str(wheel), current="0.4.0")
+    assert uv.commands == [install_command(f"heinzel @ {wheel.as_uri()}", PLUGIN)]
+    assert (result.message.splitlines()[0], result.updated) == (f"Reinstalled hz 0.4.0 from {wheel}", True)
 
 
 def test_a_plugin_that_does_not_allow_the_release_is_kept_and_hz_updates(tmp_path):
@@ -440,8 +442,10 @@ def test_when_restoring_fails_too_the_error_gives_the_command(tmp_path):
     uv = FakeUv("0.2.0")
     uv.failures, uv.hz_starts = ["network down", "still down"], False
     service = UpdateService(installation(tmp_path, f'git = "{REPO}?rev=v0.2.0"', uv), FakeReleases("0.4.0"))
-    with pytest.raises(HeinzelError, match="hz may not start; restore it with: uv tool install --force"):
+    with pytest.raises(HeinzelError, match="hz may not start; restore it with: UV_TOOL_DIR=") as raised:
         service.update(current="0.2.0")
+    assert "UV_TOOL_BIN_DIR=" in str(raised.value)
+    assert "uv tool install --reinstall" in str(raised.value)
 
 
 def test_outside_a_uv_tool_environment_update_refuses(tmp_path):
@@ -509,3 +513,49 @@ def test_channel_release_on_a_release_install_is_the_plain_update(tmp_path):
     uv = FakeUv("0.4.0")
     service = UpdateService(installation(tmp_path, f'git = "{REPO}?rev=v0.4.0"', uv), FakeReleases("0.4.0"))
     assert service.update(current="0.4.0", channel="release").message == "hz 0.4.0 is up to date (releases)."
+
+
+def test_failed_update_restores_with_scoped_target_after_receipt_and_shim_are_removed(tmp_path):
+    class DestructiveFakeUv(FakeUv):
+        def __call__(self, command, environment=None):
+            if not self.commands:
+                (target.prefix / "uv-receipt.toml").unlink()
+                (target.prefix.parent.parent / "entrypoints" / "hz").unlink()
+                self.hz_starts = False
+            return super().__call__(command, environment)
+
+    uv = DestructiveFakeUv("0.2.0")
+    uv.failures = ["network down"]
+    target = installation(tmp_path, f'git = "{REPO}?rev=v0.2.0"', uv)
+    service = UpdateService(target, FakeReleases("0.4.0"))
+    with pytest.raises(HeinzelError, match="was restored, with every plugin"):
+        service.update(current="0.2.0")
+    assert len(uv.commands) == 2
+    assert all(env["UV_TOOL_DIR"] == str(target.prefix.parent) for env in uv.environments)
+    assert all(env["UV_TOOL_BIN_DIR"] == str(target.prefix.parent.parent / "entrypoints") for env in uv.environments)
+    with pytest.raises(HeinzelError, match="Cannot verify the running uv tool"):
+        target.attempt(target.tool_install_command("heinzel", []), "later unrelated operation")
+
+
+def test_failed_plugin_refresh_restores_removed_tool_in_same_scope(tmp_path):
+    class DestructiveFakeUv(FakeUv):
+        def __call__(self, command, environment=None):
+            if not self.commands:
+                (target.prefix / "uv-receipt.toml").unlink()
+                (target.prefix.parent.parent / "entrypoints" / "hz").unlink()
+                self.hz_starts = False
+            return super().__call__(command, environment)
+
+    uv = DestructiveFakeUv("0.4.0")
+    uv.failures = ["network down"]
+    target = installation(tmp_path, f'git = "{REPO}?rev=v0.4.0"', uv)
+    (target.prefix / "uv-receipt.toml").write_text(
+        f'[tool]\nrequirements = [{{ name = "heinzel", git = "{REPO}?rev=v0.4.0" }},'
+        ' { name = "heinzel-acme", specifier = ">=1" }]\n',
+        encoding="utf-8",
+    )
+    _bind_target(target)
+    result = UpdateService(target, FakeReleases("0.4.0")).update(current="0.4.0")
+    assert len(uv.commands) == 2
+    assert "was restored, with every plugin" in result.message
+    assert result.plugins[0].status == "failed"

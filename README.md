@@ -80,7 +80,9 @@ The standard app includes its verified default plugins. For a minimal core with 
 `hz system update` then moves core to the latest PyPI
 release in place, keeping plugins (`--source <spec>` moves to another source or ref). It follows releases
 (`--channel main` or setting `update_channel` for the newest commit of `main`); pinned to another branch or a commit,
-it says which `--source` moves it. Shell completion: `hz --install-completion`.
+it says which `--source` moves it. Updates and plugin changes verify the current uv receipt and its linked entrypoints
+before selecting the tool and executable directories. If entrypoints are copied, missing or cannot be verified, use
+uv directly with the intended tool and executable directories explicitly selected. Shell completion: `hz --install-completion`.
 
 **From Claude Code**, add the plugin and let `/hz-init` do everything — install, plugins, configuration, agent
 skills:

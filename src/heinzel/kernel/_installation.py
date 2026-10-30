@@ -9,16 +9,27 @@ environment (a development checkout) packages are installed with `uv pip install
 """
 
 import re
+import shlex
 import shutil
 import subprocess
 import sys
 import tomllib
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Generator, Mapping, Sequence
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 from urllib.parse import parse_qs, urlsplit, urlunsplit
 
+from packaging.requirements import InvalidRequirement, Requirement
+from packaging.utils import (
+    InvalidSdistFilename,
+    InvalidWheelFilename,
+    canonicalize_name,
+    parse_sdist_filename,
+    parse_wheel_filename,
+)
 from packaging.version import InvalidVersion, Version
 
 from heinzel.kernel._credentials import subprocess_environment
@@ -46,6 +57,48 @@ def _run(command: Sequence[str], environment: Mapping[str, str] | None = None) -
         )
     except subprocess.TimeoutExpired:
         return subprocess.CompletedProcess(command, 124, "", f"{command[0]} timed out after {COMMAND_TIMEOUT}s")
+
+
+def _core_requirement(source: str) -> str:  # noqa: C901 - validate several source forms before invoking uv
+    """Bind a selected source to the Heinzel distribution before asking uv to resolve it.
+
+    Raises:
+        HeinzelError: If a requirement or identifiable artifact names another distribution.
+    """
+    message = "The selected source must install the heinzel distribution."
+    try:
+        requirement = Requirement(source)
+    except InvalidRequirement:
+        parts = urlsplit(source)
+        if parts.scheme in {"https", "http", "file", "git+https", "git+ssh", "git+file"}:
+            url = source
+        else:
+            try:
+                path = Path(source).expanduser().resolve(strict=True)
+                url = path.as_uri()
+            except (OSError, ValueError) as exc:
+                raise HeinzelError(message) from exc
+        try:
+            requirement = Requirement(f"{CORE_DISTRIBUTION} @ {url}")
+        except InvalidRequirement as exc:
+            raise HeinzelError(message) from exc
+    if canonicalize_name(requirement.name) != CORE_DISTRIBUTION or requirement.marker:
+        raise HeinzelError(message)
+    if requirement.url:
+        filename = Path(urlsplit(requirement.url).path).name
+        name: str
+        try:
+            if filename.endswith(".whl"):
+                name, _, _, _ = parse_wheel_filename(filename)
+            elif filename.endswith((".tar.gz", ".zip")):
+                name, _ = parse_sdist_filename(filename)
+            else:
+                name = CORE_DISTRIBUTION
+        except (InvalidWheelFilename, InvalidSdistFilename) as exc:
+            raise HeinzelError(message) from exc
+        if canonicalize_name(name) != CORE_DISTRIBUTION:
+            raise HeinzelError(message)
+    return str(requirement)
 
 
 def requirement_from_receipt(entry: dict[str, Any]) -> str:
@@ -183,6 +236,9 @@ class Installation:
         self.prefix = prefix or Path(sys.prefix)
         self._runner = runner
         self._uv = uv or shutil.which("uv")
+        self._tool_scope: ContextVar[tuple[dict[str, str], tuple[tuple[int, int], ...]] | None] = ContextVar(
+            "installation_tool_scope", default=None
+        )
 
     @property
     def is_tool(self) -> bool:
@@ -216,7 +272,16 @@ class Installation:
         resolved to its newest commit and an index to its newest release.
         """
         python = f"{sys.version_info.major}.{sys.version_info.minor}"
-        command = [self.uv, "tool", "install", "--force", *(["--refresh"] if refresh else []), "--python", python, core]
+        command = [
+            self.uv,
+            "tool",
+            "install",
+            "--reinstall",
+            *(["--refresh"] if refresh else []),
+            "--python",
+            python,
+            _core_requirement(core),
+        ]
         for plugin in plugins:
             command += ["--with", plugin]
         return command
@@ -265,6 +330,47 @@ class Installation:
         except (OSError, ValueError, TypeError, KeyError, AttributeError, tomllib.TOMLDecodeError) as exc:
             raise HeinzelError(msg) from exc
 
+    @contextmanager
+    def tool_transaction(self) -> Generator[None]:
+        """Keep a validated target only for one update and its recovery attempt."""
+        target = self._tool_target()
+        identities = self._target_directories(target)
+        token = self._tool_scope.set((target, identities))
+        try:
+            yield
+        finally:
+            self._tool_scope.reset(token)
+
+    @staticmethod
+    def _target_directories(target: Mapping[str, str]) -> tuple[tuple[int, int], ...]:
+        """Refuse a missing, replaced or symlinked authority directory.
+
+        Raises:
+            HeinzelError: If a target directory cannot be verified.
+        """
+        result = []
+        msg = "The verified uv tool target changed; update it explicitly with uv."
+        try:
+            for key in ("UV_TOOL_DIR", "UV_TOOL_BIN_DIR"):
+                path = Path(target[key])
+                if path.is_symlink() or not path.is_dir() or path.resolve(strict=True) != path:
+                    raise HeinzelError(msg)
+                info = path.stat()
+                result.append((info.st_dev, info.st_ino))
+        except (OSError, KeyError) as exc:
+            raise HeinzelError(msg) from exc
+        return tuple(result)
+
+    def _current_tool_target(self) -> dict[str, str]:
+        scope = self._tool_scope.get()
+        if scope is None:
+            return self._tool_target()
+        target, identities = scope
+        if self._target_directories(target) != identities:
+            msg = "The verified uv tool target changed; update it explicitly with uv."
+            raise HeinzelError(msg)
+        return target
+
     def run(
         self, command: list[str], failure: str, activity: str, environment: Mapping[str, str] | None = None
     ) -> None:
@@ -273,17 +379,57 @@ class Installation:
         Raises:
             HeinzelError: With `failure` and the command's output, if it fails.
         """
+        if command[1:3] == ["tool", "install"]:
+            self._run_tool(command, failure, activity, environment)
+            return
         result = self.attempt(command, activity, environment)
         if result.returncode != 0:
             msg = f"{failure}\n{result.stderr.strip() or result.stdout.strip()}"
             raise HeinzelError(msg)
+
+    def _run_tool(self, command: list[str], failure: str, activity: str, environment: Mapping[str, str] | None) -> None:
+        requirements = self.requirements()
+        if not requirements:
+            msg = "Cannot verify the running uv tool requirements; update it explicitly with uv."
+            raise HeinzelError(msg)
+        restore = self.tool_install_command(requirements[0], requirements[1:])
+        with self.tool_transaction():
+            target = self._current_tool_target()
+            result = self.attempt(command, activity, environment)
+            if result.returncode == 0:
+                return
+            detail = result.stderr.strip() or result.stdout.strip()
+            try:
+                intact = self._tool_target() == target
+            except HeinzelError:
+                intact = False
+            recovery = ""
+            if not intact:
+                try:
+                    restored = self.attempt(restore, "Restoring the previous tool", environment)
+                    if restored.returncode == 0:
+                        self.hz("--version")
+                        recovery = "The previous tool was restored."
+                except HeinzelError:
+                    pass
+                if not recovery:
+                    recovery = f"The previous tool may not start; restore it with: {self.tool_restore_hint(restore)}"
+            msg = "\n".join(part for part in (failure, detail, recovery) if part)
+            raise HeinzelError(msg)
+
+    def tool_restore_hint(self, command: Sequence[str]) -> str:
+        """Show a restore command with its verified tool store and executable directory."""
+        scope = self._tool_scope.get()
+        target = scope[0] if scope else self._tool_target()
+        variables = " ".join(f"{key}={shlex.quote(value)}" for key, value in target.items())
+        return f"{variables} {shlex.join(command)}"
 
     def attempt(
         self, command: list[str], activity: str, environment: Mapping[str, str] | None = None
     ) -> subprocess.CompletedProcess[str]:
         """Run a command with a progress indicator and return how it ended, for callers that explain a failure."""
         if command[1:3] == ["tool", "install"]:
-            environment = dict(environment or {}) | self._tool_target()
+            environment = dict(environment or {}) | self._current_tool_target()
         with self._progress.task(activity):
             return self._runner(command, environment) if environment else self._runner(command)
 
