@@ -190,7 +190,7 @@ def test_fifo_executable_is_refused_without_blocking(tmp_path):
     fifo = tmp_path / "fifo"
     os.mkfifo(fifo)
     with pytest.raises(HeinzelError, match="executable"):
-        UserChatService._executable(str(fifo))
+        UserChatService.executable(str(fifo))
 
 
 @pytest.mark.parametrize("status", ["pending", "done"])
@@ -323,7 +323,7 @@ def test_abandon_requires_owner_stopped_turn_and_never_changes_finished_reply(tm
         current, crud, session = setup_chat(current)
         executable = fake_claude(tmp_path)
         service = UserChatService(crud, current, RunnerSnapshotService(), load=lambda: FixtureConfig(executable))
-        with pytest.raises(HeinzelError, match="previously started"):
+        with pytest.raises(HeinzelError, match="stopped uncertain turn"):
             service.abandon(session, "hello")
         turn = interactive_turn_id("hello")
         with crud.repository.control_writer(session) as writer:
