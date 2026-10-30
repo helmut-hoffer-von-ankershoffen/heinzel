@@ -7,6 +7,7 @@ packet or the empty working directory it starts in (ADR 0029, option a). Nothing
 foreground daemon loop.
 """
 
+import asyncio
 import errno
 import hashlib
 import json
@@ -62,6 +63,7 @@ from heinzel.kernel import (
     toml_value,
 )
 from heinzel.modules.heinzel import _measure, _playbooks
+from heinzel.modules.heinzel._autonomous_schedule import AutonomousSchedules, ScheduleBinding
 from heinzel.modules.heinzel._contracts import Contract, collect, read_contract
 from heinzel.modules.heinzel._graph import CODES as GRAPH_CODES
 from heinzel.modules.heinzel._graph import asset as asset_id
@@ -531,7 +533,9 @@ class HeinzelService:
         requirements = tuple(frontmatter.hz.requirements().values())
         return Requester(module=MODULE, kind="job", name=self.job_name(contract), requires=requirements)
 
-    def compiled(self, *, sessions: SessionCrud | None = None) -> CompiledJobs:
+    def compiled(
+        self, *, sessions: SessionCrud | None = None, schedules: AutonomousSchedules | None = None
+    ) -> CompiledJobs:
         """The daemon jobs: one per valid contract with a schedule that your daemon runs, read afresh."""
         jobs: list[JobLet] = []
         for contract in self.contracts():
@@ -543,7 +547,59 @@ class HeinzelService:
                 logger.exception("compiling %s failed; the other contracts still run", contract.qualified)
         if sessions is not None:
             jobs.extend(self._check_in_jobs(sessions))
+            if schedules is not None:
+                jobs.extend(self._autonomous_jobs(sessions, schedules))
         return CompiledJobs(jobs=tuple(jobs))
+
+    def _autonomous_jobs(self, sessions: SessionCrud, schedules: AutonomousSchedules) -> list[JobLet]:
+        """Compile only exact approved generic schedules; old notices remain separate."""
+        if not self._kernel.provides(CurrentUser):
+            return []
+        try:
+            self._kernel.resolve(CurrentUser).context()
+            heads = sessions.repository.heads()
+        except HeinzelError:
+            return []
+        jobs: list[JobLet] = []
+        for head in heads:
+            if head.problem:
+                continue
+            try:
+                events = sessions.repository.control_read(head.session).events
+                requests = [event.key for event in events if event.kind == "agent.schedule-proposed" and event.key]
+                for request in requests:
+                    try:
+                        binding = schedules.approved(head.session, request)
+                    except HeinzelError:
+                        continue
+                    jobs.append(self._autonomous_job(schedules, binding))
+            except HeinzelError:
+                continue
+        return jobs
+
+    def _autonomous_job(self, schedules: AutonomousSchedules, binding: ScheduleBinding) -> JobLet:
+        """A daemon tick uses its real slot; the user-approved binding is rechecked at launch."""
+
+        def run(slot: datetime) -> JsonValue:
+            asyncio.run(schedules.tick(binding.session_id, binding.request_id, slot))
+            return {"status": "completed"}
+
+        def unavailable() -> JsonValue:
+            msg = "An agent schedule requires a daemon schedule slot"
+            raise HeinzelError(msg)
+
+        return JobLet(
+            name=f"agent-{binding.session_id.lower()}-{hashlib.sha256(binding.request_id.encode()).hexdigest()[:12]}",
+            func=unavailable,
+            run_for_slot=run,
+            scheduled_only=True,
+            max_tick_interval=timedelta(seconds=binding.cadence_seconds),
+            summary="Approved private agent schedule",
+            schedule="* * * * *",
+            timeout=timedelta(seconds=binding.timeout_seconds + 30),
+            retries=0,
+            catch_up=CatchUp.LATEST,
+        )
 
     def _check_in_jobs(self, sessions: SessionCrud) -> list[JobLet]:
         """Compile only the current owner's approved five-minute notification records."""

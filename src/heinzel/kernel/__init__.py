@@ -21,6 +21,7 @@ from heinzel.kernel._boot import boot
 from heinzel.kernel._bounded_process import MAX_OUTPUT as PROCESS_MAX_OUTPUT
 from heinzel.kernel._bounded_process import ProcessExecute, ProcessOutcome, run_bounded_process, signal_process_group
 from heinzel.kernel._capabilities import CAPABILITIES, MODES, NO_ADAPTER, Capability, Mode, Requirement
+from heinzel.kernel._capability_schema import capability_read_schema
 from heinzel.kernel._chat import ActionGate, ProposedCall
 from heinzel.kernel._chat_services import (
     CheckInChatContext,
@@ -40,6 +41,12 @@ from heinzel.kernel._config import (
     env_prefix,
     toml_value,
     user_config_dir,
+)
+from heinzel.kernel._connected_read import (
+    ConnectedReadLease,
+    ConnectedReadMethod,
+    ConnectedReadReview,
+    ConnectedReadService,
 )
 from heinzel.kernel._contributions import (
     ICONS,
@@ -337,6 +344,10 @@ __all__ = [
     "ConfiguredApiLease",
     "ConfiguredApiSnapshot",
     "ConfirmedLines",
+    "ConnectedReadLease",
+    "ConnectedReadMethod",
+    "ConnectedReadReview",
+    "ConnectedReadService",
     "ContractTemplate",
     "ContributionLet",
     "CoreMetadataVerifier",
@@ -531,6 +542,7 @@ __all__ = [
     "WidgetLet",
     "Window",
     "boot",
+    "capability_read_schema",
     "check_repository_url",
     "check_target",
     "clean_text",

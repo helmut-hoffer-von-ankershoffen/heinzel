@@ -18,11 +18,14 @@ from pydantic_ai.models import Model
 from heinzel import ConfiguredApiAccess, CurrentUser, HeinzelError, Kernel, SessionEvent
 from heinzel.modules.heinzel._budget_reservation import initialize_budget
 from heinzel.modules.heinzel._claude_subscription_model import ClaudeSubscriptionModel
+from heinzel.modules.heinzel._connected_grants import ConnectedReadFailedError, ConnectedReadGrants
 from heinzel.modules.heinzel._engine import EngineCheckpoint, TurnAuthority, TurnDeps, TurnLimits, run_turn
 from heinzel.modules.heinzel._host_tools import HostToolCatalog, OperationFailedError
 from heinzel.modules.heinzel._model_admission import ConnectedModelFactory, connected_model
 from heinzel.modules.heinzel._model_grants import ModelGrant, ModelGrants
 from heinzel.modules.heinzel._priced_model import ReservedModel
+from heinzel.modules.heinzel._schedule_suggestions import ScheduleSuggestionTools, schedule_suggestion_schemas
+from heinzel.modules.heinzel._scheduled_notifications import ScheduledNotifications
 from heinzel.modules.heinzel._session_bodies import immutable_body
 from heinzel.modules.heinzel._session_crud import SessionCrud
 from heinzel.modules.heinzel._session_models import BackendBinding, SessionMessage
@@ -190,6 +193,9 @@ class InteractiveTurn:
         allow_ungranted_tools: bool = True,
         backend_binding: BackendBinding | None = None,
         user_proposal_policy: Callable[[], bool] | None = None,
+        connected: ConnectedReadGrants | None = None,
+        scheduled_notifications: ScheduledNotifications | None = None,
+        prepare: Callable[[], None] | None = None,
     ) -> SessionMessage:
         """Execute one accepted message; an interrupted attempt never automatically re-executes.
 
@@ -204,6 +210,8 @@ class InteractiveTurn:
         turn = interactive_turn_id(request_id)
         with repo.main_writer(session_id) as turn_writer:
             self._check_owner()
+            if prepare is not None:
+                prepare()
             if isinstance(model, (ReservedModel, ClaudeSubscriptionModel)):
                 model.bind_fence(TurnAuthorityFence(repo, session_id, turn_writer))
             events = repo.control_read(session_id).events
@@ -217,6 +225,7 @@ class InteractiveTurn:
                 msg = "Approved operations require a host-owned tool catalog"
                 raise HeinzelError(msg)
             schemas = catalog.approved_preview(session_id, expected_grant) if catalog and expected_grant else []
+            connected_schema = connected.tool_schema(session_id) if connected is not None else None
             accepted = next(
                 (e for e in events if e.kind == "message.accepted" and e.key == f"message-{request_id}"), None
             )
@@ -226,6 +235,9 @@ class InteractiveTurn:
             prior = next((e for e in events if e.kind == "message.replied" and e.key == turn), None)
             if prior is not None:
                 return self._crud.read_message(session_id, prior)
+            if any(e.kind == "interactive.abandoned" and e.key == turn for e in events):
+                msg = "This turn was set aside and will not be retried"
+                raise HeinzelError(msg)
             if any(e.kind == "interactive.started" and e.key == turn for e in events):
                 msg = "This interrupted turn has an uncertain outcome and cannot be retried automatically"
                 raise HeinzelError(msg)
@@ -256,12 +268,23 @@ class InteractiveTurn:
                             or abandoned[0].data.get("message_id") != incoming_id
                             or abandoned[0].data.get("owner") != repo.principal_id
                             or abandoned[0].data.get("origin") not in {"cli", "api-bearer", "web-session", "web-device"}
-                            or not any(
-                                e.kind == "interactive.started"
-                                and e.key == interactive_turn_id(incoming_id)
-                                and e.seq < abandoned[0].seq
-                                and e.data.get("message_id") == incoming_id
-                                for e in events
+                            or not (
+                                (
+                                    abandoned[0].data.get("unstarted") is True
+                                    and incoming.data.get("origin") == "daemon"
+                                    and abandoned[0].seq > incoming.seq
+                                    and not any(
+                                        e.kind == "interactive.started" and e.key == interactive_turn_id(incoming_id)
+                                        for e in events
+                                    )
+                                )
+                                or any(
+                                    e.kind == "interactive.started"
+                                    and e.key == interactive_turn_id(incoming_id)
+                                    and e.seq < abandoned[0].seq
+                                    and e.data.get("message_id") == incoming_id
+                                    for e in events
+                                )
                             )
                         ):
                             msg = "An earlier turn has an invalid resolution record"
@@ -337,14 +360,29 @@ class InteractiveTurn:
                 if user_tools
                 else set[str]()
             )
+            schedule_tools = (
+                ScheduleSuggestionTools(self._crud, session_id, turn, self._owner, turn_writer, user_proposal_policy)
+                if user_proposal_policy is not None
+                else None
+            )
+            schedule_names = {"schedule:current", "schedule:propose"}
 
-            def dispatch(name: str, arguments: dict[str, JsonValue]) -> str:  # noqa: C901, PLR0911 - closed dispatch cases
+            def dispatch_general(name: str, arguments: dict[str, JsonValue]) -> str:  # noqa: C901, PLR0911, PLR0912 - closed dispatch cases
                 nonlocal calls
                 self._check_owner()
                 calls += 1
                 args = _JSON.validate_python(arguments, strict=True)
                 if len(json.dumps(args, ensure_ascii=False).encode()) > _MAX_ARGUMENT_BYTES:
                     return "Tool request is too large."
+                if schedule_tools is not None and name in schedule_names:
+                    self._event(session_id, turn, calls, name, "requested")
+                    try:
+                        result = schedule_tools.dispatch(name, args, calls)
+                    except HeinzelError:
+                        self._event(session_id, turn, calls, name, "denied")
+                        return "The private schedule suggestion could not be recorded."
+                    self._event(session_id, turn, calls, name, "completed")
+                    return result
                 if user_tools is not None and name in user_names:
                     self._event(session_id, turn, calls, name, "requested")
                     try:
@@ -394,6 +432,42 @@ class InteractiveTurn:
                 self._event(session_id, turn, calls, "unavailable", "denied")
                 return "Tool unavailable: no host-authorized implementation is registered."
 
+            def dispatch(name: str, arguments: dict[str, JsonValue]) -> str:
+                nonlocal calls
+                if name == "notification:send":
+                    self._check_owner()
+                    calls += 1
+                    self._event(session_id, turn, calls, name, "requested")
+                    try:
+                        if scheduled_notifications is None:
+                            msg = "The scheduled notification is unavailable"
+                            raise HeinzelError(msg)  # noqa: TRY301
+                        outcome, text = scheduled_notifications.send(arguments, turn_writer)
+                    except Exception:  # noqa: BLE001 - redact provider and private argument errors
+                        self._event(session_id, turn, calls, name, "denied")
+                        return "The scheduled notification was not authorized or its bounds were reached."
+                    self._event(session_id, turn, calls, name, "completed" if outcome == "recorded" else "failed")
+                    return text
+                if name != "connected_read":
+                    return dispatch_general(name, arguments)
+                self._check_owner()
+                calls += 1
+                args = _JSON.validate_python(arguments, strict=True)
+                self._event(session_id, turn, calls, name, "requested")
+                try:
+                    if connected is None or connected_schema is None or args:
+                        msg = "The connected read is unavailable or has dynamic arguments"
+                        raise HeinzelError(msg)  # noqa: TRY301
+                    value = connected.read(session_id, turn_writer)
+                except ConnectedReadFailedError:
+                    self._event(session_id, turn, calls, name, "failed")
+                    return "The connected read began but did not produce a usable result."
+                except HeinzelError:
+                    self._event(session_id, turn, calls, name, "denied")
+                    return "Connected read unavailable or its approval changed."
+                self._event(session_id, turn, calls, name, "completed")
+                return json.dumps(value, ensure_ascii=False)
+
             def checkpoint(item: EngineCheckpoint) -> None:
                 self._check_owner()
                 with repo.control_writer(session_id) as writer:
@@ -429,7 +503,10 @@ class InteractiveTurn:
                     + json.dumps(
                         [{"name": tool.identity, "schema": tool.schema} for tool in schemas]
                         + (skill_tool_schemas(expected_grant) if expected_grant else [])
-                        + (user_proposal_schemas() if user_tools else []),
+                        + (user_proposal_schemas() if user_tools else [])
+                        + (schedule_suggestion_schemas() if schedule_tools else [])
+                        + ([connected_schema] if connected_schema is not None else [])
+                        + ([scheduled_notifications.schema()] if scheduled_notifications is not None else []),
                         ensure_ascii=True,
                     )
                 ),
@@ -524,7 +601,7 @@ class InteractiveTurn:
                 or not isinstance(name, str)
                 or (
                     name not in _READ_TOOLS
-                    and name not in {"unavailable", "hz.read"}
+                    and name not in {"unavailable", "hz.read", "connected_read"}
                     and re.fullmatch(r"[a-z][a-z0-9_.-]{0,127}:[a-z][a-z0-9-]{0,127}", name) is None
                 )
                 or status not in {"requested", "completed", "failed", "denied"}

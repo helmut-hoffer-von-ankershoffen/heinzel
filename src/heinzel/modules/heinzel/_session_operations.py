@@ -8,7 +8,7 @@ from typing import Annotated, Literal
 
 from pydantic import Field, JsonValue
 
-from heinzel import Config, ConfiguredApiAccess, CurrentUser, HeinzelError, Module
+from heinzel import Config, ConfiguredApiAccess, CurrentUser, HeinzelError, Module, Notifications
 from heinzel.kernel import (
     CheckInChatContext,
     CheckInChatContextSource,
@@ -17,11 +17,39 @@ from heinzel.kernel import (
     Kernel,
     RunnerSnapshotProvider,
 )
-from heinzel.kernel._approval import ApprovalConfirmation, ApprovalIssuer
+from heinzel.kernel._approval import ApprovalConfirmation, ApprovalIssuer, arguments_hash
+from heinzel.modules.heinzel._autonomous_schedule import (
+    AutonomousSchedules,
+    ScheduleBinding,
+    ScheduleReviewPage,
+    ScheduleReviewView,
+)
+from heinzel.modules.heinzel._connected_grants import (
+    ConnectedGrant,
+    ConnectedGrantProposal,
+    ConnectedReadGrants,
+    ConnectedReadOption,
+    ConnectedReadState,
+    RollingConnectedGrantProposal,
+    RollingWindowPolicy,
+)
 from heinzel.modules.heinzel._contract_review import ContractReview, ContractReviewView
 from heinzel.modules.heinzel._model_grants import ModelGrants
 from heinzel.modules.heinzel._model_policy_operations import ModelPolicyService, register_model_policy_operations
 from heinzel.modules.heinzel._models import HeinzelSettings
+from heinzel.modules.heinzel._notification_delivery import NotificationDelivery
+from heinzel.modules.heinzel._notification_proposals import (
+    NotificationProposal,
+    NotificationProposalPage,
+    NotificationProposals,
+)
+from heinzel.modules.heinzel._schedule_suggestions import ScheduleSuggestion, latest_schedule_suggestion
+from heinzel.modules.heinzel._scheduled_notifications import (
+    ScheduledNotificationPage,
+    ScheduledNotificationPolicy,
+    ScheduledNotificationRecovery,
+    ScheduledNotificationView,
+)
 from heinzel.modules.heinzel._session_crud import SessionCrud
 from heinzel.modules.heinzel._session_models import (
     HeinzelAppearance,
@@ -112,6 +140,29 @@ class _SessionApprovalIssuer(ApprovalIssuer):
         return session, request
 
     def review(self, module: str, operation: str, arguments: dict[str, JsonValue]) -> dict[str, JsonValue]:
+        if module == "heinzel" and operation == "queue-agent-notification":
+            if self.kernel is None:
+                msg = "Notification review is unavailable"
+                raise HeinzelError(msg)
+            session, request = self._model_args(arguments)
+            current = self.kernel.resolve(CurrentUser)
+            return NotificationProposals(self.service).get(session, request, current).model_dump(mode="json")
+        if module == "heinzel" and operation == "approve-connected-read":
+            if self.kernel is None:
+                msg = "Connected read review is unavailable"
+                raise HeinzelError(msg)
+            return (
+                ConnectedReadGrants(self.service, self.kernel.resolve(CurrentUser), self.kernel)
+                .review(*self._model_args(arguments))
+                .model_dump(mode="json")
+            )
+        if module == "heinzel" and operation == "approve-agent-schedule":
+            if self.kernel is None:
+                msg = "Schedule review is unavailable"
+                raise HeinzelError(msg)
+            return (
+                self.kernel.resolve(AutonomousSchedules).current(*self._model_args(arguments)).model_dump(mode="json")
+            )
         if module == "heinzel" and operation == "accept-agent-contract":
             return ContractReview(self.service).current(*self._model_args(arguments)).model_dump(mode="json")
         if module == "heinzel" and operation == "approve-model-grant":
@@ -126,7 +177,57 @@ class _SessionApprovalIssuer(ApprovalIssuer):
         self._check_daemon(module, operation, arguments)
         return self.service.review(module, operation, arguments)
 
+    def _issue_connected(self, arguments: dict[str, JsonValue], provenance: str) -> str:
+        if self.kernel is None:
+            msg = "Connected read review is unavailable"
+            raise HeinzelError(msg)
+        session, request = self._model_args(arguments)
+        review = arguments.get("review")
+        if not isinstance(review, dict) or arguments_hash(review) != arguments_hash(
+            self.review("heinzel", "approve-connected-read", arguments)
+        ):
+            msg = "The reviewed connected read changed"
+            raise HeinzelError(msg)
+        return ConnectedReadGrants(self.service, self.kernel.resolve(CurrentUser), self.kernel).issue(
+            session, request, provenance
+        )
+
+    def _issue_notification(self, arguments: dict[str, JsonValue], provenance: str) -> str:
+        if self.kernel is None:
+            msg = "Notification review is unavailable"
+            raise HeinzelError(msg)
+        session, request = self._model_args(arguments)
+        if arguments_hash(arguments.get("review")) != arguments_hash(
+            self.review("heinzel", "queue-agent-notification", arguments)
+        ):
+            msg = "The reviewed notification changed"
+            raise HeinzelError(msg)
+        return self.kernel.resolve(NotificationDelivery).issue(session, request, provenance)
+
+    def _applied_notification(self, arguments: dict[str, JsonValue]) -> bool:
+        if self.kernel is None:
+            return False
+        session, request = self._model_args(arguments)
+        if arguments_hash(arguments.get("review")) != arguments_hash(
+            self.review("heinzel", "queue-agent-notification", arguments)
+        ):
+            return False
+        return self.kernel.resolve(NotificationDelivery).recover(session, request, write_receipt=False) == "recorded"
+
     def issue(self, module: str, operation: str, arguments: dict[str, JsonValue], provenance: str) -> str:
+        if module == "heinzel" and operation == "queue-agent-notification":
+            return self._issue_notification(arguments, provenance)
+        if module == "heinzel" and operation == "approve-connected-read":
+            return self._issue_connected(arguments, provenance)
+        if module == "heinzel" and operation == "approve-agent-schedule":
+            if self.kernel is None:
+                msg = "Schedule review is unavailable"
+                raise HeinzelError(msg)
+            session, request = self._model_args(arguments)
+            if arguments_hash(arguments.get("review")) != arguments_hash(self.review(module, operation, arguments)):
+                msg = "The reviewed schedule changed"
+                raise HeinzelError(msg)
+            return self.kernel.resolve(AutonomousSchedules).issue(session, request, provenance)
         if module == "heinzel" and operation == "accept-agent-contract":
             session, request = self._model_args(arguments)
             if arguments.get("review") != self.review(module, operation, arguments):
@@ -142,11 +243,30 @@ class _SessionApprovalIssuer(ApprovalIssuer):
         self._check_daemon(module, operation, arguments)
         return self.service.issue(module, operation, arguments, provenance)
 
+    def _applied_connected(self, arguments: dict[str, JsonValue]) -> bool:
+        if self.kernel is None:
+            return False
+        session, request = self._model_args(arguments)
+        expected = arguments.get("review")
+        if not isinstance(expected, dict):
+            return False
+        grant = ConnectedReadGrants(self.service, self.kernel.resolve(CurrentUser), self.kernel).approved(session)
+        return grant.request_id == request and arguments_hash(grant.model_dump(mode="json")) == arguments_hash(expected)
+
     def applied(self, module: str, operation: str, arguments: dict[str, JsonValue]) -> bool:
-        if module == "heinzel" and operation == "accept-agent-contract":
-            return ContractReview(self.service).applied(*self._model_args(arguments))
-        if module == "heinzel" and operation == "approve-model-grant":
-            return ModelGrants(self.service).applied(*self._model_args(arguments))
+        if module == "heinzel" and operation == "queue-agent-notification":
+            return self._applied_notification(arguments)
+        if module == "heinzel" and operation == "approve-connected-read":
+            return self._applied_connected(arguments)
+        if module == "heinzel" and operation == "approve-agent-schedule":
+            if self.kernel is None:
+                return False
+            return self.kernel.resolve(AutonomousSchedules).applied(*self._model_args(arguments))
+        if module == "heinzel" and operation in {"accept-agent-contract", "approve-model-grant"}:
+            service = (
+                ContractReview(self.service) if operation == "accept-agent-contract" else ModelGrants(self.service)
+            )
+            return service.applied(*self._model_args(arguments))
         return self.service.applied(module, operation, arguments)
 
 
@@ -301,6 +421,143 @@ def _register_contract_review_operations(module: Module) -> None:
         return contracts.accept(session_id, request_id, approval_proof)
 
 
+def _register_connected_read_operations(module: Module) -> None:
+    """Register private review surfaces; human confirmation alone can consume an issued proof."""
+
+    @module.operation(private=True, heads={"web", "api-private"}, audience="everyday")
+    def connected_read_options(service: ConnectedReadGrants, session_id: Identity) -> list[ConnectedReadOption]:
+        """List selected read methods without opening a provider."""
+        return service.options(session_id)
+
+    @module.operation(private=True, heads={"web", "api-private"}, audience="everyday")
+    def connected_read_state(service: ConnectedReadGrants, session_id: Identity) -> ConnectedReadState:
+        """Inspect the latest recorded connected-read state for this session."""
+        return service.state(session_id)
+
+    @module.operation(private=True, read_only=False, heads={"web", "api-private"}, audience="everyday")
+    def propose_connected_read(  # noqa: PLR0913, PLR0917 - exact review parameters
+        service: ConnectedReadGrants,
+        session_id: Identity,
+        request_id: Request,
+        capability: Annotated[str, Field(description="The selected read capability.")],
+        method: Annotated[str, Field(description="The exact read method to review.")],
+        fixed_arguments: Annotated[dict[str, JsonValue], Field(description="Exact fixed read arguments for review.")],
+    ) -> ConnectedGrantProposal:
+        """Observe and propose exact connected-read terms; this grants no access."""
+        return service.propose(session_id, request_id, capability, method, fixed_arguments)
+
+    @module.operation(private=True, read_only=False, heads={"web", "api-private"}, audience="everyday")
+    def propose_rolling_connected_read(  # noqa: PLR0913, PLR0917 - exact explicit reviewed terms
+        service: ConnectedReadGrants,
+        session_id: Identity,
+        request_id: Request,
+        capability: Annotated[str, Field(description="Selected read capability.")],
+        method: Annotated[str, Field(description="Selected read method.")],
+        fixed_arguments: Annotated[
+            dict[str, JsonValue], Field(description="Fixed arguments excluding the rolling window.")
+        ],
+        window_policy: RollingWindowPolicy,
+    ) -> RollingConnectedGrantProposal:
+        """Propose explicit bounded rolling read terms; this grants no access."""
+        return service.propose_rolling(session_id, request_id, capability, method, fixed_arguments, window_policy)
+
+    @module.operation(private=True, heads={"web", "api-private"}, audience="everyday")
+    def connected_read_review(
+        service: ConnectedReadGrants, session_id: Identity, request_id: Request
+    ) -> ConnectedGrant:
+        """Inspect current exact connected-read proposal; this does not approve it."""
+        return service.review(session_id, request_id)
+
+    @module.operation(private=True, read_only=False, heads={"web", "api-private"}, audience="everyday")
+    def revoke_connected_read(service: ConnectedReadGrants, session_id: Identity, request_id: Request) -> bool:
+        """Revoke this exact connected-read grant before future tool calls."""
+        service.revoke(session_id, request_id)
+        return True
+
+    @module.operation(private=True, read_only=False, heads={"web", "api-private"}, audience="everyday")
+    def approve_connected_read(  # noqa: PLR0913, PLR0917 - exact human confirmation
+        service: ConnectedReadGrants,
+        confirmation: ApprovalConfirmation,
+        session_id: Identity,
+        request_id: Request,
+        review: Annotated[
+            dict[str, JsonValue], Field(description="The exact reviewed provider, source, account and read terms.")
+        ],
+        approval_proof: Annotated[str, Field(description="In-process proof from the human confirmation boundary.")],
+    ) -> ConnectedGrant:
+        """Record only a human-confirmed exact connected-read grant; does not execute it."""
+        return service.approve(session_id, request_id, review, approval_proof, confirmation)
+
+
+def _register_autonomous_schedule_operations(module: Module) -> None:
+    """Register owner-private schedule review, independent of legacy notices."""
+
+    @module.operation(private=True, read_only=False, heads={"web", "api-private"}, audience="everyday")
+    def propose_agent_schedule(  # noqa: PLR0913, PLR0917 - exact reviewed terms
+        service: AutonomousSchedules,
+        session_id: Identity,
+        request_id: Request,
+        contract_request_id: Request,
+        cadence_seconds: Annotated[int, Field(strict=True, ge=60, le=86400, multiple_of=60)],
+        max_requests: Annotated[int, Field(strict=True, ge=1, le=4)],
+        timeout_seconds: Annotated[int, Field(strict=True, ge=1, le=120)],
+        connected_request_id: Annotated[
+            str | None,
+            Field(
+                pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+                description="An already approved connected-read request, or null for no connected reads.",
+            ),
+        ] = None,
+        notification_policy: ScheduledNotificationPolicy | None = None,
+    ) -> ScheduleBinding:
+        """Propose autonomous turns; separate human confirmation is required to authorize them."""
+        return service.propose(
+            session_id,
+            request_id,
+            contract_request_id,
+            cadence_seconds,
+            max_requests,
+            timeout_seconds,
+            connected_request_id,
+            notification_policy,
+        )
+
+    @module.operation(private=True, heads={"web", "api-private"}, audience="everyday")
+    def agent_schedule(service: AutonomousSchedules, session_id: Identity, request_id: Request) -> ScheduleReviewView:
+        """Inspect the exact proposed schedule and its recorded state."""
+        return service.review(session_id, request_id)
+
+    @module.operation(private=True, heads={"web", "api-private"}, audience="everyday")
+    def agent_schedules(
+        service: AutonomousSchedules,
+        session_id: Identity,
+        cursor: Annotated[int, Field(strict=True, ge=0)] = 0,
+        limit: Annotated[int, Field(strict=True, ge=1, le=100)] = 20,
+    ) -> ScheduleReviewPage:
+        """List bounded owner-private schedule proposals and recorded decisions."""
+        return service.list_reviews(session_id, cursor, limit)
+
+    @module.operation(private=True, read_only=False, heads={"web", "api-private"}, audience="everyday")
+    def pause_agent_schedule(
+        service: AutonomousSchedules, session_id: Identity, request_id: Request
+    ) -> ScheduleReviewView:
+        """Stop future launches; a new schedule needs a separate human approval."""
+        service.pause(session_id, request_id)
+        return service.review(session_id, request_id)
+
+    @module.operation(private=True, read_only=False, heads={"web", "api-private"}, audience="everyday")
+    def approve_agent_schedule(  # noqa: PLR0913, PLR0917 - exact trusted action confirmation
+        service: AutonomousSchedules,
+        confirmation: ApprovalConfirmation,
+        session_id: Identity,
+        request_id: Request,
+        review: dict[str, JsonValue],
+        approval_proof: str,
+    ) -> ScheduleBinding:
+        """Record exact human-confirmed autonomous schedule authority."""
+        return service.approve(session_id, request_id, review, approval_proof, confirmation)
+
+
 def _register_user_chat_operations(module: Module) -> None:
     """Register private chat, tool activity and profile proposal projections."""
 
@@ -308,6 +565,11 @@ def _register_user_chat_operations(module: Module) -> None:
     def latest_profile_proposal(service: SessionCrud, session_id: Identity) -> ProfileProposal | None:
         """Inspect the latest suggested name and look; it has not been applied."""
         return service.latest_profile_proposal(session_id)
+
+    @module.operation(private=True, heads={"web", "api-private"}, audience="everyday")
+    def latest_schedule_suggestion_view(service: SessionCrud, session_id: Identity) -> ScheduleSuggestion | None:
+        """Inspect the latest inert suggested schedule; it has not been approved or activated."""
+        return latest_schedule_suggestion(service, session_id)
 
     @module.operation(private=True, read_only=False, heads={"cli", "web", "api-private"}, audience="everyday")
     def answer_chat(service: UserChatService, session_id: Identity, request_id: Request) -> UserChatAnswer:
@@ -350,15 +612,94 @@ def _register_user_chat_operations(module: Module) -> None:
 
 def _user_chat_service(crud: SessionCrud, current: CurrentUser, kernel: Kernel) -> UserChatService:
     runner = kernel.resolve_builtin_service(RunnerSnapshotProvider, "system.runner")
-    return UserChatService(crud, current, runner)
+    return UserChatService(
+        crud,
+        current,
+        runner,
+        connected=lambda: ConnectedReadGrants(crud, current, kernel),
+        notifications=lambda: kernel.resolve(Notifications),
+    )
+
+
+def _register_notification_operations(module: Module) -> None:
+    """Owner-only access to drafts; reading does not send or authorize a notification."""
+    module.service(NotificationDelivery)
+    module.service(ScheduledNotificationRecovery)
+
+    @module.operation(private=True, heads={"web", "api-private"}, audience="everyday")
+    def notification_proposal(
+        service: SessionCrud, current: CurrentUser, session_id: Identity, request_id: Request
+    ) -> NotificationProposal:
+        """Read an exact private notification draft without sending it."""
+        return NotificationProposals(service).get(session_id, request_id, current)
+
+    @module.operation(private=True, heads={"web", "api-private"}, audience="everyday")
+    def notification_proposals(
+        service: SessionCrud,
+        current: CurrentUser,
+        session_id: Identity,
+        cursor: Annotated[int, Field(ge=0, description="Exclusive journal cursor.")] = 0,
+        limit: Annotated[int, Field(ge=1, le=100, description="Maximum references per page.")] = 20,
+    ) -> NotificationProposalPage:
+        """List bounded owner-private notification references without sending anything."""
+        return NotificationProposals(service).list(session_id, current, cursor=cursor, limit=limit)
+
+    @module.operation(private=True, read_only=False, heads={"web", "api-private"}, audience="everyday")
+    def queue_agent_notification(  # noqa: PLR0913, PLR0917 - exact action confirmation
+        service: NotificationDelivery,
+        confirmation: ApprovalConfirmation,
+        session_id: Identity,
+        request_id: Request,
+        review: dict[str, JsonValue],
+        approval_proof: str,
+    ) -> Literal["recorded", "uncertain"]:
+        """Queue the exact owner-confirmed notice; recorded means queued, never shown."""
+        return service.confirm(session_id, request_id, review, approval_proof, confirmation)
+
+    @module.operation(private=True, heads={"web", "api-private"}, audience="everyday")
+    def scheduled_notification_attempts(
+        service: ScheduledNotificationRecovery,
+        session_id: Identity,
+        cursor: Annotated[int, Field(ge=0, description="Exclusive journal cursor.")] = 0,
+        limit: Annotated[int, Field(ge=1, le=100, description="Maximum attempts per page.")] = 20,
+    ) -> ScheduledNotificationPage:
+        """Inspect bounded owner-private scheduled attempts and their recorded outcomes."""
+        return service.list(session_id, cursor=cursor, limit=limit)
+
+    @module.operation(private=True, read_only=False, heads={"web", "api-private"}, audience="everyday")
+    def resolve_scheduled_notification(
+        service: ScheduledNotificationRecovery,
+        session_id: Identity,
+        request_id: Request,
+        acknowledge_uncertain: Annotated[
+            bool,
+            Field(strict=True, description="Acknowledge the notice may already have been queued; no retry or undo."),
+        ],
+    ) -> ScheduledNotificationView:
+        """Inspect the receipt or set aside uncertainty; never resend or undo a notice."""
+        return service.resolve(session_id, request_id, acknowledge_uncertain=acknowledge_uncertain)
+
+    @module.operation(private=True, heads={"web", "api-private"}, audience="everyday")
+    def notification_outcome(service: NotificationDelivery, session_id: Identity, request_id: Request) -> str:
+        """Inspect a prior queue attempt without sending again."""
+        return service.recover(session_id, request_id, write_receipt=False)
+
+
+def _register_review_services(module: Module) -> None:
+    module.service(ConnectedReadGrants)
+    module.service(AutonomousSchedules)
+    _register_connected_read_operations(module)
+    _register_autonomous_schedule_operations(module)
 
 
 def register_session_operations(module: Module) -> None:  # noqa: C901 - operation declarations define one shared head surface
     """Register once on the owning module; constructing the service performs no private I/O."""
     module.service(SessionCrud, _crud)
     module.service(UserChatService, _user_chat_service)
+    _register_review_services(module)
     _register_skill_operations(module)
     _register_contract_review_operations(module)
+    _register_notification_operations(module)
     _register_user_chat_operations(module)
     register_model_policy_operations(module)
     module.service(ApprovalIssuer, _approval_issuer)

@@ -201,6 +201,9 @@ $ hz chat [OPTIONS] COMMAND [ARGS]...
 * `open`: Open a chat session, optionally about a...
 * `open-check-in`: Open a runner chat bound to this owner&#x27;s...
 * `propose-agent-contract`: Stage current agent contract terms for...
+* `propose-agent-notification`: Stage one exact notification draft for a...
+* `propose-agent-schedule-review`: Stage the exact current agent schedule for...
+* `propose-connected-read-review`: Stage current connected-read terms for an...
 * `propose-model-policy`: Stage the exact current model policy for...
 * `propose-schedule-control`: Stage a schedule action for review in...
 * `recover`: Check an interrupted confirmation without...
@@ -341,6 +344,69 @@ $ hz chat propose-agent-contract [OPTIONS] {durable_session} {request_id}
 
 * `durable_session`: The personal agent session.  [required]
 * `request_id`: The contract proposal request id.  [required]
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz chat propose-agent-notification`
+
+Stage one exact notification draft for a human decision; no notice is sent.
+
+**Usage**:
+
+```console
+$ hz chat propose-agent-notification [OPTIONS] {durable_session} {request_id}
+```
+
+**Arguments**:
+
+* `durable_session`: The personal agent session.  [required]
+* `request_id`: The notification draft request id.  [required]
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz chat propose-agent-schedule-review`
+
+Stage the exact current agent schedule for human review; no schedule is approved yet.
+
+**Usage**:
+
+```console
+$ hz chat propose-agent-schedule-review [OPTIONS] {durable_session} {request_id}
+```
+
+**Arguments**:
+
+* `durable_session`: The personal agent session.  [required]
+* `request_id`: The schedule proposal request id.  [required]
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz chat propose-connected-read-review`
+
+Stage current connected-read terms for an explicit human decision.
+
+**Usage**:
+
+```console
+$ hz chat propose-connected-read-review [OPTIONS] {durable_session} {request_id}
+```
+
+**Arguments**:
+
+* `durable_session`: The personal agent session.  [required]
+* `request_id`: The connected read proposal request id.  [required]
 
 **Options**:
 
