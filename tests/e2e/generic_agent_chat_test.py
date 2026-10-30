@@ -12,10 +12,7 @@ import uvicorn
 
 from heinzel import CurrentUser
 from heinzel.heads import web
-from heinzel.modules.heinzel._session_crud import SessionCrud
-from heinzel.modules.heinzel._user_chat import UserChatService
 from tests.e2e.durable_five_minute_journey_test import BROWSER_CACHE, REPO, web_build
-from tests.unit.modules.user_chat_test import FixtureConfig
 
 pytestmark = pytest.mark.e2e
 
@@ -26,6 +23,10 @@ def test_mounted_generic_agent_chat(make_kernel, tmp_path, monkeypatch, engine):
     web_build.ensure_built()
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
     monkeypatch.setenv("PLAYWRIGHT_BROWSERS_PATH", str(BROWSER_CACHE))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "xdg-data"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "xdg-state"))
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "xdg-cache"))
     (tmp_path / "home").mkdir()
     executable = tmp_path / "fake-claude"
     marker = tmp_path / "calls"
@@ -61,6 +62,9 @@ print(json.dumps({{'type':'result','subtype':'success','is_error':False,'permiss
         encoding="utf-8",
     )
     executable.chmod(0o700)
+    monkeypatch.setenv("HZ_SYSTEM_RUNNER__CLAUDE_EXECUTABLE", str(executable))
+    monkeypatch.setenv("HZ_CAPABILITIES__AI_ACCESS", "claude-code")
+    monkeypatch.setenv("HZ_CAPABILITIES__AGENT_RUNNER", "claude-code")
     from heinzel import Settings
 
     settings = Settings(
@@ -72,8 +76,11 @@ print(json.dumps({{'type':'result','subtype':'success','is_error':False,'permiss
     kernel = make_kernel(builtins=True, settings_=settings)
     current = CurrentUser(tmp_path / "state" / "identity")
     kernel.bind(CurrentUser, current)
-    crud = kernel.resolve(SessionCrud)
-    kernel.bind(UserChatService, UserChatService(crud, current, load=lambda: FixtureConfig(executable)))
+    from heinzel.kernel import ConfiguredApiAccess, RunnerSnapshotProvider
+
+    # Production services and their registry provenance resolve normally; only the executable is fake.
+    kernel.resolve_builtin_service(RunnerSnapshotProvider, "system.runner")
+    kernel.resolve_builtin_service(ConfiguredApiAccess, "ai.access")
 
     class RecordedServer(uvicorn.Server):
         instances: ClassVar[list[uvicorn.Server]] = []
