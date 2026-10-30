@@ -606,3 +606,29 @@ def test_conflict_after_owned_shim_goes_dangling_restores_without_retrying_insta
         service.update(current="0.2.0")
     assert len(uv.commands) == 2
     assert uv.commands[1] == install_command(f"heinzel @ git+{REPO}@v0.2.0", PLUGIN, refresh=False)
+
+
+def test_removed_interpreter_after_failed_update_still_triggers_restore(tmp_path, monkeypatch):
+    class DestructiveFakeUv(FakeUv):
+        def __call__(self, command, environment=None):
+            if not self.commands:
+                executable.unlink()
+            else:
+                executable.write_text("#!/bin/sh\nprintf 'hz 0.2.0\\n'\n", encoding="utf-8")
+                executable.chmod(0o700)
+            return super().__call__(command, environment)
+
+    uv = DestructiveFakeUv("0.2.0")
+    uv.failures = ["fixture collision"]
+    target = installation(tmp_path, f'git = "{REPO}?rev=v0.2.0"', uv)
+    executable = target.prefix / "bin" / "python"
+    executable.write_text("#!/bin/sh\nprintf 'hz 0.2.0\\n'\n", encoding="utf-8")
+    executable.chmod(0o700)
+    monkeypatch.setattr(sys, "executable", str(executable))
+    target.hz = Installation.hz.__get__(target)  # type: ignore[method-assign]
+    service = UpdateService(target, FakeReleases("0.4.0"))
+    with pytest.raises(HeinzelError, match="was restored, with every plugin"):
+        service.update(current="0.2.0")
+    assert len(uv.commands) == 2
+    assert executable.is_file()
+    assert uv.commands[1] == install_command(f"heinzel @ git+{REPO}@v0.2.0", PLUGIN, refresh=False)

@@ -500,6 +500,9 @@ class Installation:
         except subprocess.TimeoutExpired as exc:
             msg = f"`hz {' '.join(args)}` did not finish within {HZ_TIMEOUT}s after the change."
             raise HeinzelError(msg) from exc
+        except OSError as exc:
+            msg = f"`hz {' '.join(args)}` could not start after the change."
+            raise HeinzelError(msg) from exc
         if result.returncode != 0:
             msg = f"`hz {' '.join(args)}` failed after the change:\n{result.stderr}"
             raise HeinzelError(msg)

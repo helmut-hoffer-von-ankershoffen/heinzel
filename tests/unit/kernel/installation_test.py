@@ -484,3 +484,13 @@ def test_only_original_receipt_owned_link_can_be_dangling_for_scoped_recovery(tm
         with pytest.raises(HeinzelError, match="unresolved uv executable symlinks"):
             installation.attempt(command, "restore with replaced link", recovery=True)
     assert len(calls) == 1
+
+
+def test_hz_probe_reports_missing_interpreter_as_heinzel_error(tmp_path, monkeypatch):
+    def missing(*_args, **_kwargs):
+        msg = "fixture interpreter removed"
+        raise FileNotFoundError(msg)
+
+    monkeypatch.setattr(subprocess, "run", missing)
+    with pytest.raises(HeinzelError, match="could not start after the change"):
+        Installation(Progress(), prefix=tmp_path, uv="fake-uv").hz("--version")
