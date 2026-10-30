@@ -121,9 +121,12 @@ def test_rate_topic_uncertainty_and_daemon_ownership(tmp_path):
         page = recovery.list(session, limit=1)
         assert page.items[0].status == "recorded"
         assert page.next_cursor is not None
+        events = repo.control_read(session).events
+        original = next(event for event in events if event.kind == "scheduled-notification.attempted")
+        with pytest.raises(HeinzelError, match="inconsistent"):
+            recovery.validated_view(session, original.model_copy(update={"turn": "another-turn"}), events)
         pending = recovery.list(session, cursor=page.next_cursor).items[0]
-        assert pending.status == "unresolved"
-        assert pending.proposal.body == "Private"
+        assert (pending.status, pending.proposal.body) == ("unresolved", "Private")
         with pytest.raises(HeinzelError, match="Acknowledge"):
             recovery.resolve(session, pending.proposal.request_id, acknowledge_uncertain=False)
         resolved = recovery.resolve(session, pending.proposal.request_id, acknowledge_uncertain=True)

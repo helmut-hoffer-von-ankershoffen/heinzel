@@ -251,9 +251,16 @@ class ScheduledNotificationRecovery:
         expected = hashlib.sha256(
             f"{self.crud.repository.principal_id}\0{session}\0{proposal.topic}".encode()
         ).hexdigest()
+        expected_id = (
+            "notice-"
+            + hashlib.sha256(
+                f"{self.crud.repository.principal_id}\0{session}\0{event.turn}\0{expected}".encode()
+            ).hexdigest()
+        )
         if (
             proposal.session_id != session
             or proposal.request_id != event.key
+            or proposal.request_id != expected_id
             or event.turn is None
             or not re.fullmatch(r"notice-[0-9a-f]{64}", proposal.request_id)
             or any(
