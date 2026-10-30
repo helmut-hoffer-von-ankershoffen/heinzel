@@ -105,6 +105,10 @@ Your configuration files stay; `hz system config show` lists them before you uni
 
 ## Use
 
+`hz --command-tree` prints every enabled command, argument, option and operation input/output schema as JSON,
+including expert commands and plugin commands. It runs no operation and leaves your expert-mode setting unchanged.
+The [CLI reference](docs/CLI_REFERENCE.md) is generated from the same executable command tree; CI checks for drift.
+
 <img src="docs/assets/terminal-art.png" alt="A terminal: the command hz prints a pixel-art Heinzelmännchen in a red hat beside the name, version and tagline; after adding the clock plugin, a small one marks the done line" width="560">
 
 On a colour terminal `hz` greets you with a small Heinzelmännchen and a walking one keeps you company during long
