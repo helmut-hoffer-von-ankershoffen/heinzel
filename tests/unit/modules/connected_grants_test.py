@@ -10,6 +10,7 @@ from heinzel import (
     CallIdentity,
     Config,
     ConnectedReadLease,
+    ConnectedReadMethod,
     ConnectedReadReview,
     ConnectedReadService,
     CurrentUser,
@@ -84,6 +85,9 @@ def connected(tmp_path, monkeypatch):
             pass
 
     class Provider(ConnectedReadService):
+        def supported_reads(self):
+            return state.get("claims", (ConnectedReadMethod(capability="calendar", method="events"),))
+
         def open_lease(self, session, operation, fixed_arguments):
             state["opens"] += 1
             return Lease(session, operation, dict(fixed_arguments))
@@ -148,6 +152,12 @@ def test_exact_approval_current_source_and_revoke(connected):  # noqa: PLR0915
         assert grants.approve(session, "req-one", review, proof, confirmation) == proposal
         assert grants.approve(session, "req-one", review, proof, confirmation) == proposal
     assert grants.state(session).status == "approved"
+    state["claims"] = ()
+    assert grants.tool_schema(session) is None
+    with crud.repository.main_writer(session) as writer, pytest.raises(HeinzelError):
+        grants.read(session, writer)
+    assert state["reads"] == 0
+    del state["claims"]
     competing_args = {**args, "approval_proof": competing}
     with confirmation.using("heinzel", "approve-connected-read", competing_args), pytest.raises(HeinzelError):
         grants.approve(session, "req-one", review, competing, confirmation)
@@ -319,3 +329,38 @@ def test_rolling_parameter_requires_one_unambiguous_direct_window(monkeypatch):
     for method in ("two", "nested", "optional", "model"):
         with pytest.raises(HeinzelError):
             module.rolling_window_parameter("example", method)
+
+
+def test_supported_read_declarations_are_bounded_and_fail_closed(connected):
+    _current, _crud, session, grants, fixed, state = connected
+    event = ConnectedReadMethod(capability="calendar", method="events")
+    options = grants.options(session)
+    assert [(item.capability, item.method) for item in options] == [("calendar", "events")]
+    with pytest.raises(HeinzelError):
+        grants.propose(session, "unsupported", "calendar", "free_busy", {"people": "", **fixed})
+    invalid = [
+        (),
+        [event],
+        (event, event),
+        (ConnectedReadMethod(capability="calendar", method="create_event"),),
+        (ConnectedReadMethod(capability="unknown", method="read"),),
+        (ConnectedReadMethod.model_construct(capability="Calendar", method="events"),),
+        (event,) * 65,
+        ({"capability": "calendar", "method": "events"},),
+    ]
+    for index, claims in enumerate(invalid):
+        state["claims"] = claims
+        assert grants.options(session) == []
+        with pytest.raises(HeinzelError):
+            grants.propose(session, f"bad-claim-{index}", "calendar", "events", fixed)
+    assert state["opens"] == 0
+
+
+def test_provider_without_method_declaration_offers_no_reads(connected, monkeypatch):
+    _current, _crud, session, grants, fixed, state = connected
+    _record, service = grants.kernel.selected_capability_service(ConnectedReadService, "calendar")
+    monkeypatch.setattr(type(service), "supported_reads", ConnectedReadService.supported_reads)
+    assert grants.options(session) == []
+    with pytest.raises(HeinzelError):
+        grants.propose(session, "undeclared", "calendar", "events", fixed)
+    assert state["opens"] == 0

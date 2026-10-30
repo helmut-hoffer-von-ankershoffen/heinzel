@@ -5,6 +5,7 @@ import pytest
 from heinzel import (
     Config,
     ConnectedReadLease,
+    ConnectedReadMethod,
     ConnectedReadReview,
     ConnectedReadService,
     CurrentUser,
@@ -61,6 +62,9 @@ def test_human_action_only_approves_exact_private_connected_read(make_kernel, tm
             _fail_if(state, "close")
 
     class Provider(ConnectedReadService):
+        def supported_reads(self):
+            return (ConnectedReadMethod(capability="calendar", method="events"),)
+
         def open_lease(self, session, operation, fixed_arguments):
             state["opens"] += 1
             _fail_if(state, "open")

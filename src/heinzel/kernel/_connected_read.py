@@ -63,6 +63,16 @@ class ConnectedReadReview(BaseModel):
         return self
 
 
+class ConnectedReadMethod(BaseModel):
+    """One provider-declared captured read; this is neither an access grant nor a schema assertion."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+    capability: str = Field(
+        pattern=r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$", max_length=64, description="Canonical capability name."
+    )
+    method: str = Field(pattern=r"^[a-z][a-z0-9_]*$", max_length=64, description="Canonical public read-method name.")
+
+
 class ConnectedReadLease:
     """A private short-lived connection: no serialized credentials, writes or automatic refresh."""
 
@@ -81,6 +91,10 @@ class ConnectedReadLease:
 
 class ConnectedReadService(ServiceContract):
     """Marker for a concrete installed provider; the host selects one by its actual kernel module record."""
+
+    def supported_reads(self) -> tuple[ConnectedReadMethod, ...]:
+        """Declare supported captured reads; an absent declaration authorizes and advertises nothing."""
+        return ()
 
     def open_lease(self, session: str, operation: str, fixed_arguments: Mapping[str, JsonValue]) -> ConnectedReadLease:
         """Capture current selected credentials privately; the returned lease provides no authority by itself."""

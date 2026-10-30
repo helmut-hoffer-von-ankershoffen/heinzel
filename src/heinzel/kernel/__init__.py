@@ -42,7 +42,12 @@ from heinzel.kernel._config import (
     toml_value,
     user_config_dir,
 )
-from heinzel.kernel._connected_read import ConnectedReadLease, ConnectedReadReview, ConnectedReadService
+from heinzel.kernel._connected_read import (
+    ConnectedReadLease,
+    ConnectedReadMethod,
+    ConnectedReadReview,
+    ConnectedReadService,
+)
 from heinzel.kernel._contributions import (
     ICONS,
     ActionLet,
@@ -340,6 +345,7 @@ __all__ = [
     "ConfiguredApiSnapshot",
     "ConfirmedLines",
     "ConnectedReadLease",
+    "ConnectedReadMethod",
     "ConnectedReadReview",
     "ConnectedReadService",
     "ContractTemplate",

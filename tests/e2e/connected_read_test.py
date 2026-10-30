@@ -10,7 +10,7 @@ from urllib.parse import parse_qs, urlsplit
 import pytest
 import uvicorn
 
-from heinzel import CurrentUser
+from heinzel import ConnectedReadMethod, CurrentUser
 from heinzel.heads import web
 from tests.e2e.durable_five_minute_journey_test import BROWSER_CACHE, REPO, web_build
 
@@ -58,6 +58,9 @@ def _setup_kernel(make_kernel, tmp_path, monkeypatch):
             pass
 
     class Provider(ConnectedReadService):
+        def supported_reads(self):
+            return (ConnectedReadMethod(capability="calendar", method="events"),)
+
         def open_lease(self, session, operation, fixed_arguments):
             return Lease(session, operation, dict(fixed_arguments))
 
