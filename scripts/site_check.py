@@ -83,6 +83,28 @@ def copy_command(page: "Page", identity: str) -> None:
         require(page.evaluate("window.getSelection().toString()") == expected, "Fallback must select the command")
 
 
+def manual_theme_flow(page: "Page", mode: str, axe: Path, identity: str) -> None:
+    """Manual palette choices must update artwork independently of the operating system's preference."""
+    initial = "default" if mode == "light" else "slate"
+    selected = "slate" if mode == "light" else "default"
+    for target in (selected, initial):
+        page.locator('[data-md-component="palette"] label:visible').click()
+        expect(page.locator("body")).to_have_attribute("data-md-color-scheme", target)
+        suffix = "hero-dark.svg" if target == "slate" else "hero-light.svg"
+        page.wait_for_function(
+            "suffix => document.querySelector('.hz-hero-art img').currentSrc.endsWith(suffix)", arg=suffix
+        )
+        page.locator(".hz-hero-art img").evaluate("image => image.decode()")
+        if target == selected:
+            audit(page, axe, identity + "-manual-toggle")
+            page.reload()
+            expect(page.locator("body")).to_have_attribute("data-md-color-scheme", target)
+            page.wait_for_function(
+                "suffix => document.querySelector('.hz-hero-art img').currentSrc.endsWith(suffix)", arg=suffix
+            )
+            page.locator(".hz-hero-art img").evaluate("image => image.decode()")
+
+
 def catalog_flow(page: "Page", total: int) -> None:
     """Filter by capabilities and category, recover empty results and follow a detail page."""
     search = page.get_by_role("searchbox", name="Find a plugin")
@@ -149,6 +171,8 @@ def sweep(browser: "Browser", engine: str, base: str, axe: Path, total: int) -> 
                 )
                 identity = f"{engine}-{width}-{mode}-{name}"
                 audit(page, axe, identity)
+                if name == "home":
+                    manual_theme_flow(page, mode, axe, identity)
                 page.screenshot(path=str(REPORTS / f"{identity}.png"), full_page=True)
                 if name == "catalog":
                     catalog_flow(page, total)
