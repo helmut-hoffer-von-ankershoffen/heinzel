@@ -477,12 +477,14 @@ def contrast_problems(colours: ThemeColours) -> list[str]:
     """Where text in `colours` falls under 4.5:1, in words.
 
     `foreground` and `muted_foreground` are checked on cards, the sidebar, popovers and every main surface.
+    `primary_foreground` is checked on opaque primary controls.
     """
     pairs = [
         (text, surface, getattr(colours, text), getattr(colours, surface))
         for surface in ("card", "sidebar", "popover")
         for text in ("foreground", "muted_foreground")
     ]
+    pairs.append(("primary_foreground", "primary", colours.primary_foreground, colours.primary))
     for surface, value in _surfaces(colours):
         pairs += [
             ("foreground", surface, colours.foreground, value),
@@ -1056,7 +1058,7 @@ DEFAULT_THEME = Theme(
         card="#181818",
         border="#2c2c2c",
         primary="#d97757",
-        primary_foreground="#ffffff",
+        primary_foreground="#181818",
         accent="#444444",
         ok="#7cc39a",
         warn="#e0b45f",
