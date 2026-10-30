@@ -10942,6 +10942,7 @@
         "description": "Bounded owner-private attempted notification history.",
         "properties": {
           "items": {
+            "description": "Bounded owner-private notification attempts.",
             "items": {
               "$ref": "#/components/schemas/ScheduledNotificationView"
             },
@@ -10957,9 +10958,11 @@
                 "type": "null"
               }
             ],
+            "description": "Exclusive cursor for the next page, if present.",
             "title": "Next Cursor"
           },
           "session_id": {
+            "description": "The authenticated owner's personal session.",
             "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
             "title": "Session Id",
             "type": "string"

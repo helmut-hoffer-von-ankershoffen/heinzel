@@ -9428,11 +9428,20 @@ export interface components {
          * @description Bounded owner-private attempted notification history.
          */
         ScheduledNotificationPage: {
-            /** Items */
+            /**
+             * Items
+             * @description Bounded owner-private notification attempts.
+             */
             items: components["schemas"]["ScheduledNotificationView"][];
-            /** Next Cursor */
+            /**
+             * Next Cursor
+             * @description Exclusive cursor for the next page, if present.
+             */
             next_cursor: number | null;
-            /** Session Id */
+            /**
+             * Session Id
+             * @description The authenticated owner's personal session.
+             */
             session_id: string;
         };
         /**

@@ -216,9 +216,9 @@ class ScheduledNotificationView(BaseModel):
 class ScheduledNotificationPage(BaseModel):
     """Bounded owner-private attempted notification history."""
 
-    session_id: SessionId
-    items: list[ScheduledNotificationView]
-    next_cursor: int | None
+    session_id: SessionId = Field(description="The authenticated owner's personal session.")
+    items: list[ScheduledNotificationView] = Field(description="Bounded owner-private notification attempts.")
+    next_cursor: int | None = Field(description="Exclusive cursor for the next page, if present.")
 
 
 class ScheduledNotificationRecovery:
