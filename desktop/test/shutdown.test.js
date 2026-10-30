@@ -14,7 +14,7 @@ async function ownedProcess(exitOn) {
   child.kill = (signal) => {
     child.signals.push(signal);
     if (signal === exitOn) {
-      child.exitCode = signal === "SIGTERM" ? 2 : null;
+      child.exitCode = signal === "SIGINT" ? 2 : null;
       child.signalCode = signal === "SIGKILL" ? signal : null;
       child.emit("exit", child.exitCode, child.signalCode);
       child.emit("close", child.exitCode, child.signalCode);
@@ -33,14 +33,14 @@ async function ownedProcess(exitOn) {
   return { owned, child };
 }
 
-for (const [signal, outcome] of [["SIGTERM", "abnormal"], ["SIGKILL", "forced"]]) {
+for (const [signal, outcome] of [["SIGINT", "abnormal"], ["SIGKILL", "forced"]]) {
   test(`reports ${outcome} after the fake owned process closes`, async () => {
     const { owned, child } = await ownedProcess(signal);
     let reports = 0;
     const result = await stopWithReport(owned, () => { reports += 1; });
     assert.equal(result.outcome, outcome);
     assert.equal(reports, 1);
-    assert.deepEqual(child.signals, signal === "SIGKILL" ? ["SIGTERM", "SIGKILL"] : ["SIGTERM"]);
+    assert.deepEqual(child.signals, signal === "SIGKILL" ? ["SIGINT", "SIGKILL"] : ["SIGINT"]);
   });
 }
 

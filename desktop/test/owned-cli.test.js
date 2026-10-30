@@ -16,7 +16,7 @@ function makeChild() {
   child.kills = [];
   child.kill = (signal) => {
     child.kills.push(signal);
-    if (signal === "SIGTERM") {
+    if (signal === "SIGINT") {
       child.exitCode = 0;
       child.emit("exit", 0, null);
       child.emit("close", 0, null);
@@ -117,7 +117,7 @@ test("reports early process exit and startup timeout", async () => {
     signal: null,
     processError: false,
   });
-  assert.deepEqual(timedOut.kills, ["SIGTERM"]);
+  assert.deepEqual(timedOut.kills, ["SIGINT"]);
 });
 
 test("recognizes a child already closed after a spawn error", async () => {
@@ -150,7 +150,7 @@ test("shutdown signals only the owned child and escalates after the grace period
     signal: null,
     processError: false,
   });
-  assert.deepEqual(child.kills, ["SIGTERM"]);
+  assert.deepEqual(child.kills, ["SIGINT"]);
 
   const unresponsive = makeChild();
   unresponsive.kill = (signal) => { unresponsive.kills.push(signal); return true; };
@@ -163,7 +163,7 @@ test("shutdown signals only the owned child and escalates after the grace period
   unresponsive.signalCode = "SIGKILL";
   unresponsive.emit("exit", null, "SIGKILL");
   unresponsive.emit("close", null, "SIGKILL");
-  assert.deepEqual(unresponsive.kills, ["SIGTERM", "SIGKILL"]);
+  assert.deepEqual(unresponsive.kills, ["SIGINT", "SIGKILL"]);
 
   const noChild = createOwnedCli({ spawn: () => { throw new Error("must not spawn"); } });
   assert.deepEqual(await noChild.stop(), {
@@ -197,13 +197,13 @@ test("classifies shutdown from the observed exit when SIGKILL races with a clean
     signal: null,
     processError: false,
   });
-  assert.deepEqual(child.kills, ["SIGTERM", "SIGKILL"]);
+  assert.deepEqual(child.kills, ["SIGINT", "SIGKILL"]);
 });
 
 test("classifies nonzero exit, signal exit and already-exited abnormal child", async (t) => {
   for (const scenario of [
     {
-      name: "nonzero exit after TERM",
+      name: "nonzero exit after interrupt",
       stop: (child) => {
         child.exitCode = 2;
         child.emit("exit", 2, null);
@@ -212,7 +212,7 @@ test("classifies nonzero exit, signal exit and already-exited abnormal child", a
       expected: { outcome: "abnormal", code: 2, signal: null, processError: false },
     },
     {
-      name: "signal exit after TERM",
+      name: "signal exit after interrupt",
       stop: (child) => {
         child.signalCode = "SIGTERM";
         child.emit("exit", null, "SIGTERM");
@@ -225,7 +225,7 @@ test("classifies nonzero exit, signal exit and already-exited abnormal child", a
       const child = makeChild();
       child.kill = (signal) => {
         child.kills.push(signal);
-        if (signal === "SIGTERM") scenario.stop(child);
+        if (signal === "SIGINT") scenario.stop(child);
         return true;
       };
       const owned = createOwnedCli({ spawn: () => child });
@@ -261,7 +261,7 @@ test("a child error or synchronous signal error cannot be reported as graceful",
     const child = makeChild();
     child.kill = (signal) => {
       child.kills.push(signal);
-      if (signal === "SIGTERM") process.nextTick(() => child.emit("error", new Error("signal failed")));
+      if (signal === "SIGINT") process.nextTick(() => child.emit("error", new Error("signal failed")));
       if (signal === "SIGKILL") {
         child.signalCode = "SIGKILL";
         child.emit("exit", null, "SIGKILL");
@@ -280,14 +280,14 @@ test("a child error or synchronous signal error cannot be reported as graceful",
       signal: "SIGKILL",
       processError: true,
     });
-    assert.deepEqual(child.kills, ["SIGTERM", "SIGKILL"]);
+    assert.deepEqual(child.kills, ["SIGINT", "SIGKILL"]);
   });
 
   await t.test("synchronous kill error followed by SIGKILL", async () => {
     const child = makeChild();
     child.kill = (signal) => {
       child.kills.push(signal);
-      if (signal === "SIGTERM") throw new Error("signal failed");
+      if (signal === "SIGINT") throw new Error("signal failed");
       if (signal === "SIGKILL") {
         child.signalCode = "SIGKILL";
         child.emit("exit", null, "SIGKILL");
@@ -306,7 +306,7 @@ test("a child error or synchronous signal error cannot be reported as graceful",
       signal: "SIGKILL",
       processError: true,
     });
-    assert.deepEqual(child.kills, ["SIGTERM", "SIGKILL"]);
+    assert.deepEqual(child.kills, ["SIGINT", "SIGKILL"]);
   });
 });
 
@@ -335,7 +335,7 @@ test("handles asynchronously delivered child errors through close during shutdow
     signal: "SIGKILL",
     processError: true,
   });
-  assert.deepEqual(child.kills, ["SIGTERM", "SIGKILL"]);
+  assert.deepEqual(child.kills, ["SIGINT", "SIGKILL"]);
   assert.equal(child.listenerCount("error"), 0);
 });
 
@@ -343,7 +343,7 @@ test("can retry shutdown after a child did not close following the forced signal
   const child = makeChild();
   child.kill = (signal) => {
     child.kills.push(signal);
-    if (signal === "SIGTERM" && child.kills.filter((entry) => entry === "SIGTERM").length > 1) {
+    if (signal === "SIGINT" && child.kills.filter((entry) => entry === "SIGINT").length > 1) {
       child.signalCode = signal;
       child.emit("exit", null, signal);
       child.emit("close", null, signal);
@@ -358,8 +358,8 @@ test("can retry shutdown after a child did not close following the forced signal
   assert.deepEqual(await owned.stop(), {
     outcome: "abnormal",
     code: null,
-    signal: "SIGTERM",
+    signal: "SIGINT",
     processError: false,
   });
-  assert.deepEqual(child.kills, ["SIGTERM", "SIGKILL", "SIGTERM"]);
+  assert.deepEqual(child.kills, ["SIGINT", "SIGKILL", "SIGINT"]);
 });

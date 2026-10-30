@@ -24,7 +24,7 @@ test("uses bearer auth on a same-origin lifecycle read and returns no credential
     request = { url, options };
     return { ok: true, json: async () => ({ instance: "abc", version: "1.2.3", restartable: true }) };
   });
-  assert.equal(request.url, "http://127.0.0.1:8123/lifecycle");
+  assert.equal(request.url, "http://127.0.0.1:8123/api/lifecycle");
   assert.equal(request.options.headers.Authorization, "Bearer abcdefghijklmnopqrstuvwxyz0123456789");
   assert.deepEqual(value, { instance: "abc", version: "1.2.3", restartable: true });
   assert.equal(JSON.stringify(value).includes(connection.token), false);
