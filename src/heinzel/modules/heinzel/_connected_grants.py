@@ -489,6 +489,20 @@ class ConnectedReadGrants:
             observed["fixed_arguments"] = expected["fixed_arguments"]
         return arguments_hash(observed) == arguments_hash(expected)
 
+    def verify_proposed_terms(self, session: str, grant: ConnectedGrant) -> None:
+        """Re-observe proposed terms; this issues no approval and never invokes a read.
+
+        Raises:
+            HeinzelError: If the selected source, account or proposed terms differ.
+        """
+        self._human()
+        _SESSION.validate_python(session)
+        self.crud.repository.control_read(session)
+        binding, review = self._observe(session, grant.capability, grant.method, self._arguments(grant))
+        if binding != grant.binding_sha256 or not self._same_review(grant, review):
+            msg = "The proposed read-set source or account changed; prepare it again"
+            raise HeinzelError(msg)
+
     def propose_rolling(  # noqa: PLR0913, PLR0917 - exact reviewed terms
         self,
         session: str,
