@@ -353,17 +353,25 @@ class Kernel:
         Raises:
             HeinzelError: If the read adapter is unavailable, ambiguous, or lacks the requested service.
         """
+        record, _provider = self.selected_capability_provider(capability)
+        return record, self.resolve_selected_service(contract, record)
+
+    def selected_capability_provider(self, capability: str) -> tuple[ModuleRecord, ProviderLet]:
+        """Identify the actual uniquely selected provider with read mode; this is not an access grant.
+
+        Raises:
+            HeinzelError: If the read adapter is unavailable or ambiguous.
+        """
         selected = self._capabilities.bound(capability)
         providers = [
-            record
+            (record, let)
             for record, let in self.lets(ProviderLet)
             if let.capability == capability and let.adapter == selected and "read" in let.modes
         ]
         if selected is None or len(providers) != 1:
             msg = "The selected read adapter is unavailable or ambiguous"
             raise HeinzelError(msg)
-        record = providers[0]
-        return record, self.resolve_selected_service(contract, record)
+        return providers[0]
 
     def handle_for(self, requester: Requester, capability: str) -> object:
         """A handle on `capability` for `requester`, for code that acts on its behalf without being its function.
