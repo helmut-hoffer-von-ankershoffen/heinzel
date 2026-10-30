@@ -1,6 +1,17 @@
 /* Progressive enhancement: every catalog entry and command is useful without JavaScript. */
 (() => {
   function initialize() {
+    const hero = document.querySelector('.hz-hero-art picture source');
+    if (hero && !hero.dataset.ready) {
+      hero.dataset.ready = 'true';
+      const syncArtwork = () => {
+        hero.media = document.body.dataset.mdColorScheme === 'slate' ? 'all' : 'not all';
+      };
+      syncArtwork();
+      new MutationObserver(syncArtwork).observe(document.body, {
+        attributes: true, attributeFilter: ['data-md-color-scheme'],
+      });
+    }
     document.querySelectorAll('[data-copy]').forEach(button => {
       if (button.dataset.ready) return;
       button.dataset.ready = 'true';
