@@ -128,3 +128,61 @@ def test_source_change_denies_host_review(connected):
         ConnectedReadSetReviews(sets, grants).prepare(session, "review", "set", proposal.revision)
     assert state["reads"] == 0
     assert not any(event.kind == "connected-set.reviewed" for event in crud.repository.control_read(session).events)
+
+
+def test_exact_set_intent_does_not_issue_or_grant_and_rechecks_sources(connected):
+    current, crud, session, grants, fixed, state = connected
+    sets = ConnectedReadSets(crud, current)
+    proposal = sets.propose(session, "set", (_terms(current, session, grants, fixed, state),))
+    reviewer = ConnectedReadSetReviews(sets, grants)
+    review = reviewer.prepare(session, "review", "set", proposal.revision)
+    before = list(crud.repository.control_read(session).events)
+    intent = reviewer.approval_intent(session, "review", review.revision)
+    assert intent.owner == current.principal().id
+    assert intent.session == session
+    assert intent.audience == "personal-connected-read-set"
+    assert intent.action == "approve-connected-read-set"
+    assert intent.resource == review.request_id
+    assert intent.grant_revision == review.revision
+    assert intent.arguments_hash == arguments_hash(review.model_dump(mode="json"))
+    assert crud.repository.control_read(session).events == before
+    assert state["reads"] == 0
+    assert grants.tool_schema(session) is None
+    assert not hasattr(reviewer, "issue")
+    state["account"] = "different-account"
+    with pytest.raises(HeinzelError, match="source or account changed"):
+        reviewer.approval_intent(session, "review", review.revision)
+
+
+def test_intent_rejects_stale_review_and_different_revision(connected):
+    current, crud, session, grants, fixed, state = connected
+    sets = ConnectedReadSets(crud, current)
+    first = sets.propose(session, "first", (_terms(current, session, grants, fixed, state),))
+    reviewer = ConnectedReadSetReviews(sets, grants)
+    review = reviewer.prepare(session, "old-review", "first", first.revision)
+    original = reviewer.approval_intent(session, "old-review", review.revision)
+    with pytest.raises(HeinzelError, match="review changed"):
+        reviewer.approval_intent(session, "old-review", review.revision + 1)
+    second = sets.propose(session, "second", (_terms(current, session, grants, fixed, state),))
+    with pytest.raises(HeinzelError, match="review changed"):
+        reviewer.approval_intent(session, "old-review", review.revision)
+    newer = reviewer.prepare(session, "new-review", "second", second.revision)
+    changed = reviewer.approval_intent(session, "new-review", newer.revision)
+    assert changed.arguments_hash != original.arguments_hash
+    with pytest.raises(HeinzelError, match="review changed"):
+        reviewer.approval_intent(session, "old-review", review.revision)
+    assert state["reads"] == 0
+
+
+def test_intent_requires_authenticated_owner_and_original_session(connected):
+    current, crud, session, grants, fixed, state = connected
+    sets = ConnectedReadSets(crud, current)
+    proposal = sets.propose(session, "set", (_terms(current, session, grants, fixed, state),))
+    reviewer = ConnectedReadSetReviews(sets, grants)
+    review = reviewer.prepare(session, "review", "set", proposal.revision)
+    other = crud.new_chat("another").session_id
+    with pytest.raises(HeinzelError, match="review changed"):
+        reviewer.approval_intent(other, "review", review.revision)
+    with current.local("daemon"), pytest.raises(HeinzelError, match="authenticated owner"):
+        reviewer.approval_intent(session, "review", review.revision)
+    assert state["reads"] == 0

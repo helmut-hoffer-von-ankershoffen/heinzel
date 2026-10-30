@@ -5,7 +5,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 
 from heinzel import HeinzelError, SessionEvent
-from heinzel.kernel._approval import arguments_hash
+from heinzel.kernel._approval import ApprovalIntent, arguments_hash
 from heinzel.modules.heinzel._connected_grants import (
     ConnectedGrant,
     ConnectedGrantProposal,
@@ -121,3 +121,47 @@ class ConnectedReadSetReviews:
                 body = immutable_body(writer, "connected-set-review", result.model_dump(mode="json"), control=True)
                 writer.append("connected-set.reviewed", key=request, data=body.model_dump(mode="json"))
                 return result.model_copy(deep=True)
+
+    def approval_intent(self, session: str, review_request: str, review_revision: int) -> ApprovalIntent:
+        """Prepare an exact inert intent after freshly re-observing every selected source.
+
+        This does not issue a proof, approve a set or authorize execution. An issuer must revalidate again.
+
+        Raises:
+            HeinzelError: If the review, proposal, owner, source or account changed.
+        """
+        self.sets.latest(session)
+        _REQUEST.validate_python(review_request)
+        if type(review_revision) is not int or review_revision < 1:
+            msg = "The read-set review revision is invalid"
+            raise HeinzelError(msg)
+        with self.sets.crud.repository.main_writer(session):
+            events = self.sets.crud.repository.control_read(session).events
+            reviews = [event for event in events if event.kind == "connected-set.reviewed"]
+            matches = [event for event in reviews if event.key == review_request]
+            if len(matches) != 1 or not reviews or matches[0] != reviews[-1]:
+                msg = "The read-set review changed; review it again"
+                raise HeinzelError(msg)
+            review = self._body(session, matches[0])
+            proposal = self.sets.latest(session)
+            if (
+                review.revision != review_revision
+                or proposal is None
+                or arguments_hash(review.proposal.model_dump(mode="json"))
+                != arguments_hash(proposal.model_dump(mode="json"))
+            ):
+                msg = "The read-set review changed; review it again"
+                raise HeinzelError(msg)
+            self._observe(session, proposal)
+            self._observe(session, proposal)
+            return ApprovalIntent(
+                owner=self.sets.owner,
+                audience="personal-connected-read-set",
+                session=session,
+                action="approve-connected-read-set",
+                resource=review.request_id,
+                arguments_hash=arguments_hash(review.model_dump(mode="json")),
+                contract_revision=0,
+                grant_revision=review.revision,
+                policy_revision=0,
+            )
