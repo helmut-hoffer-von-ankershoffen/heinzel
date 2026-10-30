@@ -202,7 +202,7 @@ def test_fresh_system_only_refusal_precedes_pending_and_allows_retry(tmp_path, m
     monkeypatch.setattr(install, "boot", lambda _settings: bound)
     monkeypatch.setattr(install, "run_tool", run)
     monkeypatch.setenv("UV_NO_MANAGED_PYTHON", "1")
-    with pytest.raises(HeinzelError, match="Remove the system-only Python preference"):
+    with pytest.raises(HeinzelError, match="Remove the system-only Python environment setting"):
         install._managed_install(profile, [artifact], [wheel], settings, set())
     assert events == []
     assert not (settings.state_dir / "daemon/standard-install-pending.json").exists()

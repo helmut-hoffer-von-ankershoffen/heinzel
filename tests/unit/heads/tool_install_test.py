@@ -107,7 +107,7 @@ def test_fresh_install_rejects_conflicting_python_selection_before_uv(target, mo
 def test_fresh_install_refuses_system_only_preference_before_uv(target, monkeypatch, variable, value):
     monkeypatch.setenv(variable, value)
     monkeypatch.setattr(tool.subprocess, "run", lambda *_args, **_kwargs: pytest.fail("uv must not run"))
-    with pytest.raises(HeinzelError, match="Remove the system-only Python preference"):
+    with pytest.raises(HeinzelError, match="Remove the system-only Python environment setting"):
         run_tool(COMMAND, target, EXPECTED)
     assert not target.prefix.exists()
 

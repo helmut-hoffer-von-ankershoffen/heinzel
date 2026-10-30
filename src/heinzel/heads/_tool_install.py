@@ -152,7 +152,7 @@ def target_installation(target: ToolTarget, uv: str) -> Installation:
 
 
 def verify_fresh_python_policy(environment: Mapping[str, str]) -> None:
-    """Refuse a system-only preference before a standard-install pending marker is written.
+    """Refuse a system-only environment setting before a standard-install pending marker is written.
 
     Raises:
         HeinzelError: If the current Python policy forbids managed Python.
@@ -161,7 +161,7 @@ def verify_fresh_python_policy(environment: Mapping[str, str]) -> None:
         environment.get("UV_NO_MANAGED_PYTHON", "").casefold() in {"1", "true", "yes", "on"}
         or environment.get("UV_PYTHON_PREFERENCE", "").casefold() == "only-system"
     ):
-        msg = "The standard app needs a uv-managed Python. Remove the system-only Python preference and retry."
+        msg = "The standard app needs a uv-managed Python. Remove the system-only Python environment setting and retry."
         raise HeinzelError(msg)
 
 
