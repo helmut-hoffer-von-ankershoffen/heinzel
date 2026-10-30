@@ -1877,3 +1877,84 @@ def test_contract_review_rejects_superseded_and_foreign_actions(kernel, tmp_path
     )
     assert review.json()["accepted"] is False
     assert ran == []
+
+
+@pytest.mark.parametrize("acknowledged", [True, False])
+def test_owner_confirms_exact_notification_once_and_mcp_cannot_self_authorize(kernel, tmp_path, acknowledged):
+    from heinzel import Notifications, ProposedCall
+    from heinzel.modules.heinzel._notification_proposals import NotificationProposal, NotificationProposals
+
+    class FakeNotifications(Notifications):
+        def __init__(self):
+            self.calls = []
+            self.keys = set()
+
+        def emit_once(self, _kind, title, body, *, route, command, key):
+            self.calls.append((title, body, key))
+            self.keys.add(key)
+            return acknowledged
+
+        def has_once(self, key):
+            return key in self.keys if acknowledged else None
+
+    provider = FakeNotifications()
+    kernel.bind(Notifications, provider)
+    client = web_client(kernel, tmp_path)
+    session = client.post("/api/heinzel/new-chat", headers=AUTH, json={"request_id": "notification-test"}).json()[
+        "session_id"
+    ]
+    current = kernel.resolve(CurrentUser)
+    with current.local("cli"):
+        crud = _crud(current)
+        proposal = NotificationProposal(
+            session_id=session, request_id="notice", topic="general", title="Hello", body="Private notice"
+        )
+        with crud.repository.main_writer(session) as writer:
+            NotificationProposals(crud).propose(proposal, current.principal().id, writer)
+    params = {"durable_session": session, "request_id": "notice"}
+    staged = client.post("/api/system/runner/chat/propose-agent-notification", headers=AUTH, params=params)
+    assert staged.status_code == 200, staged.text
+    chat = staged.json()
+    action = next(item for item in chat["actions"] if item["operation"] == "queue-agent-notification")
+    assert action["arguments"]["review"] == proposal.model_dump(mode="json")
+    assert provider.calls == []
+    assert "heinzel_queue_agent_notification" not in {item.name for item in exposed(kernel, "mcp-stdio")}
+    direct = client.post(
+        "/api/heinzel/queue-agent-notification",
+        headers=AUTH,
+        json={
+            "session_id": session,
+            "request_id": "notice",
+            "review": action["arguments"]["review"],
+            "approval_proof": "fake",
+        },
+    )
+    assert direct.status_code == 400
+    with current.local("mcp-stdio"), pytest.raises(HeinzelError):
+        kernel.resolve(ActionGate).propose(
+            ProposedCall(
+                session=chat["id"],
+                module="heinzel",
+                operation="queue-agent-notification",
+                tool="heinzel_queue_agent_notification",
+                arguments=action["arguments"],
+                command="fake",
+            )
+        )
+    decision = {"session": chat["id"], "action": action["id"]}
+    assert client.post("/api/system/runner/chat/confirm", params=decision).status_code == 401
+    result = client.post("/api/system/runner/chat/confirm", headers=AUTH, params=decision)
+    assert result.status_code == 200, result.text
+    saved = next(item for item in result.json()["actions"] if item["id"] == action["id"])
+    assert saved["status"] == ("done" if acknowledged else "uncertain")
+    if acknowledged:
+        assert "queued" in saved["result"]
+        assert "not confirmed shown" in saved["result"]
+    else:
+        assert "uncertain" in saved["result"]
+        assert "not repeated" in saved["result"]
+    assert len(provider.calls) == 1
+    assert client.post("/api/system/runner/chat/confirm", headers=AUTH, params=decision).status_code == 400
+    assert len(provider.calls) == 1
+    transcript = json.dumps(result.json()["messages"])
+    assert "Private notice" not in transcript

@@ -201,6 +201,7 @@ $ hz chat [OPTIONS] COMMAND [ARGS]...
 * `open`: Open a chat session, optionally about a...
 * `open-check-in`: Open a runner chat bound to this owner&#x27;s...
 * `propose-agent-contract`: Stage current agent contract terms for...
+* `propose-agent-notification`: Stage one exact notification draft for a...
 * `propose-agent-schedule-review`: Stage the exact current agent schedule for...
 * `propose-connected-read-review`: Stage current connected-read terms for an...
 * `propose-model-policy`: Stage the exact current model policy for...
@@ -364,6 +365,27 @@ $ hz chat propose-agent-contract [OPTIONS] {durable_session} {request_id}
 
 * `durable_session`: The personal agent session.  [required]
 * `request_id`: The contract proposal request id.  [required]
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz chat propose-agent-notification`
+
+Stage one exact notification draft for a human decision; no notice is sent.
+
+**Usage**:
+
+```console
+$ hz chat propose-agent-notification [OPTIONS] {durable_session} {request_id}
+```
+
+**Arguments**:
+
+* `durable_session`: The personal agent session.  [required]
+* `request_id`: The notification draft request id.  [required]
 
 **Options**:
 
@@ -607,6 +629,8 @@ $ hz heinzel [OPTIONS] COMMAND [ARGS]...
 * `model-policy`: Read the current exact proposed policy; no...
 * `new`: Write a starter contract, or a playbook&#x27;s...
 * `new-chat`: Create a durable personal Heinzel with an...
+* `notification-outcome`: Inspect a prior queue attempt without...
+* `notification-proposal`: Read an exact private notification draft...
 * `pause-agent-schedule`: Stop future launches; a new schedule needs...
 * `personal-artifacts`: List local principal-submitted file...
 * `playbooks`: (expert) List the playbooks plugins...
@@ -620,6 +644,7 @@ $ hz heinzel [OPTIONS] COMMAND [ARGS]...
 * `propose-skill-draft`: Store a private skill draft; no file is...
 * `propose-skill-sharing`: Request review of exact private draft and...
 * `prune`: (expert) Delete drafts and records older...
+* `queue-agent-notification`: Queue the exact owner-confirmed notice;...
 * `revoke-connected-read`: Revoke this exact connected-read grant...
 * `schedule-control`: Pause a schedule; activation and resume...
 * `scheduled-agent-proposal`: Inspect the exact inert proposal; a...
@@ -1180,6 +1205,48 @@ $ hz heinzel new-chat [OPTIONS] {request_id}
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
 
+### `hz heinzel notification-outcome`
+
+Inspect a prior queue attempt without sending again.
+
+**Usage**:
+
+```console
+$ hz heinzel notification-outcome [OPTIONS] {session_id} {request_id}
+```
+
+**Arguments**:
+
+* `session_id`: [required]
+* `request_id`: [required]
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz heinzel notification-proposal`
+
+Read an exact private notification draft without sending it.
+
+**Usage**:
+
+```console
+$ hz heinzel notification-proposal [OPTIONS] {session_id} {request_id}
+```
+
+**Arguments**:
+
+* `session_id`: [required]
+* `request_id`: [required]
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
 ### `hz heinzel pause-agent-schedule`
 
 Stop future launches; a new schedule needs a separate human approval.
@@ -1465,6 +1532,29 @@ $ hz heinzel prune [OPTIONS]
 **Options**:
 
 * `--dry-run / --no-dry-run`: Only list what would be deleted; delete nothing.  [default: no-dry-run]
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz heinzel queue-agent-notification`
+
+Queue the exact owner-confirmed notice; recorded means queued, never shown.
+
+**Usage**:
+
+```console
+$ hz heinzel queue-agent-notification [OPTIONS] {session_id} {request_id} {JSON} {approval_proof}
+```
+
+**Arguments**:
+
+* `session_id`: [required]
+* `request_id`: [required]
+* `JSON`: [required]
+* `approval_proof`: [required]
+
+**Options**:
+
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.

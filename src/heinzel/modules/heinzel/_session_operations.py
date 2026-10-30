@@ -37,6 +37,8 @@ from heinzel.modules.heinzel._contract_review import ContractReview, ContractRev
 from heinzel.modules.heinzel._model_grants import ModelGrants
 from heinzel.modules.heinzel._model_policy_operations import ModelPolicyService, register_model_policy_operations
 from heinzel.modules.heinzel._models import HeinzelSettings
+from heinzel.modules.heinzel._notification_delivery import NotificationDelivery
+from heinzel.modules.heinzel._notification_proposals import NotificationProposal, NotificationProposals
 from heinzel.modules.heinzel._session_crud import SessionCrud
 from heinzel.modules.heinzel._session_models import (
     HeinzelAppearance,
@@ -127,6 +129,13 @@ class _SessionApprovalIssuer(ApprovalIssuer):
         return session, request
 
     def review(self, module: str, operation: str, arguments: dict[str, JsonValue]) -> dict[str, JsonValue]:
+        if module == "heinzel" and operation == "queue-agent-notification":
+            if self.kernel is None:
+                msg = "Notification review is unavailable"
+                raise HeinzelError(msg)
+            session, request = self._model_args(arguments)
+            current = self.kernel.resolve(CurrentUser)
+            return NotificationProposals(self.service).get(session, request, current).model_dump(mode="json")
         if module == "heinzel" and operation == "approve-connected-read":
             if self.kernel is None:
                 msg = "Connected read review is unavailable"
@@ -172,7 +181,31 @@ class _SessionApprovalIssuer(ApprovalIssuer):
             session, request, provenance
         )
 
+    def _issue_notification(self, arguments: dict[str, JsonValue], provenance: str) -> str:
+        if self.kernel is None:
+            msg = "Notification review is unavailable"
+            raise HeinzelError(msg)
+        session, request = self._model_args(arguments)
+        if arguments_hash(arguments.get("review")) != arguments_hash(
+            self.review("heinzel", "queue-agent-notification", arguments)
+        ):
+            msg = "The reviewed notification changed"
+            raise HeinzelError(msg)
+        return self.kernel.resolve(NotificationDelivery).issue(session, request, provenance)
+
+    def _applied_notification(self, arguments: dict[str, JsonValue]) -> bool:
+        if self.kernel is None:
+            return False
+        session, request = self._model_args(arguments)
+        if arguments_hash(arguments.get("review")) != arguments_hash(
+            self.review("heinzel", "queue-agent-notification", arguments)
+        ):
+            return False
+        return self.kernel.resolve(NotificationDelivery).recover(session, request, write_receipt=False) == "recorded"
+
     def issue(self, module: str, operation: str, arguments: dict[str, JsonValue], provenance: str) -> str:
+        if module == "heinzel" and operation == "queue-agent-notification":
+            return self._issue_notification(arguments, provenance)
         if module == "heinzel" and operation == "approve-connected-read":
             return self._issue_connected(arguments, provenance)
         if module == "heinzel" and operation == "approve-agent-schedule":
@@ -210,6 +243,8 @@ class _SessionApprovalIssuer(ApprovalIssuer):
         return grant.request_id == request and arguments_hash(grant.model_dump(mode="json")) == arguments_hash(expected)
 
     def applied(self, module: str, operation: str, arguments: dict[str, JsonValue]) -> bool:
+        if module == "heinzel" and operation == "queue-agent-notification":
+            return self._applied_notification(arguments)
         if module == "heinzel" and operation == "approve-connected-read":
             return self._applied_connected(arguments)
         if module == "heinzel" and operation == "approve-agent-schedule":
@@ -562,6 +597,35 @@ def _user_chat_service(crud: SessionCrud, current: CurrentUser, kernel: Kernel) 
     return UserChatService(crud, current, runner, connected=lambda: ConnectedReadGrants(crud, current, kernel))
 
 
+def _register_notification_operations(module: Module) -> None:
+    """Owner-only access to drafts; reading does not send or authorize a notification."""
+    module.service(NotificationDelivery)
+
+    @module.operation(private=True, heads={"web", "api-private"}, audience="everyday")
+    def notification_proposal(
+        service: SessionCrud, current: CurrentUser, session_id: Identity, request_id: Request
+    ) -> NotificationProposal:
+        """Read an exact private notification draft without sending it."""
+        return NotificationProposals(service).get(session_id, request_id, current)
+
+    @module.operation(private=True, read_only=False, heads={"web", "api-private"}, audience="everyday")
+    def queue_agent_notification(  # noqa: PLR0913, PLR0917 - exact action confirmation
+        service: NotificationDelivery,
+        confirmation: ApprovalConfirmation,
+        session_id: Identity,
+        request_id: Request,
+        review: dict[str, JsonValue],
+        approval_proof: str,
+    ) -> Literal["recorded", "uncertain"]:
+        """Queue the exact owner-confirmed notice; recorded means queued, never shown."""
+        return service.confirm(session_id, request_id, review, approval_proof, confirmation)
+
+    @module.operation(private=True, heads={"web", "api-private"}, audience="everyday")
+    def notification_outcome(service: NotificationDelivery, session_id: Identity, request_id: Request) -> str:
+        """Inspect a prior queue attempt without sending again."""
+        return service.recover(session_id, request_id, write_receipt=False)
+
+
 def _register_review_services(module: Module) -> None:
     module.service(ConnectedReadGrants)
     module.service(AutonomousSchedules)
@@ -576,6 +640,7 @@ def register_session_operations(module: Module) -> None:  # noqa: C901 - operati
     _register_review_services(module)
     _register_skill_operations(module)
     _register_contract_review_operations(module)
+    _register_notification_operations(module)
     _register_user_chat_operations(module)
     register_model_policy_operations(module)
     module.service(ApprovalIssuer, _approval_issuer)

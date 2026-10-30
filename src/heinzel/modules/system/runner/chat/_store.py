@@ -181,10 +181,13 @@ class ChatStore(McpChatSessions):
                 "accept-agent-contract",
                 "approve-connected-read",
                 "approve-agent-schedule",
+                "queue-agent-notification",
             }:
                 # The review remains visible in the action, not in model-visible transcript text.
                 action.command = (
-                    "Review connected read"
+                    "Review notification"
+                    if action.operation == "queue-agent-notification"
+                    else "Review connected read"
                     if action.operation == "approve-connected-read"
                     else "Review agent schedule"
                     if action.operation == "approve-agent-schedule"
@@ -210,6 +213,7 @@ class ChatStore(McpChatSessions):
                 "accept-agent-contract",
                 "approve-connected-read",
                 "approve-agent-schedule",
+                "queue-agent-notification",
             }
         ):
             msg = "This personal chat cannot authorize that action"
@@ -571,6 +575,7 @@ class StoreGate(ActionGate):
             "accept-agent-contract",
             "approve-connected-read",
             "approve-agent-schedule",
+            "queue-agent-notification",
         }:
             msg = "Only the human review surface can stage a model policy approval"
             raise HeinzelError(msg)
