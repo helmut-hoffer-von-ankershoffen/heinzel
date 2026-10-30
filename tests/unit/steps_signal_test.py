@@ -41,14 +41,16 @@ def test_interrupt_stops_only_owned_children_and_grandchildren(tmp_path, sent, v
     grand.write_text(
         "import os,signal,sys,time; from pathlib import Path; "
         "signal.signal(signal.SIGTERM,signal.SIG_IGN); "
-        "Path(sys.argv[1], 'grandchild').write_text(str(os.getpid())); time.sleep(60)"
+        "Path(sys.argv[1], 'grandchild.tmp').write_text(str(os.getpid())); "
+        "Path(sys.argv[1], 'grandchild.tmp').replace(Path(sys.argv[1], 'grandchild')); time.sleep(60)"
     )
     helper.write_text(
         "import os,signal,subprocess,sys,time; from pathlib import Path; "
         "signal.signal(signal.SIGTERM,signal.SIG_IGN if sys.argv[3]=='ignore' else "
         "lambda *_: (Path(sys.argv[1], 'term-exit').write_text('term'), sys.exit(0))); "
         "subprocess.Popen([sys.executable,sys.argv[2],sys.argv[1]]); "
-        "Path(sys.argv[1], 'child').write_text(str(os.getpid())); time.sleep(60)"
+        "Path(sys.argv[1], 'child.tmp').write_text(str(os.getpid())); "
+        "Path(sys.argv[1], 'child.tmp').replace(Path(sys.argv[1], 'child')); time.sleep(60)"
     )
     directories = [tmp_path / f"step-{i}" for i in range(1 if verbose else 2)]
     for directory in directories:
