@@ -6,7 +6,7 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from functools import partial
 from pathlib import Path
-from typing import Annotated, Any, cast, get_args, get_origin
+from typing import TYPE_CHECKING, Annotated, Any, cast, get_args, get_origin
 
 import pluggy
 from pydantic import ConfigDict, ValidationError, validate_call
@@ -50,6 +50,9 @@ from heinzel.kernel._prompter import Prompter
 from heinzel.kernel._services import ServiceContract
 from heinzel.kernel._settings import Settings
 from heinzel.kernel._spec import PROJECT_NAME, Spec
+
+if TYPE_CHECKING:
+    from heinzel.kernel._source_loading import SourceDiscovery
 
 logger = logging.getLogger(__name__)
 
@@ -106,6 +109,7 @@ class Kernel:
         records: Iterable[ModuleRecord] = (),
         errors: Mapping[str, str] | None = None,
         config: Config | None = None,
+        source_discovery: "SourceDiscovery | None" = None,
     ) -> None:
         """Register modules. Disabled modules (and their submodules) are blocked, not registered.
 
@@ -114,6 +118,7 @@ class Kernel:
             records: Modules to register, typically from `heinzel.kernel.discover`.
             errors: Plugins that failed to load, by entry point name, for reporting.
             config: Configuration files and their content; none (defaults and environment only) if not given.
+            source_discovery: Optional host-owned source continuity catalog.
 
         A plugin module that collides with a registered one — same qualified name, a submodule named like one of its
         parent's operations, or a service type provided twice — is skipped and reported in `errors`, so one bad
@@ -123,6 +128,7 @@ class Kernel:
             HeinzelError: If built-in modules collide.
         """
         self.config = config or Config.empty()
+        self.source_discovery = source_discovery
         self.settings = settings or self.config.settings(Settings, KERNEL_SECTION)
         self.errors: dict[str, str] = dict(errors or {})
         self._manager = pluggy.PluginManager(PROJECT_NAME)

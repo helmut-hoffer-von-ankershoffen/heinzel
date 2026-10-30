@@ -299,3 +299,12 @@ def test_operation_arguments_refuse_nonfinite_nested_json(value):
 def test_operation_arguments_refuse_unbounded_size_or_depth(value):
     with pytest.raises(ValidationError, match="at most"):
         RunOperation(operation="change", arguments={"value": value})
+
+
+def test_detail_designations_use_bounded_text_and_optional_state_icons():
+    line = DetailLine(text="Berlin", badge=" Primary ", icon="moon")
+    assert line.badge == "Primary"
+    assert line.icon == "moon"
+    assert DetailLine(text="Berlin").badge is None
+    with pytest.raises(ValidationError, match="at most 80"):
+        DetailLine(text="Berlin", badge="x" * 81)
