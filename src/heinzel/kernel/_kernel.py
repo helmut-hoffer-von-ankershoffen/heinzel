@@ -344,6 +344,27 @@ class Kernel:
             raise HeinzelError(msg)
         return self.resolve_registered_service(matches[0], record)
 
+    def selected_capability_service[T](self, contract: type[T], capability: str) -> tuple[ModuleRecord, T]:
+        """Resolve an installed read service from the actual capability binding in this kernel.
+
+        This identifies registered selection only. The caller must recheck current configuration, source and
+        human authorization before use; it establishes neither approval nor publisher authentication.
+
+        Raises:
+            HeinzelError: If the read adapter is unavailable, ambiguous, or lacks the requested service.
+        """
+        selected = self._capabilities.bound(capability)
+        providers = [
+            record
+            for record, let in self.lets(ProviderLet)
+            if let.capability == capability and let.adapter == selected and "read" in let.modes
+        ]
+        if selected is None or len(providers) != 1:
+            msg = "The selected read adapter is unavailable or ambiguous"
+            raise HeinzelError(msg)
+        record = providers[0]
+        return record, self.resolve_selected_service(contract, record)
+
     def handle_for(self, requester: Requester, capability: str) -> object:
         """A handle on `capability` for `requester`, for code that acts on its behalf without being its function.
 
