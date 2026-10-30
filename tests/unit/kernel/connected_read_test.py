@@ -70,7 +70,11 @@ def test_connected_service_selection_uses_actual_capability_binding():
         pass
 
     class CalendarAdapter:
-        pass
+        def events(self, window):
+            return []
+
+        def free_busy(self, people, window):
+            return []
 
     first = Module("first", "first")
     second = Module("second", "second")
@@ -99,7 +103,11 @@ def test_capability_service_refuses_ambiguous_or_disabled_binding():
         pass
 
     class CalendarAdapter:
-        pass
+        def events(self, window):
+            return []
+
+        def free_busy(self, people, window):
+            return []
 
     first = Module("first", "first")
     second = Module("second", "second")
@@ -117,3 +125,20 @@ def test_capability_service_refuses_ambiguous_or_disabled_binding():
         kernel = Kernel(Settings(), records, config=config)
         with pytest.raises(HeinzelError):
             kernel.selected_capability_service(ConnectedReadService, "calendar")
+
+
+def test_skipped_incomplete_adapter_cannot_be_selected():
+    class Broken:
+        pass
+
+    class Provider(ConnectedReadService):
+        pass
+
+    module = Module("broken", "broken")
+    module.service(Provider)
+    module.provides("calendar", modes={"read"}, name="broken", hosts=["fixture.invalid"])(Broken)
+    origin = Origin(distribution="fixture", version="1", builtin=False)
+    record = ModuleRecord(qualname="broken", module=module, origin=origin)
+    kernel = Kernel(Settings(), [record], config=Config(files=(), data={"capabilities": {"calendar": "broken"}}))
+    with pytest.raises(HeinzelError):
+        kernel.selected_capability_service(ConnectedReadService, "calendar")

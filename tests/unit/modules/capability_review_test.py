@@ -14,6 +14,12 @@ def test_protocol_schema_and_selected_provider_are_bound_without_execution():
         def __init__(self):
             raise AssertionError
 
+        def events(self, window):
+            return []
+
+        def free_busy(self, people, window):
+            return []
+
     first, second = Module("first", "first"), Module("second", "second")
     first.provides("calendar", modes={"read"}, name="first", hosts=["first.invalid"])(CalendarAdapter)
     second.provides("calendar", modes={"read"}, name="second", hosts=["second.invalid"])(CalendarAdapter)

@@ -94,3 +94,33 @@ def describe_capability_read(kernel: Kernel, capability: str, method: str) -> Ca
         schema,
         hashlib.sha256(encoded).hexdigest(),
     )
+
+
+def validate_capability_read_arguments(capability: str, method: str, arguments: dict[str, Any]) -> dict[str, Any]:
+    """Validate exact fixed arguments against the actual read protocol, rejecting ignored nested fields.
+
+    Raises:
+        HeinzelError: If arguments are unsupported, incomplete, or would be silently changed.
+        ValueError: Invalid argument representations are converted to a safe error.
+    """
+    spec = CAPABILITIES.get(capability)
+    if spec is None or spec.methods.get(method) != "read":
+        msg = "The selected capability method is not an available read"
+        raise HeinzelError(msg)
+    try:
+        function = getattr(spec.protocol, method)
+        signature = inspect.signature(function)
+        hints = get_type_hints(function)
+        fields: dict[str, Any] = {}
+        for name, parameter in signature.parameters.items():
+            if name != "self":
+                fields[name] = (hints[name], ... if parameter.default is inspect.Parameter.empty else parameter.default)
+        model = create_model("FixedCapabilityRead", __config__=ConfigDict(extra="forbid"), **fields)
+        validated = model.model_validate(arguments).model_dump(mode="json", exclude_unset=True)
+        if validated != arguments:
+            raise ValueError  # noqa: TRY301
+    except Exception:  # noqa: BLE001 - input diagnostics may contain private arguments
+        msg = "The connected read arguments do not match its capability schema"
+        raise HeinzelError(msg) from None
+    else:
+        return validated

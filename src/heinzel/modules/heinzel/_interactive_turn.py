@@ -18,6 +18,7 @@ from pydantic_ai.models import Model
 from heinzel import ConfiguredApiAccess, CurrentUser, HeinzelError, Kernel, SessionEvent
 from heinzel.modules.heinzel._budget_reservation import initialize_budget
 from heinzel.modules.heinzel._claude_subscription_model import ClaudeSubscriptionModel
+from heinzel.modules.heinzel._connected_grants import ConnectedReadFailedError, ConnectedReadGrants
 from heinzel.modules.heinzel._engine import EngineCheckpoint, TurnAuthority, TurnDeps, TurnLimits, run_turn
 from heinzel.modules.heinzel._host_tools import HostToolCatalog, OperationFailedError
 from heinzel.modules.heinzel._model_admission import ConnectedModelFactory, connected_model
@@ -187,6 +188,7 @@ class InteractiveTurn:
         allow_ungranted_tools: bool = True,
         backend_binding: BackendBinding | None = None,
         user_proposal_policy: Callable[[], bool] | None = None,
+        connected: ConnectedReadGrants | None = None,
     ) -> SessionMessage:
         """Execute one accepted message; an interrupted attempt never automatically re-executes.
 
@@ -214,6 +216,7 @@ class InteractiveTurn:
                 msg = "Approved operations require a host-owned tool catalog"
                 raise HeinzelError(msg)
             schemas = catalog.approved_preview(session_id, expected_grant) if catalog and expected_grant else []
+            connected_schema = connected.tool_schema(session_id) if connected is not None else None
             accepted = next(
                 (e for e in events if e.kind == "message.accepted" and e.key == f"message-{request_id}"), None
             )
@@ -328,7 +331,7 @@ class InteractiveTurn:
             )
             user_names = {tool["name"] for tool in user_proposal_schemas()} if user_tools else set()
 
-            def dispatch(name: str, arguments: dict[str, JsonValue]) -> str:  # noqa: C901, PLR0911 - closed dispatch cases
+            def dispatch_general(name: str, arguments: dict[str, JsonValue]) -> str:  # noqa: C901, PLR0911 - closed dispatch cases
                 nonlocal calls
                 self._check_owner()
                 calls += 1
@@ -384,6 +387,28 @@ class InteractiveTurn:
                 self._event(session_id, turn, calls, "unavailable", "denied")
                 return "Tool unavailable: no host-authorized implementation is registered."
 
+            def dispatch(name: str, arguments: dict[str, JsonValue]) -> str:
+                nonlocal calls
+                if name != "connected_read":
+                    return dispatch_general(name, arguments)
+                self._check_owner()
+                calls += 1
+                args = _JSON.validate_python(arguments, strict=True)
+                self._event(session_id, turn, calls, name, "requested")
+                try:
+                    if connected is None or connected_schema is None or args:
+                        msg = "The connected read is unavailable or has dynamic arguments"
+                        raise HeinzelError(msg)  # noqa: TRY301
+                    value = connected.read(session_id, turn_writer)
+                except ConnectedReadFailedError:
+                    self._event(session_id, turn, calls, name, "failed")
+                    return "The connected read began but did not produce a usable result."
+                except HeinzelError:
+                    self._event(session_id, turn, calls, name, "denied")
+                    return "Connected read unavailable or its approval changed."
+                self._event(session_id, turn, calls, name, "completed")
+                return json.dumps(value, ensure_ascii=False)
+
             def checkpoint(item: EngineCheckpoint) -> None:
                 self._check_owner()
                 with repo.control_writer(session_id) as writer:
@@ -419,7 +444,8 @@ class InteractiveTurn:
                     + json.dumps(
                         [{"name": tool.identity, "schema": tool.schema} for tool in schemas]
                         + (skill_tool_schemas(expected_grant) if expected_grant else [])
-                        + (user_proposal_schemas() if user_tools else []),
+                        + (user_proposal_schemas() if user_tools else [])
+                        + ([connected_schema] if connected_schema is not None else []),
                         ensure_ascii=True,
                     )
                 ),

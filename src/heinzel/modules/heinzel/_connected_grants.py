@@ -1,0 +1,356 @@
+"""Internal exact connected-read grants; no head operation, model tool, or issuer is registered here."""
+
+import json
+import secrets
+from datetime import timedelta
+
+from pydantic import BaseModel, ConfigDict, JsonValue, TypeAdapter
+
+from heinzel import (
+    ConnectedReadReview,
+    ConnectedReadService,
+    CurrentUser,
+    HeinzelError,
+    Kernel,
+    SessionEvent,
+    SessionWriter,
+)
+from heinzel.kernel import PRIVATE_WRITE
+from heinzel.kernel._approval import (
+    ApprovalEvidence,
+    ApprovalIntent,
+    ApprovalRecord,
+    approval_proof_hash,
+    arguments_hash,
+    consume_approval,
+)
+from heinzel.modules.heinzel._capability_review import describe_capability_read, validate_capability_read_arguments
+from heinzel.modules.heinzel._session_bodies import immutable_body
+from heinzel.modules.heinzel._session_crud import SessionCrud
+from heinzel.modules.heinzel._session_models import RequestId, SessionId
+
+_SESSION = TypeAdapter(SessionId)
+_REQUEST = TypeAdapter(RequestId)
+_READ_PERMISSION = "private:read"
+_MAX_RESULT_BYTES = 16_000
+_HEADS = frozenset({"cli", "api-bearer", "web-session", "web-device"})
+
+
+class ConnectedReadFailedError(HeinzelError):
+    """The provider read began but did not produce a safe usable result."""
+
+
+class ConnectedGrantProposal(BaseModel):
+    """One private exact capability/source/account/window proposal; no access until trusted approval."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    request_id: RequestId
+    revision: int
+    capability: str
+    method: str
+    binding_sha256: str
+    review: ConnectedReadReview
+
+
+class ConnectedReadGrants:
+    """Owner-bound internal grant store; caller must construct a fresh kernel from trusted current settings.
+
+    This service is unregistered: no model, MCP tool or API head can issue its proof. The issuing seam is intended
+    only for a trusted human confirmation after the exact stored review is shown.
+    """
+
+    def __init__(self, crud: SessionCrud, current: CurrentUser, kernel: Kernel) -> None:
+        self.crud, self.current, self.kernel = crud, current, kernel
+        self.owner = crud.repository.principal_id
+        if kernel.resolve(CurrentUser) is not current:
+            msg = "The connected read owner service changed"
+            raise HeinzelError(msg)
+
+    def _human(self) -> None:
+        context = self.current.context()
+        if (
+            context.authentication not in _HEADS
+            or PRIVATE_WRITE not in context.permissions
+            or context.principal != self.current.owner()
+            or context.principal.id != self.owner
+            or self.crud.repository.principal_id != self.owner
+        ):
+            msg = "The connected read review requires its authenticated owner"
+            raise HeinzelError(msg)
+
+    def _observe(
+        self, session: str, capability: str, method: str, fixed: dict[str, JsonValue]
+    ) -> tuple[str, ConnectedReadReview]:
+        fixed = validate_capability_read_arguments(capability, method, fixed)
+        descriptor = describe_capability_read(self.kernel, capability, method)
+        record, service = self.kernel.selected_capability_service(ConnectedReadService, capability)
+        if record.qualname != descriptor.owner_module:
+            msg = "The selected connected read changed"
+            raise HeinzelError(msg)
+        lease = service.open_lease(session, f"capability-method:{capability}.{method}", fixed)
+        try:
+            review = lease.review()
+            schema_digest = arguments_hash(descriptor.schema)
+            if (
+                review.owner != self.owner
+                or review.session != session
+                or review.operation != f"capability-method:{capability}.{method}"
+                or review.schema_sha256 != schema_digest
+                or review.fixed_arguments != fixed
+            ):
+                msg = "The connected read source did not match its host review"
+                raise HeinzelError(msg)
+            return descriptor.binding_sha256, review.model_copy(deep=True)
+        finally:
+            lease.close()
+
+    def _body(self, session: str, event: SessionEvent) -> ConnectedGrantProposal:
+        return ConnectedGrantProposal.model_validate(self.crud._body(session, event))  # noqa: SLF001
+
+    def _intent(self, session: str, proposal: ConnectedGrantProposal) -> ApprovalIntent:
+        return ApprovalIntent(
+            owner=self.owner,
+            audience="personal-connected-read",
+            session=session,
+            action="approve-connected-read",
+            resource=proposal.review.operation,
+            arguments_hash=arguments_hash(proposal.model_dump(mode="json")),
+            contract_revision=0,
+            grant_revision=proposal.revision,
+            policy_revision=0,
+        )
+
+    def propose(
+        self, session: str, request: str, capability: str, method: str, fixed: dict[str, JsonValue]
+    ) -> ConnectedGrantProposal:
+        """Persist the exact owner-requested proposal, never execute the read.
+
+        Raises:
+            HeinzelError: If owner, source, or request identity is invalid.
+        """
+        self._human()
+        _SESSION.validate_python(session)
+        _REQUEST.validate_python(request)
+        binding, review = self._observe(session, capability, method, fixed)
+        with self.crud.repository.main_writer(session), self.crud.repository.control_writer(session) as writer:
+            events = self.crud.repository.control_read(session).events
+            existing = next((e for e in events if e.kind == "connected.proposed" and e.key == request), None)
+            if existing:
+                proposal = self._body(session, existing)
+                candidate = ConnectedGrantProposal(
+                    request_id=request,
+                    revision=proposal.revision,
+                    capability=capability,
+                    method=method,
+                    binding_sha256=binding,
+                    review=review,
+                )
+                if proposal != candidate:
+                    msg = "This request identifies a different connected read"
+                    raise HeinzelError(msg)
+                return proposal
+            revisions = [self._body(session, e).revision for e in events if e.kind == "connected.proposed"]
+            proposal = ConnectedGrantProposal(
+                request_id=request,
+                revision=max(revisions, default=0) + 1,
+                capability=capability,
+                method=method,
+                binding_sha256=binding,
+                review=review,
+            )
+            body = immutable_body(writer, "connected-read-grant", proposal.model_dump(mode="json"), control=True)
+            writer.append("connected.proposed", key=request, data=body.model_dump(mode="json"))
+        return proposal
+
+    def _proposal(self, session: str, request: str) -> ConnectedGrantProposal:
+        events = self.crud.repository.control_read(session).events
+        proposals = [e for e in events if e.kind == "connected.proposed"]
+        matches = [e for e in proposals if e.key == request]
+        if len(matches) != 1 or not proposals or proposals[-1] != matches[0]:
+            msg = "The connected read proposal changed; review it again"
+            raise HeinzelError(msg)
+        proposal = self._body(session, matches[0])
+        binding, review = self._observe(session, proposal.capability, proposal.method, proposal.review.fixed_arguments)
+        if binding != proposal.binding_sha256 or review != proposal.review:
+            msg = "The connected read source or account changed; review it again"
+            raise HeinzelError(msg)
+        return proposal
+
+    def issue(self, session: str, request: str, provenance: str) -> str:
+        """Issue internal proof only after trusted human confirmation of the exact current review."""
+        self._human()
+        proof = secrets.token_urlsafe(32)
+        digest = approval_proof_hash(proof)
+        with self.crud.repository.control_writer(session) as writer:
+            proposal = self._proposal(session, request)
+            now = self.crud.clock()
+            record = ApprovalRecord(
+                intent=self._intent(session, proposal),
+                proof_hash=digest,
+                nonce=secrets.token_hex(32),
+                provenance=provenance[:128],
+                decision="approve",
+                issued_at=now,
+                expires_at=now + timedelta(minutes=5),
+            )
+            writer.append("approval.issued", key=digest, data=record.model_dump(mode="json"))
+        return proof
+
+    def approve(self, session: str, request: str, proof: str) -> ConnectedGrantProposal:
+        """Consume an exact proof into private grant state; do not run any provider read."""
+        self._human()
+        proposal = self._proposal(session, request)
+
+        def current(events: list[SessionEvent]) -> ApprovalIntent:
+            if any(
+                event.kind == "connected.approved" and self._body(session, event).request_id == request
+                for event in events
+            ):
+                msg = "This connected read has already been approved"
+                raise HeinzelError(msg)
+            return self._intent(session, self._proposal(session, request))
+
+        def effect(
+            writer: SessionWriter, _events: list[SessionEvent], _evidence: ApprovalEvidence
+        ) -> dict[str, JsonValue]:
+            body = immutable_body(writer, "approved-connected-read", proposal.model_dump(mode="json"), control=True)
+            return body.model_dump(mode="json")
+
+        with self.crud.repository.main_writer(session):
+            consume_approval(
+                self.crud.repository,
+                session,
+                proof,
+                self._intent(session, proposal),
+                current,
+                self.crud.clock,
+                event_kind="connected.approved",
+                effect_data=effect,
+            )
+        return proposal
+
+    def approved(self, session: str) -> ConnectedGrantProposal:
+        """Project only the latest unrevoked grant with exact trusted issuance evidence.
+
+        Raises:
+            HeinzelError: If no current grant exists or its saved evidence is inconsistent.
+        """
+        events = self.crud.repository.control_read(session).events
+        approvals = [e for e in events if e.kind == "connected.approved"]
+        if not approvals:
+            msg = "No connected read has been approved"
+            raise HeinzelError(msg)
+        event = approvals[-1]
+        grant = self._body(session, event)
+        proposed = [e for e in events if e.kind == "connected.proposed" and e.key == grant.request_id]
+        issued = [e for e in events if e.kind == "approval.issued" and e.key == event.data.get("proof_hash")]
+        if len(proposed) != 1 or len(issued) != 1 or not proposed[0].seq < issued[0].seq < event.seq:
+            msg = "The connected read approval evidence is invalid"
+            raise HeinzelError(msg)
+        try:
+            record = ApprovalRecord.model_validate_json(json.dumps(issued[0].data))
+        except ValueError:
+            msg = "The connected read approval evidence is invalid"
+            raise HeinzelError(msg) from None
+        latest = [e for e in events if e.kind == "connected.proposed"]
+        if (
+            self._body(session, proposed[0]) != grant
+            or not latest
+            or latest[-1].key != grant.request_id
+            or record.model_dump(mode="json").get("decision") != "approve"
+            or not record.issued_at <= event.ts < record.expires_at
+            or issued[0].ts > event.ts
+            or record.intent != self._intent(session, grant)
+            or record.proof_hash != issued[0].key
+            or record.nonce != event.data.get("consumed_nonce")
+            or record.provenance != event.data.get("provenance")
+            or record.intent.model_dump(mode="json") != event.data.get("intent")
+            or sum(e.data.get("consumed_nonce") == record.nonce for e in events) != 1
+            or any(e.kind == "approval.revoked" and e.key == record.nonce for e in events)
+            or any(e.kind == "connected.revoked" and e.key == grant.request_id for e in events)
+        ):
+            msg = "The connected read approval evidence is invalid or revoked"
+            raise HeinzelError(msg)
+        return grant
+
+    def tool_schema(self, session: str) -> dict[str, JsonValue] | None:
+        """Describe the approved read without exposing account or provider scope details.
+
+        Raises:
+            HeinzelError: If the saved grant or selected provider is invalid.
+        """
+        events = self.crud.repository.control_read(session).events
+        if not any(event.kind == "connected.approved" for event in events):
+            return None
+        grant = self.approved(session)
+        descriptor = describe_capability_read(self.kernel, grant.capability, grant.method)
+        if descriptor.binding_sha256 != grant.binding_sha256:
+            msg = "The connected read provider changed"
+            raise HeinzelError(msg)
+        return {
+            "name": "connected_read",
+            "description": f"Read the approved {grant.capability}.{grant.method} using the fixed reviewed arguments.",
+            "schema": {"type": "object", "properties": {}, "additionalProperties": False},
+        }
+
+    def revoke(self, session: str, request: str) -> None:
+        """Revoke an exact active grant under the same writer used by turns.
+
+        Raises:
+            HeinzelError: If the owner or current grant does not match.
+        """
+        self._human()
+        with self.crud.repository.main_writer(session), self.crud.repository.control_writer(session) as writer:
+            if self.approved(session).request_id != request:
+                msg = "The connected read grant changed"
+                raise HeinzelError(msg)
+            writer.append("connected.revoked", key=request, data={})
+
+    def read(self, session: str, turn_writer: SessionWriter) -> JsonValue:
+        """Read through a fresh exact matching lease while holding the owning turn's main writer.
+
+        Raises:
+            HeinzelError: If owner, current approval, source, account or constraints cannot be verified.
+            ConnectedReadFailedError: If an invoked read or cleanup does not finish successfully.
+            ValueError: Invalid result data is converted to a safe failure.
+        """
+        context = self.current.context()
+        if (
+            context.authentication not in _HEADS | {"daemon"}
+            or context.principal != self.current.owner()
+            or context.principal.id != self.owner
+            or self.crud.repository.principal_id != self.owner
+            or _READ_PERMISSION not in context.permissions
+            or not self.crud.repository.is_main_writer(session, turn_writer)
+        ):
+            msg = "The connected read does not belong to this authorized turn"
+            raise HeinzelError(msg)
+        grant = self.approved(session)
+        descriptor = describe_capability_read(self.kernel, grant.capability, grant.method)
+        record, service = self.kernel.selected_capability_service(ConnectedReadService, grant.capability)
+        if descriptor.binding_sha256 != grant.binding_sha256 or descriptor.owner_module != record.qualname:
+            msg = "The connected read provider changed"
+            raise HeinzelError(msg)
+        lease = service.open_lease(session, grant.review.operation, grant.review.fixed_arguments)
+        invoked = False
+        try:
+            if lease.review() != grant.review or self.approved(session) != grant:
+                msg = "The connected read approval or account changed"
+                raise HeinzelError(msg)
+            try:
+                invoked = True
+                result = TypeAdapter(JsonValue).validate_python(lease.read({}), strict=True)
+                if len(json.dumps(result, ensure_ascii=True).encode()) > _MAX_RESULT_BYTES:
+                    raise ValueError  # noqa: TRY301
+            except Exception:  # noqa: BLE001 - never return provider or input diagnostics
+                msg = "The connected read began but did not produce a usable result"
+                raise ConnectedReadFailedError(msg) from None
+            return result
+        finally:
+            try:
+                lease.close()
+            except Exception:  # noqa: BLE001 - cleanup diagnostics may contain private material
+                msg = "The connected read cleanup could not be confirmed"
+                if invoked:
+                    raise ConnectedReadFailedError(msg) from None
+                raise HeinzelError(msg) from None
