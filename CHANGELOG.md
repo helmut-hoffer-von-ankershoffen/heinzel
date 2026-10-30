@@ -4,11 +4,12 @@ All notable changes to Heinzelmännchen, newest first. Versions follow [Semantic
 
 ## [0.9.2](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/releases/tag/v0.9.2) - 2026-10-30
 
-Custom plugins now set up correctly with the Make version bundled with macOS. Standalone and collection authoring checks exercise the shipped toolkit defaults, and the guide covers creating, testing and publishing plugins from separate public or private repositories.
+Custom plugins now set up correctly with the Make version bundled with macOS. The authoring guide covers creating, testing and publishing plugins from separate public or private repositories. Cold parallel builds now share the frontend build instead of clearing each other's assets, keeping installation and release checks reliable.
 
 ### 🐛 Bug fixes
 
 - **plugin:** Bootstrap the default authoring toolkit ([#274](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/274)) ([20818ed](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/20818ed40af66a153c4a17f33408aaa867483214))
+- **web:** Reuse the locked frontend build during packaging ([66fc2cb](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/66fc2cb93f342e9e79a7d9a87f1c292c3b6f03c0))
 
 ## [0.9.1](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/releases/tag/v0.9.1) - 2026-10-29
 
