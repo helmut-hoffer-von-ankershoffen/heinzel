@@ -16,7 +16,9 @@ _RUNNER = Path(__file__).resolve().parents[2] / "scripts" / "steps.py"
 
 
 def _alive(pid: int) -> bool:
-    result = subprocess.run(["ps", "-o", "stat=", "-p", str(pid)], capture_output=True, text=True, check=False)
+    result = subprocess.run(
+        ["ps", "-o", "stat=", "-p", str(pid)], capture_output=True, text=True, timeout=2, check=False
+    )
     status = result.stdout.strip()
     return bool(status) and not status.startswith("Z")
 
