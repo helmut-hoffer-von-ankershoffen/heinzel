@@ -60,7 +60,7 @@ esac
 @pytest.fixture
 def env(tmp_path, monkeypatch):
     """A uv tool environment pinned to the running version's tag, with one plugin; fake uv and hz; fake GitHub."""
-    env = tmp_path / "env"
+    env = tmp_path / "tools" / "heinzel"
     (env / "bin").mkdir(parents=True)
     (env / "version").write_text(__version__)
     (env / "uv-receipt.toml").write_text(
@@ -75,6 +75,15 @@ def env(tmp_path, monkeypatch):
     }.items():
         (env / "bin" / name).write_text(script)
         (env / "bin" / name).chmod(0o755)
+    entrypoints = tmp_path / "entrypoints"
+    entrypoints.mkdir()
+    shim = entrypoints / "hz"
+    shim.symlink_to(env / "bin" / "hz")
+    receipt = env / "uv-receipt.toml"
+    receipt.write_text(
+        receipt.read_text(encoding="utf-8") + f"entrypoints = [{{ name = 'hz', install-path = {str(shim)!r} }}]\n",
+        encoding="utf-8",
+    )
     monkeypatch.setenv("PATH", f"{env / 'bin'}{os.pathsep}{os.environ['PATH']}")
     monkeypatch.setattr(sys, "prefix", str(env))
     monkeypatch.setattr(sys, "executable", str(env / "bin" / "hz"))  # the fresh `hz` that reports the version

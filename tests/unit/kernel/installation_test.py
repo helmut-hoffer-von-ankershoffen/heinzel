@@ -223,3 +223,90 @@ def test_attempt_returns_how_the_command_ended(tmp_path):
 
     result = Installation(Progress(), prefix=tmp_path, uv="uv", runner=failing).attempt(["uv"], "Doing")
     assert (result.returncode, result.stderr) == (1, "uv says no")
+
+
+def _target_fixture(tmp_path):
+    prefix = tmp_path / "tools" / "heinzel"
+    scripts = prefix / "bin"
+    scripts.mkdir(parents=True)
+    (scripts / "hz").write_text("fixture", encoding="utf-8")
+    bin_dir = tmp_path / "installed-bin"
+    bin_dir.mkdir()
+    (bin_dir / "hz").symlink_to(scripts / "hz")
+    receipt = (
+        '[tool]\nrequirements = [{ name = "heinzel" }]\nentrypoints = [{ name = "hz", install-path = '
+        + repr(str(bin_dir / "hz"))
+        + " }]\n"
+    )
+    (prefix / "uv-receipt.toml").write_text(receipt, encoding="utf-8")
+    return prefix, bin_dir
+
+
+def test_tool_install_binds_store_and_bin_to_running_receipt(tmp_path, monkeypatch):
+    prefix, bin_dir = _target_fixture(tmp_path)
+    monkeypatch.setenv("UV_TOOL_DIR", str(tmp_path / "other-tools"))
+    monkeypatch.setenv("UV_TOOL_BIN_DIR", str(tmp_path / "other-bin"))
+    calls = []
+
+    def spy(command, environment):
+        calls.append((command, environment))
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    installation = Installation(Progress(), prefix=prefix, uv="fake-uv", runner=spy)
+    command = installation.tool_install_command("heinzel", [])
+    installation.attempt(command, "fixture", {"EXAMPLE": "kept", "UV_TOOL_DIR": "/wrong"})
+    assert calls == [(command, {"EXAMPLE": "kept", "UV_TOOL_DIR": str(prefix.parent), "UV_TOOL_BIN_DIR": str(bin_dir)})]
+
+
+@pytest.mark.parametrize("damage", ["missing", "wrong_target", "multiple", "relative", "wrong_prefix"])
+def test_tool_install_refuses_unverified_target_without_running_uv(tmp_path, damage):
+    prefix, bin_dir = _target_fixture(tmp_path)
+    receipt = prefix / "uv-receipt.toml"
+    if damage == "missing":
+        receipt.write_text('[tool]\nrequirements = [{ name = "heinzel" }]\n', encoding="utf-8")
+    elif damage == "wrong_target":
+        (bin_dir / "hz").unlink()
+        (bin_dir / "hz").symlink_to(tmp_path / "other")
+    elif damage == "multiple":
+        receipt.write_text(
+            receipt.read_text(encoding="utf-8").replace(" }]\n", ' }, { name = "hz", install-path = "/wrong/hz" }]\n'),
+            encoding="utf-8",
+        )
+    elif damage == "relative":
+        receipt.write_text(
+            receipt.read_text(encoding="utf-8").replace(str(bin_dir / "hz"), "relative/hz"), encoding="utf-8"
+        )
+    else:
+        renamed = prefix.with_name("other")
+        prefix.rename(renamed)
+        prefix = renamed
+    installation = Installation(Progress(), prefix=prefix, uv="fake-uv", runner=lambda *_args: pytest.fail("uv ran"))
+    with pytest.raises(HeinzelError, match="Cannot verify the running uv tool"):
+        installation.attempt(installation.tool_install_command("heinzel", []), "fixture")
+
+
+def test_tool_target_reaches_guarded_subprocess_and_drops_credentials(tmp_path, monkeypatch):
+    import json
+
+    prefix, bin_dir = _target_fixture(tmp_path)
+    spy = tmp_path / "uv"
+    spy.write_text(
+        f"#!{sys.executable}\n"
+        "import json, os, sys\n"
+        "print(json.dumps({key: os.environ.get(key) for key in "
+        "('UV_TOOL_DIR', 'UV_TOOL_BIN_DIR', 'HZ_CREDENTIAL_EXAMPLE_TOKEN')}))\n"
+        "sys.exit(77)\n",
+        encoding="utf-8",
+    )
+    spy.chmod(0o700)
+    monkeypatch.setenv("UV_TOOL_DIR", str(tmp_path / "wrong-store"))
+    monkeypatch.setenv("UV_TOOL_BIN_DIR", str(tmp_path / "wrong-bin"))
+    monkeypatch.setenv("HZ_CREDENTIAL_EXAMPLE_TOKEN", "fictional-secret")
+    installation = Installation(Progress(), prefix=prefix, uv=str(spy))
+    result = installation.attempt(installation.tool_install_command("heinzel", []), "fake guarded uv")
+    assert result.returncode == 77  # The fake refuses to perform any mutation.
+    assert json.loads(result.stdout) == {
+        "UV_TOOL_DIR": str(prefix.parent),
+        "UV_TOOL_BIN_DIR": str(bin_dir),
+        "HZ_CREDENTIAL_EXAMPLE_TOKEN": None,
+    }

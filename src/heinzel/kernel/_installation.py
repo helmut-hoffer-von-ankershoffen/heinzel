@@ -225,6 +225,46 @@ class Installation:
         """`uv pip install` or `uninstall` into the environment Heinzelmännchen runs in."""
         return [self.uv, "pip", action, "--python", sys.executable, spec]
 
+    def _tool_target(self) -> dict[str, str]:
+        """Bind uv's tool store and executable directory to the running installation.
+
+        Raises:
+            HeinzelError: If the receipt does not identify the running tool and its installed entry point.
+        """
+        msg = "Cannot verify the running uv tool and its hz entry point; update it explicitly with uv."
+        try:
+            prefix = self.prefix.resolve(strict=True)
+            if prefix.name != CORE_DISTRIBUTION:
+                raise HeinzelError(msg)
+            data = tomllib.loads((prefix / RECEIPT_FILENAME).read_text(encoding="utf-8"))
+            entries = data["tool"]["entrypoints"]
+            if (prefix / "bin").is_symlink():
+                raise HeinzelError(msg)
+            matches = [item for item in entries if item.get("name") == "hz"]
+            if len(matches) != 1:
+                raise HeinzelError(msg)
+            executable = Path(matches[0]["install-path"])
+            directory = executable.parent.resolve(strict=True)
+            for item in entries:
+                name, path = item["name"], Path(item["install-path"])
+                if (
+                    not isinstance(name, str)
+                    or not name
+                    or name in {".", ".."}
+                    or Path(name).name != name
+                    or not path.is_absolute()
+                    or path.name != name
+                    or path.parent.resolve(strict=True) != directory
+                    or not path.is_symlink()
+                    or (prefix / "bin" / name).is_symlink()
+                    or not (prefix / "bin" / name).is_file()
+                    or path.resolve(strict=True) != (prefix / "bin" / name).resolve(strict=True)
+                ):
+                    raise HeinzelError(msg)
+            return {"UV_TOOL_DIR": str(prefix.parent), "UV_TOOL_BIN_DIR": str(directory)}
+        except (OSError, ValueError, TypeError, KeyError, AttributeError, tomllib.TOMLDecodeError) as exc:
+            raise HeinzelError(msg) from exc
+
     def run(
         self, command: list[str], failure: str, activity: str, environment: Mapping[str, str] | None = None
     ) -> None:
@@ -242,6 +282,8 @@ class Installation:
         self, command: list[str], activity: str, environment: Mapping[str, str] | None = None
     ) -> subprocess.CompletedProcess[str]:
         """Run a command with a progress indicator and return how it ended, for callers that explain a failure."""
+        if command[1:3] == ["tool", "install"]:
+            environment = dict(environment or {}) | self._tool_target()
         with self._progress.task(activity):
             return self._runner(command, environment) if environment else self._runner(command)
 
