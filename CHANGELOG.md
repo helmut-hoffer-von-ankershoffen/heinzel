@@ -4,12 +4,16 @@ All notable changes to Heinzelmännchen, newest first. Versions follow [Semantic
 
 ## [0.9.7](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/releases/tag/v0.9.7) - 2026-10-30
 
-Scheduled agents can use separately reviewed item-based notification policies to suppress repeated attempts across overlapping reads and restarts. CLI command discovery now emits the actual executable command tree and schemas without running operations. Item identities remain provider-reported, and existing fixed reminders retain their prior consent.
+Scheduled agents can use separately reviewed item-based notification policies to suppress repeated attempts across overlapping reads and restarts. CLI discovery emits the actual executable command tree and schemas without running operations. Interrupted local checks now stop their owned child processes. Item identities remain provider-reported, and fixed reminders retain their prior consent.
 
 ### ✨ Features
 
 - **heinzel:** Review observed item notification policies ([#291](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/291)) ([7aa9798](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/7aa979878c584020e3f2fccd2e23ef7875310565))
 - **cli:** Describe the executable command tree ([#285](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/285)) ([536d293](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/536d293d9e8290902f17aa66bff8004a2271a070))
+
+### 🐛 Bug fixes
+
+- **ci:** Stop owned steps on interruption ([#289](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/289)) ([2cb85d1](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/2cb85d107bed1567200a3c8a20947abfa5891f1b))
 
 ## [0.9.6](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/releases/tag/v0.9.6) - 2026-10-30
 
