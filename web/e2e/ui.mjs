@@ -30,10 +30,13 @@ const result = { errors: [], violations: {}, doctor: "", screens: [], splash: {}
 const viewport = { width: 1440, height: 900 };
 const API = "**/api/**";
 
-async function axeViolations(page) {
+async function axeViolations(page, target = null) {
   // Through the DevTools protocol, which the page's CSP doesn't govern; the page itself loads nothing extra.
   await page.evaluate(axeSource);
-  const found = await page.evaluate((runOnly) => window.axe.run(document, { runOnly }), { type: "tag", values: tags });
+  const runOnly = { type: "tag", values: tags };
+  const found = target
+    ? await target.evaluate((element, runOnly) => window.axe.run(element, { runOnly }), runOnly)
+    : await page.evaluate((runOnly) => window.axe.run(document, { runOnly }), runOnly);
   return found.violations.map(
     (violation) =>
       `${violation.id}: ${violation.help} @ ${violation.nodes
@@ -144,6 +147,39 @@ try {
     await page.locator("#splash").waitFor({ state: "hidden", timeout: 15_000 });
     await page.waitForFunction(() => !document.getElementById("root")?.hasAttribute("inert"), null, { timeout: 5000 });
     await audit(`onboarding-${step}`);
+    if (step === 4) {
+      const next = wizard.getByRole("button", { name: "Next", exact: true });
+      for (const colorScheme of ["light", "dark"]) {
+        await page.emulateMedia({ colorScheme });
+        await page.waitForFunction(
+          (dark) => document.documentElement.classList.contains("dark") === dark,
+          colorScheme === "dark",
+        );
+        for (const state of ["rest", "hover", "focus"]) {
+          await page.mouse.move(0, 0);
+          await next.evaluate((element) => element.blur());
+          if (state === "hover") await next.hover();
+          if (state === "focus") await next.focus();
+          await next.evaluate((element) =>
+            Promise.all(element.getAnimations().map((animation) => animation.finished.catch(() => {}))),
+          );
+          const name = `onboarding-next-${colorScheme}-${state}`;
+          result.violations[name] = await axeViolations(page, next);
+          await next.screenshot({ path: join(shots, `${name}.png`) });
+        }
+      }
+      await page.emulateMedia({ colorScheme: "light" });
+      await page.waitForFunction(() => !document.documentElement.classList.contains("dark"));
+      // The next full-dialog audit must observe settled text after this deliberate mode change.
+      await wizard.evaluate((element) =>
+        Promise.all(
+          element
+            .getAnimations({ subtree: true })
+            .filter((animation) => Number.isFinite(animation.effect?.getComputedTiming().endTime))
+            .map((animation) => animation.finished.catch(() => {})),
+        ),
+      );
+    }
     if (step < 7) await wizard.getByRole("button", { name: "Next" }).click();
     await page.mouse.move(0, 0); // audit the resting state, not the button under the pointer
   }

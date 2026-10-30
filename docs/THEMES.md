@@ -46,10 +46,12 @@ A **backdrop** is a gradient behind the main area only (the sidebar and cards st
 `main_tint`, `background`, ...), `opacity` up to 0.9 (default 0.6). Prefer tokens as stops: they follow the mode and
 fade with the variant.
 
-**Contrast is checked at import**, in both modes, for the base and every variant: `foreground` and `muted_foreground` on `card`,
+**Contrast is checked at import**, in both modes, for the base and every variant: `primary_foreground` on `primary`, and
+`foreground` and `muted_foreground` on `card`,
 `sidebar`, `popover`, `background`, `main_tint` and every backdrop stop over the background, at
 least 4.5:1. A theme that fails is refused with each failing pair named, e.g. `variant.2.light: muted_foreground on
-backdrop stop #cfd8dc is 4.47:1, under 4.5:1`.
+backdrop stop #cfd8dc is 4.47:1, under 4.5:1`. Primary buttons keep opaque fills on hover so the checked pair
+remains valid; an inset ring provides the hover indication.
 
 ## How to make a weather theme
 
