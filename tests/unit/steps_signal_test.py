@@ -32,7 +32,8 @@ def _wait_for(predicate, seconds=5):
 
 @pytest.mark.parametrize("sent", [signal.SIGINT, signal.SIGTERM])
 @pytest.mark.parametrize("verbose", [False, True])
-def test_interrupt_stops_only_owned_children_and_grandchildren(tmp_path, sent, verbose):
+@pytest.mark.parametrize("leader_ignores", [False, True])
+def test_interrupt_stops_only_owned_children_and_grandchildren(tmp_path, sent, verbose, leader_ignores):
     helper = tmp_path / "helper.py"
     grand = tmp_path / "grand.py"
     grand.write_text(
@@ -42,7 +43,8 @@ def test_interrupt_stops_only_owned_children_and_grandchildren(tmp_path, sent, v
     )
     helper.write_text(
         "import os,signal,subprocess,sys,time; from pathlib import Path; "
-        "signal.signal(signal.SIGTERM,signal.SIG_IGN); "
+        "signal.signal(signal.SIGTERM,signal.SIG_IGN if sys.argv[3]=='ignore' else "
+        "lambda *_: (Path(sys.argv[1], 'term-exit').write_text('term'), sys.exit(0))); "
         "subprocess.Popen([sys.executable,sys.argv[2],sys.argv[1]]); "
         "Path(sys.argv[1], 'child').write_text(str(os.getpid())); time.sleep(60)"
     )
@@ -50,7 +52,12 @@ def test_interrupt_stops_only_owned_children_and_grandchildren(tmp_path, sent, v
     for directory in directories:
         directory.mkdir()
     commands = [
-        " ".join(map(shlex.quote, (sys.executable, str(helper), str(directory), str(grand))))
+        " ".join(
+            map(
+                shlex.quote,
+                (sys.executable, str(helper), str(directory), str(grand), "ignore" if leader_ignores else "default"),
+            )
+        )
         for directory in directories
     ]
     environment = dict(os.environ, VERBOSE="1" if verbose else "0")
@@ -79,6 +86,8 @@ def test_interrupt_stops_only_owned_children_and_grandchildren(tmp_path, sent, v
             os.kill(runner.pid, signal.SIGINT)
         runner.communicate(timeout=8)
         assert runner.returncode == 128 + sent
+        if not leader_ignores:
+            assert all((directory / "term-exit").read_text() == "term" for directory in directories)
         _wait_for(lambda: all(not _alive(pid) for pid in pids))
         assert unrelated.poll() is None
     finally:
