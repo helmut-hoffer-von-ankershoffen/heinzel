@@ -18,6 +18,12 @@ from heinzel.kernel import (
     RunnerSnapshotProvider,
 )
 from heinzel.kernel._approval import ApprovalConfirmation, ApprovalIssuer, arguments_hash
+from heinzel.modules.heinzel._autonomous_schedule import (
+    AutonomousSchedules,
+    ScheduleBinding,
+    ScheduleReviewPage,
+    ScheduleReviewView,
+)
 from heinzel.modules.heinzel._connected_grants import (
     ConnectedGrantProposal,
     ConnectedReadGrants,
@@ -127,6 +133,13 @@ class _SessionApprovalIssuer(ApprovalIssuer):
                 .review(*self._model_args(arguments))
                 .model_dump(mode="json")
             )
+        if module == "heinzel" and operation == "approve-agent-schedule":
+            if self.kernel is None:
+                msg = "Schedule review is unavailable"
+                raise HeinzelError(msg)
+            return (
+                self.kernel.resolve(AutonomousSchedules).current(*self._model_args(arguments)).model_dump(mode="json")
+            )
         if module == "heinzel" and operation == "accept-agent-contract":
             return ContractReview(self.service).current(*self._model_args(arguments)).model_dump(mode="json")
         if module == "heinzel" and operation == "approve-model-grant":
@@ -141,21 +154,33 @@ class _SessionApprovalIssuer(ApprovalIssuer):
         self._check_daemon(module, operation, arguments)
         return self.service.review(module, operation, arguments)
 
+    def _issue_connected(self, arguments: dict[str, JsonValue], provenance: str) -> str:
+        if self.kernel is None:
+            msg = "Connected read review is unavailable"
+            raise HeinzelError(msg)
+        session, request = self._model_args(arguments)
+        review = arguments.get("review")
+        if not isinstance(review, dict) or arguments_hash(review) != arguments_hash(
+            self.review("heinzel", "approve-connected-read", arguments)
+        ):
+            msg = "The reviewed connected read changed"
+            raise HeinzelError(msg)
+        return ConnectedReadGrants(self.service, self.kernel.resolve(CurrentUser), self.kernel).issue(
+            session, request, provenance
+        )
+
     def issue(self, module: str, operation: str, arguments: dict[str, JsonValue], provenance: str) -> str:
         if module == "heinzel" and operation == "approve-connected-read":
+            return self._issue_connected(arguments, provenance)
+        if module == "heinzel" and operation == "approve-agent-schedule":
             if self.kernel is None:
-                msg = "Connected read review is unavailable"
+                msg = "Schedule review is unavailable"
                 raise HeinzelError(msg)
             session, request = self._model_args(arguments)
-            review = arguments.get("review")
-            if not isinstance(review, dict) or arguments_hash(review) != arguments_hash(
-                self.review(module, operation, arguments)
-            ):
-                msg = "The reviewed connected read changed"
+            if arguments_hash(arguments.get("review")) != arguments_hash(self.review(module, operation, arguments)):
+                msg = "The reviewed schedule changed"
                 raise HeinzelError(msg)
-            return ConnectedReadGrants(self.service, self.kernel.resolve(CurrentUser), self.kernel).issue(
-                session, request, provenance
-            )
+            return self.kernel.resolve(AutonomousSchedules).issue(session, request, provenance)
         if module == "heinzel" and operation == "accept-agent-contract":
             session, request = self._model_args(arguments)
             if arguments.get("review") != self.review(module, operation, arguments):
@@ -171,22 +196,28 @@ class _SessionApprovalIssuer(ApprovalIssuer):
         self._check_daemon(module, operation, arguments)
         return self.service.issue(module, operation, arguments, provenance)
 
+    def _applied_connected(self, arguments: dict[str, JsonValue]) -> bool:
+        if self.kernel is None:
+            return False
+        session, request = self._model_args(arguments)
+        expected = arguments.get("review")
+        if not isinstance(expected, dict):
+            return False
+        grant = ConnectedReadGrants(self.service, self.kernel.resolve(CurrentUser), self.kernel).approved(session)
+        return grant.request_id == request and arguments_hash(grant.model_dump(mode="json")) == arguments_hash(expected)
+
     def applied(self, module: str, operation: str, arguments: dict[str, JsonValue]) -> bool:
         if module == "heinzel" and operation == "approve-connected-read":
+            return self._applied_connected(arguments)
+        if module == "heinzel" and operation == "approve-agent-schedule":
             if self.kernel is None:
                 return False
-            session, request = self._model_args(arguments)
-            expected = arguments.get("review")
-            if not isinstance(expected, dict):
-                return False
-            grant = ConnectedReadGrants(self.service, self.kernel.resolve(CurrentUser), self.kernel).approved(session)
-            return grant.request_id == request and arguments_hash(grant.model_dump(mode="json")) == arguments_hash(
-                expected
+            return self.kernel.resolve(AutonomousSchedules).applied(*self._model_args(arguments))
+        if module == "heinzel" and operation in {"accept-agent-contract", "approve-model-grant"}:
+            service = (
+                ContractReview(self.service) if operation == "accept-agent-contract" else ModelGrants(self.service)
             )
-        if module == "heinzel" and operation == "accept-agent-contract":
-            return ContractReview(self.service).applied(*self._model_args(arguments))
-        if module == "heinzel" and operation == "approve-model-grant":
-            return ModelGrants(self.service).applied(*self._model_args(arguments))
+            return service.applied(*self._model_args(arguments))
         return self.service.applied(module, operation, arguments)
 
 
@@ -394,6 +425,73 @@ def _register_connected_read_operations(module: Module) -> None:
         return service.approve(session_id, request_id, review, approval_proof, confirmation)
 
 
+def _register_autonomous_schedule_operations(module: Module) -> None:
+    """Register owner-private schedule review, independent of legacy notices."""
+
+    @module.operation(private=True, read_only=False, heads={"web", "api-private"}, audience="everyday")
+    def propose_agent_schedule(  # noqa: PLR0913, PLR0917 - exact reviewed terms
+        service: AutonomousSchedules,
+        session_id: Identity,
+        request_id: Request,
+        contract_request_id: Request,
+        cadence_seconds: Annotated[int, Field(strict=True, ge=60, le=86400, multiple_of=60)],
+        max_requests: Annotated[int, Field(strict=True, ge=1, le=4)],
+        timeout_seconds: Annotated[int, Field(strict=True, ge=1, le=120)],
+        connected_request_id: Annotated[
+            str | None,
+            Field(
+                pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+                description="An already approved connected-read request, or null for no connected reads.",
+            ),
+        ] = None,
+    ) -> ScheduleBinding:
+        """Propose autonomous turns; separate human confirmation is required to authorize them."""
+        return service.propose(
+            session_id,
+            request_id,
+            contract_request_id,
+            cadence_seconds,
+            max_requests,
+            timeout_seconds,
+            connected_request_id,
+        )
+
+    @module.operation(private=True, heads={"web", "api-private"}, audience="everyday")
+    def agent_schedule(service: AutonomousSchedules, session_id: Identity, request_id: Request) -> ScheduleReviewView:
+        """Inspect the exact proposed schedule and its recorded state."""
+        return service.review(session_id, request_id)
+
+    @module.operation(private=True, heads={"web", "api-private"}, audience="everyday")
+    def agent_schedules(
+        service: AutonomousSchedules,
+        session_id: Identity,
+        cursor: Annotated[int, Field(strict=True, ge=0)] = 0,
+        limit: Annotated[int, Field(strict=True, ge=1, le=100)] = 20,
+    ) -> ScheduleReviewPage:
+        """List bounded owner-private schedule proposals and recorded decisions."""
+        return service.list_reviews(session_id, cursor, limit)
+
+    @module.operation(private=True, read_only=False, heads={"web", "api-private"}, audience="everyday")
+    def pause_agent_schedule(
+        service: AutonomousSchedules, session_id: Identity, request_id: Request
+    ) -> ScheduleReviewView:
+        """Stop future launches; a new schedule needs a separate human approval."""
+        service.pause(session_id, request_id)
+        return service.review(session_id, request_id)
+
+    @module.operation(private=True, read_only=False, heads={"web", "api-private"}, audience="everyday")
+    def approve_agent_schedule(  # noqa: PLR0913, PLR0917 - exact trusted action confirmation
+        service: AutonomousSchedules,
+        confirmation: ApprovalConfirmation,
+        session_id: Identity,
+        request_id: Request,
+        review: dict[str, JsonValue],
+        approval_proof: str,
+    ) -> ScheduleBinding:
+        """Record exact human-confirmed autonomous schedule authority."""
+        return service.approve(session_id, request_id, review, approval_proof, confirmation)
+
+
 def _register_user_chat_operations(module: Module) -> None:
     """Register private chat, tool activity and profile proposal projections."""
 
@@ -443,17 +541,23 @@ def _register_user_chat_operations(module: Module) -> None:
 
 def _user_chat_service(crud: SessionCrud, current: CurrentUser, kernel: Kernel) -> UserChatService:
     runner = kernel.resolve_builtin_service(RunnerSnapshotProvider, "system.runner")
-    return UserChatService(crud, current, runner, connected=kernel.resolve(ConnectedReadGrants))
+    return UserChatService(crud, current, runner, connected=lambda: ConnectedReadGrants(crud, current, kernel))
+
+
+def _register_review_services(module: Module) -> None:
+    module.service(ConnectedReadGrants)
+    module.service(AutonomousSchedules)
+    _register_connected_read_operations(module)
+    _register_autonomous_schedule_operations(module)
 
 
 def register_session_operations(module: Module) -> None:  # noqa: C901 - operation declarations define one shared head surface
     """Register once on the owning module; constructing the service performs no private I/O."""
     module.service(SessionCrud, _crud)
-    module.service(ConnectedReadGrants)
     module.service(UserChatService, _user_chat_service)
+    _register_review_services(module)
     _register_skill_operations(module)
     _register_contract_review_operations(module)
-    _register_connected_read_operations(module)
     _register_user_chat_operations(module)
     register_model_policy_operations(module)
     module.service(ApprovalIssuer, _approval_issuer)

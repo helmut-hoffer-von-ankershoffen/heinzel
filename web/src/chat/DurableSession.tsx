@@ -7,6 +7,7 @@ import { ApiError, api, problem, type SchemaChatSession, type SchemaSessionSnaps
 import { useDaemonStatus } from "@/api/daemon";
 import { AgentProposal } from "@/chat/AgentProposal";
 import { AgentProposalSummary } from "@/chat/AgentProposalSummary";
+import { AgentSchedules } from "@/chat/AgentSchedules";
 import { ConnectedReadReview } from "@/chat/ConnectedReadReview";
 import { ContractHistory } from "@/chat/ContractHistory";
 import { ActionCard } from "@/chat/Conversation";
@@ -719,6 +720,7 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
             </div>
           </nav>
         )}
+        <AgentSchedules key={sessionId} sessionId={sessionId} />
         {query.data?.messages?.map((message) => {
           const turnItems =
             message.role === "assistant" && message.turn_id
@@ -740,6 +742,15 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
                 )}
               </p>
               {turnItems.length > 0 && <ToolEvents items={turnItems} label="Tool activity for this reply" />}
+              {message.role === "user" && message.origin === "daemon" && (
+                <DaemonTurnInspection
+                  sessionId={sessionId}
+                  requestId={message.id}
+                  onResolved={() => {
+                    void client.invalidateQueries({ queryKey: ["heinzel", "session", sessionId] });
+                  }}
+                />
+              )}
             </div>
           );
         })}
@@ -1121,6 +1132,28 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
           {busy ? t("durable.scheduleWorking") : pending || agentPending ? t("durable.retry") : t("durable.send")}
         </Button>
       </form>
+    </div>
+  );
+}
+
+function DaemonTurnInspection({
+  sessionId,
+  requestId,
+  onResolved,
+}: {
+  sessionId: string;
+  requestId: string;
+  onResolved: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div>
+      <Button type="button" size="sm" variant="outline" onClick={() => setOpen(!open)}>
+        {open ? "Hide turn state" : "Inspect daemon turn"}
+      </Button>
+      {open && (
+        <UncertainTurnRecovery sessionId={sessionId} requestId={requestId} allowPendingDaemon onResolved={onResolved} />
+      )}
     </div>
   );
 }

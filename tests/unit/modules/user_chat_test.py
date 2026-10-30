@@ -323,7 +323,7 @@ def test_abandon_requires_owner_stopped_turn_and_never_changes_finished_reply(tm
         current, crud, session = setup_chat(current)
         executable = fake_claude(tmp_path)
         service = UserChatService(crud, current, RunnerSnapshotService(), load=lambda: FixtureConfig(executable))
-        with pytest.raises(HeinzelError, match="previously started"):
+        with pytest.raises(HeinzelError, match="stopped uncertain turn"):
             service.abandon(session, "hello")
         turn = interactive_turn_id("hello")
         with crud.repository.control_writer(session) as writer:

@@ -36,7 +36,7 @@ from heinzel.modules.heinzel._subscription_slots import SubscriptionSlots
 
 _HEADS = frozenset({"cli", "api-bearer", "web-session", "web-device"})
 _MAX_REQUESTS = 4
-_TIMEOUT = 120
+MAX_TURN_SECONDS = 120
 _MAX_OUTPUT = 128 * 1024
 
 
@@ -105,15 +105,26 @@ class UserChatService:
         current: CurrentUser,
         runner_settings: RunnerSnapshotProvider,
         *,
-        connected: ConnectedReadGrants | None = None,
+        connected: Callable[[], ConnectedReadGrants] | None = None,
         load: Callable[[], Config] = lambda: Config.load(Path.home()),
         execute: Callable[..., Outcome] = run_bounded,
     ) -> None:
-        self._crud, self._current, self._load, self._which, self._execute = crud, current, load, shutil.which, execute
+        self._crud, self.current, self._load, self.which, self._execute = crud, current, load, shutil.which, execute
         self._runner_settings = runner_settings
         self._connected = connected
 
-    def _selected(self) -> tuple[HeinzelSettings, RunnerSnapshot]:
+    def connected_grants(self) -> ConnectedReadGrants:
+        """Resolve owner-bound connected grants only inside an authenticated host call.
+
+        Raises:
+            HeinzelError: If connected reads are not configured.
+        """
+        if self._connected is None:
+            msg = "Connected reads are unavailable"
+            raise HeinzelError(msg)
+        return self._connected()
+
+    def selected(self) -> tuple[HeinzelSettings, RunnerSnapshot]:
         config = self._load()
         choices = config.settings(CapabilitySettings, "capabilities")
         runner = self._runner_settings.snapshot(config)
@@ -129,19 +140,22 @@ class UserChatService:
             raise HeinzelError(msg)
         return limits, runner
 
-    def _owner(self, session: str, request: str) -> None:
-        context = self._current.context()
+    def _owner(self, session: str, request: str, *, allow_daemon_origin: bool = False) -> None:
+        context = self.current.context()
         if (
             context.authentication not in _HEADS
             or PRIVATE_WRITE not in context.permissions
-            or context.principal != self._current.owner()
+            or context.principal != self.current.owner()
             or self._crud.repository.principal_id != context.principal.id
         ):
             msg = "This chat turn requires an authenticated user request"
             raise HeinzelError(msg)
         events = self._crud.repository.control_read(session).events
         matches = [event for event in events if event.kind == "message.accepted" and event.key == f"message-{request}"]
-        if len(matches) != 1 or matches[0].data.get("origin") not in _HEADS:
+        allowed_origins = _HEADS
+        if allow_daemon_origin:
+            allowed_origins = _HEADS | frozenset(["daemon"])
+        if len(matches) != 1 or matches[0].data.get("origin") not in allowed_origins:
             msg = "This message has no authenticated user-chat origin"
             raise HeinzelError(msg)
 
@@ -171,7 +185,7 @@ class UserChatService:
             raise HeinzelError(msg) from None
 
     @staticmethod
-    def _executable(found: str) -> tuple[Path, str]:
+    def executable(found: str) -> tuple[Path, str]:
         try:
             executable = Path(found).resolve(strict=True)
             return executable, executable_digest(executable)
@@ -186,7 +200,28 @@ class UserChatService:
         Raises:
             HeinzelError: If user origin, configured access, bounds, or the stored turn cannot be verified.
         """
-        self._owner(session, request)
+        return await self.dispatch(
+            session,
+            request,
+            lambda: self._owner(session, request),
+            _MAX_REQUESTS,
+            MAX_TURN_SECONDS,
+            user_proposals=True,
+        )
+
+    async def dispatch(  # noqa: PLR0913 - private dispatcher receives exact host policy
+        self,
+        session: str,
+        request: str,
+        verify: Callable[[], None],
+        max_requests: int,
+        duration: int,
+        *,
+        user_proposals: bool,
+        prepare: Callable[[], None] | None = None,
+        connected_allowed: bool = False,
+    ) -> UserChatAnswer:
+        verify()
         events = self._crud.repository.control_read(session).events
         turn = interactive_turn_id(request)
         prior = next((event for event in events if event.kind == "message.replied" and event.key == turn), None)
@@ -194,22 +229,25 @@ class UserChatService:
             return UserChatAnswer(
                 session_id=session, request_id=request, message=self._crud.read_message(session, prior)
             )
+        if any(event.kind == "interactive.abandoned" and event.key == turn for event in events):
+            msg = "This turn was set aside and will not be retried"
+            raise HeinzelError(msg)
         if any(event.kind == "interactive.started" and event.key == turn for event in events):
             msg = "This interrupted turn has an uncertain outcome and cannot be retried automatically"
             raise HeinzelError(msg)
-        initial, runner = self._selected()
-        found = self._which(runner.claude_executable)
+        initial, runner = self.selected()
+        found = self.which(runner.claude_executable)
         if found is None:
             msg = "The selected Claude Code executable is unavailable"
             raise HeinzelError(msg)
-        executable, digest = await asyncio.to_thread(self._executable, found)
+        executable, digest = await asyncio.to_thread(self.executable, found)
         await asyncio.to_thread(self._login, executable)
-        policy = SubscriptionAdmission(self._current.principal().id, session, 1, _MAX_REQUESTS, _TIMEOUT, _MAX_OUTPUT)
+        policy = SubscriptionAdmission(self.current.principal().id, session, 1, max_requests, duration, _MAX_OUTPUT)
 
         def unchanged() -> bool:
-            self._owner(session, request)
-            current, selected = self._selected()
-            resolved = self._which(selected.claude_executable)
+            verify()
+            current, selected = self.selected()
+            resolved = self.which(selected.claude_executable)
             return (
                 current == initial
                 and selected == runner
@@ -231,10 +269,11 @@ class UserChatService:
             session,
             request,
             model,
-            limits=TurnLimits(requests=_MAX_REQUESTS, total_tokens=None, output_tokens=None, timeout_seconds=_TIMEOUT),
+            limits=TurnLimits(requests=max_requests, total_tokens=None, output_tokens=None, timeout_seconds=duration),
             allow_ungranted_tools=False,
-            user_proposal_policy=unchanged,
-            connected=self._connected,
+            user_proposal_policy=unchanged if user_proposals else None,
+            prepare=prepare,
+            connected=self._connected() if (user_proposals or connected_allowed) and self._connected else None,
             backend_binding=BackendBinding(backend="claude-code", mode="cli-model", revision=1),
         )
         return UserChatAnswer(session_id=session, request_id=request, message=message)
@@ -245,7 +284,7 @@ class UserChatService:
         Raises:
             HeinzelError: If the journal contains an inconsistent resolution.
         """
-        self._owner(session, request)
+        self._owner(session, request, allow_daemon_origin=True)
         repo = self._crud.repository
         turn = interactive_turn_id(request)
         events = repo.control_read(session).events
@@ -258,10 +297,14 @@ class UserChatService:
         status: Literal["pending", "unresolved", "abandoned", "completed"] = "pending"
         if resolutions:
             event = resolutions[0]
+            unstarted = event.data.get("unstarted") is True
+            accepted = next(e for e in events if e.kind == "message.accepted" and e.key == f"message-{request}")
             if (
-                len(starts) != 1
-                or event.seq <= starts[0].seq
-                or starts[0].data.get("message_id") != request
+                (unstarted and (starts or accepted.data.get("origin") != "daemon" or event.seq <= accepted.seq))
+                or (
+                    not unstarted
+                    and (len(starts) != 1 or event.seq <= starts[0].seq or starts[0].data.get("message_id") != request)
+                )
                 or event.data.get("message_id") != request
                 or event.data.get("owner") != repo.principal_id
                 or event.data.get("origin") not in _HEADS
@@ -283,19 +326,21 @@ class UserChatService:
         """Record an explicit owner decision to proceed without replaying a stopped uncertain turn.
 
         Raises:
-            HeinzelError: If the turn is active, unstarted, finished, or not owner-bound.
+            HeinzelError: If the turn is active, finished, not owner-bound, or an unstarted user message.
         """
-        self._owner(session, request)
+        self._owner(session, request, allow_daemon_origin=True)
         repo = self._crud.repository
         turn = interactive_turn_id(request)
         with repo.main_writer(session):
-            self._owner(session, request)
+            self._owner(session, request, allow_daemon_origin=True)
             with repo.control_writer(session) as writer:
                 events = repo.control_read(session).events
                 starts = [e for e in events if e.kind == "interactive.started" and e.key == turn]
                 resolutions = [e for e in events if e.kind == "interactive.abandoned" and e.key == turn]
-                if len(starts) != 1 or starts[0].data.get("message_id") != request:
-                    msg = "Only a previously started uncertain turn can be set aside"
+                accepted = next(e for e in events if e.kind == "message.accepted" and e.key == f"message-{request}")
+                unstarted = not starts and accepted.data.get("origin") == "daemon"
+                if not unstarted and (len(starts) != 1 or starts[0].data.get("message_id") != request):
+                    msg = "Only a stopped uncertain turn or unstarted daemon occurrence can be set aside"
                     raise HeinzelError(msg)
                 if any(e.kind == "message.replied" and e.key == turn for e in events):
                     msg = "This turn already has a recorded reply"
@@ -306,7 +351,9 @@ class UserChatService:
                         or resolutions[0].data.get("message_id") != request
                         or resolutions[0].data.get("owner") != repo.principal_id
                         or resolutions[0].data.get("origin") not in _HEADS
-                        or resolutions[0].seq <= starts[0].seq
+                        or resolutions[0].data.get("unstarted", False) != unstarted
+                        or resolutions[0].seq <= accepted.seq
+                        or (not unstarted and resolutions[0].seq <= starts[0].seq)
                     ):
                         msg = "This turn has an invalid resolution record"
                         raise HeinzelError(msg)
@@ -318,7 +365,8 @@ class UserChatService:
                     data={
                         "message_id": request,
                         "owner": repo.principal_id,
-                        "origin": self._current.context().authentication,
+                        "origin": self.current.context().authentication,
+                        **({"unstarted": True} if unstarted else {}),
                     },
                 )
         return UserTurnResolution(session_id=session, request_id=request)

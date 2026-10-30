@@ -449,6 +449,23 @@ class ConnectedReadGrants:
             raise HeinzelError(msg)
         return grant
 
+    def verify_approved(self, session: str, expected: ConnectedGrantProposal) -> None:
+        """Recheck the exact current grant and selected account before an authorized host launch.
+
+        Raises:
+            HeinzelError: If the grant, provider, account, or reviewed terms changed.
+        """
+        grant = self.approved(session)
+        if arguments_hash(grant.model_dump(mode="json")) != arguments_hash(expected.model_dump(mode="json")):
+            msg = "The connected read grant changed"
+            raise HeinzelError(msg)
+        binding, review = self._observe(session, grant.capability, grant.method, grant.review.fixed_arguments)
+        if binding != grant.binding_sha256 or arguments_hash(review.model_dump(mode="json")) != arguments_hash(
+            grant.review.model_dump(mode="json")
+        ):
+            msg = "The connected read source or account changed"
+            raise HeinzelError(msg)
+
     def tool_schema(self, session: str) -> dict[str, JsonValue] | None:
         """Expose only a currently valid grant; an unavailable read does not prevent ordinary chat."""
         events = self.crud.repository.control_read(session).events

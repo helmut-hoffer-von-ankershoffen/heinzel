@@ -194,6 +194,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/heinzel/agent-schedule": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Inspect the exact proposed schedule and its recorded state.
+         * @description Inspect the exact proposed schedule and its recorded state.
+         */
+        get: operations["heinzel_agent_schedule"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/heinzel/agent-schedules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List bounded owner-private schedule proposals and recorded decisions.
+         * @description List bounded owner-private schedule proposals and recorded decisions.
+         */
+        get: operations["heinzel_agent_schedules"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/heinzel/amend-scheduled-agent": {
         parameters: {
             query?: never;
@@ -228,6 +268,26 @@ export interface paths {
          * @description Answer one authenticated user's accepted message; an interrupted request is never silently replayed.
          */
         post: operations["heinzel_answer_chat"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/heinzel/approve-agent-schedule": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Record exact human-confirmed autonomous schedule authority.
+         * @description Record exact human-confirmed autonomous schedule authority.
+         */
+        post: operations["heinzel_approve_agent_schedule"];
         delete?: never;
         options?: never;
         head?: never;
@@ -554,6 +614,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/heinzel/pause-agent-schedule": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Stop future launches; a new schedule needs a separate human approval.
+         * @description Stop future launches; a new schedule needs a separate human approval.
+         */
+        post: operations["heinzel_pause_agent_schedule"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/heinzel/personal-artifacts": {
         parameters: {
             query?: never;
@@ -608,6 +688,26 @@ export interface paths {
          * @description Save this Heinzel's name or look against the exact profile revision you saw.
          */
         post: operations["heinzel_profile"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/heinzel/propose-agent-schedule": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Propose autonomous turns; separate human confirmation is required to authorize them.
+         * @description Propose autonomous turns; separate human confirmation is required to authorize them.
+         */
+        post: operations["heinzel_propose_agent_schedule"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2216,6 +2316,26 @@ export interface paths {
          * @description Stage current agent contract terms for human review.
          */
         post: operations["system_runner_chat_propose_agent_contract"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/runner/chat/propose-agent-schedule-review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Stage the exact current agent schedule for human review; no schedule is approved yet.
+         * @description Stage the exact current agent schedule for human review; no schedule is approved yet.
+         */
+        post: operations["system_runner_chat_propose_agent_schedule_review"];
         delete?: never;
         options?: never;
         head?: never;
@@ -8803,6 +8923,120 @@ export interface components {
             value: string;
         };
         /**
+         * ScheduleBinding
+         * @description Exact reviewed private schedule; no external tools or account permissions are granted.
+         */
+        ScheduleBinding: {
+            /**
+             * Access
+             * @description Selected subscription access mode.
+             * @default claude-code-subscription
+             * @constant
+             */
+            access: "claude-code-subscription";
+            /**
+             * Access Fingerprint
+             * @description Opaque selected-access continuity fingerprint.
+             */
+            access_fingerprint: string;
+            /**
+             * Cadence Seconds
+             * @description Whole-minute recurrence interval in seconds.
+             */
+            cadence_seconds: number;
+            /** @description Exact separately approved connected read, or null for no external read. */
+            connected_grant?: components["schemas"]["ConnectedGrantProposal"] | null;
+            /**
+             * Contract Request Id
+             * @description Accepted contract request.
+             */
+            contract_request_id: string;
+            /**
+             * Contract Revision
+             * @description Accepted contract revision.
+             */
+            contract_revision: number;
+            /**
+             * Contract Sha256
+             * @description Exact accepted contract digest.
+             */
+            contract_sha256: string;
+            /**
+             * First Run
+             * @description Current interval becomes eligible only after approval.
+             * @default current-slot-after-approval
+             * @constant
+             */
+            first_run: "current-slot-after-approval";
+            /**
+             * Max Requests
+             * @description Maximum model requests per turn.
+             */
+            max_requests: number;
+            /**
+             * Owner
+             * @description Authenticated owner identity.
+             */
+            owner: string;
+            /**
+             * Request Id
+             * @description Stable schedule proposal request.
+             */
+            request_id: string;
+            /**
+             * Session Id
+             * @description Owner-bound personal session.
+             */
+            session_id: string;
+            /**
+             * Status
+             * @description Proposal status; approval is separate.
+             * @default proposed
+             * @constant
+             */
+            status: "proposed";
+            /**
+             * Timeout Seconds
+             * @description Maximum turn duration in seconds.
+             */
+            timeout_seconds: number;
+        };
+        /**
+         * ScheduleReviewPage
+         * @description Bounded owner-private schedule references, including paused and stale decisions.
+         */
+        ScheduleReviewPage: {
+            /**
+             * Items
+             * @description Bounded owner-private schedule reviews.
+             */
+            items: components["schemas"]["ScheduleReviewView"][];
+            /**
+             * Next Cursor
+             * @description Cursor for the next page, if present.
+             */
+            next_cursor?: number | null;
+            /**
+             * Session Id
+             * @description Owner-bound personal session.
+             */
+            session_id: string;
+        };
+        /**
+         * ScheduleReviewView
+         * @description Owner-private schedule proposal or its recorded decision and current eligibility.
+         */
+        ScheduleReviewView: {
+            /** @description Exact reviewed schedule binding. */
+            binding: components["schemas"]["ScheduleBinding"];
+            /**
+             * Status
+             * @description Recorded decision and current eligibility.
+             * @enum {string}
+             */
+            status: "proposed" | "approved" | "paused" | "stale";
+        };
+        /**
          * ScheduledAgentProposal
          * @description An inert execution proposal; creating or reading it never authorizes a run.
          */
@@ -11849,6 +12083,25 @@ export interface components {
              */
             session_id: string;
         };
+        /** heinzel_approve_agent_schedule_Input */
+        heinzel_approve_agent_schedule_Input: {
+            /** Approval Proof */
+            approval_proof: string;
+            /**
+             * Request Id
+             * @description A stable client request id; reuse it only for an exact retry.
+             */
+            request_id: string;
+            /** Review */
+            review: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            /**
+             * Session Id
+             * @description The stable personal session id returned by new-chat or sessions.
+             */
+            session_id: string;
+        };
         /** heinzel_approve_connected_read_Input */
         heinzel_approve_connected_read_Input: {
             /**
@@ -11964,6 +12217,19 @@ export interface components {
              */
             request_id: string;
         };
+        /** heinzel_pause_agent_schedule_Input */
+        heinzel_pause_agent_schedule_Input: {
+            /**
+             * Request Id
+             * @description A stable client request id; reuse it only for an exact retry.
+             */
+            request_id: string;
+            /**
+             * Session Id
+             * @description The stable personal session id returned by new-chat or sessions.
+             */
+            session_id: string;
+        };
         /** heinzel_profile_Input */
         heinzel_profile_Input: {
             /** @description The complete personal appearance overrides; null leaves the current look unchanged. */
@@ -11988,6 +12254,35 @@ export interface components {
              * @description The stable personal session id returned by new-chat or sessions.
              */
             session_id: string;
+        };
+        /** heinzel_propose_agent_schedule_Input */
+        heinzel_propose_agent_schedule_Input: {
+            /** Cadence Seconds */
+            cadence_seconds: number;
+            /**
+             * Connected Request Id
+             * @description An already approved connected-read request, or null for no connected reads.
+             */
+            connected_request_id?: string | null;
+            /**
+             * Contract Request Id
+             * @description A stable client request id; reuse it only for an exact retry.
+             */
+            contract_request_id: string;
+            /** Max Requests */
+            max_requests: number;
+            /**
+             * Request Id
+             * @description A stable client request id; reuse it only for an exact retry.
+             */
+            request_id: string;
+            /**
+             * Session Id
+             * @description The stable personal session id returned by new-chat or sessions.
+             */
+            session_id: string;
+            /** Timeout Seconds */
+            timeout_seconds: number;
         };
         /** heinzel_propose_check_in_Input */
         heinzel_propose_check_in_Input: {
@@ -12375,6 +12670,9 @@ export type SchemaRunMeasure = components['schemas']['RunMeasure'];
 export type SchemaRunOperation = components['schemas']['RunOperation'];
 export type SchemaScene = components['schemas']['Scene'];
 export type SchemaSceneStep = components['schemas']['SceneStep'];
+export type SchemaScheduleBinding = components['schemas']['ScheduleBinding'];
+export type SchemaScheduleReviewPage = components['schemas']['ScheduleReviewPage'];
+export type SchemaScheduleReviewView = components['schemas']['ScheduleReviewView'];
 export type SchemaScheduledAgentProposal = components['schemas']['ScheduledAgentProposal'];
 export type SchemaSessionCosts = components['schemas']['SessionCosts'];
 export type SchemaSessionList = components['schemas']['SessionList'];
@@ -12455,12 +12753,15 @@ export type SchemaHeinzelAbandonChatTurnInput = components['schemas']['heinzel_a
 export type SchemaHeinzelAcceptAgentContractInput = components['schemas']['heinzel_accept_agent_contract_Input'];
 export type SchemaHeinzelAmendScheduledAgentInput = components['schemas']['heinzel_amend_scheduled_agent_Input'];
 export type SchemaHeinzelAnswerChatInput = components['schemas']['heinzel_answer_chat_Input'];
+export type SchemaHeinzelApproveAgentScheduleInput = components['schemas']['heinzel_approve_agent_schedule_Input'];
 export type SchemaHeinzelApproveConnectedReadInput = components['schemas']['heinzel_approve_connected_read_Input'];
 export type SchemaHeinzelApproveModelGrantInput = components['schemas']['heinzel_approve_model_grant_Input'];
 export type SchemaHeinzelAssociateArtifactInput = components['schemas']['heinzel_associate_artifact_Input'];
 export type SchemaHeinzelChatInput = components['schemas']['heinzel_chat_Input'];
 export type SchemaHeinzelNewChatInput = components['schemas']['heinzel_new_chat_Input'];
+export type SchemaHeinzelPauseAgentScheduleInput = components['schemas']['heinzel_pause_agent_schedule_Input'];
 export type SchemaHeinzelProfileInput = components['schemas']['heinzel_profile_Input'];
+export type SchemaHeinzelProposeAgentScheduleInput = components['schemas']['heinzel_propose_agent_schedule_Input'];
 export type SchemaHeinzelProposeCheckInInput = components['schemas']['heinzel_propose_check_in_Input'];
 export type SchemaHeinzelProposeConnectedReadInput = components['schemas']['heinzel_propose_connected_read_Input'];
 export type SchemaHeinzelProposeModelPolicyInput = components['schemas']['heinzel_propose_model_policy_Input'];
@@ -12747,6 +13048,71 @@ export interface operations {
             };
         };
     };
+    heinzel_agent_schedule: {
+        parameters: {
+            query: {
+                session_id: string;
+                request_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScheduleReviewView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    heinzel_agent_schedules: {
+        parameters: {
+            query: {
+                session_id: string;
+                cursor?: number;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScheduleReviewPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     heinzel_amend_scheduled_agent: {
         parameters: {
             query?: never;
@@ -12800,6 +13166,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["UserChatAnswer"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    heinzel_approve_agent_schedule: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["heinzel_approve_agent_schedule_Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScheduleBinding"];
                 };
             };
             /** @description Validation Error */
@@ -13339,6 +13738,39 @@ export interface operations {
             };
         };
     };
+    heinzel_pause_agent_schedule: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["heinzel_pause_agent_schedule_Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScheduleReviewView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     heinzel_personal_artifacts: {
         parameters: {
             query: {
@@ -13410,6 +13842,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SessionSnapshot"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    heinzel_propose_agent_schedule: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["heinzel_propose_agent_schedule_Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScheduleBinding"];
                 };
             };
             /** @description Validation Error */
@@ -15573,6 +16038,40 @@ export interface operations {
                 /** @description The personal agent session. */
                 durable_session: string;
                 /** @description The contract proposal request id. */
+                request_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatSession"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_runner_chat_propose_agent_schedule_review: {
+        parameters: {
+            query: {
+                /** @description The personal agent session. */
+                durable_session: string;
+                /** @description The schedule proposal request id. */
                 request_id: string;
             };
             header?: never;

@@ -472,6 +472,56 @@ class ChatService:
             )
             return self._store.load(personal_chat.id)
 
+    def propose_agent_schedule_review(self, durable_session: str, request_id: str) -> ChatSession:
+        """Stage the exact owner-private agent schedule for a human decision, without granting it.
+
+        Raises:
+            HeinzelError: If the owner, current proposal or existing action cannot be verified.
+        """
+        if not self._kernel.provides(ApprovalIssuer):
+            msg = "Agent schedule review is unavailable"
+            raise HeinzelError(msg)
+        issuer = self._kernel.resolve(ApprovalIssuer)
+        base: dict[str, JsonValue] = {"session_id": durable_session, "request_id": request_id}
+        with self._store.proposal_request_lock():
+            prior = self._store.find_proposal("heinzel", "approve-agent-schedule", durable_session, request_id)
+            if prior is not None:
+                chat, found = prior
+                # Returning the original owner-bound action does not reissue or consume a proof. The issuer
+                # still rechecks current intent when a pending action is confirmed.
+                if (
+                    chat.personal_session_id != durable_session
+                    or set(found.arguments) != {"session_id", "request_id", "review"}
+                    or not isinstance(found.arguments.get("review"), dict)
+                ):
+                    msg = "This schedule review no longer matches its original action"
+                    raise HeinzelError(msg)
+                return chat
+            preview = issuer.review("heinzel", "approve-agent-schedule", base)
+            arguments: dict[str, JsonValue] = {**base, "review": preview}
+            personal_chat = self._store.find_personal_chat(durable_session)
+            if personal_chat is None:
+                personal_chat = self._store.create(
+                    ChatContext(
+                        kind="text",
+                        ref=durable_session,
+                        owner_id=self._store.personal_owner(),
+                        detail="Review agent schedule for this personal agent.",
+                    ),
+                    personal_session_id=durable_session,
+                )
+            self._store.propose(
+                ProposedCall(
+                    session=personal_chat.id,
+                    module="heinzel",
+                    operation="approve-agent-schedule",
+                    tool="heinzel_approve_agent_schedule",
+                    arguments=arguments,
+                    command="Review agent schedule",
+                )
+            )
+            return self._store.load(personal_chat.id)
+
     def _notice(self, event: str) -> str:
         """What the notice `event` says, from the notifications every head reads (ADR 0043); empty if unknown."""
         if not self._kernel.provides(Notifications):
@@ -729,7 +779,8 @@ class ChatService:
         confirmation: ApprovalConfirmation | None = None
         if found.module == "heinzel" and (
             (found.operation == "schedule-control" and found.arguments.get("action") in {"activate", "resume"})
-            or found.operation in {"approve-model-grant", "accept-agent-contract", "approve-connected-read"}
+            or found.operation
+            in {"approve-model-grant", "accept-agent-contract", "approve-connected-read", "approve-agent-schedule"}
         ):
             if "approval_proof" in found.arguments or not self._kernel.provides(ApprovalIssuer):
                 msg = "Approval is invalid or unavailable"
@@ -756,6 +807,8 @@ class ChatService:
                 if found.module == "heinzel" and found.operation == "approve-model-grant"
                 else "The connected read approval was recorded. No requested data was read."
                 if found.module == "heinzel" and found.operation == "approve-connected-read"
+                else "The agent schedule approval was recorded. No external access was granted."
+                if found.module == "heinzel" and found.operation == "approve-agent-schedule"
                 else "The contract acceptance was recorded. No schedule or access was activated."
                 if found.module == "heinzel" and found.operation == "accept-agent-contract"
                 else redact_emails(dumps(to_jsonable_python(value, fallback=str)))
@@ -783,7 +836,8 @@ class ChatService:
     def _is_reconciled_confirmation(found: ChatAction) -> bool:
         return found.module == "heinzel" and (
             (found.operation == "schedule-control" and found.arguments.get("action") in {"activate", "resume"})
-            or found.operation in {"approve-model-grant", "accept-agent-contract", "approve-connected-read"}
+            or found.operation
+            in {"approve-model-grant", "accept-agent-contract", "approve-connected-read", "approve-agent-schedule"}
         )
 
     def _reconcile_schedule_confirmation(self, found: ChatAction) -> None:
@@ -805,6 +859,8 @@ class ChatService:
                 if found.operation == "schedule-control"
                 else "The exact connected read approval is recorded. It was not run again."
                 if found.operation == "approve-connected-read"
+                else "The exact agent schedule approval is recorded. It was not run again."
+                if found.operation == "approve-agent-schedule"
                 else "The exact contract acceptance is recorded. It was not run again."
                 if found.operation == "accept-agent-contract"
                 else "The exact model policy approval is recorded. It was not run again."
@@ -848,6 +904,8 @@ class ChatService:
                         if found.operation == "schedule-control"
                         else "The exact connected read approval is recorded. It was not run again."
                         if found.operation == "approve-connected-read"
+                        else "The exact agent schedule approval is recorded. It was not run again."
+                        if found.operation == "approve-agent-schedule"
                         else "The exact contract acceptance is recorded. It was not run again."
                         if found.operation == "accept-agent-contract"
                         else "The exact model policy approval is recorded. It was not run again."
@@ -900,7 +958,13 @@ class ChatService:
                 )
                 trusted_policy = (
                     action.module == "heinzel"
-                    and action.operation in {"approve-model-grant", "accept-agent-contract", "approve-connected-read"}
+                    and action.operation
+                    in {
+                        "approve-model-grant",
+                        "accept-agent-contract",
+                        "approve-connected-read",
+                        "approve-agent-schedule",
+                    }
                     and chat.personal_session_id == action.arguments.get("session_id")
                     and chat.personal_owner_id is not None
                 )
