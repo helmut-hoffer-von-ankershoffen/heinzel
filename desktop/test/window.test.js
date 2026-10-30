@@ -25,7 +25,7 @@ test("Electron readiness starts the CLI and reports startup errors", () => {
 
 test("Quit stops the owned CLI without adding background integration", () => {
   assert.match(main, /app\.on\("before-quit", \(event\) =>/);
-  assert.match(main, /ownedCli\.stop\(\)/);
+  assert.match(main, /stopWithReport\(ownedCli,/);
   assert.match(main, /window\.on\("closed", \(\) => \{ if \(!quitting\) app\.quit\(\); \}\)/);
   assert.doesNotMatch(main, /setLoginItemSettings|systemPreferences|Notification/);
 });

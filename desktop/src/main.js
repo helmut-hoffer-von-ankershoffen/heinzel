@@ -5,8 +5,10 @@ import { lifecycle } from "./connection.js";
 import { createInstanceLifecycle } from "./instance-lifecycle.js";
 import { createLifecycleHandler } from "./lifecycle-ipc.js";
 import { createOwnedCli } from "./owned-cli.js";
+import { initializeDesktopIdentity } from "./identity.js";
+import { stopWithReport } from "./shutdown.js";
 
-app.setName("Heinzelmännchen");
+const identityReady = initializeDesktopIdentity(app, dialog);
 const windows = new WeakSet();
 const instance = createInstanceLifecycle({
   app,
@@ -41,7 +43,7 @@ const instance = createInstanceLifecycle({
 
 let quitting = false;
 const ownedCli = createOwnedCli();
-if (instance.acquire(process.argv.slice(app.isPackaged ? 1 : 2))) {
+if (identityReady && instance.acquire(process.argv.slice(app.isPackaged ? 1 : 2))) {
   ipcMain.handle("hz:lifecycle", createLifecycleHandler({
     windows,
     fromWebContents: (contents) => BrowserWindow.fromWebContents(contents),
@@ -50,9 +52,14 @@ if (instance.acquire(process.argv.slice(app.isPackaged ? 1 : 2))) {
   }));
   let stopping = false;
   let serviceStarted = false;
+  let unexpectedExitReported = false;
   void ownedCli.exited().then(() => {
     if (serviceStarted && !stopping && !quitting) {
-      dialog.showErrorBox("Heinzelmännchen stopped", "The local service stopped. Reopen the app to start it again.");
+      unexpectedExitReported = true;
+      dialog.showErrorBox(
+        "Heinzelmännchen stopped unexpectedly",
+        "The local service stopped unexpectedly. Check any work that was in progress, then reopen the app.",
+      );
       app.quit();
     }
   });
@@ -61,7 +68,13 @@ if (instance.acquire(process.argv.slice(app.isPackaged ? 1 : 2))) {
     event.preventDefault();
     if (stopping) return;
     stopping = true;
-    void ownedCli.stop().then(() => {
+    void stopWithReport(ownedCli, () => {
+      if (unexpectedExitReported) return;
+      dialog.showErrorBox(
+        "Heinzelmännchen stopped unexpectedly",
+        "The local service did not shut down cleanly. Check any work that was in progress before continuing.",
+      );
+    }).then(() => {
       quitting = true;
       app.quit();
     }).catch(() => {
