@@ -166,7 +166,7 @@ export function createOwnedCli({
         }
       };
 
-      if (!closed && !exited()) signal("SIGTERM");
+      if (!closed && !exited()) signal("SIGINT");
       if (!(await waitForClose(stopTimeoutMs))) {
         if (!closed && !exited()) {
           signal("SIGKILL");
