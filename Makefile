@@ -146,6 +146,7 @@ desktop-electron-sandbox: ## Set Electron's Linux sandbox helper ownership and m
 	fi
 
 desktop-electron-native: ## Launch the Electron window against a temporary authenticated local service
+	pnpm --dir web install --frozen-lockfile
 	@case "$$(uname -s)" in \
 		Linux) target="linux-$$(node -p 'process.arch')"; executable="$$PWD/desktop/dist/Heinzelmaennchen-$$target/Heinzelmaennchen"; runner='xvfb-run --auto-servernum' ;; \
 		Darwin) target="darwin-$$(node -p 'process.arch')"; executable="$$PWD/desktop/dist/Heinzelmaennchen-$$target/Heinzelmaennchen.app/Contents/MacOS/Heinzelmaennchen"; runner='' ;; \
@@ -153,6 +154,13 @@ desktop-electron-native: ## Launch the Electron window against a temporary authe
 	esac; \
 	if [ ! -x "$$executable" ]; then echo "Packaged Electron executable is missing or not executable: $$executable"; exit 1; fi; \
 	HEINZEL_ELECTRON_EXECUTABLE="$$executable" $$runner pnpm --dir desktop test:native
+	# Packaging can replace pnpm's development-runtime directory; provision it again before development navigation tests.
+	pnpm --dir desktop exec node node_modules/electron/install.js
+	@if [ "$$(uname -s)" = Linux ]; then \
+		if [ "$$CI" != true ] || [ "$$HZ_DISPOSABLE_NATIVE_CI" != 1 ]; then echo "Development sandbox setup requires disposable native CI."; exit 1; fi; \
+		sudo python3 desktop/ci/restore_linux_sandbox.py --configure "$$(realpath desktop/node_modules/electron)"; \
+	fi
+	@case "$$(uname -s)" in Linux) xvfb-run --auto-servernum pnpm --dir desktop test:navigation ;; Darwin) pnpm --dir desktop test:navigation ;; esac
 
 test: ## Run unit and integration tests with coverage on 4 workers (offline; what the CI Coverage job runs)
 	$(STEPS) \

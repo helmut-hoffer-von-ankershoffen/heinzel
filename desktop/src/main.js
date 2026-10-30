@@ -1,4 +1,3 @@
-import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { app, BrowserWindow, dialog, ipcMain } from "electron";
 import { lifecycle } from "./connection.js";
@@ -7,9 +6,12 @@ import { createLifecycleHandler } from "./lifecycle-ipc.js";
 import { createOwnedCli } from "./owned-cli.js";
 import { initializeDesktopIdentity } from "./identity.js";
 import { stopWithReport } from "./shutdown.js";
+import { guardUiNavigation, openProductUi } from "./ui-navigation.js";
 
 const identityReady = initializeDesktopIdentity(app, dialog);
 const windows = new WeakSet();
+let quitting = false;
+let stopping = false;
 const instance = createInstanceLifecycle({
   app,
   parseConnection: () => null,
@@ -17,8 +19,11 @@ const instance = createInstanceLifecycle({
     if (!window.isVisible()) window.show();
     window.focus();
   },
-  createWindow: async () => {
-    const window = new BrowserWindow({
+  createWindow: (connection) => openProductUi({
+    connection,
+    lifecycle,
+    cancelled: () => stopping || quitting,
+    createWindow: () => new BrowserWindow({
       width: 1100,
       height: 760,
       show: false,
@@ -29,19 +34,18 @@ const instance = createInstanceLifecycle({
         sandbox: true,
         webviewTag: false,
       },
-    });
-    windows.add(window);
-    window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
-    window.webContents.on("will-navigate", (event) => event.preventDefault());
-    window.on("closed", () => { if (!quitting) app.quit(); });
-    const html = await readFile(new URL("./index.html", import.meta.url), "utf8");
-    await window.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
-    window.show();
-    return window;
-  },
+    }),
+    prepareWindow: (window) => {
+      windows.add(window);
+      // Native notification/capture consent is a separate lifecycle step, never implied by opening the UI.
+      window.webContents.session.setPermissionCheckHandler(() => false);
+      window.webContents.session.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
+      guardUiNavigation(window.webContents, connection);
+      window.on("closed", () => { if (!quitting) app.quit(); });
+    },
+  }),
 });
 
-let quitting = false;
 const ownedCli = createOwnedCli();
 if (identityReady && instance.acquire(process.argv.slice(app.isPackaged ? 1 : 2))) {
   ipcMain.handle("hz:lifecycle", createLifecycleHandler({
@@ -50,7 +54,6 @@ if (identityReady && instance.acquire(process.argv.slice(app.isPackaged ? 1 : 2)
     connection: () => instance.currentConnection(),
     lifecycle,
   }));
-  let stopping = false;
   let serviceStarted = false;
   let unexpectedExitReported = false;
   void ownedCli.exited().then(() => {

@@ -1,7 +1,8 @@
 # Electron desktop shell
 
-This proof of concept starts the installed `hz` CLI as an owned foreground child, opens a sandboxed Electron window
-for its authenticated local UI, and stops that child when the app quits. Install Heinzelmännchen from PyPI so `hz` is
+This development shell starts the installed `hz` CLI as an owned foreground child, verifies its authenticated
+lifecycle and opens the actual product UI in a sandboxed Electron window. It stops that child when the app quits.
+Install Heinzelmännchen from PyPI so `hz` is
 on `PATH` before launching the desktop app:
 
 ```sh
@@ -19,7 +20,17 @@ To exercise the installed CLI rather than the fake lifecycle server, first run t
 `pnpm install` here, then run `HZ_REAL_CLI="$(command -v hz)" pnpm test:real-backend`. This opt-in smoke uses a
 temporary Electron profile and temporary CLI home, configuration, data, state and cache directories. It verifies
 authenticated lifecycle, reload, and owned-child shutdown on a fresh loopback port, and reports the installed CLI
-version. It does not test a packaged, signed or notarized app.
+version. It also verifies the rendered Today page, authenticated browser API access and reload, with renderer Node
+access disabled. It does not test a packaged, signed or notarized app.
+
+The web head adopts its initial bearer fragment into the window's session storage, as in the browser. The native
+preload exposes only lifecycle status, checks the owning main frame and exact loopback origin, and exposes no token
+or generic native operation. Main-document navigation and redirects stay on that owned origin; new windows remain
+blocked. Native notification and capture requests are denied until a separate explicit-consent integration is
+implemented. These restrictions are development limitations, not a completed native permission lifecycle.
+
+`pnpm test:navigation` separately exercises real Electron page navigation and redirects, including an initial
+fragment-bearing redirect, against isolated temporary servers. Cross-origin destinations receive no request.
 
 ## Local unsigned packaging
 
@@ -35,6 +46,6 @@ These are unsigned local/CI verification artifacts. They are not notarized, publ
 production install. Gatekeeper may block macOS launches, and Linux desktop integration/package-manager installation
 is not included. There is no auto-update, login item, background service, OS permission request, installer/uninstaller,
 or Python runtime provisioning. The shell invokes `hz ui --port 0 --no-browser` without a shell, accepts only its
-single verified loopback URL line, keeps the bearer token in main-process memory, and stops only its owned child on
+single verified loopback URL line, passes its fragment only to the owned web UI, and stops only its owned child on
 Quit. This does not install the `hz` CLI or enable background operation; the CLI must already be installed and the
 user must launch the app while it is on `PATH`.
