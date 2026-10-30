@@ -161,6 +161,7 @@ desktop-electron-native: ## Launch the Electron window against a temporary authe
 		sudo python3 desktop/ci/restore_linux_sandbox.py --configure "$$(realpath desktop/node_modules/electron)"; \
 	fi
 	@case "$$(uname -s)" in Linux) xvfb-run --auto-servernum pnpm --dir desktop test:navigation ;; Darwin) pnpm --dir desktop test:navigation ;; esac
+	@case "$$(uname -s)" in Linux) xvfb-run --auto-servernum pnpm --dir desktop test:permissions ;; Darwin) pnpm --dir desktop test:permissions ;; esac
 
 test: ## Run unit and integration tests with coverage on 4 workers (offline; what the CI Coverage job runs)
 	$(STEPS) \
