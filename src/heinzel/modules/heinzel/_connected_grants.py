@@ -24,7 +24,13 @@ from heinzel import (
     SessionWriter,
     Settings,
 )
-from heinzel.kernel import CAPABILITIES, PRIVATE_WRITE, CapabilitySettings, capability_read_schema
+from heinzel.kernel import (
+    CAPABILITIES,
+    PRIVATE_WRITE,
+    CapabilitySettings,
+    SourceGuardedConnectedService,
+    capability_read_schema,
+)
 from heinzel.kernel._approval import (
     ApprovalConfirmation,
     ApprovalEvidence,
@@ -257,7 +263,16 @@ class ConnectedReadGrants:
 
     def _selected(self, capability: str, method: str) -> tuple[ModuleRecord, ConnectedReadService]:
         try:
-            record, service = self.kernel.selected_capability_service(ConnectedReadService, capability)
+            record, _provider = self.kernel.selected_capability_provider(capability)
+            # Default boot binds source before resolving any provider service factory.
+            source_guard = self.kernel.source_discovery
+            service: ConnectedReadService
+            if source_guard is not None:
+                service = SourceGuardedConnectedService(
+                    source_guard, source_guard.binding(self.kernel, capability, ConnectedReadService)
+                )
+            else:
+                record, service = self.kernel.selected_capability_service(ConnectedReadService, capability)
             claims = service.supported_reads()
             if type(claims) is not tuple or len(claims) > _MAX_SUPPORTED_READS:
                 raise ValueError  # noqa: TRY301
