@@ -61,7 +61,9 @@ it("discovers a recorded owner proposal and requires an exact action review", as
   const user = userEvent.setup();
   show();
   expect(await screen.findByText(/Account: account/)).toBeInTheDocument();
-  expect(screen.getByText(/Provider-reported candidate read: Candidate metadata is filtered locally/)).toBeInTheDocument();
+  expect(
+    screen.getByText(/Provider-reported candidate read: Candidate metadata is filtered locally/),
+  ).toBeInTheDocument();
   await user.click(await screen.findByRole("button", { name: "Review access" }));
   expect(await screen.findByText("Review connected read")).toBeInTheDocument();
   expect(calls.some((r) => new URL(r.url).pathname.endsWith("/confirm"))).toBe(false);
@@ -158,11 +160,23 @@ it("requires explicit rolling bounds and sends a separately reviewed window poli
 
 it("refuses an action whose provider candidate disclosure changed", async () => {
   const changed = { ...proposal, review: { ...proposal.review, candidate_read_disclosure: "Different data." } };
-  const action = { id: "a1", module: "heinzel", operation: "approve-connected-read", status: "pending", command: "approve", arguments: { session_id: session, request_id: "r1", review: changed } };
+  const action = {
+    id: "a1",
+    module: "heinzel",
+    operation: "approve-connected-read",
+    status: "pending",
+    command: "approve",
+    arguments: { session_id: session, request_id: "r1", review: changed },
+  };
   const chat = { id: "chat", personal_session_id: session, actions: [action], messages: [] };
   const { calls } = mockApi({
     "/api/heinzel/connected-read-options": () => [],
-    "/api/heinzel/connected-read-state": () => ({ session_id: session, status: "proposed", proposal, descriptor: null }),
+    "/api/heinzel/connected-read-state": () => ({
+      session_id: session,
+      status: "proposed",
+      proposal,
+      descriptor: null,
+    }),
     "/api/heinzel/connected-read-review": () => proposal,
     "/api/system/runner/chat/propose-connected-read-review": () => chat,
     "/api/system/runner/chat/show": () => chat,
