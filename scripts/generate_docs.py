@@ -401,6 +401,16 @@ def main() -> int:
     for page in BADGE_PAGES:
         text = with_block((ROOT / page).read_text(encoding="utf-8"), BADGES_START, BADGES_END, ours)
         outputs[ROOT / page] = readme_with_module_list(text) if page == README.name else text
+    command = (DOCS / "_data" / "install-command.txt").read_text(encoding="utf-8").strip()
+    for path in (README, ROOT / "PYPI.md"):
+        body = f"<!-- docs-test -->\n```sh\n{command}\n```"
+        outputs[path] = with_block(
+            outputs.get(path, path.read_text(encoding="utf-8")), "<!-- install:start -->", "<!-- install:end -->", body
+        )
+        guided = (DOCS / "_data" / "install-script-command.txt").read_text(encoding="utf-8").strip()
+        outputs[path] = with_block(
+            outputs[path], "<!-- install-script:start -->", "<!-- install-script:end -->", f"```sh\n{guided}\n```"
+        )
     readme = TEMPLATE / "README.md.jinja"
     outputs[readme] = with_block(readme.read_text(encoding="utf-8"), BADGES_START, BADGES_END, template_badges())
     outputs[TEMPLATE / "SECURITY.md.jinja"] = template_security()

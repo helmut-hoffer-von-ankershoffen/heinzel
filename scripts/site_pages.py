@@ -38,7 +38,8 @@ def load_snapshot(path: Path = SNAPSHOT) -> Object:
     if data.get("format") != 1 or not VERSION.fullmatch(str(data.get("release", {}).get("version", ""))):
         msg = "The website requires a versioned catalog and a complete release recommendation"
         raise ValueError(msg)
-    data["release"]["install"] = f"uvx --from heinzel=={data['release']['version']} hz-install"
+    data["release"]["install"] = (SNAPSHOT.parent / "install-command.txt").read_text().strip()
+    data["release"]["install_script"] = (SNAPSHOT.parent / "install-script-command.txt").read_text().strip()
     if not 0 < len(data.get("plugins", [])) <= MAX_PROJECTS:
         msg = "Catalog must be bounded and nonempty"
         raise ValueError(msg)
@@ -400,6 +401,7 @@ def on_page_markdown(markdown: str, *, page: Any, config: Any, **_: Any) -> str:
         "featured": lambda: cards(snapshot, page.url, featured=True),
         "themes": lambda: theme_gallery(snapshot, page.url),
         "install": lambda: command(snapshot["release"]["install"], "app-install"),
+        "install-script": lambda: command(snapshot["release"]["install_script"], "app-install-script"),
         "freshness": lambda: (
             '<p class="hz-freshness">Public metadata snapshot: '
             f"<time>{escape(snapshot['refreshed_at'][:16].replace('T', ' '))} UTC</time>. "

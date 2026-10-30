@@ -27,7 +27,9 @@ class ThemeSettings(ModuleSettings):
         pattern=NAME_PATTERN,
         max_length=64,
         title="Theme",
-        description="The theme of the web app; default is the built-in one, and plugins can bring others.",
+        description=(
+            "The selected theme; when unset a plugin may recommend one. Explicit default uses the built-in fallback."
+        ),
         json_schema_extra={"x-hidden": True},
     )
 
@@ -97,7 +99,9 @@ class ThemeList(BaseModel):
     """Every available theme and which one is in effect."""
 
     selected: str = Field(description="The name of the theme in effect.")
-    themes: list[ThemeView] = Field(description="The built-in `default` first, then the plugins' themes.")
+    themes: list[ThemeView] = Field(
+        description="Available themes; an inactive Core fallback is omitted when a provider recommends a default."
+    )
     conflicts: list[str] = Field(
         default_factory=list[str],
         description="Names an org and the site both offer with nothing more specific deciding; left out until one is.",

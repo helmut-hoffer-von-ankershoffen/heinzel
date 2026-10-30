@@ -150,7 +150,9 @@ def test_a_configured_name_that_is_no_theme_name_falls_back_to_the_default(acme,
     assert code == 0, listed
     assert listed["selected"] == "default"
     assert "isn't a theme name" in listed["note"]
-    assert listed["next"] == ["hz system theme use default"]
+    assert listed["next"] == (
+        ["unset HZ_SYSTEM_THEME__NAME"] if where == "environment" else ["hz system theme use default"]
+    )
 
 
 def test_an_org_and_the_site_offering_one_name_is_a_conflict_nobody_decided(acme):
@@ -180,7 +182,7 @@ def test_the_cli_renders_the_themes_with_the_selected_one_marked(acme):
     code, output = hz(acme(extra=(outsider(),)), "system", "theme", "list", json_output=False)
     assert code == 0, output
     text = " ".join(str(output).split())
-    assert "* default Default built in" in text
+    assert "* default Built-in fallback built in" in text
     assert "acme Acme Checkout heinzel-acme-payments-checkout" in text
     assert "acme hides the one in acme, lookalike" in text
     assert "hz system theme use acme" in text

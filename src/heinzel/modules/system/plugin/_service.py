@@ -9,6 +9,7 @@ import base64
 import contextlib
 import hashlib
 import json
+import re
 import shlex
 import subprocess
 import tempfile
@@ -16,6 +17,7 @@ import threading
 import tomllib
 import urllib.error
 from collections.abc import Collection, Generator, Mapping, Sequence
+from dataclasses import replace
 from datetime import UTC, datetime
 from http import HTTPStatus
 from importlib.metadata import Distribution, entry_points
@@ -26,6 +28,7 @@ from urllib.parse import urlencode, urlsplit
 
 from packaging.requirements import InvalidRequirement, Requirement
 from packaging.utils import canonicalize_name
+from packaging.version import InvalidVersion, Version
 
 from heinzel import HeinzelError, Kernel, __version__
 from heinzel.kernel import (
@@ -275,6 +278,7 @@ class PluginService:
                 metadata = from_pypi(source, self.pypi)
             elif source.github is not None:
                 metadata = from_github(source, self.github_api)
+                source = replace(source, subdirectory=metadata.subdirectory or source.subdirectory)
             else:
                 warnings.append(
                     f"{urlsplit(source.url or '').hostname} isn't GitHub: its name, version and publisher can't be "
@@ -359,22 +363,24 @@ class PluginService:
                 operation_id=receipt.operation_id,
             )
         with self._receipts.installing(), self._exclusive():
+            before = self._fresh_list() if _requires_change(candidate) else []
             self._installation.run(
                 self.add_command(candidate.requirement),
                 f"Failed to add plugin {spec!r}.",
                 f"Adding plugin {candidate.distribution or spec}",
                 self._git_environment(),
             )
+            installed = self._verify_added(candidate, before)
             self._record(
                 "add",
-                candidate.distribution,
+                installed.distribution,
                 requirement=candidate.requirement,
                 source=candidate.source,
                 version=candidate.version,
                 publisher=candidate.publisher,
                 private_repository=candidate.private,
             )
-            return self._changed("add", candidate.distribution, candidate)
+            return self._changed("add", installed.distribution, candidate)
 
     def operation(self, operation_id: str) -> PluginOperation:
         """Read the durable status of a preview receipt without repeating its mutation."""
@@ -390,22 +396,24 @@ class PluginService:
                         return receipt.result
                     _raise_not_replayable(receipt.status)
                 claimed = True
+                before = self._fresh_list() if _requires_change(candidate) else []
                 self._installation.run(
                     self.add_command(candidate.requirement),
                     f"Failed to add plugin {candidate.spec!r}.",
                     f"Adding plugin {candidate.distribution or candidate.spec}",
                     self._git_environment(),
                 )
+                installed = self._verify_added(candidate, before)
                 self._record(
                     "add",
-                    candidate.distribution,
+                    installed.distribution,
                     requirement=candidate.requirement,
                     source=candidate.source,
                     version=candidate.version,
                     publisher=candidate.publisher,
                     private_repository=candidate.private,
                 )
-                result = self._changed("add", candidate.distribution, candidate)
+                result = self._changed("add", installed.distribution, candidate)
                 completed = self._receipts.complete(operation_id, result)
                 if completed.result is None:
                     _raise_missing_result()
@@ -939,11 +947,39 @@ class PluginService:
     def _history_path(self) -> Path:
         return self._kernel.settings.data_dir / HISTORY
 
+    def _verify_added(self, candidate: PluginCandidate, before: list[PluginInfo]) -> PluginInfo:
+        """Verify the requested distribution before recording or reporting a successful add.
+
+        Raises:
+            HeinzelError: If the requested plugin is absent after the installer returned success.
+        """
+        after = self._fresh_list()
+        previous = {(item.distribution, item.version, item.revision, item.source_url) for item in before}
+        requires_change = _requires_change(candidate)
+        matches = [
+            item
+            for item in after
+            if _matches_candidate(item, candidate)
+            and (
+                not requires_change or (item.distribution, item.version, item.revision, item.source_url) not in previous
+            )
+        ]
+        if len(matches) != 1:
+            msg = (
+                "The requested plugin identity is not present after installation; "
+                "nothing was recorded as a successful add."
+            )
+            raise HeinzelError(msg)
+        return matches[0]
+
     def _changed(self, action: Action, distribution: str | None, candidate: PluginCandidate | None) -> PluginChange:
         """A carried-out change, with the plugins as a fresh `hz` sees them; this process still has the old ones.
 
         The fresh `hz` also removes skill exports whose skill went or changed (ADR 0061); it never adds one, and a
         failure there is a next step, not a failed change.
+
+        Raises:
+            HeinzelError: If fresh discovery fails.
         """
         change = PluginChange(
             action=action,
@@ -998,6 +1034,48 @@ def _table(document: dict[str, object], key: str) -> dict[str, object]:
     """The table under `key`; empty if there is none."""
     value = document.get(key)
     return cast("dict[str, object]", value) if isinstance(value, dict) else {}
+
+
+def _known_revision(candidate: PluginCandidate) -> str | None:
+    """A resolved revision or an explicitly requested commit, never a guessed branch/tag identity."""
+    if candidate.revision or candidate.source != "git":
+        return candidate.revision
+    ref = parse(candidate.requirement).ref
+    return ref.lower() if ref and re.fullmatch(r"[a-fA-F0-9]{7,40}", ref) else None
+
+
+def _requires_change(candidate: PluginCandidate) -> bool:
+    """Unresolved names or Git refs need a fresh change as well as a matching recorded origin."""
+    return candidate.distribution is None or (candidate.source == "git" and _known_revision(candidate) is None)
+
+
+def _matches_git_origin(plugin: PluginInfo, candidate: PluginCandidate) -> bool:
+    """A known repository and subdirectory must match actual PEP 610 provenance after installation."""
+    if candidate.source != "git":
+        return True
+    source = parse(candidate.requirement)
+    revision = _known_revision(candidate)
+    expected = installed_repository_url(source.url, plugin.revision, source.subdirectory)
+    return (
+        plugin.source_kind == "git"
+        and plugin.revision is not None
+        and plugin.source_url == expected
+        and (revision is None or plugin.revision.startswith(revision))
+    )
+
+
+def _matches_candidate(plugin: PluginInfo, candidate: PluginCandidate) -> bool:
+    """Check the full known installed identity; a matching existing identity remains idempotent."""
+    try:
+        requested = Requirement(candidate.requirement) if candidate.source == "pypi" else None
+        return (
+            (candidate.distribution is None or _same(plugin.distribution, candidate.distribution))
+            and (candidate.version is None or Version(plugin.version) == Version(candidate.version))
+            and (requested is None or Version(plugin.version) in requested.specifier)
+            and _matches_git_origin(plugin, candidate)
+        )
+    except (InvalidVersion, InvalidRequirement):
+        return False
 
 
 def _same(a: str, b: str) -> bool:

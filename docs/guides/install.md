@@ -6,25 +6,34 @@ description: Install the standard Heinzel app, start the web workspace, and veri
 # Your first Heinzelmännchen.
 
 The standard app is the easiest start. It installs the core plus the default Clock, Resource, Tailscale and
-Heinzelmännchen theme plugins from a versioned profile. Install [uv](https://docs.astral.sh/uv/getting-started/installation/)
-first; uv brings a compatible Python (3.12 or newer). macOS and Linux are the documented command-line installation paths.
+Heinzelmännchen theme plugins from a versioned profile. Supported on **macOS and Linux**.
+Windows may work, but is not supported. You do not need a separate Python installation.
 
 ## Install the standard app
 
+If you already have [uv](https://docs.astral.sh/uv/getting-started/installation/), run:
+
 <!-- hz:install -->
 
-The command is pinned to the newest complete standard release verified by this site's catalog refresh.
-It checks the profile's artifact hashes and installs the default plugins together. Tailscale sharing remains opt-in;
-installing its plugin does not make your workspace public.
+**Need uv installed for you?** Use the guided installer instead:
+
+<!-- hz:install-script -->
+
+It reuses uv when available, otherwise runs [Astral's official installer](https://docs.astral.sh/uv/getting-started/installation/).
+It then runs the same app launcher. No administrator access is needed. You can
+[inspect the script](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/blob/main/docs/install.sh) first. If you use wget:
 
 ```sh
-hz --help
-hz system doctor
-hz ui
+wget -qO- https://helmut.hoffer-von-ankershoffen.me/heinzel/install.sh | sh
 ```
 
-Open the local address printed by `hz ui`. Stop that session with **Ctrl-C**. Use the app's setup flow or run
-`hz setup` to choose the services and AI access you want. A health check may report missing optional credentials;
+The first run selects the newest complete standard release automatically, verifies its artifact hashes,
+installs and enables its default plugins, and opens the workspace. Later runs open the installed app.
+Tailscale sharing remains opt-in;
+installing its plugin does not make your workspace public.
+
+Stop that session with **Ctrl-C**. Background operation is optional. Use the app's setup flow or run
+`hz setup` to choose the services and AI access you want. `hz system doctor` may report missing optional credentials;
 configure the integrations you intend to use before relying on them.
 
 [Continue to your first session →](first-steps.md)
@@ -32,7 +41,7 @@ configure the integrations you intend to use before relying on them.
 ## Building a plugin? Start with the SDK
 
 ```sh
-uv tool install 'heinzel>=0.9.2,<0.10'
+uv tool install heinzel
 ```
 
 This installs the independently usable core without the standard plugin profile. You do not need a core checkout
@@ -55,7 +64,8 @@ shows what its metadata declares; it does not certify all plugins against your c
 | Symptom | Next step |
 | --- | --- |
 | `uv` is unavailable | Follow the official uv installation instructions linked above; open a new terminal afterward. |
-| `hz` is unavailable after installation | Check `uv tool dir --bin` and put that directory on your shell's `PATH`. |
+| `hz` is unavailable in another terminal | Run `uv tool update-shell`, then open a new terminal. |
+| An older source installation cannot update | Stop the workspace, run `uv tool uninstall heinzel`, then use the standard installer above. Your configuration stays. |
 | A module reports unhealthy | Read `hz system doctor` and configure that integration with `hz setup`. |
 | A private plugin cannot be found | Run `gh auth login` using an account allowed to read its repository. |
 | You want exact command options | Use `hz --help` and the [CLI reference](../CLI_REFERENCE.md). |

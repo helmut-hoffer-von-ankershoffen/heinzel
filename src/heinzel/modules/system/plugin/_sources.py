@@ -183,6 +183,91 @@ class Metadata:
     private: bool | None = None
     revision: str | None = None
     page: str | None = None
+    subdirectory: str | None = None
+
+
+def _github_project_at(get: JsonGetter, base: str, revision: str, directory: str | None) -> dict[str, Any]:
+    """Read bounded project metadata at one commit, including GitHub-resolved links within that commit.
+
+    Raises:
+        ValueError: If the response is malformed or is not a bounded file response.
+        TypeError: If its project metadata is not a table.
+    """
+    where = f"{directory}/pyproject.toml" if directory else "pyproject.toml"
+    content = cast("dict[str, Any]", get(f"{base}/contents/{quote(where)}?ref={revision}"))
+    encoded = str(content["content"])
+    if content.get("type") != "file" or len(encoded) > 128 * 1024:
+        msg = "Plugin project metadata must be a bounded file response"
+        raise ValueError(msg)
+    document = tomllib.loads(base64.b64decode("".join(encoded.split()), validate=True).decode())
+    project: object = document.get("project") or {}
+    if not isinstance(project, dict):
+        msg = "Plugin project metadata must be a table"
+        raise TypeError(msg)
+    return cast("dict[str, Any]", project)
+
+
+def _github_root_project(source: PluginSource, get: JsonGetter, base: str, revision: str) -> dict[str, Any]:
+    """Root metadata is optional for collections; an explicitly selected project must exist.
+
+    Raises:
+        LookupError: If the explicitly selected directory has no project metadata.
+    """
+    try:
+        return _github_project_at(get, base, revision, source.subdirectory)
+    except LookupError:
+        if source.subdirectory:
+            raise
+        return {}
+
+
+def _github_project(
+    source: PluginSource, get: JsonGetter, base: str, revision: str
+) -> tuple[dict[str, Any], str | None]:
+    """Read a standalone project or select one unambiguous metadata-declared collection project.
+
+    Raises:
+        HeinzelError: If a collection has no matching plugin or requires a distribution name to disambiguate.
+        ValueError: If project metadata is malformed or exceeds its bounded discovery budget.
+    """
+    project = _github_root_project(source, get, base, revision)
+    if _declares_plugin(project):
+        return project, source.subdirectory
+    if source.subdirectory:
+        msg = "The selected directory has no installable plugin project"
+        raise HeinzelError(msg)
+    listing = get(f"{base}/contents/plugins?ref={revision}")
+    if not isinstance(listing, list) or len(cast("list[object]", listing)) > 64:  # noqa: PLR2004 - bounded collection discovery
+        msg = "Choose an explicit plugin project; collection discovery exceeds its budget"
+        raise ValueError(msg)
+    candidates: list[tuple[dict[str, Any], str]] = []
+    for entry in cast("list[dict[str, Any]]", listing):
+        folder = entry.get("name")
+        if entry.get("type") != "dir" or not isinstance(folder, str) or not NAME.fullmatch(folder):
+            continue
+        directory = f"plugins/{folder}"
+        try:
+            child = _github_project_at(get, base, revision, directory)
+        except LookupError:
+            continue
+        name = child.get("name")
+        if (
+            not isinstance(name, str)
+            or not _declares_plugin(child)
+            or (source.name is not None and canonicalize_name(name) != source.name)
+        ):
+            continue
+        candidates.append((child, directory))
+    if len(candidates) != 1:
+        msg = "Choose a distribution from this collection with `name @ git+https://…`; no unique plugin was selected"
+        raise HeinzelError(msg)
+    return candidates[0]
+
+
+def _declares_plugin(project: dict[str, Any]) -> bool:
+    """An installable plugin declares the SDK's module entry-point group, independent of its folder or name."""
+    points: object = project.get("entry-points")
+    return isinstance(points, dict) and bool(cast("dict[str, object]", points).get("heinzel.modules"))
 
 
 def from_pypi(source: PluginSource, get: JsonGetter) -> Metadata:
@@ -238,15 +323,13 @@ def from_github(source: PluginSource, get: JsonGetter) -> Metadata:
         repo = cast("dict[str, Any]", get(base))
         ref = source.ref or str(repo["default_branch"])
         revision = str(cast("dict[str, Any]", get(f"{base}/commits/{quote(ref, safe='')}"))["sha"])
-        where = f"{source.subdirectory}/pyproject.toml" if source.subdirectory else "pyproject.toml"
-        content = cast("dict[str, Any]", get(f"{base}/contents/{quote(where)}?ref={revision}"))
+        project, directory = _github_project(source, get, base, revision)
     except LookupError as exc:  # a missing repository, ref or file: gh and urllib both end up here
         msg = (
             f"Can't read {source.url}{'@' + source.ref if source.ref else ''} on GitHub ({exc}). Check the URL; for a "
             "private repository, sign in with `gh auth login`."
         )
         raise HeinzelError(msg) from exc
-    project = cast("dict[str, Any]", tomllib.loads(base64.b64decode(str(content["content"])).decode())["project"])
     authors = cast("list[dict[str, Any]]", project.get("authors") or [])
     owner_info = cast("dict[str, Any]", repo.get("owner") or {})
     publisher = clean(owner_info.get("login") or owner)
@@ -261,6 +344,7 @@ def from_github(source: PluginSource, get: JsonGetter) -> Metadata:
         private=bool(repo.get("private")),
         revision=revision,
         page=str(repo.get("html_url") or source.url),
+        subdirectory=directory,
     )
 
 

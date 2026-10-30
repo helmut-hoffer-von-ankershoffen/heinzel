@@ -215,7 +215,7 @@ Plugins add their own tables.
 
 | Key | Environment variable | Default | Description |
 | --- | --- | --- | --- |
-| `name` | `HZ_SYSTEM_THEME__NAME` | `'default'` | The theme of the web app; default is the built-in one, and plugins can bring others. Never read from a project's hz.toml. |
+| `name` | `HZ_SYSTEM_THEME__NAME` | `'default'` | The selected theme; when unset a plugin may recommend one. Explicit default uses the built-in fallback. Never read from a project's hz.toml. |
 
 ## `[system.ui]`
 

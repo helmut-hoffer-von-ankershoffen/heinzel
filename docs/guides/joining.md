@@ -16,17 +16,12 @@ signed in (`brew install gh`, then `gh auth login`) and, for drafting, the
 as posted:
 
 ```bash
-uvx --from heinzel heinzel join https://github.com/acme-example/hz-team-checkout.git
+uvx heinzel@latest join https://github.com/acme-example/hz-team-checkout.git
 ```
 
-This PyPI command runs hz without a persistent installation. The invite printed by `hz join` currently uses the Git
-repository at your release tag (`@vX.Y.Z`). To keep hz, use the recommended PyPI installation once and run
-`hz` from then on:
-
-```bash
-uv tool install heinzel
-hz join https://github.com/acme-example/hz-team-checkout.git
-```
+The launcher installs the standard app and its default plugins when needed, then runs `join` in that same
+managed installation. Later commands use `hz` directly; the [installation guide](install.md) covers opening and
+stopping the workspace.
 
 ## What happens
 
@@ -55,9 +50,9 @@ The roster lists you as theo-example (engineer).
 Make checkout your team? [Y/n]: y
 
 What happens next
-  keep hz             uv tool install git+https://github.com/helmut-hoffer-von-ankershoffen/heinzel
+  open hz             uvx heinzel@latest
   what is missing     hz setup, any time
-  invite the next one post the same line: uvx --from ... heinzel join https://github.com/acme-example/hz-team-checkout.git
+  invite the next one post the same line: uvx heinzel@latest join https://github.com/acme-example/hz-team-checkout.git
 ```
 
 **If the roster doesn't list you**, you still read the team's contracts, and one question remains: who are you?

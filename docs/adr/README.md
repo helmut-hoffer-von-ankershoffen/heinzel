@@ -195,6 +195,8 @@ of inventing them. Two factual corrections came with it: ADR 0004 names the plug
 | [0097](0097-plugin-authors-use-one-small-artifact-based-toolchain.md) | Plugin authors use one small artifact-based toolchain | proposed | 2026-10-29 |
 | [0098](0098-pages-showcases-the-product-and-discovers-public-plugin-metadata.md) | Pages showcases the product and discovers public plugin metadata | proposed | 2026-10-30 |
 | [0099](0099-reviewed-connected-reads-and-local-agent-notifications.md) | Review connected reads and local agent notifications separately | proposed | 2026-10-30 |
+| [0100](0100-one-versionless-launcher-installs-and-opens-the-standard-app.md) | One versionless launcher installs and opens the standard app | proposed | 2026-10-30 |
+| [0101](0101-plugins-recommend-the-default-theme-with-a-core-recovery-fallback.md) | Plugins recommend the default theme with a Core recovery fallback | proposed | 2026-10-30 |
 | [0104](0104-reviewed-item-evidence-for-local-notifications.md) | Bind notification deduplication to observed source items | proposed | 2026-10-30 |
 | [0105](0105-status-detail-designations-and-state-icons.md) | Status detail rows carry provider designations and work state icons | proposed | 2026-10-30 |
 | [0106](0106-source-bound-connected-provider-loading.md) | Bind connected providers to source-only loading | proposed | 2026-10-30 |

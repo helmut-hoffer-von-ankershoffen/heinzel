@@ -11246,6 +11246,11 @@ export interface components {
             /** @description The colours in dark mode. */
             dark: components["schemas"]["ThemeColours"];
             /**
+             * Default Priority
+             * @description Opt into automatic theme selection; higher wins, ties use module and theme name. None opts out.
+             */
+            default_priority?: number | null;
+            /**
              * Font Mono
              * @description The font-family stack of code, installed or shipped fonts, e.g. `ui-monospace, monospace`.
              */
@@ -11644,7 +11649,7 @@ export interface components {
             selected: string;
             /**
              * Themes
-             * @description The built-in `default` first, then the plugins' themes.
+             * @description Available themes; an inactive Core fallback is omitted when a provider recommends a default.
              */
             themes: components["schemas"]["ThemeView"][];
         };

@@ -2,7 +2,7 @@
 name = "heinzel"
 version = "0.9.7"
 description = "Heinzelmännchen: an open-source, AI-driven operating system for product development teams."
-readme = "README.md"
+readme = "PYPI.md"
 authors = [{ name = "Helmut Hoffer von Ankershoffen", email = "helmuthva@gmail.com" }]
 license = "MIT"
 # ATTRIBUTIONS.md: every package hz ships, with its license text; the wheel bundles the web app's (`make attributions`).
@@ -32,13 +32,14 @@ openai = ["pydantic-ai-slim[openai]==2.61.0"]
 [project.scripts]
 hz = "heinzel.heads.cli:main"
 hz-install = "heinzel.heads.install:main"
-heinzel = "heinzel.heads.cli:main" # the same command, so `uvx --from <source> heinzel join <team repository>` runs it
+heinzel = "heinzel.heads.bootstrap:main" # `uvx heinzel@latest` installs and opens the standard app
 
 [project.entry-points.pytest11]
 heinzel = "heinzel.testing"
 
 [project.urls]
-Homepage = "https://github.com/helmut-hoffer-von-ankershoffen/heinzel"
+Homepage = "https://helmut.hoffer-von-ankershoffen.me/heinzel/"
+Documentation = "https://helmut.hoffer-von-ankershoffen.me/heinzel/guides/install/"
 Source = "https://github.com/helmut-hoffer-von-ankershoffen/heinzel"
 Changelog = "https://github.com/helmut-hoffer-von-ankershoffen/heinzel/blob/main/CHANGELOG.md"
 Issues = "https://github.com/helmut-hoffer-von-ankershoffen/heinzel/issues"

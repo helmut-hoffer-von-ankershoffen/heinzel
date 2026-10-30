@@ -36,6 +36,12 @@ pytestmark = pytest.mark.unit
 COLOURS = DEFAULT_THEME.light.model_dump(exclude_none=True)
 
 
+@pytest.mark.parametrize("priority", [True, "100", -1, 1001])
+def test_theme_default_preferences_are_bounded_strict_integers(priority):
+    with pytest.raises(ValidationError, match="default_priority"):
+        Theme.model_validate(DEFAULT_THEME.model_dump() | {"name": "harbor", "default_priority": priority})
+
+
 def theme(**overrides: object) -> dict[str, object]:
     data: dict[str, object] = DEFAULT_THEME.model_dump() | {"name": "acme", "title": "Acme"}
     return data | overrides

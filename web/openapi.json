@@ -13881,6 +13881,20 @@
             "$ref": "#/components/schemas/ThemeColours",
             "description": "The colours in dark mode."
           },
+          "default_priority": {
+            "anyOf": [
+              {
+                "maximum": 1000.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Opt into automatic theme selection; higher wins, ties use module and theme name. None opts out.",
+            "title": "Default Priority"
+          },
           "font_mono": {
             "description": "The font-family stack of code, installed or shipped fonts, e.g. `ui-monospace, monospace`.",
             "title": "Font Mono",
@@ -14492,7 +14506,7 @@
             "type": "string"
           },
           "themes": {
-            "description": "The built-in `default` first, then the plugins' themes.",
+            "description": "Available themes; an inactive Core fallback is omitted when a provider recommends a default.",
             "items": {
               "$ref": "#/components/schemas/ThemeView"
             },

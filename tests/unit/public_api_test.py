@@ -527,10 +527,11 @@ def api_change(exported: list[str], snapshot: list[str]) -> dict[str, list[str]]
     }
 
 
-def test_heinzel_is_the_same_command_as_hz():
-    """`uvx heinzel join <team repository>` is the invite line: uvx runs the script named like the package."""
+def test_heinzel_bootstraps_the_managed_app_while_hz_keeps_the_independent_cli():
+    """The package-named launcher delegates runtime arguments to the managed app (ADR 0100)."""
     scripts = tomllib.loads((Path(__file__).parents[2] / "pyproject.toml").read_text(encoding="utf-8"))["project"]
-    assert scripts["scripts"]["heinzel"] == scripts["scripts"]["hz"] == "heinzel.heads.cli:main"
+    assert scripts["scripts"]["heinzel"] == "heinzel.heads.bootstrap:main"
+    assert scripts["scripts"]["hz"] == "heinzel.heads.cli:main"
 
 
 def test_finds_api_changes():

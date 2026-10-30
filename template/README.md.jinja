@@ -20,14 +20,15 @@ product development teams.
 
 ## Install
 
-With Heinzelmännchen installed (`uv tool install git+https://github.com/[[ heinzel_owner ]]/heinzel`):
+Start the standard app with `uvx heinzel@latest`; it installs its default plugins automatically.
+In another terminal, add this optional plugin:
 
 ```bash
-hz system plugin add git+https://github.com/[[ github_owner ]]/[[ project_name ]]             # shows what it installs
-hz system plugin add git+https://github.com/[[ github_owner ]]/[[ project_name ]] --confirm   # installs it
+hz system plugin add https://github.com/[[ github_owner ]]/[[ project_name ]] --confirm
 ```
 
-Pin a version with `@vX.Y.Z`. Running `hz system plugin add` again upgrades; `hz system plugin remove [[ project_name ]]` removes it.
+Installation history records its resolved source. `hz system update` keeps compatible plugins;
+`hz system plugin remove [[ project_name ]]` removes this one.
 
 ## Use
 
