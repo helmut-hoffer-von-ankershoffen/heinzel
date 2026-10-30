@@ -182,28 +182,33 @@ export function AgentScheduleReview({
       {proposal.notification_policy && (
         <div className="space-y-1 break-words">
           <p>
-            Local notifications are included: at most {proposal.notification_policy.max_per_24h} attempts per rolling
-            24 hours and one per turn. Content may appear on this device; queued does not mean shown.
+            Local notifications are included: at most {proposal.notification_policy.max_per_24h} attempts per rolling 24
+            hours and one per turn. Content may appear on this device; queued does not mean shown.
           </p>
           {proposal.notification_policy.item_evidence ? (
             <>
               <p>
                 Only an item observed in the current turn can trigger a notice; at most one attempt per source
                 {proposal.notification_policy.item_evidence.deduplicate_by === "revision" ? " item revision" : " item"}
-                for this approved source and contract. The item identity is provider-reported and does not establish complete source history.
+                for this approved source and contract. The item identity is provider-reported and does not establish
+                complete source history.
               </p>
               {proposal.connected_grant?.review.item_identity && (
                 <p>
-                  Provider-reported collection {proposal.connected_grant.review.item_identity.collection.join(".") || "result array"},
-                  identity field {proposal.connected_grant.review.item_identity.identity_field}
+                  Provider-reported collection{" "}
+                  {proposal.connected_grant.review.item_identity.collection.join(".") || "result array"}, identity field{" "}
+                  {proposal.connected_grant.review.item_identity.identity_field}
                   {proposal.connected_grant.review.item_identity.revision_field
-                    ? `, revision field ${proposal.connected_grant.review.item_identity.revision_field}` : ""}.
+                    ? `, revision field ${proposal.connected_grant.review.item_identity.revision_field}`
+                    : ""}
+                  .
                 </p>
               )}
             </>
           ) : (
             <p>
-              At least {proposal.notification_policy.topic_cooldown_seconds} seconds between the same model-chosen topic.
+              At least {proposal.notification_policy.topic_cooldown_seconds} seconds between the same model-chosen
+              topic.
             </p>
           )}
         </div>

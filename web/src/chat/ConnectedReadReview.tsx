@@ -567,8 +567,8 @@ function Terms({ proposal }: { proposal: SchemaConnectedGrantProposal | SchemaRo
         <p className="break-words">
           Provider-reported item identity: collection {terms.item_identity.collection.join(".") || "result array"},
           identity field {terms.item_identity.identity_field}
-          {terms.item_identity.revision_field ? `, revision field ${terms.item_identity.revision_field}` : ""}.
-          These claims do not guarantee complete source history.
+          {terms.item_identity.revision_field ? `, revision field ${terms.item_identity.revision_field}` : ""}. These
+          claims do not guarantee complete source history.
         </p>
       )}
       {terms.candidate_read_disclosure && (

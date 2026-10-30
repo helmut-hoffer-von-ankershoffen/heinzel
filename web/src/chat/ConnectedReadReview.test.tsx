@@ -65,7 +65,9 @@ it("discovers a recorded owner proposal and requires an exact action review", as
   expect(
     screen.getByText(/Provider-reported candidate read: Candidate metadata is filtered locally/),
   ).toBeInTheDocument();
-  expect(screen.getByText(/Provider-reported item identity: collection events/)).toHaveTextContent("revision field version");
+  expect(screen.getByText(/Provider-reported item identity: collection events/)).toHaveTextContent(
+    "revision field version",
+  );
   await user.click(await screen.findByRole("button", { name: "Review access" }));
   expect(await screen.findByText("Review connected read")).toBeInTheDocument();
   expect(calls.some((r) => new URL(r.url).pathname.endsWith("/confirm"))).toBe(false);
