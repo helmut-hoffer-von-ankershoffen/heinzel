@@ -27,14 +27,15 @@
 | src/heinzel/kernel/\_bindings.py                             |      326 |        3 |       74 |        1 |     99% |   559-561 |
 | src/heinzel/kernel/\_bounded\_process.py                     |       99 |        5 |       14 |        1 |     95% |123, 159-162 |
 | src/heinzel/kernel/\_capability\_schema.py                   |       35 |        5 |       10 |        2 |     84% |36, 43, 45-47 |
+| src/heinzel/kernel/\_captured\_source.py                     |       22 |        2 |        2 |        0 |     92% |     33-34 |
 | src/heinzel/kernel/\_connected\_read.py                      |       50 |        2 |        4 |        1 |     94% |     51-52 |
 | src/heinzel/kernel/\_contributions.py                        |      364 |        5 |       72 |        4 |     98% |170, 208, 531, 665-666 |
-| src/heinzel/kernel/\_discovery.py                            |       66 |        2 |       16 |        0 |     98% |     60-61 |
+| src/heinzel/kernel/\_discovery.py                            |       76 |        5 |       20 |        0 |     95% |59-61, 75-76 |
 | src/heinzel/kernel/\_duration.py                             |       52 |        1 |       18 |        1 |     97% |        76 |
 | src/heinzel/kernel/\_git.py                                  |      122 |        0 |       34 |        1 |     99% |227-\>exit |
 | src/heinzel/kernel/\_identity.py                             |      128 |        4 |       10 |        1 |     96% |45-46, 222-223 |
 | src/heinzel/kernel/\_installation.py                         |      154 |        2 |       40 |        0 |     99% |     85-86 |
-| src/heinzel/kernel/\_kernel.py                               |      397 |        5 |      134 |        3 |     98% |290-291, 373-374, 709 |
+| src/heinzel/kernel/\_kernel.py                               |      398 |        5 |      134 |        3 |     98% |296-297, 379-380, 715 |
 | src/heinzel/kernel/\_local\_web.py                           |       23 |        1 |        4 |        1 |     93% |        39 |
 | src/heinzel/kernel/\_metadata\_verifier.py                   |        6 |        2 |        0 |        0 |     67% |     16-17 |
 | src/heinzel/kernel/\_org.py                                  |       31 |        1 |        0 |        0 |     97% |        55 |
@@ -45,6 +46,7 @@
 | src/heinzel/kernel/\_settings.py                             |       66 |        2 |       16 |        2 |     95% |  196, 198 |
 | src/heinzel/kernel/\_skills.py                               |      380 |       11 |      120 |        2 |     97% |164-166, 375-376, 477-481, 610, 615, 631 |
 | src/heinzel/kernel/\_soundscapes.py                          |      271 |        3 |       70 |        0 |     99% |   105-107 |
+| src/heinzel/kernel/\_source\_loading.py                      |      551 |       92 |      204 |       46 |     81% |52-53, 63-64, 89-90, 96-97, 105-106, 108-109, 179-180, 184-185, 188-189, 201-202, 208-209, 212-213, 242-243, 250-251, 276, 278-279, 287-288, 293-294, 297-300, 342-343, 347-348, 352-353, 379, 386-387, 390-391, 419-420, 439, 451-452, 495-496, 500-\>502, 511-512, 514-\>516, 521-522, 540-541, 545-546, 556-558, 595-596, 619-620, 622-623, 627-628, 630-631, 651-652, 657-\>exit, 718-719, 724-\>727, 740-741, 791-\>794, 806-809, 831-832, 868-869 |
 | src/heinzel/kernel/\_telemetry.py                            |      129 |        0 |       34 |        1 |     99% | 160-\>162 |
 | src/heinzel/kernel/\_themes.py                               |      562 |        3 |      162 |        3 |     99% |318, 378, 983 |
 | src/heinzel/kernel/\_views.py                                |      145 |       10 |       46 |        4 |     93% |31-32, 41-43, 47-48, 153, 166-167 |
@@ -66,7 +68,7 @@
 | src/heinzel/modules/heinzel/\_budget\_reservation.py         |      139 |       31 |       52 |       14 |     76% |86-87, 91-92, 95-97, 100-101, 105-106, 144-145, 148-149, 154-155, 159-160, 162-163, 176-177, 184-185, 189-190, 194-195, 236-237 |
 | src/heinzel/modules/heinzel/\_capability\_review.py          |       77 |       10 |       22 |        3 |     87% |51, 68-71, 128-129, 147-149 |
 | src/heinzel/modules/heinzel/\_claude\_subscription\_model.py |      195 |       14 |       56 |       11 |     90% |117, 121, 238-239, 280, 288, 292, 316-317, 319, 348, 372, 383, 390 |
-| src/heinzel/modules/heinzel/\_connected\_grants.py           |      446 |       56 |      108 |       22 |     85% |170-171, 177-178, 224-225, 231-\>242, 240-241, 243, 279, 313-314, 379-393, 420-421, 444-445, 467-468, 478-479, 517-518, 529-530, 534-535, 557-558, 611-612, 658-659, 662-664, 695-696, 713, 731-732, 752-753, 759-760, 780, 788-792 |
+| src/heinzel/modules/heinzel/\_connected\_grants.py           |      450 |       56 |      110 |       22 |     85% |176-177, 183-184, 230-231, 237-\>248, 246-247, 249, 294, 328-329, 394-408, 435-436, 459-460, 482-483, 493-494, 532-533, 544-545, 549-550, 572-573, 626-627, 673-674, 677-679, 710-711, 728, 746-747, 767-768, 774-775, 795, 803-807 |
 | src/heinzel/modules/heinzel/\_contract\_review.py            |       73 |        4 |       16 |        2 |     93% |73-74, 138-139 |
 | src/heinzel/modules/heinzel/\_contracts.py                   |      342 |        2 |      132 |        1 |     99% |   464-465 |
 | src/heinzel/modules/heinzel/\_engine.py                      |      235 |        4 |       46 |        3 |     98% |391-392, 421, 423-\>425, 466 |
@@ -163,7 +165,7 @@
 | src/heinzel/modules/telemetry/\_render.py                    |       15 |       10 |        2 |        0 |     29% |11-17, 22-27 |
 | src/heinzel/modules/telemetry/\_service.py                   |      236 |        8 |       70 |        3 |     96% |146-\>152, 154-\>152, 162, 219-220, 289-291, 344-345 |
 | src/heinzel/testing.py                                       |      124 |        4 |       32 |        0 |     97% |   240-244 |
-| **TOTAL**                                                    | **32820** | **1748** | **8200** |  **724** | **94%** |           |
+| **TOTAL**                                                    | **33415** | **1845** | **8412** |  **770** | **93%** |           |
 
 133 files skipped due to complete coverage.
 
