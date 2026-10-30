@@ -13,7 +13,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 <!-- badges:end -->
 
-[**Install & explore →**](https://helmut-hoffer-von-ankershoffen.github.io/heinzel/) · [Plugin catalog](https://helmut-hoffer-von-ankershoffen.github.io/heinzel/CATALOG/) · [Build a plugin](docs/PLUGIN_AUTHORING.md)
+[**Install & explore →**](https://helmut.hoffer-von-ankershoffen.me/heinzel/) · [Plugin catalog](https://helmut.hoffer-von-ankershoffen.me/heinzel/CATALOG/) · [Build a plugin](docs/PLUGIN_AUTHORING.md)
 
 <p align="center">
   <picture>

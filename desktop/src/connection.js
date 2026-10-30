@@ -11,7 +11,7 @@ export function parseConnection(args) {
 }
 
 export async function lifecycle(connection, fetchImpl = fetch) {
-  const response = await fetchImpl(`${connection.origin}/lifecycle`, {
+  const response = await fetchImpl(`${connection.origin}/api/lifecycle`, {
     headers: { Authorization: `Bearer ${connection.token}`, Accept: "application/json" },
     redirect: "error",
     signal: AbortSignal.timeout(5000),
