@@ -76,8 +76,10 @@ def _external_parents(path: Path) -> None:
 
 
 class _Observation:
-    def __init__(self, prefix: Path) -> None:
+    def __init__(self, prefix: Path, *, strict_identity: bool = False, receipt: bytes | None = None) -> None:
         self.prefix = prefix
+        self.strict_identity = strict_identity
+        self.receipt = receipt
         self.digest = hashlib.sha256()
         self.digest.update(b"heinzel-installation-continuity-v1\0" + os.fsencode(prefix) + b"\0")
         self.budget = [0, 0]
@@ -101,6 +103,8 @@ class _Observation:
             encoded = os.fsencode(str(path))
             if name != "__pycache__" or not stat.S_ISDIR(info.st_mode):
                 self.digest.update(len(encoded).to_bytes(8, "big") + encoded + info.st_mode.to_bytes(4, "big"))
+                if self.strict_identity:
+                    self.digest.update(repr(_identity(info)).encode("ascii"))
             self.entry(directory, name, path, info)
         if before != _identity(os.fstat(directory)):
             msg = "Installation changed during inspection."
@@ -116,6 +120,10 @@ class _Observation:
                     raise HeinzelError(msg)
                 if is_directory:
                     self.visit(fd, path)
+                elif path == Path("uv-receipt.toml") and self.receipt is not None:
+                    _regular(fd, hashlib.sha256(), self.budget)
+                    self.digest.update(len(self.receipt).to_bytes(8, "big"))
+                    self.digest.update(self.receipt)
                 else:
                     _regular(fd, self.digest, self.budget)
             finally:
@@ -147,6 +155,8 @@ class _Observation:
                 _owned(info_target, external=True)
                 self.digest.update(os.fsencode(str(target)) + b"\0")
                 self.digest.update(f"{info_target.st_uid}:{info_target.st_mode}\0".encode("ascii"))
+                if self.strict_identity:
+                    self.digest.update(repr(_identity(info_target)).encode("ascii"))
                 _regular(fd, self.digest, self.budget)
             finally:
                 os.close(fd)
@@ -155,19 +165,23 @@ class _Observation:
             raise HeinzelError(msg)
 
 
-def _snapshot(prefix: Path) -> str:
-    observation = _Observation(prefix)
+def _snapshot(prefix: Path, *, strict_identity: bool = False, receipt: bytes | None = None) -> str:
+    observation = _Observation(prefix, strict_identity=strict_identity, receipt=receipt)
     root = os.open(prefix, _DIRECTORY)
     try:
         info = os.fstat(root)
         observation.digest.update(f"{info.st_dev}:{info.st_ino}\0".encode("ascii"))
+        if strict_identity:
+            observation.digest.update(repr(_identity(info)).encode("ascii"))
         observation.visit(root, Path())
     finally:
         os.close(root)
     return observation.digest.hexdigest()
 
 
-def fingerprint(prefix: Path, authority: Callable[[], object]) -> str:
+def fingerprint(
+    prefix: Path, authority: Callable[[], object], *, strict_identity: bool = False, receipt: bytes | None = None
+) -> str:
     """Capture twice and validate the tool authority on both sides.
 
     Raises:
@@ -182,8 +196,12 @@ def fingerprint(prefix: Path, authority: Callable[[], object]) -> str:
         if info.st_uid != os.getuid() or info.st_mode & 0o022:
             msg = "The installation prefix is not privately owned."
             raise HeinzelError(msg)
-        first = _snapshot(prefix)
-        second = _snapshot(prefix)
+        if receipt is not None:
+            first = _snapshot(prefix, strict_identity=strict_identity, receipt=receipt)
+            second = _snapshot(prefix, strict_identity=strict_identity, receipt=receipt)
+        else:
+            first = _snapshot(prefix, strict_identity=True) if strict_identity else _snapshot(prefix)
+            second = _snapshot(prefix, strict_identity=True) if strict_identity else _snapshot(prefix)
         if first != second or authority() != target:
             msg = "Installation changed during inspection."
             raise HeinzelError(msg)
@@ -200,6 +218,65 @@ def _pending_exists(directory: int) -> bool:
     except FileNotFoundError:
         return False
     return True
+
+
+def replace_receipt(
+    prefix: Path, authority: Callable[[], object], expected: str, transform: Callable[[], bytes]
+) -> str:
+    """Replace only a projected receipt under the continuity lock; uncertainty retains the pending marker.
+
+    Raises:
+        HeinzelError: If authority or generation cannot be established.
+        OSError: If a private write or synchronization fails.
+    """
+    _validate_expected(expected)
+    directory, name = os.open(prefix, _DIRECTORY), f".heinzel-receipt-{secrets.token_hex(16)}"
+    marker = -1
+    committed = False
+    try:
+        fcntl.flock(directory, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        _require_generation(fingerprint(prefix, authority), expected)
+        target = authority()
+        replacement = transform()
+        projected = fingerprint(prefix, authority, receipt=replacement)
+        _require_generation(fingerprint(prefix, authority), expected)
+        info = os.stat("uv-receipt.toml", dir_fd=directory, follow_symlinks=False)
+        marker = os.open(_PENDING, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=directory)
+        os.fsync(marker)
+        marker_info = os.fstat(marker)
+        os.fsync(directory)
+        _require_generation(fingerprint(prefix, authority), expected)
+        fd = os.open(name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=directory)
+        try:
+            os.fchmod(fd, stat.S_IMODE(info.st_mode))
+            if os.write(fd, replacement) != len(replacement):
+                msg = "Could not write the complete uv receipt."
+                raise HeinzelError(msg)
+            os.fsync(fd)
+            if _identity(os.stat("uv-receipt.toml", dir_fd=directory, follow_symlinks=False)) != _identity(info):
+                msg = "The uv receipt changed during replacement."
+                raise HeinzelError(msg)
+            os.replace(name, "uv-receipt.toml", src_dir_fd=directory, dst_dir_fd=directory)
+            os.fsync(directory)
+            if authority() != target or fingerprint(prefix, authority) != projected:
+                msg = "The replacement could not be verified; inspect the installation."
+                raise HeinzelError(msg)
+            if _identity(os.fstat(directory)) != _identity(prefix.stat()):
+                msg = "The installation directory changed during replacement."
+                raise HeinzelError(msg)
+            _verify_marker(directory, marker_info)
+            os.unlink(_PENDING, dir_fd=directory)
+            committed = True
+            return projected
+        finally:
+            _close_fd(fd, committed=committed)
+    finally:
+        if not committed:
+            with contextlib.suppress(FileNotFoundError):
+                os.unlink(name, dir_fd=directory)
+        if marker >= 0:
+            _close_fd(marker, committed=committed)
+        _close_fd(directory, committed=committed)
 
 
 def matches(prefix: Path, authority: Callable[[], object], *, pending: bool = False) -> bool:
@@ -349,3 +426,54 @@ def _confirm_record(prefix: Path, authority: Callable[[], object], expected: obj
         raise HeinzelError(msg) from exc
     if not confirmed:
         raise HeinzelError(msg)
+
+
+def external_python(path: Path) -> tuple[str, str, tuple[int, ...]]:
+    """Capture a physical, safely owned external interpreter without executing it.
+
+    Raises:
+        HeinzelError: If the interpreter cannot be verified.
+    """
+    msg = "The original tool interpreter cannot be verified; inspect the installation before updating."
+    try:
+        if not path.is_absolute() or path.resolve(strict=True) != path:
+            raise HeinzelError(msg)
+        _external_parents(path)
+        fd = os.open(path, _FLAGS)
+        try:
+            info = os.fstat(fd)
+            _owned(info, external=True)
+            if not info.st_mode & 0o111:
+                raise HeinzelError(msg)
+            digest = hashlib.sha256()
+            _regular(fd, digest, [0, 0])
+            return str(path), digest.hexdigest(), _identity(info)
+        finally:
+            os.close(fd)
+    except OSError as exc:
+        raise HeinzelError(msg) from exc
+
+
+def tool_python(prefix: Path) -> tuple[str, str, tuple[int, ...]]:
+    """Capture the selected tool's external Python link and its bytes.
+
+    Raises:
+        HeinzelError: If the link or target cannot be verified.
+    """
+    msg = "The original tool interpreter cannot be verified; inspect the installation before updating."
+    try:
+        prefix = prefix.resolve(strict=True)
+        link = prefix / "bin/python"
+        before = link.lstat()
+        if not stat.S_ISLNK(before.st_mode):
+            raise HeinzelError(msg)
+        target = link.resolve(strict=True)
+        if target.is_relative_to(prefix):
+            raise HeinzelError(msg)
+        result = external_python(target)
+        if _identity(link.lstat()) != _identity(before):
+            raise HeinzelError(msg)
+    except OSError as exc:
+        raise HeinzelError(msg) from exc
+    else:
+        return result

@@ -219,6 +219,12 @@ jobs:
           python-version: ${{ matrix.python }}
       - name: Install what the tests need, and no more
         run: uv sync --no-dev --group test # UV_FROZEN: exactly the lockfile
+      - name: Inspect the Linux user manager without starting services
+        if: matrix.os == 'ubuntu-latest' && matrix.python == '3.14'
+        env:
+          UV_NO_SYNC: "1"
+          PROBE_PREFIX: heinzel-probe-${{ github.run_id }}
+        run: make linux-user-manager-proof
       - name: Unit and integration tests (unit first, 4 workers, stop at the first failure)
         env:
           UV_NO_SYNC: "1" # use the test group just installed

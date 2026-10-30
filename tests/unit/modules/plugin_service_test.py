@@ -21,7 +21,20 @@ from heinzel.modules.system.plugin._service import PluginService, distributions_
 
 pytestmark = pytest.mark.unit
 
-PYTHON = f"{sys.version_info.major}.{sys.version_info.minor}"
+PYTHON = ""
+
+
+@pytest.fixture(autouse=True)
+def isolated_python(tmp_path, monkeypatch):
+    base = tmp_path / "base-python"
+    assert base.parent.resolve() == tmp_path.resolve()
+    assert not base.exists()
+    assert not base.is_symlink()
+    base.write_text("#!/bin/sh\nexit 0\n")
+    base.chmod(0o700)
+    monkeypatch.setitem(globals(), "PYTHON", str(base))
+
+
 RECEIPT = """
 [tool]
 requirements = [
@@ -49,6 +62,7 @@ def tool_env(tmp_path):
     prefix = tmp_path / "tools" / "heinzel"
     (prefix / "bin").mkdir(parents=True)
     (prefix / "bin" / "hz").write_text("fixture", encoding="utf-8")
+    (prefix / "bin" / "python").symlink_to(PYTHON)
     entrypoints = tmp_path / "entrypoints"
     entrypoints.mkdir()
     shim = entrypoints / "hz"

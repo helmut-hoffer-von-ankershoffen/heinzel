@@ -2,6 +2,7 @@
 
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -184,12 +185,20 @@ def test_links_cannot_hide_excluded_content(tool, target_name):
 
 def test_interpreter_external_link_is_content_bound_without_execution(tool, tmp_path):
     interpreter = tmp_path / "python"
+    assert not interpreter.exists()
+    assert not interpreter.is_symlink()
     interpreter.write_bytes(b"ordinary fixture file")
     (tool.prefix / "bin/python").symlink_to(interpreter)
     _record(tool)
     assert tool.startup_state_matches()
+    assert interpreter.resolve().is_relative_to(tmp_path.resolve())
+    assert not interpreter.samefile(sys.executable)
+    assert not interpreter.samefile(sys._base_executable)
     interpreter.write_bytes(b"different fixture")
     assert not tool.startup_state_matches()
+    assert interpreter.resolve().is_relative_to(tmp_path.resolve())
+    assert not interpreter.samefile(sys.executable)
+    assert not interpreter.samefile(sys._base_executable)
     interpreter.unlink()
     assert not tool.startup_state_matches()
 
@@ -259,11 +268,19 @@ def test_foreign_owner_and_writable_external_python_are_refused(tool, tmp_path, 
         _installation_continuity._owned(sample)
     monkeypatch.undo()
     python = tmp_path / "python"
+    assert not python.exists()
+    assert not python.is_symlink()
     python.write_bytes(b"fixture")
+    assert python.resolve().is_relative_to(tmp_path.resolve())
+    assert not python.samefile(sys.executable)
+    assert not python.samefile(sys._base_executable)
     python.chmod(0o666)
     (tool.prefix / "bin/python").symlink_to(python)
     with pytest.raises(HeinzelError, match="unsafe ownership or permissions"):
         tool.startup_fingerprint()
+    assert python.resolve().is_relative_to(tmp_path.resolve())
+    assert not python.samefile(sys.executable)
+    assert not python.samefile(sys._base_executable)
     python.chmod(0o644)
     tmp_path.chmod(0o777)
     with pytest.raises(HeinzelError, match="interpreter directory"):

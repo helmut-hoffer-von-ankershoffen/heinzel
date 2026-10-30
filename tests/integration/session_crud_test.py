@@ -14,9 +14,11 @@ from heinzel import CurrentUser, Module
 from heinzel.heads import api, cli, mcp
 from heinzel.heads._exposure import MCP_HTTP, exposed
 from heinzel.heads.api._auth import ApiBearer
-from heinzel.kernel._approval import ApprovalIntent, ApprovalRecord, approval_proof_hash, arguments_hash
+from heinzel.kernel import DaemonAttestation, DaemonInstallationLifecycle
+from heinzel.kernel._approval import ApprovalIntent, ApprovalIssuer, ApprovalRecord, approval_proof_hash, arguments_hash
 from heinzel.modules.heinzel._session_operations import register_session_operations
 from heinzel.modules.heinzel._session_repository import PersonalSessionRepository
+from heinzel.modules.system.daemon import DaemonService, DaemonSettings, _attestation, _installation_lifecycle
 
 pytestmark = pytest.mark.integration
 
@@ -62,11 +64,15 @@ def _seed_test_approval(kernel, session_id, request_id, revision, action, contra
 
 
 @pytest.fixture
-def kernel(make_kernel, tmp_path):
+def kernel(make_kernel, settings, tmp_path):
     module = Module("heinzel", "Durable personal session acceptance")
     register_session_operations(module)
     kernel = make_kernel(heinzel=module)
     kernel.bind(CurrentUser, CurrentUser(tmp_path / "state" / "identity"))
+    daemon = DaemonService(kernel, settings, DaemonSettings(unit_dir=tmp_path / "units"))
+    kernel.bind(DaemonService, daemon)
+    kernel.bind(DaemonAttestation, _attestation(daemon))
+    kernel.bind(DaemonInstallationLifecycle, _installation_lifecycle(daemon))
     return kernel
 
 
@@ -123,6 +129,44 @@ def test_authenticated_creation_omits_optional_name_and_appearance_and_uses_serv
     assert response.json()["appearance"]["hat"] is None
     schema = client.get("/openapi.json", headers=auth).json()
     assert schema["components"]["schemas"]["heinzel_new_chat_Input"]["required"] == ["request_id"]
+
+
+def test_lifecycle_change_between_proof_and_schedule_apply_denies_durable_write(kernel):
+    from heinzel.modules.system.daemon._runtime import lock
+
+    client, auth = protected(kernel)
+    session = client.post("/heinzel/new-chat", headers=auth, json={"request_id": "guard-create"}).json()["session_id"]
+    proposed = client.post(
+        "/heinzel/propose-check-in",
+        headers=auth,
+        json={"session_id": session, "request_id": "guard-proposal", "timezone": "UTC"},
+    ).json()
+    arguments = {
+        "session_id": session,
+        "request_id": "guard-activate",
+        "expected_revision": 1,
+        "action": "activate",
+        "expected_contract_version": proposed["schedule"]["contract_version"],
+        "expected_preview_hash": proposed["schedule"]["preview_hash"],
+    }
+    current = kernel.resolve(CurrentUser)
+    with current.local("cli"):
+        proof = kernel.resolve(ApprovalIssuer).issue("heinzel", "schedule-control", arguments, "fixture-confirmation")
+    daemon = kernel.resolve(DaemonService)
+    pending = daemon.state_dir / "handover-pending.json"
+    pending.write_text("uncertain lifecycle change")
+    blocked = client.post("/heinzel/schedule-control", headers=auth, json={**arguments, "approval_proof": proof})
+    assert blocked.status_code == 400
+    pending.unlink()
+    with lock(daemon.state_dir / "lifecycle.lock") as acquired:
+        assert acquired
+        blocked = client.post("/heinzel/schedule-control", headers=auth, json={**arguments, "approval_proof": proof})
+        assert blocked.status_code == 400
+    with current.local("cli"):
+        events = PersonalSessionRepository(current).control_read(session).events
+        assert not any(event.kind == "schedule.activated" for event in events)
+    accepted = client.post("/heinzel/schedule-control", headers=auth, json={**arguments, "approval_proof": proof})
+    assert accepted.status_code == 200, accepted.text
 
 
 def test_propose_activate_pause_and_resume_five_minute_check_in_through_private_api(kernel):  # noqa: PLR0915

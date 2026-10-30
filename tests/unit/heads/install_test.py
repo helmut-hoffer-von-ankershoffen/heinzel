@@ -152,6 +152,13 @@ def test_standard_receipt_preserves_ordinary_index_updates(tmp_path, monkeypatch
     prefix = tmp_path / "tools" / "heinzel"
     (prefix / "bin").mkdir(parents=True)
     (prefix / "bin" / "hz").write_text("fixture", encoding="utf-8")
+    base = tmp_path / "base-python"
+    assert base.parent.resolve() == tmp_path.resolve()
+    assert not base.exists()
+    assert not base.is_symlink()
+    base.write_text("#!/bin/sh\nexit 0\n")
+    base.chmod(0o700)
+    (prefix / "bin" / "python").symlink_to(base)
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     shim = bin_dir / "hz"
@@ -161,6 +168,9 @@ def test_standard_receipt_preserves_ordinary_index_updates(tmp_path, monkeypatch
         f"entrypoints=[{{name='hz', install-path={str(shim)!r}}}]\n",
         encoding="utf-8",
     )
+    info = prefix / "lib/python3.14/site-packages/heinzel-0.9.0.dist-info"
+    info.mkdir(parents=True)
+    (info / "METADATA").write_text("Metadata-Version: 2.1\nName: heinzel\nVersion: 0.9.0\n")
     updates = []
 
     def update_runner(args, environment):
@@ -170,6 +180,56 @@ def test_standard_receipt_preserves_ordinary_index_updates(tmp_path, monkeypatch
     target = Installation(Progress(), prefix=prefix, uv="uv", runner=update_runner)
     assert target.core_pin().kind == "index"
     assert target.core_pin().requirement == "heinzel"
+
+    class Releases(ReleaseSource):
+        def highest_version(self, timeout, *, prereleases=False):
+            return "0.9.1"
+
+    from heinzel import HeinzelError
+
+    with pytest.raises(HeinzelError, match="constraints cannot be safely preserved"):
+        UpdateService(target, Releases()).update(current="0.9.0")
+    assert not updates
+
+
+def test_plain_index_receipt_can_update_with_real_installed_metadata(tmp_path, monkeypatch):
+    from heinzel import Progress
+    from heinzel.kernel import Installation, ReleaseSource
+    from heinzel.modules.system._update import UpdateService
+
+    prefix = tmp_path / "tools" / "heinzel"
+    (prefix / "bin").mkdir(parents=True)
+    (prefix / "bin" / "hz").write_text("fixture", encoding="utf-8")
+    base = tmp_path / "base-python"
+    assert base.parent.resolve() == tmp_path.resolve()
+    assert not base.exists()
+    assert not base.is_symlink()
+    base.write_text("#!/bin/sh\nexit 0\n")
+    base.chmod(0o700)
+    (prefix / "bin" / "python").symlink_to(base)
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    shim = bin_dir / "hz"
+    shim.symlink_to(prefix / "bin" / "hz")
+    (prefix / "uv-receipt.toml").write_text(
+        f"[tool]\nrequirements=[{{name=\"heinzel\"}}]\nentrypoints=[{{name='hz', install-path={str(shim)!r}}}]\n",
+        encoding="utf-8",
+    )
+    site = prefix / "lib/python3.14/site-packages"
+    before = site / "heinzel-0.9.0.dist-info"
+    before.mkdir(parents=True)
+    (before / "METADATA").write_text("Metadata-Version: 2.1\nName: heinzel\nVersion: 0.9.0\n")
+    updates = []
+
+    def update_runner(args, environment):
+        constraints = Path(args[args.index("--constraints") + 1]).read_text()
+        updates.append((args, environment, constraints))
+        after = site / "heinzel-0.9.1.dist-info"
+        before.rename(after)
+        (after / "METADATA").write_text("Metadata-Version: 2.1\nName: heinzel\nVersion: 0.9.1\n")
+        return subprocess.CompletedProcess(args, 0, "", "")
+
+    target = Installation(Progress(), prefix=prefix, uv="uv", runner=update_runner)
     monkeypatch.setattr(target, "hz", lambda *args: "hz 0.9.1" if args == ("--version",) else "[]")
 
     class Releases(ReleaseSource):
@@ -179,6 +239,8 @@ def test_standard_receipt_preserves_ordinary_index_updates(tmp_path, monkeypatch
     result = UpdateService(target, Releases()).update(current="0.9.0")
     assert result.updated
     assert result.after == "0.9.1"
-    assert updates[0][0][-1] == "heinzel"
-    assert updates[0][1]["UV_TOOL_DIR"] == str(prefix.parent)
-    assert updates[0][1]["UV_TOOL_BIN_DIR"] == str(bin_dir)
+    [command, environment, constraints] = updates[0]
+    assert "heinzel" in command
+    assert constraints == "heinzel>=0.9.0\n"
+    assert environment["UV_TOOL_DIR"] == str(prefix.parent)
+    assert environment["UV_TOOL_BIN_DIR"] == str(bin_dir)

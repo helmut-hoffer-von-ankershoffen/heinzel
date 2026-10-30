@@ -95,7 +95,16 @@ from heinzel.kernel._credentials import (
     environment_variable,
     subprocess_environment,
 )
-from heinzel.kernel._daemon_attestation import DaemonAttestation, DaemonStatusAttestation
+from heinzel.kernel._daemon_attestation import (
+    DaemonAttestation,
+    DaemonHandoverAssessment,
+    DaemonHandoverObservation,
+    DaemonHandoverPlan,
+    DaemonHandoverRequest,
+    DaemonInstallationLifecycle,
+    DaemonMutationScope,
+    DaemonStatusAttestation,
+)
 from heinzel.kernel._directory import ConfirmedLines, ReportingDraft, draft_reporting_lines
 from heinzel.kernel._discovery import BUILTIN_PACKAGE, ENTRY_POINT_GROUP, discover, walk
 from heinzel.kernel._duration import MAX_WINDOW, WINDOW_PATTERN, Span, format_duration, parse_duration, parse_window
@@ -361,6 +370,12 @@ __all__ = [
     "Credentials",
     "CurrentUser",
     "DaemonAttestation",
+    "DaemonHandoverAssessment",
+    "DaemonHandoverObservation",
+    "DaemonHandoverPlan",
+    "DaemonHandoverRequest",
+    "DaemonInstallationLifecycle",
+    "DaemonMutationScope",
     "DaemonStatusAttestation",
     "Daypart",
     "DeclaredCredential",

@@ -3,6 +3,8 @@
 import asyncio
 import getpass
 import sys
+from collections.abc import Generator
+from contextlib import contextmanager, nullcontext
 from pathlib import Path
 from typing import Annotated, Literal
 
@@ -14,6 +16,7 @@ from heinzel.kernel import (
     CheckInChatContextSource,
     CheckInHistoryMessage,
     DaemonAttestation,
+    DaemonInstallationLifecycle,
     Kernel,
     RunnerSnapshotProvider,
 )
@@ -111,7 +114,7 @@ class _SessionApprovalIssuer(ApprovalIssuer):
         self.daemon = daemon
         self.kernel = kernel
 
-    def _check_daemon(self, module: str, operation: str, arguments: dict[str, JsonValue]) -> None:
+    def check_daemon(self, module: str, operation: str, arguments: dict[str, JsonValue]) -> None:
         if (
             module == "heinzel"
             and operation == "schedule-control"
@@ -182,7 +185,7 @@ class _SessionApprovalIssuer(ApprovalIssuer):
                 .review(*self._model_args(arguments))
                 .proposal
             )
-        self._check_daemon(module, operation, arguments)
+        self.check_daemon(module, operation, arguments)
         return self.service.review(module, operation, arguments)
 
     def _review_connected_action(self, operation: str, arguments: dict[str, JsonValue]) -> dict[str, JsonValue]:
@@ -276,8 +279,14 @@ class _SessionApprovalIssuer(ApprovalIssuer):
                 msg = "The reviewed model policy changed"
                 raise HeinzelError(msg)
             return ModelGrants(self.service).issue(session, request, provenance)
-        self._check_daemon(module, operation, arguments)
-        return self.service.issue(module, operation, arguments, provenance)
+        guarded = (
+            module == "heinzel"
+            and operation == "schedule-control"
+            and arguments.get("action") in {"activate", "resume"}
+        )
+        with _schedule_admission(self.service, self.kernel) if guarded else nullcontext():
+            self.check_daemon(module, operation, arguments)
+            return self.service.issue(module, operation, arguments, provenance)
 
     def _applied_connected(self, arguments: dict[str, JsonValue]) -> bool:
         if self.kernel is None:
@@ -314,6 +323,27 @@ class _SessionApprovalIssuer(ApprovalIssuer):
             )
             return service.applied(*self._model_args(arguments))
         return self.service.applied(module, operation, arguments)
+
+
+@contextmanager
+def _schedule_admission(service: SessionCrud, kernel: Kernel | None) -> Generator[None, None, None]:
+    """Hold lifecycle before session writer until the caller's schedule write is complete.
+
+    Yields:
+        Control while the current daemon state remains protected from cooperating lifecycle writers.
+
+    Raises:
+        HeinzelError: If the lifecycle service or current daemon evidence is unavailable.
+    """
+    if kernel is None or not kernel.provides(DaemonInstallationLifecycle):
+        msg = "Check-ins are blocked because daemon lifecycle admission is unavailable"
+        raise HeinzelError(msg)
+    daemon = kernel.resolve(DaemonAttestation) if kernel.provides(DaemonAttestation) else None
+    with kernel.resolve(DaemonInstallationLifecycle).admission():
+        _SessionApprovalIssuer(service, daemon, kernel).check_daemon(
+            "heinzel", "schedule-control", {"action": "activate"}
+        )
+        yield
 
 
 def _approval_issuer(service: SessionCrud, kernel: Kernel) -> ApprovalIssuer:
@@ -999,6 +1029,7 @@ def register_session_operations(module: Module) -> None:  # noqa: C901 - operati
         service: SessionCrud,
         current: CurrentUser,
         confirmation: ApprovalConfirmation,
+        kernel: Kernel,
         session_id: Identity,
         request_id: Request,
         expected_revision: Annotated[
@@ -1053,15 +1084,17 @@ def register_session_operations(module: Module) -> None:  # noqa: C901 - operati
         elif approval_proof == "-":
             msg = "Approval input `-` is only available on the CLI"
             raise HeinzelError(msg)
-        return service.schedule_control(
-            session_id,
-            request_id,
-            expected_revision,
-            action,
-            approval_proof,
-            expected_contract_version,
-            expected_preview_hash,
-        )
+
+        with _schedule_admission(service, kernel) if action in {"activate", "resume"} else nullcontext():
+            return service.schedule_control(
+                session_id,
+                request_id,
+                expected_revision,
+                action,
+                approval_proof,
+                expected_contract_version,
+                expected_preview_hash,
+            )
 
     @module.operation(private=True, read_only=False, audience="everyday")
     def chat(
