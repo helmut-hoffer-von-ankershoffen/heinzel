@@ -146,13 +146,15 @@ desktop-electron-sandbox: ## Set Electron's Linux sandbox helper ownership and m
 	fi
 
 desktop-electron-native: ## Launch the Electron window against a temporary authenticated local service
+	pnpm --dir web install --frozen-lockfile
 	@case "$$(uname -s)" in \
 		Linux) target="linux-$$(node -p 'process.arch')"; executable="$$PWD/desktop/dist/Heinzelmaennchen-$$target/Heinzelmaennchen"; runner='xvfb-run --auto-servernum' ;; \
 		Darwin) target="darwin-$$(node -p 'process.arch')"; executable="$$PWD/desktop/dist/Heinzelmaennchen-$$target/Heinzelmaennchen.app/Contents/MacOS/Heinzelmaennchen"; runner='' ;; \
 		*) echo "Unsupported Electron native smoke-test host: $$(uname -s)"; exit 2 ;; \
 	esac; \
 	if [ ! -x "$$executable" ]; then echo "Packaged Electron executable is missing or not executable: $$executable"; exit 1; fi; \
-	HEINZEL_ELECTRON_EXECUTABLE="$$executable" $$runner pnpm --dir desktop test:native
+	HEINZEL_ELECTRON_EXECUTABLE="$$executable" $$runner pnpm --dir desktop test:native && \
+	$$runner pnpm --dir desktop test:navigation
 
 test: ## Run unit and integration tests with coverage on 4 workers (offline; what the CI Coverage job runs)
 	$(STEPS) \

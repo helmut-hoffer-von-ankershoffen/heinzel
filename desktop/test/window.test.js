@@ -11,7 +11,10 @@ test("startup acquires the single-instance guard before launching the owned CLI"
   assert.match(main, /contextIsolation: true/);
   assert.match(main, /nodeIntegration: false/);
   assert.match(main, /sandbox: true/);
-  assert.match(main, /setWindowOpenHandler\(\(\) => \(\{ action: "deny" \}\)\)/);
+  assert.match(main, /guardUiNavigation\(window\.webContents, connection\)/);
+  assert.match(main, /openProductUi\(/);
+  assert.match(main, /cancelled: \(\) => stopping \|\| quitting/);
+  assert.doesNotMatch(main, /data:text\/html/);
   assert.match(preload, /lifecycle: \(\) => ipcRenderer\.invoke\("hz:lifecycle"\)/);
   assert.doesNotMatch(preload, /token|send\(|sendSync|process|require\("node:/);
 });

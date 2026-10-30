@@ -28,7 +28,7 @@ if (!expectedVersion || packageJson.version !== expectedVersion) {
   throw new Error(`Packaged app version ${packageJson.version} does not match core ${expectedVersion ?? "unknown"}`);
 }
 const archiveEntries = listPackage(archivePath, { isPack: false }).map((entry) => entry.replace(/^\//, ""));
-for (const required of ["package.json", "src/main.js", "src/preload.cjs", "src/index.html"]) {
+for (const required of ["package.json", "src/main.js", "src/preload.cjs", "src/ui-navigation.js"]) {
   if (!archiveEntries.includes(required)) throw new Error(`Packaged archive is missing ${required}`);
 }
 for (const forbidden of ["test/", "e2e/", "ci/"]) {
