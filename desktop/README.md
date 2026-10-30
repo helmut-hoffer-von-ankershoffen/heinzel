@@ -23,11 +23,16 @@ authenticated lifecycle, reload, and owned-child shutdown on a fresh loopback po
 version. It also verifies the rendered Today page, authenticated browser API access and reload, with renderer Node
 access disabled. It does not test a packaged, signed or notarized app.
 
+`HZ_REAL_CLI="$(command -v hz)" pnpm test:real-backend-crash` uses the same isolation and kills only the verified
+test-owned child after the UI loads. It checks that the shell reports the unexpected stop and that the child and
+its temporary listener are gone. It does not simulate installation, update or background operation.
+
 The web head adopts its initial bearer fragment into the window's session storage, as in the browser. The native
 preload exposes only lifecycle status, checks the owning main frame and exact loopback origin, and exposes no token
 or generic native operation. Main-document navigation and redirects stay on that owned origin; new windows remain
-blocked. Native notification and capture requests are denied until a separate explicit-consent integration is
-implemented. These restrictions are development limitations, not a completed native permission lifecycle.
+blocked. Notification and audio-only microphone requests require a separate native confirmation for the current
+document; other permission requests remain denied. That confirmation does not establish an OS grant or prove
+delivery or audio capture. These restrictions are development limitations, not a completed native permission lifecycle.
 
 `pnpm test:navigation` separately exercises real Electron page navigation and redirects, including an initial
 fragment-bearing redirect, against isolated temporary servers. Cross-origin destinations receive no request.

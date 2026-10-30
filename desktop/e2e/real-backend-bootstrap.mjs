@@ -16,6 +16,7 @@ const spawn = childProcess.spawn;
 childProcess.spawn = function observeOwned(command, args, options) {
   const child = spawn(command, args, options);
   if (command === "hz" && JSON.stringify(args) === JSON.stringify(["ui", "--port", "0", "--no-browser"])) {
+    globalThis.ownedTestChild = child;
     writeFileSync(join(root, "owned-pid"), String(child.pid), { mode: 0o600 });
     child.once("exit", (code, signal) => writeFileSync(join(root, "owned-exit"), JSON.stringify({ code, signal }), { mode: 0o600 }));
     let pending = "";
