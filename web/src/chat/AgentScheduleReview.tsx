@@ -181,6 +181,7 @@ export function AgentScheduleReview({
       {chatId && (chat.isError || (chat.data && !ownedChat)) && (
         <p role="alert">The saved review conversation could not be verified.</p>
       )}
+      {ownedChat && !action && <p role="alert">The saved schedule review does not match these exact terms.</p>}
       {action?.status === "declined" && <p>This schedule was declined. Create a new proposal to review again.</p>}
       {review.data?.status === "proposed" && !action && !chatId && (
         <Button type="button" size="sm" disabled={busy || !review.data || review.isError} onClick={() => void stage()}>
