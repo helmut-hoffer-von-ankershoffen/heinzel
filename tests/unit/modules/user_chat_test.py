@@ -14,6 +14,7 @@ from heinzel.modules.heinzel._session_models import MessageRequest, SessionCosts
 from heinzel.modules.heinzel._session_repository import PersonalSessionRepository
 from heinzel.modules.heinzel._user_chat import UserChatService
 from heinzel.modules.system.runner._models import RunnerSettings
+from heinzel.modules.system.runner._snapshot import RunnerSnapshotService
 
 pytestmark = pytest.mark.unit
 
@@ -80,7 +81,7 @@ def test_fake_cli_reply_tool_denial_unknown_usage_and_restart(tmp_path):
     with current.local("cli"):
         current, crud, session = setup_chat(current)
         executable = fake_claude(tmp_path)
-        service = UserChatService(crud, current, load=lambda: FixtureConfig(executable))
+        service = UserChatService(crud, current, RunnerSnapshotService(), load=lambda: FixtureConfig(executable))
         answer = asyncio.run(service.answer(session, "hello"))
         assert answer.session_id == session
         assert answer.request_id == "hello"
@@ -95,7 +96,10 @@ def test_fake_cli_reply_tool_denial_unknown_usage_and_restart(tmp_path):
         marker = tmp_path / "model-calls"
         assert marker.read_text() == "xx"
         reopened = UserChatService(
-            SessionCrud(PersonalSessionRepository(current), crud.costs), current, load=lambda: FixtureConfig(executable)
+            SessionCrud(PersonalSessionRepository(current), crud.costs),
+            current,
+            RunnerSnapshotService(),
+            load=lambda: FixtureConfig(executable),
         )
         assert asyncio.run(reopened.answer(session, "hello")) == answer
         assert marker.read_text() == "xx"
@@ -111,7 +115,9 @@ def test_explicit_usd_cap_refuses_before_start_or_model_call(tmp_path):
     with current.local("cli"):
         current, crud, session = setup_chat(current)
         executable = fake_claude(tmp_path)
-        service = UserChatService(crud, current, load=lambda: FixtureConfig(executable, mode="usd-cap"))
+        service = UserChatService(
+            crud, current, RunnerSnapshotService(), load=lambda: FixtureConfig(executable, mode="usd-cap")
+        )
         with pytest.raises(HeinzelError, match="cannot enforce"):
             asyncio.run(service.answer(session, "hello"))
         assert not (tmp_path / "model-calls").exists()
@@ -123,7 +129,7 @@ def test_cancelled_cli_keeps_started_turn_and_will_not_relaunch(tmp_path):
     with current.local("cli"):
         current, crud, session = setup_chat(current)
         executable = fake_claude(tmp_path, pause=True)
-        service = UserChatService(crud, current, load=lambda: FixtureConfig(executable))
+        service = UserChatService(crud, current, RunnerSnapshotService(), load=lambda: FixtureConfig(executable))
         marker = tmp_path / "model-calls"
 
         async def run():
@@ -154,7 +160,7 @@ def test_full_current_message_is_retained(tmp_path):
         text = "long-current-" + "z" * 7000
         crud.accept(session, MessageRequest(request_id="long", text=text))
         executable = fake_claude(tmp_path)
-        service = UserChatService(crud, current, load=lambda: FixtureConfig(executable))
+        service = UserChatService(crud, current, RunnerSnapshotService(), load=lambda: FixtureConfig(executable))
         answer = asyncio.run(service.answer(session, "long"))
         assert answer.message.text == "A real recorded reply"
         payload = (tmp_path / "prompt-input").read_text()
@@ -172,7 +178,7 @@ def test_earlier_started_uncertain_turn_blocks_later_without_launch(tmp_path):
             writer.append("interactive.started", key=turn, turn=turn, data={"message_id": "hello"})
         crud.accept(session, MessageRequest(request_id="later", text="Hello again"))
         executable = fake_claude(tmp_path)
-        service = UserChatService(crud, current, load=lambda: FixtureConfig(executable))
+        service = UserChatService(crud, current, RunnerSnapshotService(), load=lambda: FixtureConfig(executable))
         with pytest.raises(HeinzelError, match="uncertain"):
             asyncio.run(service.answer(session, "later"))
         assert not (tmp_path / "model-calls").exists()
@@ -215,7 +221,7 @@ def test_existing_legacy_personal_action_does_not_block_new_generic_turn(tmp_pat
         )
         store.save(chat)
         executable = fake_claude(tmp_path)
-        service = UserChatService(crud, current, load=lambda: FixtureConfig(executable))
+        service = UserChatService(crud, current, RunnerSnapshotService(), load=lambda: FixtureConfig(executable))
         answer = asyncio.run(service.answer(session, "hello"))
         assert answer.message.text == "A real recorded reply"
         assert store.load(chat.id).actions[0].status == status
@@ -234,7 +240,7 @@ def test_fake_model_proposes_contract_in_owner_private_journal(tmp_path):
                 "timeout_seconds": 30,
             },
         )
-        service = UserChatService(crud, current, load=lambda: FixtureConfig(executable))
+        service = UserChatService(crud, current, RunnerSnapshotService(), load=lambda: FixtureConfig(executable))
         answer = asyncio.run(service.answer(session, "hello"))
         assert answer.message.text == "A real recorded reply"
         proposal = crud.latest_scheduled_agent_proposal(session)
@@ -296,7 +302,9 @@ def test_auth_and_model_processes_receive_same_restricted_identity_environment(t
     with current.local("cli"):
         current, crud, session = setup_chat(current)
         executable = fake_claude(tmp_path)
-        service = UserChatService(crud, current, load=lambda: FixtureConfig(executable), execute=execute)
+        service = UserChatService(
+            crud, current, RunnerSnapshotService(), load=lambda: FixtureConfig(executable), execute=execute
+        )
         assert asyncio.run(service.answer(session, "hello")).message.text == "A real recorded reply"
     assert len(observed) >= 3
     assert all(env == observed[0] for env in observed)
@@ -314,7 +322,7 @@ def test_abandon_requires_owner_stopped_turn_and_never_changes_finished_reply(tm
     with current.local("cli"):
         current, crud, session = setup_chat(current)
         executable = fake_claude(tmp_path)
-        service = UserChatService(crud, current, load=lambda: FixtureConfig(executable))
+        service = UserChatService(crud, current, RunnerSnapshotService(), load=lambda: FixtureConfig(executable))
         with pytest.raises(HeinzelError, match="previously started"):
             service.abandon(session, "hello")
         turn = _turn_id("hello")

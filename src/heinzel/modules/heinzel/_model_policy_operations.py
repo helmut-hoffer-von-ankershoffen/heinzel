@@ -5,11 +5,8 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field, JsonValue, ValidationError
 
-from heinzel import Credentials, CurrentUser, HeinzelError, Module, Settings
+from heinzel import ConfiguredApiAccess, HeinzelError, Kernel, Module
 from heinzel.kernel._approval import ApprovalConfirmation
-from heinzel.modules.ai.access._models import AccessSettings
-from heinzel.modules.ai.access._pydantic import PydanticAiAccess
-from heinzel.modules.heinzel._configured_api_binding import ConfiguredApiBinding
 from heinzel.modules.heinzel._model_grants import ModelGrant, ModelGrants
 from heinzel.modules.heinzel._priced_model import MODEL, resolve_pricing
 from heinzel.modules.heinzel._session_crud import SessionCrud
@@ -30,7 +27,7 @@ class ModelPolicyReview(BaseModel):
 class ModelPolicyService:
     """Validate and stage a policy, or consume a trusted confirmation of its exact intent."""
 
-    def __init__(self, crud: SessionCrud, binding: ConfiguredApiBinding) -> None:
+    def __init__(self, crud: SessionCrud, binding: ConfiguredApiAccess) -> None:
         self.crud = crud
         self.binding = binding
 
@@ -107,42 +104,39 @@ class ModelPolicyService:
         return ModelPolicyReview(session_id=session, status="approved", proposal=grant.model_dump(mode="json"))
 
 
-def _configured_binding(
-    current: CurrentUser, credentials: Credentials, settings: Settings, access: AccessSettings
-) -> ConfiguredApiBinding:
-    return ConfiguredApiBinding(current, PydanticAiAccess(access, credentials, settings))
-
-
 def register_model_policy_operations(module: Module) -> None:
     """Register private policy review; trusted confirmation must stage and issue its own exact proof."""
-    module.service(ConfiguredApiBinding, _configured_binding)
 
     @module.operation(private=True, read_only=False, heads={"web", "api-private"}, audience="everyday")
     def propose_model_policy(
         service: SessionCrud,
-        binding: ConfiguredApiBinding,
+        kernel: Kernel,
         session_id: Annotated[SessionId, Field(description="Owner-bound durable agent session.")],
         billing: Annotated[str, Field(description="Billing policy; only api-priced is currently supported.")],
         proposal: Annotated[dict[str, JsonValue], Field(description="Exact model grant terms and request identity.")],
     ) -> ModelPolicyReview:
         """Stage an inert model policy for independent human review."""
-        return ModelPolicyService(service, binding).propose(session_id, billing, proposal)
+        return ModelPolicyService(service, kernel.resolve_builtin_service(ConfiguredApiAccess, "ai.access")).propose(
+            session_id, billing, proposal
+        )
 
     @module.operation(private=True, heads={"web", "api-private"}, audience="everyday")
     def model_policy(
         service: SessionCrud,
-        binding: ConfiguredApiBinding,
+        kernel: Kernel,
         session_id: Annotated[SessionId, Field(description="Owner-bound durable agent session.")],
         request_id: Annotated[RequestId, Field(description="The exact proposed policy request id.")],
     ) -> ModelPolicyReview:
         """Read the current exact proposed policy; no permission is granted."""
-        return ModelPolicyService(service, binding).review(session_id, request_id)
+        return ModelPolicyService(service, kernel.resolve_builtin_service(ConfiguredApiAccess, "ai.access")).review(
+            session_id, request_id
+        )
 
     @module.operation(private=True, read_only=False, heads={"web", "api-private"}, audience="everyday")
     def approve_model_grant(  # noqa: PLR0913, PLR0917 - exact reviewed terms and trusted proof
         service: SessionCrud,
         confirmation: ApprovalConfirmation,
-        binding: ConfiguredApiBinding,
+        kernel: Kernel,
         session_id: Annotated[SessionId, Field(description="Owner-bound durable agent session.")],
         request_id: Annotated[RequestId, Field(description="The exact proposed policy request id.")],
         review: Annotated[dict[str, JsonValue], Field(description="Exact policy terms displayed in the action card.")],
@@ -151,6 +145,6 @@ def register_model_policy_operations(module: Module) -> None:
         ],
     ) -> ModelPolicyReview:
         """Apply an exact human-confirmed policy; direct callers cannot issue or consume approval."""
-        return ModelPolicyService(service, binding).confirm(
+        return ModelPolicyService(service, kernel.resolve_builtin_service(ConfiguredApiAccess, "ai.access")).confirm(
             confirmation, session_id, request_id, review, approval_proof
         )

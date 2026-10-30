@@ -7,12 +7,13 @@ import pytest
 
 from heinzel import CurrentUser, HeinzelError, Module
 from heinzel.kernel._exposure import exposed
-from heinzel.modules.heinzel._core_metadata_policy import CoreMetadataIdentity, core_metadata_catalog
+from heinzel.modules.heinzel._core_metadata_policy import core_metadata_catalog
 from heinzel.modules.heinzel._model_grants import ModelGrant, ModelGrants
 from heinzel.modules.heinzel._session_crud import SessionCrud
 from heinzel.modules.heinzel._session_models import SessionCosts
 from heinzel.modules.heinzel._session_repository import PersonalSessionRepository
 from heinzel.modules.heinzel._tool_review import ToolReviewFacade
+from heinzel.modules.system._metadata_identity import CoreMetadataIdentity
 from heinzel.modules.system._service import SystemService
 
 pytestmark = pytest.mark.unit
@@ -88,3 +89,19 @@ def test_spoofed_plugin_and_changed_source_or_dependency_are_rejected(make_kerne
         patch.setattr(Path, "read_bytes", changed)
         with pytest.raises(HeinzelError):
             identity(item)
+
+
+def test_untrusted_rebound_verifier_cannot_authorize_core_catalog(make_kernel, tmp_path):
+    from heinzel.kernel import CoreMetadataVerifier
+
+    kernel = make_kernel(builtins=True)
+    current = CurrentUser(tmp_path / "identity")
+    kernel.bind(CurrentUser, current)
+    with current.local("cli"):
+        crud = SessionCrud(
+            PersonalSessionRepository(current), lambda: SessionCosts(session_max_usd=2, message_max_usd=1)
+        )
+        session = crud.new_chat("bound").session_id
+        kernel.bind(CoreMetadataVerifier, CoreMetadataIdentity(kernel))
+        with pytest.raises(HeinzelError, match="instance changed"):
+            core_metadata_catalog(kernel, current, crud, session)

@@ -12,10 +12,11 @@ from rich.console import Group, RenderableType
 from rich.table import Table
 from rich.text import Text
 
-from heinzel import AccessStatus, Check, Module, Progress
+from heinzel import AccessStatus, Check, ConfiguredApiAccess, Module, Progress
 from heinzel.modules.ai.access._chatgpt import CHATGPT_LOGIN, ChatGptAccess
 from heinzel.modules.ai.access._chatgpt import HOSTS as CHATGPT_HOSTS
 from heinzel.modules.ai.access._chatgpt import NAME as CHATGPT
+from heinzel.modules.ai.access._configured import TrustedConfiguredApiAccess
 from heinzel.modules.ai.access._gateway import NAME as GATEWAY
 from heinzel.modules.ai.access._gateway import GatewayAccess, configured_hosts
 from heinzel.modules.ai.access._models import (
@@ -36,6 +37,10 @@ module = Module(
     requires=["ai-access:read"],
 )
 module.settings(AccessSettings)
+
+
+module.service(PydanticAiAccess)
+module.service(ConfiguredApiAccess, TrustedConfiguredApiAccess)
 module.service(AccessService)
 module.provides("ai-access", modes={"read"}, hosts=configured_hosts, name=GATEWAY)(GatewayAccess)
 module.add(API_KEY)

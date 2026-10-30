@@ -4,8 +4,8 @@ import pytest
 
 from heinzel import CallIdentity, CurrentUser, HeinzelError, Principal
 from heinzel.kernel._approval import ApprovalConfirmation
+from heinzel.modules.ai.access._configured import ConfiguredApiBinding
 from heinzel.modules.ai.access._models import AccessSettings
-from heinzel.modules.heinzel._configured_api_binding import ConfiguredApiBinding
 from heinzel.modules.heinzel._model_grants import ModelGrant, ModelGrants
 from heinzel.modules.heinzel._model_policy_operations import ModelPolicyService
 from heinzel.modules.heinzel._priced_model import MODEL

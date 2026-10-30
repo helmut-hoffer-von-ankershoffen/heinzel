@@ -24,7 +24,7 @@ from heinzel.kernel._capabilities import CAPABILITIES, Capability, capability_of
 from heinzel.kernel._config import KERNEL_SECTION, Config, ModuleSettings
 from heinzel.kernel._errors import HeinzelError
 from heinzel.kernel._identity import PRIVATE_READ, PRIVATE_WRITE, CurrentUser
-from heinzel.kernel._installation import Installation
+from heinzel.kernel._installation import CORE_DISTRIBUTION, Installation
 from heinzel.kernel._jobs import CompiledJobs
 from heinzel.kernel._layers import Declared, Label, LayerLet, LayerProblem, LayerProblemKind, Layers, LayerStack
 from heinzel.kernel._lets import (
@@ -150,6 +150,8 @@ class Kernel:
             LocalWebRuntime: LocalWebRuntime(),
             Prompter: Prompter(),
         }
+        self._factory_instances: dict[type[Any], object] = {}
+        """Instances constructed by registered factories; explicit binds invalidate this provenance."""
         self._factories: dict[type[Any], Callable[..., Any]] = {
             Installation: Installation,
             CurrentUser: _current_user,
@@ -229,6 +231,7 @@ class Kernel:
     def bind[T](self, kind: type[T], instance: T) -> None:
         """Replace what the kernel injects for `kind`; heads use this to bind their own `Progress`."""
         self._instances[kind] = instance
+        self._factory_instances.pop(kind, None)
 
     def available(self, func: Callable[..., Any]) -> bool:
         """Whether required services exist, including explicit contracts and transitive factory dependencies."""
@@ -261,8 +264,36 @@ class Kernel:
             if kind not in self._factories:
                 msg = f"No module provides {kind.__name__}"
                 raise HeinzelError(msg)
-            self._instances[kind] = self.call(self._factories[kind])
+            instance = self.call(self._factories[kind])
+            self._instances[kind] = instance
+            self._factory_instances[kind] = instance
         return cast("T", self._instances[kind])
+
+    def resolve_builtin_service[T](self, kind: type[T], owner: str) -> T:
+        """Resolve a service only from its named built-in module and its exact registered class.
+
+        This checks registry origin and injection continuity, not a publisher signature or code attestation.
+
+        Raises:
+            HeinzelError: If the provider or bound instance is not the named built-in class.
+        """
+        record = self._records.get(owner)
+        factory = self._factories.get(kind)
+        if (
+            self._providers.get(kind) != owner
+            or record is None
+            or not record.origin.builtin
+            or record.origin.distribution != CORE_DISTRIBUTION
+            or not isinstance(factory, type)
+            or not factory.__module__.startswith(f"heinzel.modules.{owner}.")
+        ):
+            msg = "The expected built-in service provider is unavailable"
+            raise HeinzelError(msg)
+        instance = self.resolve(kind)
+        if type(instance) is not factory or self._factory_instances.get(kind) is not instance:
+            msg = "The expected built-in service instance changed"
+            raise HeinzelError(msg)
+        return instance
 
     def handle_for(self, requester: Requester, capability: str) -> object:
         """A handle on `capability` for `requester`, for code that acts on its behalf without being its function.

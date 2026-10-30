@@ -8,16 +8,16 @@ from typing import Annotated, Literal
 
 from pydantic import Field, JsonValue
 
-from heinzel import Config, CurrentUser, HeinzelError, Module
+from heinzel import Config, ConfiguredApiAccess, CurrentUser, HeinzelError, Module
 from heinzel.kernel import (
     CheckInChatContext,
     CheckInChatContextSource,
     CheckInHistoryMessage,
     DaemonAttestation,
     Kernel,
+    RunnerSnapshotProvider,
 )
 from heinzel.kernel._approval import ApprovalConfirmation, ApprovalIssuer
-from heinzel.modules.heinzel._configured_api_binding import ConfiguredApiBinding
 from heinzel.modules.heinzel._contract_review import ContractReview, ContractReviewView
 from heinzel.modules.heinzel._model_grants import ModelGrants
 from heinzel.modules.heinzel._model_policy_operations import ModelPolicyService, register_model_policy_operations
@@ -119,7 +119,7 @@ class _SessionApprovalIssuer(ApprovalIssuer):
                 msg = "Configured model policy review is unavailable"
                 raise HeinzelError(msg)
             return (
-                ModelPolicyService(self.service, self.kernel.resolve(ConfiguredApiBinding))
+                ModelPolicyService(self.service, self.kernel.resolve_builtin_service(ConfiguredApiAccess, "ai.access"))
                 .review(*self._model_args(arguments))
                 .proposal
             )
@@ -348,10 +348,15 @@ def _register_user_chat_operations(module: Module) -> None:
         return service.activity(session_id, limit)
 
 
+def _user_chat_service(crud: SessionCrud, current: CurrentUser, kernel: Kernel) -> UserChatService:
+    runner = kernel.resolve_builtin_service(RunnerSnapshotProvider, "system.runner")
+    return UserChatService(crud, current, runner)
+
+
 def register_session_operations(module: Module) -> None:  # noqa: C901 - operation declarations define one shared head surface
     """Register once on the owning module; constructing the service performs no private I/O."""
     module.service(SessionCrud, _crud)
-    module.service(UserChatService)
+    module.service(UserChatService, _user_chat_service)
     _register_skill_operations(module)
     _register_contract_review_operations(module)
     _register_user_chat_operations(module)
