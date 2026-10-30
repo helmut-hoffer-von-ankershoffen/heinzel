@@ -4,11 +4,16 @@ All notable changes to Heinzelmännchen, newest first. Versions follow [Semantic
 
 ## [0.9.5](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/releases/tag/v0.9.5) - 2026-10-30
 
-Durable chats now support exact connected-source reviews, separately approved recurring turns and limits for local notifications. Chat-generated schedules stay inactive until reviewed. This release provides host and plugin SDK foundations; complete connected workflows and native delivery still need verification.
+Durable chats now support exact connected-source reviews, separately approved recurring turns and limits for local notifications; chat-generated schedules stay inactive until reviewed. The Electron development shell opens the authenticated product UI and verifies its packaged runtime contents. Complete connected workflows, native permissions, signed distribution and the rest of the desktop lifecycle still need verification.
 
 ### ✨ Features
 
 - **heinzel:** Review connected reads and recurring agent work ([#282](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/282)) ([963efea](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/963efea9d053a364f57c037db3a8b81de9ac527b))
+- **heads:** Open the product UI in Electron ([#284](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/284)) ([64c9234](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/64c92340f01896a4b026671f3e134ff102f45fd3))
+
+### 📚 Documentation
+
+- **release:** Describe the reviewed scheduling scope ([18d0f8d](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/18d0f8d7a6370be52d8e2f9a8eacef591dc3b689))
 
 ## [0.9.4](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/releases/tag/v0.9.4) - 2026-10-30
 
