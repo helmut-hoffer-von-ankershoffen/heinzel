@@ -4,11 +4,11 @@ A plugin can live in its own public or private repository. It needs no change in
 `heinzel-plugins`. Start with one operation and one test; add settings, services and views when the feature needs
 them. The same operation supplies CLI, MCP and REST access.
 
-This guide applies to Heinzel 0.9.1 and its versioned developer toolkit. You need Python 3.12+, uv, Git and make.
+This guide applies to Heinzel 0.9.2+ and its versioned developer toolkit. You need Python 3.12+, uv, Git and make.
 GitHub CLI (`gh`) supplies repository creation, private access and release dispatch. The examples use a fictional
 Harbor plugin; replace `your-account` with your GitHub user or organization.
 
-If `hz` is not installed, get the SDK CLI with `uv tool install 'heinzel>=0.9.1,<0.10'`. This installs core without
+If `hz` is not installed, get the SDK CLI with `uv tool install 'heinzel>=0.9.2,<0.10'`. This installs core without
 real plugins or a source checkout. Run `gh auth login` before creating a GitHub repository if you are not signed in.
 
 ## Scaffold a standalone repository
