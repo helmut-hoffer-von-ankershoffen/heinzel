@@ -16,6 +16,7 @@ import { Home } from "@/pages/Home";
 import { Assets, AssetTypes } from "@/pages/Inventory";
 import { OrgChart, Team } from "@/pages/Organisation";
 import { NotFound, Profile } from "@/pages/Profile";
+import { InstalledPage } from "@/plugins/Views";
 import { Splash, SplashGone } from "@/splash/Splash";
 import { splash, unreachableError } from "@/splash/store";
 
@@ -44,6 +45,7 @@ export const routes: RouteObject[] = [
       { path: "inventory/assets", element: <Assets /> },
       { path: "doctor", element: <Doctor /> },
       { path: "profile", element: <Profile /> },
+      { path: "plugins/*", element: <InstalledPage /> },
       { path: "*", element: <NotFound /> },
     ],
   },

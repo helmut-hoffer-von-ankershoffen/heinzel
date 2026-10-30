@@ -101,6 +101,16 @@ ordinary CLI forwarding or OS integration is delivered by this slice.
 Follow-on native work must add actual window, authenticated backend, package relocation and platform CI proofs.
 The eventual native app attaches the shared authenticated web UI only after verifying its active deployment;
 a fresh or uncertain profile retains recovery. Catalog and staged wheel provenance need separate verification.
+The foreground development shell now verifies its owned CLI's lifecycle before loading that CLI's actual web UI,
+with the same fragment adoption and tab storage as the browser head. This is an explicitly narrower admission
+than a verified immutable deployment tuple. Exact owned-origin main-frame checks protect the fixed lifecycle
+preload, and top-level navigation/redirects cannot carry the session to another origin. Startup cancellation is
+checked after both authentication and UI loading, with hidden failed windows destroyed. Notification and microphone requests from the owned main frame use separate, fixed native consent prompts; other
+permissions and subframes remain denied. Consent applies only to that document and permission until navigation, close or quit, and does not establish OS permission or delivery.
+An isolated Electron test covers denial, while successful OS permission remains unverified. Node tests exercise delayed shutdown; real Electron tests
+exercise page navigation and initial/subsequent redirects, while the isolated CLI smoke checks the actual Today
+page, authenticated API access, reload, clean owned-child exit and closed loopback listener. This does not establish
+signed installation, permission delivery, background operation, recoverable update or complete uninstall.
 Before release, add failure-injection tests around every deployment journal/
 swap boundary; concurrent singleton/profile and stale-writer tests; actual native notification/capture tests;
 browser/native/window claim races; exact running-version checks; owned uninstall and external-owner refusal.

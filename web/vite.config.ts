@@ -24,6 +24,16 @@ export default defineConfig({
   server: api
     ? {
         proxy: {
+          ...Object.fromEntries(
+            ["/plugin-assets", "/plugin-sdk"].map((path) => [
+              path,
+              {
+                target: `http://127.0.0.1:${api}`,
+                changeOrigin: true,
+                headers: { origin: `http://127.0.0.1:${api}` },
+              },
+            ]),
+          ),
           // Fonts a theme ships (ADR 0044) are served by the web head outside /api, without a token.
           "/theme-fonts": {
             target: `http://127.0.0.1:${api}`,

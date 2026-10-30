@@ -1,9 +1,11 @@
 """Checks on files agents and tools read, so they never silently break."""
 
+import ast
 import json
 import os
 import re
 import tomllib
+from importlib import metadata
 from pathlib import Path
 
 import pytest
@@ -84,58 +86,16 @@ def test_claude_settings_hooks_exist(root):
         assert (root / script.group()).is_file(), f"{root.name}: {script.group()} is missing"
 
 
-def test_first_party_plugins_match_the_plugins_directory():
-    from heinzel.modules.system.plugin._service import FIRST_PARTY
-
-    packages = {p.name.removeprefix("heinzel-") for p in (REPO / "plugins").iterdir() if p.is_dir()}
-    assert packages == set(FIRST_PARTY)
-    for name, description in FIRST_PARTY.items():
-        project = tomllib.loads((REPO / "plugins" / f"heinzel-{name}" / "pyproject.toml").read_text(encoding="utf-8"))
-        assert project["project"]["description"].startswith(description.removesuffix(".")), (
-            f"`hz system plugin search` describes heinzel-{name} like its pyproject.toml does"
-        )
-
-
-@pytest.mark.parametrize("package", sorted((REPO / "plugins").iterdir()), ids=lambda p: p.name)
-def test_first_party_plugins_are_released_tested_and_fenced_with_the_core(package):
-    """Every first-party plugin follows the core's version, runs in its suite and coverage, and obeys the contracts,
-    but the core distribution never depends on it: users choose it with `hz system plugin add` (ADR 0017, 0028)."""
-    root = tomllib.loads((REPO / "pyproject.toml").read_text(encoding="utf-8"))
-    project = tomllib.loads((package / "pyproject.toml").read_text(encoding="utf-8"))["project"]
-    distribution, root_package = package.name, package.name.replace("-", "_")
-    version = root["project"]["version"]
-    assert project["name"] == distribution
-    assert project["version"] == version
-    # Conditional Serve writes need HTTP If-Match, which the vendor CLI does not expose (ADR 0084).
-    transport = ["httpx>=0.28"] if distribution == "heinzel-tailscale" else []
-    assert project["dependencies"] == [f"heinzel>={version}", *transport]
-    repository = root["project"]["urls"]["Source"]
-    assert project["urls"]["Source"] == f"{repository}/tree/main/plugins/{distribution}", "`hz --version` links it"
-    assert project["urls"]["Issues"] == root["project"]["urls"]["Issues"]
-    assert not any(r.startswith(distribution) for r in root["project"]["dependencies"]), "not installed by default"
-    assert f"{distribution}>={version}" in root["dependency-groups"]["test"]
-    assert root["tool"]["uv"]["sources"][distribution] == {"workspace": True}
-    assert root_package in root["tool"]["coverage"]["run"]["source"]
-    assert f"plugins/{distribution}/src" in root["tool"]["mypy"]["mypy_path"]
-    assert root_package in root["tool"]["importlinter"]["root_packages"]
-    contracts = {c["name"]: c for c in root["tool"]["importlinter"]["contracts"]}
-    assert root_package in contracts["First-party plugins use only the public API, like any plugin"]["source_modules"]
-    assert (
-        root_package
-        in contracts["First-party plugins are independent of each other, like separate repositories"]["modules"]
-    )
-    assert any(
-        root_package in c.get("forbidden_modules", [])
-        for c in contracts.values()
-        if c.get("source_modules") == ["heinzel"]
-    )
-    bumped = {(f["filename"], f["search"]) for f in root["tool"]["bumpversion"]["files"]}
-    assert (f"plugins/{distribution}/pyproject.toml", '"heinzel>={current_version}"') in bumped
-    assert (
-        f"plugins/{distribution}/pyproject.toml",
-        f'name = "{distribution}"\nversion = "{{current_version}}"',
-    ) in bumped
-    assert ("pyproject.toml", f'"{distribution}>={{current_version}}"') in bumped
+def test_core_project_has_no_plugin_install_or_delivery_dependencies():
+    root = tomllib.loads((REPO / "pyproject.toml").read_text())
+    assert not any(name.startswith("heinzel-") for name in root["project"]["dependencies"])
+    assert not any(name.startswith("heinzel-") for name in root["dependency-groups"]["test"])
+    assert root["tool"]["pytest"]["testpaths"] == ["tests"]
+    assert root["tool"]["coverage"]["run"]["source"] == ["heinzel"]
+    assert "/plugins" in root["tool"]["hatch"]["build"]["targets"]["sdist"]["exclude"]
+    assert "plugins" in root["tool"]["ruff"]["extend-exclude"]
+    assert "plugins" in root["tool"]["typos"]["files"]["extend-exclude"]
+    assert all(not item["filename"].startswith("plugins/") for item in root["tool"]["bumpversion"]["files"])
 
 
 UNTRACKED = {
@@ -148,8 +108,8 @@ UNTRACKED = {
     ".ruff_cache",
     ".pytest_cache",
     "dist",
-    "node_modules",  # the web app's dependencies (web/)
-    "static",  # the web app as built into the package (src/heinzel/heads/web/static)
+    "node_modules",
+    "static",
     ".tools",
 }
 
@@ -185,3 +145,70 @@ def test_every_system_submodule_is_independent_of_the_others():
     system = REPO / "src" / "heinzel" / "modules" / "system"
     packages = {f"heinzel.modules.system.{p.parent.name}" for p in system.glob("*/__init__.py")}
     assert set(independence["modules"]) == packages
+
+
+def test_core_imports_no_concrete_plugin_implementation():
+    providers = {
+        point.value.split(":")[0].split(".")[0]
+        for distribution in metadata.distributions()
+        for point in distribution.entry_points
+        if point.group == "heinzel.modules"
+    }
+    assert _forbidden_plugin_imports(REPO, providers) == []
+
+
+def _forbidden_plugin_imports(repo, providers):
+    """Check every import; only inspect installed package names when a candidate needs them."""
+    packages = None
+    forbidden = []
+    for source in (repo / "src/heinzel").rglob("*.py"):
+        for node in ast.walk(ast.parse(source.read_text())):
+            imported = []
+            if isinstance(node, ast.Import):
+                imported = [alias.name for alias in node.names]
+            elif isinstance(node, ast.ImportFrom) and node.level == 0:
+                imported = [node.module or ""]
+            for name in imported:
+                root = name.split(".")[0]
+                if root in providers:
+                    forbidden.append(f"{source.relative_to(repo)}:{node.lineno}: {name}")
+                elif root.startswith("heinzel_"):
+                    if packages is None:
+                        packages = metadata.packages_distributions()
+                    if root not in packages:
+                        forbidden.append(f"{source.relative_to(repo)}:{node.lineno}: {name}")
+    return forbidden
+
+
+def test_plugin_import_scan_checks_providers_neutral_packages_and_uninstalled_names(tmp_path, monkeypatch):
+    source = tmp_path / "src/heinzel/example.py"
+    source.parent.mkdir(parents=True)
+    source.write_text(
+        "import ordinary, vendor_plugin.child\n"
+        "from heinzel_neutral import thing\n"
+        "if True:\n    import heinzel_missing.child\n"
+        "from .heinzel_missing import local\n"
+        "import heinzel_provider\n",
+        encoding="utf-8",
+    )
+    calls = []
+
+    def packages():
+        calls.append(True)
+        return {"heinzel_neutral": ["neutral"], "heinzel_provider": ["provider"]}
+
+    monkeypatch.setattr(metadata, "packages_distributions", packages)
+    assert _forbidden_plugin_imports(tmp_path, {"vendor_plugin", "heinzel_provider"}) == [
+        "src/heinzel/example.py:1: vendor_plugin.child",
+        "src/heinzel/example.py:6: heinzel_provider",
+        "src/heinzel/example.py:4: heinzel_missing.child",
+    ]
+    assert calls == [True]
+
+
+def test_plugin_import_scan_avoids_package_map_without_candidates(tmp_path, monkeypatch):
+    source = tmp_path / "src/heinzel/example.py"
+    source.parent.mkdir(parents=True)
+    source.write_text("import ordinary, vendor_plugin\n", encoding="utf-8")
+    monkeypatch.setattr(metadata, "packages_distributions", lambda: pytest.fail("unneeded package lookup"))
+    assert _forbidden_plugin_imports(tmp_path, {"vendor_plugin"}) == ["src/heinzel/example.py:1: vendor_plugin"]

@@ -13,6 +13,8 @@ const updateVersion = "0.7.31";
 let restarted = false;
 let updated = false;
 const submissions = [];
+const answerRequested = Promise.withResolvers();
+const finishAnswer = Promise.withResolvers();
 
 function sessionUrlFor(id) {
   const address = new URL(sessionUrl);
@@ -53,6 +55,18 @@ await page.route("**/api/heinzel/chat", async (route) => {
   if (submissions.length === 1) return route.fulfill({ status: 503, json: { detail: "acknowledgement lost" } });
   return route.fulfill({
     json: { session_id: body.session_id, request_id: body.request_id, disposition: "queued", inbox_position: 1 },
+  });
+});
+await page.route("**/api/heinzel/answer-chat", async (route) => {
+  const body = route.request().postDataJSON();
+  answerRequested.resolve(body);
+  await finishAnswer.promise;
+  return route.fulfill({
+    json: {
+      session_id: body.session_id,
+      request_id: body.request_id,
+      message: { id: "fixture-answer", seq: 3, role: "assistant", text: "The draft is ready.", status: "completed" },
+    },
   });
 });
 await page.route("**/api/system/update", async (route) => {
@@ -147,6 +161,12 @@ try {
   assert.deepEqual(submissions[1], submissions[0], "retry after reload must use the exact same session and request id");
   assert.equal(submissions[0].session_id, firstSession);
   assert.equal(submissions[0].request_id, requestId);
+  assert.deepEqual(await answerRequested.promise, { session_id: firstSession, request_id: requestId });
+  const acceptedPending = JSON.parse(await page.evaluate((key) => sessionStorage.getItem(key), firstKey));
+  assert.equal(acceptedPending.pending.accepted, true, "acceptance alone must preserve a still-unanswered message");
+  assert.equal(acceptedPending.pending.request_id, requestId);
+  finishAnswer.resolve();
+  await page.waitForFunction((key) => sessionStorage.getItem(key) === null, firstKey);
   assert.equal(await page.evaluate((key) => sessionStorage.getItem(key), firstKey), null);
 
   await page.goto(sessionUrlFor(secondSession));
@@ -162,6 +182,7 @@ try {
     }),
   );
 } finally {
+  finishAnswer.resolve();
   await context.close();
   await browser.close();
 }

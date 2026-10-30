@@ -1,0 +1,1 @@
+../../src/heinzel/kernel/assets/plugin-sdk/v1/index.d.ts

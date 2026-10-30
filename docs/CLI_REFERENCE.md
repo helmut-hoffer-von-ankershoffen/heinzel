@@ -1,6 +1,6 @@
 # CLI reference
 
-Every operation accepts --json. Commands marked (expert) run like any other but are listed in help and completion only in expert mode: hz system expert on.
+Discover every command and its schemas with hz --command-tree (JSON). Every operation accepts --json. Commands marked (expert) run like any other but are listed in help and completion only in expert mode: hz system expert on.
 
 **Usage**:
 
@@ -10,6 +10,7 @@ $ hz [OPTIONS] COMMAND [ARGS]...
 
 **Options**:
 
+* `--command-tree`: Print every command, argument, option and operation schema as JSON, including expert commands.
 * `-V, --version`: Show the version and repository, Python, platform, installation and plugins, then exit.
 * `--install-completion`: Install completion for the current shell.
 * `--show-completion`: Show completion for the current shell, to copy it or customize the installation.
@@ -18,11 +19,7 @@ $ hz [OPTIONS] COMMAND [ARGS]...
 **Commands**:
 
 * `ai`: (expert) How hz reaches AI, and what it...
-* `atlassian`: (expert) Read Jira issues and Confluence...
 * `chat`: Chat with the agent runner in this...
-* `clock`: Show the time in each of the team&#x27;s time...
-* `github`: (expert) Read pull requests and issues...
-* `google`: (expert) Google Docs, Sheets, Drive,...
 * `graph`: Show your team&#x27;s promises: who keeps which...
 * `heinzel`: Your Heinzelmännchen: durable agents that...
 * `join`: Join a team from its invite line: finds...
@@ -30,10 +27,8 @@ $ hz [OPTIONS] COMMAND [ARGS]...
 * `report`: Telemetry: log what a Heinzelmännchen did,...
 * `setup`: Set up what is still missing, wizard...
 * `system`: Inspect, configure, diagnose and update...
-* `tailscale`: (expert) Private web sharing through...
 * `team`: Your team&#x27;s repository: create one (`hz...
 * `ui`: Open the web app in your browser, served...
-* `zoom`: (expert) Read meetings from Zoom&#x27;s...
 
 ## `hz ai`
 
@@ -179,40 +174,6 @@ $ hz ai usage [OPTIONS]
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
 
-## `hz atlassian`
-
-(expert) Read Jira issues and Confluence pages through acli: the tracker and documents capabilities.
-
-**Usage**:
-
-```console
-$ hz atlassian [OPTIONS] COMMAND [ARGS]...
-```
-
-**Options**:
-
-* `--help`: Show this message and exit.
-
-**Commands**:
-
-* `info`: (expert) Show this plugin&#x27;s version, the...
-
-### `hz atlassian info`
-
-(expert) Show this plugin&#x27;s version, the Atlassian site and the acli commands it runs.
-
-**Usage**:
-
-```console
-$ hz atlassian info [OPTIONS]
-```
-
-**Options**:
-
-* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
-* `--json`: Shorthand for --format json, for scripts and agents.
-* `--help`: Show this message and exit.
-
 ## `hz chat`
 
 Chat with the agent runner in this terminal: it reads with hz&#x27;s operations and asks you before it changes anything. /exit or Ctrl-D leaves; `hz chat --continue` comes back.
@@ -235,11 +196,15 @@ $ hz chat [OPTIONS] COMMAND [ARGS]...
 
 * `authorize-for-mcp`: Authorize one reviewed schedule action for...
 * `confirm`: Run an action the agent proposed, with...
-* `confirm-authorized-mcp`: Run a schedule action once after a person...
 * `decline`: Decline an action the agent proposed; it...
 * `list`: List chat sessions, most recent first;...
 * `open`: Open a chat session, optionally about a...
 * `open-check-in`: Open a runner chat bound to this owner&#x27;s...
+* `propose-agent-contract`: Stage current agent contract terms for...
+* `propose-agent-notification`: Stage one exact notification draft for a...
+* `propose-agent-schedule-review`: Stage the exact current agent schedule for...
+* `propose-connected-read-review`: Stage current connected-read terms for an...
+* `propose-model-policy`: Stage the exact current model policy for...
 * `propose-schedule-control`: Stage a schedule action for review in...
 * `recover`: Check an interrupted confirmation without...
 * `remove`: (expert) Delete a chat session and...
@@ -275,27 +240,6 @@ Run an action the agent proposed, with exactly the arguments shown; only you can
 
 ```console
 $ hz chat confirm [OPTIONS] {session} {action}
-```
-
-**Arguments**:
-
-* `session`: The chat session&#x27;s id, from `hz chat list`.  [required]
-* `action`: The proposed action&#x27;s id, e.g. `a1`.  [required]
-
-**Options**:
-
-* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
-* `--json`: Shorthand for --format json, for scripts and agents.
-* `--help`: Show this message and exit.
-
-### `hz chat confirm-authorized-mcp`
-
-Run a schedule action once after a person authorized it; accept no proof here.
-
-**Usage**:
-
-```console
-$ hz chat confirm-authorized-mcp [OPTIONS] {session} {action}
 ```
 
 **Arguments**:
@@ -379,6 +323,111 @@ $ hz chat open-check-in [OPTIONS] {session_id} {request_id} {timezone}
 * `session_id`: The durable personal session id from `hz heinzel sessions` or the personal Heinzel page.  [required]
 * `request_id`: A stable id for opening or resuming this scoped chat.  [required]
 * `timezone`: The IANA time zone to use for this schedule preview.  [required]
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz chat propose-agent-contract`
+
+Stage current agent contract terms for human review.
+
+**Usage**:
+
+```console
+$ hz chat propose-agent-contract [OPTIONS] {durable_session} {request_id}
+```
+
+**Arguments**:
+
+* `durable_session`: The personal agent session.  [required]
+* `request_id`: The contract proposal request id.  [required]
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz chat propose-agent-notification`
+
+Stage one exact notification draft for a human decision; no notice is sent.
+
+**Usage**:
+
+```console
+$ hz chat propose-agent-notification [OPTIONS] {durable_session} {request_id}
+```
+
+**Arguments**:
+
+* `durable_session`: The personal agent session.  [required]
+* `request_id`: The notification draft request id.  [required]
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz chat propose-agent-schedule-review`
+
+Stage the exact current agent schedule for human review; no schedule is approved yet.
+
+**Usage**:
+
+```console
+$ hz chat propose-agent-schedule-review [OPTIONS] {durable_session} {request_id}
+```
+
+**Arguments**:
+
+* `durable_session`: The personal agent session.  [required]
+* `request_id`: The schedule proposal request id.  [required]
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz chat propose-connected-read-review`
+
+Stage current connected-read terms for an explicit human decision.
+
+**Usage**:
+
+```console
+$ hz chat propose-connected-read-review [OPTIONS] {durable_session} {request_id}
+```
+
+**Arguments**:
+
+* `durable_session`: The personal agent session.  [required]
+* `request_id`: The connected read proposal request id.  [required]
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz chat propose-model-policy`
+
+Stage the exact current model policy for human review; no grant or model call is made.
+
+**Usage**:
+
+```console
+$ hz chat propose-model-policy [OPTIONS] {durable_session} {request_id}
+```
+
+**Arguments**:
+
+* `durable_session`: The personal agent session.  [required]
+* `request_id`: The policy proposal request id.  [required]
 
 **Options**:
 
@@ -497,110 +546,6 @@ $ hz chat show [OPTIONS] {session}
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
 
-## `hz clock`
-
-Show the time in each of the team&#x27;s time zones.
-
-**Usage**:
-
-```console
-$ hz clock [OPTIONS]
-```
-
-**Options**:
-
-* `--at ISO-8601`: Moment to show instead of now (ISO 8601).
-* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
-* `--json`: Shorthand for --format json, for scripts and agents.
-* `--help`: Show this message and exit.
-
-## `hz github`
-
-(expert) Read pull requests and issues from GitHub: the code-host and tracker capabilities.
-
-**Usage**:
-
-```console
-$ hz github [OPTIONS] COMMAND [ARGS]...
-```
-
-**Options**:
-
-* `--help`: Show this message and exit.
-
-**Commands**:
-
-* `info`: (expert) Show this plugin&#x27;s version, the...
-
-### `hz github info`
-
-(expert) Show this plugin&#x27;s version, the Heinzelmännchen it runs on and the GitHub host it reads.
-
-**Usage**:
-
-```console
-$ hz github info [OPTIONS]
-```
-
-**Options**:
-
-* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
-* `--json`: Shorthand for --format json, for scripts and agents.
-* `--help`: Show this message and exit.
-
-## `hz google`
-
-(expert) Google Docs, Sheets, Drive, Calendar and Gmail: the documents, calendar and mail capabilities.
-
-**Usage**:
-
-```console
-$ hz google [OPTIONS] COMMAND [ARGS]...
-```
-
-**Options**:
-
-* `--help`: Show this message and exit.
-
-**Commands**:
-
-* `files`: (expert) List the Google Docs and Sheets...
-* `info`: (expert) Show this plugin&#x27;s version, the...
-
-### `hz google files`
-
-(expert) List the Google Docs and Sheets you can open that changed recently, newest first.
-
-**Usage**:
-
-```console
-$ hz google files [OPTIONS]
-```
-
-**Options**:
-
-* `--days <int>`: How many days back to look for changes, 1 to 366.  [default: 7]
-* `--name <str>`: Only files whose name contains this text; all Docs and Sheets when not given.
-* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
-* `--json`: Shorthand for --format json, for scripts and agents.
-* `--help`: Show this message and exit.
-
-### `hz google info`
-
-(expert) Show this plugin&#x27;s version, the Heinzelmännchen it runs on and the gws, scopes and APIs it uses.
-
-**Usage**:
-
-```console
-$ hz google info [OPTIONS]
-```
-
-**Options**:
-
-* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
-* `--json`: Shorthand for --format json, for scripts and agents.
-* `--help`: Show this message and exit.
-
 ## `hz graph`
 
 Show your team&#x27;s promises: who keeps which artifact, how each promise stands, where the flow waits.
@@ -637,24 +582,129 @@ $ hz heinzel [OPTIONS] COMMAND [ARGS]...
 
 **Commands**:
 
+* `abandon-chat-turn`: Explicitly set aside a stopped uncertain...
+* `amend-scheduled-agent`: Propose revised terms; an independent...
+* `answer-chat`: Answer one authenticated user&#x27;s accepted...
+* `associate-artifact`: Associate a Google file locally; no...
 * `chat`: Durably queue a message for this Heinzel;...
+* `chat-turn-state`: Read the recorded turn state; unresolved...
 * `check`: (expert) Check contracts and list every...
 * `discover`: (expert) Find candidates for each...
 * `drafts`: List the drafts runs saved locally, newest...
 * `graph`: (expert) Show the workflow your contracts...
+* `input-snapshot-history`: Show recent private exact-result...
+* `latest-profile-proposal`: Inspect the latest suggested name and...
+* `latest-scheduled-agent-proposal`: Read the current inert proposal for the...
 * `list`: List your Heinzelmännchen, one per...
 * `new`: Write a starter contract, or a playbook&#x27;s...
 * `new-chat`: Create a durable personal Heinzel with an...
+* `personal-artifacts`: List local principal-submitted file...
 * `playbooks`: (expert) List the playbooks plugins...
 * `profile`: Save this Heinzel&#x27;s name or look against...
 * `propose-check-in`: Propose local five-minute check-ins; the...
+* `propose-scheduled-agent`: Save an inert agent execution proposal; it...
 * `prune`: (expert) Delete drafts and records older...
 * `schedule-control`: Pause a schedule; activation and resume...
+* `scheduled-agent-proposal`: Inspect the exact inert proposal; a...
 * `sent`: (expert) Record how much of a draft you...
 * `session`: Open one durable Heinzel and an ordered...
 * `sessions`: List your durable personal Heinzels,...
 * `show`: Show a contract as the daemon runs it:...
+* `skill-draft`: Read exact private skill draft files and...
+* `skill-drafts`: List private draft references without file...
+* `tool-activity`: Show owner-private host-observed tool...
 * `wake`: Wake a Heinzelmännchen now: fetch its...
+
+### `hz heinzel abandon-chat-turn`
+
+Explicitly set aside a stopped uncertain turn; never retry or undo its possible effects.
+
+**Usage**:
+
+```console
+$ hz heinzel abandon-chat-turn [OPTIONS] {session_id} {request_id} {acknowledge_uncertain}
+```
+
+**Arguments**:
+
+* `session_id`: [required]
+* `request_id`: [required]
+* `acknowledge_uncertain`: Confirm the outcome may be unknown and no retry or undo occurs.  [required]
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz heinzel amend-scheduled-agent`
+
+Propose revised terms; an independent human review and approval is still required.
+
+**Usage**:
+
+```console
+$ hz heinzel amend-scheduled-agent [OPTIONS] {session_id} {request_id} {expected_revision} {contract} {max_usd} {timeout_seconds}
+```
+
+**Arguments**:
+
+* `session_id`: [required]
+* `request_id`: [required]
+* `expected_revision`: The exact proposal revision inspected.  [required]
+* `contract`: Complete replacement instructions.  [required]
+* `max_usd`: Proposed per-turn USD limit; not yet enforced.  [required]
+* `timeout_seconds`: Proposed maximum seconds per turn.  [required]
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz heinzel answer-chat`
+
+Answer one authenticated user&#x27;s accepted message; an interrupted request is never silently replayed.
+
+**Usage**:
+
+```console
+$ hz heinzel answer-chat [OPTIONS] {session_id} {request_id}
+```
+
+**Arguments**:
+
+* `session_id`: [required]
+* `request_id`: [required]
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz heinzel associate-artifact`
+
+Associate a Google file locally; no access, provider ownership or permission is verified.
+
+**Usage**:
+
+```console
+$ hz heinzel associate-artifact [OPTIONS] {session_id} {request_id} {kind}:<document|spreadsheet|presentation> {ref}
+```
+
+**Arguments**:
+
+* `session_id`: [required]
+* `request_id`: [required]
+* `kind:<document|spreadsheet|presentation>`: The claimed Google file type; not verified with the provider.  [required]
+* `ref`: Canonical Google editor URL.  [required]
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
 
 ### `hz heinzel chat`
 
@@ -675,6 +725,27 @@ $ hz heinzel chat [OPTIONS] {session_id} {request_id} {message}
 **Options**:
 
 * `--when-busy <follow_up|steer>`: Queue a follow-up or request steering at the next safe boundary.  [default: follow_up]
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz heinzel chat-turn-state`
+
+Read the recorded turn state; unresolved may still be running.
+
+**Usage**:
+
+```console
+$ hz heinzel chat-turn-state [OPTIONS] {session_id} {request_id}
+```
+
+**Arguments**:
+
+* `session_id`: [required]
+* `request_id`: [required]
+
+**Options**:
+
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
@@ -748,6 +819,67 @@ $ hz heinzel graph [OPTIONS]
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
 
+### `hz heinzel input-snapshot-history`
+
+Show recent private exact-result comparisons from approved reads, without source contents.
+
+**Usage**:
+
+```console
+$ hz heinzel input-snapshot-history [OPTIONS] {session_id}
+```
+
+**Arguments**:
+
+* `session_id`: [required]
+
+**Options**:
+
+* `--limit <int>`: Maximum recent observations to return.  [default: 20]
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz heinzel latest-profile-proposal`
+
+Inspect the latest suggested name and look; it has not been applied.
+
+**Usage**:
+
+```console
+$ hz heinzel latest-profile-proposal [OPTIONS] {session_id}
+```
+
+**Arguments**:
+
+* `session_id`: [required]
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz heinzel latest-scheduled-agent-proposal`
+
+Read the current inert proposal for the personal session, if one exists.
+
+**Usage**:
+
+```console
+$ hz heinzel latest-scheduled-agent-proposal [OPTIONS] {session_id}
+```
+
+**Arguments**:
+
+* `session_id`: [required]
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
 ### `hz heinzel list`
 
 List your Heinzelmännchen, one per contract: owner, schedule, state, last and next run.
@@ -808,6 +940,26 @@ $ hz heinzel new-chat [OPTIONS] {request_id}
 
 * `--name <str>`: Your personal display name for this Heinzel.  [default: New Heinzel]
 * `--appearance JSON`: The complete personal appearance overrides; null leaves the current look unchanged.
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz heinzel personal-artifacts`
+
+List local principal-submitted file associations without accessing the provider.
+
+**Usage**:
+
+```console
+$ hz heinzel personal-artifacts [OPTIONS] {session_id}
+```
+
+**Arguments**:
+
+* `session_id`: [required]
+
+**Options**:
+
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
@@ -874,6 +1026,30 @@ $ hz heinzel propose-check-in [OPTIONS] {session_id} {request_id}
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
 
+### `hz heinzel propose-scheduled-agent`
+
+Save an inert agent execution proposal; it neither approves nor starts a model turn.
+
+**Usage**:
+
+```console
+$ hz heinzel propose-scheduled-agent [OPTIONS] {session_id} {request_id} {contract} {max_usd} {timeout_seconds}
+```
+
+**Arguments**:
+
+* `session_id`: [required]
+* `request_id`: [required]
+* `contract`: Exact instructions to preview for a future agent turn.  [required]
+* `max_usd`: Proposed per-turn USD limit; not yet enforced.  [required]
+* `timeout_seconds`: Proposed maximum seconds per turn.  [required]
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
 ### `hz heinzel prune`
 
 (expert) Delete drafts and records older than ` retention_days` (default 90); receipts are kept.
@@ -913,6 +1089,27 @@ $ hz heinzel schedule-control [OPTIONS] {session_id} {request_id} {expected_revi
 * `--approval-proof <str>`: Human-issued exact-intent proof required to activate or resume; never returned by reads. On CLI, pass `-` to read it from hidden input or stdin.
 * `--expected-contract-version <int>`: The contract version in the schedule preview.  [default: 1]
 * `--expected-preview-hash <str>`: The preview hash shown for this exact schedule.
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz heinzel scheduled-agent-proposal`
+
+Inspect the exact inert proposal; a separate future human approval is required to run it.
+
+**Usage**:
+
+```console
+$ hz heinzel scheduled-agent-proposal [OPTIONS] {session_id} {request_id}
+```
+
+**Arguments**:
+
+* `session_id`: [required]
+* `request_id`: [required]
+
+**Options**:
+
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
@@ -995,6 +1192,70 @@ $ hz heinzel show [OPTIONS] {name}
 
 **Options**:
 
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz heinzel skill-draft`
+
+Read exact private skill draft files and requested sharing scope.
+
+**Usage**:
+
+```console
+$ hz heinzel skill-draft [OPTIONS] {session_id} {request_id}
+```
+
+**Arguments**:
+
+* `session_id`: [required]
+* `request_id`: [required]
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz heinzel skill-drafts`
+
+List private draft references without file contents.
+
+**Usage**:
+
+```console
+$ hz heinzel skill-drafts [OPTIONS] {session_id}
+```
+
+**Arguments**:
+
+* `session_id`: [required]
+
+**Options**:
+
+* `--cursor <int>`: Resume after this session journal position.  [default: 0]
+* `--limit <int>`: The most private draft references returned in this page.  [default: 20]
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz heinzel tool-activity`
+
+Show owner-private host-observed tool decisions, without their arguments.
+
+**Usage**:
+
+```console
+$ hz heinzel tool-activity [OPTIONS] {session_id}
+```
+
+**Arguments**:
+
+* `session_id`: [required]
+
+**Options**:
+
+* `--limit <int>`: Maximum recent recorded tool events to return.  [default: 30]
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
@@ -1360,7 +1621,6 @@ $ hz system [OPTIONS] COMMAND [ARGS]...
 * `notify`: (expert) Pop up what deserves your...
 * `plugin`: (expert) Find, add, remove, enable,...
 * `release`: (expert) Ask where Heinzelmännchen was...
-* `resource`: Show machine CPU/memory usage, one-minute...
 * `runner`: Run bounded agent sessions with Claude...
 * `serve`: (expert) Serve every operation to coding...
 * `skill`: (expert) List the skills plugins ship for...
@@ -2297,6 +2557,7 @@ $ hz system plugin [OPTIONS] COMMAND [ARGS]...
 * `new`: (expert) Scaffold a plugin repository from...
 * `operation`: (expert) Read the status and result of a...
 * `remove`: (expert) Remove a plugin.
+* `sdk`: (expert) Export the versioned plugin view...
 * `search`: (expert) Find plugins to install:...
 
 #### `hz system plugin add`
@@ -2493,6 +2754,9 @@ $ hz system plugin new [OPTIONS] {destination}
 * `--data <str>`: Answer a template question as key=value, e.g. plugin_name=crm; repeat for each.
 * `--template <str>`: Copier template: a git URL, gh:owner/repo or a local path.  [default: gh:helmut-hoffer-von-ankershoffen/heinzel]
 * `--ref <str>`: Template version; defaults to this Heinzelmännchen&#x27;s release tag.
+* `--defaults / --no-defaults`: Use template defaults without interactive questions.  [default: no-defaults]
+* `--layout <standalone|collection>`: A standalone repository, or only owning files inside a plugin collection.  [default: standalone]
+* `--preset <minimal|contributions>`: One operation and test, or the complete UI and notification example.  [default: minimal]
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
@@ -2537,6 +2801,26 @@ $ hz system plugin remove [OPTIONS] {distribution}
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
 
+#### `hz system plugin sdk`
+
+(expert) Export the versioned plugin view SDK from this installation, without a core checkout.
+
+**Usage**:
+
+```console
+$ hz system plugin sdk [OPTIONS] {destination}
+```
+
+**Arguments**:
+
+* `destination`: New directory for the installed view SDK and TypeScript definitions.  [required]
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
 #### `hz system plugin search`
 
 (expert) Find plugins to install: first-party ones, and community ones by querying the GitHub API.
@@ -2562,22 +2846,6 @@ $ hz system plugin search [OPTIONS]
 
 ```console
 $ hz system release [OPTIONS]
-```
-
-**Options**:
-
-* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
-* `--json`: Shorthand for --format json, for scripts and agents.
-* `--help`: Show this message and exit.
-
-### `hz system resource`
-
-Show machine CPU/memory usage, one-minute load and logical cores; cache each sample for one second.
-
-**Usage**:
-
-```console
-$ hz system resource [OPTIONS]
 ```
 
 **Options**:
@@ -2797,7 +3065,7 @@ $ hz system skill unexport [OPTIONS]
 
 ### `hz system sound`
 
-(expert) Pick the web app&#x27;s soundscape: off, a built-in one or one a plugin offers.
+(expert) Pick the web app&#x27;s soundscape: off or one an installed plugin offers.
 
 **Usage**:
 
@@ -2842,7 +3110,7 @@ $ hz system sound use [OPTIONS] {name}
 
 **Arguments**:
 
-* `name`: The soundscape to play, one `hz system sound list` shows, e.g. `claude-fm`, or `off`.  [required]
+* `name`: The soundscape to play, one `hz system sound list` shows, or `off`.  [required]
 
 **Options**:
 
@@ -3012,6 +3280,7 @@ $ hz system ui [OPTIONS] COMMAND [ARGS]...
 * `navigation`: (expert) List active providers&#x27; navigation...
 * `show`: (expert) Show a contribution in a slot of...
 * `status`: (expert) List the status items modules add...
+* `views`: (expert) List active installed views,...
 * `widgets`: (expert) List the widgets modules add to...
 
 #### `hz system ui actions`
@@ -3122,6 +3391,22 @@ $ hz system ui status [OPTIONS]
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
 
+#### `hz system ui views`
+
+(expert) List active installed views, their compatible bundles and read-only operation calls.
+
+**Usage**:
+
+```console
+$ hz system ui views [OPTIONS]
+```
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
 #### `hz system ui widgets`
 
 (expert) List the widgets modules add to the web app&#x27;s Today screen, with what each shows now.
@@ -3153,74 +3438,6 @@ $ hz system update [OPTIONS]
 
 * `--source <str>`: Install from here instead, e.g. git+https://github.com/org/heinzel@v1.2.0 or a wheel.
 * `--channel <release|main>`: Follow `release` (the default, setting `update_channel`): the newest release, also from `main` once a release is as new as it; or `main`: its newest commit.
-* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
-* `--json`: Shorthand for --format json, for scripts and agents.
-* `--help`: Show this message and exit.
-
-## `hz tailscale`
-
-(expert) Private web sharing through Tailscale Serve.
-
-**Usage**:
-
-```console
-$ hz tailscale [OPTIONS] COMMAND [ARGS]...
-```
-
-**Options**:
-
-* `--help`: Show this message and exit.
-
-**Commands**:
-
-* `disable`: (expert) Stop only hz&#x27;s private Serve...
-* `enable`: (expert) Share hz privately over...
-* `status`: (expert) Show private sharing readiness...
-
-### `hz tailscale disable`
-
-(expert) Stop only hz&#x27;s private Serve mapping and remove only the origin permission this plugin added.
-
-**Usage**:
-
-```console
-$ hz tailscale disable [OPTIONS]
-```
-
-**Options**:
-
-* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
-* `--json`: Shorthand for --format json, for scripts and agents.
-* `--help`: Show this message and exit.
-
-### `hz tailscale enable`
-
-(expert) Share hz privately over Tailscale, preserving existing services and requiring authenticated readiness.
-
-**Usage**:
-
-```console
-$ hz tailscale enable [OPTIONS]
-```
-
-**Options**:
-
-* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
-* `--json`: Shorthand for --format json, for scripts and agents.
-* `--help`: Show this message and exit.
-
-### `hz tailscale status`
-
-(expert) Show private sharing readiness without changing Tailscale or configuration.
-
-**Usage**:
-
-```console
-$ hz tailscale status [OPTIONS]
-```
-
-**Options**:
-
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
@@ -3375,38 +3592,4 @@ $ hz ui [OPTIONS]
 * `--browser / --no-browser`: Open the default browser at the app; --no-browser prints only its URL.  [default: browser]
 * `--devices`: List the browsers and installed apps paired with hz, then stop.
 * `--revoke <str>`: Unpair a device by its id from --devices, or `all`, then stop.
-* `--help`: Show this message and exit.
-
-## `hz zoom`
-
-(expert) Read meetings from Zoom&#x27;s meeting-summary emails: the meetings capability.
-
-**Usage**:
-
-```console
-$ hz zoom [OPTIONS] COMMAND [ARGS]...
-```
-
-**Options**:
-
-* `--help`: Show this message and exit.
-
-**Commands**:
-
-* `info`: (expert) Show this plugin&#x27;s version, the...
-
-### `hz zoom info`
-
-(expert) Show this plugin&#x27;s version, the Heinzelmännchen it runs on and where its meetings come from.
-
-**Usage**:
-
-```console
-$ hz zoom info [OPTIONS]
-```
-
-**Options**:
-
-* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
-* `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.

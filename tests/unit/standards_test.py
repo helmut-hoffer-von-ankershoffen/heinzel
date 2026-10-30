@@ -12,12 +12,8 @@ from pathlib import Path
 from types import ModuleType
 from typing import get_origin
 
-import heinzel_atlassian
-import heinzel_clock
-import heinzel_github
-import heinzel_google
-import heinzel_zoom
 import pytest
+import yaml
 from packaging.requirements import Requirement
 
 from heinzel import Kernel, Module, OperationLet
@@ -27,7 +23,7 @@ pytestmark = pytest.mark.unit
 
 REPO = Path(__file__).resolve().parents[2]
 TEMPLATE = REPO / "template"
-CODE = [*REPO.glob("src/**/*.py"), *REPO.glob("plugins/*/src/**/*.py"), *REPO.glob("scripts/*.py"),
+CODE = [*REPO.glob("src/**/*.py"), *REPO.glob("scripts/*.py"),
         *REPO.glob("tests/**/*.py"), *REPO.glob(".claude/hooks/*.py"),
         *REPO.glob("template/**/*.py"), *REPO.glob("template/**/*.py.jinja")]  # fmt: skip
 BLOCKING = {"run", "check_call", "check_output", "call"}
@@ -84,13 +80,16 @@ def repository_files() -> list[str]:
         check=True,
         timeout=10,
     ).stdout.splitlines()
-    return [path for path in listed if (REPO / path).is_file()]
+    return [path for path in listed if not path.startswith("plugins/") and (REPO / path).is_file()]
 
 
 # Template parity: plugins get the same agents, hooks, skills, workflows and scripts, unless they are core-only.
 
 SHARED = [".claude", ".github/workflows", "scripts"]
 CORE_ONLY = {  # path: why plugins don't get it
+    "scripts/site_catalog.py": "public product website aggregation, never a standalone plugin build (ADR 0098)",
+    "scripts/site_pages.py": "renders the product's public ecosystem catalog, not plugin-owned docs (ADR 0098)",
+    "scripts/site_check.py": "accepts the core product website with its locked web axe tooling (ADR 0098)",
     ".github/workflows/pypi.yml": "publishes only the registered core project with its trusted publisher (ADR 0079)",
     "scripts/pypi_release.py": "verifies core-only PyPI identity and browser/notifier payloads (ADR 0079)",
     ".github/workflows/fuzz.yml": "fuzzes Heinzelmännchen's contract parser (fuzz/); plugins have no fuzz targets",
@@ -106,6 +105,8 @@ CORE_ONLY = {  # path: why plugins don't get it
     "scripts/terminal_art.py": "draws Heinzelmännchen for the terminal from the web app's drawing; plugins bring none",
     "scripts/sync_template.py": "generates the template from Heinzelmännchen's files",
     "scripts/template-test.sh": "renders and checks the template",
+    "scripts/starter-test.py": "core SDK compatibility job exercises fresh standalone and collection authors",
+    "scripts/scoped_checks.py": "routes Core-root checks; owning and governed plugins already check their own project",
     "scripts/template_pyproject_head.toml.tmpl": "input of sync_template.py",
     "scripts/web.py": "the web head's typed client and dev server (web/, ADR 0039); plugins bring no UI",
     "scripts/web_build.py": "runs and builds the web head's app (web/, ADR 0039); plugins bring no UI",
@@ -211,11 +212,6 @@ def test_tests_and_template_use_only_variables_something_reads(make_kernel):
     code reads by name (HZ_CONFIG, HZ_CONFIG_HOME, HZ_SOURCE in install.sh, HZ_SPEC in the template's e2e test)."""
     kernel = make_kernel(
         builtins=True,
-        atlassian=heinzel_atlassian.module,
-        clock=heinzel_clock.module,
-        github=heinzel_github.module,
-        google=heinzel_google.module,
-        zoom=heinzel_zoom.module,
     )
     known = {
         f"{env_prefix(section)}{key.upper()}"
@@ -267,7 +263,6 @@ def test_claude_md_names_every_bash_guard_rule(root):
 LOWER_BOUNDS = {">=", ">", "==", "~=", "==="}
 PYPROJECTS = [
     REPO / "pyproject.toml",
-    *sorted(REPO.glob("plugins/*/pyproject.toml")),
     TEMPLATE / "pyproject.toml.jinja",
 ]
 
@@ -302,7 +297,7 @@ def test_every_dependency_has_a_lower_bound(pyproject):
 
 # Modules return results and heads present them: a module writing to the terminal breaks MCP and REST.
 
-MODULE_CODE = [*REPO.glob("src/heinzel/modules/**/*.py"), *REPO.glob("plugins/*/src/**/*.py")]
+MODULE_CODE = [*REPO.glob("src/heinzel/modules/**/*.py")]
 
 
 def terminal_writes(source: str) -> list[int]:
@@ -367,11 +362,6 @@ def test_injected_parameters_come_first(make_kernel):
         injected_after_exposed(
             make_kernel(
                 builtins=True,
-                atlassian=heinzel_atlassian.module,
-                clock=heinzel_clock.module,
-                github=heinzel_github.module,
-                google=heinzel_google.module,
-                zoom=heinzel_zoom.module,
             )
         )
         == []
@@ -424,6 +414,12 @@ def test_markdown_names_only_make_targets_that_exist(makefile):
     targets = {target for target, _ in TARGET.findall(makefile.read_text(encoding="utf-8"))}
     if makefile == REPO / "Makefile":
         targets |= {target for target, _ in TARGET.findall((TEMPLATE / "Makefile").read_text(encoding="utf-8"))}
+        starter = next((REPO / "starter").glob("*Makefile*.jinja")).read_text(encoding="utf-8")
+        targets |= {
+            name
+            for group in re.findall(r"(?m)^([a-z][\w-]*(?:[ \t]+[a-z][\w-]*)*):(?!=)", starter)
+            for name in group.split()
+        }
     missing = [
         f"{p.relative_to(REPO)}: make {target}"
         for p in _markdown(MAKEFILES[makefile])
@@ -435,6 +431,101 @@ def test_markdown_names_only_make_targets_that_exist(makefile):
 
 def test_finds_make_targets_in_markdown():
     assert MAKE_IN_MARKDOWN.findall("run `make check`, `make pr TITLE=x`; make sense of `uv run`") == ["check", "pr"]
+
+
+def lock_policy_valid(configuration):
+    """A generated lock exception needs a required resolver check; ordinary file limits stay unchanged."""
+    hooks = {hook["id"]: hook for repo in configuration["repos"] for hook in repo["hooks"]}
+    large, lock = hooks["check-added-large-files"], hooks.get("uv-lock", {})
+    return (
+        large.get("exclude") == r"^uv\.lock$"
+        and not large.get("args")
+        and lock.get("entry") == "uv lock --check"
+        and lock.get("files") == r"^(pyproject\.toml|uv\.lock)$"
+        and lock.get("pass_filenames") is False
+        and lock.get("language") == "system"
+    )
+
+
+def test_large_generated_locks_require_resolver_validation_without_relaxing_other_file_limits():
+    configuration = yaml.safe_load((REPO / ".pre-commit-config.yaml").read_text())
+    assert lock_policy_valid(configuration)
+    validator = next(repo for repo in configuration["repos"] if repo["repo"] == "local")["hooks"]
+    validator[:] = [hook for hook in validator if hook["id"] != "uv-lock"]
+    assert not lock_policy_valid(configuration)
+    configuration = yaml.safe_load((REPO / ".pre-commit-config.yaml").read_text())
+    configuration["repos"][0]["hooks"][0]["exclude"] = ".*"
+    assert not lock_policy_valid(configuration)
+
+
+def matching_toolkit_pins(pins):
+    """Every authoring entry point must use the same final wheel version and exact digest."""
+    pattern = (
+        r"https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/releases/download/"
+        r"tools-v(?P<version>\d+\.\d+\.\d+)/heinzel_plugin_tools-(?P=version)-py3-none-any.whl"
+        r"#sha256=[a-f0-9]{64}"
+    )
+    return bool(pins) and len(set(pins)) == 1 and all(re.fullmatch(pattern, pin) for pin in pins)
+
+
+def test_standalone_commands_workflows_and_journey_pin_one_immutable_toolkit():
+    starter = REPO / "starter"
+    paths = [
+        next(starter.glob("*Makefile*.jinja")),
+        *starter.glob("*github*/workflows/*.yml.jinja"),
+        REPO / ".github/workflows/release.yml",
+    ]
+    pins = [_load(REPO / "scripts/starter-test.py").TOOLKIT.rsplit(" ", 1)[-1]]
+    pins.append(_load(REPO / "scripts/scoped_checks.py").TOOLKIT.rsplit(" ", 1)[-1])
+    for path in paths:
+        text = path.read_text().replace(r"\#", "#")
+        match = re.search(r"https://github\.com/\S+?\.whl(?:#sha256=[a-f0-9]{64})?", text)
+        assert match, path
+        pins.append(match.group())
+    config = yaml.safe_load((REPO / ".pre-commit-config.yaml").read_text())
+    hook = next(hook for repo in config["repos"] for hook in repo["hooks"] if hook["id"] == "owning-plugin-checks")
+    pins.append(hook["args"][0].rsplit(" ", 1)[-1])
+    assert len(pins) == 7
+    assert matching_toolkit_pins(pins)
+
+
+def test_plugin_only_pushes_and_commits_use_owning_checks_instead_of_core_checks():
+    config = yaml.safe_load((REPO / ".pre-commit-config.yaml").read_text())
+    hooks = {hook["id"]: hook for repo in config["repos"] for hook in repo["hooks"]}
+    path = "plugins/heinzel-unforeseen/src/feature.py"
+    for name in ("check-fast", "mypy", "ruff-format", "ruff-check"):
+        assert not hooks[name].get("always_run")
+        assert re.search(hooks[name]["exclude"], path)
+        assert not re.search(hooks[name]["exclude"], "src/heinzel/kernel/_kernel.py")
+    owner = hooks["owning-plugin-checks"]
+    assert owner["pass_filenames"] is False
+    assert owner["always_run"] is True
+    assert owner["args"][-2:] == ["check-changed", "--git-hook"]
+    assert owner["require_serial"] is True
+    assert set(owner["stages"]) == {"pre-commit", "pre-push"}
+
+
+def test_core_can_release_an_unknown_source_plugin_without_core_build_or_tests():
+    workflow = yaml.safe_load((REPO / ".github/workflows/release.yml").read_text())
+    build = workflow["jobs"]["build"]
+    commands = "\n".join(step.get("run", "") for step in build["steps"])
+    assert 'hz-plugin verify-release "$PLUGIN"' in commands
+    assert "make check" not in commands
+    assert "make build" not in commands
+    assert "pytest" not in commands
+    assert workflow["jobs"]["publish"]["environment"] == "plugin-pypi"
+    assert 'test "$PUBLISH" != true || test "$REF" = refs/heads/main' in commands
+
+
+def test_unhashed_or_drifting_toolkit_pins_are_refused():
+    base = (
+        "https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/releases/download/"
+        "tools-v0.1.1/heinzel_plugin_tools-0.1.1-py3-none-any.whl"
+    )
+    pinned = base + "#sha256=" + "a" * 64
+    assert matching_toolkit_pins([pinned, pinned])
+    assert not matching_toolkit_pins([base, base])
+    assert not matching_toolkit_pins([pinned, pinned.replace("a" * 64, "b" * 64)])
 
 
 # The working title is gone; only the ADR that chose the name and the changelog remember it.

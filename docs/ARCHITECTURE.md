@@ -200,10 +200,13 @@ sources only, and `hz system plugin develop <path>` adds a local checkout. New p
 Every plugin, first-party or external, is named the same way
 ([ADR 0025](adr/0025-plugin-distributions-are-named-heinzel-name.md)): distribution and repository `heinzel-<name>`,
 root package `heinzel_<name>`, entry point `<name>` in the `heinzel.modules` group. `hz system plugin add <name>`
-resolves the name of a first-party plugin. First-party plugins (`plugins/`: clock and the GitHub, Atlassian,
-Google and Zoom adapters) are released with the core but never installed by default; the core imports none of them
-([ADR 0017](adr/0017-first-party-plugins-in-the-core-repository.md),
-[ADR 0028](adr/0028-integrations-are-capability-adapters.md)).
+resolves a catalog name from project metadata. Public implementations live in
+[heinzel-plugins](https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins), with independent locks, environments,
+versions and releases. External/private repositories use the same SDK and discovery rules. The standard app profile
+includes Clock, Resource, Tailscale and the Heinzelmännchen theme; minimal core has no plugin dependencies. Resource
+is the only built-in module extracted in 0.9; the theme plugin also owns the former bundled soundscape content.
+See [ADR 0094](adr/0094-plugins-own-features-and-independent-delivery.md) and
+[ADR 0095](adr/0095-standard-heinzel-theme-owns-bundled-soundscapes.md).
 
 ## Layering
 
@@ -213,17 +216,16 @@ Enforced by [import-linter](https://import-linter.readthedocs.io) (`make lint`):
 - `heinzel.modules` must not import `heinzel.heads`.
 - `heinzel.heads` must not import `heinzel.modules` — heads only know what the kernel discovered.
 
-## World Clock
+## Plugin-owned views
 
-The clock plugin's header button opens the local World Clock in the right panel (`?panel=world-clock`). It shows
-configured zones on a draggable globe, with city names in the list and marker tooltips, 24-hour times and approximate
-daylight. Reduced motion or missing WebGL uses a static map. Orange marks the primary zone; selecting a place centres
-it. Markers are the representative locations of IANA time-zone names, never people's locations. No map service is
-contacted.
+Clock demonstrates a complete plugin-owned feature: right panel/globe, footer clock, header action, sidebar ticker,
+menu/Settings and CLI/MCP/API operations live in its project. Its panel uses `?panel=clock:world-clock`; core consumes
+only the generic view and contribution contracts. Asset attribution and implementation details live with the
+[Clock plugin](https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/tree/main/plugins/heinzel-clock).
 
-The fallback land outline is simplified [Natural Earth land](https://www.naturalearthdata.com/about/terms-of-use/)
-(public domain), and representative zone points are from IANA's public-domain `zone.tab`. See
-[ADR 0063](adr/0063-world-clock-is-a-local-interactive-globe.md).
+The [extension guide](PLUGINS.md) documents ABI 1, owned page routes, local bundles, fallbacks and shared interface
+contracts. A required interface derives from `ServiceContract`; missing implementations disable dependent operations
+without exposing the interface as a user input or making unrelated heads unusable.
 
 ### Phone overlays
 

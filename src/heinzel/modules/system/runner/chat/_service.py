@@ -15,13 +15,12 @@ import tempfile
 from datetime import timedelta
 from functools import partial
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal, get_origin
+from typing import TYPE_CHECKING, Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic_core import to_jsonable_python
 
 from heinzel import (
-    ActionGate,
     AgentResult,
     AgentRunner,
     Budget,
@@ -34,7 +33,7 @@ from heinzel import (
     ToolProfile,
     redact_emails,
 )
-from heinzel.kernel import CapabilityView, UsageEntry, record_usage
+from heinzel.kernel import CapabilityView, CheckInChatContextSource, UsageEntry, record_usage
 from heinzel.kernel._approval import ApprovalConfirmation, ApprovalIssuer
 from heinzel.modules.system.runner.chat._models import ChatAction, ChatContext, ChatMessage, ChatSession, ChatSettings
 from heinzel.modules.system.runner.chat._policy import guarded_settings, refusal
@@ -215,7 +214,7 @@ def parameters(kernel: Kernel, operation: OperationLet) -> set[str]:
     return {
         name
         for name, parameter in operation.signature().parameters.items()
-        if not kernel.provides(get_origin(parameter.annotation) or parameter.annotation)
+        if not kernel.provides(parameter.annotation)
     }
 
 
@@ -247,17 +246,24 @@ class ChatService:
         except (ValueError, ZoneInfoNotFoundError):
             msg = f"Unknown IANA time zone {timezone!r}"
             raise HeinzelError(msg) from None
+        self._kernel.resolve(CheckInChatContextSource).get(session_id)
+        owner_id = self._store.personal_owner()
         context = ChatContext(
-            kind="check-in", ref=session_id, request_id=request_id, timezone=timezone, detail=detail[:4000]
+            kind="check-in",
+            ref=session_id,
+            request_id=request_id,
+            timezone=timezone,
+            detail=detail[:4000],
+            owner_id=owner_id,
         )
         with self._store.proposal_request_lock():
-            prior = self._store.find_context("check-in", session_id, request_id)
+            prior = self._store.find_personal_chat(session_id)
             if prior is not None:
-                if prior.context is None or prior.context.timezone != timezone:
-                    msg = "This check-in chat request id already identifies a different time zone"
+                if prior.context is None or prior.context.kind != "check-in" or prior.context.timezone != timezone:
+                    msg = "This personal chat has a different time zone or context; inspect it before continuing"
                     raise HeinzelError(msg)
                 return prior
-            return self._store.create(context)
+            return self._store.create(context, personal_session_id=session_id)
 
     def propose_schedule_control(  # noqa: PLR0913, PLR0917 - one reviewed parameter per exact schedule revision
         self,
@@ -273,6 +279,7 @@ class ChatService:
         Raises:
             HeinzelError: If this request id already identifies another exact schedule review.
         """
+        durable_context = self._kernel.resolve(CheckInChatContextSource).get(durable_session)
         arguments: dict[str, JsonValue] = {
             "session_id": durable_session,
             "request_id": request_id,
@@ -289,27 +296,281 @@ class ChatService:
                     msg = "This request id already identifies a different schedule review"
                     raise HeinzelError(msg)
                 return chat
-            chat = self.open(
-                ChatContext(
-                    kind="text",
-                    ref=f"five-minute check-in for {durable_session}",
-                    detail={
-                        "activate": "Confirm only if you want this schedule to run every five minutes.",
-                        "pause": "Confirm only if you want this schedule paused.",
-                        "resume": "Confirm only if you want this schedule to resume.",
-                    }[action],
+            personal_chat = self._store.find_personal_chat(durable_session)
+            if personal_chat is None:
+                owner_id = self._store.personal_owner()
+                context = ChatContext(
+                    kind="check-in",
+                    ref=durable_session,
+                    request_id=request_id,
+                    timezone=durable_context.timezone or "UTC",
+                    owner_id=owner_id,
+                    detail="Review proposed schedule changes before confirming them.",
                 )
-            )
+                personal_chat = self._store.create(context, personal_session_id=durable_session)
+            if personal_chat.context is None or personal_chat.context.kind != "check-in":
+                msg = "This personal chat has an incompatible legacy context; inspect it before continuing"
+                raise HeinzelError(msg)
             call = ProposedCall(
-                session=chat.id,
+                session=personal_chat.id,
                 module="heinzel",
                 operation="schedule-control",
                 tool="heinzel_schedule_control",
                 arguments=arguments,
                 command="hz heinzel schedule-control",
             )
-            self._kernel.resolve(ActionGate).propose(call)
-            return self._store.load(chat.id)
+            self._store.propose(call)  # Trusted review staging; the agent-facing gate cannot stage this action.
+            return self._store.load(personal_chat.id)
+
+    def propose_model_policy(self, durable_session: str, request_id: str) -> ChatSession:
+        """Stage the exact owner-private model policy for a human decision, without granting it.
+
+        Raises:
+            HeinzelError: If the owner, current proposal or existing action cannot be verified.
+        """
+        if not self._kernel.provides(ApprovalIssuer):
+            msg = "Model policy review is unavailable"
+            raise HeinzelError(msg)
+        issuer = self._kernel.resolve(ApprovalIssuer)
+        base: dict[str, JsonValue] = {"session_id": durable_session, "request_id": request_id}
+        with self._store.proposal_request_lock():
+            prior = self._store.find_proposal("heinzel", "approve-model-grant", durable_session, request_id)
+            if prior is not None:
+                chat, found = prior
+                # Returning the original owner-bound action does not reissue or consume a proof. The issuer
+                # still rechecks current intent when a pending action is confirmed.
+                if (
+                    chat.personal_session_id != durable_session
+                    or set(found.arguments) != {"session_id", "request_id", "review"}
+                    or not isinstance(found.arguments.get("review"), dict)
+                ):
+                    msg = "This policy review no longer matches its original action"
+                    raise HeinzelError(msg)
+                return chat
+            preview = issuer.review("heinzel", "approve-model-grant", base)
+            arguments: dict[str, JsonValue] = {**base, "review": preview}
+            personal_chat = self._store.find_personal_chat(durable_session)
+            if personal_chat is None:
+                personal_chat = self._store.create(
+                    ChatContext(
+                        kind="text",
+                        ref=durable_session,
+                        owner_id=self._store.personal_owner(),
+                        detail="Review model policy for this personal agent.",
+                    ),
+                    personal_session_id=durable_session,
+                )
+            self._store.propose(
+                ProposedCall(
+                    session=personal_chat.id,
+                    module="heinzel",
+                    operation="approve-model-grant",
+                    tool="heinzel_approve_model_grant",
+                    arguments=arguments,
+                    command="Review model policy",
+                )
+            )
+            return self._store.load(personal_chat.id)
+
+    def propose_agent_contract(self, durable_session: str, request_id: str) -> ChatSession:
+        """Stage the exact owner-private agent contract for a human decision, without granting it.
+
+        Raises:
+            HeinzelError: If the owner, current proposal or existing action cannot be verified.
+        """
+        if not self._kernel.provides(ApprovalIssuer):
+            msg = "Agent contract review is unavailable"
+            raise HeinzelError(msg)
+        issuer = self._kernel.resolve(ApprovalIssuer)
+        base: dict[str, JsonValue] = {"session_id": durable_session, "request_id": request_id}
+        with self._store.proposal_request_lock():
+            prior = self._store.find_proposal("heinzel", "accept-agent-contract", durable_session, request_id)
+            if prior is not None:
+                chat, found = prior
+                # Returning the original owner-bound action does not reissue or consume a proof. The issuer
+                # still rechecks current intent when a pending action is confirmed.
+                if (
+                    chat.personal_session_id != durable_session
+                    or set(found.arguments) != {"session_id", "request_id", "review"}
+                    or not isinstance(found.arguments.get("review"), dict)
+                ):
+                    msg = "This contract review no longer matches its original action"
+                    raise HeinzelError(msg)
+                return chat
+            preview = issuer.review("heinzel", "accept-agent-contract", base)
+            arguments: dict[str, JsonValue] = {**base, "review": preview}
+            personal_chat = self._store.find_personal_chat(durable_session)
+            if personal_chat is None:
+                personal_chat = self._store.create(
+                    ChatContext(
+                        kind="text",
+                        ref=durable_session,
+                        owner_id=self._store.personal_owner(),
+                        detail="Review agent contract for this personal agent.",
+                    ),
+                    personal_session_id=durable_session,
+                )
+            self._store.propose(
+                ProposedCall(
+                    session=personal_chat.id,
+                    module="heinzel",
+                    operation="accept-agent-contract",
+                    tool="heinzel_accept_agent_contract",
+                    arguments=arguments,
+                    command="Review agent contract",
+                )
+            )
+            return self._store.load(personal_chat.id)
+
+    def propose_agent_notification(self, durable_session: str, request_id: str) -> ChatSession:
+        """Stage the exact owner-private notification for a human decision, without granting it.
+
+        Raises:
+            HeinzelError: If the owner, current proposal or existing action cannot be verified.
+        """
+        if not self._kernel.provides(ApprovalIssuer):
+            msg = "Notification review is unavailable"
+            raise HeinzelError(msg)
+        issuer = self._kernel.resolve(ApprovalIssuer)
+        base: dict[str, JsonValue] = {"session_id": durable_session, "request_id": request_id}
+        with self._store.proposal_request_lock():
+            prior = self._store.find_proposal("heinzel", "queue-agent-notification", durable_session, request_id)
+            if prior is not None:
+                chat, found = prior
+                # Returning the original owner-bound action does not reissue or consume a proof. The issuer
+                # still rechecks current intent when a pending action is confirmed.
+                if (
+                    chat.personal_session_id != durable_session
+                    or set(found.arguments) != {"session_id", "request_id", "review"}
+                    or not isinstance(found.arguments.get("review"), dict)
+                ):
+                    msg = "This notification review no longer matches its original action"
+                    raise HeinzelError(msg)
+                return chat
+            preview = issuer.review("heinzel", "queue-agent-notification", base)
+            arguments: dict[str, JsonValue] = {**base, "review": preview}
+            personal_chat = self._store.find_personal_chat(durable_session)
+            if personal_chat is None:
+                personal_chat = self._store.create(
+                    ChatContext(
+                        kind="text",
+                        ref=durable_session,
+                        owner_id=self._store.personal_owner(),
+                        detail="Review notification for this personal agent.",
+                    ),
+                    personal_session_id=durable_session,
+                )
+            self._store.propose(
+                ProposedCall(
+                    session=personal_chat.id,
+                    module="heinzel",
+                    operation="queue-agent-notification",
+                    tool="heinzel_queue_agent_notification",
+                    arguments=arguments,
+                    command="Review notification",
+                )
+            )
+            return self._store.load(personal_chat.id)
+
+    def propose_connected_read_review(self, durable_session: str, request_id: str) -> ChatSession:
+        """Stage the exact owner-private connected read for a human decision, without granting it.
+
+        Raises:
+            HeinzelError: If the owner, current proposal or existing action cannot be verified.
+        """
+        if not self._kernel.provides(ApprovalIssuer):
+            msg = "Connected read review is unavailable"
+            raise HeinzelError(msg)
+        issuer = self._kernel.resolve(ApprovalIssuer)
+        base: dict[str, JsonValue] = {"session_id": durable_session, "request_id": request_id}
+        with self._store.proposal_request_lock():
+            prior = self._store.find_proposal("heinzel", "approve-connected-read", durable_session, request_id)
+            if prior is not None:
+                chat, found = prior
+                # Returning the original owner-bound action does not reissue or consume a proof. The issuer
+                # still rechecks current intent when a pending action is confirmed.
+                if (
+                    chat.personal_session_id != durable_session
+                    or set(found.arguments) != {"session_id", "request_id", "review"}
+                    or not isinstance(found.arguments.get("review"), dict)
+                ):
+                    msg = "This connected read review no longer matches its original action"
+                    raise HeinzelError(msg)
+                return chat
+            preview = issuer.review("heinzel", "approve-connected-read", base)
+            arguments: dict[str, JsonValue] = {**base, "review": preview}
+            personal_chat = self._store.find_personal_chat(durable_session)
+            if personal_chat is None:
+                personal_chat = self._store.create(
+                    ChatContext(
+                        kind="text",
+                        ref=durable_session,
+                        owner_id=self._store.personal_owner(),
+                        detail="Review connected read for this personal agent.",
+                    ),
+                    personal_session_id=durable_session,
+                )
+            self._store.propose(
+                ProposedCall(
+                    session=personal_chat.id,
+                    module="heinzel",
+                    operation="approve-connected-read",
+                    tool="heinzel_approve_connected_read",
+                    arguments=arguments,
+                    command="Review connected read",
+                )
+            )
+            return self._store.load(personal_chat.id)
+
+    def propose_agent_schedule_review(self, durable_session: str, request_id: str) -> ChatSession:
+        """Stage the exact owner-private agent schedule for a human decision, without granting it.
+
+        Raises:
+            HeinzelError: If the owner, current proposal or existing action cannot be verified.
+        """
+        if not self._kernel.provides(ApprovalIssuer):
+            msg = "Agent schedule review is unavailable"
+            raise HeinzelError(msg)
+        issuer = self._kernel.resolve(ApprovalIssuer)
+        base: dict[str, JsonValue] = {"session_id": durable_session, "request_id": request_id}
+        with self._store.proposal_request_lock():
+            prior = self._store.find_proposal("heinzel", "approve-agent-schedule", durable_session, request_id)
+            if prior is not None:
+                chat, found = prior
+                # Returning the original owner-bound action does not reissue or consume a proof. The issuer
+                # still rechecks current intent when a pending action is confirmed.
+                if (
+                    chat.personal_session_id != durable_session
+                    or set(found.arguments) != {"session_id", "request_id", "review"}
+                    or not isinstance(found.arguments.get("review"), dict)
+                ):
+                    msg = "This schedule review no longer matches its original action"
+                    raise HeinzelError(msg)
+                return chat
+            preview = issuer.review("heinzel", "approve-agent-schedule", base)
+            arguments: dict[str, JsonValue] = {**base, "review": preview}
+            personal_chat = self._store.find_personal_chat(durable_session)
+            if personal_chat is None:
+                personal_chat = self._store.create(
+                    ChatContext(
+                        kind="text",
+                        ref=durable_session,
+                        owner_id=self._store.personal_owner(),
+                        detail="Review agent schedule for this personal agent.",
+                    ),
+                    personal_session_id=durable_session,
+                )
+            self._store.propose(
+                ProposedCall(
+                    session=personal_chat.id,
+                    module="heinzel",
+                    operation="approve-agent-schedule",
+                    tool="heinzel_approve_agent_schedule",
+                    arguments=arguments,
+                    command="Review agent schedule",
+                )
+            )
+            return self._store.load(personal_chat.id)
 
     def _notice(self, event: str) -> str:
         """What the notice `event` says, from the notifications every head reads (ADR 0043); empty if unknown."""
@@ -325,7 +586,7 @@ class ChatService:
         lines = [found.title, found.body, f"Shown at {found.route}; in a terminal: {found.command}"]
         return "\n".join(line for line in lines if line)[:4000]
 
-    def send(  # noqa: PLR0913 - a message and how to answer it
+    def send(  # noqa: C901, PLR0913 - a message and how to answer it
         self,
         runner: AgentRunner,
         session: str,
@@ -352,6 +613,11 @@ class ChatService:
             _guard_check_in_retry(chat)
             if retried := _completed_retry(chat, text, request_id):
                 return retried
+            if chat.personal_session_id is not None:
+                # A tool profile is only an adapter request, not proof that ambient tools, writes, budget and
+                # timeout are enforced. No trusted verifier and owner-bound grant are wired to this path yet.
+                msg = "This personal agent cannot run until its runner isolation and grants are verified"
+                raise HeinzelError(msg)
             if len(chat.messages) >= MAX_MESSAGES:
                 msg = f"This chat has {len(chat.messages)} messages, the most it keeps; open a new one."
                 raise HeinzelError(msg)
@@ -385,6 +651,9 @@ class ChatService:
             )  # with what the agent proposed
 
     def _run(self, runner: AgentRunner, chat: ChatSession, cap: float) -> AgentResult:
+        if chat.personal_session_id is not None:
+            msg = "This personal agent cannot run until its runner isolation and grants are verified"
+            raise HeinzelError(msg)
         # No files of yours: an empty working directory and no built-in tools, only hz's, through the gate.
         with tempfile.TemporaryDirectory(prefix="hz-chat-") as directory:
             tools_set = (
@@ -558,10 +827,16 @@ class ChatService:
         allowed = parameters(self._kernel, operation)
         arguments = {k: v for k, v in found.arguments.items() if k in allowed}
         confirmation: ApprovalConfirmation | None = None
-        if (
-            found.module == "heinzel"
-            and found.operation == "schedule-control"
-            and found.arguments.get("action") in {"activate", "resume"}
+        if found.module == "heinzel" and (
+            (found.operation == "schedule-control" and found.arguments.get("action") in {"activate", "resume"})
+            or found.operation
+            in {
+                "approve-model-grant",
+                "accept-agent-contract",
+                "approve-connected-read",
+                "approve-agent-schedule",
+                "queue-agent-notification",
+            }
         ):
             if "approval_proof" in found.arguments or not self._kernel.provides(ApprovalIssuer):
                 msg = "Approval is invalid or unavailable"
@@ -583,16 +858,33 @@ class ChatService:
             else:
                 with confirmation.using(found.module, found.operation, arguments):
                     value = self._kernel.invoke(operation, **arguments)
-            text = redact_emails(dumps(to_jsonable_python(value, fallback=str)))  # it goes into prompts
-            found.status, found.result = "done", text[:RESULT_LIMIT]
+            text = (
+                "The notification was queued; it may be held by local policy and is not confirmed shown."
+                if found.module == "heinzel" and found.operation == "queue-agent-notification" and value == "recorded"
+                else "The notification outcome is uncertain; it was not repeated."
+                if found.module == "heinzel" and found.operation == "queue-agent-notification"
+                else "The model policy approval was recorded. No model request was started."
+                if found.module == "heinzel" and found.operation == "approve-model-grant"
+                else "The connected read approval was recorded. No requested data was read."
+                if found.module == "heinzel" and found.operation == "approve-connected-read"
+                else "The agent schedule approval was recorded. No external access was granted."
+                if found.module == "heinzel" and found.operation == "approve-agent-schedule"
+                else "The contract acceptance was recorded. No schedule or access was activated."
+                if found.module == "heinzel" and found.operation == "accept-agent-contract"
+                else redact_emails(dumps(to_jsonable_python(value, fallback=str)))
+            )  # The resulting action message may later be sent to a model.
+            found.status, found.result = (
+                ("uncertain" if found.operation == "queue-agent-notification" and value == "uncertain" else "done"),
+                text[:RESULT_LIMIT],
+            )
         except HeinzelError as exc:
-            if self._is_schedule_confirmation(found):
+            if self._is_reconciled_confirmation(found):
                 self._reconcile_schedule_confirmation(found)
             else:
                 found.status, found.result = "failed", str(exc)
         except Exception as exc:
             log.exception("Confirmed action %s of chat %s failed", found.id, session)
-            if self._is_schedule_confirmation(found):
+            if self._is_reconciled_confirmation(found):
                 self._reconcile_schedule_confirmation(found)
             else:
                 found.status, found.result = "failed", f"{type(exc).__name__}: failed with a bug; the log says why"
@@ -604,11 +896,17 @@ class ChatService:
         return chat
 
     @staticmethod
-    def _is_schedule_confirmation(found: ChatAction) -> bool:
-        return (
-            found.module == "heinzel"
-            and found.operation == "schedule-control"
-            and found.arguments.get("action") in {"activate", "pause", "resume"}
+    def _is_reconciled_confirmation(found: ChatAction) -> bool:
+        return found.module == "heinzel" and (
+            (found.operation == "schedule-control" and found.arguments.get("action") in {"activate", "pause", "resume"})
+            or found.operation
+            in {
+                "approve-model-grant",
+                "accept-agent-contract",
+                "approve-connected-read",
+                "approve-agent-schedule",
+                "queue-agent-notification",
+            }
         )
 
     def _reconcile_schedule_confirmation(self, found: ChatAction) -> None:
@@ -625,11 +923,23 @@ class ChatService:
             log.exception("Could not reconcile schedule action %s after confirmation failed", found.id)
         if applied:
             found.status = "done"
-            found.result = "The exact schedule change is recorded. It was not run again."
+            found.result = (
+                "The notification was queued; it was not repeated or confirmed shown."
+                if found.operation == "queue-agent-notification"
+                else "The exact schedule change is recorded. It was not run again."
+                if found.operation == "schedule-control"
+                else "The exact connected read approval is recorded. It was not run again."
+                if found.operation == "approve-connected-read"
+                else "The exact agent schedule approval is recorded. It was not run again."
+                if found.operation == "approve-agent-schedule"
+                else "The exact contract acceptance is recorded. It was not run again."
+                if found.operation == "accept-agent-contract"
+                else "The exact model policy approval is recorded. It was not run again."
+            )
         else:
             found.status = "uncertain"
             found.result = (
-                "The schedule change could not be confirmed. It was not repeated. Inspect the current schedule "
+                "The approved action could not be confirmed. It was not repeated. Inspect the current state "
                 "before making a new proposal."
             )
 
@@ -653,14 +963,26 @@ class ChatService:
                 self._store.remove_mcp_approval(session, found.id)
                 found.mcp_authorized = False
                 applied = False
-                if self._is_schedule_confirmation(found) and self._kernel.provides(ApprovalIssuer):
+                if self._is_reconciled_confirmation(found) and self._kernel.provides(ApprovalIssuer):
                     with contextlib.suppress(HeinzelError):
                         applied = self._kernel.resolve(ApprovalIssuer).applied(
                             found.module, found.operation, found.arguments
                         )
                 if applied:
                     found.status = "done"
-                    found.result = "The exact schedule change is recorded. It was not run again."
+                    found.result = (
+                        "The notification was queued; it was not repeated or confirmed shown."
+                        if found.operation == "queue-agent-notification"
+                        else "The exact schedule change is recorded. It was not run again."
+                        if found.operation == "schedule-control"
+                        else "The exact connected read approval is recorded. It was not run again."
+                        if found.operation == "approve-connected-read"
+                        else "The exact agent schedule approval is recorded. It was not run again."
+                        if found.operation == "approve-agent-schedule"
+                        else "The exact contract acceptance is recorded. It was not run again."
+                        if found.operation == "accept-agent-contract"
+                        else "The exact model policy approval is recorded. It was not run again."
+                    )
                 else:
                     found.status = "uncertain"
                     found.result = (
@@ -707,7 +1029,20 @@ class ChatService:
                 allowed_heads = (
                     {"mcp-check-in"} if chat.context and chat.context.kind == "check-in" else {"mcp", "mcp-stdio"}
                 )
-                if operation.heads is not None and not allowed_heads & operation.heads:
+                trusted_policy = (
+                    action.module == "heinzel"
+                    and action.operation
+                    in {
+                        "approve-model-grant",
+                        "accept-agent-contract",
+                        "approve-connected-read",
+                        "approve-agent-schedule",
+                        "queue-agent-notification",
+                    }
+                    and chat.personal_session_id == action.arguments.get("session_id")
+                    and chat.personal_owner_id is not None
+                )
+                if operation.heads is not None and not allowed_heads & operation.heads and not trusted_policy:
                     break
                 if not self._kernel.available(operation.func):
                     break

@@ -1,12 +1,11 @@
 """The sound module of system: soundscapes for the web app, chosen like a theme but on their own (ADR 0058).
 
 A soundscape is data a plugin offers with `module.soundscape(...)`: licensed audio files the web app mixes live, each
-layer following a signal such as the part of the day, or a stream in the official player of an allowed host. The core
-offers Claude FM, a stream on YouTube. Sound is off until the person picks a soundscape and presses Play;
+layer following a signal such as the part of the day, or a stream in the official player of an allowed host.
+Installed plugins own the soundscape content. Sound is off until the person picks a soundscape and presses Play;
 `hz system sound use <name>` picks one, `off` is none.
 """
 
-from pathlib import Path
 from typing import Annotated
 
 from pydantic import Field
@@ -26,11 +25,10 @@ from heinzel.modules.system.sound._models import (
 )
 from heinzel.modules.system.sound._service import SoundService
 
-module = Module("sound", "Pick the web app's soundscape: off, a built-in one or one a plugin offers.")
+module = Module("sound", "Pick the web app's soundscape: off or one an installed plugin offers.")
 module.settings(SoundSettings)
 module.service(SoundService)
 module.service(SoundAssets, SoundService)  # the web head serves audio and sets its page's CSP through it (ADR 0058)
-module.soundscape(Path(__file__).parent / "soundscapes")
 
 
 def _kind(view: SoundscapeView) -> str:
@@ -79,9 +77,7 @@ def list_(service: SoundService) -> SoundList:
 @module.operation(read_only=False, render=render, heads={"cli", "mcp", "web"})
 def use(
     service: SoundService,
-    name: Annotated[
-        str, Field(description="The soundscape to play, one `hz system sound list` shows, e.g. `claude-fm`, or `off`.")
-    ],
+    name: Annotated[str, Field(description="The soundscape to play, one `hz system sound list` shows, or `off`.")],
 ) -> SoundList:
     """Pick the web app's soundscape, `off` for none; turns off theme following and saves your choice."""
     return service.use(name)

@@ -5,6 +5,7 @@ within a few seconds, and is compared in constant time; before that the connecti
 every API request (a loopback Host on our port, our own Origin, no cross-site `Sec-Fetch-Site`). A browser always
 sends an Origin with a WebSocket, so one without it is refused too. After that, binary frames are keystrokes and
 text frames are JSON control messages, `{"resize": [cols, rows]}`; the shell's output comes back as binary frames.
+The server may send `{"agent_title": ...}` on that same authenticated socket for the foreground agent's session name.
 Both directions are bounded: a shell that prints faster than the browser reads is paused by the pseudo-terminal,
 and a browser that types faster than the shell reads stops being read. Closing the socket hangs up the shell's
 whole process group (ADR 0048). When `hz ui` stops, each terminal hangs up its shell the same way and closes its
@@ -31,6 +32,7 @@ from fastapi import FastAPI, WebSocket
 from fastapi.websockets import WebSocketDisconnect
 
 from heinzel.heads import api
+from heinzel.heads.web._agent_titles import claude_title
 from heinzel.heads.web._shutdown import Stopping
 
 if os.name == "posix":
@@ -246,7 +248,7 @@ class _Terminal:
         self.websocket = websocket
         self.origin = origin
         self.loop = asyncio.get_running_loop()
-        self.output: asyncio.Queue[bytes] = asyncio.Queue(maxsize=OUTPUT_CHUNKS)
+        self.output: asyncio.Queue[bytes | str] = asyncio.Queue(maxsize=OUTPUT_CHUNKS)
         self.paused = False
         """Whether reading the shell's output stopped because the queue is full."""
         self.pending = bytearray()
@@ -277,6 +279,7 @@ class _Terminal:
         self.main, process = _spawn()
         self.loop.add_reader(self.main, self._readable)
         sender = asyncio.create_task(self._send())
+        titles = asyncio.create_task(self._agent_titles())
         closer = asyncio.create_task(self._close_when(stopped, stopping))
         receiver = asyncio.create_task(self._receive())
         revoked = asyncio.create_task(self.revoked.wait())
@@ -290,11 +293,14 @@ class _Terminal:
             self.loop.remove_reader(self.main)
             self.loop.remove_writer(self.main)
             sender.cancel()
+            titles.cancel()
             closer.cancel()
             revoked.cancel()
             try:
                 with contextlib.suppress(asyncio.CancelledError, WebSocketDisconnect, RuntimeError, OSError):
                     await sender
+                with contextlib.suppress(asyncio.CancelledError, RuntimeError, OSError):
+                    await titles
                 with contextlib.suppress(asyncio.CancelledError, RuntimeError, OSError):
                     await closer
                 with contextlib.suppress(asyncio.CancelledError, WebSocketDisconnect, RuntimeError, OSError):
@@ -328,9 +334,22 @@ class _Terminal:
             if self.paused:
                 self.paused = False
                 self.loop.add_reader(self.main, self._readable)
-            await self.websocket.send_bytes(data)
+            if isinstance(data, bytes):
+                await self.websocket.send_bytes(data)
+            else:
+                await self.websocket.send_text(data)
         self.drained.set()  # nothing reads keystrokes any more; let the receiver see the socket close
         await self.websocket.close(reason="The shell ended.")
+
+    async def _agent_titles(self) -> None:
+        """Publish changes to the foreground agent's session name on this socket only."""
+        previous: str | None = None
+        while True:
+            name = await asyncio.to_thread(claude_title, self.main)
+            if name != previous and self.output.qsize() < OUTPUT_CHUNKS - 1:
+                self.output.put_nowait(json.dumps({"agent_title": name}))
+                previous = name
+            await asyncio.sleep(2)
 
     async def _receive(self) -> None:
         """Keystrokes and control messages from the browser, until it goes away."""

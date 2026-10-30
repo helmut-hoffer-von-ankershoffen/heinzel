@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { Providers, queryClient } from "@/App";
 import { daemonStatusKey } from "@/api/daemon";
 import { DurableSession } from "@/chat/DurableSession";
-import { frame, mockWithStream } from "@/test/chat";
+import { frame } from "@/test/chat";
 import { shell } from "@/test/fixtures";
 import { expectAccessible, mockApi, renderAt } from "@/test/render";
 import { preserveUpdateWork } from "@/updates/work";
@@ -28,6 +28,7 @@ const proposedSchedule = {
 
 const reviewChat = {
   id: "0123456789abcdef",
+  personal_session_id: sessionId,
   title: "Check-in approval",
   messages: [],
   actions: [
@@ -121,140 +122,305 @@ describe("personal conversation links", () => {
     const panel = within(await screen.findByRole("complementary", { name: "Chat" }));
 
     fireEvent.click(await panel.findByRole("button", { name: "Review pause in chat" }));
-    expect(await panel.findByRole("heading", { name: "Review this schedule change" })).toBeInTheDocument();
+    expect(await panel.findByRole("heading", { name: "Review pause of this schedule" })).toBeInTheDocument();
     expect(panel.queryByRole("button", { name: "Authorize MCP to run once" })).not.toBeInTheDocument();
     fireEvent.click(panel.getByRole("button", { name: "Confirm" }));
     await waitFor(() => expect(panel.getByText("paused")).toBeInTheDocument());
 
     fireEvent.click(await panel.findByRole("button", { name: "Review resume in chat" }));
-    expect(await panel.findByRole("heading", { name: "Review this schedule change" })).toBeInTheDocument();
+    expect(await panel.findByRole("heading", { name: "Review resuming this schedule" })).toBeInTheDocument();
     expect(await panel.findByRole("button", { name: "Authorize MCP to run once" })).toBeInTheDocument();
     fireEvent.click(panel.getByRole("button", { name: "Confirm" }));
     await waitFor(() => expect(panel.getByText("active")).toBeInTheDocument());
     expect(requestedActions).toEqual(["pause", "resume"]);
   });
 
-  it.each([
-    "Please schedule a check-in every five minutes.",
-    "Notify me every 5 minutes.",
-    "Send me a notification every five minutes.",
-  ])("asks the configured agent for a scoped proposal and keeps activation separate: %s", async (message) => {
-    let stored = { ...snapshot, schedule: null as null | typeof proposedSchedule };
-    let confirmed = false;
-    const agentChat = {
-      id: "abcdef0123456789",
-      title: "Check-in conversation",
-      context: { kind: "check-in", ref: sessionId, request_id: "open-request", timezone: "Europe/Berlin" },
-      messages: [
-        { role: "user", text: message, at: "2026-10-28T12:00:00Z", status: "completed", request_id: "open-request" },
-        {
-          role: "assistant",
-          text: "I can prepare the five-minute proposal for your review.",
-          at: "2026-10-28T12:00:01Z",
-          status: "completed",
-          request_id: "open-request",
-        },
-      ],
+  it("shows an unsupported owner-bound model policy without permitting approval", async () => {
+    const review = {
+      request_id: "policy-one",
+      revision: 1,
+      access: "pydantic-ai",
+      model: "openai:example",
+      requests: 1,
+      total_tokens: 100,
+      output_tokens: 10,
+      timeout_seconds: 10,
+      message_cap_usd: "1",
+      session_cap_usd: "2",
+      owner_cap_usd: "3",
+      allowed_tools: {},
+      allowed_skill_tools: [],
+    };
+    const chat = {
+      ...reviewChat,
       actions: [
         {
-          id: "a1",
-          tool: "heinzel_propose_check_in",
-          module: "heinzel",
-          operation: "propose-check-in",
-          command: "hz heinzel propose-check-in",
-          arguments: { session_id: sessionId, request_id: "contract-request", timezone: "Europe/Berlin" },
+          ...reviewChat.actions[0],
+          operation: "approve-model-grant",
           status: "pending",
-          mcp_authorized: false,
+          arguments: { session_id: sessionId, request_id: "policy-one", review },
         },
       ],
-      costs: { spent_usd: 0, session_max_usd: 2, message_max_usd: 0.2 },
     };
-    const completedProposal = {
-      ...agentChat,
-      actions: [{ ...agentChat.actions[0], status: "done", result: "The schedule proposal was saved." }],
-    };
-    const { calls } = mockWithStream(
-      {
-        ...shell,
-        "/api/heinzel/session": () => stored,
-        "/api/system/runner/chat/open-check-in": agentChat,
-        "/api/system/runner/chat/confirm": () => {
-          confirmed = true;
-          stored = { ...stored, schedule: proposedSchedule };
-          return completedProposal;
-        },
-      },
-      [frame("result", { data: agentChat })],
-    );
-    renderAt(`/heinzel?chat=${sessionId}`);
+    const { calls } = mockApi({ ...shell, "/api/heinzel/session": snapshot, "/api/system/runner/chat/show": chat });
+    renderAt(`/heinzel?chat=${sessionId}&agent-chat=${chat.id}&approval-chat=${chat.id}`);
     const panel = within(await screen.findByRole("complementary", { name: "Chat" }));
-    fireEvent.change(await panel.findByLabelText("Message your Heinzel"), {
-      target: { value: message },
-    });
-    fireEvent.click(panel.getByRole("button", { name: "Prepare schedule review" }));
-    expect(await panel.findByText(/I can prepare the five-minute proposal/i)).toBeInTheDocument();
-    expect(await panel.findByRole("heading", { name: "Review this schedule change" })).toBeInTheDocument();
-    expect(confirmed).toBe(false);
-    expect(calls.some((request) => new URL(request.url).pathname === "/api/heinzel/chat")).toBe(false);
-    expect(calls.some((request) => new URL(request.url).pathname.endsWith("/chat/confirm"))).toBe(false);
-    fireEvent.click(panel.getByRole("button", { name: "Confirm" }));
-    await waitFor(() => expect(confirmed).toBe(true));
-    await waitFor(() => expect(panel.getByText("proposed")).toBeInTheDocument());
-    expect(panel.getByRole("button", { name: "Review activation in chat" })).toBeInTheDocument();
-    expect(calls.some((request) => new URL(request.url).pathname.endsWith("/propose-schedule-control"))).toBe(false);
-    const opened = calls.find((request) => new URL(request.url).pathname.endsWith("/open-check-in"));
-    const sent = calls.find((request) => new URL(request.url).pathname.endsWith("/chat/send"));
-    expect(opened && new URL(opened.url).searchParams.get("session_id")).toBe(sessionId);
-    expect(sent && new URL(sent.url).searchParams.get("message")).toBe(message);
-    expect(calls.some((request) => new URL(request.url).pathname.endsWith("/chat/confirm"))).toBe(true);
+    const card = within(await panel.findByRole("region", { name: "Model policy review" }));
+    expect(panel.getAllByRole("region", { name: "Model policy review" })).toHaveLength(1);
+    expect(card.getByText(/Confirmation is unavailable for this model policy/)).toBeInTheDocument();
+    expect(card.getByText(/openai:example/)).toHaveTextContent('"request_id": "policy-one"');
+    expect(card.queryByRole("button")).not.toBeInTheDocument();
+    expect(calls.filter((request) => request.method === "POST")).toHaveLength(0);
   });
 
-  it("offers a direct inactive proposal when the configured runner is unavailable", async () => {
-    let stored = { ...snapshot, schedule: null as null | typeof proposedSchedule };
-    const chat = { id: "abcdef0123456789", title: "Check-in conversation", messages: [], actions: [], costs: {} };
-    const failedChat = {
-      ...chat,
-      messages: [
+  it("confirms only the exact current bound policy after explicit review", async () => {
+    const review = {
+      request_id: "policy-one",
+      revision: 1,
+      access: "pydantic-ai",
+      model: "openai:gpt-4.1-mini-2025-04-14",
+      binding: {
+        owner: `u-${"a".repeat(32)}`,
+        access: "pydantic-ai",
+        model: "openai:gpt-4.1-mini-2025-04-14",
+        endpoint: "https://api.openai.com/v1",
+        credential_fingerprint: "b".repeat(64),
+      },
+      requests: 1,
+      total_tokens: 100,
+      output_tokens: 10,
+      timeout_seconds: 10,
+      message_cap_usd: "1",
+      session_cap_usd: "2",
+      owner_cap_usd: "3",
+      allowed_tools: {},
+      allowed_skill_tools: [],
+    };
+    const action = {
+      ...reviewChat.actions[0],
+      operation: "approve-model-grant",
+      status: "pending",
+      arguments: { session_id: sessionId, request_id: "policy-one", review },
+    };
+    const chat = { ...reviewChat, actions: [action] };
+    const confirmed = { ...chat, actions: [{ ...action, status: "done" }] };
+    const { calls } = mockApi({
+      ...shell,
+      "/api/heinzel/session": snapshot,
+      "/api/system/runner/chat/show": chat,
+      "/api/heinzel/model-policy": {
+        session_id: sessionId,
+        status: "proposed",
+        billing: "api-priced",
+        proposal: review,
+      },
+      "/api/system/runner/chat/confirm": confirmed,
+    });
+    renderAt(`/heinzel?chat=${sessionId}&agent-chat=${chat.id}`);
+    const panel = within(await screen.findByRole("complementary", { name: "Chat" }));
+    const card = within(await panel.findByRole("region", { name: "Model policy review" }));
+    expect(card.getByText(/not a provider account/)).toBeInTheDocument();
+    expect(calls.filter((request) => request.method === "POST")).toHaveLength(0);
+    fireEvent.click(card.getByRole("button", { name: "Confirm model policy" }));
+    await waitFor(() => expect(calls.filter((request) => request.method === "POST")).toHaveLength(1));
+    const post = calls.find((request) => request.method === "POST");
+    expect(new URL(post?.url ?? "").pathname).toBe("/api/system/runner/chat/confirm");
+    await waitFor(() => expect(panel.queryByRole("region", { name: "Model policy review" })).not.toBeInTheDocument());
+  });
+
+  it.each(["binding", "session"])("does not confirm if the reviewed %s changed", async (changedField) => {
+    const review = {
+      request_id: "policy-one",
+      revision: 1,
+      access: "pydantic-ai",
+      model: "openai:gpt-4.1-mini-2025-04-14",
+      binding: {
+        owner: `u-${"a".repeat(32)}`,
+        access: "pydantic-ai",
+        model: "openai:gpt-4.1-mini-2025-04-14",
+        endpoint: "https://api.openai.com/v1",
+        credential_fingerprint: "b".repeat(64),
+      },
+      allowed_tools: {},
+      allowed_skill_tools: [],
+    };
+    const action = {
+      ...reviewChat.actions[0],
+      operation: "approve-model-grant",
+      status: "pending",
+      arguments: { session_id: sessionId, request_id: "policy-one", review },
+    };
+    const chat = { ...reviewChat, actions: [action] };
+    const changed = { ...review, binding: { ...review.binding, credential_fingerprint: "c".repeat(64) } };
+    const { calls } = mockApi({
+      ...shell,
+      "/api/heinzel/session": snapshot,
+      "/api/system/runner/chat/show": chat,
+      "/api/heinzel/model-policy": {
+        session_id: changedField === "session" ? "hz-01ARZ3NDEKTSV4RRFFQ69G5FAW" : sessionId,
+        status: "proposed",
+        billing: "api-priced",
+        proposal: changedField === "binding" ? changed : review,
+      },
+    });
+    renderAt(`/heinzel?chat=${sessionId}&agent-chat=${chat.id}`);
+    const panel = within(await screen.findByRole("complementary", { name: "Chat" }));
+    const card = within(await panel.findByRole("region", { name: "Model policy review" }));
+    fireEvent.click(card.getByRole("button", { name: "Confirm model policy" }));
+    await waitFor(() =>
+      expect(calls.some((request) => new URL(request.url).pathname === "/api/heinzel/model-policy")).toBe(true),
+    );
+    await waitFor(() => expect(panel.getAllByRole("alert").length).toBeGreaterThan(0));
+    expect(calls.filter((request) => request.method === "POST")).toHaveLength(0);
+  });
+
+  it("does not show another agent's policy action in an otherwise bound chat", async () => {
+    const chat = {
+      ...reviewChat,
+      actions: [
         {
-          role: "user",
-          text: "notify me every 5 minutes",
-          at: "2026-10-28T12:00:00Z",
-          request_id: "open-request",
-          status: "completed",
-        },
-        {
-          role: "assistant",
-          text: "",
-          detail: "agent runner is not configured",
-          at: "2026-10-28T12:00:01Z",
-          request_id: "open-request",
-          status: "failed",
+          ...reviewChat.actions[0],
+          operation: "approve-model-grant",
+          status: "pending",
+          arguments: {
+            session_id: "hz-01ARZ3NDEKTSV4RRFFQ69G5FAW",
+            request_id: "foreign",
+            review: { request_id: "foreign" },
+          },
         },
       ],
     };
-    const { calls } = mockWithStream(
-      {
-        ...shell,
-        "/api/heinzel/session": () => stored,
-        "/api/system/runner/chat/open-check-in": chat,
-        "/api/system/runner/chat/show": chat,
-        "/api/heinzel/propose-check-in": () => {
-          stored = { ...stored, schedule: proposedSchedule };
-          return stored;
-        },
-      },
-      [frame("result", { data: failedChat })],
-    );
+    mockApi({ ...shell, "/api/heinzel/session": snapshot, "/api/system/runner/chat/show": chat });
+    renderAt(`/heinzel?chat=${sessionId}&agent-chat=${chat.id}`);
+    const panel = within(await screen.findByRole("complementary", { name: "Chat" }));
+    await panel.findByText("Hello");
+    await waitFor(() => expect(panel.queryByRole("region", { name: "Model policy review" })).not.toBeInTheDocument());
+  });
+
+  it("pages to newer queued messages and back without presenting the first page as complete", async () => {
+    const { calls } = mockApi({
+      ...shell,
+      "/api/heinzel/session": (request: Request) =>
+        new URL(request.url).searchParams.get("cursor") === "opaque-page-51"
+          ? {
+              ...snapshot,
+              messages: [{ id: "new", seq: 52, role: "user", text: "A newer queued message", status: "pending" }],
+              has_more: false,
+              next_cursor: null,
+            }
+          : { ...snapshot, has_more: true, next_cursor: "opaque-page-51" },
+    });
     renderAt(`/heinzel?chat=${sessionId}`);
     const panel = within(await screen.findByRole("complementary", { name: "Chat" }));
-    fireEvent.change(await panel.findByLabelText("Message your Heinzel"), {
-      target: { value: "notify me every 5 minutes" },
+    expect(await panel.findByText("Hello")).toBeInTheDocument();
+    expect(panel.getByRole("navigation", { name: "Conversation history" })).toHaveTextContent("More messages follow");
+    fireEvent.click(panel.getByRole("button", { name: "Newer messages" }));
+    expect(await panel.findByText("A newer queued message")).toBeInTheDocument();
+    expect(panel.queryByText("Hello")).not.toBeInTheDocument();
+    fireEvent.click(panel.getByRole("button", { name: "Earlier messages" }));
+    expect(await panel.findByText("Hello")).toBeInTheDocument();
+    expect(calls.some((request) => new URL(request.url).searchParams.get("cursor") === "opaque-page-51")).toBe(true);
+  });
+
+  it("does not label a failed history page as the latest and retries its exact cursor", async () => {
+    let attempts = 0;
+    const { calls } = mockApi({
+      ...shell,
+      "/api/heinzel/session": (request: Request) => {
+        if (new URL(request.url).searchParams.get("cursor") !== "next-page")
+          return { ...snapshot, has_more: true, next_cursor: "next-page" };
+        attempts += 1;
+        return attempts === 1
+          ? { status: 503, body: { error: "History unavailable" } }
+          : {
+              ...snapshot,
+              messages: [{ id: "new", seq: 52, role: "user", text: "Recovered later message" }],
+              has_more: false,
+            };
+      },
     });
-    fireEvent.click(panel.getByRole("button", { name: "Prepare schedule review" }));
-    expect(await panel.findByText(/configured agent runner could not answer/i)).toBeInTheDocument();
-    fireEvent.click(panel.getByRole("button", { name: "Propose check-in schedule" }));
-    await waitFor(() => expect(panel.getByText("proposed")).toBeInTheDocument());
-    expect(calls.some((request) => new URL(request.url).pathname.endsWith("/propose-schedule-control"))).toBe(false);
+    renderAt(`/heinzel?chat=${sessionId}`);
+    const panel = within(await screen.findByRole("complementary", { name: "Chat" }));
+    fireEvent.click(await panel.findByRole("button", { name: "Newer messages" }));
+    expect(await panel.findByText(/This message page could not be loaded/)).toBeInTheDocument();
+    expect(panel.queryByText("You are viewing the latest message page.")).not.toBeInTheDocument();
+    expect(panel.getByRole("button", { name: "Earlier messages" })).toBeEnabled();
+    fireEvent.click(panel.getByRole("button", { name: "Retry message page" }));
+    expect(await panel.findByText("Recovered later message")).toBeInTheDocument();
+    expect(calls.filter((request) => new URL(request.url).searchParams.get("cursor") === "next-page")).toHaveLength(2);
+  });
+
+  it("keeps one artifact and skill section across repeated session refreshes", async () => {
+    const client = queryClient();
+    mockApi({
+      "/api/heinzel/session": snapshot,
+      "/api/heinzel/personal-artifacts": { session_id: sessionId, artifacts: [] },
+    });
+    const router = createMemoryRouter(
+      [{ path: "/", element: <DurableSession sessionId={sessionId} onClose={() => {}} /> }],
+      { initialEntries: ["/"] },
+    );
+    render(
+      <Providers client={client}>
+        <RouterProvider router={router} />
+      </Providers>,
+    );
+    await screen.findByText("Hello");
+    for (let refresh = 0; refresh < 3; refresh++) {
+      await act(async () => {
+        await client.invalidateQueries({ queryKey: ["heinzel", "session", sessionId] });
+      });
+    }
+    expect(screen.getAllByRole("heading", { name: "Associated files" })).toHaveLength(1);
+    expect(screen.getAllByText("Skill draft", { exact: true })).toHaveLength(1);
+  });
+
+  it.each([null, "hz-01ARZ3NDEKTSV4RRFFQ69G5FAW"])(
+    "does not display or send to a linked conversation with binding %s",
+    async (binding) => {
+      const linked = {
+        ...reviewChat,
+        personal_session_id: binding,
+        messages: [{ role: "assistant", text: "Another agent's private conversation" }],
+      };
+      const { calls } = mockApi({
+        ...shell,
+        "/api/heinzel/session": snapshot,
+        "/api/system/runner/chat/show": linked,
+      });
+      renderAt(`/heinzel?chat=${sessionId}&agent-chat=${linked.id}&approval-chat=${linked.id}`);
+      const panel = within(await screen.findByRole("complementary", { name: "Chat" }));
+      const box = await panel.findByLabelText("Message your Heinzel");
+      fireEvent.change(box, { target: { value: "Keep this with the selected agent" } });
+      await waitFor(() => expect(panel.getByRole("button", { name: "Queue message" })).toBeDisabled());
+      fireEvent.submit(box.closest("form") as HTMLFormElement);
+      await waitFor(() => expect(panel.getAllByRole("alert").length).toBeGreaterThan(0));
+      expect(panel.queryByText("Another agent's private conversation")).not.toBeInTheDocument();
+      expect(panel.queryByRole("button", { name: "Confirm" })).not.toBeInTheDocument();
+      expect(calls.some((request) => request.method === "POST")).toBe(false);
+      expect(box).toHaveValue("Keep this with the selected agent");
+    },
+  );
+
+  it("does not render another agent's cached conversation while its link is being checked", async () => {
+    const client = queryClient();
+    client.setQueryData(["system", "runner", "chat", "show", reviewChat.id], {
+      ...reviewChat,
+      personal_session_id: "hz-01ARZ3NDEKTSV4RRFFQ69G5FAW",
+      messages: [{ role: "assistant", text: "Cached private conversation" }],
+    });
+    mockApi({ ...shell, "/api/heinzel/session": snapshot });
+    const router = createMemoryRouter(
+      [{ path: "/", element: <DurableSession sessionId={sessionId} onClose={() => {}} /> }],
+      { initialEntries: [`/?agent-chat=${reviewChat.id}`] },
+    );
+    render(
+      <Providers client={client}>
+        <RouterProvider router={router} />
+      </Providers>,
+    );
+    expect(screen.queryByText("Cached private conversation")).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole("button", { name: "Queue message" })).toBeDisabled());
   });
 
   it("recovers an interrupted proposal without replaying it", async () => {
@@ -270,6 +436,7 @@ describe("personal conversation links", () => {
     };
     const interruptedChat = {
       id: "abcdef0123456789",
+      personal_session_id: sessionId,
       title: "Check-in conversation",
       context: { kind: "check-in", ref: sessionId, request_id: "open-request", timezone: "Europe/Berlin" },
       messages: [],
@@ -306,6 +473,7 @@ describe("personal conversation links", () => {
     let confirmed = false;
     const pendingChat = {
       id: "abcdef0123456789",
+      personal_session_id: sessionId,
       title: "Check-in conversation",
       context: { kind: "check-in", ref: sessionId, request_id: "open-request", timezone: "Europe/Berlin" },
       messages: [],
@@ -384,10 +552,602 @@ describe("personal conversation links", () => {
     const panel = within(await screen.findByRole("complementary", { name: "Chat" }));
     expect(await panel.findByRole("heading", { name: "Personal helper" })).toBeInTheDocument();
     expect(panel.getByText("Hello")).toBeInTheDocument();
-    expect(panel.getByText(/Ask naturally about the five-minute check-in/)).toBeInTheDocument();
+    expect(panel.getByText(/Messages and replies stay in this conversation/)).toBeInTheDocument();
     expect(calls.some((request) => new URL(request.url).pathname === "/api/system/runner/chat/show")).toBe(false);
     expect(calls.some((request) => new URL(request.url).searchParams.get("session_id") === sessionId)).toBe(true);
     await expectAccessible(container);
+  });
+
+  it("sends any sentence to the selected agent and shows only persisted reply and proposal", async () => {
+    const sentence = "Keep my workspace notes current";
+    let current: { session_id: string; name: string; messages: object[]; contracts: object[] } = {
+      ...snapshot,
+      contracts: [],
+    };
+    let proposal: object | null = null;
+    const { calls } = mockApi({
+      ...shell,
+      "/api/heinzel/session": () => current,
+      "/api/heinzel/latest-scheduled-agent-proposal": () => proposal,
+      "/api/heinzel/chat": async (request: Request) => {
+        const body = await request.json();
+        return { session_id: sessionId, request_id: body.request_id, disposition: "queued", inbox_position: 2 };
+      },
+      "/api/heinzel/answer-chat": async (request: Request) => {
+        const body = await request.json();
+        proposal = {
+          session_id: sessionId,
+          request_id: "proposal-one",
+          revision: 1,
+          contract: "Use the user's context.",
+          max_usd: null,
+          timeout_seconds: 30,
+          permitted_tools: [],
+          status: "proposed",
+          preview_sha256: "b".repeat(64),
+        };
+        current = {
+          ...current,
+          messages: [
+            ...snapshot.messages,
+            { id: body.request_id, seq: 2, role: "user", text: sentence, status: "pending" },
+            {
+              id: "answer",
+              seq: 3,
+              role: "assistant",
+              text: "Here are the proposed terms.",
+              status: "completed",
+              billing: "plan",
+              cost_usd: null,
+            },
+          ],
+          contracts: [
+            {
+              id: "terms",
+              version: 1,
+              sha256: "a".repeat(64),
+              status: "proposed",
+              title: "Workspace notes",
+              text: "Keep notes current.",
+              created_at: "2026-10-30T00:00:00Z",
+            },
+          ],
+        };
+        return {
+          session_id: sessionId,
+          request_id: body.request_id,
+          message: {
+            id: "answer",
+            seq: 3,
+            role: "assistant",
+            text: "Here are the proposed terms.",
+            status: "completed",
+          },
+        };
+      },
+    });
+    renderAt(`/heinzel?chat=${sessionId}`);
+    const panel = within(await screen.findByRole("complementary", { name: "Chat" }));
+    fireEvent.change(await panel.findByLabelText("Message your Heinzel"), { target: { value: sentence } });
+    fireEvent.click(panel.getByRole("button", { name: "Queue message" }));
+    expect(await panel.findByText("Here are the proposed terms.")).toBeInTheDocument();
+    expect(panel.getByText("Subscription usage · cost unknown")).toBeInTheDocument();
+    expect(panel.getByText(/Contract v1: proposed/)).toBeInTheDocument();
+    expect(panel.getByText("Keep notes current.")).toBeInTheDocument();
+    const proposed = within(await panel.findByRole("region", { name: "Proposed agent terms" }));
+    expect(proposed.getByText("Revision 1 · proposed terms")).toBeInTheDocument();
+    expect(proposed.getByText(/Subscription plan · cost unknown/)).toBeInTheDocument();
+    expect(proposed.getByText("Use the user's context.")).toBeInTheDocument();
+    expect(proposed.getByText(/does not activate the agent/)).toBeInTheDocument();
+    expect(calls.some((request) => new URL(request.url).pathname.includes("open-check-in"))).toBe(false);
+    expect(calls.some((request) => new URL(request.url).pathname.endsWith("/confirm"))).toBe(false);
+  });
+
+  it.each([false, true])("reviews exact agent terms through explicit confirmation (changed: %s)", async (changed) => {
+    const proposal = {
+      session_id: sessionId,
+      request_id: "terms-one",
+      revision: 1,
+      contract: "Prepare a draft from my context.",
+      max_usd: null,
+      timeout_seconds: 30,
+      permitted_tools: [],
+      status: "proposed",
+      preview_sha256: "b".repeat(64),
+    };
+    const action = {
+      ...reviewChat.actions[0],
+      operation: "accept-agent-contract",
+      arguments: { session_id: sessionId, request_id: proposal.request_id, review: proposal },
+    };
+    const contractChat = { ...reviewChat, actions: [action] };
+    let reads = 0;
+    let accepted = false;
+    const { calls } = mockApi({
+      ...shell,
+      "/api/heinzel/session": snapshot,
+      "/api/heinzel/latest-scheduled-agent-proposal": proposal,
+      "/api/heinzel/agent-contract-review": () => ({
+        proposal: changed && ++reads > 1 ? { ...proposal, contract: "Different terms" } : proposal,
+        accepted,
+      }),
+      "/api/system/runner/chat/propose-agent-contract": contractChat,
+      "/api/system/runner/chat/show": contractChat,
+      "/api/system/runner/chat/confirm": () => {
+        accepted = true;
+        return { ...contractChat, actions: [{ ...action, status: "done" }] };
+      },
+    });
+    renderAt(`/heinzel?chat=${sessionId}`);
+    const reviewButton = await screen.findByRole("button", { name: "Review these terms" });
+    await waitFor(() => expect(reviewButton).toBeEnabled());
+    fireEvent.click(reviewButton);
+    expect(await screen.findByRole("heading", { name: "Review agent terms" })).toBeInTheDocument();
+    expect(calls.filter((request) => new URL(request.url).pathname.endsWith("/confirm"))).toHaveLength(0);
+    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+    if (changed) {
+      expect(await screen.findByText(/review could not be confirmed/i)).toBeInTheDocument();
+      expect(calls.filter((request) => new URL(request.url).pathname.endsWith("/confirm"))).toHaveLength(0);
+    } else {
+      expect(await screen.findByText("These exact terms were accepted.")).toBeInTheDocument();
+      expect(calls.filter((request) => new URL(request.url).pathname.endsWith("/confirm"))).toHaveLength(1);
+    }
+    expect(calls.some((request) => new URL(request.url).pathname.endsWith("/propose-schedule-control"))).toBe(false);
+  });
+
+  it("lets the person review a suggested identity before an explicit profile save", async () => {
+    const look = { age: "grown", build: "regular", accessories: [] };
+    const proposedLook = { age: "grown", build: "regular", shirt: "teal", accessories: [] };
+    const suggestion = {
+      session_id: sessionId,
+      request_id: "look-1",
+      expected_revision: 1,
+      name: "Mira",
+      appearance: proposedLook,
+      status: "proposed",
+      preview_sha256: "a".repeat(64),
+    };
+    const saved: unknown[] = [];
+    mockApi({
+      ...shell,
+      "/api/heinzel/session": { ...snapshot, profile_revision: 1, appearance: look },
+      "/api/heinzel/latest-profile-proposal": suggestion,
+      "/api/heinzel/profile": async (request: Request) => {
+        const body = await request.json();
+        saved.push(body);
+        return {
+          ...snapshot,
+          session_id: sessionId,
+          profile_revision: 2,
+          name: body.name,
+          appearance: body.appearance,
+        };
+      },
+    });
+    renderAt(`/heinzel?chat=${sessionId}`);
+    const panel = within(await screen.findByRole("complementary", { name: "Chat" }));
+    fireEvent.click(await panel.findByText(/Customize.*suggested look/));
+    const proposal = within(await panel.findByRole("region", { name: "Suggested identity" }));
+    expect(proposal.getByText("Mira · Proposed")).toBeInTheDocument();
+    expect(saved).toHaveLength(0);
+    fireEvent.click(proposal.getByRole("button", { name: "Use suggested identity" }));
+    expect(panel.getByLabelText("Name")).toHaveValue("Mira");
+    expect(saved).toHaveLength(0);
+    fireEvent.click(panel.getByRole("button", { name: "Save name and look" }));
+    await waitFor(() => expect(saved).toHaveLength(1));
+    expect(saved[0]).toMatchObject({
+      session_id: sessionId,
+      expected_revision: 1,
+      name: "Mira",
+      appearance: proposedLook,
+    });
+  });
+
+  it("does not replace unsaved personal edits or apply a stale suggested identity", async () => {
+    const look = { age: "grown", build: "regular", accessories: [] };
+    const suggestion = {
+      session_id: sessionId,
+      request_id: "look-2",
+      expected_revision: 2,
+      name: "Mira",
+      appearance: look,
+      status: "proposed",
+      preview_sha256: "a".repeat(64),
+    };
+    mockApi({
+      ...shell,
+      "/api/heinzel/session": { ...snapshot, profile_revision: 1, appearance: look },
+      "/api/heinzel/latest-profile-proposal": suggestion,
+    });
+    renderAt(`/heinzel?chat=${sessionId}`);
+    const panel = within(await screen.findByRole("complementary", { name: "Chat" }));
+    fireEvent.click(await panel.findByText(/Customize.*suggested look/));
+    const proposal = within(await panel.findByRole("region", { name: "Suggested identity" }));
+    expect(proposal.getByText(/out of date/)).toBeInTheDocument();
+    expect(proposal.getByRole("button", { name: "Use suggested identity" })).toBeDisabled();
+    fireEvent.change(panel.getByLabelText("Name"), { target: { value: "My own edit" } });
+    expect(proposal.getByText(/current profile edits/)).toBeInTheDocument();
+    expect(panel.getByLabelText("Name")).toHaveValue("My own edit");
+    fireEvent.click(panel.getByRole("button", { name: "Discard unsaved name and look" }));
+    expect(panel.getByLabelText("Name")).toHaveValue("Personal helper");
+    expect(proposal.getByRole("button", { name: "Use suggested identity" })).toBeDisabled();
+  });
+
+  it("shows only owner-bound recorded tool activity without inputs", async () => {
+    mockApi({
+      ...shell,
+      "/api/heinzel/session": snapshot,
+      "/api/heinzel/tool-activity": {
+        session_id: sessionId,
+        items: [
+          {
+            seq: 10,
+            at: "2026-10-30T00:00:00Z",
+            turn_id: "turn-1",
+            tool: "example:read",
+            status: "completed",
+            arguments: { secret: "private-argument" },
+          },
+        ],
+      },
+    });
+    renderAt(`/heinzel?chat=${sessionId}`);
+    const panel = within(await screen.findByRole("complementary", { name: "Chat" }));
+    const activity = within(await panel.findByRole("region", { name: "Recorded tool activity" }));
+    expect(activity.getByText("example:read · completed")).toBeInTheDocument();
+    expect(panel.queryByText(/private-argument/)).not.toBeInTheDocument();
+  });
+
+  it("attaches recorded events only to the exact reply and can expand the bounded recent window", async () => {
+    const events = Array.from({ length: 100 }, (_, index) => ({
+      seq: index + 10,
+      at: "2026-10-30T00:00:00Z",
+      turn_id: index === 99 ? "matching-turn" : "other-turn",
+      tool: index === 99 ? "example:matching" : `example:other-${index}`,
+      status: index === 99 ? "denied" : "requested",
+    }));
+    mockApi({
+      ...shell,
+      "/api/heinzel/session": {
+        ...snapshot,
+        messages: [
+          {
+            id: "reply",
+            seq: 2,
+            role: "assistant",
+            turn_id: "matching-turn",
+            text: "A recorded answer",
+            status: "completed",
+          },
+          {
+            id: "another",
+            seq: 3,
+            role: "assistant",
+            turn_id: "different-turn",
+            text: "Another answer",
+            status: "completed",
+          },
+        ],
+      },
+      "/api/heinzel/tool-activity": (request: Request) => ({
+        session_id: sessionId,
+        items: events.slice(-Number(new URL(request.url).searchParams.get("limit"))),
+      }),
+    });
+    renderAt(`/heinzel?chat=${sessionId}`);
+    const answer = (await screen.findByText("A recorded answer")).closest("div");
+    if (!answer) throw new Error("Missing answer");
+    const attached = within(answer).getByText(/Tool activity for this reply/);
+    fireEvent.click(attached);
+    expect(within(answer).getByText("example:matching · denied")).toBeVisible();
+    expect(within(answer).queryByText(/example:other/)).not.toBeInTheDocument();
+    expect(screen.getByText(/Earlier activity may be omitted/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Show more recorded activity" }));
+    expect(await screen.findByText(/Events older than the latest 100/)).toBeInTheDocument();
+    expect(screen.getByText("example:other-0 · requested")).toBeInTheDocument();
+  });
+
+  it("does not display tool activity from a different session", async () => {
+    mockApi({
+      ...shell,
+      "/api/heinzel/session": snapshot,
+      "/api/heinzel/tool-activity": {
+        session_id: "hz-01ARZ3NDEKTSV4RRFFQ69G5FAW",
+        items: [{ seq: 10, at: "2026-10-30T00:00:00Z", turn_id: "turn-1", tool: "private:read", status: "completed" }],
+      },
+    });
+    renderAt(`/heinzel?chat=${sessionId}`);
+    const panel = within(await screen.findByRole("complementary", { name: "Chat" }));
+    expect(await panel.findByText("Recorded tool activity is unavailable.")).toBeInTheDocument();
+    expect(panel.queryByText(/private:read/)).not.toBeInTheDocument();
+  });
+
+  it("shows private exact-result comparisons only beside their actual turn", async () => {
+    const turn = `interactive-${"a".repeat(64)}`;
+    const other = `interactive-${"b".repeat(64)}`;
+    mockApi({
+      ...shell,
+      "/api/heinzel/session": {
+        ...snapshot,
+        messages: [{ id: "reply", seq: 1, role: "assistant", turn_id: turn, text: "Recorded answer" }],
+      },
+      "/api/heinzel/input-snapshot-history": {
+        session_id: sessionId,
+        items: [
+          { seq: 4, at: "2026-10-30T00:00:00Z", turn_id: turn, status: "first", digest: "private-fingerprint" },
+          { seq: 5, at: "2026-10-30T00:00:01Z", turn_id: other, status: "unchanged" },
+        ],
+      },
+    });
+    renderAt(`/heinzel?chat=${sessionId}`);
+    const answer = (await screen.findByText("Recorded answer")).closest("div");
+    if (!answer) throw new Error("Missing answer");
+    expect(await within(answer).findByText("Approved read: first recorded result.")).toBeInTheDocument();
+    expect(screen.getByText(/Read without a visible reply: same exact result/)).toBeInTheDocument();
+    expect(screen.getByText(/not event deduplication or complete history/)).toBeInTheDocument();
+    expect(screen.queryByText(/private-fingerprint/)).not.toBeInTheDocument();
+  });
+
+  it("refuses input comparisons from another session", async () => {
+    mockApi({
+      ...shell,
+      "/api/heinzel/session": snapshot,
+      "/api/heinzel/input-snapshot-history": {
+        session_id: "hz-01ARZ3NDEKTSV4RRFFQ69G5FAW",
+        items: [{ seq: 4, at: "2026-10-30T00:00:00Z", turn_id: `interactive-${"a".repeat(64)}`, status: "first" }],
+      },
+    });
+    renderAt(`/heinzel?chat=${sessionId}`);
+    expect(await screen.findByText("Input comparison history is unavailable.")).toBeInTheDocument();
+    expect(screen.queryByText(/first recorded result/)).not.toBeInTheDocument();
+  });
+
+  it("preserves an accepted message across a lost answer and retries only its exact request", async () => {
+    const accepted: Array<{ request_id: string }> = [];
+    const turns: unknown[] = [];
+    const apiAnswers = {
+      ...shell,
+      "/api/heinzel/session": snapshot,
+      "/api/heinzel/chat": async (request: Request) => {
+        const body = await request.json();
+        accepted.push(body);
+        return { session_id: sessionId, request_id: body.request_id, disposition: "queued", inbox_position: 2 };
+      },
+      "/api/heinzel/answer-chat": async (request: Request) => {
+        const body = await request.json();
+        turns.push(body);
+        if (turns.length === 1) return { status: 503, body: { error: "uncertain" } };
+        return {
+          session_id: sessionId,
+          request_id: body.request_id,
+          message: { id: "answer", seq: 3, role: "assistant" },
+        };
+      },
+    };
+    mockApi(apiAnswers);
+    const first = renderAt(`/heinzel?chat=${sessionId}`);
+    fireEvent.change(await screen.findByLabelText("Message your Heinzel"), { target: { value: "Review my notes" } });
+    fireEvent.click(screen.getByRole("button", { name: "Queue message" }));
+    await screen.findByText(/Your message was saved/);
+    expect(accepted).toHaveLength(1);
+    expect(turns).toHaveLength(1);
+    first.unmount();
+    mockApi(apiAnswers);
+    renderAt(`/heinzel?chat=${sessionId}`);
+    const retry = await screen.findByRole("button", { name: "Retry the same message" });
+    await waitFor(() => expect(retry).toBeEnabled());
+    fireEvent.click(retry);
+    await waitFor(() => expect(turns).toHaveLength(2));
+    expect(turns[1]).toEqual(turns[0]);
+    expect(accepted).toHaveLength(1);
+    await waitFor(() => expect(sessionStorage.getItem(`hz.durable.composer.${sessionId}`)).toBeNull());
+  });
+
+  it("keeps a reported subscription limit across reload without retrying the uncertain turn", async () => {
+    const turns: unknown[] = [];
+    let abandoned = false;
+    let resolutions = 0;
+    const answers = {
+      ...shell,
+      "/api/heinzel/session": snapshot,
+      "/api/heinzel/chat": async (request: Request) => {
+        const body = await request.json();
+        return { session_id: sessionId, request_id: body.request_id, disposition: "queued", inbox_position: 2 };
+      },
+      "/api/heinzel/answer-chat": async (request: Request) => {
+        turns.push(await request.json());
+        return { status: 400, body: { code: "subscription_usage_limit", error: "redacted status" } };
+      },
+      "/api/heinzel/chat-turn-state": (request: Request) => ({
+        session_id: sessionId,
+        request_id: new URL(request.url).searchParams.get("request_id"),
+        status: abandoned ? "abandoned" : "unresolved",
+      }),
+      "/api/heinzel/abandon-chat-turn": async (request: Request) => {
+        const body = await request.json();
+        expect(body.acknowledge_uncertain).toBe(true);
+        resolutions += 1;
+        abandoned = true;
+        return { status: 503, body: { error: "acknowledgement lost" } };
+      },
+    };
+    mockApi(answers);
+    const first = renderAt(`/heinzel?chat=${sessionId}`);
+    fireEvent.change(await screen.findByLabelText("Message your Heinzel"), { target: { value: "Check my notes" } });
+    fireEvent.click(screen.getByRole("button", { name: "Queue message" }));
+    expect(await screen.findByText(/reported its subscription usage limit/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Retry the same message" })).toBeDisabled();
+    expect(turns).toHaveLength(1);
+    first.unmount();
+    mockApi(answers);
+    const second = renderAt(`/heinzel?chat=${sessionId}`);
+    expect(await screen.findByText(/reported its subscription usage limit/)).toBeInTheDocument();
+    expect(turns).toHaveLength(1);
+    expect(screen.queryByRole("button", { name: "Start a new message" })).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Message your Heinzel")).toBeDisabled();
+    expect(await screen.findByText(/may still be running/)).toBeInTheDocument();
+    const setAside = screen.getByRole("button", { name: "Set aside this turn" });
+    expect(setAside).toBeDisabled();
+    fireEvent.click(screen.getByRole("checkbox", { name: /will not retry it or undo/ }));
+    fireEvent.click(setAside);
+    expect(await screen.findByText(/This turn was set aside/)).toBeInTheDocument();
+    expect(resolutions).toBe(1);
+    expect(turns).toHaveLength(1);
+    second.unmount();
+    mockApi(answers);
+    renderAt(`/heinzel?chat=${sessionId}`);
+    expect(await screen.findByText(/This turn was set aside/)).toBeInTheDocument();
+    expect(resolutions).toBe(1);
+    fireEvent.click(await screen.findByRole("button", { name: "Continue conversation" }));
+    expect(await screen.findByLabelText("Message your Heinzel")).toBeEnabled();
+  });
+
+  it("refuses a schedule listing from another personal session", async () => {
+    mockApi({
+      ...shell,
+      "/api/heinzel/session": snapshot,
+      "/api/heinzel/agent-schedules": { session_id: "hz-01ARZ3NDEKTSV4RRFFQ69G5FAW", items: [], next_cursor: null },
+    });
+    renderAt(`/heinzel?chat=${sessionId}`);
+    fireEvent.click(await screen.findByText("Recurring agent turns"));
+    expect(await screen.findByText("Saved schedules are unavailable.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Pause future turns" })).not.toBeInTheDocument();
+  });
+
+  it("keeps the exact recurring proposal across a lost acknowledgement and reload", async () => {
+    const contract = {
+      session_id: sessionId,
+      request_id: "contract-one",
+      revision: 1,
+      based_on_revision: 0,
+      contract: "Prepare a draft",
+      max_usd: null,
+      timeout_seconds: 30,
+      permitted_tools: [],
+      status: "proposed",
+      preview_sha256: "b".repeat(64),
+    };
+    const attempts: Array<Record<string, unknown>> = [];
+    const answers = {
+      ...shell,
+      "/api/heinzel/session": snapshot,
+      "/api/heinzel/latest-scheduled-agent-proposal": contract,
+      "/api/heinzel/agent-contract-review": { proposal: contract, accepted: true },
+      "/api/heinzel/agent-schedules": { session_id: sessionId, items: [], next_cursor: null },
+      "/api/heinzel/propose-agent-schedule": async (request: Request) => {
+        const body = await request.json();
+        attempts.push(body);
+        if (attempts.length === 1) return { status: 503, body: { error: "lost" } };
+        return {
+          ...body,
+          owner: "u-" + "a".repeat(32),
+          contract_revision: 1,
+          contract_sha256: contract.preview_sha256,
+          access: "claude-code-subscription",
+          access_fingerprint: "c".repeat(64),
+          first_run: "current-slot-after-approval",
+          status: "proposed",
+        };
+      },
+    };
+    const { calls } = mockApi(answers);
+    const first = renderAt(`/heinzel?chat=${sessionId}`);
+    fireEvent.click(await screen.findByText("Recurring agent turns"));
+    const button = screen.getByRole("button", { name: "Propose recurring turns" });
+    await waitFor(() => expect(button).toBeEnabled());
+    fireEvent.click(button);
+    expect(await screen.findByText(/schedule request could not be confirmed/)).toBeInTheDocument();
+    first.unmount();
+    mockApi(answers);
+    renderAt(`/heinzel?chat=${sessionId}`);
+    fireEvent.click(await screen.findByText("Recurring agent turns"));
+    fireEvent.click(screen.getByRole("button", { name: "Retry same proposal" }));
+    await waitFor(() => expect(attempts).toHaveLength(2));
+    expect(attempts[1]).toEqual(attempts[0]);
+    expect(calls.some((request) => new URL(request.url).pathname.endsWith("/confirm"))).toBe(false);
+  });
+
+  it("lets an owner inspect and set aside an unstarted daemon occurrence", async () => {
+    let abandoned = false;
+    let posts = 0;
+    mockApi({
+      ...shell,
+      "/api/heinzel/session": {
+        ...snapshot,
+        messages: [{ id: "wake", seq: 1, role: "user", origin: "daemon", text: "Wake", status: "pending" }],
+      },
+      "/api/heinzel/chat-turn-state": { session_id: sessionId, request_id: "wake", status: "pending" },
+    });
+    const originalFetch = globalThis.fetch;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (request: Request) => {
+        const pathname = new URL(request.url).pathname;
+        if (pathname === "/api/heinzel/chat-turn-state")
+          return Response.json({
+            session_id: sessionId,
+            request_id: "wake",
+            status: abandoned ? "abandoned" : "pending",
+          });
+        if (pathname === "/api/heinzel/abandon-chat-turn") {
+          posts++;
+          abandoned = true;
+          return Response.json({ session_id: sessionId, request_id: "wake", status: "abandoned" });
+        }
+        return originalFetch(request);
+      }),
+    );
+    renderAt(`/heinzel?chat=${sessionId}`);
+    fireEvent.click(await screen.findByRole("button", { name: "Inspect daemon turn" }));
+    expect(await screen.findByText(/No model work has been recorded as started/)).toBeInTheDocument();
+    const action = screen.getByRole("button", { name: "Set aside this unstarted turn" });
+    expect(action).toBeDisabled();
+    fireEvent.click(screen.getByRole("checkbox", { name: /unstarted daemon turn will be set aside/ }));
+    fireEvent.click(action);
+    expect(await screen.findByText(/This turn was set aside/)).toBeInTheDocument();
+    expect(posts).toBe(1);
+  });
+
+  it("identifies a daemon-origin message without presenting it as a user message", async () => {
+    mockApi({
+      ...shell,
+      "/api/heinzel/session": {
+        ...snapshot,
+        messages: [{ id: "wake", seq: 1, role: "user", origin: "daemon", text: "Stored trigger", status: "pending" }],
+      },
+    });
+    renderAt(`/heinzel?chat=${sessionId}`);
+    expect(await screen.findByText("Daemon:")).toBeInTheDocument();
+    expect(screen.queryByText("user:")).not.toBeInTheDocument();
+  });
+
+  it("retains the accepted request when an answer acknowledgement belongs to another session", async () => {
+    const { calls } = mockApi({
+      ...shell,
+      "/api/heinzel/session": snapshot,
+      "/api/heinzel/chat": async (request: Request) => {
+        const body = await request.json();
+        return { session_id: sessionId, request_id: body.request_id, disposition: "queued", inbox_position: 2 };
+      },
+      "/api/heinzel/answer-chat": async (request: Request) => {
+        const body = await request.json();
+        return {
+          session_id: "hz-01ARZ3NDEKTSV4RRFFQ69G5FAW",
+          request_id: body.request_id,
+          message: { id: "answer", seq: 3, role: "assistant", text: "Foreign answer" },
+        };
+      },
+    });
+    renderAt(`/heinzel?chat=${sessionId}`);
+    const panel = within(await screen.findByRole("complementary", { name: "Chat" }));
+    fireEvent.change(await panel.findByLabelText("Message your Heinzel"), { target: { value: "My private request" } });
+    fireEvent.click(panel.getByRole("button", { name: "Queue message" }));
+    expect(await panel.findByText(/Your message was saved/)).toBeInTheDocument();
+    expect(panel.queryByText("Foreign answer")).not.toBeInTheDocument();
+    expect(calls.filter((request) => new URL(request.url).pathname === "/api/heinzel/answer-chat")).toHaveLength(1);
+    expect(JSON.parse(sessionStorage.getItem(`hz.durable.composer.${sessionId}`) ?? "null").pending.accepted).toBe(
+      true,
+    );
   });
 
   it("queues a message and retries an uncertain acknowledgement with identical input", async () => {
@@ -473,6 +1233,14 @@ describe("personal conversation links", () => {
         const body = retriedPayloads[0] as { request_id: string };
         return { session_id: sessionId, request_id: body.request_id, disposition: "queued", inbox_position: 2 };
       },
+      "/api/heinzel/answer-chat": async (request: Request) => {
+        const body = await request.json();
+        return {
+          session_id: sessionId,
+          request_id: body.request_id,
+          message: { role: "assistant", id: "answer", seq: 3 },
+        };
+      },
     });
     renderAt(`/heinzel?chat=${sessionId}`);
     const retry = await screen.findByRole("button", { name: "Retry the same message" });
@@ -480,7 +1248,7 @@ describe("personal conversation links", () => {
     fireEvent.click(retry);
     await waitFor(() => expect(retriedPayloads).toHaveLength(1));
     expect(retriedPayloads[0]).toEqual(firstPayloads[0]);
-    expect(sessionStorage.getItem(`hz.durable.composer.${sessionId}`)).toBeNull();
+    await waitFor(() => expect(sessionStorage.getItem(`hz.durable.composer.${sessionId}`)).toBeNull());
   });
 
   it.each([404, 422])(
@@ -488,6 +1256,7 @@ describe("personal conversation links", () => {
     async (status) => {
       const agentChat = {
         id: "abcdef0123456789",
+        personal_session_id: sessionId,
         title: "Check-in conversation",
         context: { kind: "check-in", ref: sessionId, request_id: "open-request", timezone: "Europe/Berlin" },
         messages: [],
@@ -536,10 +1305,22 @@ describe("personal conversation links", () => {
         }),
       );
 
-      const first = renderAt(`/heinzel?chat=${sessionId}`);
       const message = "Notify me every 5 minutes";
-      fireEvent.change(await screen.findByLabelText("Message your Heinzel"), { target: { value: message } });
-      fireEvent.click(screen.getByRole("button", { name: "Prepare schedule review" }));
+      sessionStorage.setItem(
+        `hz.durable.composer.${sessionId}`,
+        JSON.stringify({
+          version: 1,
+          session_id: sessionId,
+          text: message,
+          pending: null,
+          agentPending: { request_id: "stable-runner-request", message },
+          checkInRequest: null,
+        }),
+      );
+      const first = renderAt(`/heinzel?chat=${sessionId}`);
+      await screen.findByLabelText("Message your Heinzel");
+      await waitFor(() => expect(screen.getByRole("button", { name: "Retry the same message" })).toBeEnabled());
+      fireEvent.click(screen.getByRole("button", { name: "Retry the same message" }));
       await screen.findByText(/configured agent runner could not answer/i);
       expect(await screen.findByLabelText("Message your Heinzel")).toHaveValue(message);
       const saved = JSON.parse(sessionStorage.getItem(`hz.durable.composer.${sessionId}`) ?? "null");
@@ -609,7 +1390,7 @@ describe("personal conversation links", () => {
     const panel = within(await screen.findByRole("complementary", { name: "Chat" }));
     expect(await panel.findByText("*/5 * * * * · Europe/Berlin")).toBeInTheDocument();
     fireEvent.click(panel.getByRole("button", { name: "Review activation in chat" }));
-    expect(await panel.findByRole("alert")).toHaveTextContent("The schedule request could not be confirmed");
+    expect(await panel.findByText(/The schedule request could not be confirmed/)).toBeInTheDocument();
     fireEvent.click(panel.getByRole("button", { name: "Review activation in chat" }));
     await waitFor(() =>
       expect(calls.some((request) => new URL(request.url).pathname.endsWith("/propose-schedule-control"))).toBe(true),
@@ -736,7 +1517,7 @@ describe("personal conversation links", () => {
     renderAt(`/heinzel?chat=${sessionId}&approval-chat=${reviewChat.id}`);
     const panel = within(await screen.findByRole("complementary", { name: "Chat" }));
     fireEvent.click(await panel.findByRole("button", { name: "Authorize MCP to run once" }));
-    expect(await panel.findByRole("alert")).toHaveTextContent("hz system daemon restart");
+    expect(await panel.findByText(/hz system daemon restart/)).toBeInTheDocument();
     expect(calls.some((request) => new URL(request.url).pathname.endsWith("/chat/confirm"))).toBe(false);
   });
 
@@ -957,4 +1738,90 @@ describe("personal conversation links", () => {
       vi.restoreAllMocks();
     }
   });
+});
+
+it("shows recorded activity and stored drafts without exposing tool bodies or inventing approval", async () => {
+  mockApi({
+    ...shell,
+    "/api/heinzel/session": {
+      ...snapshot,
+      appearance: { age: "grown", build: "regular", hat: "red", shirt: "blue", accessories: ["scarf"] },
+      profile_revision: 1,
+      messages: [{ id: "tool1", seq: 1, role: "tool", text: "private tool payload", status: "failed" }],
+      pending_actions: [
+        { id: "p1", status: "pending", preview: { title: "Review draft", target: "Report", after: "A draft" } },
+      ],
+      schedule: null,
+    },
+  });
+  renderAt(`/?chat=${sessionId}`);
+  expect((await screen.findByText(/Tool activity:/)).parentElement).toHaveTextContent("failed");
+  expect(screen.queryByText("private tool payload")).not.toBeInTheDocument();
+  expect(screen.getByText("Waiting for approval", { exact: false })).toBeInTheDocument();
+  expect(screen.getByText("Draft: A draft")).toBeInTheDocument();
+  expect(screen.getByText("Approval for this durable action is not available here yet.")).toBeInTheDocument();
+  fireEvent.click(screen.getByText("Customize your Heinzel"));
+  expect(screen.getByRole("checkbox", { name: "Scarf" })).toBeChecked();
+});
+
+it("shows only owner-session associations and recorded review states in the agent chat", async () => {
+  const ref = "https://docs.google.com/document/d/abc123_DEF456/edit";
+  const { calls } = mockApi({
+    ...shell,
+    "/api/heinzel/session": {
+      ...snapshot,
+      pending_actions: [
+        {
+          id: "draft-1",
+          operation: "publish",
+          status: "pending",
+          preview: { title: "Weekly notes", after: "Proposed draft" },
+        },
+        { id: "draft-2", operation: "send", status: "uncertain" },
+      ],
+      contracts: [{ id: "contract-1", version: 1, title: "Check-in", status: "approved" }],
+    },
+    "/api/heinzel/personal-artifacts": {
+      session_id: sessionId,
+      artifacts: [
+        {
+          session_id: sessionId,
+          request_id: "file-1",
+          provider: "google",
+          kind: "document",
+          ref,
+          provenance: "principal-submitted",
+        },
+      ],
+    },
+  });
+  renderAt(`/?chat=${sessionId}`);
+  const link = await screen.findByRole("link", { name: /Google Doc/ });
+  expect(link).toHaveAttribute("href", ref);
+  expect(screen.getByText(/agent management are unverified/)).toBeInTheDocument();
+  expect(screen.getByText(/Recent agent edits are not available/)).toBeInTheDocument();
+  expect(screen.getByText("Weekly notes")).toBeInTheDocument();
+  expect(screen.getByText("Status: Waiting for approval")).toBeInTheDocument();
+  expect(screen.getByText("Draft: Proposed draft")).toBeInTheDocument();
+  expect(screen.getByText("Status: uncertain")).toBeInTheDocument();
+  expect(screen.getByText(/Contract v1: approved/)).toBeInTheDocument();
+  const request = calls.find((call) => new URL(call.url).pathname.endsWith("/personal-artifacts"));
+  expect(new URL(request?.url ?? "").searchParams.get("session_id")).toBe(sessionId);
+});
+
+it("does not display another session's action or request its associations", async () => {
+  const other = "hz-01ARZ3NDEKTSV4RRFFQ69G5FAW";
+  const { calls } = mockApi({
+    ...shell,
+    "/api/heinzel/session": {
+      ...snapshot,
+      session_id: other,
+      pending_actions: [{ id: "foreign", operation: "private-action", status: "pending" }],
+    },
+  });
+  renderAt(`/?chat=${sessionId}`);
+  expect(await screen.findByText("This personal conversation could not be loaded.")).toBeInTheDocument();
+  expect(screen.queryByRole("heading", { name: "Personal helper" })).not.toBeInTheDocument();
+  expect(screen.queryByText(/private-action/)).not.toBeInTheDocument();
+  expect(calls.some((call) => new URL(call.url).pathname.endsWith("/personal-artifacts"))).toBe(false);
 });

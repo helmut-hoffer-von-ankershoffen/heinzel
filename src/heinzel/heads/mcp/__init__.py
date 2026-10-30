@@ -177,9 +177,10 @@ def _check_in_items(kernel: Kernel, chat: str) -> list[Exposed]:
     Raises:
         HeinzelError: If the chat is not a durable check-in context.
     """
-    if not kernel.resolve(McpChatSessions).is_check_in(chat):
-        msg = "The personal-check-in tool profile requires a durable check-in chat"
-        raise HeinzelError(msg)
+    with kernel.resolve(CurrentUser).local_read("mcp-stdio"):
+        if not kernel.resolve(McpChatSessions).is_check_in(chat):
+            msg = "The personal-check-in tool profile requires a durable check-in chat"
+            raise HeinzelError(msg)
     return [
         item
         for item in exposed(kernel, "mcp-check-in")

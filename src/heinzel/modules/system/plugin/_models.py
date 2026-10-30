@@ -1,9 +1,9 @@
 """Models of the plugin module."""
 
 from datetime import datetime
-from typing import ClassVar, Literal
+from typing import Annotated, ClassVar, Literal
 
-from pydantic import AliasChoices, BaseModel, Field, SecretStr
+from pydantic import AliasChoices, BaseModel, Field, SecretStr, StringConstraints
 from pydantic_settings import SettingsConfigDict
 
 from heinzel import ModuleSettings
@@ -22,6 +22,18 @@ class PluginSettings(ModuleSettings):
     # The aliases are environment variable names; the field name still works in the TOML table and in code.
     model_config = SettingsConfigDict(populate_by_name=True)
     section_title: ClassVar[str | None] = "Plugins"  # the heading in Settings
+
+    ignored_in_project: ClassVar[frozenset[str]] = frozenset({"catalog_sources", "github_token"})
+    catalog_sources: list[Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")]] = Field(
+        default=[
+            "helmut-hoffer-von-ankershoffen/heinzel-plugins",
+            "helmut-hoffer-von-ankershoffen/heinzel",
+            "helmut-hoffer-von-ankershoffen/heinzel-contrib",
+        ],
+        title="Plugin catalogs",
+        description="GitHub repositories scanned for plugin projects, in addition to topic discovery.",
+        max_length=16,
+    )
 
     github_token: SecretStr | None = Field(
         default=None,
@@ -67,7 +79,7 @@ class PluginInfo(BaseModel):
     revision: str | None = Field(default=None, description="The git commit installed, for a git source.")
     homepage: str | None = Field(default=None, description="Its source repository, from its metadata.")
     first_party: bool = Field(
-        default=False, description="Whether it is maintained and released with Heinzelmännchen (ADR 0017)."
+        default=False, description="Whether its recorded origin is an official maintainer repository (ADR 0094)."
     )
     private_repository: bool | None = Field(
         default=None,

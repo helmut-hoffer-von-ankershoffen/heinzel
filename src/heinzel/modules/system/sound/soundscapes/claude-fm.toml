@@ -1,9 +1,0 @@
-# Claude FM, a stream on the official Claude YouTube channel (ADR 0058): the core's soundscape, never on by default.
-# By default, played in YouTube's privacy-enhanced player; nothing of YouTube loads until you press Play.
-name = "claude-fm"
-title = "Claude FM"
-kind = "stream"
-
-[stream]
-provider = "youtube"
-video = "tRsQsTMvPNg"

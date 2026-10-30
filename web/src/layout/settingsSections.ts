@@ -27,8 +27,6 @@ export const FILES = "files";
 export const FROM_CLAUDE_PAGE = "from-claude";
 export const PLUGINS = "plugins";
 export const CONNECTORS = "connectors";
-/** The settings of the clock plugin: its time zones and working hours, which the status bar's clock links to. */
-export const CLOCK_SETTINGS = "clock";
 /** The `[capabilities]` table: which adapter serves which capability; shown on the Connectors page. */
 export const BINDINGS = "capabilities";
 
@@ -36,8 +34,6 @@ export const BINDINGS = "capabilities";
 export const group = (section: string) => section.split(".")[0] ?? section;
 
 const BRANDS: Record<string, string> = {
-  acme: "ACME",
-  clock: "World clock",
   github: "GitHub",
   gitlab: "GitLab",
   hz: "hz",
@@ -46,7 +42,6 @@ const BRANDS: Record<string, string> = {
 const ACRONYMS: Record<string, string> = {
   ai: "AI",
   api: "API",
-  acme: "ACME",
   cli: "CLI",
   mcp: "MCP",
   rest: "REST",
@@ -253,7 +248,7 @@ export function settingsNav(
     return [
       {
         id: entry.id,
-        title: entry.module === "clock" ? "World clock" : displayName(entry.title, entry.title),
+        title: entry.title,
         icon: !entry.declared && entry.icon === "code" ? (preferenceIcon(plugin) ?? ICONS.code) : ICONS[entry.icon],
         heading: entry.settings.group,
         owns: entry.settings.sections,

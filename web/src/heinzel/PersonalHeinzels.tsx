@@ -2,7 +2,13 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router";
-import { api, problem, type SchemaHeinzelAppearance, type SchemaSessionSnapshot } from "@/api/client";
+import {
+  api,
+  problem,
+  type SchemaHeinzelAppearance,
+  type SchemaProfileProposal,
+  type SchemaSessionSnapshot,
+} from "@/api/client";
 import { HeinzelAvatar } from "@/components/HeinzelAvatar";
 import { ACCESSORIES, AGES, BEARDS, BUILDS, HATS, SHIRTS } from "@/components/heinzel";
 import { Button } from "@/components/ui/button";
@@ -157,7 +163,13 @@ export function PersonalHeinzels() {
   });
   const session = useQuery({
     queryKey: ["heinzel", "session", selected],
-    queryFn: () => personalResult(api.GET("/heinzel/session", { params: { query: { session_id: selected ?? "" } } })),
+    queryFn: async () => {
+      const result = await personalResult(
+        api.GET("/heinzel/session", { params: { query: { session_id: selected ?? "" } } }),
+      );
+      if (!selected || result.session_id !== selected) throw new Error("Invalid profile response");
+      return result;
+    },
     enabled: selected !== null,
     retry: false,
   });
@@ -225,37 +237,32 @@ export function PersonalHeinzels() {
   );
 }
 
-function ProfileEditor({ initial, onLock }: { initial: SchemaSessionSnapshot; onLock: (locked: boolean) => void }) {
+export function ProfileEditor({
+  initial,
+  onLock,
+  inChat = false,
+  suggestion = null,
+}: {
+  initial: SchemaSessionSnapshot;
+  onLock: (locked: boolean) => void;
+  inChat?: boolean;
+  suggestion?: SchemaProfileProposal | null;
+}) {
   const client = useQueryClient();
   const navigate = useNavigate();
   const [draftStorageFailed, setDraftStorageFailed] = useState(false);
   const [draft] = useState(() => readProfileDraft(initial.session_id));
   const [snapshot, setSnapshot] = useState(initial);
-  const [name, setName] = useState(draft?.name ?? initial.name);
-  const [look, setLook] = useState<SchemaHeinzelAppearance>(
-    draft?.appearance ?? initial.appearance ?? { age: "grown", build: "regular" },
-  );
   const [savedRequest] = useState(() => readProfileSave(initial.session_id));
+  const [name, setName] = useState(savedRequest.pending?.name ?? draft?.name ?? initial.name);
+  const [look, setLook] = useState<SchemaHeinzelAppearance>(
+    savedRequest.pending?.appearance ?? draft?.appearance ?? initial.appearance ?? { age: "grown", build: "regular" },
+  );
   const [pending, setPending] = useState<ProfileSave | null>(savedRequest.pending);
   const [pendingStorageInvalid, setPendingStorageInvalid] = useState(savedRequest.invalid);
   const [busy, setBusy] = useState(false);
   const savingNow = useRef(false);
   const [error, setError] = useState(false);
-
-  useEffect(() => {
-    if (!pending || !profileSaveApplied(pending, snapshot)) return;
-    setSnapshot(snapshot);
-    setName(snapshot.name);
-    setLook(snapshot.appearance ?? { age: "grown", build: "regular" });
-    setPending(null);
-    setPendingStorageInvalid(false);
-    setError(false);
-    try {
-      sessionStorage.removeItem(profileSaveKey(snapshot.session_id));
-    } catch {
-      setDraftStorageFailed(true);
-    }
-  }, [pending, snapshot]);
 
   useEffect(() => {
     const key = profileDraftKey(snapshot.session_id);
@@ -280,7 +287,10 @@ function ProfileEditor({ initial, onLock }: { initial: SchemaSessionSnapshot; on
     };
     try {
       // Persist the id and exact body before sending. A reload can then retry idempotently or reconcile a lost ACK.
-      sessionStorage.setItem(profileSaveKey(snapshot.session_id), JSON.stringify(request));
+      const serialized = JSON.stringify(request);
+      sessionStorage.setItem(profileSaveKey(snapshot.session_id), serialized);
+      if (sessionStorage.getItem(profileSaveKey(snapshot.session_id)) !== serialized)
+        throw new Error("Profile recovery unavailable");
     } catch {
       savingNow.current = false;
       setDraftStorageFailed(true);
@@ -331,6 +341,15 @@ function ProfileEditor({ initial, onLock }: { initial: SchemaSessionSnapshot; on
         api.GET("/heinzel/session", { params: { query: { session_id: snapshot.session_id } } }),
       );
       if (saved.session_id !== snapshot.session_id) throw new Error("Invalid profile response");
+      // A read at the original revision cannot rule out a delayed POST committing later.
+      // Once the revision advances, the old compare-and-swap can no longer newly apply.
+      if (
+        pendingStorageInvalid ||
+        !pending ||
+        !Number.isInteger(saved.profile_revision) ||
+        saved.profile_revision <= pending.expected_revision
+      )
+        throw new Error("Profile save remains uncertain");
       setSnapshot(saved);
       setName(saved.name);
       setLook(saved.appearance ?? { age: "grown", build: "regular" });
@@ -354,13 +373,16 @@ function ProfileEditor({ initial, onLock }: { initial: SchemaSessionSnapshot; on
       setBusy(false);
     }
   };
-  const pendingApplied = pending !== null && profileSaveApplied(pending, snapshot);
   const pendingNeedsReload =
-    pendingStorageInvalid ||
-    (pending !== null && !pendingApplied && snapshot.profile_revision !== pending.expected_revision);
+    pendingStorageInvalid || (pending !== null && snapshot.profile_revision !== pending.expected_revision);
   const disabled = busy || pending !== null || pendingStorageInvalid;
   const savedLook = snapshot.appearance ?? { age: "grown" as const, build: "regular" as const };
   const hasUncommittedChanges = name !== snapshot.name || JSON.stringify(look) !== JSON.stringify(savedLook);
+  const suggestionSelected =
+    suggestion !== null && name === suggestion.name && JSON.stringify(look) === JSON.stringify(suggestion.appearance);
+  useEffect(() => {
+    onLock(hasUncommittedChanges || pending !== null || pendingStorageInvalid || busy);
+  }, [hasUncommittedChanges, pending, pendingStorageInvalid, busy, onLock]);
   return (
     <form
       className="space-y-3 border-t border-border pt-4"
@@ -369,6 +391,43 @@ function ProfileEditor({ initial, onLock }: { initial: SchemaSessionSnapshot; on
         void save();
       }}
     >
+      {suggestion?.session_id === snapshot.session_id && suggestion.status === "proposed" && (
+        <section aria-label="Suggested identity" className="space-y-2 rounded border border-border p-2 text-sm">
+          <h3 className="font-medium">Suggested identity</h3>
+          <p>{suggestion.name} · Proposed</p>
+          <HeinzelAvatar
+            label="Suggested appearance"
+            age={suggestion.appearance.age}
+            build={suggestion.appearance.build}
+            beard={suggestion.appearance.beard ?? undefined}
+            hat={suggestion.appearance.hat ?? undefined}
+            shirt={suggestion.appearance.shirt ?? undefined}
+            accessories={suggestion.appearance.accessories}
+            className="h-24 w-16"
+          />
+          <p>Review the suggestion, then save it if you want to apply it.</p>
+          {suggestion.expected_revision !== snapshot.profile_revision && (
+            <p role="status">The saved profile changed; this suggestion is out of date.</p>
+          )}
+          {hasUncommittedChanges && !pending && suggestionSelected && (
+            <p role="status">Suggested identity is ready to save.</p>
+          )}
+          {hasUncommittedChanges && !pending && !suggestionSelected && (
+            <p role="status">Finish or discard your current profile edits before using this suggestion.</p>
+          )}
+          <Button
+            type="button"
+            variant="outline"
+            disabled={disabled || hasUncommittedChanges || suggestion.expected_revision !== snapshot.profile_revision}
+            onClick={() => {
+              setName(suggestion.name);
+              setLook(suggestion.appearance);
+            }}
+          >
+            Use suggested identity
+          </Button>
+        </section>
+      )}
       <div className="flex items-center gap-4">
         <HeinzelAvatar
           label={t("personal.preview")}
@@ -472,19 +531,21 @@ function ProfileEditor({ initial, onLock }: { initial: SchemaSessionSnapshot; on
             ))}
           </select>
         </label>
-        <fieldset className="space-y-2 rounded border border-border p-2">
-          <legend className="px-1 text-sm">{t("personal.accessories")}</legend>
+        <fieldset className="space-y-1 text-sm">
+          <legend>{t("personal.accessories")}</legend>
           {ACCESSORIES.map((accessory) => (
-            <label key={accessory} className="flex items-center gap-2 text-sm">
+            <label key={accessory} className="mr-3 inline-flex items-center gap-1">
               <input
                 type="checkbox"
                 checked={(look.accessories ?? []).includes(accessory)}
-                onChange={(event) => {
-                  const selected = new Set(look.accessories ?? []);
-                  if (event.target.checked) selected.add(accessory);
-                  else selected.delete(accessory);
-                  setLook({ ...look, accessories: ACCESSORIES.filter((item) => selected.has(item)) });
-                }}
+                onChange={(event) =>
+                  setLook({
+                    ...look,
+                    accessories: event.target.checked
+                      ? [...(look.accessories ?? []), accessory]
+                      : (look.accessories ?? []).filter((item) => item !== accessory),
+                  })
+                }
               />
               {t(`personal.accessory.${accessory}`)}
             </label>
@@ -495,9 +556,22 @@ function ProfileEditor({ initial, onLock }: { initial: SchemaSessionSnapshot; on
       {pendingNeedsReload && <p role="alert">{t("personal.saveOutcomeChanged")}</p>}
       {draftStorageFailed && <p role="status">{t("personal.draftStorageFailed")}</p>}
       <div className="flex flex-wrap gap-2">
-        <Button type="submit" disabled={busy || pendingNeedsReload || pendingApplied || !name.trim()}>
+        <Button type="submit" disabled={busy || pendingStorageInvalid || (!pending && !name.trim())}>
           {pending ? t("personal.retrySave") : t("personal.save")}
         </Button>
+        {hasUncommittedChanges && !pending && !pendingStorageInvalid && (
+          <Button
+            type="button"
+            variant="outline"
+            disabled={busy}
+            onClick={() => {
+              setName(snapshot.name);
+              setLook(savedLook);
+            }}
+          >
+            Discard unsaved name and look
+          </Button>
+        )}
         {(pending || pendingStorageInvalid) && (
           <Button type="button" variant="outline" disabled={busy} onClick={() => void reload()}>
             {t("personal.reload")}
@@ -505,14 +579,16 @@ function ProfileEditor({ initial, onLock }: { initial: SchemaSessionSnapshot; on
         )}
       </div>
       {hasUncommittedChanges && <p className="text-sm text-muted-foreground">{t("personal.saveBeforeSchedule")}</p>}
-      <Button
-        type="button"
-        variant="outline"
-        disabled={busy || pending !== null || hasUncommittedChanges}
-        onClick={() => navigate(`/heinzel?chat=${encodeURIComponent(snapshot.session_id)}`)}
-      >
-        {t("personal.openSchedule")}
-      </Button>
+      {!inChat && (
+        <Button
+          type="button"
+          variant="outline"
+          disabled={busy || pending !== null || hasUncommittedChanges}
+          onClick={() => navigate(`/heinzel?chat=${encodeURIComponent(snapshot.session_id)}`)}
+        >
+          {t("personal.openSchedule")}
+        </Button>
+      )}
     </form>
   );
 }

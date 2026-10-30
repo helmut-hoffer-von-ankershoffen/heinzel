@@ -1,9 +1,9 @@
-# The documentation site: the Markdown in docs/ as GitHub renders it, as a searchable site on GitHub Pages
+# The product and documentation site: the Markdown in docs/ as GitHub renders it, as a searchable site on GitHub Pages
 # (ADR 0082). `make docs-site` builds it into site/; the Docs workflow deploys it. Nothing here is hand-written
 # content: every page is a file in docs/ or at the root, so GitHub and the site show the same thing.
 site_name: Heinzelmännchen
 site_description: Open-source helpers that keep product development teams running.
-site_url: https://helmut-hoffer-von-ankershoffen.github.io/heinzel/
+site_url: https://helmut.hoffer-von-ankershoffen.me/heinzel/
 repo_url: https://github.com/helmut-hoffer-von-ankershoffen/heinzel
 repo_name: heinzel
 edit_uri: edit/main/docs/
@@ -11,10 +11,17 @@ docs_dir: docs
 site_dir: site
 exclude_docs: |
   plugins/*/assets/*.md
+  overrides/
+  _data/
+  catalog-sources.toml
 strict: false # root documents link to docs/ with ../; the site keeps them as GitHub links
 
 theme:
   name: material
+  custom_dir: docs/overrides
+  font: false
+  logo: assets/website/mark.svg
+  favicon: assets/website/mark.svg
   language: en
   icon:
     logo: material/account-group-outline
@@ -34,6 +41,7 @@ theme:
         icon: material/weather-sunny
         name: Switch to light mode
   features:
+    - navigation.tabs
     - navigation.sections
     - navigation.indexes
     - navigation.top
@@ -59,21 +67,35 @@ markdown_extensions:
 plugins:
   - search
 
+extra_css:
+  - assets/website/site.css
+extra_javascript:
+  - assets/website/site.js
+
 hooks:
+  - scripts/site_pages.py
   - scripts/mkdocs_hooks.py # links to files outside docs/ become GitHub links
 
 nav:
-  - Overview: README.md
-  - Get started:
-      - Bootstrap your team: guides/manager.md
-      - Join your team: guides/joining.md
-  - Plugins:
-      - Gallery: plugins/README.md
-      - heinzel-atlassian: plugins/heinzel-atlassian/index.md
-      - heinzel-clock: plugins/heinzel-clock/index.md
-      - heinzel-github: plugins/heinzel-github/index.md
-      - heinzel-google: plugins/heinzel-google/index.md
-      - heinzel-zoom: plugins/heinzel-zoom/index.md
+  - Home: README.md
+  - Start here:
+      - Install Heinzel: guides/install.md
+      - Your first session: guides/first-steps.md
+      - Bootstrap a team: guides/manager.md
+      - Join a team: guides/joining.md
+  - Plugin catalog: CATALOG.md
+  - Build with Heinzel:
+      - Contribution paths: guides/contribute.md
+      - Create a public or private plugin: PLUGIN_AUTHORING.md
+      - Catalog metadata: guides/catalog.md
+      - Extension contracts: PLUGINS.md
+      - Themes and soundscapes: THEMES.md
+      - Publishing: PUBLISHING.md
+  - Vision & architecture:
+      - Where we are going: VISION.md
+      - Architecture tour: guides/architecture.md
+      - Technical architecture: ARCHITECTURE.md
+      - Decisions: adr/README.md
   - Reference:
       - Modules: MODULES.md
       - CLI: CLI_REFERENCE.md
@@ -81,7 +103,4 @@ nav:
       - Workflows: WORKFLOWS.md
       - Playbooks: PLAYBOOKS.md
       - Teams: TEAMS.md
-  - Understand:
-      - Architecture: ARCHITECTURE.md
       - Coding standards: CODING_STANDARDS.md
-      - Decisions: adr/README.md

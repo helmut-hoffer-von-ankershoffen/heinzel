@@ -3,7 +3,7 @@ import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { createServer } from "node:http";
 import { createConnection, createServer as createControlServer } from "node:net";
-import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { delimiter, dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -11,6 +11,8 @@ import { fileURLToPath } from "node:url";
 const packageRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const electronCli = join(packageRoot, "node_modules", "electron", "cli.js");
 const packagedExecutable = process.env.HEINZEL_ELECTRON_EXECUTABLE;
+if (packagedExecutable && !(process.env.CI === "true" && process.env.HZ_DISPOSABLE_NATIVE_CI === "1"))
+  throw new Error("Packaged native smoke requires an explicitly disposable CI environment; profile isolation is unverified.");
 const OUTPUT_LIMIT = 8192;
 const token = randomBytes(24).toString("base64url");
 const controlToken = randomBytes(24).toString("base64url");
@@ -29,11 +31,22 @@ const request = new Promise((resolve) => {
   resolveRequest = resolve;
 });
 const server = createServer((incoming, outgoing) => {
-  const accepted = incoming.method === "GET" && incoming.url === "/lifecycle";
+  if (incoming.method === "GET" && incoming.url === "/") {
+    outgoing.writeHead(200, { "content-type": "text/html", "content-security-policy": "default-src 'self'; script-src 'self'" });
+    outgoing.end('<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Native UI fixture</title></head><body><p>Isolated native fixture</p><script src="/native-fixture.js"></script></body></html>');
+    return;
+  }
+  if (incoming.method === "GET" && incoming.url === "/native-fixture.js") {
+    outgoing.writeHead(200, { "content-type": "text/javascript" });
+    outgoing.end('const credential = new URLSearchParams(location.hash.slice(1)).get("token"); history.replaceState(null, "", "/"); window.heinzelDesktop.lifecycle().then(() => fetch("/native-ready", { headers: { Authorization: `Bearer ${credential}` } }));');
+    return;
+  }
+  const accepted = incoming.method === "GET" && incoming.url === "/api/lifecycle";
+  const ready = incoming.method === "GET" && incoming.url === "/native-ready";
   const authenticated = incoming.headers.authorization === `Bearer ${token}`;
-  outgoing.writeHead(accepted && authenticated ? 200 : 403, { "content-type": "application/json" });
+  outgoing.writeHead((accepted || ready) && authenticated ? 200 : 403, { "content-type": "application/json" });
   outgoing.end(JSON.stringify({ instance: "native-smoke", version: "0.0.0", restartable: true }));
-  if (accepted) resolveRequest(authenticated);
+  if (ready) resolveRequest(authenticated);
 });
 let controlSocket;
 const controlSockets = new Set();
@@ -88,18 +101,24 @@ try {
   const controlAddress = controlServer.address();
   assert.ok(controlAddress && typeof controlAddress === "object");
   fixtureDir = await mkdtemp(join(tmpdir(), "heinzel-electron-native-"));
+  await Promise.all(["electron-profile", "electron-session", "electron-logs"].map((name) => mkdir(join(fixtureDir, name))));
   const fixtureCli = join(fixtureDir, "hz");
   const url = `http://127.0.0.1:${address.port}/#token=${token}`;
-  await writeFile(fixtureCli, `#!/usr/bin/env node\nimport { createConnection } from "node:net";\nconst expected = ["ui", "--port", "0", "--no-browser"];\nif (JSON.stringify(process.argv.slice(2)) !== JSON.stringify(expected)) process.exit(64);\nconst control = createConnection({ host: "127.0.0.1", port: Number(process.env.HZ_TEST_CONTROL_PORT) });\ncontrol.once("connect", () => { control.write("HELLO " + process.env.HZ_TEST_CONTROL_TOKEN + "\\n"); });\nlet input = "";\ncontrol.on("data", (chunk) => { input += chunk.toString("utf8"); if (input.includes("READY " + process.env.HZ_TEST_CONTROL_TOKEN + "\\n")) { process.stdout.write(process.env.HZ_TEST_URL + "\\n"); input = ""; } });\ncontrol.on("close", () => process.exit(0));\nsetInterval(() => {}, 1000);\n`, { mode: 0o700 });
+  await writeFile(fixtureCli, `#!/usr/bin/env node\nimport { createConnection } from "node:net";\nconst expected = ["ui", "--port", "0", "--no-browser"];\nif (JSON.stringify(process.argv.slice(2)) !== JSON.stringify(expected)) process.exit(64);\nconst control = createConnection({ host: "127.0.0.1", port: Number(process.env.HZ_TEST_CONTROL_PORT) });\ncontrol.once("connect", () => { control.write("HELLO " + process.env.HZ_TEST_CONTROL_TOKEN + "\\n"); });\nlet input = "";\ncontrol.on("data", (chunk) => { input += chunk.toString("utf8"); if (input.includes("READY " + process.env.HZ_TEST_CONTROL_TOKEN + "\\n")) { process.stdout.write(process.env.HZ_TEST_URL + "\\n"); input = ""; } });\ncontrol.on("close", () => process.exit(0));\nprocess.on("SIGINT", () => { control.end(); process.exit(0); });\nsetInterval(() => {}, 1000);\n`, { mode: 0o700 });
   await chmod(fixtureCli, 0o700);
   child = spawn(
     packagedExecutable ?? process.execPath,
-    packagedExecutable ? [] : [electronCli, packageRoot],
+    packagedExecutable ? [] : [electronCli, join(packageRoot, "e2e", "real-backend-bootstrap.mjs")],
     {
       cwd: packageRoot,
       env: {
-        ...process.env,
         PATH: `${fixtureDir}${delimiter}${process.env.PATH || ""}`,
+        HOME: fixtureDir,
+        TMPDIR: fixtureDir,
+        XDG_CONFIG_HOME: fixtureDir,
+        HZ_NATIVE_TEST_ROOT: fixtureDir,
+        ...(process.env.DISPLAY ? { DISPLAY: process.env.DISPLAY } : {}),
+        ...(process.env.XAUTHORITY ? { XAUTHORITY: process.env.XAUTHORITY } : {}),
         HZ_TEST_URL: url,
         HZ_TEST_CONTROL_PORT: String(controlAddress.port),
         HZ_TEST_CONTROL_TOKEN: controlToken,
@@ -157,14 +176,14 @@ if (shutdownError) throw shutdownError;
 assert.equal(
   outcome.kind,
   "request",
-  `Electron did not reach the local lifecycle endpoint: ${JSON.stringify(outcome)}${diagnostics}`,
+  `Electron did not render the local UI fixture: ${JSON.stringify(outcome)}${diagnostics}`,
 );
 assert.equal(
   outcome.authenticated,
   true,
   `Electron did not preserve the authenticated loopback connection.${diagnostics}`,
 );
-console.log("Electron 45 opened the native window and made its authenticated lifecycle request.");
+console.log("Electron 45 rendered the native UI fixture and made its authenticated lifecycle request.");
 
 function boundedCapture(limit) {
   let chunks = [];

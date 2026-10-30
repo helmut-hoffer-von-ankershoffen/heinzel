@@ -7,6 +7,7 @@ import {
   Activity,
   AlarmClock,
   Bell,
+  BriefcaseBusiness,
   Calendar,
   CalendarClock,
   ChartLine,
@@ -32,6 +33,8 @@ import {
   type LucideIcon,
   Mail,
   MessageSquare,
+  Moon,
+  PartyPopper,
   Play,
   Rocket,
   Star,
@@ -46,7 +49,7 @@ import {
 } from "lucide-react";
 import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { useNavigate } from "react-router";
+import { useLocation, useNavigate } from "react-router";
 import {
   api,
   problem,
@@ -66,6 +69,7 @@ import { HeinzelAvatar } from "@/components/HeinzelAvatar";
 import { HeinzelFace } from "@/components/HeinzelFace";
 import { Button } from "@/components/ui/button";
 import { type MessageKey, t } from "@/i18n";
+import { contributionPath } from "@/lib/navigation";
 import { runInTerminal, runsAsIs, typeInTerminal } from "@/lib/terminal";
 import { cn } from "@/lib/utils";
 import { zoneClock, zoneTime } from "@/lib/zoneTime";
@@ -84,6 +88,7 @@ export const ICONS: Record<Icon, LucideIcon> = {
   "alarm-clock": AlarmClock,
   bell: Bell,
   bot: HeinzelFace,
+  "briefcase-business": BriefcaseBusiness,
   calendar: Calendar,
   "calendar-clock": CalendarClock,
   "chart-line": ChartLine,
@@ -108,6 +113,8 @@ export const ICONS: Record<Icon, LucideIcon> = {
   "list-checks": ListChecks,
   mail: Mail,
   "message-square": MessageSquare,
+  moon: Moon,
+  "party-popper": PartyPopper,
   play: Play,
   rocket: Rocket,
   star: Star,
@@ -201,6 +208,7 @@ export function liveText(live: Live, now: Date): string {
 /** Runs what a click does; a write first asks, showing the call the server built and its summary, never a label. */
 export function useEffectRunner(): { run: (effect: Effect) => void; dialog: ReactNode } {
   const navigate = useNavigate();
+  const location = useLocation();
   const queries = useQueryClient();
   const [pending, setPending] = useState<SchemaOperationCall | null>(null);
   const [outcome, setOutcome] = useState<string | null>(null);
@@ -224,7 +232,7 @@ export function useEffectRunner(): { run: (effect: Effect) => void; dialog: Reac
   };
   const run = (effect: Effect) => {
     setOutcome(null);
-    if (effect.kind === "navigate") void navigate(effect.path);
+    if (effect.kind === "navigate") void navigate(contributionPath(effect.path, location));
     else if (effect.kind === "open") window.open(effect.url, "_blank", "noopener,noreferrer");
     else if (effect.kind === "command") {
       if (effect.runs && runsAsIs(effect.command)) runInTerminal(effect.command);
@@ -303,14 +311,59 @@ function FooterStatus({
   }
   const label = [item.text, item.live ? liveText(item.live, now) : ""].filter(Boolean).join(" ");
   const effect = item.effect;
+  const accessible = [
+    label,
+    ...(item.meters ?? []).map((meter) => `${meter.label}: ${meter.value == null ? "unavailable" : `${meter.value}%`}`),
+  ].join("; ");
   return (
-    <FooterItem label={label} state={stateOf(item.tone)} icon={item.icon ? ICONS[item.icon] : Info}>
+    <FooterItem
+      label={accessible}
+      state={stateOf(item.tone)}
+      icon={
+        (!item.presentation || item.presentation === "icon") && !item.meters?.length
+          ? item.icon
+            ? ICONS[item.icon]
+            : Info
+          : undefined
+      }
+      text={item.presentation === "value" && item.live ? liveText(item.live, now) : label}
+      content={
+        item.meters?.length ? (
+          <span aria-hidden className="flex h-4 items-end gap-px">
+            {item.meters.map((meter) => (
+              <span
+                key={meter.label}
+                className="flex h-4 w-1 items-end overflow-hidden rounded-sm bg-muted-foreground/15"
+              >
+                <span
+                  className={cn("block w-full", DOT[meter.tone])}
+                  style={{
+                    height: `${meter.value == null ? 100 : Math.min(100, Math.max(8, meter.value))}%`,
+                    opacity: meter.value == null ? 0.3 : 1,
+                  }}
+                />
+              </span>
+            ))}
+          </span>
+        ) : undefined
+      }
+    >
       {item.toggle && <StatusControl entry={current} />}
       <ul>
         {(item.detail ?? []).map((line) => (
           <li key={line.text} className="flex items-center gap-2 rounded-lg px-2.5 py-1.5">
             <span aria-hidden className={cn("size-2 shrink-0 rounded-full", DOT[line.tone])} />
-            <span className="min-w-0">{line.text}</span>
+            <span className="min-w-0 flex-1" title={line.tooltip ?? undefined}>
+              {line.text}
+              {line.badge && (
+                <span className="ml-2 rounded-md border border-primary/40 px-2 py-0.5 text-xs text-foreground">
+                  {line.badge}
+                </span>
+              )}
+              {line.secondary && <span className="block text-xs text-muted-foreground">{line.secondary}</span>}
+            </span>
+            <IconOf icon={line.icon} />
+            {line.live && <span className="font-mono tabular-nums">{liveText(line.live, now)}</span>}
           </li>
         ))}
       </ul>
@@ -386,6 +439,41 @@ const DOT: Record<Tone, string> = {
   bad: "bg-bad",
 };
 
+function StatusTicker({ item, run }: { item: NonNullable<SchemaStatusEntry["item"]>; run: (effect: Effect) => void }) {
+  const now = useNow();
+  const segments = item.segments ?? [];
+  const lines = segments.map((line) =>
+    [[line.text, line.live ? liveText(line.live, now) : ""].filter(Boolean).join(" "), line.secondary]
+      .filter(Boolean)
+      .join(" · "),
+  );
+  const label = `${item.text}: ${lines.join(" · ")}`;
+  if (!lines.length) return null;
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title={label}
+      onClick={() => item.effect && run(item.effect)}
+      className="hz-ticker mx-2 block min-w-0 rounded px-1 py-1 text-ui-sm text-muted-foreground tabular-nums hover:bg-accent/60 hover:text-foreground"
+    >
+      <span
+        aria-hidden
+        className="hz-ticker-track flex w-max font-mono"
+        style={{ animationDuration: `${Math.max(30, lines.join("").length * 0.13)}s` }}
+      >
+        {[0, 1].map((copy) => (
+          <span key={copy} className={copy ? "hz-ticker-copy flex gap-6 pr-6" : "flex gap-6 pr-6"}>
+            {lines.map((line, index) => (
+              <span key={segments[index]?.text}>{line}</span>
+            ))}
+          </span>
+        ))}
+      </span>
+    </button>
+  );
+}
+
 /** One sidebar status item: icon, text and live value; its detail and buttons on hover or focus; a click runs its effect. */
 function SidebarStatusItem({
   entry,
@@ -421,6 +509,7 @@ function SidebarStatusItem({
       </span>
     ) : null;
   }
+  if (item.presentation === "ticker") return <StatusTicker item={item} run={run} />;
   const label = [item.text, item.live ? liveText(item.live, now) : ""].filter(Boolean).join(" ");
   const detail = item.detail ?? [];
   const actions = item.actions ?? [];
@@ -475,7 +564,17 @@ function SidebarStatusItem({
                           : "bg-muted-foreground/40",
                   )}
                 />
-                <span className="min-w-0 truncate">{line.text}</span>
+                <span className="min-w-0 flex-1" title={line.tooltip ?? undefined}>
+                  {line.text}
+                  {line.badge && (
+                    <span className="ml-2 rounded-md border border-primary/40 px-2 py-0.5 text-xs text-foreground">
+                      {line.badge}
+                    </span>
+                  )}
+                  {line.secondary && <span className="block text-xs text-muted-foreground">{line.secondary}</span>}
+                </span>
+                <IconOf icon={line.icon} />
+                {line.live && <span className="font-mono tabular-nums">{liveText(line.live, now)}</span>}
               </li>
             ))}
           </ul>
@@ -495,9 +594,8 @@ function SidebarStatusItem({
   );
 }
 
-/** Contributions the status bar draws itself, with more than the shapes allow (the clock's pinned zones panel,
- * the agenda's translated text); they still follow the person's per-slot choice through `useShown`. */
-export const NATIVE_FOOTER = ["clock:primary-zone", "org:meeting"];
+/** The built-in agenda keeps its specialized translated representation. */
+export const NATIVE_FOOTER = ["org:meeting"];
 
 /** Whether a contribution shows in a slot: the person's choice, its default, or `fallback` until the list loads. */
 export function useShown(id: string, slot: Slot, fallback = true): boolean {
@@ -596,21 +694,14 @@ function ActionButton({
 }
 
 /** The header buttons modules add, before the built-in ones. */
-export function HeaderActions({ onWorldClock }: { onWorldClock?: () => void } = {}) {
+export function HeaderActions() {
   const { entries, updatedAt } = useEntries("actions", "header");
   const { run, dialog } = useEffectRunner();
-  const runHeader = (effect: Effect) => {
-    if (effect.kind === "navigate" && effect.path === "/?panel=world-clock" && onWorldClock) onWorldClock();
-    else run(effect);
-  };
-  // Weather is available through its Preferences section and Today widget; it
-  // does not contribute a header action or weather-map panel.
-  const headerEntries = entries.filter((entry) => entry.module !== "weather");
-  if (!headerEntries.length) return null;
+  if (!entries.length) return null;
   return (
     <>
-      {headerEntries.map((entry) => (
-        <ActionButton key={entry.id} entry={entry} updatedAt={updatedAt} run={runHeader} />
+      {entries.map((entry) => (
+        <ActionButton key={entry.id} entry={entry} updatedAt={updatedAt} run={run} />
       ))}
       {dialog}
     </>
@@ -880,13 +971,13 @@ const KIND_OF = { status: "status", action: "actions", widget: "widgets" } as co
 function PlacementPreview({ info, slot, on }: { info: SchemaContributionInfo; slot: Slot; on: boolean }) {
   const key = KIND_OF[info.kind as keyof typeof KIND_OF];
   const now = useNow(1000);
-  const entry = useQuery<ContributionEntries>({
+  const entry = useQuery<SchemaStatusEntry | SchemaActionEntry | SchemaWidgetEntry | null>({
     queryKey: ["ui", key, info.id],
-    queryFn: () => fetchers[key](info.id),
+    queryFn: async () => (await fetchers[key](info.id))[0] ?? null,
     enabled: Boolean(key),
     retry: false,
   });
-  const found = entry.data?.[0] as (SchemaStatusEntry & SchemaActionEntry & SchemaWidgetEntry) | undefined;
+  const found = entry.data as (SchemaStatusEntry & SchemaActionEntry & SchemaWidgetEntry) | null | undefined;
   let body: ReactNode = <span className="truncate">{info.title}</span>;
   if (info.kind === "status" && found?.item) {
     const live = found.item.live ? ` ${liveText(found.item.live, now)}` : "";

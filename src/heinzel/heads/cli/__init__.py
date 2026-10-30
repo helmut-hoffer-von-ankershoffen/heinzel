@@ -10,6 +10,7 @@ Outside expert mode, help and shell completion list the everyday operations only
 """
 
 import inspect
+import json
 import logging
 import platform
 import sys
@@ -28,13 +29,14 @@ from rich.text import Text
 from typer.core import TyperGroup
 
 from heinzel import __version__
-from heinzel.heads._exposure import collapses, owns_path
+from heinzel.heads._exposure import collapses, owns_path, restricts
 from heinzel.heads.cli import _playful, _update
 from heinzel.heads.cli._branding import TAGLINE
 from heinzel.heads.cli._branding import footer as brand_footer
 from heinzel.heads.cli._chat import CHAT, chat_callback
 from heinzel.heads.cli._chat import HELP as CHAT_HELP
 from heinzel.heads.cli._command import command
+from heinzel.heads.cli._discovery import command_tree
 from heinzel.heads.cli._join import HELP as JOIN_HELP
 from heinzel.heads.cli._join import JoinCommand
 from heinzel.heads.cli._progress import ConsoleProgress
@@ -49,9 +51,11 @@ console = Console()
 err_console = Console(stderr=True)
 
 HELP = (
+    "Discover every command and its schemas with [bold]hz --command-tree[/bold] (JSON). "
     "Every operation accepts [bold]--json[/bold]. Start with [bold]hz setup[/bold], then [bold]hz system doctor[/bold]."
 )
 PLAIN_HELP = (
+    "Discover every command and its schemas with hz --command-tree (JSON). "
     "Every operation accepts --json. Commands marked (expert) run like any other "
     "but are listed in help and completion only in expert mode: hz system expert on."
 )
@@ -97,8 +101,24 @@ def build(kernel: Kernel, *, plain: bool = False) -> typer.Typer:
     def print_version(value: bool) -> None:
         _print_version(kernel, value)
 
+    def print_command_tree(ctx: typer.Context, value: bool) -> None:
+        if value:
+            console.print(
+                json.dumps(command_tree(kernel, ctx), indent=2), markup=False, highlight=False, soft_wrap=True
+            )
+            raise typer.Exit
+
     @app.callback()
     def main(
+        discovery: Annotated[  # noqa: ARG001 - handled by the eager callback
+            bool,
+            typer.Option(
+                "--command-tree",
+                help="Print every command, argument, option and operation schema as JSON, including expert commands.",
+                callback=print_command_tree,
+                is_eager=True,
+            ),
+        ] = False,
         version: Annotated[  # noqa: ARG001 - handled by the eager callback
             bool,
             typer.Option(
@@ -164,7 +184,8 @@ def main() -> None:
         err_console.print(message("Configuration error:", str(exc)))
         err_console.print("Check the files `hz system config show` lists and your HZ_* environment variables.")
         sys.exit(EX_CONFIG)
-    check = start_check(kernel)  # in the background, at most once an hour (ADR 0031)
+    # Discovery stays offline; ordinary invocations check in the background at most once an hour (ADR 0031).
+    check = None if "--command-tree" in sys.argv[1:] else start_check(kernel)
     if not sys.argv[1:]:
         _banner(kernel)  # the bare `hz`: the start screen follows
     try:
@@ -303,7 +324,7 @@ class _Mount:
         """
         groups: dict[str, typer.Typer] = {}
         for record, operation in self.kernel.lets(OperationLet):
-            if not operation.aliases or not self.kernel.available(operation.func):
+            if not operation.aliases or not self.kernel.available(operation.func) or restricts(operation.heads, "cli"):
                 continue
             path = record.path if owns_path(self.kernel, record, operation) else (*record.path, operation.name)
             new = " ".join(("hz", *path))
@@ -378,7 +399,7 @@ def _operations(kernel: Kernel, record: ModuleRecord) -> list[OperationLet]:
     return [
         let
         for owner, let in kernel.lets(OperationLet)
-        if owner.qualname == record.qualname and kernel.available(let.func)
+        if owner.qualname == record.qualname and kernel.available(let.func) and not restricts(let.heads, "cli")
     ]
 
 

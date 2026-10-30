@@ -1,0 +1,592 @@
+{
+  "format": 1,
+  "refreshed_at": "2026-10-30T02:13:54.845431+00:00",
+  "sources": [
+    {
+      "repository": "helmut-hoffer-von-ankershoffen/heinzel",
+      "revision": "abfe56c66935d8a76dc4674ad15186d6addb6e53",
+      "visibility": "public"
+    },
+    {
+      "repository": "helmut-hoffer-von-ankershoffen/heinzel-contrib",
+      "revision": "17c4f4d2fe2697b7174a35027bf75b867b0887aa",
+      "visibility": "public"
+    },
+    {
+      "repository": "helmut-hoffer-von-ankershoffen/heinzel-plugins",
+      "revision": "9c32bf30e66b98762ec05fcc0b0f2d93606ed29c",
+      "visibility": "public"
+    },
+    {
+      "repository": "helmut-hoffer-von-ankershoffen/heinzel-acme",
+      "revision": "fff70d9415b218e572c06842e860a9c6bf28fc74",
+      "visibility": "public"
+    }
+  ],
+  "notices": [],
+  "release": {
+    "version": "0.9.2",
+    "install": "uvx --from heinzel==0.9.2 hz-install",
+    "profile": "https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/releases/download/app-v0.9.2/standard.json",
+    "artifacts": [
+      {
+        "name": "heinzel",
+        "version": "0.9.2",
+        "filename": "heinzel-0.9.2-py3-none-any.whl",
+        "sha256": "a39fae3a7bfcffab8285e069d9d19ca2cfea0b52e3469b8f0d79ae49c6d0be3c",
+        "url": "https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/releases/download/app-v0.9.2/heinzel-0.9.2-py3-none-any.whl"
+      },
+      {
+        "name": "heinzel-clock",
+        "version": "0.9.1",
+        "filename": "heinzel_clock-0.9.1-py3-none-any.whl",
+        "sha256": "d0b64491bc470b381f6f08b0df218eee714cc75915b0c3aafdb3b6144e16bc0f",
+        "url": "https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/releases/download/app-v0.9.2/heinzel_clock-0.9.1-py3-none-any.whl"
+      },
+      {
+        "name": "heinzel-resource",
+        "version": "0.1.0",
+        "filename": "heinzel_resource-0.1.0-py3-none-any.whl",
+        "sha256": "78d594f790f941e1e46f11422fc16f8290fe2c95c9a30b25b90c2a7c98a68b05",
+        "url": "https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/releases/download/app-v0.9.2/heinzel_resource-0.1.0-py3-none-any.whl"
+      },
+      {
+        "name": "heinzel-tailscale",
+        "version": "0.9.1",
+        "filename": "heinzel_tailscale-0.9.1-py3-none-any.whl",
+        "sha256": "56fddc8a971a77da21f46ffde85aba8b16cd1b46f6ea710e9c993583c927cc8b",
+        "url": "https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/releases/download/app-v0.9.2/heinzel_tailscale-0.9.1-py3-none-any.whl"
+      },
+      {
+        "name": "heinzel-theme",
+        "version": "0.1.0",
+        "filename": "heinzel_theme-0.1.0-py3-none-any.whl",
+        "sha256": "c7287d1f34ae12553e1b1e17e79c0941c5f16151c97a004c449b49b092ce43c8",
+        "url": "https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/releases/download/app-v0.9.2/heinzel_theme-0.1.0-py3-none-any.whl"
+      }
+    ],
+    "url": "https://github.com/helmut-hoffer-von-ankershoffen/heinzel/releases/tag/v0.9.2"
+  },
+  "plugins": [
+    {
+      "name": "heinzel-acme",
+      "title": "Acme",
+      "id": "heinzel-acme-aa9ce1cf07",
+      "summary": "Acme, a made-up company: the root layer of the reference company.",
+      "category": "themes",
+      "highlights": [],
+      "version": "0.1.2",
+      "core": "<1,>=0.7.2",
+      "declares_standard": false,
+      "included_version": "",
+      "provides": [],
+      "requires": [],
+      "source": {
+        "repository": "helmut-hoffer-von-ankershoffen/heinzel-acme",
+        "revision": "fff70d9415b218e572c06842e860a9c6bf28fc74",
+        "visibility": "public"
+      },
+      "directory": ".",
+      "url": "https://github.com/helmut-hoffer-von-ankershoffen/heinzel-acme/tree/fff70d9415b218e572c06842e860a9c6bf28fc74/.",
+      "install": "hz system plugin add git+https://github.com/helmut-hoffer-von-ankershoffen/heinzel-acme.git@fff70d9415b218e572c06842e860a9c6bf28fc74",
+      "themes": [
+        {
+          "name": "acme",
+          "title": "ACME",
+          "path": "src/heinzel_acme/themes/acme.toml",
+          "palette": {
+            "light": {
+              "background": "#faf7f2",
+              "foreground": "#1c2b2a",
+              "muted": "#f0ebe3",
+              "muted_foreground": "#5b6b69",
+              "card": "#ffffff",
+              "border": "#e2dbd0",
+              "primary": "#0f766e",
+              "primary_foreground": "#f8fffe",
+              "accent": "#e0f2ef",
+              "ok": "#15803d",
+              "warn": "#a16207",
+              "bad": "#b91c1c",
+              "ring": "#0f766e",
+              "sidebar": "#f3eee6",
+              "input": "#ddd5c8",
+              "popover": "#ffffff"
+            },
+            "dark": {
+              "background": "#0f172a",
+              "foreground": "#e2e8f0",
+              "muted": "#1e293b",
+              "muted_foreground": "#94a3b8",
+              "card": "#131c31",
+              "border": "#334155",
+              "primary": "#2dd4bf",
+              "primary_foreground": "#042f2e",
+              "accent": "#134e4a",
+              "ok": "#4ade80",
+              "warn": "#facc15",
+              "bad": "#f87171",
+              "ring": "#2dd4bf",
+              "sidebar": "#111a2e",
+              "input": "#334155",
+              "popover": "#131c31"
+            }
+          },
+          "logo": ""
+        }
+      ],
+      "artwork": [],
+      "maintained": false
+    },
+    {
+      "name": "heinzel-acme-lisbon",
+      "title": "Acme Lisbon",
+      "id": "heinzel-acme-lisbon-f5f1f19a1e",
+      "summary": "Acme Lisbon, a made-up site of the reference company: time zone, working hours, meeting rhythm.",
+      "category": "utilities",
+      "highlights": [],
+      "version": "0.1.2",
+      "core": "<1,>=0.7.2",
+      "declares_standard": false,
+      "included_version": "",
+      "provides": [],
+      "requires": [],
+      "source": {
+        "repository": "helmut-hoffer-von-ankershoffen/heinzel-acme",
+        "revision": "fff70d9415b218e572c06842e860a9c6bf28fc74",
+        "visibility": "public"
+      },
+      "directory": "plugins/heinzel-acme-lisbon",
+      "url": "https://github.com/helmut-hoffer-von-ankershoffen/heinzel-acme/tree/fff70d9415b218e572c06842e860a9c6bf28fc74/plugins/heinzel-acme-lisbon",
+      "install": "hz system plugin add 'git+https://github.com/helmut-hoffer-von-ankershoffen/heinzel-acme.git@fff70d9415b218e572c06842e860a9c6bf28fc74#subdirectory=plugins/heinzel-acme-lisbon'",
+      "themes": [],
+      "artwork": [],
+      "maintained": false
+    },
+    {
+      "name": "heinzel-acme-payments",
+      "title": "Acme Payments",
+      "id": "heinzel-acme-payments-f39fc70bf6",
+      "summary": "Acme Payments, a made-up org of the reference company: how it plans, by quarterly OKRs.",
+      "category": "utilities",
+      "highlights": [],
+      "version": "0.1.2",
+      "core": "<1,>=0.7.2",
+      "declares_standard": false,
+      "included_version": "",
+      "provides": [],
+      "requires": [],
+      "source": {
+        "repository": "helmut-hoffer-von-ankershoffen/heinzel-acme",
+        "revision": "fff70d9415b218e572c06842e860a9c6bf28fc74",
+        "visibility": "public"
+      },
+      "directory": "plugins/heinzel-acme-payments",
+      "url": "https://github.com/helmut-hoffer-von-ankershoffen/heinzel-acme/tree/fff70d9415b218e572c06842e860a9c6bf28fc74/plugins/heinzel-acme-payments",
+      "install": "hz system plugin add 'git+https://github.com/helmut-hoffer-von-ankershoffen/heinzel-acme.git@fff70d9415b218e572c06842e860a9c6bf28fc74#subdirectory=plugins/heinzel-acme-payments'",
+      "themes": [],
+      "artwork": [],
+      "maintained": false
+    },
+    {
+      "name": "heinzel-acme-payments-checkout",
+      "title": "Acme Payments Checkout",
+      "id": "heinzel-acme-payments-checkout-8a7d294621",
+      "summary": "Acme Payments Checkout, a made-up team of the reference company: its weekly report playbook.",
+      "category": "utilities",
+      "highlights": [],
+      "version": "0.1.2",
+      "core": "<1,>=0.7.2",
+      "declares_standard": false,
+      "included_version": "",
+      "provides": [],
+      "requires": [],
+      "source": {
+        "repository": "helmut-hoffer-von-ankershoffen/heinzel-acme",
+        "revision": "fff70d9415b218e572c06842e860a9c6bf28fc74",
+        "visibility": "public"
+      },
+      "directory": "plugins/heinzel-acme-payments-checkout",
+      "url": "https://github.com/helmut-hoffer-von-ankershoffen/heinzel-acme/tree/fff70d9415b218e572c06842e860a9c6bf28fc74/plugins/heinzel-acme-payments-checkout",
+      "install": "hz system plugin add 'git+https://github.com/helmut-hoffer-von-ankershoffen/heinzel-acme.git@fff70d9415b218e572c06842e860a9c6bf28fc74#subdirectory=plugins/heinzel-acme-payments-checkout'",
+      "themes": [],
+      "artwork": [],
+      "maintained": false
+    },
+    {
+      "name": "heinzel-atlassian",
+      "title": "Atlassian",
+      "id": "heinzel-atlassian-4aefc9d27e",
+      "summary": "Read Jira issues and Confluence pages through acli: the tracker and documents capabilities.",
+      "category": "connectors",
+      "highlights": [
+        "Jira issues and Confluence pages",
+        "Implements tracker and documents contracts",
+        "Configure your own Atlassian access"
+      ],
+      "version": "0.9.1",
+      "core": "<0.10,>=0.9.1",
+      "declares_standard": false,
+      "included_version": "",
+      "provides": [
+        "tracker:read",
+        "documents:read"
+      ],
+      "requires": [
+        "core:plugin-api@1"
+      ],
+      "source": {
+        "repository": "helmut-hoffer-von-ankershoffen/heinzel-plugins",
+        "revision": "9c32bf30e66b98762ec05fcc0b0f2d93606ed29c",
+        "visibility": "public"
+      },
+      "directory": "plugins/heinzel-atlassian",
+      "url": "https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/tree/9c32bf30e66b98762ec05fcc0b0f2d93606ed29c/plugins/heinzel-atlassian",
+      "install": "hz system plugin add 'git+https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins.git@9c32bf30e66b98762ec05fcc0b0f2d93606ed29c#subdirectory=plugins/heinzel-atlassian'",
+      "themes": [],
+      "artwork": [],
+      "maintained": true
+    },
+    {
+      "name": "heinzel-clock",
+      "title": "World Clock",
+      "id": "heinzel-clock-a8638667a9",
+      "summary": "What time it is for everyone on the team: a Heinzelmännchen plugin.",
+      "category": "utilities",
+      "highlights": [
+        "Team time zones across sidebar, footer, header and ticker",
+        "Clock operations through CLI, MCP and REST",
+        "World Clock page and Today contribution"
+      ],
+      "version": "0.9.1",
+      "core": "<0.10,>=0.9.1",
+      "declares_standard": true,
+      "included_version": "0.9.1",
+      "provides": [],
+      "requires": [
+        "core:plugin-api@1"
+      ],
+      "source": {
+        "repository": "helmut-hoffer-von-ankershoffen/heinzel-plugins",
+        "revision": "9c32bf30e66b98762ec05fcc0b0f2d93606ed29c",
+        "visibility": "public"
+      },
+      "directory": "plugins/heinzel-clock",
+      "url": "https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/tree/9c32bf30e66b98762ec05fcc0b0f2d93606ed29c/plugins/heinzel-clock",
+      "install": "hz system plugin add 'git+https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins.git@9c32bf30e66b98762ec05fcc0b0f2d93606ed29c#subdirectory=plugins/heinzel-clock'",
+      "themes": [],
+      "artwork": [],
+      "maintained": true
+    },
+    {
+      "name": "heinzel-example",
+      "title": "Example Plugin",
+      "id": "heinzel-example-3a92941575",
+      "summary": "Show how a Heinzelmännchen plugin is built.",
+      "category": "reference",
+      "highlights": [
+        "A working reference for extension authors",
+        "Operations, settings and head contributions",
+        "Source to explore alongside the scaffold guide"
+      ],
+      "version": "0.4.0",
+      "core": "<0.10,>=0.9.1",
+      "declares_standard": false,
+      "included_version": "",
+      "provides": [],
+      "requires": [
+        "core:plugin-api@1"
+      ],
+      "source": {
+        "repository": "helmut-hoffer-von-ankershoffen/heinzel-plugins",
+        "revision": "9c32bf30e66b98762ec05fcc0b0f2d93606ed29c",
+        "visibility": "public"
+      },
+      "directory": "plugins/heinzel-example",
+      "url": "https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/tree/9c32bf30e66b98762ec05fcc0b0f2d93606ed29c/plugins/heinzel-example",
+      "install": "hz system plugin add 'git+https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins.git@9c32bf30e66b98762ec05fcc0b0f2d93606ed29c#subdirectory=plugins/heinzel-example'",
+      "themes": [],
+      "artwork": [],
+      "maintained": true
+    },
+    {
+      "name": "heinzel-github",
+      "title": "GitHub",
+      "id": "heinzel-github-2d8dc93d74",
+      "summary": "Read pull requests and issues from GitHub: the code-host and tracker capabilities.",
+      "category": "connectors",
+      "highlights": [
+        "Pull requests and issues through GitHub CLI",
+        "Implements code-host and tracker contracts",
+        "Use the same operations from CLI, MCP and REST"
+      ],
+      "version": "0.9.1",
+      "core": "<0.10,>=0.9.1",
+      "declares_standard": false,
+      "included_version": "",
+      "provides": [
+        "code-host:read",
+        "tracker:read"
+      ],
+      "requires": [
+        "core:plugin-api@1"
+      ],
+      "source": {
+        "repository": "helmut-hoffer-von-ankershoffen/heinzel-plugins",
+        "revision": "9c32bf30e66b98762ec05fcc0b0f2d93606ed29c",
+        "visibility": "public"
+      },
+      "directory": "plugins/heinzel-github",
+      "url": "https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/tree/9c32bf30e66b98762ec05fcc0b0f2d93606ed29c/plugins/heinzel-github",
+      "install": "hz system plugin add 'git+https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins.git@9c32bf30e66b98762ec05fcc0b0f2d93606ed29c#subdirectory=plugins/heinzel-github'",
+      "themes": [],
+      "artwork": [],
+      "maintained": true
+    },
+    {
+      "name": "heinzel-google",
+      "title": "Google Workspace",
+      "id": "heinzel-google-49accfe7d6",
+      "summary": "Google Docs, Sheets, Drive, Calendar and Gmail: the documents, calendar and mail capabilities.",
+      "category": "connectors",
+      "highlights": [
+        "Docs, Sheets, Drive, Calendar and Gmail",
+        "Uses the Google Workspace CLI",
+        "Implements documents, calendar and mail contracts"
+      ],
+      "version": "0.9.1",
+      "core": "<0.10,>=0.9.1",
+      "declares_standard": false,
+      "included_version": "",
+      "provides": [
+        "documents:read",
+        "calendar:read",
+        "mail:read"
+      ],
+      "requires": [
+        "core:plugin-api@1"
+      ],
+      "source": {
+        "repository": "helmut-hoffer-von-ankershoffen/heinzel-plugins",
+        "revision": "9c32bf30e66b98762ec05fcc0b0f2d93606ed29c",
+        "visibility": "public"
+      },
+      "directory": "plugins/heinzel-google",
+      "url": "https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/tree/9c32bf30e66b98762ec05fcc0b0f2d93606ed29c/plugins/heinzel-google",
+      "install": "hz system plugin add 'git+https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins.git@9c32bf30e66b98762ec05fcc0b0f2d93606ed29c#subdirectory=plugins/heinzel-google'",
+      "themes": [],
+      "artwork": [],
+      "maintained": true
+    },
+    {
+      "name": "heinzel-resource",
+      "title": "System Resources",
+      "id": "heinzel-resource-c3ccd26ae0",
+      "summary": "Machine CPU, memory and load with a compact visualizer.",
+      "category": "utilities",
+      "highlights": [
+        "Live CPU, memory and system load",
+        "Resource visualizer and Today widget",
+        "Independently installed and tested utility"
+      ],
+      "version": "0.1.0",
+      "core": "<0.10,>=0.9.1",
+      "declares_standard": true,
+      "included_version": "0.1.0",
+      "provides": [],
+      "requires": [
+        "core:plugin-api@1"
+      ],
+      "source": {
+        "repository": "helmut-hoffer-von-ankershoffen/heinzel-plugins",
+        "revision": "9c32bf30e66b98762ec05fcc0b0f2d93606ed29c",
+        "visibility": "public"
+      },
+      "directory": "plugins/heinzel-resource",
+      "url": "https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/tree/9c32bf30e66b98762ec05fcc0b0f2d93606ed29c/plugins/heinzel-resource",
+      "install": "hz system plugin add 'git+https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins.git@9c32bf30e66b98762ec05fcc0b0f2d93606ed29c#subdirectory=plugins/heinzel-resource'",
+      "themes": [],
+      "artwork": [],
+      "maintained": true
+    },
+    {
+      "name": "heinzel-tailscale",
+      "title": "Tailscale",
+      "id": "heinzel-tailscale-d13884e4ee",
+      "summary": "Share the authenticated web app privately through Tailscale Serve: a Heinzelmännchen plugin.",
+      "category": "utilities",
+      "highlights": [
+        "Opt-in private connectivity for your workspace",
+        "Private sharing status and operations",
+        "Your network remains an explicit choice"
+      ],
+      "version": "0.9.1",
+      "core": "<0.10,>=0.9.1",
+      "declares_standard": true,
+      "included_version": "0.9.1",
+      "provides": [],
+      "requires": [
+        "core:plugin-api@1"
+      ],
+      "source": {
+        "repository": "helmut-hoffer-von-ankershoffen/heinzel-plugins",
+        "revision": "9c32bf30e66b98762ec05fcc0b0f2d93606ed29c",
+        "visibility": "public"
+      },
+      "directory": "plugins/heinzel-tailscale",
+      "url": "https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/tree/9c32bf30e66b98762ec05fcc0b0f2d93606ed29c/plugins/heinzel-tailscale",
+      "install": "hz system plugin add 'git+https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins.git@9c32bf30e66b98762ec05fcc0b0f2d93606ed29c#subdirectory=plugins/heinzel-tailscale'",
+      "themes": [],
+      "artwork": [],
+      "maintained": true
+    },
+    {
+      "name": "heinzel-theme",
+      "title": "Heinzelmännchen",
+      "id": "heinzel-theme-5e723a7d8a",
+      "summary": "The Heinzelmännchen theme and its soundscapes.",
+      "category": "themes",
+      "highlights": [
+        "Warm light and dark palettes with character artwork",
+        "Claude FM, Die Heinzelmännchen and Hyper Focus soundscapes",
+        "Theme content owned entirely by this plugin"
+      ],
+      "version": "0.1.0",
+      "core": "<0.10,>=0.9.1",
+      "declares_standard": true,
+      "included_version": "0.1.0",
+      "provides": [],
+      "requires": [
+        "core:plugin-api@1"
+      ],
+      "source": {
+        "repository": "helmut-hoffer-von-ankershoffen/heinzel-plugins",
+        "revision": "9c32bf30e66b98762ec05fcc0b0f2d93606ed29c",
+        "visibility": "public"
+      },
+      "directory": "plugins/heinzel-theme",
+      "url": "https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/tree/9c32bf30e66b98762ec05fcc0b0f2d93606ed29c/plugins/heinzel-theme",
+      "install": "hz system plugin add 'git+https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins.git@9c32bf30e66b98762ec05fcc0b0f2d93606ed29c#subdirectory=plugins/heinzel-theme'",
+      "themes": [
+        {
+          "name": "heinzelmaennchen",
+          "title": "Heinzelmännchen",
+          "path": "plugins/heinzel-theme/src/heinzel_theme/themes/heinzelmaennchen.toml",
+          "palette": {
+            "light": {
+              "background": "#ffffff",
+              "foreground": "#1a1a1a",
+              "muted": "#f2f2f2",
+              "muted_foreground": "#6b6b6b",
+              "card": "#ffffff",
+              "border": "#e4e4e4",
+              "primary": "#b4532f",
+              "primary_foreground": "#ffffff",
+              "accent": "#ebebeb",
+              "ok": "#1f7444",
+              "warn": "#8a5c00",
+              "bad": "#b4372d",
+              "ring": "#b4532f",
+              "sidebar": "#f3f3f3",
+              "input": "#ffffff",
+              "popover": "#ffffff",
+              "accent_foreground": "#1a1a1a",
+              "icon": "#5c5c5c"
+            },
+            "dark": {
+              "background": "#181818",
+              "foreground": "#ececec",
+              "muted": "#272727",
+              "muted_foreground": "#9b9b9b",
+              "card": "#181818",
+              "border": "#2c2c2c",
+              "primary": "#d97757",
+              "primary_foreground": "#ffffff",
+              "accent": "#444444",
+              "ok": "#7cc39a",
+              "warn": "#e0b45f",
+              "bad": "#e5806f",
+              "ring": "#d97757",
+              "sidebar": "#272727",
+              "input": "#303030",
+              "popover": "#2c2c2c",
+              "accent_foreground": "#ececec",
+              "icon": "#b3b3b3"
+            }
+          },
+          "logo": ""
+        }
+      ],
+      "artwork": [],
+      "maintained": true
+    },
+    {
+      "name": "heinzel-weather",
+      "title": "Weather",
+      "id": "heinzel-weather-d59846a40e",
+      "summary": "Weather where you are, keyless from Open-Meteo (or OpenWeather with your key): now, the next hours and days, and a heads-up when it changes.",
+      "category": "utilities",
+      "highlights": [
+        "Open-Meteo forecasts without an API key",
+        "Weather page, footer status, Today widget and notices",
+        "Weather-aware character signals"
+      ],
+      "version": "0.4.0",
+      "core": "<0.10,>=0.9.1",
+      "declares_standard": false,
+      "included_version": "",
+      "provides": [
+        "theme-signals@1",
+        "numeric-signals@1"
+      ],
+      "requires": [
+        "core:plugin-api@1"
+      ],
+      "source": {
+        "repository": "helmut-hoffer-von-ankershoffen/heinzel-plugins",
+        "revision": "9c32bf30e66b98762ec05fcc0b0f2d93606ed29c",
+        "visibility": "public"
+      },
+      "directory": "plugins/heinzel-weather",
+      "url": "https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/tree/9c32bf30e66b98762ec05fcc0b0f2d93606ed29c/plugins/heinzel-weather",
+      "install": "hz system plugin add 'git+https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins.git@9c32bf30e66b98762ec05fcc0b0f2d93606ed29c#subdirectory=plugins/heinzel-weather'",
+      "themes": [],
+      "artwork": [],
+      "maintained": true
+    },
+    {
+      "name": "heinzel-zoom",
+      "title": "Zoom",
+      "id": "heinzel-zoom-af3d213754",
+      "summary": "Read meetings from Zoom's meeting-summary emails: the meetings capability.",
+      "category": "connectors",
+      "highlights": [
+        "Meeting context from meeting-summary emails",
+        "Uses a bound mail adapter",
+        "Implements the meetings contract"
+      ],
+      "version": "0.9.1",
+      "core": "<0.10,>=0.9.1",
+      "declares_standard": false,
+      "included_version": "",
+      "provides": [
+        "meetings:read"
+      ],
+      "requires": [
+        "core:plugin-api@1",
+        "mail:read"
+      ],
+      "source": {
+        "repository": "helmut-hoffer-von-ankershoffen/heinzel-plugins",
+        "revision": "9c32bf30e66b98762ec05fcc0b0f2d93606ed29c",
+        "visibility": "public"
+      },
+      "directory": "plugins/heinzel-zoom",
+      "url": "https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/tree/9c32bf30e66b98762ec05fcc0b0f2d93606ed29c/plugins/heinzel-zoom",
+      "install": "hz system plugin add 'git+https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins.git@9c32bf30e66b98762ec05fcc0b0f2d93606ed29c#subdirectory=plugins/heinzel-zoom'",
+      "themes": [],
+      "artwork": [],
+      "maintained": true
+    }
+  ]
+}

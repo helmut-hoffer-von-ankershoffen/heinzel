@@ -211,7 +211,7 @@ class SoundStream(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, revalidate_instances="always")
 
     provider: Annotated[str, AfterValidator(_provider)] = Field(description="The host, one of `STREAM_PROVIDERS`.")
-    video: str = Field(pattern=VIDEO, description="The video's id, e.g. `tRsQsTMvPNg`.")
+    video: str = Field(pattern=VIDEO, description="The video's id, e.g. `abcdefghijk`.")
 
 
 class Soundscape(BaseModel):
@@ -410,7 +410,7 @@ def problems_of(exc: ValidationError) -> str:
     rules = {
         "name": "lowercase words joined by single dashes, e.g. rain",
         "file": "a path inside the soundscape's directory ending in .ogg, .opus or .mp3, e.g. sounds/rain.ogg",
-        "video": "the video's id: 11 letters, digits, dashes or underscores, e.g. tRsQsTMvPNg",
+        "video": "the video's id: 11 letters, digits, dashes or underscores, e.g. abcdefghijk",
     }
     problems: list[str] = []
     for error in exc.errors():

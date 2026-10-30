@@ -34,12 +34,11 @@ def root(tmp_path):
     return tmp_path
 
 
-def test_snippets_come_from_plugins_first_then_built_in_modules_each_sorted_by_path(root):
+def test_snippets_come_only_from_built_in_modules_sorted_by_path(root):
     doctor = module(root, "src/heinzel/modules/system/doctor", 'Type "hz system doctor"\n')
     agent = module(root, "src/heinzel/modules/system/agent", 'Type "hz system agent"\n')
-    zebra = module(root, "plugins/heinzel-zebra/src/heinzel_zebra", 'Type "hz zebra"\n')
-    clock = module(root, "plugins/heinzel-clock/src/heinzel_clock", 'Type "hz clock"\n')
-    assert demo_tape.snippets(root) == [clock, zebra, agent, doctor]
+    module(root, "plugins/heinzel-unforeseen/src/heinzel_unforeseen", 'Type "hz unforeseen"\n')
+    assert demo_tape.snippets(root) == [agent, doctor]
 
 
 def test_a_snippet_types_only_real_hz_commands_and_sets_nothing(root):
@@ -65,14 +64,14 @@ def test_snippets_cannot_replace_the_environment_the_recorder_is_running_from(ro
 
 
 def test_assembling_hoists_requires_clears_between_snippets_and_holds_the_end(root):
-    module(root, "plugins/heinzel-clock/src/heinzel_clock", '# Clock.\nRequire jq\nType "hz clock --json | jq"\n')
+    module(root, "src/heinzel/modules/graph", '# Graph.\nRequire jq\nType "hz graph --json | jq"\n')
     module(root, "src/heinzel/modules/system", 'Require jq\nRequire hz\nType "hz system doctor"\n')
     lines = demo_tape.assemble(root).splitlines()
     assert lines[lines.index("Output demo.gif") + 2 : lines.index("Set Shell bash")] == ["Require hz", "Require jq", ""]
-    clock = lines.index("# --- plugins/heinzel-clock/src/heinzel_clock ---")
-    assert lines[clock + 1 : clock + 6] == [*demo_tape.CLEAR, 'Type "hz clock --json | jq"']
-    assert lines.index("# --- src/heinzel/modules/system ---") > clock
-    assert "# Clock." not in lines
+    graph = lines.index("# --- src/heinzel/modules/graph ---")
+    assert lines[graph + 1 : graph + 6] == [*demo_tape.CLEAR, 'Type "hz graph --json | jq"']
+    assert lines.index("# --- src/heinzel/modules/system ---") > graph
+    assert "# Graph." not in lines
     assert lines[-1] == demo_tape.HOLD
 
 

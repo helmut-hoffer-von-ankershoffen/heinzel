@@ -15,9 +15,14 @@ from heinzel.kernel._agents import (
     ToolProfile,
 )
 from heinzel.kernel._ai import AccessStatus, AccessTest, AiAccess, UsageCause, UsageEntry, UsageLog, record_usage
-from heinzel.kernel._bindings import HOWS, Adapters, CapabilityView, How, Requester
+from heinzel.kernel._api_access import ConfiguredApiAccess, ConfiguredApiLease, ConfiguredApiSnapshot
+from heinzel.kernel._bindings import HOWS, Adapters, CapabilitySettings, CapabilityView, How, Requester
 from heinzel.kernel._boot import boot
+from heinzel.kernel._bounded_process import MAX_OUTPUT as PROCESS_MAX_OUTPUT
+from heinzel.kernel._bounded_process import ProcessExecute, ProcessOutcome, run_bounded_process, signal_process_group
 from heinzel.kernel._capabilities import CAPABILITIES, MODES, NO_ADAPTER, Capability, Mode, Requirement
+from heinzel.kernel._capability_schema import capability_read_schema
+from heinzel.kernel._captured_source import captured_source_active
 from heinzel.kernel._chat import ActionGate, ProposedCall
 from heinzel.kernel._chat_services import (
     CheckInChatContext,
@@ -37,6 +42,13 @@ from heinzel.kernel._config import (
     env_prefix,
     toml_value,
     user_config_dir,
+)
+from heinzel.kernel._connected_read import (
+    ConnectedItemIdentity,
+    ConnectedReadLease,
+    ConnectedReadMethod,
+    ConnectedReadReview,
+    ConnectedReadService,
 )
 from heinzel.kernel._contributions import (
     ICONS,
@@ -67,6 +79,7 @@ from heinzel.kernel._contributions import (
     Slot,
     StatusItem,
     StatusLet,
+    StatusMeter,
     ToggleControl,
     Tone,
     Widget,
@@ -86,7 +99,7 @@ from heinzel.kernel._daemon_attestation import DaemonAttestation, DaemonStatusAt
 from heinzel.kernel._directory import ConfirmedLines, ReportingDraft, draft_reporting_lines
 from heinzel.kernel._discovery import BUILTIN_PACKAGE, ENTRY_POINT_GROUP, discover, walk
 from heinzel.kernel._duration import MAX_WINDOW, WINDOW_PATTERN, Span, format_duration, parse_duration, parse_window
-from heinzel.kernel._errors import HeinzelError
+from heinzel.kernel._errors import HeinzelError, SubscriptionUsageLimitError
 from heinzel.kernel._exposure import MCP_HTTP, MCP_STDIO, Exposed, exposed, input_schema, restricts
 from heinzel.kernel._git import (
     GIT_HARDENING,
@@ -96,7 +109,7 @@ from heinzel.kernel._git import (
     check_repository_url,
     git_command,
 )
-from heinzel.kernel._identity import CallIdentity, CurrentUser, Principal
+from heinzel.kernel._identity import PRIVATE_WRITE, Authentication, CallIdentity, CurrentUser, Principal
 from heinzel.kernel._installation import (
     CORE_DISTRIBUTION,
     CorePin,
@@ -137,6 +150,7 @@ from heinzel.kernel._lets import (
     schedule_problem,
 )
 from heinzel.kernel._local_web import LocalWebRuntime
+from heinzel.kernel._metadata_verifier import CoreMetadataVerifier
 from heinzel.kernel._module import Module
 from heinzel.kernel._notifications import Delivery, Notice, NoticeKind, Notifications
 from heinzel.kernel._org import OrgContext, Recommendation, RecommendationKind, TeamPromise, TeamPromises
@@ -187,6 +201,8 @@ from heinzel.kernel._protocols import (
     plain_addresses,
 )
 from heinzel.kernel._release import ReleaseCache, ReleaseSource
+from heinzel.kernel._runner_snapshot import RunnerSnapshot, RunnerSnapshotProvider
+from heinzel.kernel._services import ServiceContract
 from heinzel.kernel._session import SessionEvent, SessionHead, SessionProjector, SessionRead
 from heinzel.kernel._session_store import SessionStore, SessionWriter
 from heinzel.kernel._settings import Settings
@@ -226,6 +242,7 @@ from heinzel.kernel._soundscapes import (
     StreamProvider,
     ThemeChoice,
 )
+from heinzel.kernel._source_loading import SourceGuardedConnectedService
 from heinzel.kernel._telemetry import (
     HEINZEL_ID,
     VERBS,
@@ -255,6 +272,7 @@ from heinzel.kernel._themes import (
     ThemeVariant,
     font_stack_problem,
 )
+from heinzel.kernel._views import ViewLet, ViewSlot, read_view_asset
 
 __all__ = [
     "BUILTIN_PACKAGE",
@@ -280,6 +298,8 @@ __all__ = [
     "MCP_STDIO",
     "MODES",
     "NO_ADAPTER",
+    "PRIVATE_WRITE",
+    "PROCESS_MAX_OUTPUT",
     "PROJECT_FILENAME",
     "RESPONSES",
     "SETUP_PHASES",
@@ -299,6 +319,7 @@ __all__ = [
     "AgentRunner",
     "AiAccess",
     "AssetType",
+    "Authentication",
     "Avatar",
     "Badge",
     "Billing",
@@ -306,6 +327,7 @@ __all__ = [
     "Calendar",
     "CallIdentity",
     "Capability",
+    "CapabilitySettings",
     "CapabilityView",
     "CardWidget",
     "CatchUp",
@@ -321,9 +343,18 @@ __all__ = [
     "ConfigEditor",
     "ConfigFile",
     "ConfigListChange",
+    "ConfiguredApiAccess",
+    "ConfiguredApiLease",
+    "ConfiguredApiSnapshot",
     "ConfirmedLines",
+    "ConnectedItemIdentity",
+    "ConnectedReadLease",
+    "ConnectedReadMethod",
+    "ConnectedReadReview",
+    "ConnectedReadService",
     "ContractTemplate",
     "ContributionLet",
+    "CoreMetadataVerifier",
     "CorePin",
     "CredentialBackend",
     "CredentialLet",
@@ -416,6 +447,8 @@ __all__ = [
     "PostedMessage",
     "Presence",
     "Principal",
+    "ProcessExecute",
+    "ProcessOutcome",
     "Progress",
     "ProgressWidget",
     "Prompter",
@@ -435,10 +468,13 @@ __all__ = [
     "RunGitCommand",
     "RunOperation",
     "RunStatus",
+    "RunnerSnapshot",
+    "RunnerSnapshotProvider",
     "ScriptExhausted",
     "ScriptedPrompter",
     "SectionReplacement",
     "SentMail",
+    "ServiceContract",
     "ServiceLet",
     "SessionEvent",
     "SessionHead",
@@ -465,11 +501,14 @@ __all__ = [
     "SoundStream",
     "Soundscape",
     "SoundscapeLet",
+    "SourceGuardedConnectedService",
     "Span",
     "Status",
     "StatusItem",
     "StatusLet",
+    "StatusMeter",
     "StreamProvider",
+    "SubscriptionUsageLimitError",
     "TeamGraph",
     "TeamPromise",
     "TeamPromises",
@@ -500,12 +539,16 @@ __all__ = [
     "UsageEntry",
     "UsageLog",
     "Verb",
+    "ViewLet",
+    "ViewSlot",
     "Weather",
     "Widget",
     "WidgetAction",
     "WidgetLet",
     "Window",
     "boot",
+    "capability_read_schema",
+    "captured_source_active",
     "check_repository_url",
     "check_target",
     "clean_text",
@@ -530,11 +573,14 @@ __all__ = [
     "public_parameters",
     "read_skill",
     "read_skill_file",
+    "read_view_asset",
     "record_usage",
     "redact_emails",
     "requirement_from_receipt",
     "restricts",
+    "run_bounded_process",
     "schedule_problem",
+    "signal_process_group",
     "skill_frame",
     "skill_instructions",
     "skill_name_problem",

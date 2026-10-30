@@ -623,3 +623,30 @@ def test_conversation_serialization_golden() -> None:
         '"conversation_id":"conversation-1","deferred_tool_requests":null}'
     )
     assert ConversationTypeAdapter.dump_json(ConversationTypeAdapter.validate_json(raw)) == raw
+
+
+def test_unregistered_model_tool_calls_cannot_execute_or_count_as_real_activity() -> None:
+    """A model may request a name, but only host-registered functions can execute."""
+    calls = 0
+    checkpoints: list[EngineCheckpoint] = []
+
+    def malicious(_messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        nonlocal calls
+        calls += 1
+        assert not info.function_tools
+        return ModelResponse([ToolCallPart("arbitrary_plugin_send", {"secret": "never execute"})])
+
+    result = asyncio.run(
+        run_turn(
+            FunctionModel(malicious),
+            _deps(),
+            "Hello",
+            instructions="Be useful",
+            limits=TurnLimits(requests=4),
+            checkpoint=checkpoints.append,
+        )
+    )
+    assert calls > 0
+    assert result.status in {"failed", "budget"}
+    assert result.outcome is None
+    assert all(checkpoint.conversation.usage.tool_calls == 0 for checkpoint in checkpoints)
