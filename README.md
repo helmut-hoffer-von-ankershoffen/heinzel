@@ -29,7 +29,7 @@
 | src/heinzel/kernel/\_capability\_schema.py                   |       35 |        5 |       10 |        2 |     84% |36, 43, 45-47 |
 | src/heinzel/kernel/\_captured\_source.py                     |       22 |        2 |        2 |        0 |     92% |     33-34 |
 | src/heinzel/kernel/\_connected\_read.py                      |       50 |        2 |        4 |        1 |     94% |     51-52 |
-| src/heinzel/kernel/\_contributions.py                        |      364 |        5 |       72 |        4 |     98% |170, 208, 531, 665-666 |
+| src/heinzel/kernel/\_contributions.py                        |      365 |        5 |       72 |        4 |     98% |173, 211, 535, 669-670 |
 | src/heinzel/kernel/\_discovery.py                            |       76 |        5 |       20 |        0 |     95% |59-61, 75-76 |
 | src/heinzel/kernel/\_duration.py                             |       52 |        1 |       18 |        1 |     97% |        76 |
 | src/heinzel/kernel/\_git.py                                  |      122 |        0 |       34 |        1 |     99% |227-\>exit |
@@ -48,7 +48,7 @@
 | src/heinzel/kernel/\_soundscapes.py                          |      271 |        3 |       70 |        0 |     99% |   105-107 |
 | src/heinzel/kernel/\_source\_loading.py                      |      551 |       92 |      204 |       46 |     81% |52-53, 63-64, 89-90, 96-97, 105-106, 108-109, 179-180, 184-185, 188-189, 201-202, 208-209, 212-213, 242-243, 250-251, 276, 278-279, 287-288, 293-294, 297-300, 342-343, 347-348, 352-353, 379, 386-387, 390-391, 419-420, 439, 451-452, 495-496, 500-\>502, 511-512, 514-\>516, 521-522, 540-541, 545-546, 556-558, 595-596, 619-620, 622-623, 627-628, 630-631, 651-652, 657-\>exit, 718-719, 724-\>727, 740-741, 791-\>794, 806-809, 831-832, 868-869 |
 | src/heinzel/kernel/\_telemetry.py                            |      129 |        0 |       34 |        1 |     99% | 160-\>162 |
-| src/heinzel/kernel/\_themes.py                               |      562 |        3 |      162 |        3 |     99% |318, 378, 983 |
+| src/heinzel/kernel/\_themes.py                               |      563 |        3 |      162 |        3 |     99% |318, 378, 985 |
 | src/heinzel/kernel/\_views.py                                |      145 |       10 |       46 |        4 |     93% |31-32, 41-43, 47-48, 153, 166-167 |
 | src/heinzel/modules/ai/\_\_init\_\_.py                       |       49 |       25 |       14 |        0 |     38% |38, 43-62, 82-94 |
 | src/heinzel/modules/ai/\_models.py                           |       32 |        5 |        2 |        1 |     82% |46-48, 51-52 |
@@ -165,7 +165,7 @@
 | src/heinzel/modules/telemetry/\_render.py                    |       15 |       10 |        2 |        0 |     29% |11-17, 22-27 |
 | src/heinzel/modules/telemetry/\_service.py                   |      236 |        8 |       70 |        3 |     96% |146-\>152, 154-\>152, 162, 219-220, 289-291, 344-345 |
 | src/heinzel/testing.py                                       |      124 |        4 |       32 |        0 |     97% |   240-244 |
-| **TOTAL**                                                    | **33415** | **1845** | **8412** |  **770** | **93%** |           |
+| **TOTAL**                                                    | **33417** | **1845** | **8412** |  **770** | **93%** |           |
 
 133 files skipped due to complete coverage.
 
