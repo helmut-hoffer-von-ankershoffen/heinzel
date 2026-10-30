@@ -43,6 +43,7 @@ from heinzel.modules.heinzel._notification_proposals import (
     NotificationProposalPage,
     NotificationProposals,
 )
+from heinzel.modules.heinzel._schedule_suggestions import ScheduleSuggestion, latest_schedule_suggestion
 from heinzel.modules.heinzel._scheduled_notifications import (
     ScheduledNotificationPage,
     ScheduledNotificationPolicy,
@@ -564,6 +565,11 @@ def _register_user_chat_operations(module: Module) -> None:
     def latest_profile_proposal(service: SessionCrud, session_id: Identity) -> ProfileProposal | None:
         """Inspect the latest suggested name and look; it has not been applied."""
         return service.latest_profile_proposal(session_id)
+
+    @module.operation(private=True, heads={"web", "api-private"}, audience="everyday")
+    def latest_schedule_suggestion_view(service: SessionCrud, session_id: Identity) -> ScheduleSuggestion | None:
+        """Inspect the latest inert suggested schedule; it has not been approved or activated."""
+        return latest_schedule_suggestion(service, session_id)
 
     @module.operation(private=True, read_only=False, heads={"cli", "web", "api-private"}, audience="everyday")
     def answer_chat(service: UserChatService, session_id: Identity, request_id: Request) -> UserChatAnswer:

@@ -428,6 +428,7 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
       await client.invalidateQueries({ queryKey: ["heinzel", "notification-proposals", sessionId] });
       await client.invalidateQueries({ queryKey: ["heinzel", "agent-proposal", sessionId] });
       await client.invalidateQueries({ queryKey: ["heinzel", "profile-proposal", sessionId] });
+      await client.invalidateQueries({ queryKey: ["heinzel", "latest-schedule-suggestion", sessionId] });
     } catch (reason) {
       if (acceptedConfirmed && reason instanceof ApiError && reason.code === "subscription_usage_limit") {
         updateComposer({ pending: { ...request, accepted: true, outcome: "subscription_usage_limit" } });
@@ -1119,6 +1120,7 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
               void client.invalidateQueries({ queryKey: ["heinzel", "tool-activity", sessionId] });
               void client.invalidateQueries({ queryKey: ["heinzel", "agent-proposal", sessionId] });
               void client.invalidateQueries({ queryKey: ["heinzel", "profile-proposal", sessionId] });
+              void client.invalidateQueries({ queryKey: ["heinzel", "latest-schedule-suggestion", sessionId] });
             }}
           />
         )}

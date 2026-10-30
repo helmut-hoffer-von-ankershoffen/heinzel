@@ -624,6 +624,7 @@ $ hz heinzel [OPTIONS] COMMAND [ARGS]...
 * `drafts`: List the drafts runs saved locally, newest...
 * `graph`: (expert) Show the workflow your contracts...
 * `latest-profile-proposal`: Inspect the latest suggested name and...
+* `latest-schedule-suggestion-view`: Inspect the latest inert suggested...
 * `latest-scheduled-agent-proposal`: Read the current inert proposal for the...
 * `list`: List your Heinzelmännchen, one per...
 * `model-policy`: Read the current exact proposed policy; no...
@@ -1091,6 +1092,26 @@ Inspect the latest suggested name and look; it has not been applied.
 
 ```console
 $ hz heinzel latest-profile-proposal [OPTIONS] {session_id}
+```
+
+**Arguments**:
+
+* `session_id`: [required]
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz heinzel latest-schedule-suggestion-view`
+
+Inspect the latest inert suggested schedule; it has not been approved or activated.
+
+**Usage**:
+
+```console
+$ hz heinzel latest-schedule-suggestion-view [OPTIONS] {session_id}
 ```
 
 **Arguments**:

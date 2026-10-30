@@ -41,6 +41,28 @@ export function AgentSchedules({ sessionId }: { sessionId: string }) {
   const [includeNotifications, setIncludeNotifications] = useState(false);
   const [noticeMax, setNoticeMax] = useState(3);
   const [noticeCooldown, setNoticeCooldown] = useState(3600);
+  const suggestion = useQuery({
+    queryKey: ["heinzel", "latest-schedule-suggestion", sessionId],
+    queryFn: async () => {
+      const value = await result(
+        api.GET("/heinzel/latest-schedule-suggestion-view", { params: { query: { session_id: sessionId } } }),
+      );
+      if (value) {
+        if (value.session_id !== sessionId || value.status !== "suggested") throw new Error("Unexpected suggestion");
+        if (
+          "kind" in value.trigger &&
+          (value.trigger.kind !== "interval" ||
+            !Number.isInteger(value.trigger.cadence_seconds) ||
+            value.trigger.cadence_seconds < 60 ||
+            value.trigger.cadence_seconds > 86400 ||
+            value.trigger.cadence_seconds % 60 !== 0)
+        )
+          throw new Error("Unexpected interval");
+      }
+      return value;
+    },
+    retry: false,
+  });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(false);
   const [saved] = useState((): { pending: Draft | null; invalid: boolean } => {
@@ -199,6 +221,48 @@ export function AgentSchedules({ sessionId }: { sessionId: string }) {
             subscription and has unknown cost. Connected reads require separate approval and are included only when
             selected below.
           </p>
+          <section className="space-y-2 rounded border border-border p-2" aria-label="Chat schedule suggestion">
+            <p className="font-medium">Chat schedule suggestion</p>
+            <Button type="button" size="sm" variant="outline" onClick={() => void suggestion.refetch()}>
+              Refresh suggestion
+            </Button>
+            {suggestion.isError && <p role="alert">The suggestion could not be verified.</p>}
+            {suggestion.data === null && <p>No schedule suggested yet.</p>}
+            {suggestion.data && (
+              <>
+                <p>Suggestion revision {suggestion.data.revision}; not approved or active.</p>
+                {"kind" in suggestion.data.trigger ? (
+                  <>
+                    <p>Suggested interval: every {suggestion.data.trigger.cadence_seconds / 60} minutes.</p>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={!!pending || busy || !Number.isInteger(suggestion.data.trigger.cadence_seconds / 60)}
+                      onClick={() => {
+                        if (suggestion.data && "kind" in suggestion.data.trigger)
+                          setMinutes(suggestion.data.trigger.cadence_seconds / 60);
+                      }}
+                    >
+                      Use interval in preview
+                    </Button>
+                  </>
+                ) : (
+                  <p>
+                    Suggested calendar schedule: {suggestion.data.trigger.cron} ({suggestion.data.trigger.timezone}).
+                    Calendar schedules are not supported here; this suggestion remains inactive.
+                  </p>
+                )}
+                {suggestion.data.suggested_reads.length > 0 && (
+                  <p className="break-words">
+                    Suggested reads:{" "}
+                    {suggestion.data.suggested_reads.map((read) => `${read.capability}.${read.method}`).join(", ")}.
+                    These do not grant access. Choose an already approved read separately.
+                  </p>
+                )}
+              </>
+            )}
+          </section>
           {!contract.data?.accepted && <p>Accept the current agent terms before proposing recurring turns.</p>}
           {connected.data?.status === "approved" && connected.data.proposal && (
             <label className="block">

@@ -24,6 +24,7 @@ from heinzel.modules.heinzel._host_tools import HostToolCatalog, OperationFailed
 from heinzel.modules.heinzel._model_admission import ConnectedModelFactory, connected_model
 from heinzel.modules.heinzel._model_grants import ModelGrant, ModelGrants
 from heinzel.modules.heinzel._priced_model import ReservedModel
+from heinzel.modules.heinzel._schedule_suggestions import ScheduleSuggestionTools, schedule_suggestion_schemas
 from heinzel.modules.heinzel._scheduled_notifications import ScheduledNotifications
 from heinzel.modules.heinzel._session_bodies import immutable_body
 from heinzel.modules.heinzel._session_crud import SessionCrud
@@ -359,14 +360,29 @@ class InteractiveTurn:
                 if user_tools
                 else set[str]()
             )
+            schedule_tools = (
+                ScheduleSuggestionTools(self._crud, session_id, turn, self._owner, turn_writer, user_proposal_policy)
+                if user_proposal_policy is not None
+                else None
+            )
+            schedule_names = {"schedule:current", "schedule:propose"}
 
-            def dispatch_general(name: str, arguments: dict[str, JsonValue]) -> str:  # noqa: C901, PLR0911 - closed dispatch cases
+            def dispatch_general(name: str, arguments: dict[str, JsonValue]) -> str:  # noqa: C901, PLR0911, PLR0912 - closed dispatch cases
                 nonlocal calls
                 self._check_owner()
                 calls += 1
                 args = _JSON.validate_python(arguments, strict=True)
                 if len(json.dumps(args, ensure_ascii=False).encode()) > _MAX_ARGUMENT_BYTES:
                     return "Tool request is too large."
+                if schedule_tools is not None and name in schedule_names:
+                    self._event(session_id, turn, calls, name, "requested")
+                    try:
+                        result = schedule_tools.dispatch(name, args, calls)
+                    except HeinzelError:
+                        self._event(session_id, turn, calls, name, "denied")
+                        return "The private schedule suggestion could not be recorded."
+                    self._event(session_id, turn, calls, name, "completed")
+                    return result
                 if user_tools is not None and name in user_names:
                     self._event(session_id, turn, calls, name, "requested")
                     try:
@@ -488,6 +504,7 @@ class InteractiveTurn:
                         [{"name": tool.identity, "schema": tool.schema} for tool in schemas]
                         + (skill_tool_schemas(expected_grant) if expected_grant else [])
                         + (user_proposal_schemas() if user_tools else [])
+                        + (schedule_suggestion_schemas() if schedule_tools else [])
                         + ([connected_schema] if connected_schema is not None else [])
                         + ([scheduled_notifications.schema()] if scheduled_notifications is not None else []),
                         ensure_ascii=True,

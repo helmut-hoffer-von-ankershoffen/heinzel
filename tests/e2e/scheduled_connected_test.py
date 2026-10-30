@@ -132,9 +132,11 @@ payload=json.load(sys.stdin)
 try: n=len(open({str(marker)!r}).read())
 except FileNotFoundError: n=0
 open({str(marker)!r},'a').write('x')
-if n in (0,2):
- name='agent:propose' if n == 0 else 'connected_read'
- args={{'expected_revision':0,'contract':'Inspect the chosen source.','timeout_seconds':30}} if n == 0 else {{}}
+if n in (0,2,4):
+ name={{0:'agent:propose',2:'schedule:propose',4:'connected_read'}}[n]
+ args={{0:{{'expected_revision':0,'contract':'Inspect the chosen source.','timeout_seconds':30}},
+        2:{{'expected_revision':0,'trigger':{{'kind':'interval','cadence_seconds':420}},'suggested_reads':[]}},
+        4:{{}}}}[n]
  wire={{'kind':'tool','name':'use_tool','arguments':{{'name':name,'arguments':args}},'text':None}}
 else:
  name=next(t['name'] for t in payload['tools'] if t['name'] != 'use_tool')
@@ -194,7 +196,7 @@ print(json.dumps({{'type':'result','subtype':'success','is_error':False,'permiss
         if run.returncode:
             pytest.fail((run.stderr + "\n" + run.stdout).replace(token, "<redacted-session>"))
         assert json.loads(run.stdout.strip().splitlines()[-1])["accepted"] is True
-        assert marker.read_text() == "xxxx"
+        assert marker.read_text() == "xxxxxx"
         _assert_read(reads, rolling)
         assert probe["failure"] is None
         assert probe["deduplicated"] is True
