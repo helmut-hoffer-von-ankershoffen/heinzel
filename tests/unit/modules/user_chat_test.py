@@ -190,7 +190,7 @@ def test_fifo_executable_is_refused_without_blocking(tmp_path):
     fifo = tmp_path / "fifo"
     os.mkfifo(fifo)
     with pytest.raises(HeinzelError, match="executable"):
-        UserChatService._executable(str(fifo))
+        UserChatService.executable(str(fifo))
 
 
 @pytest.mark.parametrize("status", ["pending", "done"])
