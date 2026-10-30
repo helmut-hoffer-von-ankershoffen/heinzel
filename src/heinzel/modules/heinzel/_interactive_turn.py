@@ -12,7 +12,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Literal, cast
 
-from pydantic import BaseModel, JsonValue, TypeAdapter
+from pydantic import BaseModel, Field, JsonValue, TypeAdapter
 from pydantic_ai.models import Model
 
 from heinzel import ConfiguredApiAccess, CurrentUser, HeinzelError, Kernel, SessionEvent
@@ -49,18 +49,21 @@ def _word_count(arguments: dict[str, JsonValue]) -> str:
 _READ_TOOLS: dict[str, Callable[[dict[str, JsonValue]], str]] = {"text.word_count": _word_count}
 
 
-def _turn_id(request_id: str) -> str:
+def interactive_turn_id(request_id: str) -> str:
+    """Derive the stable durable turn identity for one accepted message request."""
     return "interactive-" + hashlib.sha256(request_id.encode()).hexdigest()
 
 
 class ToolActivity(BaseModel):
     """A redacted host-observed tool invocation or denial."""
 
-    seq: int
-    at: datetime
-    turn_id: str
-    tool: str
-    status: Literal["requested", "completed", "failed", "denied"]
+    seq: int = Field(description="Sequence of this event in the owner's control journal.")
+    at: datetime = Field(description="When the host recorded this event, in UTC.")
+    turn_id: str = Field(description="The exact durable turn associated with this tool event.")
+    tool: str = Field(description="The host-recorded tool name, without its arguments.")
+    status: Literal["requested", "completed", "failed", "denied"] = Field(
+        description="Whether dispatch was requested, completed, failed, or refused by the host."
+    )
 
 
 class InteractiveTurn:
@@ -164,7 +167,7 @@ class InteractiveTurn:
             model,
             self._crud.repository,
             session_id,
-            _turn_id(request_id),
+            interactive_turn_id(request_id),
             max_requests=limits.requests,
             max_turn_tokens=grant.total_tokens,
             max_turn_output_tokens=grant.output_tokens,
@@ -200,7 +203,7 @@ class InteractiveTurn:
         """
         self._check_owner()
         repo = self._crud.repository
-        turn = _turn_id(request_id)
+        turn = interactive_turn_id(request_id)
         with repo.main_writer(session_id) as turn_writer:
             self._check_owner()
             if isinstance(model, (ReservedModel, ClaudeSubscriptionModel)):
@@ -225,7 +228,7 @@ class InteractiveTurn:
                 raise HeinzelError(msg)
             prior = next((e for e in events if e.kind == "message.replied" and e.key == turn), None)
             if prior is not None:
-                return self._crud._message(session_id, prior)  # noqa: SLF001 - verify the authoritative body
+                return self._crud.read_message(session_id, prior)
             if any(e.kind == "interactive.started" and e.key == turn for e in events):
                 msg = "This interrupted turn has an uncertain outcome and cannot be retried automatically"
                 raise HeinzelError(msg)
@@ -240,13 +243,15 @@ class InteractiveTurn:
                     (
                         event
                         for event in events
-                        if event.kind == "message.replied" and event.key == _turn_id(incoming_id)
+                        if event.kind == "message.replied" and event.key == interactive_turn_id(incoming_id)
                     ),
                     None,
                 )
                 if prior_reply is None:
                     abandoned = [
-                        e for e in events if e.kind == "interactive.abandoned" and e.key == _turn_id(incoming_id)
+                        e
+                        for e in events
+                        if e.kind == "interactive.abandoned" and e.key == interactive_turn_id(incoming_id)
                     ]
                     if abandoned:
                         if (
@@ -256,7 +261,7 @@ class InteractiveTurn:
                             or abandoned[0].data.get("origin") not in {"cli", "api-bearer", "web-session", "web-device"}
                             or not any(
                                 e.kind == "interactive.started"
-                                and e.key == _turn_id(incoming_id)
+                                and e.key == interactive_turn_id(incoming_id)
                                 and e.seq < abandoned[0].seq
                                 and e.data.get("message_id") == incoming_id
                                 for e in events
@@ -267,7 +272,8 @@ class InteractiveTurn:
                         ordered.extend((incoming, abandoned[0]))
                         continue
                     if any(
-                        event.kind == "interactive.started" and event.key == _turn_id(incoming_id) for event in events
+                        event.kind == "interactive.started" and event.key == interactive_turn_id(incoming_id)
+                        for event in events
                     ):
                         msg = "An earlier started turn has an uncertain outcome and must be inspected first"
                     else:
@@ -275,7 +281,7 @@ class InteractiveTurn:
                     raise HeinzelError(msg)
                 ordered.extend((incoming, prior_reply))
             ordered.append(accepted)
-            message = self._crud._message(session_id, accepted)  # noqa: SLF001 - verify accepted body
+            message = self._crud.read_message(session_id, accepted)
             if message.status == "expired":
                 msg = "This accepted message is no longer retained"
                 raise HeinzelError(msg)
@@ -299,7 +305,7 @@ class InteractiveTurn:
                     history.insert(0, entry)
                     remaining -= size
                     continue
-                item = self._crud._message(session_id, previous_event)  # noqa: SLF001
+                item = self._crud.read_message(session_id, previous_event)
                 if item.status == "expired":
                     omitted = True
                     continue
@@ -329,7 +335,11 @@ class InteractiveTurn:
                 if user_proposal_policy is not None
                 else None
             )
-            user_names = {tool["name"] for tool in user_proposal_schemas()} if user_tools else set()
+            user_names = (
+                {TypeAdapter(str).validate_python(tool["name"], strict=True) for tool in user_proposal_schemas()}
+                if user_tools
+                else set[str]()
+            )
 
             def dispatch_general(name: str, arguments: dict[str, JsonValue]) -> str:  # noqa: C901, PLR0911 - closed dispatch cases
                 nonlocal calls
@@ -476,7 +486,7 @@ class InteractiveTurn:
                     turn=turn,
                     data={"message_id": reply.id, **body.model_dump(mode="json")},
                 )
-            return self._crud._message(session_id, event)  # noqa: SLF001 - use the same projection as future reads
+            return self._crud.read_message(session_id, event)
 
     def activity(self, session_id: str, *, limit: int = 30) -> list[ToolActivity]:
         """Project only host-recorded, redacted tool events for the current owner.
@@ -494,11 +504,14 @@ class InteractiveTurn:
             for event in events
             if event.kind == "interactive.started"
             and isinstance(event.data.get("message_id"), str)
-            and event.turn == _turn_id(cast("str", event.data["message_id"]))
+            and event.turn == interactive_turn_id(cast("str", event.data["message_id"]))
         }
         selected = [event for event in events if event.kind in {"interactive.tool", "interactive.skill-tool"}][-limit:]
-        projected = []
+        projected: list[ToolActivity] = []
         for event in selected:
+            if event.turn is None:
+                msg = "A tool activity event has no durable turn provenance"
+                raise HeinzelError(msg)
             name = event.data.get("tool")
             status = event.data.get("status")
             if event.kind == "interactive.skill-tool":

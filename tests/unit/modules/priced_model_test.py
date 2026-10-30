@@ -415,3 +415,51 @@ def test_expired_price_after_reservation_blocks_provider_call(tmp_path):
         assert calls == []
         assert model.counted == []
         assert len(repo.budget_read(session).events) == 1
+
+
+def test_modern_retry_feedback_remains_text_only_and_reserved(tmp_path):
+    from pydantic_ai.messages import RetryFeedbackPart, RetryInfo, ToolReturnPart
+
+    current = CurrentUser(tmp_path / "identity")
+    calls = []
+
+    class FakeModel(CountedModel):
+        async def request(self, *_args):
+            calls.append(1)
+            return ModelResponse([])
+
+    model = FakeModel(lambda *_: ModelResponse([]))
+    with current.local("cli"):
+        repo = PersonalSessionRepository(current)
+        session = (
+            SessionCrud(repo, lambda: SessionCosts(session_max_usd=2, message_max_usd=1)).new_chat("retry").session_id
+        )
+        wrapped = ReservedModel(
+            model,
+            repo,
+            session,
+            "retry",
+            message_cap=Decimal(2),
+            max_requests=2,
+            max_turn_tokens=3_000_000,
+            max_turn_output_tokens=400,
+            session_cap=Decimal(3),
+            owner_cap=Decimal(3),
+            now=lambda: CHECKED,
+        )
+        retry = RetryFeedbackPart(content="Correct the response", retry=RetryInfo(cause="no_output"))
+        tool_retry = ToolReturnPart(tool_name="test", content="Try again", outcome="retried")
+        asyncio.run(
+            wrapped.request([ModelRequest(parts=[retry, tool_retry])], {"max_tokens": 200}, ModelRequestParameters())
+        )
+        assert calls == [1]
+        assert len(repo.budget_read(session).events) > 0
+        structured = RetryFeedbackPart(
+            content=[{"type": "value_error", "loc": (), "input": "private", "msg": "bad"}],
+            retry=RetryInfo(cause="validation_error"),
+        )
+        with pytest.raises(HeinzelError, match="text-only"):
+            asyncio.run(
+                wrapped.request([ModelRequest(parts=[structured])], {"max_tokens": 200}, ModelRequestParameters())
+            )
+        assert calls == [1]

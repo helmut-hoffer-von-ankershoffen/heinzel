@@ -719,11 +719,17 @@ try {
     // A private fixture suggestion stays inert until the person selects it and saves the profile.
     await page.route("**/api/heinzel/latest-profile-proposal?*", async (route) => {
       const session = new URL(route.request().url()).searchParams.get("session_id");
-      await route.fulfill({ json: {
-        session_id: session, request_id: "mobile-look", expected_revision: 1, name: "Mira",
-        appearance: { age: "grown", build: "regular", shirt: "teal", accessories: [] },
-        status: "proposed", preview_sha256: "a".repeat(64),
-      } });
+      await route.fulfill({
+        json: {
+          session_id: session,
+          request_id: "mobile-look",
+          expected_revision: 1,
+          name: "Mira",
+          appearance: { age: "grown", build: "regular", shirt: "teal", accessories: [] },
+          status: "proposed",
+          preview_sha256: "a".repeat(64),
+        },
+      });
     });
     await page.getByRole("textbox", { name: "Your message" }).fill("Keep my notes current.");
     await page.getByRole("button", { name: "Create Heinzel and take this message" }).click();

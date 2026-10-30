@@ -78,7 +78,7 @@ class ModelGrants:
         self.crud = crud
 
     def _body(self, session: str, event: SessionEvent) -> ModelGrant:
-        return ModelGrant.model_validate(self.crud._body(session, event))  # noqa: SLF001 - hash-verified private body
+        return ModelGrant.model_validate(self.crud.read_body(session, event))
 
     def _latest(self, session: str, events: list[SessionEvent]) -> ModelGrant | None:
         event = next((event for event in reversed(events) if event.kind == "model.grant-approved"), None)
@@ -162,6 +162,13 @@ class ModelGrants:
         return grant
 
     def _intent(self, session: str, grant: ModelGrant) -> ApprovalIntent:
+        excluded: set[str] = set()
+        if not grant.allowed_tools:
+            excluded.add("allowed_tools")
+        if not grant.allowed_skill_tools:
+            excluded.add("allowed_skill_tools")
+        if grant.binding is None:
+            excluded.add("binding")
         return ApprovalIntent(
             owner=self.crud.repository.principal_id,
             audience="personal-model-grant",
@@ -171,11 +178,7 @@ class ModelGrants:
             arguments_hash=arguments_hash(
                 grant.model_dump(
                     mode="json",
-                    exclude=(
-                        ({"allowed_tools"} if not grant.allowed_tools else set())
-                        | ({"allowed_skill_tools"} if not grant.allowed_skill_tools else set())
-                        | ({"binding"} if grant.binding is None else set())
-                    ),
+                    exclude=excluded,
                 )
             ),
             contract_revision=0,

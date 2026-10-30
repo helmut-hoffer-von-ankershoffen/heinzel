@@ -2092,8 +2092,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Stage the exact current agent contract for human review; no schedule, access, or model call is granted.
-         * @description Stage the exact current agent contract for human review; no schedule, access, or model call is granted.
+         * Stage current agent contract terms for human review.
+         * @description Stage current agent contract terms for human review.
          */
         post: operations["system_runner_chat_propose_agent_contract"];
         delete?: never;
@@ -7861,19 +7861,36 @@ export interface components {
          * @description Private suggested identity and appearance; applying it requires a separate user save.
          */
         ProfileProposal: {
+            /** @description The suggested appearance, pending an explicit user save. */
             appearance: components["schemas"]["HeinzelAppearance"];
-            /** Expected Revision */
+            /**
+             * Expected Revision
+             * @description The current profile revision this suggestion is based on.
+             */
             expected_revision: number;
-            /** Name */
+            /**
+             * Name
+             * @description The suggested display name, not yet applied.
+             */
             name: string;
-            /** Preview Sha256 */
+            /**
+             * Preview Sha256
+             * @description The digest binding the exact suggested profile for review.
+             */
             preview_sha256: string;
-            /** Request Id */
+            /**
+             * Request Id
+             * @description The stable request identifying these exact suggested terms.
+             */
             request_id: string;
-            /** Session Id */
+            /**
+             * Session Id
+             * @description The owner's agent receiving this suggested identity.
+             */
             session_id: string;
             /**
              * Status
+             * @description This suggestion has not been applied.
              * @default proposed
              * @constant
              */
@@ -10868,18 +10885,29 @@ export interface components {
             /**
              * At
              * Format: date-time
+             * @description When the host recorded this event, in UTC.
              */
             at: string;
-            /** Seq */
+            /**
+             * Seq
+             * @description Sequence of this event in the owner's control journal.
+             */
             seq: number;
             /**
              * Status
+             * @description Whether dispatch was requested, completed, failed, or refused by the host.
              * @enum {string}
              */
             status: "requested" | "completed" | "failed" | "denied";
-            /** Tool */
+            /**
+             * Tool
+             * @description The host-recorded tool name, without its arguments.
+             */
             tool: string;
-            /** Turn Id */
+            /**
+             * Turn Id
+             * @description The exact durable turn associated with this tool event.
+             */
             turn_id: string;
         };
         /**
@@ -11098,10 +11126,17 @@ export interface components {
          * @description A persisted answer for exactly the accepted request; not a schedule or approval.
          */
         UserChatAnswer: {
+            /** @description The persisted assistant reply for this exact request. */
             message: components["schemas"]["SessionMessage"];
-            /** Request Id */
+            /**
+             * Request Id
+             * @description The accepted message request answered by this turn.
+             */
             request_id: string;
-            /** Session Id */
+            /**
+             * Session Id
+             * @description The authenticated owner's durable agent session.
+             */
             session_id: string;
         };
         /**
@@ -11109,9 +11144,15 @@ export interface components {
          * @description Owner-private, host-observed tool decisions without arguments or secrets.
          */
         UserToolActivity: {
-            /** Items */
+            /**
+             * Items
+             * @description Recent host-recorded tool events, with no arguments or credentials.
+             */
             items: components["schemas"]["ToolActivity"][];
-            /** Session Id */
+            /**
+             * Session Id
+             * @description The authenticated owner's durable agent session.
+             */
             session_id: string;
         };
         /**
@@ -11119,12 +11160,19 @@ export interface components {
          * @description The exact stopped turn was explicitly set aside, not replayed or undone.
          */
         UserTurnResolution: {
-            /** Request Id */
+            /**
+             * Request Id
+             * @description The stopped request explicitly set aside by its owner.
+             */
             request_id: string;
-            /** Session Id */
+            /**
+             * Session Id
+             * @description The authenticated owner's durable agent session.
+             */
             session_id: string;
             /**
              * Status
+             * @description The turn was set aside without replaying or undoing possible effects.
              * @default abandoned
              * @constant
              */
@@ -11135,12 +11183,19 @@ export interface components {
          * @description The recorded state of one owner-bound turn; unresolved may still be running.
          */
         UserTurnState: {
-            /** Request Id */
+            /**
+             * Request Id
+             * @description The accepted request whose journal state was inspected.
+             */
             request_id: string;
-            /** Session Id */
+            /**
+             * Session Id
+             * @description The authenticated owner's durable agent session.
+             */
             session_id: string;
             /**
              * Status
+             * @description Recorded request state; an unresolved turn may still be running.
              * @enum {string}
              */
             status: "pending" | "unresolved" | "abandoned" | "completed";
@@ -13337,6 +13392,7 @@ export interface operations {
         parameters: {
             query: {
                 session_id: string;
+                /** @description Maximum recent recorded tool events to return. */
                 limit?: number;
             };
             header?: never;

@@ -126,7 +126,7 @@ class ContractReview:
         for event in events:
             if event.kind != "agent.contract-accepted":
                 continue
-            body = ScheduledAgentProposal.model_validate(self.crud._body(session, event))  # noqa: SLF001
+            body = ScheduledAgentProposal.model_validate(self.crud.read_body(session, event))
             if body != proposal:
                 continue
             matches = [

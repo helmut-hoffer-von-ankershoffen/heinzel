@@ -315,3 +315,45 @@ def test_usage_limit_classification_is_exact_and_redacted(tmp_path, status, code
     if is_limit:
         assert "provider settings" in str(error.value)
         assert "will not retry automatically" in str(error.value)
+
+
+def test_modern_retry_feedback_and_retried_tool_return_are_transported(tmp_path):
+    from pydantic_ai.messages import RetryFeedbackPart, RetryInfo
+
+    from heinzel.kernel import ProcessOutcome
+
+    captured = []
+
+    def fake(command, **kwargs):
+        if command[-1] == "--version":
+            return ProcessOutcome(0, "2.1.312 (Claude Code)\n", "")
+        captured.append(json.loads(kwargs["input"]))
+        return ProcessOutcome(
+            0,
+            json.dumps(
+                {
+                    "type": "result",
+                    "subtype": "success",
+                    "is_error": False,
+                    "structured_output": {"kind": "text", "name": None, "arguments": None, "text": "fixed"},
+                }
+            ),
+            "",
+        )
+
+    policy = admission()
+    model = fixture_model(fake_cli(tmp_path), policy, FixtureVerifier(), lambda: policy, execute=fake)
+    parts = [
+        UserPromptPart(content="question"),
+        ToolReturnPart(
+            tool_name="use_tool", content="retry tool", outcome="retried", retry=RetryInfo(cause="model_retry")
+        ),
+        RetryFeedbackPart(content="retry output", retry=RetryInfo(cause="model_retry")),
+    ]
+    response = asyncio.run(model.request([ModelRequest(parts=parts)], None, parameters()))
+    assert response.parts[0].content == "fixed"
+    sent = captured[0]["messages"][0]["parts"]
+    assert sent[1]["part_kind"] == "tool-return"
+    assert sent[1]["outcome"] == "retried"
+    assert sent[2]["part_kind"] == "retry-feedback"
+    assert sent[2]["content"] == "retry output"

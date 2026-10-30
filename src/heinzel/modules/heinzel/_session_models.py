@@ -418,13 +418,13 @@ class ProfileProposal(BaseModel):
     """Private suggested identity and appearance; applying it requires a separate user save."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
-    session_id: SessionId
-    request_id: RequestId
-    expected_revision: int = Field(ge=1)
-    name: str = Field(min_length=1, max_length=100)
-    appearance: HeinzelAppearance
-    status: Literal["proposed"] = "proposed"
-    preview_sha256: Digest
+    session_id: SessionId = Field(description="The owner's agent receiving this suggested identity.")
+    request_id: RequestId = Field(description="The stable request identifying these exact suggested terms.")
+    expected_revision: int = Field(ge=1, description="The current profile revision this suggestion is based on.")
+    name: str = Field(min_length=1, max_length=100, description="The suggested display name, not yet applied.")
+    appearance: HeinzelAppearance = Field(description="The suggested appearance, pending an explicit user save.")
+    status: Literal["proposed"] = Field(default="proposed", description="This suggestion has not been applied.")
+    preview_sha256: Digest = Field(description="The digest binding the exact suggested profile for review.")
 
 
 class WakeScheduleView(BaseModel):

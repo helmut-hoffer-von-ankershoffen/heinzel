@@ -369,7 +369,7 @@ Chat with the agent runner about where you are; it acts through hz once you conf
 | Check an interrupted confirmation without running it again; unresolved outcomes stay blocked. | `hz chat recover` | — | — | `POST /api/system/runner/chat/recover` | yes |  |
 | Stage a schedule action for review in chat; creating the proposal never changes or activates it. | `hz chat propose-schedule-control` | — | — | `POST /api/system/runner/chat/propose-schedule-control` | yes |  |
 | Stage the exact current model policy for human review; no grant or model call is made. | `hz chat propose-model-policy` | — | — | `POST /api/system/runner/chat/propose-model-policy` | yes |  |
-| Stage the exact current agent contract for human review; no schedule, access, or model call is granted. | `hz chat propose-agent-contract` | — | — | `POST /api/system/runner/chat/propose-agent-contract` | yes |  |
+| Stage current agent contract terms for human review. | `hz chat propose-agent-contract` | — | — | `POST /api/system/runner/chat/propose-agent-contract` | yes |  |
 | Show a chat session: its context, messages, actions and costs. | `hz chat show` | — | — | `GET /api/system/runner/chat/show` |  | expert |
 | List chat sessions, most recent first; they are kept for system.runner.chat.keep_days. | `hz chat list` | — | — | `GET /api/system/runner/chat/list` |  |  |
 | Delete a chat session and everything it holds; returns the sessions left. | `hz chat remove` | — | — | `POST /api/system/runner/chat/remove` | yes | expert |

@@ -168,13 +168,13 @@ def test_full_current_message_is_retained(tmp_path):
 
 
 def test_earlier_started_uncertain_turn_blocks_later_without_launch(tmp_path):
-    from heinzel.modules.heinzel._interactive_turn import _turn_id
+    from heinzel.modules.heinzel._interactive_turn import interactive_turn_id
 
     current = CurrentUser(tmp_path / "identity")
     with current.local("cli"):
         current, crud, session = setup_chat(current)
         with crud.repository.control_writer(session) as writer:
-            turn = _turn_id("hello")
+            turn = interactive_turn_id("hello")
             writer.append("interactive.started", key=turn, turn=turn, data={"message_id": "hello"})
         crud.accept(session, MessageRequest(request_id="later", text="Hello again"))
         executable = fake_claude(tmp_path)
@@ -316,7 +316,7 @@ def test_auth_and_model_processes_receive_same_restricted_identity_environment(t
 
 def test_abandon_requires_owner_stopped_turn_and_never_changes_finished_reply(tmp_path):
     from heinzel import CallIdentity, Principal
-    from heinzel.modules.heinzel._interactive_turn import _turn_id
+    from heinzel.modules.heinzel._interactive_turn import interactive_turn_id
 
     current = CurrentUser(tmp_path / "identity")
     with current.local("cli"):
@@ -325,7 +325,7 @@ def test_abandon_requires_owner_stopped_turn_and_never_changes_finished_reply(tm
         service = UserChatService(crud, current, RunnerSnapshotService(), load=lambda: FixtureConfig(executable))
         with pytest.raises(HeinzelError, match="previously started"):
             service.abandon(session, "hello")
-        turn = _turn_id("hello")
+        turn = interactive_turn_id("hello")
         with crud.repository.control_writer(session) as writer:
             writer.append("interactive.started", key=turn, turn=turn, data={"message_id": "hello"})
         stranger = CallIdentity(

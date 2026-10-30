@@ -197,6 +197,33 @@ class PydanticAiAccess:
             return os.environ[variable], variable
         return None, ""
 
+    def check_reserved_configuration(self, expected_model: str) -> None:
+        """Verify the current owner-selected pinned configuration without resolving a credential.
+
+        Raises:
+            HeinzelError: If the selected adapter or exact configured endpoint has changed.
+        """
+        settings = self._current_settings()
+        if (
+            self._binding() != "pydantic-ai"
+            or settings != self._settings
+            or settings.model != expected_model
+            or settings.base_url is not None
+        ):
+            msg = "The configured API binding is unavailable or changed"
+            raise HeinzelError(msg)
+
+    def with_reserved_credential[T](self, expected_model: str, consume: Callable[[str | None, str], T]) -> T:
+        """Pass the single current credential read to a trusted local consumer; not a head operation.
+
+        Raises:
+            HeinzelError: If the selected configuration changed.
+        """
+        self.check_reserved_configuration(expected_model)
+        credential, source = self._key()
+        self.check_reserved_configuration(expected_model)
+        return consume(credential, source)
+
     def status(self) -> AccessStatus:  # noqa: PLR0911 - one answer per thing that can be missing
         """Whether a model is configured, its client installed and a key present where one is needed; offline."""
         settings = self._settings

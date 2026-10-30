@@ -4,7 +4,7 @@ This is not registered as a product operation or a human approval boundary. Call
 state. Dollar-capped policies are refused until a hard pre-request cost ceiling can be enforced.
 """
 
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 
 from pydantic_ai.models import Model
 
@@ -32,7 +32,7 @@ def connected_model(  # noqa: PLR0913 - each policy dimension must be checked se
     approved_access: str,
     approved_model: str,
     limits: TurnLimits,
-) -> Model:
+) -> Model[Any]:
     """Resolve a model for a request/token/time-bounded turn; never represent token limits as a dollar cap.
 
     Binding and grant values must be trusted, independently persisted authority, not client or model input. The
@@ -56,4 +56,4 @@ def connected_model(  # noqa: PLR0913 - each policy dimension must be checked se
     if not isinstance(model, Model):
         msg = "The configured model factory returned an unsupported model"
         raise HeinzelError(msg)
-    return model
+    return cast("Model[Any]", model)  # type: ignore[redundant-cast]  # narrow the provider generic for Pyright

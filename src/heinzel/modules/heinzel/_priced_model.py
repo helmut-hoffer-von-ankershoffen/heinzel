@@ -7,12 +7,13 @@ provider conformance, trusted grants and all billing classes require independent
 from collections.abc import Callable
 from datetime import UTC, datetime
 from decimal import Decimal
+from typing import cast
 
 from pydantic_ai.messages import (
     ModelMessage,
     ModelRequest,
     ModelResponse,
-    RetryPromptPart,
+    RetryFeedbackPart,
     SystemPromptPart,
     TextPart,
     ToolCallPart,
@@ -187,16 +188,16 @@ class ReservedModel(WrapperModel):
             if isinstance(message, ModelRequest):
                 for part in message.parts:
                     if not isinstance(
-                        part, (SystemPromptPart, UserPromptPart, ToolReturnPart, RetryPromptPart)
+                        part, (SystemPromptPart, UserPromptPart, ToolReturnPart, RetryFeedbackPart)
                     ) or not isinstance(part.content, str):
                         msg = "This pricing policy supports text-only input"
                         raise HeinzelError(msg)
-            elif isinstance(message, ModelResponse):
+            elif isinstance(cast("object", message), ModelResponse):
                 if any(not isinstance(part, (TextPart, ToolCallPart)) for part in message.parts):
                     msg = "This pricing policy supports text-only input"
                     raise HeinzelError(msg)
             else:
-                msg = "This pricing policy supports text-only input"  # type: ignore[unreachable]  # runtime guard
+                msg = "This pricing policy supports text-only input"  # runtime guard
                 raise HeinzelError(msg)
         # Counting is a remote provider call. Reserve the full supported context without contacting the provider.
         settings.update({"max_tokens": output, "openai_service_tier": "default", "max_retries": 0})

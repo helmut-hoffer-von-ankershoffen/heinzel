@@ -34,15 +34,15 @@ def _private_key(current: CurrentUser) -> bytes:
     current.owner()  # creates and verifies the private identity directory
     directory = os.open(current.directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     try:
-        CurrentUser._private(os.fstat(directory), directory=True)  # noqa: SLF001 - same ownership fence as identity
-        lock = CurrentUser._open(directory, "owner.lock", os.O_RDWR | os.O_CREAT)  # noqa: SLF001
+        CurrentUser.verify_private(os.fstat(directory), directory=True)
+        lock = CurrentUser.open_private(directory, "owner.lock", os.O_RDWR | os.O_CREAT)
         try:
             fcntl.flock(lock, fcntl.LOCK_EX)
             try:
-                handle = CurrentUser._open(directory, _KEY_NAME, os.O_RDONLY)  # noqa: SLF001
+                handle = CurrentUser.open_private(directory, _KEY_NAME, os.O_RDONLY)
             except FileNotFoundError:
                 temporary = f".api-binding-{secrets.token_hex(12)}"
-                fd = CurrentUser._open(directory, temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL)  # noqa: SLF001
+                fd = CurrentUser.open_private(directory, temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL)
                 try:
                     with os.fdopen(fd, "wb") as stream:
                         stream.write(secrets.token_bytes(_KEY_BYTES))
@@ -53,7 +53,7 @@ def _private_key(current: CurrentUser) -> bytes:
                 finally:
                     with contextlib.suppress(FileNotFoundError):
                         os.unlink(temporary, dir_fd=directory)
-                handle = CurrentUser._open(directory, _KEY_NAME, os.O_RDONLY)  # noqa: SLF001
+                handle = CurrentUser.open_private(directory, _KEY_NAME, os.O_RDONLY)
             with os.fdopen(handle, "rb") as stream:
                 key = stream.read(_KEY_BYTES + 1)
             if len(key) != _KEY_BYTES:
@@ -70,8 +70,15 @@ def _private_key(current: CurrentUser) -> bytes:
 class _ConfiguredApiLease(ConfiguredApiLease):
     """Ephemeral host-only credential lease; never serialize or expose it to a model or API caller."""
 
-    def __init__(self, binding: "ConfiguredApiBinding", snapshot: ConfiguredApiSnapshot, credential: str) -> None:
-        self._binding = binding
+    def __init__(
+        self,
+        check: Callable[[str], None],
+        build: Callable[[str], Any],
+        snapshot: ConfiguredApiSnapshot,
+        credential: str,
+    ) -> None:
+        self._check = check
+        self._build = build
         self._snapshot = snapshot
         self._credential: str | None = credential
 
@@ -102,8 +109,8 @@ class _ConfiguredApiLease(ConfiguredApiLease):
         if credential is None or type(approved) is not ConfiguredApiSnapshot or approved != self.snapshot:
             raise HeinzelError(invalid)
         try:
-            self._binding._check_configuration(approved.owner)  # noqa: SLF001 - internal lease boundary
-            return self._binding._build(credential)  # noqa: SLF001 - same captured secret, never a second read
+            self._check(approved.owner)
+            return self._build(credential)
         except Exception:  # noqa: BLE001 - provider errors may include credential details
             raise HeinzelError(invalid) from None
 
@@ -123,19 +130,10 @@ class ConfiguredApiBinding(ConfiguredApiAccess):
 
     def _check_configuration(self, owner: str) -> None:
         invalid = "The configured API binding is unavailable or changed"
-        if (
-            self._current.principal() != self._current.owner()
-            or self._current.principal().id != owner
-            or self._access._binding() != "pydantic-ai"  # noqa: SLF001
-        ):
+        if self._current.principal() != self._current.owner() or self._current.principal().id != owner:
             raise HeinzelError(invalid)
-        settings = self._access._current_settings()  # noqa: SLF001
-        if (
-            settings != self._access._settings  # noqa: SLF001
-            or settings.model != MODEL
-            or settings.base_url is not None
-            or any(os.environ.get(name) for name in ("OPENAI_CUSTOM_HEADERS", "OPENAI_ORG_ID", "OPENAI_PROJECT_ID"))
-        ):
+        self._access.check_reserved_configuration(MODEL)
+        if any(os.environ.get(name) for name in ("OPENAI_CUSTOM_HEADERS", "OPENAI_ORG_ID", "OPENAI_PROJECT_ID")):
             raise HeinzelError(invalid)
 
     def lease(self) -> ConfiguredApiLease:
@@ -148,17 +146,19 @@ class ConfiguredApiBinding(ConfiguredApiAccess):
         try:
             owner = self._current.principal().id
             self._check_configuration(owner)
-            # One read, preserving the credential resolver's declared-store/environment precedence.
-            credential, source = self._access._key()  # noqa: SLF001
-            if not credential or len(credential.encode()) > _MAX_CREDENTIAL_BYTES or not source:
-                raise HeinzelError(invalid)  # noqa: TRY301
-            self._check_configuration(owner)
-            material = json.dumps(
-                ["api-access-v1", owner, source, credential], ensure_ascii=True, separators=(",", ":")
-            )
-            fingerprint = hmac.new(_private_key(self._current), material.encode(), hashlib.sha256).hexdigest()
-            snapshot = ConfiguredApiSnapshot(owner, "pydantic-ai", MODEL, _ENDPOINT, fingerprint)
-            return _ConfiguredApiLease(self, snapshot, credential)
+
+            def capture(credential: str | None, source: str) -> ConfiguredApiLease:
+                if not credential or len(credential.encode()) > _MAX_CREDENTIAL_BYTES or not source:
+                    raise HeinzelError(invalid)  # noqa: TRY301 - sanitized at the enclosing boundary
+                self._check_configuration(owner)
+                material = json.dumps(
+                    ["api-access-v1", owner, source, credential], ensure_ascii=True, separators=(",", ":")
+                )
+                fingerprint = hmac.new(_private_key(self._current), material.encode(), hashlib.sha256).hexdigest()
+                snapshot = ConfiguredApiSnapshot(owner, "pydantic-ai", MODEL, _ENDPOINT, fingerprint)
+                return _ConfiguredApiLease(self._check_configuration, self._build, snapshot, credential)
+
+            return self._access.with_reserved_credential(MODEL, capture)
         except Exception:  # noqa: BLE001 - credential errors may contain private diagnostics
             raise HeinzelError(invalid) from None
 

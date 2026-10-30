@@ -17,7 +17,7 @@ import threading
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol
+from typing import Protocol, cast
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 from pydantic_ai._instrumentation import get_instructions
@@ -26,7 +26,7 @@ from pydantic_ai.messages import (
     ModelMessagesTypeAdapter,
     ModelRequest,
     ModelResponse,
-    RetryPromptPart,
+    RetryFeedbackPart,
     SystemPromptPart,
     TextPart,
     ToolCallPart,
@@ -44,7 +44,7 @@ from heinzel.kernel import run_bounded_process as run_bounded
 from heinzel.modules.heinzel._subscription_slots import SubscriptionSlots
 from heinzel.modules.heinzel._turn_authority_fence import TurnAuthorityFence
 
-_VERSION = "2.1.312"
+VERSION = "2.1.312"
 _MAX_EXECUTABLE_BYTES = 512 * 1024 * 1024
 _MAX_INPUT = 96 * 1024
 _MAX_RESPONSE = 128 * 1024
@@ -167,7 +167,7 @@ _WIRE_SCHEMA = {
     },
     "required": ["kind", "name", "arguments", "text"],
 }
-_COMMAND_FLAGS = (*_FLAGS, "--json-schema", json.dumps(_WIRE_SCHEMA, separators=(",", ":")))
+COMMAND_FLAGS = (*_FLAGS, "--json-schema", json.dumps(_WIRE_SCHEMA, separators=(",", ":")))
 
 
 async def _run_cancelable(execute: Callable[..., Outcome], command: list[str], **kwargs: object) -> Outcome:
@@ -281,7 +281,7 @@ class ClaudeSubscriptionModel(Model):
         for message in messages:
             if isinstance(message, ModelRequest):
                 if any(
-                    not isinstance(part, (SystemPromptPart, UserPromptPart, ToolReturnPart, RetryPromptPart))
+                    not isinstance(part, (SystemPromptPart, UserPromptPart, ToolReturnPart, RetryFeedbackPart))
                     or not isinstance(part.content, str)
                     for part in message.parts
                 ):
@@ -324,7 +324,7 @@ class ClaudeSubscriptionModel(Model):
             executable = self._executable.resolve(strict=True)
             digest = executable_digest(executable)
             if self._current_policy() != self._policy or not self._verifier.verify(
-                executable, digest, _VERSION, _COMMAND_FLAGS, self._policy
+                executable, digest, VERSION, COMMAND_FLAGS, self._policy
             ):
                 raise HeinzelError(denied)  # noqa: TRY301 - all process failures are redacted at this boundary
             environment = subscription_environment()
@@ -338,16 +338,12 @@ class ClaudeSubscriptionModel(Model):
                     timeout=5,
                     limit=1024,
                 )
-                if (
-                    version.returncode != 0
-                    or version.truncated
-                    or version.stdout.strip() != f"{_VERSION} (Claude Code)"
-                ):
+                if version.returncode != 0 or version.truncated or version.stdout.strip() != f"{VERSION} (Claude Code)":
                     raise HeinzelError(denied)  # noqa: TRY301
                 if (
                     self._current_policy() != self._policy
                     or executable_digest(executable) != digest
-                    or not self._verifier.verify(executable, digest, _VERSION, _COMMAND_FLAGS, self._policy)
+                    or not self._verifier.verify(executable, digest, VERSION, COMMAND_FLAGS, self._policy)
                 ):
                     raise HeinzelError(denied)  # noqa: TRY301 - all process failures are redacted at this boundary
                 self._slots.reserve(
@@ -365,7 +361,7 @@ class ClaudeSubscriptionModel(Model):
                     raise HeinzelError(denied)  # noqa: TRY301
                 outcome = await _run_cancelable(
                     self._execute,
-                    [str(executable), *_COMMAND_FLAGS],
+                    [str(executable), *COMMAND_FLAGS],
                     input=payload,
                     cwd=Path(directory),
                     env=environment,
@@ -374,8 +370,9 @@ class ClaudeSubscriptionModel(Model):
                 )
             if outcome.truncated:
                 raise HeinzelError(denied)  # noqa: TRY301 - all process failures are redacted at this boundary
-            result = json.loads(outcome.stdout)
-            if isinstance(result, dict) and result.get("type") == "result" and result.get("is_error") is True:
+            decoded: object = json.loads(outcome.stdout)
+            result = cast("dict[str, object]", decoded) if isinstance(decoded, dict) else None
+            if result is not None and result.get("type") == "result" and result.get("is_error") is True:
                 reported_error = True
                 status = result.get("api_error_status")
                 usage_limit = (
@@ -385,7 +382,7 @@ class ClaudeSubscriptionModel(Model):
             if outcome.returncode != 0:
                 raise HeinzelError(denied)  # noqa: TRY301
             if (
-                not isinstance(result, dict)
+                result is None
                 or result.get("type") != "result"
                 or result.get("subtype") != "success"
                 or result.get("is_error") is not False

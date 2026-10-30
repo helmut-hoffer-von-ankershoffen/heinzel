@@ -705,7 +705,16 @@ describe("personal conversation links", () => {
       "/api/heinzel/session": snapshot,
       "/api/heinzel/tool-activity": {
         session_id: sessionId,
-        items: [{ seq: 10, at: "2026-10-30T00:00:00Z", turn_id: "turn-1", tool: "example:read", status: "completed", arguments: { secret: "private-argument" } }],
+        items: [
+          {
+            seq: 10,
+            at: "2026-10-30T00:00:00Z",
+            turn_id: "turn-1",
+            tool: "example:read",
+            status: "completed",
+            arguments: { secret: "private-argument" },
+          },
+        ],
       },
     });
     renderAt(`/heinzel?chat=${sessionId}`);
