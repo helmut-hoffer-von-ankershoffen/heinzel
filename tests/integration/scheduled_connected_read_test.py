@@ -244,3 +244,97 @@ def test_scheduled_read_requires_exact_separate_consent_and_survives_restart(  #
     with current.local("daemon"), pytest.raises(HeinzelError):
         kernel.resolve(AutonomousSchedules).current(session, "recurring")
     assert state["reads"] == 1
+
+
+def test_compiled_daemon_notification_requires_exact_read_and_schedule_consents(
+    make_kernel, tmp_path, monkeypatch, settings
+):
+    import asyncio
+    from datetime import UTC, datetime
+    from typing import override
+
+    from heinzel import Notifications
+    from heinzel.kernel import CompiledJobs
+    from heinzel.modules.heinzel._autonomous_schedule import AutonomousSchedules
+    from heinzel.modules.system.daemon import DaemonService, DaemonSettings
+    from tests.unit.modules.user_chat_test import fake_claude
+
+    class Notices(Notifications):
+        def __init__(self):
+            self.calls = []
+
+        @override
+        def emit_once(self, _kind, title, body, *, route, command, key):
+            self.calls.append((title, body, key))
+            return True
+
+    client, kernel, current, session, state = _fixture(make_kernel, tmp_path, monkeypatch)
+    provider = Notices()
+    kernel.bind(Notifications, provider)
+    _approve_read(client, kernel, current, session, state, rolling=False)
+    fake_claude(tmp_path, tool="notification:send", arguments={"topic": "example", "title": "Title", "body": "Private"})
+    with current.local("cli"):
+        crud = kernel.resolve(ConnectedReadGrants).crud
+        crud.propose_scheduled_agent(session, "contract", "Inspect the source and report", None, 30)
+    card = client.post(
+        "/api/system/runner/chat/propose-agent-contract",
+        headers=AUTH,
+        params={"durable_session": session, "request_id": "contract"},
+    ).json()
+    action = next(a for a in card["actions"] if a["operation"] == "accept-agent-contract")
+    assert (
+        client.post(
+            "/api/system/runner/chat/confirm", headers=AUTH, params={"session": card["id"], "action": action["id"]}
+        ).status_code
+        == 200
+    )
+    proposed = client.post(
+        "/api/heinzel/propose-agent-schedule",
+        headers=AUTH,
+        json={
+            "session_id": session,
+            "request_id": "recurring",
+            "contract_request_id": "contract",
+            "cadence_seconds": 3600,
+            "max_requests": 4,
+            "timeout_seconds": 30,
+            "connected_request_id": "grant-one",
+            "notification_policy": {"max_per_24h": 2, "topic_cooldown_seconds": 300},
+        },
+    )
+    assert proposed.status_code == 200, proposed.text
+    assert proposed.json()["notification_policy"]["per_turn"] == 1
+    with current.local("daemon"), pytest.raises(HeinzelError):
+        asyncio.run(kernel.resolve(AutonomousSchedules).tick(session, "recurring", datetime.now(UTC)))
+    assert provider.calls == []
+    staged = client.post(
+        "/api/system/runner/chat/propose-agent-schedule-review",
+        headers=AUTH,
+        params={"durable_session": session, "request_id": "recurring"},
+    ).json()
+    action = next(a for a in staged["actions"] if a["operation"] == "approve-agent-schedule")
+    assert action["arguments"]["review"] == proposed.json()
+    assert (
+        client.post(
+            "/api/system/runner/chat/confirm", headers=AUTH, params={"session": staged["id"], "action": action["id"]}
+        ).status_code
+        == 200
+    )
+    with current.local("daemon"):
+        job = next(job for job in kernel.resolve(CompiledJobs).jobs if job.name.startswith("agent-" + session.lower()))
+        now = datetime.now(UTC)
+        daemon = DaemonService(kernel, settings, DaemonSettings(), clock=lambda: now, zone=UTC)
+        registered = [item for item in daemon._jobs() if item.id == "heinzel:" + job.name]
+        monkeypatch.setattr(daemon, "_jobs", lambda: registered)
+        monkeypatch.setattr(daemon, "_post_notices", lambda _log: None)
+        daemon.tick()
+        assert len(provider.calls) == 1
+        restarted = DaemonService(kernel, settings, DaemonSettings(), clock=lambda: now, zone=UTC)
+        monkeypatch.setattr(restarted, "_jobs", lambda: registered)
+        monkeypatch.setattr(restarted, "_post_notices", lambda _log: None)
+        restarted.tick()
+        assert len(provider.calls) == 1
+    _invalidate_grant(client, session, "revoked")
+    with current.local("daemon"), pytest.raises(HeinzelError):
+        kernel.resolve(AutonomousSchedules).current(session, "recurring")
+    assert len(provider.calls) == 1

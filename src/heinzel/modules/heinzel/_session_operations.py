@@ -8,7 +8,7 @@ from typing import Annotated, Literal
 
 from pydantic import Field, JsonValue
 
-from heinzel import Config, ConfiguredApiAccess, CurrentUser, HeinzelError, Module
+from heinzel import Config, ConfiguredApiAccess, CurrentUser, HeinzelError, Module, Notifications
 from heinzel.kernel import (
     CheckInChatContext,
     CheckInChatContextSource,
@@ -42,6 +42,12 @@ from heinzel.modules.heinzel._notification_proposals import (
     NotificationProposal,
     NotificationProposalPage,
     NotificationProposals,
+)
+from heinzel.modules.heinzel._scheduled_notifications import (
+    ScheduledNotificationPage,
+    ScheduledNotificationPolicy,
+    ScheduledNotificationRecovery,
+    ScheduledNotificationView,
 )
 from heinzel.modules.heinzel._session_crud import SessionCrud
 from heinzel.modules.heinzel._session_models import (
@@ -501,6 +507,7 @@ def _register_autonomous_schedule_operations(module: Module) -> None:
                 description="An already approved connected-read request, or null for no connected reads.",
             ),
         ] = None,
+        notification_policy: ScheduledNotificationPolicy | None = None,
     ) -> ScheduleBinding:
         """Propose autonomous turns; separate human confirmation is required to authorize them."""
         return service.propose(
@@ -511,6 +518,7 @@ def _register_autonomous_schedule_operations(module: Module) -> None:
             max_requests,
             timeout_seconds,
             connected_request_id,
+            notification_policy,
         )
 
     @module.operation(private=True, heads={"web", "api-private"}, audience="everyday")
@@ -598,12 +606,19 @@ def _register_user_chat_operations(module: Module) -> None:
 
 def _user_chat_service(crud: SessionCrud, current: CurrentUser, kernel: Kernel) -> UserChatService:
     runner = kernel.resolve_builtin_service(RunnerSnapshotProvider, "system.runner")
-    return UserChatService(crud, current, runner, connected=lambda: ConnectedReadGrants(crud, current, kernel))
+    return UserChatService(
+        crud,
+        current,
+        runner,
+        connected=lambda: ConnectedReadGrants(crud, current, kernel),
+        notifications=lambda: kernel.resolve(Notifications),
+    )
 
 
 def _register_notification_operations(module: Module) -> None:
     """Owner-only access to drafts; reading does not send or authorize a notification."""
     module.service(NotificationDelivery)
+    module.service(ScheduledNotificationRecovery)
 
     @module.operation(private=True, heads={"web", "api-private"}, audience="everyday")
     def notification_proposal(
@@ -634,6 +649,29 @@ def _register_notification_operations(module: Module) -> None:
     ) -> Literal["recorded", "uncertain"]:
         """Queue the exact owner-confirmed notice; recorded means queued, never shown."""
         return service.confirm(session_id, request_id, review, approval_proof, confirmation)
+
+    @module.operation(private=True, heads={"web", "api-private"}, audience="everyday")
+    def scheduled_notification_attempts(
+        service: ScheduledNotificationRecovery,
+        session_id: Identity,
+        cursor: Annotated[int, Field(ge=0, description="Exclusive journal cursor.")] = 0,
+        limit: Annotated[int, Field(ge=1, le=100, description="Maximum attempts per page.")] = 20,
+    ) -> ScheduledNotificationPage:
+        """Inspect bounded owner-private scheduled attempts and their recorded outcomes."""
+        return service.list(session_id, cursor=cursor, limit=limit)
+
+    @module.operation(private=True, read_only=False, heads={"web", "api-private"}, audience="everyday")
+    def resolve_scheduled_notification(
+        service: ScheduledNotificationRecovery,
+        session_id: Identity,
+        request_id: Request,
+        acknowledge_uncertain: Annotated[
+            bool,
+            Field(strict=True, description="Acknowledge the notice may already have been queued; no retry or undo."),
+        ],
+    ) -> ScheduledNotificationView:
+        """Inspect the receipt or set aside uncertainty; never resend or undo a notice."""
+        return service.resolve(session_id, request_id, acknowledge_uncertain=acknowledge_uncertain)
 
     @module.operation(private=True, heads={"web", "api-private"}, audience="everyday")
     def notification_outcome(service: NotificationDelivery, session_id: Identity, request_id: Request) -> str:

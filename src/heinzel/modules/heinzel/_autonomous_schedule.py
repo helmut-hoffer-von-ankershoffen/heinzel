@@ -26,6 +26,7 @@ from heinzel.kernel._approval import (
 from heinzel.modules.heinzel._connected_grants import ConnectedGrant
 from heinzel.modules.heinzel._contract_review import ContractReview
 from heinzel.modules.heinzel._interactive_turn import interactive_turn_id
+from heinzel.modules.heinzel._scheduled_notifications import ScheduledNotificationPolicy
 from heinzel.modules.heinzel._session_bodies import immutable_body
 from heinzel.modules.heinzel._session_crud import SessionCrud
 from heinzel.modules.heinzel._session_models import MessageRequest, RequestId, SessionId
@@ -61,6 +62,10 @@ class ScheduleBinding(BaseModel):
         default="current-slot-after-approval", description="Current interval becomes eligible only after approval."
     )
     status: Literal["proposed"] = Field(default="proposed", description="Proposal status; approval is separate.")
+    notification_policy: ScheduledNotificationPolicy | None = Field(
+        default=None,
+        description="Separately reviewed bounded local notification scope, or null for no scheduled notifications.",
+    )
     connected_grant: ConnectedGrant | None = Field(
         default=None, description="Exact separately approved connected read, or null for no external read."
     )
@@ -82,6 +87,8 @@ class ScheduleBinding(BaseModel):
 def _binding_intent(binding: ScheduleBinding) -> dict[str, JsonValue]:
     # Older schedules predate connected_grant; preserve their exact digest without omitting nested nulls.
     value = binding.model_dump(mode="json")
+    if value["notification_policy"] is None:
+        del value["notification_policy"]
     if value["connected_grant"] is None:
         del value["connected_grant"]
     return value
@@ -182,6 +189,7 @@ class AutonomousSchedules:
         max_requests: int,
         timeout_seconds: int,
         connected_request_id: str | None = None,
+        notification_policy: ScheduledNotificationPolicy | None = None,
     ) -> ScheduleBinding:
         """Persist an inert proposal; no user decision or wake is created.
 
@@ -213,6 +221,7 @@ class AutonomousSchedules:
             timeout_seconds=timeout_seconds,
             access_fingerprint=_fingerprint(self.chat),
             connected_grant=connected_grant,
+            notification_policy=notification_policy,
         )
         if timeout_seconds > proposal.timeout_seconds:
             msg = "Schedule timeout exceeds the reviewed contract"
@@ -555,5 +564,9 @@ class AutonomousSchedules:
             user_proposals=False,
             prepare=prepare,
             connected_allowed=binding.connected_grant is not None,
+            notification_policy=binding.notification_policy,
+            notification_contract=binding.contract_sha256,
+            notification_schedule=binding.request_id,
+            notification_binding=arguments_hash(_binding_intent(binding)),
         )
         return answer.message.text
