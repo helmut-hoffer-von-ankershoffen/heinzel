@@ -1,6 +1,8 @@
 import { app, BrowserWindow, session } from 'electron';
 import { createNativePermissions } from '../src/native-permissions.js';
 
+// A headless runner still needs an audio device to reach the real permission handler. This does not grant access.
+app.commandLine.appendSwitch('use-fake-device-for-media-stream');
 app.setPath('userData', process.env.HZ_TEST_PROFILE);
 app.setPath('sessionData', process.env.HZ_TEST_PROFILE);
 app.whenReady().then(async () => {
