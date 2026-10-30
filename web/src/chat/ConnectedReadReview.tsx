@@ -563,6 +563,14 @@ function Terms({ proposal }: { proposal: SchemaConnectedGrantProposal | SchemaRo
       <p>Provider-reported source revision: {terms.source_revision}</p>
       <p>Operation: {terms.operation}</p>
       <p>Provider-reported scopes: {terms.provider_scopes.join(", ") || "none"}</p>
+      {terms.item_identity && (
+        <p className="break-words">
+          Provider-reported item identity: collection {terms.item_identity.collection.join(".") || "result array"},
+          identity field {terms.item_identity.identity_field}
+          {terms.item_identity.revision_field ? `, revision field ${terms.item_identity.revision_field}` : ""}.
+          These claims do not guarantee complete source history.
+        </p>
+      )}
       {terms.candidate_read_disclosure && (
         <p className="break-words">Provider-reported candidate read: {terms.candidate_read_disclosure}</p>
       )}

@@ -51,6 +51,7 @@ def _fixture(make_kernel, tmp_path, monkeypatch):
                 account_identity=state["account"],
                 provider_scopes=("read",),
                 fixed_arguments=self.fixed,
+                item_identity=state.get("item_identity"),
             )
 
         def read(self, _arguments):
@@ -338,3 +339,70 @@ def test_compiled_daemon_notification_requires_exact_read_and_schedule_consents(
     with current.local("daemon"), pytest.raises(HeinzelError):
         kernel.resolve(AutonomousSchedules).current(session, "recurring")
     assert len(provider.calls) == 1
+
+
+def test_item_notification_policy_needs_exact_separate_schedule_confirmation(make_kernel, tmp_path, monkeypatch):
+    import asyncio
+    from datetime import UTC, datetime
+
+    from heinzel import ConnectedItemIdentity
+    from heinzel.modules.heinzel._autonomous_schedule import AutonomousSchedules
+
+    client, kernel, current, session, state = _fixture(make_kernel, tmp_path, monkeypatch)
+    state["item_identity"] = ConnectedItemIdentity(collection=("events",), identity_field="id", revision_field="rev")
+    _approve_read(client, kernel, current, session, state, rolling=False)
+    with current.local("cli"):
+        crud = kernel.resolve(ConnectedReadGrants).crud
+        crud.propose_scheduled_agent(session, "contract", "Inspect the approved source", None, 30)
+    card = client.post(
+        "/api/system/runner/chat/propose-agent-contract",
+        headers=AUTH,
+        params={"durable_session": session, "request_id": "contract"},
+    ).json()
+    action = next(item for item in card["actions"] if item["operation"] == "accept-agent-contract")
+    assert (
+        client.post(
+            "/api/system/runner/chat/confirm", headers=AUTH, params={"session": card["id"], "action": action["id"]}
+        ).status_code
+        == 200
+    )
+    policy = {
+        "max_per_24h": 2,
+        "topic_cooldown_seconds": 60,
+        "item_evidence": {"deduplicate_by": "revision"},
+        "disclosure": (
+            "Content may appear on this device. Item identities are provider-reported and not completeness guarantees."
+        ),
+    }
+    body = {
+        "session_id": session,
+        "request_id": "schedule",
+        "contract_request_id": "contract",
+        "cadence_seconds": 60,
+        "max_requests": 2,
+        "timeout_seconds": 30,
+        "connected_request_id": "grant-one",
+        "notification_policy": policy,
+    }
+    proposed = client.post("/api/heinzel/propose-agent-schedule", headers=AUTH, json=body)
+    assert proposed.status_code == 200, proposed.text
+    with current.local("daemon"), pytest.raises(HeinzelError):
+        asyncio.run(kernel.resolve(AutonomousSchedules).tick(session, "schedule", datetime.now(UTC)))
+    assert state["reads"] == 0
+    staged = client.post(
+        "/api/system/runner/chat/propose-agent-schedule-review",
+        headers=AUTH,
+        params={"durable_session": session, "request_id": "schedule"},
+    ).json()
+    action = next(item for item in staged["actions"] if item["operation"] == "approve-agent-schedule")
+    assert action["arguments"]["review"] == proposed.json()
+    assert (
+        client.post(
+            "/api/system/runner/chat/confirm", headers=AUTH, params={"session": staged["id"], "action": action["id"]}
+        ).status_code
+        == 200
+    )
+    with current.local("cli"):
+        approved = kernel.resolve(AutonomousSchedules).approved(session, "schedule")
+    assert approved.notification_policy.item_evidence.deduplicate_by == "revision"
+    assert state["reads"] == 0

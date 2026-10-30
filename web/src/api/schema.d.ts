@@ -4959,6 +4959,27 @@ export interface components {
             revision: number;
         };
         /**
+         * ConnectedItemIdentity
+         * @description Provider-reported paths for stable item identity; this is not a source completeness claim.
+         */
+        ConnectedItemIdentity: {
+            /**
+             * Collection
+             * @description Object-field path to the returned item array.
+             */
+            collection: string[];
+            /**
+             * Identity Field
+             * @description Provider-reported stable identity field.
+             */
+            identity_field: string;
+            /**
+             * Revision Field
+             * @description Optional provider-reported item revision field.
+             */
+            revision_field?: string | null;
+        };
+        /**
          * ConnectedReadOption
          * @description Host-selected registered capability description; this conveys no read authority.
          */
@@ -5027,6 +5048,8 @@ export interface components {
             fixed_arguments: {
                 [key: string]: components["schemas"]["JsonValue"];
             };
+            /** @description Provider-reported item identity fields, subject to separate host audit and review. */
+            item_identity?: components["schemas"]["ConnectedItemIdentity"] | null;
             /**
              * Operation
              * @description The exact read capability and method.
@@ -6547,6 +6570,25 @@ export interface components {
              * @description Directory the skill was copied to or removed from.
              */
             target: string;
+        };
+        /**
+         * ItemNotificationPolicy
+         * @description Separately reviewed source-item deduplication; never a provider access grant.
+         */
+        ItemNotificationPolicy: {
+            /**
+             * Deduplicate By
+             * @description At most one attempt per observed identity or revision.
+             * @enum {string}
+             */
+            deduplicate_by: "item" | "revision";
+            /**
+             * Disclosure
+             * @description Reviewed item-evidence and deduplication scope.
+             * @default Only current-turn items count; deduplication is scoped to the approved source and contract.
+             * @constant
+             */
+            disclosure: "Only current-turn items count; deduplication is scoped to the approved source and contract.";
         };
         /**
          * JobDoc
@@ -9632,9 +9674,11 @@ export interface components {
              * Disclosure
              * @description The visibility and deduplication limitation the person reviews.
              * @default Content may appear on this device. Topics are model-chosen, not verified source identities.
-             * @constant
+             * @enum {string}
              */
-            disclosure: "Content may appear on this device. Topics are model-chosen, not verified source identities.";
+            disclosure: "Content may appear on this device. Topics are model-chosen, not verified source identities." | "Content may appear on this device. Item identities are provider-reported and not completeness guarantees.";
+            /** @description Separately reviewed observed-item policy; absent retains model-chosen topics. */
+            item_evidence?: components["schemas"]["ItemNotificationPolicy"] | null;
             /**
              * Max Per 24H
              * @description Maximum local queue attempts per rolling 24 hours.
@@ -13317,6 +13361,7 @@ export type SchemaConfigReport = components['schemas']['ConfigReport'];
 export type SchemaConfigRevealed = components['schemas']['ConfigRevealed'];
 export type SchemaConflictView = components['schemas']['ConflictView'];
 export type SchemaConnectedGrantProposal = components['schemas']['ConnectedGrantProposal'];
+export type SchemaConnectedItemIdentity = components['schemas']['ConnectedItemIdentity'];
 export type SchemaConnectedReadOption = components['schemas']['ConnectedReadOption'];
 export type SchemaConnectedReadReview = components['schemas']['ConnectedReadReview'];
 export type SchemaConnectedReadState = components['schemas']['ConnectedReadState'];
@@ -13364,6 +13409,7 @@ export type SchemaInputSnapshotPage = components['schemas']['InputSnapshotPage']
 export type SchemaInputSnapshotView = components['schemas']['InputSnapshotView'];
 export type SchemaInstalled = components['schemas']['Installed'];
 export type SchemaInstalledSkill = components['schemas']['InstalledSkill'];
+export type SchemaItemNotificationPolicy = components['schemas']['ItemNotificationPolicy'];
 export type SchemaJobDoc = components['schemas']['JobDoc'];
 export type SchemaJobInfo = components['schemas']['JobInfo'];
 export type SchemaJsonValue = components['schemas']['JsonValue'];

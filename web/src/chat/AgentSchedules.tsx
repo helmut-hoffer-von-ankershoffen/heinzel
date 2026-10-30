@@ -377,8 +377,10 @@ export function AgentSchedules({ sessionId }: { sessionId: string }) {
               {binding.notification_policy && (
                 <p>
                   Local notifications: up to {binding.notification_policy.max_per_24h} attempts per rolling 24 hours,
-                  one per turn, with {binding.notification_policy.topic_cooldown_seconds} seconds between the same
-                  model-chosen topic. Queued does not mean shown.
+                  one per turn. {binding.notification_policy.item_evidence
+                    ? `At most one attempt per observed ${binding.notification_policy.item_evidence.deduplicate_by} for this approved source and contract.`
+                    : `At least ${binding.notification_policy.topic_cooldown_seconds} seconds between the same model-chosen topic.`}
+                  {" "}Queued does not mean shown.
                 </p>
               )}
               {status === "proposed" && <AgentScheduleReview sessionId={sessionId} proposal={binding} />}

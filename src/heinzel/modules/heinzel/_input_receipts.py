@@ -14,12 +14,13 @@ import re
 import secrets
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Literal
+from typing import Literal, cast
 
 from pydantic import BaseModel, Field, JsonValue
 
-from heinzel import CurrentUser, HeinzelError, SessionEvent, SessionWriter
+from heinzel import ConnectedItemIdentity, CurrentUser, HeinzelError, SessionEvent, SessionWriter
 from heinzel.modules.heinzel._connected_grants import ConnectedReadFailedError, ConnectedReadGrants
+from heinzel.modules.heinzel._item_evidence import EvidenceContext, ItemReference, extract_items
 from heinzel.modules.heinzel._session_crud import SessionCrud
 from heinzel.modules.heinzel._session_models import SessionId
 
@@ -93,6 +94,8 @@ class InputSnapshot:
 
     status: Literal["first", "unchanged", "changed"]
     sequence: int
+    items: tuple[ItemReference, ...] = ()
+    item_collection: tuple[str, ...] | None = None
 
 
 class InputSnapshotView(BaseModel):
@@ -175,7 +178,7 @@ class ApprovedInputSnapshots:
         self.verified_history(self._grants.crud, session, key_id)
         value = self._grants.read(session, writer)
         try:
-            return value, self._record(session, turn, call, key, key_id, terms, value)
+            return value, self._record(session, turn, call, key, key_id, terms, value, grant.review.item_identity)
         except Exception:  # noqa: BLE001 - provider read completed; never expose receipt diagnostics
             msg = "The connected read completed but its input snapshot could not be recorded"
             raise ConnectedReadFailedError(msg) from None
@@ -189,11 +192,17 @@ class ApprovedInputSnapshots:
         key_id: str,
         terms: dict[str, JsonValue],
         value: JsonValue,
+        item_identity: ConnectedItemIdentity | None,
     ) -> InputSnapshot:
         repo = self._grants.crud.repository
         owner = self._current.context().principal.id
         scope = _fingerprint(key, ["input-scope-v1", owner, session, terms])
         digest = _fingerprint(key, ["input-value-v1", owner, session, terms, value])
+        item_values = (
+            extract_items(item_identity, value, EvidenceContext(key, scope, turn, call))
+            if item_identity is not None and turn is not None and call is not None
+            else None
+        )
         with repo.control_writer(session) as control:
             if not hmac.compare_digest(
                 _fingerprint(key, self._grants.approved(session).model_dump(mode="json")), _fingerprint(key, terms)
@@ -215,7 +224,23 @@ class ApprovedInputSnapshots:
                 key=f"{turn}-{call}-input" if turn is not None else None,
                 data={"version": 1, "key_id": key_id, "scope": scope, "digest": digest},
             )
-            return InputSnapshot(status, event.seq)
+            references: tuple[ItemReference, ...] = ()
+            if item_values is not None and turn is not None and call is not None:
+                data: dict[str, JsonValue] = {
+                    "version": 1,
+                    "scope": scope,
+                    "read_seq": event.seq,
+                    "call": call,
+                    "items": cast("list[JsonValue]", item_values),
+                }
+                data["mac"] = _fingerprint(key, ["item-observation-v1", turn, data])
+                control.append("input-item.observed", turn=turn, key=f"{turn}-{call}-items", data=data)
+                references = tuple(
+                    ItemReference(index=index, reference=str(item["ref"])) for index, item in enumerate(item_values)
+                )
+            return InputSnapshot(
+                status, event.seq, references, item_identity.collection if item_identity is not None else None
+            )
 
 
 def snapshot_history(crud: SessionCrud, current: CurrentUser, session: str, limit: int = 20) -> InputSnapshotPage:

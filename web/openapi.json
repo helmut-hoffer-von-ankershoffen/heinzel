@@ -3148,6 +3148,50 @@
         "title": "ConnectedGrantProposal",
         "type": "object"
       },
+      "ConnectedItemIdentity": {
+        "additionalProperties": false,
+        "description": "Provider-reported paths for stable item identity; this is not a source completeness claim.",
+        "properties": {
+          "collection": {
+            "description": "Object-field path to the returned item array.",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 5,
+            "title": "Collection",
+            "type": "array"
+          },
+          "identity_field": {
+            "description": "Provider-reported stable identity field.",
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+            "title": "Identity Field",
+            "type": "string"
+          },
+          "revision_field": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 1,
+                "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional provider-reported item revision field.",
+            "title": "Revision Field"
+          }
+        },
+        "required": [
+          "collection",
+          "identity_field"
+        ],
+        "title": "ConnectedItemIdentity",
+        "type": "object"
+      },
       "ConnectedReadOption": {
         "description": "Host-selected registered capability description; this conveys no read authority.",
         "properties": {
@@ -3248,6 +3292,17 @@
             "maxProperties": 32,
             "title": "Fixed Arguments",
             "type": "object"
+          },
+          "item_identity": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConnectedItemIdentity"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Provider-reported item identity fields, subject to separate host audit and review."
           },
           "operation": {
             "description": "The exact read capability and method.",
@@ -5953,6 +6008,33 @@
           "target"
         ],
         "title": "InstalledSkill",
+        "type": "object"
+      },
+      "ItemNotificationPolicy": {
+        "additionalProperties": false,
+        "description": "Separately reviewed source-item deduplication; never a provider access grant.",
+        "properties": {
+          "deduplicate_by": {
+            "description": "At most one attempt per observed identity or revision.",
+            "enum": [
+              "item",
+              "revision"
+            ],
+            "title": "Deduplicate By",
+            "type": "string"
+          },
+          "disclosure": {
+            "const": "Only current-turn items count; deduplication is scoped to the approved source and contract.",
+            "default": "Only current-turn items count; deduplication is scoped to the approved source and contract.",
+            "description": "Reviewed item-evidence and deduplication scope.",
+            "title": "Disclosure",
+            "type": "string"
+          }
+        },
+        "required": [
+          "deduplicate_by"
+        ],
+        "title": "ItemNotificationPolicy",
         "type": "object"
       },
       "JobDoc": {
@@ -11135,11 +11217,25 @@
             "type": "string"
           },
           "disclosure": {
-            "const": "Content may appear on this device. Topics are model-chosen, not verified source identities.",
             "default": "Content may appear on this device. Topics are model-chosen, not verified source identities.",
             "description": "The visibility and deduplication limitation the person reviews.",
+            "enum": [
+              "Content may appear on this device. Topics are model-chosen, not verified source identities.",
+              "Content may appear on this device. Item identities are provider-reported and not completeness guarantees."
+            ],
             "title": "Disclosure",
             "type": "string"
+          },
+          "item_evidence": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ItemNotificationPolicy"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Separately reviewed observed-item policy; absent retains model-chosen topics."
           },
           "max_per_24h": {
             "description": "Maximum local queue attempts per rolling 24 hours.",
