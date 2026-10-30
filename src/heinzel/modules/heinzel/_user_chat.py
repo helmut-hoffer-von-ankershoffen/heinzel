@@ -294,6 +294,7 @@ class UserChatService:
                 schedule_sha256=notification_binding,
                 policy=notification_policy,
                 verify=verify,
+                connected=self.connected_grants() if notification_policy.item_evidence is not None else None,
             )
         message = await InteractiveTurn(self._crud).run(
             session,

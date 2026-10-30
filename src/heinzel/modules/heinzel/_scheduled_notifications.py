@@ -4,19 +4,37 @@ import contextlib
 import hashlib
 import re
 from collections.abc import Callable
-from datetime import UTC, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, model_validator
 
 from heinzel import CurrentUser, HeinzelError, NoticeKind, Notifications, SessionEvent, SessionWriter
 from heinzel.kernel._approval import arguments_hash
+from heinzel.modules.heinzel._connected_grants import ConnectedReadGrants
+from heinzel.modules.heinzel._input_receipts import existing_input_receipt_key
+from heinzel.modules.heinzel._item_evidence import ItemLookup, dedupe_key, resolve_current_item
 from heinzel.modules.heinzel._notification_proposals import NotificationProposal
 from heinzel.modules.heinzel._session_bodies import immutable_body
 from heinzel.modules.heinzel._session_crud import SessionCrud
 from heinzel.modules.heinzel._session_models import SessionId
 
 _MAX_PAGE = 100
+
+
+class ItemNotificationPolicy(BaseModel):
+    """Separately reviewed source-item deduplication; never a provider access grant."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+    deduplicate_by: Literal["item", "revision"] = Field(
+        description="At most one attempt per observed identity or revision."
+    )
+    disclosure: Literal[
+        "Only current-turn items count; deduplication is scoped to the approved source and contract."
+    ] = Field(
+        default="Only current-turn items count; deduplication is scoped to the approved source and contract.",
+        description="Reviewed item-evidence and deduplication scope.",
+    )
 
 
 class ScheduledNotificationPolicy(BaseModel):
@@ -27,16 +45,37 @@ class ScheduledNotificationPolicy(BaseModel):
     topic_cooldown_seconds: int = Field(
         ge=60, le=2678400, description="Minimum seconds between attempts for the same model-chosen topic."
     )
+    item_evidence: ItemNotificationPolicy | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+        description="Separately reviewed observed-item policy; absent retains model-chosen topics.",
+    )
     per_turn: Literal[1] = Field(default=1, description="At most one local queue attempt per scheduled turn.")
     delivery: Literal["local-notification"] = Field(
         default="local-notification", description="Only the owner's local in-app or native notification policy."
     )
     disclosure: Literal[
-        "Content may appear on this device. Topics are model-chosen, not verified source identities."
+        "Content may appear on this device. Topics are model-chosen, not verified source identities.",
+        "Content may appear on this device. Item identities are provider-reported and not completeness guarantees.",
     ] = Field(
         default="Content may appear on this device. Topics are model-chosen, not verified source identities.",
         description="The visibility and deduplication limitation the person reviews.",
     )
+
+    @model_validator(mode="after")
+    def matching_disclosure(self) -> "ScheduledNotificationPolicy":
+        """Require the reviewed disclosure to match the selected identity policy.
+
+        Raises:
+            ValueError: If the disclosure describes a different policy.
+        """
+        item_text = (
+            "Content may appear on this device. Item identities are provider-reported and not completeness guarantees."
+        )
+        if (self.item_evidence is not None) != (self.disclosure == item_text):
+            msg = "The notification disclosure does not match its identity policy"
+            raise ValueError(msg)
+        return self
 
     @field_validator("per_turn", mode="before")
     @classmethod
@@ -61,6 +100,15 @@ class ScheduledNotificationRequest(BaseModel):
     body: str = Field(max_length=500)
 
 
+class ItemNotificationRequest(BaseModel):
+    """One notification based on a current-turn host-issued item reference."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+    item_ref: str = Field(pattern=r"^[0-9a-f]{64}$")
+    title: str = Field(min_length=1, max_length=120)
+    body: str = Field(max_length=500)
+
+
 class ScheduledNotifications:
     """Execute a reviewed bounded local notice only under an owner-bound scheduled writer."""
 
@@ -77,6 +125,7 @@ class ScheduledNotifications:
         schedule_sha256: str,
         policy: ScheduledNotificationPolicy,
         verify: Callable[[], None],
+        connected: ConnectedReadGrants | None = None,
     ) -> None:
         self.crud, self.current, self.notifications = crud, current, notifications
         self.session, self.turn, self.contract_sha256, self.policy, self.verify = (
@@ -88,13 +137,18 @@ class ScheduledNotifications:
         )
         self.schedule_request, self.schedule_sha256 = schedule_request, schedule_sha256
         self.owner = crud.repository.principal_id
+        self.connected = connected
 
     def schema(self) -> dict[str, JsonValue]:
         """Expose only the user's bounded local notification scope, not provider credentials or authority."""
         return {
             "name": "notification:send",
-            "description": "Queue a local notice under reviewed limits; the topic is model-chosen.",
-            "schema": ScheduledNotificationRequest.model_json_schema(),
+            "description": "Queue a local notice under reviewed limits, using current observed item evidence."
+            if self.policy.item_evidence
+            else "Queue a local notice under reviewed limits; the topic is model-chosen.",
+            "schema": (
+                ItemNotificationRequest if self.policy.item_evidence else ScheduledNotificationRequest
+            ).model_json_schema(),
         }
 
     def send(
@@ -117,9 +171,28 @@ class ScheduledNotifications:
             msg = "This scheduled notification is not authorized"
             raise HeinzelError(msg)
         self.verify()
-        request = ScheduledNotificationRequest.model_validate(arguments)
+        if self.policy.item_evidence is not None:
+            item_request = ItemNotificationRequest.model_validate(arguments)
+            if self.connected is None:
+                msg = "The observed source item is unavailable"
+                raise HeinzelError(msg)
+            grant = self.connected.approved(self.session)
+            terms = grant.model_dump(mode="json")
+            item = resolve_current_item(
+                self.crud,
+                self.current,
+                ItemLookup(self.session, self.turn, item_request.item_ref, terms),
+                existing_input_receipt_key(self.current),
+            )
+            item_identity = dedupe_key(item, self.policy.item_evidence.deduplicate_by)
+            scoped_identity = hashlib.sha256(f"{self.contract_sha256}\0{item_identity}".encode()).hexdigest()
+            request = ScheduledNotificationRequest(
+                topic="observed-" + scoped_identity, title=item_request.title, body=item_request.body
+            )
+        else:
+            request = ScheduledNotificationRequest.model_validate(arguments)
         topic = hashlib.sha256(f"{self.owner}\0{self.session}\0{request.topic}".encode()).hexdigest()
-        self._check_rate(topic)
+        self._check_rate(topic, once=self.policy.item_evidence is not None)
         identity = hashlib.sha256(f"{self.owner}\0{self.session}\0{self.turn}\0{topic}".encode()).hexdigest()
         request_id = "notice-" + identity
         proposal = NotificationProposal(
@@ -168,7 +241,7 @@ class ScheduledNotifications:
             return "recorded", "The local notification was queued; it may be held and is not confirmed shown."
         return "uncertain", "The notification outcome is uncertain and will not be retried automatically."
 
-    def _check_rate(self, topic: str) -> None:
+    def _check_rate(self, topic: str, *, once: bool = False) -> None:
         now = self.crud.clock()
         if now.tzinfo is None or now.utcoffset() is None:
             msg = "The scheduled notification clock is unavailable"
@@ -194,15 +267,21 @@ class ScheduledNotifications:
         for event in attempts:
             if event.data.get("topic_sha256") != topic:
                 continue
-            view = ScheduledNotificationRecovery(self.crud, self.current, self.notifications).validated_view(
-                self.session, event, events
-            )
-            if view.status == "unresolved":
-                msg = "An earlier notification for this topic has an uncertain outcome"
-                raise HeinzelError(msg)
-            if event.ts > now - timedelta(seconds=self.policy.topic_cooldown_seconds):
-                msg = "The reviewed notification topic is still within its cooldown"
-                raise HeinzelError(msg)
+            self._check_topic_attempt(event, events, now, once)
+
+    def _check_topic_attempt(self, event: SessionEvent, events: list[SessionEvent], now: datetime, once: bool) -> None:
+        if once:
+            msg = "This source item already has a notification attempt"
+            raise HeinzelError(msg)
+        view = ScheduledNotificationRecovery(self.crud, self.current, self.notifications).validated_view(
+            self.session, event, events
+        )
+        if view.status == "unresolved":
+            msg = "An earlier notification for this topic has an uncertain outcome"
+            raise HeinzelError(msg)
+        if event.ts > now - timedelta(seconds=self.policy.topic_cooldown_seconds):
+            msg = "The reviewed notification topic is still within its cooldown"
+            raise HeinzelError(msg)
 
 
 class ScheduledNotificationView(BaseModel):

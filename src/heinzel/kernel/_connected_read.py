@@ -5,6 +5,7 @@ contracts convey no user approval, provider-account verification or authority on
 """
 
 import json
+import re
 from collections.abc import Mapping
 from typing import Any
 
@@ -14,6 +15,42 @@ from heinzel.kernel._services import ServiceContract
 
 _MAX_SCOPE_LENGTH = 512
 _MAX_REVIEW_BYTES = 16_384
+
+
+class ConnectedItemIdentity(BaseModel):
+    """Provider-reported paths for stable item identity; this is not a source completeness claim."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+    collection: tuple[str, ...] = Field(
+        max_length=5, strict=False, description="Object-field path to the returned item array."
+    )
+    identity_field: str = Field(
+        min_length=1,
+        max_length=64,
+        pattern=r"^[A-Za-z_][A-Za-z0-9_]*$",
+        description="Provider-reported stable identity field.",
+    )
+    revision_field: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=64,
+        pattern=r"^[A-Za-z_][A-Za-z0-9_]*$",
+        description="Optional provider-reported item revision field.",
+    )
+
+    @model_validator(mode="after")
+    def safe_fields(self) -> "ConnectedItemIdentity":
+        """Require simple bounded object fields.
+
+        Raises:
+            ValueError: If a collection component or revision field is ambiguous.
+        """
+        if any(not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,63}", field) for field in self.collection) or (
+            self.revision_field is not None and self.revision_field == self.identity_field
+        ):
+            msg = "The item identity declaration is invalid"
+            raise ValueError(msg)
+        return self
 
 
 class ConnectedReadReview(BaseModel):
@@ -42,6 +79,11 @@ class ConnectedReadReview(BaseModel):
         max_length=128, description="Observed provider scopes, which may exceed the host read grant."
     )
     fixed_arguments: dict[str, JsonValue] = Field(max_length=32, description="Exact host-constrained read arguments.")
+    item_identity: ConnectedItemIdentity | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+        description="Provider-reported item identity fields, subject to separate host audit and review.",
+    )
     candidate_read_disclosure: str | None = Field(
         default=None,
         min_length=1,
