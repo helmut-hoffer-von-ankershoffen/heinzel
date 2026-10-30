@@ -128,9 +128,7 @@ def ci_workflow() -> str:
     # The web head's app (ADR 0039) and ATTRIBUTIONS.md, the notices of what it bundles: plugins have neither.
     text = re.sub(r"\n      - run: make test-web[^\n]*", "", text)
     text = text.replace(
-        "\n      - name: Install browser runtimes and host dependencies\n"
-        "        if: runner.os == 'Linux'\n"
-        "        run: make test-browser-deps",
+        "\n      - name: Install browser runtimes and host dependencies\n        run: make test-browser-deps",
         "",
     )
     text = re.sub(r"\n      - run: make managed-backend-[^\n]*", "", text)
