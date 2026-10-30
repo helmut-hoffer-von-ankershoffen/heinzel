@@ -147,13 +147,16 @@ def test_cancelled_occurrence_never_relaunches_and_changed_access_refuses(tmp_pa
         args = {"session_id": session, "request_id": "schedule", "review": review, "approval_proof": proof}
         with marker.using("heinzel", "approve-agent-schedule", args):
             schedules.approve(session, "schedule", review, proof, marker)
-        now = datetime.now(UTC)
+        now = fixed
 
         async def cancel():
             task = asyncio.create_task(schedules.tick(session, "schedule", now))
             for _ in range(200):
                 if (tmp_path / "model-calls").exists():
                     break
+                if task.done():
+                    await task
+                    pytest.fail("Scheduled turn finished before the fake model started")
                 await asyncio.sleep(0.01)
             assert (tmp_path / "model-calls").exists()
             task.cancel()
