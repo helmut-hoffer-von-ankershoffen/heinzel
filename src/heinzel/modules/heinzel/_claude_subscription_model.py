@@ -38,10 +38,11 @@ from pydantic_ai.settings import ModelSettings
 from pydantic_ai.usage import RequestUsage
 
 from heinzel import HeinzelError
+from heinzel.kernel import ProcessOutcome as Outcome
+from heinzel.kernel import run_bounded_process as run_bounded
 from heinzel.kernel._errors import SubscriptionUsageLimitError
 from heinzel.modules.heinzel._subscription_slots import SubscriptionSlots
 from heinzel.modules.heinzel._turn_authority_fence import TurnAuthorityFence
-from heinzel.modules.system.runner._process import Outcome, run_bounded
 
 _VERSION = "2.1.312"
 _MAX_EXECUTABLE_BYTES = 512 * 1024 * 1024
