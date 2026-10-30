@@ -13,6 +13,8 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 <!-- badges:end -->
 
+[**Install & explore →**](https://helmut-hoffer-von-ankershoffen.github.io/heinzel/) · [Plugin catalog](https://helmut-hoffer-von-ankershoffen.github.io/heinzel/CATALOG/) · [Build a plugin](docs/PLUGIN_AUTHORING.md)
+
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/assets/hero-dark.svg">
