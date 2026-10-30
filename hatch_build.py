@@ -61,7 +61,7 @@ class WebAppHook(BuildHookInterface[Any]):
         web = _web()
         if not web.current():
             try:
-                web.build()
+                web.ensure_built()
             except web.WebError as error:
                 msg = f"The web app (web/) couldn't be built into the package: {error}"
                 raise RuntimeError(msg) from error
