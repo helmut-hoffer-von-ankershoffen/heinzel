@@ -514,6 +514,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/heinzel/input-snapshot-history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Show recent private exact-result comparisons from approved reads, without source contents.
+         * @description Show recent private exact-result comparisons from approved reads, without source contents.
+         */
+        get: operations["heinzel_input_snapshot_history"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/heinzel/latest-profile-proposal": {
         parameters: {
             query?: never;
@@ -566,6 +586,26 @@ export interface paths {
          * @description Read the current inert proposal for the personal session, if one exists.
          */
         get: operations["heinzel_latest_scheduled_agent_proposal"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/heinzel/latest-source-suggestion-view": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Inspect the latest inert suggested source; no provider was contacted or approved.
+         * @description Inspect the latest inert suggested source; no provider was contacted or approved.
+         */
+        get: operations["heinzel_latest_source_suggestion_view"];
         put?: never;
         post?: never;
         delete?: never;
@@ -748,6 +788,26 @@ export interface paths {
         get: operations["heinzel_playbooks"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/heinzel/prepare-suggested-source": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Prepare the current exact suggestion for separate human approval without executing the read.
+         * @description Prepare the current exact suggestion for separate human approval without executing the read.
+         */
+        post: operations["heinzel_prepare_suggested_source"];
         delete?: never;
         options?: never;
         head?: never;
@@ -6384,6 +6444,50 @@ export interface components {
             window: string | null;
         };
         /**
+         * InputSnapshotPage
+         * @description Bounded recent snapshot observations; not a complete event history.
+         */
+        InputSnapshotPage: {
+            /**
+             * Items
+             * @description Recent actual host-recorded observations.
+             */
+            items: components["schemas"]["InputSnapshotView"][];
+            /**
+             * Session Id
+             * @description The authenticated owner's durable session.
+             */
+            session_id: string;
+        };
+        /**
+         * InputSnapshotView
+         * @description A private redacted exact-result comparison for a recorded connected read.
+         */
+        InputSnapshotView: {
+            /**
+             * At
+             * Format: date-time
+             * @description When the host recorded this successful read.
+             */
+            at: string;
+            /**
+             * Seq
+             * @description Sequence in the owner's control journal.
+             */
+            seq: number;
+            /**
+             * Status
+             * @description Comparison with the prior exact result under the same approved grant.
+             * @enum {string}
+             */
+            status: "first" | "unchanged" | "changed";
+            /**
+             * Turn Id
+             * @description The durable turn which performed the approved read.
+             */
+            turn_id: string;
+        };
+        /**
          * Installed
          * @description What `install` wrote, or would write, and how it was loaded.
          */
@@ -10513,6 +10617,56 @@ export interface components {
             title: string;
         };
         /**
+         * SourceSuggestion
+         * @description Stored private source suggestion; no access or approval is implied.
+         */
+        SourceSuggestion: {
+            /**
+             * Based On Revision
+             * @description Revision this suggestion amended.
+             */
+            based_on_revision: number;
+            /**
+             * Capability
+             * @description Unverified suggested capability.
+             */
+            capability: string;
+            /**
+             * Fixed Arguments
+             * @description Exact suggested arguments, not provider-verified.
+             */
+            fixed_arguments: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            /**
+             * Method
+             * @description Unverified suggested method.
+             */
+            method: string;
+            /**
+             * Request Id
+             * @description Host-derived suggestion identity.
+             */
+            request_id: string;
+            /**
+             * Revision
+             * @description Suggestion revision.
+             */
+            revision: number;
+            /**
+             * Session Id
+             * @description Owner-private agent session.
+             */
+            session_id: string;
+            /**
+             * Status
+             * @description Inert suggestion, without authority.
+             * @default suggested
+             * @constant
+             */
+            status: "suggested";
+        };
+        /**
          * StackView
          * @description `hz system layer show`: the layers you are in, general to specific, and what they bring together.
          */
@@ -12753,6 +12907,29 @@ export interface components {
              */
             session_id: string;
         };
+        /** heinzel_prepare_suggested_source_Input */
+        heinzel_prepare_suggested_source_Input: {
+            /**
+             * Request Id
+             * @description A stable client request id; reuse it only for an exact retry.
+             */
+            request_id: string;
+            /**
+             * Session Id
+             * @description The stable personal session id returned by new-chat or sessions.
+             */
+            session_id: string;
+            /**
+             * Suggestion Request
+             * @description Exact host-derived suggestion request.
+             */
+            suggestion_request: string;
+            /**
+             * Suggestion Revision
+             * @description Exact current suggestion revision.
+             */
+            suggestion_revision: number;
+        };
         /** heinzel_profile_Input */
         heinzel_profile_Input: {
             /** @description The complete personal appearance overrides; null leaves the current look unchanged. */
@@ -13183,6 +13360,8 @@ export type SchemaHeinzelList = components['schemas']['HeinzelList'];
 export type SchemaHeinzelSummary = components['schemas']['HeinzelSummary'];
 export type SchemaHintProblem = components['schemas']['HintProblem'];
 export type SchemaHintView = components['schemas']['HintView'];
+export type SchemaInputSnapshotPage = components['schemas']['InputSnapshotPage'];
+export type SchemaInputSnapshotView = components['schemas']['InputSnapshotView'];
 export type SchemaInstalled = components['schemas']['Installed'];
 export type SchemaInstalledSkill = components['schemas']['InstalledSkill'];
 export type SchemaJobDoc = components['schemas']['JobDoc'];
@@ -13299,6 +13478,7 @@ export type SchemaSoundLayerView = components['schemas']['SoundLayerView'];
 export type SchemaSoundList = components['schemas']['SoundList'];
 export type SchemaSoundStreamView = components['schemas']['SoundStreamView'];
 export type SchemaSoundscapeView = components['schemas']['SoundscapeView'];
+export type SchemaSourceSuggestion = components['schemas']['SourceSuggestion'];
 export type SchemaStackView = components['schemas']['StackView'];
 export type SchemaStateStatus = components['schemas']['StateStatus'];
 export type SchemaStatus = components['schemas']['Status'];
@@ -13364,6 +13544,7 @@ export type SchemaHeinzelAssociateArtifactInput = components['schemas']['heinzel
 export type SchemaHeinzelChatInput = components['schemas']['heinzel_chat_Input'];
 export type SchemaHeinzelNewChatInput = components['schemas']['heinzel_new_chat_Input'];
 export type SchemaHeinzelPauseAgentScheduleInput = components['schemas']['heinzel_pause_agent_schedule_Input'];
+export type SchemaHeinzelPrepareSuggestedSourceInput = components['schemas']['heinzel_prepare_suggested_source_Input'];
 export type SchemaHeinzelProfileInput = components['schemas']['heinzel_profile_Input'];
 export type SchemaHeinzelProposeAgentScheduleInput = components['schemas']['heinzel_propose_agent_schedule_Input'];
 export type SchemaHeinzelProposeCheckInInput = components['schemas']['heinzel_propose_check_in_Input'];
@@ -14182,6 +14363,39 @@ export interface operations {
             };
         };
     };
+    heinzel_input_snapshot_history: {
+        parameters: {
+            query: {
+                session_id: string;
+                /** @description Maximum recent observations to return. */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InputSnapshotPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     heinzel_latest_profile_proposal: {
         parameters: {
             query: {
@@ -14262,6 +14476,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ScheduledAgentProposal"] | null;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    heinzel_latest_source_suggestion_view: {
+        parameters: {
+            query: {
+                session_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SourceSuggestion"] | null;
                 };
             };
             /** @description Validation Error */
@@ -14555,6 +14800,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PlaybookList"];
+                };
+            };
+        };
+    };
+    heinzel_prepare_suggested_source: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["heinzel_prepare_suggested_source_Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectedGrantProposal"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

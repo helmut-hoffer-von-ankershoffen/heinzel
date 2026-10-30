@@ -341,3 +341,59 @@ def test_chat_schedule_suggestion_is_private_and_inert(make_kernel, tmp_path):
     assert suggestion.json()["status"] == "suggested"
     assert suggestion.json()["trigger"] == {"cron": "0 9 * * 1", "timezone": "UTC"}
     assert client.get("/api/heinzel/session", headers=AUTH, params=params).json()["schedule"] is None
+
+
+def test_chat_source_suggestion_private_inert_and_replays_without_provider(make_kernel, tmp_path):
+    kernel = make_kernel(builtins=True)
+    current = kernel.resolve(CurrentUser)
+    crud = kernel.resolve(SessionCrud)
+    executable = fake_claude(
+        tmp_path,
+        tool="source:propose",
+        arguments={
+            "expected_revision": 0,
+            "capability": "documents",
+            "method": "read",
+            "fixed_arguments": {"ref": "https://example.invalid/document"},
+        },
+    )
+    kernel.bind(
+        UserChatService, UserChatService(crud, current, RunnerSnapshotService(), load=lambda: FixtureConfig(executable))
+    )
+    client = web_client(kernel, tmp_path)
+    session = client.post("/api/heinzel/new-chat", headers=AUTH, json={"request_id": "new"}).json()["session_id"]
+    assert (
+        client.post(
+            "/api/heinzel/chat",
+            headers=AUTH,
+            json={"session_id": session, "request_id": "hello", "message": "Please examine this source"},
+        ).status_code
+        == 200
+    )
+    answer = client.post("/api/heinzel/answer-chat", headers=AUTH, json={"session_id": session, "request_id": "hello"})
+    assert answer.status_code == 200, answer.text
+    params = {"session_id": session}
+    assert client.get("/api/heinzel/latest-source-suggestion-view", params=params).status_code == 401
+    suggestion = client.get("/api/heinzel/latest-source-suggestion-view", headers=AUTH, params=params)
+    assert suggestion.status_code == 200, suggestion.text
+    assert suggestion.json()["fixed_arguments"] == {"ref": "https://example.invalid/document"}
+    assert suggestion.json()["status"] == "suggested"
+    prepare = {
+        "session_id": session,
+        "request_id": "prepare",
+        "suggestion_request": suggestion.json()["request_id"],
+        "suggestion_revision": 2,
+    }
+    assert client.post("/api/heinzel/prepare-suggested-source", headers=AUTH, json=prepare).status_code == 400
+    assert (
+        client.post(
+            "/api/heinzel/prepare-suggested-source", headers=AUTH, json={**prepare, "fixed_arguments": {"ref": "other"}}
+        ).status_code
+        == 422
+    )
+    assert client.post("/api/heinzel/prepare-suggested-source", json=prepare).status_code == 401
+    state = client.get("/api/heinzel/connected-read-state", headers=AUTH, params=params)
+    assert state.json()["status"] == "none"
+    replay = client.post("/api/heinzel/answer-chat", headers=AUTH, json={"session_id": session, "request_id": "hello"})
+    assert replay.status_code == 200
+    assert replay.json() == answer.json()

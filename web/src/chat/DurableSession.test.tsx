@@ -788,6 +788,46 @@ describe("personal conversation links", () => {
     expect(panel.queryByText(/private:read/)).not.toBeInTheDocument();
   });
 
+  it("shows private exact-result comparisons only beside their actual turn", async () => {
+    const turn = `interactive-${"a".repeat(64)}`;
+    const other = `interactive-${"b".repeat(64)}`;
+    mockApi({
+      ...shell,
+      "/api/heinzel/session": {
+        ...snapshot,
+        messages: [{ id: "reply", seq: 1, role: "assistant", turn_id: turn, text: "Recorded answer" }],
+      },
+      "/api/heinzel/input-snapshot-history": {
+        session_id: sessionId,
+        items: [
+          { seq: 4, at: "2026-10-30T00:00:00Z", turn_id: turn, status: "first", digest: "private-fingerprint" },
+          { seq: 5, at: "2026-10-30T00:00:01Z", turn_id: other, status: "unchanged" },
+        ],
+      },
+    });
+    renderAt(`/heinzel?chat=${sessionId}`);
+    const answer = (await screen.findByText("Recorded answer")).closest("div");
+    if (!answer) throw new Error("Missing answer");
+    expect(await within(answer).findByText("Approved read: first recorded result.")).toBeInTheDocument();
+    expect(screen.getByText(/Read without a visible reply: same exact result/)).toBeInTheDocument();
+    expect(screen.getByText(/not event deduplication or complete history/)).toBeInTheDocument();
+    expect(screen.queryByText(/private-fingerprint/)).not.toBeInTheDocument();
+  });
+
+  it("refuses input comparisons from another session", async () => {
+    mockApi({
+      ...shell,
+      "/api/heinzel/session": snapshot,
+      "/api/heinzel/input-snapshot-history": {
+        session_id: "hz-01ARZ3NDEKTSV4RRFFQ69G5FAW",
+        items: [{ seq: 4, at: "2026-10-30T00:00:00Z", turn_id: `interactive-${"a".repeat(64)}`, status: "first" }],
+      },
+    });
+    renderAt(`/heinzel?chat=${sessionId}`);
+    expect(await screen.findByText("Input comparison history is unavailable.")).toBeInTheDocument();
+    expect(screen.queryByText(/first recorded result/)).not.toBeInTheDocument();
+  });
+
   it("preserves an accepted message across a lost answer and retries only its exact request", async () => {
     const accepted: Array<{ request_id: string }> = [];
     const turns: unknown[] = [];

@@ -100,6 +100,9 @@ try {
     .getByText(/connected_read · completed/)
     .first()
     .waitFor({ timeout: 30000 });
+  await page.getByText("Approved read: first recorded result.").waitFor();
+  assert.equal(await page.getByText("Approved read: first recorded result.").count(), 1);
+  await page.getByText(/this is not event deduplication or complete history/i).waitFor();
   await panel.getByRole("button", { name: "Revoke this grant" }).click();
   await panel.getByText(/Recorded state: revoked/).waitFor();
   await page.reload();

@@ -44,6 +44,10 @@ these decisions bind the authority a recurring turn needs without giving its mod
 - An optional bounded, provider-attributed candidate-read disclosure describes data a provider may inspect before
   local filtering. When supplied, it is part of the exact review and must match on every later observation and read.
   Absence remains absence rather than an inferred claim; legacy approvals retain their original digest.
+- A successful connected read records a private keyed fingerprint of the exact bounded result and approved grant.
+  The owner's chat can show whether that whole result is first, unchanged or changed under the same grant. This is
+  not source completeness, per-item event identity or semantic deduplication. The journal retains fingerprints,
+  not source content; loss of the private key or invalid evidence fails closed.
 - A person separately confirms the exact contract and recurring schedule. A schedule may include an already approved
   connected read and an optional local-notification policy; omission grants neither. Existing fixed-notice schedules
   and older recurring schedule approvals do not acquire new capabilities. The daemon rechecks the current binding
