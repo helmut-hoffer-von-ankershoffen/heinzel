@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 from typer.testing import CliRunner
 
 from heinzel import Config, Module, Settings
-from heinzel.heads._exposure import exposed, input_schema
+from heinzel.heads._exposure import exposed, input_schema, restricts
 from heinzel.heads.cli import build
 from heinzel.heads.cli._chat import command_words
 from heinzel.kernel import Kernel, discover
@@ -71,6 +71,8 @@ def test_every_ui_operation_has_a_discoverable_cli_command_and_matching_input_sc
     commands = command_catalog(build(hz))
     cli = {id(item.operation): item for item in exposed(hz, "cli")}
     for item in exposed(hz, "web"):
+        if restricts(item.operation.heads, "cli"):
+            continue  # Explicit private/head restrictions take precedence over parity.
         assert id(item.operation) in cli, f"UI operation lacks CLI parity: {item.name}"
         name = " ".join(("hz", *command_words(cli[id(item.operation)].path)))
         assert commands[name]["operation"]["name"] == item.operation.name
@@ -79,7 +81,6 @@ def test_every_ui_operation_has_a_discoverable_cli_command_and_matching_input_sc
         name = " ".join(("hz", *command_words(item.path)))
         assert name in commands, f"CLI operation is not discoverable: {name}"
     assert {"hz setup", "hz join", "hz ui", "hz chat", "hz system serve api"} <= commands.keys()
-    assert "hz clock" in commands
     assert commands["hz system expert"]["operation"]["name"] == "expert"
 
 

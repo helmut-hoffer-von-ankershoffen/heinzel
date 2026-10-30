@@ -196,7 +196,6 @@ $ hz chat [OPTIONS] COMMAND [ARGS]...
 
 * `authorize-for-mcp`: Authorize one reviewed schedule action for...
 * `confirm`: Run an action the agent proposed, with...
-* `confirm-authorized-mcp`: Run a schedule action once after a person...
 * `decline`: Decline an action the agent proposed; it...
 * `list`: List chat sessions, most recent first;...
 * `open`: Open a chat session, optionally about a...
@@ -238,27 +237,6 @@ Run an action the agent proposed, with exactly the arguments shown; only you can
 
 ```console
 $ hz chat confirm [OPTIONS] {session} {action}
-```
-
-**Arguments**:
-
-* `session`: The chat session&#x27;s id, from `hz chat list`.  [required]
-* `action`: The proposed action&#x27;s id, e.g. `a1`.  [required]
-
-**Options**:
-
-* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
-* `--json`: Shorthand for --format json, for scripts and agents.
-* `--help`: Show this message and exit.
-
-### `hz chat confirm-authorized-mcp`
-
-Run a schedule action once after a person authorized it; accept no proof here.
-
-**Usage**:
-
-```console
-$ hz chat confirm-authorized-mcp [OPTIONS] {session} {action}
 ```
 
 **Arguments**:
@@ -539,11 +517,8 @@ $ hz heinzel [OPTIONS] COMMAND [ARGS]...
 **Commands**:
 
 * `abandon-chat-turn`: Explicitly set aside a stopped uncertain...
-* `accept-agent-contract`: Record only exact contract acceptance...
-* `agent-contract-review`: Read an exact contract and its acceptance;...
 * `amend-scheduled-agent`: Propose revised terms; an independent...
 * `answer-chat`: Answer one authenticated user&#x27;s accepted...
-* `approve-model-grant`: Apply an exact human-confirmed policy;...
 * `associate-artifact`: Associate a Google file locally; no...
 * `chat`: Durably queue a message for this Heinzel;...
 * `chat-turn-state`: Read the recorded turn state; unresolved...
@@ -554,17 +529,13 @@ $ hz heinzel [OPTIONS] COMMAND [ARGS]...
 * `latest-profile-proposal`: Inspect the latest suggested name and...
 * `latest-scheduled-agent-proposal`: Read the current inert proposal for the...
 * `list`: List your Heinzelmännchen, one per...
-* `model-policy`: Read the current exact proposed policy; no...
 * `new`: Write a starter contract, or a playbook&#x27;s...
 * `new-chat`: Create a durable personal Heinzel with an...
 * `personal-artifacts`: List local principal-submitted file...
 * `playbooks`: (expert) List the playbooks plugins...
 * `profile`: Save this Heinzel&#x27;s name or look against...
 * `propose-check-in`: Propose local five-minute check-ins; the...
-* `propose-model-policy`: Stage an inert model policy for...
 * `propose-scheduled-agent`: Save an inert agent execution proposal; it...
-* `propose-skill-draft`: Store a private skill draft; no file is...
-* `propose-skill-sharing`: Request review of exact private draft and...
 * `prune`: (expert) Delete drafts and records older...
 * `schedule-control`: Pause a schedule; activation and resume...
 * `scheduled-agent-proposal`: Inspect the exact inert proposal; a...
@@ -574,8 +545,6 @@ $ hz heinzel [OPTIONS] COMMAND [ARGS]...
 * `show`: Show a contract as the daemon runs it:...
 * `skill-draft`: Read exact private skill draft files and...
 * `skill-drafts`: List private draft references without file...
-* `skill-sharing`: Read a private sharing request; it is...
-* `skill-sharing-proposals`: Discover owner-private pending sharing...
 * `tool-activity`: Show owner-private host-observed tool...
 * `wake`: Wake a Heinzelmännchen now: fetch its...
 
@@ -594,50 +563,6 @@ $ hz heinzel abandon-chat-turn [OPTIONS] {session_id} {request_id} {acknowledge_
 * `session_id`: [required]
 * `request_id`: [required]
 * `acknowledge_uncertain`: Confirm the outcome may be unknown and no retry or undo occurs.  [required]
-
-**Options**:
-
-* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
-* `--json`: Shorthand for --format json, for scripts and agents.
-* `--help`: Show this message and exit.
-
-### `hz heinzel accept-agent-contract`
-
-Record only exact contract acceptance through trusted confirmation.
-
-**Usage**:
-
-```console
-$ hz heinzel accept-agent-contract [OPTIONS] {session_id} {request_id} {JSON} {approval_proof}
-```
-
-**Arguments**:
-
-* `session_id`: [required]
-* `request_id`: [required]
-* `JSON`: [required]
-* `approval_proof`: [required]
-
-**Options**:
-
-* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
-* `--json`: Shorthand for --format json, for scripts and agents.
-* `--help`: Show this message and exit.
-
-### `hz heinzel agent-contract-review`
-
-Read an exact contract and its acceptance; this grants no execution or access.
-
-**Usage**:
-
-```console
-$ hz heinzel agent-contract-review [OPTIONS] {session_id} {request_id}
-```
-
-**Arguments**:
-
-* `session_id`: [required]
-* `request_id`: [required]
 
 **Options**:
 
@@ -684,29 +609,6 @@ $ hz heinzel answer-chat [OPTIONS] {session_id} {request_id}
 
 * `session_id`: [required]
 * `request_id`: [required]
-
-**Options**:
-
-* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
-* `--json`: Shorthand for --format json, for scripts and agents.
-* `--help`: Show this message and exit.
-
-### `hz heinzel approve-model-grant`
-
-Apply an exact human-confirmed policy; direct callers cannot issue or consume approval.
-
-**Usage**:
-
-```console
-$ hz heinzel approve-model-grant [OPTIONS] {session_id} {request_id} {JSON} {approval_proof}
-```
-
-**Arguments**:
-
-* `session_id`: [required]
-* `request_id`: [required]
-* `JSON`: Exact policy terms displayed in the action card.  [required]
-* `approval_proof`: In-process proof issued only by trusted human confirmation.  [required]
 
 **Options**:
 
@@ -909,27 +811,6 @@ $ hz heinzel list [OPTIONS]
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
 
-### `hz heinzel model-policy`
-
-Read the current exact proposed policy; no permission is granted.
-
-**Usage**:
-
-```console
-$ hz heinzel model-policy [OPTIONS] {session_id} {request_id}
-```
-
-**Arguments**:
-
-* `session_id`: [required]
-* `request_id`: [required]
-
-**Options**:
-
-* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
-* `--json`: Shorthand for --format json, for scripts and agents.
-* `--help`: Show this message and exit.
-
 ### `hz heinzel new`
 
 Write a starter contract, or a playbook&#x27;s template (--template), into your workflows directory.
@@ -1057,28 +938,6 @@ $ hz heinzel propose-check-in [OPTIONS] {session_id} {request_id}
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
 
-### `hz heinzel propose-model-policy`
-
-Stage an inert model policy for independent human review.
-
-**Usage**:
-
-```console
-$ hz heinzel propose-model-policy [OPTIONS] {session_id} {billing} {JSON}
-```
-
-**Arguments**:
-
-* `session_id`: [required]
-* `billing`: Billing policy; only api-priced is currently supported.  [required]
-* `JSON`: Exact model grant terms and request identity.  [required]
-
-**Options**:
-
-* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
-* `--json`: Shorthand for --format json, for scripts and agents.
-* `--help`: Show this message and exit.
-
 ### `hz heinzel propose-scheduled-agent`
 
 Save an inert agent execution proposal; it neither approves nor starts a model turn.
@@ -1096,54 +955,6 @@ $ hz heinzel propose-scheduled-agent [OPTIONS] {session_id} {request_id} {contra
 * `contract`: Exact instructions to preview for a future agent turn.  [required]
 * `max_usd`: Proposed per-turn USD limit; not yet enforced.  [required]
 * `timeout_seconds`: Proposed maximum seconds per turn.  [required]
-
-**Options**:
-
-* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
-* `--json`: Shorthand for --format json, for scripts and agents.
-* `--help`: Show this message and exit.
-
-### `hz heinzel propose-skill-draft`
-
-Store a private skill draft; no file is published, executed or shared.
-
-**Usage**:
-
-```console
-$ hz heinzel propose-skill-draft [OPTIONS] {session_id} {request_id} {name} {requested_scope}:<personal|team|org|site|company> {JSON}
-```
-
-**Arguments**:
-
-* `session_id`: [required]
-* `request_id`: [required]
-* `name`: Proposed skill name.  [required]
-* `requested_scope:<personal|team|org|site|company>`: Requested scope; no grant is created.  [required]
-* `JSON`: Exact SKILL.md, supporting text and optional Python script drafts.  [required]
-
-**Options**:
-
-* `--scope-ref <str>`: Opaque target for a requested shared scope; not verified.
-* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
-* `--json`: Shorthand for --format json, for scripts and agents.
-* `--help`: Show this message and exit.
-
-### `hz heinzel propose-skill-sharing`
-
-Request review of exact private draft and target; membership and authority are unverified.
-
-**Usage**:
-
-```console
-$ hz heinzel propose-skill-sharing [OPTIONS] {session_id} {request_id} {draft_request_id} {draft_sha256}
-```
-
-**Arguments**:
-
-* `session_id`: [required]
-* `request_id`: [required]
-* `draft_request_id`: [required]
-* `draft_sha256`: The exact immutable draft fingerprint.  [required]
 
 **Options**:
 
@@ -1336,49 +1147,6 @@ $ hz heinzel skill-drafts [OPTIONS] {session_id}
 
 * `--cursor <int>`: Resume after this session journal position.  [default: 0]
 * `--limit <int>`: The most private draft references returned in this page.  [default: 20]
-* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
-* `--json`: Shorthand for --format json, for scripts and agents.
-* `--help`: Show this message and exit.
-
-### `hz heinzel skill-sharing`
-
-Read a private sharing request; it is neither approved nor published.
-
-**Usage**:
-
-```console
-$ hz heinzel skill-sharing [OPTIONS] {session_id} {request_id}
-```
-
-**Arguments**:
-
-* `session_id`: [required]
-* `request_id`: [required]
-
-**Options**:
-
-* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
-* `--json`: Shorthand for --format json, for scripts and agents.
-* `--help`: Show this message and exit.
-
-### `hz heinzel skill-sharing-proposals`
-
-Discover owner-private pending sharing request references.
-
-**Usage**:
-
-```console
-$ hz heinzel skill-sharing-proposals [OPTIONS] {session_id}
-```
-
-**Arguments**:
-
-* `session_id`: [required]
-
-**Options**:
-
-* `--cursor <int>`: Resume after this session journal position.  [default: 0]
-* `--limit <int>`: The most private sharing references returned in this page.  [default: 20]
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
