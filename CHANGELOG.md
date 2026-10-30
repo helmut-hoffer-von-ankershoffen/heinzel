@@ -4,11 +4,12 @@ All notable changes to Heinzelmännchen, newest first. Versions follow [Semantic
 
 ## [0.9.6](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/releases/tag/v0.9.6) - 2026-10-30
 
-Agent chats can suggest exact connected sources for separate human review and approval, then show recorded comparisons of results from permitted reads. Suggestions alone grant no access. These comparisons cover whole results; they do not identify individual events or prove complete source history.
+Agent chats can suggest exact connected sources for separate review and approval, then compare whole results from permitted reads. The Electron shell now asks for document-scoped notification and microphone consent and revokes it on navigation. These changes do not establish complete connected workflows, individual-event history or real OS permission and delivery.
 
 ### ✨ Features
 
 - **heinzel:** Review suggested sources and compare reads ([#287](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/287)) ([46cd12b](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/46cd12b1e92022204e31176c14d5009a71bd0ef3))
+- **heads:** Review native notification and microphone access ([#288](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/288)) ([73aa44e](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/73aa44efbdc0ebd607b90ecc69bfe4d1e875de8c))
 
 ## [0.9.5](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/releases/tag/v0.9.5) - 2026-10-30
 
