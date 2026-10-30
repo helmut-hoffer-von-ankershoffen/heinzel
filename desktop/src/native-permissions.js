@@ -85,5 +85,9 @@ export function createNativePermissions({ windows, fromWebContents, connection, 
     return Boolean(same(contents, details, grant));
   }
 
-  return Object.freeze({ request, check, revoke });
+  function navigation(details) {
+    if (details?.isMainFrame === true) revoke();
+  }
+
+  return Object.freeze({ request, check, revoke, navigation });
 }

@@ -48,9 +48,7 @@ const instance = createInstanceLifecycle({
       permissions = windowPermissions;
       window.webContents.session.setPermissionCheckHandler(windowPermissions.check);
       window.webContents.session.setPermissionRequestHandler(windowPermissions.request);
-      window.webContents.on("did-start-navigation", (_event, _url, _inPlace, isMainFrame) => {
-        if (isMainFrame) windowPermissions.revoke();
-      });
+      window.webContents.on("did-start-navigation", windowPermissions.navigation);
       guardUiNavigation(window.webContents, connection);
       window.on("closed", () => { windowPermissions.revoke(); if (!quitting) app.quit(); });
     },

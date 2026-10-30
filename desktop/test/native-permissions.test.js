@@ -131,3 +131,14 @@ test("microphone status is limited to audio and the current document and connect
   f.connection.token = "different";
   assert.equal(f.adapter.check(f.contents, "media", f.connection.origin, status), false);
 });
+
+test("modern navigation details revoke only for the main frame", async () => {
+  const f = fixture();
+  const decision = f.invoke(); await tick(); f.answer(1); assert.equal(await decision, true);
+  const check = () => f.adapter.check(f.contents, "notifications", f.connection.origin, f.details);
+  assert.equal(check(), true);
+  f.adapter.navigation({ isMainFrame: false });
+  assert.equal(check(), true);
+  f.adapter.navigation({ isMainFrame: true });
+  assert.equal(check(), false);
+});

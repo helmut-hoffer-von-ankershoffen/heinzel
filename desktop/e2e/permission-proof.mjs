@@ -55,8 +55,9 @@ try {
   console.log(JSON.stringify({ syntheticAcceptedStatus: state, checks: after.filter((e) => e.kind === 'check') }));
   assert.equal(state, 'granted');
   assert(after.some((e) => e.kind === 'check' && e.permission === 'notifications'));
-  await instance.evaluate(() => globalThis.revokeSynthetic());
+  await page.reload();
   assert.equal(await page.evaluate(async () => (await navigator.permissions.query({name:'notifications'})).state), 'denied');
+  assert((await instance.evaluate(() => globalThis.permissionEvents)).some((e) => e.kind === 'navigation' && e.isMainFrame === true));
 
 } finally {
   if (instance) {

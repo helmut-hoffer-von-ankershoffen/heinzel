@@ -13,6 +13,10 @@ const permissions = createNativePermissions({ windows, fromWebContents: BrowserW
     globalThis.permissionEvents.push({ kind: 'prompt', title: options.title });
     return { response: globalThis.syntheticAccept ? 1 : 0 };
   } });
+window.webContents.on('did-start-navigation', (details) => {
+  globalThis.permissionEvents.push({ kind: 'navigation', isMainFrame: details.isMainFrame });
+  permissions.navigation(details);
+});
 globalThis.revokeSynthetic = () => permissions.revoke();
 globalThis.authorizeSynthetic = () => new Promise((resolve) => {
   const frame = window.webContents.mainFrame;
