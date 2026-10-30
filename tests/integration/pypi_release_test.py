@@ -3,6 +3,7 @@
 import importlib.util
 import shutil
 import subprocess
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -14,6 +15,14 @@ assert SPEC is not None
 assert SPEC.loader is not None
 release = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(release)
+
+
+def test_current_built_wheel_passes_release_payload_validation(tmp_path):
+    subprocess.run(
+        ["uv", "build", "--wheel", "--out-dir", str(tmp_path)], cwd=ROOT, check=True, capture_output=True, timeout=300
+    )
+    version = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]["version"]
+    release._wheel(tmp_path / f"heinzel-{version}-py3-none-any.whl", version)
 
 
 @pytest.fixture
