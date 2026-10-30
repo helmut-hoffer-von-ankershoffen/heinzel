@@ -190,14 +190,32 @@ it("refuses an action whose provider candidate disclosure changed", async () => 
 
 it("reviews an inert chat source only after an explicit click and preserves its exact arguments", async () => {
   sessionStorage.clear();
-  const suggestion = { session_id: session, request_id: "turn-1", revision: 1, based_on_revision: 0,
-    capability: "example", method: "read", fixed_arguments: { ref: "https://example.invalid/a" }, status: "suggested" };
+  const suggestion = {
+    session_id: session,
+    request_id: "turn-1",
+    revision: 1,
+    based_on_revision: 0,
+    capability: "example",
+    method: "read",
+    fixed_arguments: { ref: "https://example.invalid/a" },
+    status: "suggested",
+  };
   let submitted: unknown;
   const { calls } = mockApi({
     "/api/heinzel/latest-source-suggestion-view": () => suggestion,
-    "/api/heinzel/connected-read-options": () => [{ capability: "example", method: "read", provider: "fixture", source: "fixture", input_schema: {} }],
-    "/api/heinzel/connected-read-state": () => ({ session_id: session, status: "none", proposal: null, descriptor: null }),
-    "/api/heinzel/prepare-suggested-source": async (request: Request) => { submitted = await request.clone().json(); return proposal; },
+    "/api/heinzel/connected-read-options": () => [
+      { capability: "example", method: "read", provider: "fixture", source: "fixture", input_schema: {} },
+    ],
+    "/api/heinzel/connected-read-state": () => ({
+      session_id: session,
+      status: "none",
+      proposal: null,
+      descriptor: null,
+    }),
+    "/api/heinzel/prepare-suggested-source": async (request: Request) => {
+      submitted = await request.clone().json();
+      return proposal;
+    },
   });
   const user = userEvent.setup();
   show();
@@ -211,13 +229,28 @@ it("reviews an inert chat source only after an explicit click and preserves its 
 
 it("refuses review if the suggestion changed after it was displayed", async () => {
   sessionStorage.clear();
-  const suggestion = { session_id: session, request_id: "turn-1", revision: 1, based_on_revision: 0,
-    capability: "example", method: "read", fixed_arguments: { ref: "https://example.invalid/a" }, status: "suggested" };
+  const suggestion = {
+    session_id: session,
+    request_id: "turn-1",
+    revision: 1,
+    based_on_revision: 0,
+    capability: "example",
+    method: "read",
+    fixed_arguments: { ref: "https://example.invalid/a" },
+    status: "suggested",
+  };
   let reads = 0;
   const { calls } = mockApi({
-    "/api/heinzel/latest-source-suggestion-view": () => ++reads === 1 ? suggestion : { ...suggestion, revision: 2 },
-    "/api/heinzel/connected-read-options": () => [{ capability: "example", method: "read", provider: "fixture", source: "fixture", input_schema: {} }],
-    "/api/heinzel/connected-read-state": () => ({ session_id: session, status: "none", proposal: null, descriptor: null }),
+    "/api/heinzel/latest-source-suggestion-view": () => (++reads === 1 ? suggestion : { ...suggestion, revision: 2 }),
+    "/api/heinzel/connected-read-options": () => [
+      { capability: "example", method: "read", provider: "fixture", source: "fixture", input_schema: {} },
+    ],
+    "/api/heinzel/connected-read-state": () => ({
+      session_id: session,
+      status: "none",
+      proposal: null,
+      descriptor: null,
+    }),
   });
   const user = userEvent.setup();
   show();

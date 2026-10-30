@@ -38,27 +38,33 @@ export function ConnectedReadReview({ sessionId }: { sessionId: string }) {
   const [lookback, setLookback] = useState("");
   const [lookahead, setLookahead] = useState("");
   const [timezone, setTimezone] = useState("");
-  const [pendingProposal, setPendingProposal] = useState<{
-    request_id: string;
-    suggestion_request: string;
-    suggestion_revision: number;
-  } | {
-    request_id: string;
-    capability: string;
-    method: string;
-    fixed_arguments: Record<string, never>;
-    window_policy?: { parameter: string; lookback_seconds: number; lookahead_seconds: number; timezone: string };
-  } | null>(() => {
+  const [pendingProposal, setPendingProposal] = useState<
+    | {
+        request_id: string;
+        suggestion_request: string;
+        suggestion_revision: number;
+      }
+    | {
+        request_id: string;
+        capability: string;
+        method: string;
+        fixed_arguments: Record<string, never>;
+        window_policy?: { parameter: string; lookback_seconds: number; lookahead_seconds: number; timezone: string };
+      }
+    | null
+  >(() => {
     try {
       const saved = JSON.parse(sessionStorage.getItem(`hz.connected-proposal:${sessionId}`) ?? "null");
       return saved &&
         typeof saved.request_id === "string" &&
-        ((typeof saved.suggestion_request === "string" && Number.isInteger(saved.suggestion_revision) && saved.suggestion_revision > 0) ||
-        (typeof saved.capability === "string" &&
-        typeof saved.method === "string" &&
-        saved.fixed_arguments &&
-        typeof saved.fixed_arguments === "object" &&
-        !Array.isArray(saved.fixed_arguments)))
+        ((typeof saved.suggestion_request === "string" &&
+          Number.isInteger(saved.suggestion_revision) &&
+          saved.suggestion_revision > 0) ||
+          (typeof saved.capability === "string" &&
+            typeof saved.method === "string" &&
+            saved.fixed_arguments &&
+            typeof saved.fixed_arguments === "object" &&
+            !Array.isArray(saved.fixed_arguments)))
         ? saved
         : null;
     } catch {
@@ -84,7 +90,8 @@ export function ConnectedReadReview({ sessionId }: { sessionId: string }) {
   });
   const suggestion = useQuery({
     queryKey: ["heinzel", "latest-source-suggestion", sessionId],
-    queryFn: () => result(api.GET("/heinzel/latest-source-suggestion-view", { params: { query: { session_id: sessionId } } })),
+    queryFn: () =>
+      result(api.GET("/heinzel/latest-source-suggestion-view", { params: { query: { session_id: sessionId } } })),
     retry: false,
   });
   const requestId = state.data?.proposal?.request_id ?? null;
@@ -141,11 +148,22 @@ export function ConnectedReadReview({ sessionId }: { sessionId: string }) {
     if (suggested && !request) {
       try {
         const shown = suggestion.data;
-        const fresh = await result(api.GET("/heinzel/latest-source-suggestion-view", { params: { query: { session_id: sessionId } } }));
-        if (!shown || !fresh || shown.session_id !== sessionId || canonical(shown) !== canonical(fresh) ||
-            !options.data?.some((item) => item.capability === shown.capability && item.method === shown.method))
+        const fresh = await result(
+          api.GET("/heinzel/latest-source-suggestion-view", { params: { query: { session_id: sessionId } } }),
+        );
+        if (
+          !shown ||
+          !fresh ||
+          shown.session_id !== sessionId ||
+          canonical(shown) !== canonical(fresh) ||
+          !options.data?.some((item) => item.capability === shown.capability && item.method === shown.method)
+        )
           throw new Error("The source suggestion changed or is unavailable");
-        request = { request_id: crypto.randomUUID(), suggestion_request: shown.request_id, suggestion_revision: shown.revision };
+        request = {
+          request_id: crypto.randomUUID(),
+          suggestion_request: shown.request_id,
+          suggestion_revision: shown.revision,
+        };
         sessionStorage.setItem(`hz.connected-proposal:${sessionId}`, JSON.stringify(request));
         setPendingProposal(request);
       } catch {
@@ -335,10 +353,30 @@ export function ConnectedReadReview({ sessionId }: { sessionId: string }) {
       </p>
       {suggestion.data && suggestion.data.session_id === sessionId && (
         <div className="space-y-1 rounded border p-2">
-          <p>Suggested source · version {suggestion.data.revision}. This suggestion has not contacted a provider or granted access.</p>
-          <p>{suggestion.data.capability}.{suggestion.data.method}</p>
-          <pre className="overflow-x-auto whitespace-pre-wrap break-all">{JSON.stringify(suggestion.data.fixed_arguments, null, 2)}</pre>
-          <Button type="button" size="sm" disabled={busy || !!pendingProposal || !options.data?.some((item) => item.capability === suggestion.data?.capability && item.method === suggestion.data?.method)} onClick={() => void submit(true)}>Review source</Button>
+          <p>
+            Suggested source · version {suggestion.data.revision}. This suggestion has not contacted a provider or
+            granted access.
+          </p>
+          <p>
+            {suggestion.data.capability}.{suggestion.data.method}
+          </p>
+          <pre className="overflow-x-auto whitespace-pre-wrap break-all">
+            {JSON.stringify(suggestion.data.fixed_arguments, null, 2)}
+          </pre>
+          <Button
+            type="button"
+            size="sm"
+            disabled={
+              busy ||
+              !!pendingProposal ||
+              !options.data?.some(
+                (item) => item.capability === suggestion.data?.capability && item.method === suggestion.data?.method,
+              )
+            }
+            onClick={() => void submit(true)}
+          >
+            Review source
+          </Button>
         </div>
       )}
       {options.isError || state.isError ? <p role="alert">Connected read availability could not be verified.</p> : null}
@@ -445,10 +483,17 @@ export function ConnectedReadReview({ sessionId }: { sessionId: string }) {
           {pendingProposal && (
             <div>
               <p>Retained for an exact retry. Check the recorded proposal if the response was lost.</p>
-              <Button type="button" size="sm" disabled={busy} onClick={() => {
-                sessionStorage.removeItem(`hz.connected-proposal:${sessionId}`);
-                setPendingProposal(null);
-              }}>Forget this retry</Button>
+              <Button
+                type="button"
+                size="sm"
+                disabled={busy}
+                onClick={() => {
+                  sessionStorage.removeItem(`hz.connected-proposal:${sessionId}`);
+                  setPendingProposal(null);
+                }}
+              >
+                Forget this retry
+              </Button>
               <p>Forgetting this retry does not remove a proposal that may already have been recorded.</p>
             </div>
           )}
