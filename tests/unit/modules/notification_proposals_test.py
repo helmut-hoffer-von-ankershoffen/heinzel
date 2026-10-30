@@ -63,7 +63,7 @@ def test_notification_bounds_and_closed_schema():
             NotificationProposal.model_validate({**base, **extra})
 
 
-def test_one_exact_human_confirmation_records_once_and_never_replays(tmp_path):
+def test_one_exact_human_confirmation_records_once_and_never_replays(tmp_path, monkeypatch):
     from heinzel import Notifications
     from heinzel.kernel._approval import ApprovalConfirmation
     from heinzel.modules.heinzel._notification_delivery import NotificationDelivery
@@ -113,6 +113,21 @@ def test_one_exact_human_confirmation_records_once_and_never_replays(tmp_path):
         assert len(notices.calls) == 1
         assert delivery.recover(session, proposal.request_id) == "recorded"
         assert len(notices.calls) == 1
+        real_read = repo.control_read
+
+        def declined(session_id):
+            read = real_read(session_id)
+            events = [
+                event.model_copy(update={"data": {**event.data, "decision": "decline"}})
+                if event.kind == "approval.issued"
+                else event
+                for event in read.events
+            ]
+            return read.model_copy(update={"events": events})
+
+        monkeypatch.setattr(repo, "control_read", declined)
+        with pytest.raises(HeinzelError):
+            delivery.recover(session, proposal.request_id)
         with current.local("mcp-stdio"), pytest.raises(HeinzelError):
             delivery.issue(session, proposal.request_id, "model")
 

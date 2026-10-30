@@ -191,6 +191,7 @@ class NotificationDelivery:
                 raise HeinzelError(msg) from None
             if (
                 issued[0].seq >= event.seq
+                or record.model_dump(mode="json").get("decision") != "approve"
                 or record.intent != self._intent(proposal)
                 or record.proof_hash != issued[0].key
                 or record.nonce != event.data.get("consumed_nonce")
