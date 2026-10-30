@@ -30,8 +30,10 @@ Chosen option: **record a distinct inert, bounded read-set proposal**, because p
   snapshot. A separately scoped trusted human confirmation may issue and consume a one-use, expiring proof of the
   exact current review, recording the whole set approval atomically. Any changed entry requires a new review and
   approval; revocation applies to the whole set. Neither source text, a model nor a legacy single grant can approve it.
-- This slice has no public approval issuer or operation, provider read execution, model tool or schedule integration.
-  Any later execution must freshly revalidate every relevant source, account and approval at the read boundary.
+- An internal executor may read one exact approved entry for an authenticated human-owned active turn, after
+  rechecking its source, account and approval. It records a private per-entry receipt before returning a value; an
+  interrupted attempt is not replayed automatically. It provides no public operation, model tool, daemon or schedule
+  integration, item-evidence effect or notification authority.
 - Existing fixed and rolling grant approvals, histories, schedules and digests retain their meanings. No legacy grant
   or accepted artifact becomes an approval for a read set.
 
@@ -45,4 +47,7 @@ Chosen option: **record a distinct inert, bounded read-set proposal**, because p
 `tests/unit/modules/connected_read_set_test.py` checks proposal bounds, duplicate terms, owner/session binding,
 idempotency, projection and legacy isolation. `tests/unit/modules/connected_read_set_review_test.py` checks fresh
 observations and exact intents. `tests/unit/modules/connected_read_set_approval_test.py` checks trusted proof,
-consumption, replay, revocation and legacy isolation. Review confirms that no provider read execution is added.
+consumption, replay, revocation and legacy isolation. `tests/unit/modules/connected_read_set_input_test.py` and
+`tests/unit/modules/connected_read_set_key_test.py` check turn/handle binding, receipts, fail-closed key recovery and
+legacy compatibility; `tests/integration/source_read_set_prototype_test.py` checks captured-source failure.
+Review confirms there is no public tool, daemon, schedule or notification route for the internal executor.

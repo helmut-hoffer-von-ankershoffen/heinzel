@@ -68,7 +68,7 @@ class ConnectedReadSetReviews:
         return result
 
     @staticmethod
-    def _grant(entry: ReadSetEntry) -> ConnectedGrant:
+    def entry_grant(entry: ReadSetEntry) -> ConnectedGrant:
         terms = entry.terms
         common = {
             "request_id": entry.handle,
@@ -86,7 +86,7 @@ class ConnectedReadSetReviews:
 
     def _observe(self, session: str, proposal: ReadSetProposal) -> None:
         for entry in proposal.entries:
-            grant = self._grant(entry)
+            grant = self.entry_grant(entry)
             self.grants.verify_proposed_terms(session, grant)
 
     def prepare(self, session: str, request: str, proposal_request: str, proposal_revision: int) -> ReadSetReview:

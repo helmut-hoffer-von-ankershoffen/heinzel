@@ -5,7 +5,7 @@ import json
 import secrets
 from datetime import UTC, timedelta
 from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, model_validator
@@ -50,6 +50,10 @@ from heinzel.modules.heinzel._session_crud import SessionCrud
 from heinzel.modules.heinzel._session_models import RequestId, SessionId
 from heinzel.modules.heinzel._source_suggestions import latest_source_suggestion
 
+if TYPE_CHECKING:
+    from heinzel.modules.heinzel._connected_read_set_approvals import ConnectedReadSetApprovals
+    from heinzel.modules.heinzel._connected_read_set_inputs import ReadSetCall
+
 _SESSION = TypeAdapter(SessionId)
 _REQUEST = TypeAdapter(RequestId)
 _READ_PERMISSION = "private:read"
@@ -82,6 +86,20 @@ def _close_review_lease(lease: ConnectedReadLease) -> None:
     except Exception:  # noqa: BLE001 - plugin errors may contain credentials
         msg = "The connected read provider cleanup could not be confirmed"
         raise HeinzelError(msg) from None
+
+
+def _bounded_set_read(lease: ConnectedReadLease) -> JsonValue:
+    try:
+        result = TypeAdapter(JsonValue).validate_python(lease.read({}), strict=True)
+        encoded = json.dumps(result, ensure_ascii=True, allow_nan=False).encode()
+        if len(encoded) > _MAX_RESULT_BYTES:
+            raise ValueError  # noqa: TRY301
+        result = TypeAdapter(JsonValue).validate_json(encoded, strict=True)
+    except Exception:  # noqa: BLE001 - provider and input diagnostics are private
+        msg = "The connected read began but did not produce a usable result"
+        raise ConnectedReadFailedError(msg) from None
+    else:
+        return result
 
 
 class ConnectedReadFailedError(HeinzelError):
@@ -819,3 +837,82 @@ class ConnectedReadGrants:
                 if invoked:
                     raise ConnectedReadFailedError(msg) from None
                 raise HeinzelError(msg) from None
+
+    def read_set_entry(
+        self, session: str, writer: SessionWriter, call: "ReadSetCall", approvals: "ConnectedReadSetApprovals"
+    ) -> tuple[JsonValue, int]:
+        """Read one approved entry in a human-owned turn and record it before returning data.
+
+        This internal path registers no tool and does not authorize daemon or notification use.
+
+        Raises:
+            HeinzelError: If the turn, set, selected account or source is unavailable.
+            ConnectedReadFailedError: If a read, cleanup or durable receipt fails.
+        """
+        from heinzel.modules.heinzel._connected_read_set_inputs import (  # noqa: PLC0415 - avoid approval import cycle
+            ReadSetReceiptBinding,
+            record_set_input,
+            set_input_key,
+            start_set_call,
+            verify_set_call,
+        )
+
+        context = self.current.context()
+        if (
+            approvals.reviews.grants is not self
+            or approvals.crud is not self.crud
+            or context.authentication not in _HEADS
+            or context.principal != self.current.owner()
+            or context.principal.id != self.owner
+            or _READ_PERMISSION not in context.permissions
+            or not self.crud.repository.is_main_writer(session, writer)
+        ):
+            msg = "The read-set input does not belong to this authorized turn"
+            raise HeinzelError(msg)
+        call = verify_set_call(self.crud, session, call)
+        expected = approvals.approved(session)
+        matches = [entry for entry in expected.proposal.entries if entry.handle == call.handle]
+        if len(matches) != 1:
+            msg = "The read-set entry is unavailable"
+            raise HeinzelError(msg)
+        grant = approvals.reviews.entry_grant(matches[0])
+        key, key_id = set_input_key(self.current, self.crud, session)
+        start_set_call(self.crud, session, call)
+        self._check_current_config(grant.capability)
+        descriptor = describe_capability_read(self.kernel, grant.capability, grant.method)
+        record, service = self._selected(grant.capability, grant.method)
+        if descriptor.binding_sha256 != grant.binding_sha256 or descriptor.owner_module != record.qualname:
+            msg = "The connected read provider changed"
+            raise HeinzelError(msg)
+        fixed = self._arguments(grant)
+        lease = _open_lease(service, session, grant.review.operation, copy.deepcopy(fixed))
+        invoked = False
+        try:
+            live = _review_lease(lease)
+            if (
+                arguments_hash(live.fixed_arguments) != arguments_hash(fixed)
+                or not self._same_review(grant, live)
+                or arguments_hash(approvals.approved(session).model_dump(mode="json"))
+                != arguments_hash(expected.model_dump(mode="json"))
+            ):
+                msg = "The read-set approval or account changed"
+                raise HeinzelError(msg)
+            self._check_current_config(grant.capability)
+            invoked = True
+            result = _bounded_set_read(lease)
+        finally:
+            try:
+                lease.close()
+            except Exception:  # noqa: BLE001 - cleanup diagnostics may contain private material
+                msg = "The connected read cleanup could not be confirmed"
+                if invoked:
+                    raise ConnectedReadFailedError(msg) from None
+                raise HeinzelError(msg) from None
+        try:
+            self.verify_proposed_terms(session, grant)
+            binding = ReadSetReceiptBinding(call, expected, key, key_id)
+            sequence = record_set_input(approvals, session, binding, result)
+        except Exception:  # noqa: BLE001 - never expose a value whose receipt could not be recorded
+            msg = "The connected read completed but its input snapshot could not be recorded"
+            raise ConnectedReadFailedError(msg) from None
+        return result, sequence
