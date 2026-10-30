@@ -109,7 +109,7 @@ def verify_stream_fixture(url: str) -> None:
     with urlopen(origin + "/", timeout=10) as response:  # noqa: S310 - validated loopback origin
         directives = [part.split() for part in response.headers.get("Content-Security-Policy", "").split(";")]
         frames = next((part[1:] for part in directives if part and part[0] == "frame-src"), [])
-        assert "https://www.youtube-nocookie.com" in frames
+        assert any(frame == "https://www.youtube-nocookie.com" for frame in frames)
     request = Request(origin + "/api/system/sound/list", headers={"Authorization": f"Bearer {tokens[0]}"})  # noqa: S310 - validated loopback origin
     with urlopen(request, timeout=10) as response:  # noqa: S310 - validated loopback origin
         sound = json.load(response)
