@@ -14,7 +14,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, JsonValue, TypeAdapter
 
-from heinzel import Config, CurrentUser, HeinzelError, Notifications
+from heinzel import Config, CurrentUser, HeinzelError, Kernel, Notifications
 from heinzel.kernel import PRIVATE_WRITE, CapabilitySettings, RunnerSnapshot, RunnerSnapshotProvider
 from heinzel.kernel import ProcessOutcome as Outcome
 from heinzel.kernel import run_bounded_process as run_bounded
@@ -111,6 +111,7 @@ class UserChatService:
         *,
         connected: Callable[[], ConnectedReadGrants] | None = None,
         notifications: Callable[[], Notifications] | None = None,
+        playbook_kernel: Kernel | None = None,
         load: Callable[[], Config] = lambda: Config.load(Path.home()),
         execute: Callable[..., Outcome] = run_bounded,
     ) -> None:
@@ -118,6 +119,7 @@ class UserChatService:
         self._runner_settings = runner_settings
         self._connected = connected
         self._notifications = notifications
+        self._playbook_kernel = playbook_kernel
 
     def connected_grants(self) -> ConnectedReadGrants:
         """Resolve owner-bound connected grants only inside an authenticated host call.
@@ -312,6 +314,7 @@ class UserChatService:
             limits=TurnLimits(requests=max_requests, total_tokens=None, output_tokens=None, timeout_seconds=duration),
             allow_ungranted_tools=False,
             user_proposal_policy=unchanged if user_proposals else None,
+            playbook_kernel=self._playbook_kernel if user_proposals else None,
             prepare=prepare,
             connected=connected,
             connected_set=connected_set,
