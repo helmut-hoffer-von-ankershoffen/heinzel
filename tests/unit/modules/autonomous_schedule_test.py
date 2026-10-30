@@ -20,6 +20,16 @@ pytestmark = pytest.mark.unit
 
 
 def test_separate_consent_daemon_occurrence_dedup_and_pause(tmp_path, monkeypatch):  # noqa: PLR0915 - one authorization lifecycle
+    import heinzel.modules.heinzel._autonomous_schedule as schedule_module
+
+    fixed = datetime.now(UTC)
+
+    class FixedClock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return fixed
+
+    monkeypatch.setattr(schedule_module, "datetime", FixedClock)
     current = CurrentUser(tmp_path / "identity")
     with current.local("cli"):
         crud = SessionCrud(
@@ -35,7 +45,7 @@ def test_separate_consent_daemon_occurrence_dedup_and_pause(tmp_path, monkeypatc
         binding = schedules.propose(session, "schedule", "contract", 60, 4, 30)
         assert binding.contract_sha256 == proposal.preview_sha256
         assert crud.snapshot(session).schedule is None
-        now = datetime.now(UTC)
+        now = fixed
         with current.local("daemon"), pytest.raises(HeinzelError, match="not been separately approved"):
             asyncio.run(schedules.tick(session, "schedule", now))
         proof = schedules.issue(session, "schedule", "chat-confirm:test:schedule")
@@ -378,3 +388,55 @@ def test_schedule_binding_tracks_full_runner_configuration(tmp_path):
         original = _fingerprint(chat)
         config[0] = ConfigWithRunnerChange(executable, "changed-model")
         assert _fingerprint(chat) != original
+
+
+def test_occurrence_expiring_during_model_call_refuses_reply_and_never_replays(tmp_path, monkeypatch):
+    from datetime import timedelta
+
+    import heinzel.modules.heinzel._autonomous_schedule as schedule_module
+    from heinzel.modules.system.runner._process import run_bounded
+
+    clock = [datetime.now(UTC)]
+
+    class Clock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return clock[0]
+
+    monkeypatch.setattr(schedule_module, "datetime", Clock)
+    current = CurrentUser(tmp_path / "identity")
+    with current.local("cli"):
+        crud = SessionCrud(
+            PersonalSessionRepository(current), lambda: SessionCosts(session_max_usd=2, message_max_usd=0.2)
+        )
+        session = crud.new_chat("rollover-inflight").session_id
+        crud.propose_scheduled_agent(session, "contract", "Status", None, 30)
+        contract = ContractReview(crud)
+        contract.accept(session, "contract", contract.issue(session, "contract", "test-confirm"))
+        executable = fake_claude(tmp_path)
+        start = clock[0]
+
+        def execute(command, **kwargs):
+            result = run_bounded(command, **kwargs)
+            if "--safe-mode" in command:
+                clock[0] = start + timedelta(seconds=60)
+            return result
+
+        chat = UserChatService(
+            crud, current, RunnerSnapshotService(), load=lambda: FixtureConfig(executable), execute=execute
+        )
+        schedules = AutonomousSchedules(crud, chat)
+        binding = schedules.propose(session, "schedule", "contract", 60, 4, 30)
+        proof = schedules.issue(session, "schedule", "test-confirm")
+        marker = ApprovalConfirmation()
+        review = binding.model_dump(mode="json")
+        args = {"session_id": session, "request_id": "schedule", "review": review, "approval_proof": proof}
+        with marker.using("heinzel", "approve-agent-schedule", args):
+            schedules.approve(session, "schedule", review, proof, marker)
+        with current.local("daemon"), pytest.raises(HeinzelError, match="subscription response"):
+            asyncio.run(schedules.tick(session, "schedule", start))
+        assert (tmp_path / "model-calls").read_text() == "x"
+        assert not any(e.kind == "message.replied" for e in crud.repository.control_read(session).events)
+        with current.local("daemon"), pytest.raises(HeinzelError, match="current schedule occurrence"):
+            asyncio.run(schedules.tick(session, "schedule", start))
+        assert (tmp_path / "model-calls").read_text() == "x"
