@@ -6,10 +6,10 @@ import json
 from dataclasses import dataclass
 from typing import Any, get_type_hints
 
-from pydantic import ConfigDict, TypeAdapter, create_model
+from pydantic import ConfigDict, create_model
 
 from heinzel import HeinzelError, Kernel
-from heinzel.kernel import CAPABILITIES
+from heinzel.kernel import CAPABILITIES, capability_read_schema
 
 _MAX_SCHEMA_BYTES = 16_000
 
@@ -49,20 +49,7 @@ def describe_capability_read(kernel: Kernel, capability: str, method: str) -> Ca
     try:
         if function is None:
             raise ValueError  # noqa: TRY301
-        signature = inspect.signature(function)
-        hints = get_type_hints(function)
-        fields: dict[str, Any] = {}
-        for name, parameter in signature.parameters.items():
-            if name == "self":
-                continue
-            if parameter.kind not in (inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.KEYWORD_ONLY):
-                raise ValueError  # noqa: TRY301
-            if name not in hints:
-                raise ValueError  # noqa: TRY301
-            default = ... if parameter.default is inspect.Parameter.empty else parameter.default
-            fields[name] = (hints[name], default)
-        model = create_model("CapabilityRead", __config__=ConfigDict(extra="forbid"), **fields)
-        schema = TypeAdapter(model).json_schema(mode="validation")
+        schema, _digest = capability_read_schema(capability, method)
         factory = f"{provider.factory.__module__}.{provider.factory.__qualname__}"
         binding = {
             "kind": "capability-method",

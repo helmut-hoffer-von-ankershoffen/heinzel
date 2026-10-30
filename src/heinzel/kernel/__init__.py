@@ -21,6 +21,7 @@ from heinzel.kernel._boot import boot
 from heinzel.kernel._bounded_process import MAX_OUTPUT as PROCESS_MAX_OUTPUT
 from heinzel.kernel._bounded_process import ProcessExecute, ProcessOutcome, run_bounded_process, signal_process_group
 from heinzel.kernel._capabilities import CAPABILITIES, MODES, NO_ADAPTER, Capability, Mode, Requirement
+from heinzel.kernel._capability_schema import capability_read_schema
 from heinzel.kernel._chat import ActionGate, ProposedCall
 from heinzel.kernel._chat_services import (
     CheckInChatContext,
@@ -535,6 +536,7 @@ __all__ = [
     "WidgetLet",
     "Window",
     "boot",
+    "capability_read_schema",
     "check_repository_url",
     "check_target",
     "clean_text",

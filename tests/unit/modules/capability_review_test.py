@@ -41,3 +41,13 @@ def test_protocol_schema_and_selected_provider_are_bound_without_execution():
         describe_capability_read(one, "calendar", "create_event")
     with pytest.raises(HeinzelError):
         describe_capability_read(one, "unknown", "events")
+
+
+def test_public_protocol_schema_matches_host_review_hash():
+    from heinzel import capability_read_schema
+    from heinzel.kernel._approval import arguments_hash
+
+    schema, digest = capability_read_schema("calendar", "events")
+    assert digest == arguments_hash(schema)
+    with pytest.raises(HeinzelError):
+        capability_read_schema("calendar", "create_event")
