@@ -11,6 +11,36 @@ import pytest
 pytestmark = pytest.mark.integration
 
 
+def test_starter_make_bootstraps_its_pinned_toolkit_without_overrides(tmp_path):
+    make = shutil.which("make")
+    assert make
+    source = next((Path(__file__).parents[2] / "starter").glob("*Makefile*.jinja"))
+    stub = tmp_path / "uv"
+    stub.write_text('#!/bin/sh\nprintf "%s\\n" "$@"\n')
+    stub.chmod(0o755)
+    environment = {
+        key: value
+        for key, value in os.environ.items()
+        if key not in {"TOOLING", "CORE", "TAG", "REGISTRY", "MAKEFLAGS", "MAKELEVEL", "MFLAGS"}
+    }
+    environment["PATH"] = str(tmp_path) + os.pathsep + os.environ["PATH"]
+    result = subprocess.run(
+        [make, "-f", str(source), "setup"],
+        cwd=tmp_path,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=10,
+    )
+    assert result.returncode == 0, result.stderr
+    arguments = result.stdout.splitlines()
+    assert arguments[:4] == ["run", "--quiet", "--no-project", "--with"]
+    assert arguments[4].startswith("heinzel-plugin-tools @ https://github.com/")
+    assert "#sha256=" in arguments[4]
+    assert arguments[5:] == ["hz-plugin", "setup"]
+
+
 @pytest.mark.parametrize("option", ["TOOLING", "CORE", "TAG", "REGISTRY"])
 def test_standalone_make_forwards_values_without_evaluating_them(tmp_path, option):
     make = shutil.which("make")
