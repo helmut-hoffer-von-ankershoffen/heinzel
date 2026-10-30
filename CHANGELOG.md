@@ -4,7 +4,7 @@ All notable changes to Heinzelmännchen, newest first. Versions follow [Semantic
 
 ## [0.9.5](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/releases/tag/v0.9.5) - 2026-10-30
 
-Durable chats can review exactly which connected source an agent may read, approve recurring turns separately, and set limits for local notifications. Conversational source and schedule suggestions remain inactive until reviewed. This release provides the host and plugin SDK foundations; complete connected workflows and native delivery still need verification.
+Durable chats now support exact connected-source reviews, separately approved recurring turns and limits for local notifications. Chat-generated schedules stay inactive until reviewed. This release provides host and plugin SDK foundations; complete connected workflows and native delivery still need verification.
 
 ### ✨ Features
 
