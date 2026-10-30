@@ -28,12 +28,13 @@ def test_runner_snapshot_tracks_selected_settings_and_redacts_other_values(monke
 def test_runner_snapshot_provider_must_be_the_registered_builtin(make_kernel):
     from heinzel import HeinzelError
     from heinzel.kernel import RunnerSnapshotProvider
+    from heinzel.modules.system.runner._snapshot import RunnerSnapshotService
 
     kernel = make_kernel(builtins=True)
     assert kernel.resolve_builtin_service(RunnerSnapshotProvider, "system.runner") is kernel.resolve(
         RunnerSnapshotProvider
     )
-    kernel.bind(RunnerSnapshotProvider, RunnerSnapshotProvider())
+    kernel.bind(RunnerSnapshotProvider, RunnerSnapshotService())
     with pytest.raises(HeinzelError, match="instance changed"):
         kernel.resolve_builtin_service(RunnerSnapshotProvider, "system.runner")
 

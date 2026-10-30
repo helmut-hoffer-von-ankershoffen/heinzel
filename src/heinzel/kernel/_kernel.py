@@ -150,6 +150,8 @@ class Kernel:
             LocalWebRuntime: LocalWebRuntime(),
             Prompter: Prompter(),
         }
+        self._factory_instances: dict[type[Any], object] = {}
+        """Instances constructed by registered factories; explicit binds invalidate this provenance."""
         self._factories: dict[type[Any], Callable[..., Any]] = {
             Installation: Installation,
             CurrentUser: _current_user,
@@ -229,6 +231,7 @@ class Kernel:
     def bind[T](self, kind: type[T], instance: T) -> None:
         """Replace what the kernel injects for `kind`; heads use this to bind their own `Progress`."""
         self._instances[kind] = instance
+        self._factory_instances.pop(kind, None)
 
     def available(self, func: Callable[..., Any]) -> bool:
         """Whether required services exist, including explicit contracts and transitive factory dependencies."""
@@ -261,7 +264,9 @@ class Kernel:
             if kind not in self._factories:
                 msg = f"No module provides {kind.__name__}"
                 raise HeinzelError(msg)
-            self._instances[kind] = self.call(self._factories[kind])
+            instance = self.call(self._factories[kind])
+            self._instances[kind] = instance
+            self._factory_instances[kind] = instance
         return cast("T", self._instances[kind])
 
     def resolve_builtin_service[T](self, kind: type[T], owner: str) -> T:
@@ -285,7 +290,7 @@ class Kernel:
             msg = "The expected built-in service provider is unavailable"
             raise HeinzelError(msg)
         instance = self.resolve(kind)
-        if type(instance) is not factory:
+        if type(instance) is not factory or self._factory_instances.get(kind) is not instance:
             msg = "The expected built-in service instance changed"
             raise HeinzelError(msg)
         return instance

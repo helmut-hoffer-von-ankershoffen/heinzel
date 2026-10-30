@@ -102,6 +102,6 @@ def test_untrusted_rebound_verifier_cannot_authorize_core_catalog(make_kernel, t
             PersonalSessionRepository(current), lambda: SessionCosts(session_max_usd=2, message_max_usd=1)
         )
         session = crud.new_chat("bound").session_id
-        kernel.bind(CoreMetadataVerifier, CoreMetadataVerifier())
+        kernel.bind(CoreMetadataVerifier, CoreMetadataIdentity(kernel))
         with pytest.raises(HeinzelError, match="instance changed"):
             core_metadata_catalog(kernel, current, crud, session)
