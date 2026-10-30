@@ -52,7 +52,7 @@ def _model(expected, summary):
 
 
 @pytest.fixture
-def connected(tmp_path):
+def connected(tmp_path, monkeypatch):
     current = CurrentUser(tmp_path / "identity")
     state = {"account": "account-a", "source": "source-v1", "scopes": ("calendar", "drive"), "reads": 0}
     holder = {}
@@ -101,6 +101,8 @@ def connected(tmp_path):
     kernel = Kernel(Settings(), [record], config=Config(files=(), data={"capabilities": {"calendar": "fixture"}}))
     kernel.bind(CurrentUser, current)
     holder["kernel"] = kernel
+    state["config"] = kernel.config
+    monkeypatch.setattr(Config, "load", classmethod(lambda _cls, _cwd=None: state["config"]))
 
     with current.local("cli"):
         crud = SessionCrud(
@@ -155,6 +157,11 @@ def test_exact_approval_current_source_and_revoke(connected):
     with crud.repository.main_writer(session) as writer, pytest.raises(HeinzelError):
         grants.read(session, writer)
     state["scopes"] = ("calendar", "drive")
+    state["config"] = Config(files=(), data={"capabilities": {"calendar": "different"}})
+    with crud.repository.main_writer(session) as writer, pytest.raises(HeinzelError):
+        grants.read(session, writer)
+    state["config"] = holder_config = grants.kernel.config
+    assert holder_config is grants.kernel.config
     foreign = CallIdentity(Principal("u-" + "b" * 32), "api-bearer", "foreign", "private", frozenset({"private:write"}))
     with current.using(foreign), pytest.raises(HeinzelError):
         grants.issue(session, "req-one", "foreign")

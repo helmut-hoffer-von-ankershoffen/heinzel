@@ -3,10 +3,12 @@
 import json
 import secrets
 from datetime import timedelta
+from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, JsonValue, TypeAdapter
 
 from heinzel import (
+    Config,
     ConnectedReadReview,
     ConnectedReadService,
     CurrentUser,
@@ -14,8 +16,9 @@ from heinzel import (
     Kernel,
     SessionEvent,
     SessionWriter,
+    Settings,
 )
-from heinzel.kernel import PRIVATE_WRITE
+from heinzel.kernel import PRIVATE_WRITE, CapabilitySettings
 from heinzel.kernel._approval import (
     ApprovalEvidence,
     ApprovalIntent,
@@ -78,9 +81,28 @@ class ConnectedReadGrants:
             msg = "The connected read review requires its authenticated owner"
             raise HeinzelError(msg)
 
+    def _check_current_config(self, capability: str) -> None:
+        """Reject a changed owner-selected binding; this does not refresh installed plugin discovery.
+
+        Raises:
+            HeinzelError: If the binding changed.
+        """
+        config = Config.load(Path.home())
+        fresh = config.settings(CapabilitySettings, "capabilities")
+        original = self.kernel.capability_settings
+        if (
+            fresh.bound(capability) != original.bound(capability)
+            or fresh.configured(capability) != original.configured(capability)
+            or fresh.defaulted(capability) != original.defaulted(capability)
+            or config.settings(Settings, "hz").disabled_modules != self.kernel.settings.disabled_modules
+        ):
+            msg = "The connected read capability binding changed; reload it before continuing"
+            raise HeinzelError(msg)
+
     def _observe(
         self, session: str, capability: str, method: str, fixed: dict[str, JsonValue]
     ) -> tuple[str, ConnectedReadReview]:
+        self._check_current_config(capability)
         fixed = validate_capability_read_arguments(capability, method, fixed)
         descriptor = describe_capability_read(self.kernel, capability, method)
         record, service = self.kernel.selected_capability_service(ConnectedReadService, capability)
@@ -283,6 +305,7 @@ class ConnectedReadGrants:
         if not any(event.kind == "connected.approved" for event in events):
             return None
         grant = self.approved(session)
+        self._check_current_config(grant.capability)
         descriptor = describe_capability_read(self.kernel, grant.capability, grant.method)
         if descriptor.binding_sha256 != grant.binding_sha256:
             msg = "The connected read provider changed"
@@ -326,6 +349,7 @@ class ConnectedReadGrants:
             msg = "The connected read does not belong to this authorized turn"
             raise HeinzelError(msg)
         grant = self.approved(session)
+        self._check_current_config(grant.capability)
         descriptor = describe_capability_read(self.kernel, grant.capability, grant.method)
         record, service = self.kernel.selected_capability_service(ConnectedReadService, grant.capability)
         if descriptor.binding_sha256 != grant.binding_sha256 or descriptor.owner_module != record.qualname:
@@ -337,6 +361,7 @@ class ConnectedReadGrants:
             if lease.review() != grant.review or self.approved(session) != grant:
                 msg = "The connected read approval or account changed"
                 raise HeinzelError(msg)
+            self._check_current_config(grant.capability)
             try:
                 invoked = True
                 result = TypeAdapter(JsonValue).validate_python(lease.read({}), strict=True)
