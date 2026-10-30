@@ -154,7 +154,7 @@ def test_source_and_page_identity_must_match(tmp_path):
 
 
 def release_pair():
-    profile = {"format": 1, "sdk": 1, "core_version": "0.9.2", "artifacts": []}
+    profile = {"format": 2, "sdk": 1, "core_version": "0.9.2", "artifacts": []}
     for name, version in (("heinzel", "0.9.2"), ("heinzel-harbor", "0.1.0")):
         filename = f"{name.replace('-', '_')}-{version}-py3-none-any.whl"
         profile["artifacts"].append(
@@ -192,6 +192,13 @@ def test_install_recommendation_requires_matching_complete_artifacts():
     assert not catalog.complete_release(profile, package)
     profile, package = release_pair()
     profile["artifacts"].append(profile["artifacts"][1])
+    assert not catalog.complete_release(profile, package)
+
+
+@pytest.mark.parametrize("version", [1, 3, True, False, "2", None])
+def test_recommendation_rejects_noncurrent_or_invalid_profile_format(version):
+    profile, package = release_pair()
+    profile["format"] = version
     assert not catalog.complete_release(profile, package)
 
 
@@ -389,13 +396,13 @@ def test_install_cta_rejects_profiles_the_actual_installer_would_refuse(mutation
 
 
 def test_website_ready_profile_is_accepted_by_the_actual_installer(tmp_path):
-    from heinzel.heads.install import read_profile
+    from heinzel.heads.install import _selected_profile
 
     profile, package = release_pair()
     assert catalog.complete_release(profile, package)
     path = tmp_path / "standard.json"
     path.write_text(json.dumps(profile))
-    parsed = read_profile(str(path))
+    parsed = _selected_profile(str(path))
     assert parsed.core_version == "0.9.2"
     assert len(parsed.artifacts) == 2
 

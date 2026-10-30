@@ -48,6 +48,7 @@ MAX_PROJECTS = 500
 MAX_SOURCE_PROJECTS = 32
 MAX_SOURCE_BLOBS = 64
 MAX_API_REQUESTS = 240
+APP_PROFILE_FORMAT = 2
 MIN_PROFILE_ARTIFACTS = 2
 MAX_PROFILE_ARTIFACTS = 64
 MAX_ARTIFACT_VERSION = 80
@@ -408,7 +409,8 @@ def complete_release(profile: Object, package: Object) -> bool:
     """Only recommend the profile when its core artifact matches the published package."""
     version = str(profile.get("core_version", ""))
     if (
-        profile.get("format") != 1
+        type(profile.get("format")) is not int
+        or profile.get("format") != APP_PROFILE_FORMAT
         or profile.get("sdk") != 1
         or not VERSION.fullmatch(version)
         or set(profile) != {"format", "sdk", "core_version", "artifacts"}
