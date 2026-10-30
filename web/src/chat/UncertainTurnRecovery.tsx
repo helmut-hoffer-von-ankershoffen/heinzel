@@ -8,10 +8,12 @@ export function UncertainTurnRecovery({
   sessionId,
   requestId,
   onResolved,
+  allowPendingDaemon = false,
 }: {
   sessionId: string;
   requestId: string;
   onResolved: () => void;
+  allowPendingDaemon?: boolean;
 }) {
   const [acknowledged, setAcknowledged] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -35,7 +37,14 @@ export function UncertainTurnRecovery({
     refetchOnMount: "always",
   });
   const setAside = async () => {
-    if (!acknowledged || busy || state.isError || state.isFetching || state.data?.status !== "unresolved") return;
+    if (
+      !acknowledged ||
+      busy ||
+      state.isError ||
+      state.isFetching ||
+      !(state.data?.status === "unresolved" || (allowPendingDaemon && state.data?.status === "pending"))
+    )
+      return;
     setBusy(true);
     setError(false);
     try {
@@ -61,6 +70,25 @@ export function UncertainTurnRecovery({
     <section aria-label="Resolve an uncertain turn" className="space-y-2 rounded border border-border p-2 text-sm">
       {state.isError && <p role="alert">The saved turn state could not be checked.</p>}
       {error && <p role="alert">The set-aside request was not confirmed. Check the saved state before proceeding.</p>}
+      {allowPendingDaemon && state.data?.status === "pending" && (
+        <>
+          <p>
+            No model work has been recorded as started for this daemon turn. Setting it aside prevents a later launch.
+          </p>
+          <label className="flex items-start gap-2">
+            <input type="checkbox" checked={acknowledged} onChange={(event) => setAcknowledged(event.target.checked)} />
+            <span>I understand this unstarted daemon turn will be set aside.</span>
+          </label>
+          <Button
+            type="button"
+            size="sm"
+            disabled={!acknowledged || busy || state.isError || state.isFetching}
+            onClick={() => void setAside()}
+          >
+            Set aside this unstarted turn
+          </Button>
+        </>
+      )}
       {state.data?.status === "unresolved" && (
         <>
           <p>This turn has no recorded answer and may still be running. Its possible effects remain unknown.</p>
@@ -79,7 +107,7 @@ export function UncertainTurnRecovery({
         </>
       )}
       {state.data?.status === "abandoned" && (
-        <p role="status">This turn was set aside. Its possible effects remain unknown.</p>
+        <p role="status">This turn was set aside. If it had started, its possible effects remain unknown.</p>
       )}
       {state.data?.status === "completed" && <p role="status">An answer was recorded for this turn.</p>}
       {(state.data?.status === "abandoned" || state.data?.status === "completed") && (

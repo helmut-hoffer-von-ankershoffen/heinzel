@@ -129,7 +129,15 @@ export function ChatPanel({ onCollapse }: { onCollapse: () => void }) {
       void client.invalidateQueries({ queryKey: ["heinzel", "sessions"] });
       setParams((current) => {
         const next = new URLSearchParams(current);
-        for (const key of ["agent-chat", "approval-chat", "approval-request", "agent-open-request", "contract-chat"])
+        for (const key of [
+          "agent-chat",
+          "approval-chat",
+          "approval-request",
+          "agent-open-request",
+          "contract-chat",
+          "schedule-chat",
+          "schedule-request",
+        ])
           next.delete(key);
         next.set("chat", data.session_id);
         return next;
@@ -157,6 +165,8 @@ export function ChatPanel({ onCollapse }: { onCollapse: () => void }) {
               "approval-request",
               "agent-open-request",
               "contract-chat",
+              "schedule-chat",
+              "schedule-request",
             ])
               next.delete(key);
             return next;

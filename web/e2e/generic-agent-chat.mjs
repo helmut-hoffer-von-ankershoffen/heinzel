@@ -38,6 +38,14 @@ try {
   await terms.getByRole("button", { name: "Review these terms" }).click();
   await terms.getByRole("button", { name: "Confirm" }).click();
   await terms.getByText("These exact terms were accepted.").waitFor();
+  const schedules = page.locator("details").filter({ has: page.getByText("Recurring agent turns", { exact: true }) });
+  await schedules.locator("summary").first().click();
+  await schedules.getByRole("button", { name: "Propose recurring turns" }).click();
+  await schedules.getByRole("button", { name: "Review this schedule" }).click();
+  await schedules.getByRole("button", { name: "Confirm", exact: true }).click();
+  await schedules.getByText(/Approved; the daemon must be running/).waitFor();
+  await schedules.getByRole("button", { name: "Pause future turns" }).click();
+  await schedules.getByText(/Every 5 minutes · paused/).waitFor();
   await page.getByText(/suggested look/).click();
   await page.getByRole("button", { name: "Use suggested identity" }).click();
   await page.getByRole("button", { name: "Save name and look" }).click();

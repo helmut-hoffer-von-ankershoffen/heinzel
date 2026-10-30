@@ -127,6 +127,7 @@ export function AgentContractAcceptance({
       );
       remember(value, ownedChat.id);
       await client.invalidateQueries({ queryKey: reviewKey });
+      await client.invalidateQueries({ queryKey: ["heinzel", "agent-schedule-contract-review", sessionId] });
     } catch {
       setError(true);
       try {
@@ -135,6 +136,7 @@ export function AgentContractAcceptance({
         );
         remember(value, ownedChat.id);
         await client.invalidateQueries({ queryKey: reviewKey });
+        await client.invalidateQueries({ queryKey: ["heinzel", "agent-schedule-contract-review", sessionId] });
       } catch {
         // Keep the review link for an explicit later inspection; never repeat confirmation here.
       }
@@ -154,6 +156,7 @@ export function AgentContractAcceptance({
       );
       remember(value, ownedChat.id);
       await client.invalidateQueries({ queryKey: reviewKey });
+      await client.invalidateQueries({ queryKey: ["heinzel", "agent-schedule-contract-review", sessionId] });
     } catch {
       setError(true);
     } finally {
