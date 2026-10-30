@@ -7,7 +7,7 @@ import { extractFile, getRawHeader, listPackage, statFile, uncacheAll } from "@e
 // Adding a runtime file is an explicit packaging decision, not an automatic inclusion of arbitrary source files.
 export const RUNTIME_FILES = Object.freeze([
   "connection.js", "identity.js", "instance-lifecycle.js", "lifecycle-ipc.js", "main.js",
-  "owned-cli.js", "preload.cjs", "shutdown.js", "ui-navigation.js",
+  "native-permissions.js", "owned-cli.js", "preload.cjs", "shutdown.js", "ui-navigation.js",
 ]);
 const MAX_FILE = 2 * 1024 * 1024;
 

@@ -4,6 +4,7 @@ import { lifecycle } from "./connection.js";
 import { createInstanceLifecycle } from "./instance-lifecycle.js";
 import { createLifecycleHandler } from "./lifecycle-ipc.js";
 import { createOwnedCli } from "./owned-cli.js";
+import { createNativePermissions } from "./native-permissions.js";
 import { initializeDesktopIdentity } from "./identity.js";
 import { stopWithReport } from "./shutdown.js";
 import { guardUiNavigation, openProductUi } from "./ui-navigation.js";
@@ -12,6 +13,7 @@ const identityReady = initializeDesktopIdentity(app, dialog);
 const windows = new WeakSet();
 let quitting = false;
 let stopping = false;
+let permissions;
 const instance = createInstanceLifecycle({
   app,
   parseConnection: () => null,
@@ -37,11 +39,20 @@ const instance = createInstanceLifecycle({
     }),
     prepareWindow: (window) => {
       windows.add(window);
-      // Native notification/capture consent is a separate lifecycle step, never implied by opening the UI.
-      window.webContents.session.setPermissionCheckHandler(() => false);
-      window.webContents.session.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
+      const windowPermissions = createNativePermissions({
+        windows,
+        fromWebContents: (contents) => BrowserWindow.fromWebContents(contents),
+        connection: () => (stopping || quitting ? null : instance.currentConnection()),
+        prompt: (owner, options) => dialog.showMessageBox(owner, options),
+      });
+      permissions = windowPermissions;
+      window.webContents.session.setPermissionCheckHandler(windowPermissions.check);
+      window.webContents.session.setPermissionRequestHandler(windowPermissions.request);
+      window.webContents.on("did-start-navigation", (_event, _url, _inPlace, isMainFrame) => {
+        if (isMainFrame) windowPermissions.revoke();
+      });
       guardUiNavigation(window.webContents, connection);
-      window.on("closed", () => { if (!quitting) app.quit(); });
+      window.on("closed", () => { windowPermissions.revoke(); if (!quitting) app.quit(); });
     },
   }),
 });
@@ -71,6 +82,7 @@ if (identityReady && instance.acquire(process.argv.slice(app.isPackaged ? 1 : 2)
     event.preventDefault();
     if (stopping) return;
     stopping = true;
+    permissions?.revoke();
     void stopWithReport(ownedCli, () => {
       if (unexpectedExitReported) return;
       dialog.showErrorBox(
