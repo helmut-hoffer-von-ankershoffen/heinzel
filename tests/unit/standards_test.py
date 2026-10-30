@@ -87,6 +87,7 @@ def repository_files() -> list[str]:
 
 SHARED = [".claude", ".github/workflows", "scripts"]
 CORE_ONLY = {  # path: why plugins don't get it
+    "scripts/source_review.py": "reviews core source from the dedicated protected core review ref",
     "scripts/site_catalog.py": "public product website aggregation, never a standalone plugin build (ADR 0098)",
     "scripts/site_pages.py": "renders the product's public ecosystem catalog, not plugin-owned docs (ADR 0098)",
     "scripts/site_check.py": "accepts the core product website with its locked web axe tooling (ADR 0098)",

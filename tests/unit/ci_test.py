@@ -74,6 +74,15 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
         ),
     },
     "prepare-release.yml": {
+        'uv run --quiet --script scripts/steps.py "tests=env -u VERBOSE uv run pytest '
+        "-m '(unit or integration) and not perf' -n 4 -x -q --session-timeout=420\"": (
+            "streams the approved target's unchanged Make payload without leaking runner mode into its tests; "
+            "that immutable target has no diagnostic Make target"
+        ),
+        ': "source-review dispatch authority"': "rejects an unapproved review ref or actor before checkout and secrets",
+        ': "prepare dispatch validation"': "rejects unsupported modes and review-ref release before jobs run",
+        ': "diagnostic approved target"': "verifies exact approved target and authority before target checkout",
+        ': "diagnostic final identity"': "rechecks PR identity on a fresh runner after target execution",
         'if [[ ! "$INTRO"': "rejects blank dispatch input before checkout or release work",
         "git config user.name": "opens the release pull request as the bot and hands its tag to the next step",
         "gh workflow run ci.yml": "starts CI on the release pull request, which the bot's token doesn't",
@@ -563,7 +572,7 @@ def test_release_docs_only_publish_existing_recordings_even_when_the_caller_was_
 # A script named by path needs its executable bit, which copier drops when it follows the template's symlinks into a
 # plugin's scripts/. Through an interpreter, a script runs without it.
 SCRIPT = re.compile(r"(?<![\w/.-])(?:\./)?scripts/[\w.-]+\.(?:sh|py)\b")
-INTERPRETER = re.compile(r"(?:\bbash|\bpython3?|\buv run(?: -[\w-]+)*(?: --script| python3?))\s+$")
+INTERPRETER = re.compile(r"(?:\bbash|\bpython3?(?:\s+-I)?|\buv run(?: -[\w-]+)*(?: --script| python3?))\s+$")
 
 
 def scripts_run_by_path(run: str) -> list[str]:
@@ -577,6 +586,7 @@ def scripts_run_by_path(run: str) -> list[str]:
 
 def test_finds_scripts_run_by_path():
     assert scripts_run_by_path('tag="$(scripts/release.sh "$BUMP" | tail -n 1)"') == ["scripts/release.sh"]
+    assert scripts_run_by_path("python3 -I scripts/source_review.py --github") == []
     assert scripts_run_by_path("./scripts/x.py --check") == ["./scripts/x.py"]
     assert scripts_run_by_path("sh scripts/x.sh") == ["scripts/x.sh"]
     assert scripts_run_by_path("bash scripts/x.sh && python scripts/y.py") == []
@@ -870,3 +880,58 @@ def test_linux_electron_sandbox_target_configures_only_the_packaged_helper():
     assert '--configure-file "$$packaged_sandbox"' in recipe
     assert 'require.resolve("electron"' not in recipe
     assert 'python3 desktop/ci/restore_linux_sandbox.py "$$electron_root"' not in recipe
+
+
+@pytest.mark.parametrize("fail", [False, True])
+def test_e2e_prepares_core_build_before_suite_and_removes_owned_temp(tmp_path, fail):
+    """A failed build cannot start pytest; the suite still performs its own candidate build."""
+    tool_dir = tmp_path / "bin"
+    tool_dir.mkdir()
+    trace = tmp_path / "trace"
+    uv = tool_dir / "uv"
+    steps = tool_dir / "fake-steps"
+    for path, text in (
+        (
+            uv,
+            (
+                '#!/bin/sh\nprintf "build:%s\\n" "$*" >> "$TRACE"\n'
+                'for last do :; done\nprintf "dir:%s\\n" "$last" >> "$TRACE"\n'
+                'test "$FAIL_PREP" != 1\n'
+            ),
+        ),
+        (steps, '#!/bin/sh\nprintf "suite:%s\\n" "$*" >> "$TRACE"\n'),
+    ):
+        assert not path.exists()
+        assert not path.is_symlink()
+        assert path.parent.resolve().is_relative_to(tmp_path.resolve())
+        path.write_text(text)
+        assert not path.samefile(os.path.realpath(os.sys.executable))
+        assert not path.samefile(os.path.realpath(os.sys._base_executable))
+        path.chmod(0o700)
+    env = {
+        **os.environ,
+        "PATH": f"{tool_dir}:/usr/bin:/bin",
+        "TMPDIR": str(tmp_path),
+        "TRACE": str(trace),
+        "FAIL_PREP": "1" if fail else "0",
+    }
+    result = subprocess.run(
+        ["make", "--no-print-directory", "test-e2e", f"STEPS={steps}"],
+        cwd=REPO,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=20,
+        check=False,
+    )
+    lines = trace.read_text().splitlines()
+    assert lines[0].startswith("build:build --quiet --wheel --out-dir ")
+    assert lines[1].startswith("dir:")
+    directory = Path(lines[1].removeprefix("dir:"))
+    assert directory.is_relative_to(tmp_path)
+    assert not directory.exists()
+    assert (result.returncode == 0) is not fail
+    assert any(line.startswith("suite:e2e=uv run pytest ") for line in lines) is not fail
+    generated = _template_sync_module().makefile()
+    assert "e2e-prepare" not in generated
+    assert generated == (REPO / "template/Makefile").read_text(encoding="utf-8")

@@ -8,6 +8,23 @@ name: Prepare release
 on:
   workflow_dispatch:
     inputs:
+      mode:
+        description: Release preparation or independent source review
+        type: choice
+        options: [release, source_review, diagnostic_unit315, diagnostic_e2e]
+        default: release
+      target_head:
+        description: Exact PR head for source review
+        type: string
+        required: false
+      target_base:
+        description: Exact PR base for source review
+        type: string
+        required: false
+      trusted_commit:
+        description: Independently reviewed dispatch commit
+        type: string
+        required: false
       bump:
         description: Version bump
         type: choice
@@ -21,11 +38,37 @@ on:
 permissions: {}
 
 concurrency:
-  group: release
+  group: ${{ inputs.mode == 'release' && 'release' || format('readonly-{0}-{1}', inputs.mode, inputs.target_head) }}
   cancel-in-progress: false
 
 jobs:
+  dispatch-validation:
+    name: Validate dispatch mode
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Validate mode before any job
+        env:
+          MODE: ${{ inputs.mode }}
+          ACTOR: ${{ github.actor }}
+          OWNER: ${{ github.repository_owner }}
+          TRUSTED_COMMIT: ${{ inputs.trusted_commit }}
+        shell: bash
+        run: |
+          : "prepare dispatch validation"
+          set -euo pipefail
+          case "$MODE" in
+            release) test "$GITHUB_REF" != refs/heads/private/independent-source-review ;;
+            source_review|diagnostic_unit315|diagnostic_e2e)
+              test "$GITHUB_REF" = refs/heads/private/independent-source-review
+              test "$ACTOR" = "$OWNER"
+              test "$GITHUB_SHA" = "$TRUSTED_COMMIT" ;;
+            *) echo "Unsupported dispatch mode" >&2; exit 1 ;;
+          esac
+
   pull-request:
+    needs: dispatch-validation
+    if: inputs.mode == 'release'
     name: Open the release pull request
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -40,6 +83,10 @@ jobs:
         run: |
           if [[ ! "$INTRO" =~ [^[:space:]] ]]; then
             echo "error: intro is required: summarize what changed for users." >&2
+            exit 1
+          fi
+          if [[ "$GITHUB_REF" == refs/heads/private/independent-source-review ]]; then
+            echo "error: the source review ref cannot prepare a release." >&2
             exit 1
           fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -75,3 +122,137 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.release.outputs.tag }}
         run: gh pr merge "release/$TAG" --squash --auto
+
+  review:
+    needs: dispatch-validation
+    if: inputs.mode == 'source_review'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: read
+    env:
+      REVIEW_HEAD: ${{ inputs.target_head }}
+      REVIEW_BASE: ${{ inputs.target_base }}
+      TRUSTED_COMMIT: ${{ inputs.trusted_commit }}
+    steps:
+      - name: Check source-review dispatch authority before checkout
+        env:
+          ACTOR: ${{ github.actor }}
+          OWNER: ${{ github.repository_owner }}
+        shell: bash
+        run: |
+          : "source-review dispatch authority"
+          test "$GITHUB_REF" = refs/heads/private/independent-source-review
+          test "$ACTOR" = "$OWNER"
+          test "$GITHUB_SHA" = "$TRUSTED_COMMIT"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - name: Run bounded independent source review
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: make independent-source-review
+
+  diagnostic:
+    needs: dispatch-validation
+    if: inputs.mode == 'diagnostic_unit315' || inputs.mode == 'diagnostic_e2e'
+    name: Exact target macOS diagnostic
+    runs-on: macos-latest
+    timeout-minutes: ${{ inputs.mode == 'diagnostic_unit315' && 10 || 15 }}
+    permissions:
+      contents: read
+      pull-requests: read
+    env:
+      REVIEW_HEAD: ${{ inputs.target_head }}
+      REVIEW_BASE: ${{ inputs.target_base }}
+      TRUSTED_COMMIT: ${{ inputs.trusted_commit }}
+      UV_FROZEN: "1"
+      FORCE_COLOR: "1"
+    steps:
+      - name: Verify approved target before checkout
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ACTOR: ${{ github.actor }}
+          OWNER: ${{ github.repository_owner }}
+        shell: bash
+        run: |
+          : "diagnostic approved target"
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/private/independent-source-review
+          test "$ACTOR" = "$OWNER"
+          test "$GITHUB_SHA" = "$TRUSTED_COMMIT"
+          test "$REVIEW_HEAD" = 216c0500e9045ec2615e44abd0dec56a598f35e3
+          test "$REVIEW_BASE" = 5d4a5e378b5ed0dbf5795702f7e342c98df7afc7
+          current="$(gh api "repos/$GITHUB_REPOSITORY/pulls/305" --jq '[.state,.base.ref,.head.sha,.base.sha,.head.repo.full_name,.base.repo.full_name]|join(" ")')"
+          test "$current" = "open main $REVIEW_HEAD $REVIEW_BASE $GITHUB_REPOSITORY $GITHUB_REPOSITORY"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ inputs.target_head }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+          save-cache: false
+          python-version: ${{ inputs.mode == 'diagnostic_unit315' && '3.15' || '' }}
+      - name: Install test dependencies
+        if: inputs.mode == 'diagnostic_unit315'
+        run: uv sync --no-dev --group test
+      - name: Install browser runtimes and host dependencies
+        if: inputs.mode == 'diagnostic_e2e'
+        run: make test-browser-deps
+      - name: Run exact unit and integration diagnostic
+        if: inputs.mode == 'diagnostic_unit315'
+        env:
+          UV_NO_SYNC: "1"
+          VERBOSE: "1"
+          PYTEST_ADDOPTS: -vvv --durations=20
+        shell: bash
+        # Stream the same target payload without making tests' own step runners sequential.
+        run: |
+          uv run --quiet --script scripts/steps.py "tests=env -u VERBOSE uv run pytest -m '(unit or integration) and not perf' -n 4 -x -q --session-timeout=420" 2>&1 | sed -l -E 's/(#token=)[A-Za-z0-9_-]+/\1<redacted>/g; s/(Bearer[[:space:]]+)[A-Za-z0-9_.-]+/\1<redacted>/g'
+      - name: Run exact end-to-end diagnostic
+        if: inputs.mode == 'diagnostic_e2e'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          VERBOSE: "1"
+          PYTEST_ADDOPTS: -vvv --durations=20 -x
+        shell: bash
+        run: make test-e2e 2>&1 | sed -l -E 's/(#token=)[A-Za-z0-9_-]+/\1<redacted>/g; s/(Bearer[[:space:]]+)[A-Za-z0-9_.-]+/\1<redacted>/g'
+
+  diagnostic-identity:
+    needs: diagnostic
+    if: always() && (inputs.mode == 'diagnostic_unit315' || inputs.mode == 'diagnostic_e2e')
+    name: Verify diagnostic identity
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions:
+      pull-requests: read
+    steps:
+      - name: Recheck PR on a fresh runner
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REVIEW_HEAD: ${{ inputs.target_head }}
+          REVIEW_BASE: ${{ inputs.target_base }}
+          TRUSTED_COMMIT: ${{ inputs.trusted_commit }}
+          DIAG_RESULT: ${{ needs.diagnostic.result }}
+          ACTOR: ${{ github.actor }}
+          OWNER: ${{ github.repository_owner }}
+        shell: bash
+        run: |
+          : "diagnostic final identity"
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/private/independent-source-review
+          test "$GITHUB_SHA" = "$TRUSTED_COMMIT"
+          test "$ACTOR" = "$OWNER"
+          test "$REVIEW_HEAD" = 216c0500e9045ec2615e44abd0dec56a598f35e3
+          test "$REVIEW_BASE" = 5d4a5e378b5ed0dbf5795702f7e342c98df7afc7
+          current="$(gh api "repos/$GITHUB_REPOSITORY/pulls/305" --jq '[.state,.base.ref,.head.sha,.base.sha,.head.repo.full_name,.base.repo.full_name]|join(" ")')"
+          test "$current" = "open main $REVIEW_HEAD $REVIEW_BASE $GITHUB_REPOSITORY $GITHUB_REPOSITORY"
+          test "$DIAG_RESULT" = success
