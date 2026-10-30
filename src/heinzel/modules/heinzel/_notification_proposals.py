@@ -10,6 +10,8 @@ from heinzel.modules.heinzel._session_bodies import immutable_body
 from heinzel.modules.heinzel._session_crud import SessionCrud
 from heinzel.modules.heinzel._session_models import RequestId, SessionId
 
+_MAX_PAGE = 100
+
 
 class NotificationProposal(BaseModel):
     """Exact private local-notification draft; no delivery or approval is implied."""
@@ -33,6 +35,21 @@ class NotificationProposal(BaseModel):
         description="The exact local delivery and visibility limitation.",
     )
     status: Literal["proposed"] = Field(default="proposed", description="A draft, not permission to notify.")
+
+
+class NotificationProposalRef(BaseModel):
+    """One bounded owner-private notification draft reference."""
+
+    request_id: RequestId = Field(description="Stable proposal request identity.")
+    seq: int = Field(gt=0, description="Exclusive journal cursor for this reference.")
+
+
+class NotificationProposalPage(BaseModel):
+    """A bounded page of references; bodies are read separately by exact identity."""
+
+    session_id: SessionId = Field(description="The owner-bound personal session.")
+    items: list[NotificationProposalRef] = Field(description="Owner-private draft references.")
+    next_cursor: int | None = Field(description="Exclusive cursor for the next page, if any.")
 
 
 class NotificationProposals:
@@ -75,15 +92,7 @@ class NotificationProposals:
             HeinzelError: If the draft or authenticated owner is unavailable.
         """
         repo = self.crud.repository
-        context = current.context()
-        if (
-            context.principal != current.owner()
-            or context.principal.id != repo.principal_id
-            or context.authentication not in {"cli", "api-bearer", "web-session", "web-device"}
-            or "private:read" not in context.permissions
-        ):
-            msg = "The notification draft requires its authenticated owner"
-            raise HeinzelError(msg)
+        self._reader(current)
         matches = [
             event
             for event in repo.control_read(session).events
@@ -97,3 +106,40 @@ class NotificationProposals:
             msg = "The notification draft identity is inconsistent"
             raise HeinzelError(msg)
         return proposal
+
+    def list(self, session: str, current: CurrentUser, *, cursor: int = 0, limit: int = 20) -> NotificationProposalPage:
+        """List bounded owner-private draft references without returning their contents.
+
+        Raises:
+            HeinzelError: If the owner or page bounds cannot be verified.
+        """
+        self._reader(current)
+        if type(cursor) is not int or cursor < 0 or type(limit) is not int or not 1 <= limit <= _MAX_PAGE:
+            msg = "The notification page bounds are invalid"
+            raise HeinzelError(msg)
+        events = [
+            event
+            for event in self.crud.repository.control_read(session).events
+            if event.kind == "notification.proposed" and event.seq > cursor
+        ]
+        selected = events[:limit]
+        if any(event.key is None for event in selected):
+            msg = "The notification draft reference is invalid"
+            raise HeinzelError(msg)
+        items = [
+            NotificationProposalRef(request_id=event.key, seq=event.seq) for event in selected if event.key is not None
+        ]
+        return NotificationProposalPage(
+            session_id=session, items=items, next_cursor=selected[-1].seq if len(events) > limit else None
+        )
+
+    def _reader(self, current: CurrentUser) -> None:
+        context = current.context()
+        if (
+            context.principal != current.owner()
+            or context.principal.id != self.crud.repository.principal_id
+            or context.authentication not in {"cli", "api-bearer", "web-session", "web-device"}
+            or "private:read" not in context.permissions
+        ):
+            msg = "The notification draft requires its authenticated owner"
+            raise HeinzelError(msg)

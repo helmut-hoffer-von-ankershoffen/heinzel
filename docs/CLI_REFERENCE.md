@@ -631,6 +631,7 @@ $ hz heinzel [OPTIONS] COMMAND [ARGS]...
 * `new-chat`: Create a durable personal Heinzel with an...
 * `notification-outcome`: Inspect a prior queue attempt without...
 * `notification-proposal`: Read an exact private notification draft...
+* `notification-proposals`: List bounded owner-private notification...
 * `pause-agent-schedule`: Stop future launches; a new schedule needs...
 * `personal-artifacts`: List local principal-submitted file...
 * `playbooks`: (expert) List the playbooks plugins...
@@ -1243,6 +1244,28 @@ $ hz heinzel notification-proposal [OPTIONS] {session_id} {request_id}
 
 **Options**:
 
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz heinzel notification-proposals`
+
+List bounded owner-private notification references without sending anything.
+
+**Usage**:
+
+```console
+$ hz heinzel notification-proposals [OPTIONS] {session_id}
+```
+
+**Arguments**:
+
+* `session_id`: [required]
+
+**Options**:
+
+* `--cursor <int>`: Exclusive journal cursor.  [default: 0]
+* `--limit <int>`: Maximum references per page.  [default: 20]
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.

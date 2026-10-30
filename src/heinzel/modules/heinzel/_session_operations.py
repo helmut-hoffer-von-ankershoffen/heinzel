@@ -38,7 +38,11 @@ from heinzel.modules.heinzel._model_grants import ModelGrants
 from heinzel.modules.heinzel._model_policy_operations import ModelPolicyService, register_model_policy_operations
 from heinzel.modules.heinzel._models import HeinzelSettings
 from heinzel.modules.heinzel._notification_delivery import NotificationDelivery
-from heinzel.modules.heinzel._notification_proposals import NotificationProposal, NotificationProposals
+from heinzel.modules.heinzel._notification_proposals import (
+    NotificationProposal,
+    NotificationProposalPage,
+    NotificationProposals,
+)
 from heinzel.modules.heinzel._session_crud import SessionCrud
 from heinzel.modules.heinzel._session_models import (
     HeinzelAppearance,
@@ -607,6 +611,17 @@ def _register_notification_operations(module: Module) -> None:
     ) -> NotificationProposal:
         """Read an exact private notification draft without sending it."""
         return NotificationProposals(service).get(session_id, request_id, current)
+
+    @module.operation(private=True, heads={"web", "api-private"}, audience="everyday")
+    def notification_proposals(
+        service: SessionCrud,
+        current: CurrentUser,
+        session_id: Identity,
+        cursor: Annotated[int, Field(ge=0, description="Exclusive journal cursor.")] = 0,
+        limit: Annotated[int, Field(ge=1, le=100, description="Maximum references per page.")] = 20,
+    ) -> NotificationProposalPage:
+        """List bounded owner-private notification references without sending anything."""
+        return NotificationProposals(service).list(session_id, current, cursor=cursor, limit=limit)
 
     @module.operation(private=True, read_only=False, heads={"web", "api-private"}, audience="everyday")
     def queue_agent_notification(  # noqa: PLR0913, PLR0917 - exact action confirmation

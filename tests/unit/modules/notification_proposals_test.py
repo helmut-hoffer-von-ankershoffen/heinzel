@@ -173,3 +173,30 @@ def test_uncertain_queue_recovery_inspects_receipt_without_redelivery(tmp_path):
         provider.seen = True
         assert delivery.recover(session, proposal.request_id) == "recorded"
         assert provider.calls == 1
+
+
+def test_draft_listing_is_owner_scoped_bounded_and_contains_no_body(tmp_path):
+    current = CurrentUser(tmp_path / "identity")
+    with current.local("cli"):
+        repo = PersonalSessionRepository(current)
+        crud = SessionCrud(repo, lambda: SessionCosts(session_max_usd=2, message_max_usd=0.2))
+        session = crud.new_chat("create", name="Agent").session_id
+        store = NotificationProposals(crud)
+        for request in ("first", "second"):
+            draft = NotificationProposal(
+                session_id=session, request_id=request, topic="example", title="Title", body="Private body"
+            )
+            with repo.main_writer(session) as writer:
+                store.propose(draft, current.principal().id, writer)
+        first = store.list(session, current, limit=1)
+        assert [item.request_id for item in first.items] == ["first"]
+        assert first.next_cursor is not None
+        second = store.list(session, current, cursor=first.next_cursor, limit=1)
+        assert [item.request_id for item in second.items] == ["second"]
+        assert second.next_cursor is None
+        assert "Private body" not in first.model_dump_json()
+        with pytest.raises(HeinzelError):
+            store.list(session, current, limit=101)
+        stranger = CallIdentity(Principal("u-" + "a" * 32), "api-bearer", "other", "private", frozenset())
+        with current.using(stranger), pytest.raises(HeinzelError):
+            store.list(session, current)

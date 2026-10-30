@@ -654,6 +654,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/heinzel/notification-proposals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List bounded owner-private notification references without sending anything.
+         * @description List bounded owner-private notification references without sending anything.
+         */
+        get: operations["heinzel_notification_proposals"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/heinzel/pause-agent-schedule": {
         parameters: {
             query?: never;
@@ -7490,6 +7510,43 @@ export interface components {
             topic: string;
         };
         /**
+         * NotificationProposalPage
+         * @description A bounded page of references; bodies are read separately by exact identity.
+         */
+        NotificationProposalPage: {
+            /**
+             * Items
+             * @description Owner-private draft references.
+             */
+            items: components["schemas"]["NotificationProposalRef"][];
+            /**
+             * Next Cursor
+             * @description Exclusive cursor for the next page, if any.
+             */
+            next_cursor: number | null;
+            /**
+             * Session Id
+             * @description The owner-bound personal session.
+             */
+            session_id: string;
+        };
+        /**
+         * NotificationProposalRef
+         * @description One bounded owner-private notification draft reference.
+         */
+        NotificationProposalRef: {
+            /**
+             * Request Id
+             * @description Stable proposal request identity.
+             */
+            request_id: string;
+            /**
+             * Seq
+             * @description Exclusive journal cursor for this reference.
+             */
+            seq: number;
+        };
+        /**
          * OpenUrl
          * @description Open an https link in a new tab.
          */
@@ -12909,6 +12966,8 @@ export type SchemaNotice = components['schemas']['Notice'];
 export type SchemaNoticeKind = components['schemas']['NoticeKind'];
 export type SchemaNoticeList = components['schemas']['NoticeList'];
 export type SchemaNotificationProposal = components['schemas']['NotificationProposal'];
+export type SchemaNotificationProposalPage = components['schemas']['NotificationProposalPage'];
+export type SchemaNotificationProposalRef = components['schemas']['NotificationProposalRef'];
 export type SchemaOpenUrl = components['schemas']['OpenUrl'];
 export type SchemaOpened = components['schemas']['Opened'];
 export type SchemaOperationAudience = components['schemas']['OperationAudience'];
@@ -14074,6 +14133,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["NotificationProposal"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    heinzel_notification_proposals: {
+        parameters: {
+            query: {
+                session_id: string;
+                /** @description Exclusive journal cursor. */
+                cursor?: number;
+                /** @description Maximum references per page. */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotificationProposalPage"];
                 };
             };
             /** @description Validation Error */

@@ -7836,6 +7836,67 @@
         "title": "NotificationProposal",
         "type": "object"
       },
+      "NotificationProposalPage": {
+        "description": "A bounded page of references; bodies are read separately by exact identity.",
+        "properties": {
+          "items": {
+            "description": "Owner-private draft references.",
+            "items": {
+              "$ref": "#/components/schemas/NotificationProposalRef"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Exclusive cursor for the next page, if any.",
+            "title": "Next Cursor"
+          },
+          "session_id": {
+            "description": "The owner-bound personal session.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "items",
+          "next_cursor"
+        ],
+        "title": "NotificationProposalPage",
+        "type": "object"
+      },
+      "NotificationProposalRef": {
+        "description": "One bounded owner-private notification draft reference.",
+        "properties": {
+          "request_id": {
+            "description": "Stable proposal request identity.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "seq": {
+            "description": "Exclusive journal cursor for this reference.",
+            "exclusiveMinimum": 0.0,
+            "title": "Seq",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "request_id",
+          "seq"
+        ],
+        "title": "NotificationProposalRef",
+        "type": "object"
+      },
       "OpenUrl": {
         "additionalProperties": false,
         "description": "Open an https link in a new tab.",
@@ -18572,6 +18633,73 @@
           }
         },
         "summary": "Read an exact private notification draft without sending it.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/notification-proposals": {
+      "get": {
+        "description": "List bounded owner-private notification references without sending anything.",
+        "operationId": "heinzel_notification_proposals",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Exclusive journal cursor.",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Exclusive journal cursor.",
+              "title": "Cursor",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Maximum references per page.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "description": "Maximum references per page.",
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationProposalPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List bounded owner-private notification references without sending anything.",
         "tags": [
           "heinzel"
         ]
