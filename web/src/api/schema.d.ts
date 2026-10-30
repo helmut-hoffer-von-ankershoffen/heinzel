@@ -534,6 +534,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/heinzel/latest-schedule-suggestion-view": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Inspect the latest inert suggested schedule; it has not been approved or activated.
+         * @description Inspect the latest inert suggested schedule; it has not been approved or activated.
+         */
+        get: operations["heinzel_latest_schedule_suggestion_view"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/heinzel/latest-scheduled-agent-proposal": {
         parameters: {
             query?: never;
@@ -9324,6 +9344,46 @@ export interface components {
             status: "proposed" | "approved" | "paused" | "stale";
         };
         /**
+         * ScheduleSuggestion
+         * @description Stored owner-private, revisioned schedule suggestion with explicit inert status.
+         */
+        ScheduleSuggestion: {
+            /**
+             * Based On Revision
+             * @description Revision the suggestion amended.
+             */
+            based_on_revision: number;
+            /**
+             * Request Id
+             * @description Stable host-derived suggestion identity.
+             */
+            request_id: string;
+            /**
+             * Revision
+             * @description Suggestion revision.
+             */
+            revision: number;
+            /**
+             * Session Id
+             * @description Owner-private durable agent session.
+             */
+            session_id: string;
+            /**
+             * Status
+             * @description Inert suggestion, without authority.
+             * @default suggested
+             * @constant
+             */
+            status: "suggested";
+            /**
+             * Suggested Reads
+             * @description Unverified suggested read capabilities.
+             */
+            suggested_reads: components["schemas"]["SuggestedRead"][];
+            /** @description Suggested schedule, not yet approved or activated. */
+            trigger: components["schemas"]["SuggestedTrigger"];
+        };
+        /**
          * ScheduledAgentProposal
          * @description An inert execution proposal; creating or reading it never authorizes a run.
          */
@@ -10606,6 +10666,38 @@ export interface components {
              * @description Lines the last push didn't carry yet.
              */
             pending: number;
+        };
+        /**
+         * SuggestedRead
+         * @description An unverified capability reference, not a grant or provider selection.
+         */
+        SuggestedRead: {
+            /**
+             * Capability
+             * @description Suggested capability name; not a grant.
+             */
+            capability: string;
+            /**
+             * Method
+             * @description Suggested read method; not verified.
+             */
+            method: string;
+        };
+        /**
+         * SuggestedTrigger
+         * @description An inert five-field cron expression and its explicit IANA timezone.
+         */
+        SuggestedTrigger: {
+            /**
+             * Cron
+             * @description Suggested five-field cron expression, not necessarily supported by the scheduler.
+             */
+            cron: string;
+            /**
+             * Timezone
+             * @description Explicit IANA timezone for the suggested expression.
+             */
+            timezone: string;
         };
         /**
          * SystemInfo
@@ -13015,6 +13107,7 @@ export type SchemaSceneStep = components['schemas']['SceneStep'];
 export type SchemaScheduleBinding = components['schemas']['ScheduleBinding'];
 export type SchemaScheduleReviewPage = components['schemas']['ScheduleReviewPage'];
 export type SchemaScheduleReviewView = components['schemas']['ScheduleReviewView'];
+export type SchemaScheduleSuggestion = components['schemas']['ScheduleSuggestion'];
 export type SchemaScheduledAgentProposal = components['schemas']['ScheduledAgentProposal'];
 export type SchemaSessionCosts = components['schemas']['SessionCosts'];
 export type SchemaSessionList = components['schemas']['SessionList'];
@@ -13048,6 +13141,8 @@ export type SchemaStatusItem = components['schemas']['StatusItem'];
 export type SchemaStatusMeter = components['schemas']['StatusMeter'];
 export type SchemaStep = components['schemas']['Step'];
 export type SchemaStreamStatus = components['schemas']['StreamStatus'];
+export type SchemaSuggestedRead = components['schemas']['SuggestedRead'];
+export type SchemaSuggestedTrigger = components['schemas']['SuggestedTrigger'];
 export type SchemaSystemInfo = components['schemas']['SystemInfo'];
 export type SchemaTeamGraphDocument = components['schemas']['TeamGraphDocument'];
 export type SchemaTeamShow = components['schemas']['TeamShow'];
@@ -13937,6 +14032,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProfileProposal"] | null;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    heinzel_latest_schedule_suggestion_view: {
+        parameters: {
+            query: {
+                session_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScheduleSuggestion"] | null;
                 };
             };
             /** @description Validation Error */

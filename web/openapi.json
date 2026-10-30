@@ -10836,6 +10836,66 @@
         "title": "ScheduleReviewView",
         "type": "object"
       },
+      "ScheduleSuggestion": {
+        "additionalProperties": false,
+        "description": "Stored owner-private, revisioned schedule suggestion with explicit inert status.",
+        "properties": {
+          "based_on_revision": {
+            "description": "Revision the suggestion amended.",
+            "minimum": 0.0,
+            "title": "Based On Revision",
+            "type": "integer"
+          },
+          "request_id": {
+            "description": "Stable host-derived suggestion identity.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "revision": {
+            "description": "Suggestion revision.",
+            "minimum": 1.0,
+            "title": "Revision",
+            "type": "integer"
+          },
+          "session_id": {
+            "description": "Owner-private durable agent session.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "status": {
+            "const": "suggested",
+            "default": "suggested",
+            "description": "Inert suggestion, without authority.",
+            "title": "Status",
+            "type": "string"
+          },
+          "suggested_reads": {
+            "description": "Unverified suggested read capabilities.",
+            "items": {
+              "$ref": "#/components/schemas/SuggestedRead"
+            },
+            "maxItems": 16,
+            "title": "Suggested Reads",
+            "type": "array"
+          },
+          "trigger": {
+            "$ref": "#/components/schemas/SuggestedTrigger",
+            "description": "Suggested schedule, not yet approved or activated."
+          }
+        },
+        "required": [
+          "session_id",
+          "request_id",
+          "revision",
+          "based_on_revision",
+          "trigger",
+          "suggested_reads"
+        ],
+        "title": "ScheduleSuggestion",
+        "type": "object"
+      },
       "ScheduledAgentProposal": {
         "description": "An inert execution proposal; creating or reading it never authorizes a run.",
         "properties": {
@@ -13015,6 +13075,58 @@
           "pending"
         ],
         "title": "StreamStatus",
+        "type": "object"
+      },
+      "SuggestedRead": {
+        "additionalProperties": false,
+        "description": "An unverified capability reference, not a grant or provider selection.",
+        "properties": {
+          "capability": {
+            "description": "Suggested capability name; not a grant.",
+            "maxLength": 64,
+            "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
+            "title": "Capability",
+            "type": "string"
+          },
+          "method": {
+            "description": "Suggested read method; not verified.",
+            "maxLength": 64,
+            "pattern": "^[a-z][a-z0-9_]*$",
+            "title": "Method",
+            "type": "string"
+          }
+        },
+        "required": [
+          "capability",
+          "method"
+        ],
+        "title": "SuggestedRead",
+        "type": "object"
+      },
+      "SuggestedTrigger": {
+        "additionalProperties": false,
+        "description": "An inert five-field cron expression and its explicit IANA timezone.",
+        "properties": {
+          "cron": {
+            "description": "Suggested five-field cron expression, not necessarily supported by the scheduler.",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Cron",
+            "type": "string"
+          },
+          "timezone": {
+            "description": "Explicit IANA timezone for the suggested expression.",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Timezone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "cron",
+          "timezone"
+        ],
+        "title": "SuggestedTrigger",
         "type": "object"
       },
       "SystemInfo": {
@@ -18289,6 +18401,57 @@
           }
         },
         "summary": "Inspect the latest suggested name and look; it has not been applied.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/latest-schedule-suggestion-view": {
+      "get": {
+        "description": "Inspect the latest inert suggested schedule; it has not been approved or activated.",
+        "operationId": "heinzel_latest_schedule_suggestion_view",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ScheduleSuggestion"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Response Heinzel Latest Schedule Suggestion View"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Inspect the latest inert suggested schedule; it has not been approved or activated.",
         "tags": [
           "heinzel"
         ]

@@ -306,3 +306,38 @@ def test_schedule_card_and_daemon_registry_run_one_owner_bound_fake_turn(make_ke
     assert listed.json()["items"][0]["status"] == "paused"
     assert client.get("/api/heinzel/agent-schedules", params={"session_id": session}).status_code == 401
     assert client.get("/api/heinzel/session", headers=AUTH, params={"session_id": session}).json()["schedule"] is None
+
+
+def test_chat_schedule_suggestion_is_private_and_inert(make_kernel, tmp_path):
+    kernel = make_kernel(builtins=True)
+    current = kernel.resolve(CurrentUser)
+    crud = kernel.resolve(SessionCrud)
+    executable = fake_claude(
+        tmp_path,
+        tool="schedule:propose",
+        arguments={
+            "expected_revision": 0,
+            "trigger": {"cron": "0 9 * * 1", "timezone": "UTC"},
+            "suggested_reads": [],
+        },
+    )
+    kernel.bind(
+        UserChatService, UserChatService(crud, current, RunnerSnapshotService(), load=lambda: FixtureConfig(executable))
+    )
+    client = web_client(kernel, tmp_path)
+    session = client.post("/api/heinzel/new-chat", headers=AUTH, json={"request_id": "new"}).json()["session_id"]
+    accepted = client.post(
+        "/api/heinzel/chat", headers=AUTH, json={"session_id": session, "request_id": "hello", "message": "Schedule it"}
+    )
+    assert accepted.status_code == 200
+    response = client.post(
+        "/api/heinzel/answer-chat", headers=AUTH, json={"session_id": session, "request_id": "hello"}
+    )
+    assert response.status_code == 200, response.text
+    params = {"session_id": session}
+    assert client.get("/api/heinzel/latest-schedule-suggestion-view", params=params).status_code == 401
+    suggestion = client.get("/api/heinzel/latest-schedule-suggestion-view", headers=AUTH, params=params)
+    assert suggestion.status_code == 200, suggestion.text
+    assert suggestion.json()["status"] == "suggested"
+    assert suggestion.json()["trigger"] == {"cron": "0 9 * * 1", "timezone": "UTC"}
+    assert client.get("/api/heinzel/session", headers=AUTH, params=params).json()["schedule"] is None

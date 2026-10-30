@@ -337,3 +337,30 @@ def test_abandon_requires_owner_stopped_turn_and_never_changes_finished_reply(tm
             service.abandon(session, "hello")
         assert service.abandon(session, "hello").status == "abandoned"
         assert service.abandon(session, "hello").status == "abandoned"
+
+
+def test_fake_model_suggests_inert_schedule_in_personal_turn(tmp_path):
+    current = CurrentUser(tmp_path / "identity")
+    with current.local("cli"):
+        current, crud, session = setup_chat(current)
+        executable = fake_claude(
+            tmp_path,
+            tool="schedule:propose",
+            arguments={
+                "expected_revision": 0,
+                "trigger": {"cron": "0 9 * * 1", "timezone": "UTC"},
+                "suggested_reads": [],
+            },
+        )
+        service = UserChatService(crud, current, RunnerSnapshotService(), load=lambda: FixtureConfig(executable))
+        answer = asyncio.run(service.answer(session, "hello"))
+        assert answer.message.text == "A real recorded reply"
+        events = crud.repository.control_read(session).events
+        suggestions = [event for event in events if event.kind == "schedule-suggestion.proposed"]
+        assert len(suggestions) == 1
+        assert crud.read_body(session, suggestions[0])["status"] == "suggested"
+        assert crud.snapshot(session).schedule is None
+        assert [(item.tool, item.status) for item in service.activity(session).items] == [
+            ("schedule:propose", "requested"),
+            ("schedule:propose", "completed"),
+        ]
