@@ -170,6 +170,15 @@ try {
       }
       await page.emulateMedia({ colorScheme: "light" });
       await page.waitForFunction(() => !document.documentElement.classList.contains("dark"));
+      // The next full-dialog audit must observe settled text after this deliberate mode change.
+      await wizard.evaluate((element) =>
+        Promise.all(
+          element
+            .getAnimations({ subtree: true })
+            .filter((animation) => Number.isFinite(animation.effect?.getComputedTiming().endTime))
+            .map((animation) => animation.finished.catch(() => {})),
+        ),
+      );
     }
     if (step < 7) await wizard.getByRole("button", { name: "Next" }).click();
     await page.mouse.move(0, 0); // audit the resting state, not the button under the pointer
