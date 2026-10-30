@@ -4,24 +4,26 @@ const PROMPTS = Object.freeze({
   notifications: Object.freeze({
     type: "question", title: "Allow notifications?",
     message: "Allow this Heinzelmännchen window to request system notifications?",
-    detail: "Your operating system may separately block notifications. Allowing this request does not mean a notification was shown.",
+    detail: "This choice lasts until this window navigates or closes. Your operating system may separately block notifications; this does not mean a notification was shown.",
     buttons: Object.freeze(["Don't allow", "Allow"]), defaultId: 0, cancelId: 0, noLink: true,
   }),
   microphone: Object.freeze({
     type: "question", title: "Allow microphone?",
     message: "Allow this Heinzelmännchen window to request microphone access?",
-    detail: "Your operating system may separately ask for or deny microphone access.",
+    detail: "This choice lasts until this window navigates or closes. Your operating system may separately ask for or deny microphone access.",
     buttons: Object.freeze(["Don't allow", "Allow"]), defaultId: 0, cancelId: 0, noLink: true,
   }),
 });
 
-/** One-shot native consent; never a durable grant, OS permission, or delivery receipt. */
+/** Document-scoped native consent; never an OS permission or delivery receipt. */
 export function createNativePermissions({ windows, fromWebContents, connection, prompt }) {
   let generation = 0;
   let pending = null;
+  const grants = new Map();
 
   function revoke() {
     generation++;
+    grants.clear();
     if (pending) pending.finish(false);
   }
 
@@ -54,11 +56,14 @@ export function createNativePermissions({ windows, fromWebContents, connection, 
       details.mediaTypes[0] === "audio" ? "microphone" : null;
     const original = kind && snapshot(contents, details);
     if (!original || pending) { callback(false); return; }
+    const grant = grants.get(kind);
+    if (grant && same(contents, details, grant)) { callback(true); return; }
     let completed = false;
     const epoch = generation;
     const finish = (allowed) => {
       if (completed) return;
       completed = true;
+      if (allowed === true) grants.set(kind, original);
       callback(allowed === true);
     };
     pending = { finish };
@@ -71,8 +76,14 @@ export function createNativePermissions({ windows, fromWebContents, connection, 
     ).finally(() => { if (pending?.finish === finish) pending = null; });
   }
 
-  // Checks cannot establish one-shot request identity. Fail closed until a real request receives native consent.
-  function check() { return false; }
+  // Electron may ask for a permission status after the request. Require the same proven document and kind.
+  function check(contents, permission, requestingOrigin, details) {
+    const kind = permission === "notifications" ? "notifications" :
+      permission === "media" && details?.mediaType === "audio" ? "microphone" : null;
+    const grant = kind && grants.get(kind);
+    if (!grant || (requestingOrigin !== grant.origin && requestingOrigin !== `${grant.origin}/`)) return false;
+    return Boolean(same(contents, details, grant));
+  }
 
   return Object.freeze({ request, check, revoke });
 }

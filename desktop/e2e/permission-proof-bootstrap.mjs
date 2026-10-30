@@ -11,8 +11,16 @@ globalThis.permissionEvents = [];
 const permissions = createNativePermissions({ windows, fromWebContents: BrowserWindow.fromWebContents,
   connection: () => connection, prompt: async (_window, options) => {
     globalThis.permissionEvents.push({ kind: 'prompt', title: options.title });
-    return { response: 0 };
+    return { response: globalThis.syntheticAccept ? 1 : 0 };
   } });
+globalThis.revokeSynthetic = () => permissions.revoke();
+globalThis.authorizeSynthetic = () => new Promise((resolve) => {
+  const frame = window.webContents.mainFrame;
+  globalThis.syntheticAccept = true;
+  permissions.request(window.webContents, 'notifications', (allowed) => {
+    globalThis.syntheticAccept = false; resolve(allowed);
+  }, { isMainFrame: true, requestingUrl: frame.url });
+});
 session.defaultSession.setPermissionCheckHandler((contents, permission, origin, details) => {
   globalThis.permissionEvents.push({ kind: 'check', permission, origin, details });
   return permissions.check(contents, permission, origin, details);

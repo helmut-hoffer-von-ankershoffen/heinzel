@@ -47,6 +47,17 @@ try {
   assert.equal(media.details.requestingUrl, `${origin}/`);
   assert.deepEqual(media.details.mediaTypes, ['audio']);
   assert.equal(media.details.securityOrigin, `${origin}/`);
+  // The accepted decision is injected directly into the adapter, not into an Electron request callback.
+  // Querying permission status performs no OS permission request or notification display.
+  assert.equal(await instance.evaluate(() => globalThis.authorizeSynthetic()), true);
+  const state = await page.evaluate(async () => (await navigator.permissions.query({name:'notifications'})).state);
+  const after = await instance.evaluate(() => globalThis.permissionEvents);
+  console.log(JSON.stringify({ syntheticAcceptedStatus: state, checks: after.filter((e) => e.kind === 'check') }));
+  assert.equal(state, 'granted');
+  assert(after.some((e) => e.kind === 'check' && e.permission === 'notifications'));
+  await instance.evaluate(() => globalThis.revokeSynthetic());
+  assert.equal(await page.evaluate(async () => (await navigator.permissions.query({name:'notifications'})).state), 'denied');
+
 } finally {
   if (instance) {
     try { await withTimeout(instance.close(), 10000, 'Electron did not close'); }

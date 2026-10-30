@@ -19,7 +19,7 @@ function fixture() {
 
 const tick = () => new Promise((resolve) => setImmediate(resolve));
 
-test("a native fixed prompt authorizes only the pending request; checks stay denied", async () => {
+test("a native fixed prompt grants only the matching current document", async () => {
   const f = fixture();
   assert.equal(f.adapter.check(), false);
   const decision = f.invoke();
@@ -29,7 +29,12 @@ test("a native fixed prompt authorizes only the pending request; checks stay den
   assert.match(f.prompts[0].options.title, /notifications/i);
   f.answer(1);
   assert.equal(await decision, true);
-  assert.equal(f.adapter.check(), false);
+  assert.equal(f.adapter.check(f.contents, "notifications", f.connection.origin, f.details), true);
+  assert.equal(f.adapter.check(f.contents, "notifications", "http://evil.example", f.details), false);
+  assert.equal(f.adapter.check(f.contents, "notifications", f.connection.origin, { ...f.details, isMainFrame: false }), false);
+  assert.equal(f.adapter.check(f.contents, "media", f.connection.origin, { ...f.details, mediaType: "audio" }), false);
+  f.adapter.revoke();
+  assert.equal(f.adapter.check(f.contents, "notifications", f.connection.origin, f.details), false);
   await tick();
   const denied = f.invoke();
   await tick(); f.answer(0);
@@ -113,4 +118,16 @@ test("Electron media security origin permits its canonical trailing slash only",
   f.answer(0);
   assert.equal(await decision, false);
   assert.equal(f.prompts.length, 1);
+});
+
+test("microphone status is limited to audio and the current document and connection", async () => {
+  const f = fixture();
+  const details = { ...f.details, mediaTypes: ["audio"], securityOrigin: `${f.connection.origin}/` };
+  const decision = f.invoke("media", details); await tick(); f.answer(1); assert.equal(await decision, true);
+  const status = { ...f.details, mediaType: "audio", securityOrigin: `${f.connection.origin}/` };
+  assert.equal(f.adapter.check(f.contents, "media", f.connection.origin, status), true);
+  assert.equal(f.adapter.check(f.contents, "media", f.connection.origin, { ...status, mediaType: "video" }), false);
+  assert.equal(f.adapter.check(f.contents, "media", f.connection.origin, { ...status, requestingUrl: undefined }), false);
+  f.connection.token = "different";
+  assert.equal(f.adapter.check(f.contents, "media", f.connection.origin, status), false);
 });

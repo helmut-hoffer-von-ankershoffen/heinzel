@@ -106,7 +106,7 @@ with the same fragment adoption and tab storage as the browser head. This is an 
 than a verified immutable deployment tuple. Exact owned-origin main-frame checks protect the fixed lifecycle
 preload, and top-level navigation/redirects cannot carry the session to another origin. Startup cancellation is
 checked after both authentication and UI loading, with hidden failed windows destroyed. Notification and microphone requests from the owned main frame use separate, fixed native consent prompts; other
-permissions and subframes remain denied. Consent is per request and does not establish OS permission or delivery.
+permissions and subframes remain denied. Consent applies only to that document and permission until navigation, close or quit, and does not establish OS permission or delivery.
 An isolated Electron test covers denial, while successful OS permission remains unverified. Node tests exercise delayed shutdown; real Electron tests
 exercise page navigation and initial/subsequent redirects, while the isolated CLI smoke checks the actual Today
 page, authenticated API access, reload, clean owned-child exit and closed loopback listener. This does not establish
