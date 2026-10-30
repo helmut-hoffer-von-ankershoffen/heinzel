@@ -295,9 +295,18 @@ def test_expired_occurrence_cannot_launch_after_auth_delays(tmp_path, monkeypatc
 
 
 def test_failure_after_acceptance_before_start_can_be_resolved(tmp_path, monkeypatch):
+    import heinzel.modules.heinzel._autonomous_schedule as schedule_module
     from heinzel.modules.heinzel._claude_subscription_model import ClaudeSubscriptionModel
     from heinzel.modules.heinzel._session_models import MessageRequest
 
+    fixed = datetime(2026, 1, 5, 12, 0, 1, tzinfo=UTC)
+
+    class FixedClock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return fixed
+
+    monkeypatch.setattr(schedule_module, "datetime", FixedClock)
     current = CurrentUser(tmp_path / "identity")
     with current.local("cli"):
         crud = SessionCrud(
@@ -325,7 +334,7 @@ def test_failure_after_acceptance_before_start_can_be_resolved(tmp_path, monkeyp
 
         monkeypatch.setattr(ClaudeSubscriptionModel, "bind_fence", fail)
         with current.local("daemon"), pytest.raises(HeinzelError, match="simulated"):
-            asyncio.run(schedules.tick(session, "schedule", datetime.now(UTC)))
+            asyncio.run(schedules.tick(session, "schedule", fixed))
         events = crud.repository.control_read(session).events
         occurrence = next(e.data["message_id"] for e in events if e.kind == "message.accepted")
         assert not any(e.kind == "interactive.started" for e in events)
