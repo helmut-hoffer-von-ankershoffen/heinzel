@@ -1,5 +1,6 @@
 """Private durable-session operations: one declared surface for CLI, stdio MCP, paired web and private API."""
 
+import asyncio
 import getpass
 import sys
 from pathlib import Path
@@ -7,28 +8,47 @@ from typing import Annotated, Literal
 
 from pydantic import Field, JsonValue
 
-from heinzel import Config, CurrentUser, HeinzelError, Module
+from heinzel import Config, ConfiguredApiAccess, CurrentUser, HeinzelError, Module
 from heinzel.kernel import (
     CheckInChatContext,
     CheckInChatContextSource,
     CheckInHistoryMessage,
     DaemonAttestation,
     Kernel,
+    RunnerSnapshotProvider,
 )
 from heinzel.kernel._approval import ApprovalConfirmation, ApprovalIssuer
+from heinzel.modules.heinzel._contract_review import ContractReview, ContractReviewView
+from heinzel.modules.heinzel._model_grants import ModelGrants
+from heinzel.modules.heinzel._model_policy_operations import ModelPolicyService, register_model_policy_operations
 from heinzel.modules.heinzel._models import HeinzelSettings
 from heinzel.modules.heinzel._session_crud import SessionCrud
 from heinzel.modules.heinzel._session_models import (
     HeinzelAppearance,
     MessageAccepted,
     MessageRequest,
+    PersonalArtifact,
+    PersonalArtifacts,
+    ProfileProposal,
     RequestId,
+    ScheduledAgentProposal,
     SessionCosts,
     SessionId,
     SessionList,
     SessionSnapshot,
+    SkillDraft,
+    SkillDraftPage,
+    SkillSharingPage,
+    SkillSharingProposal,
 )
 from heinzel.modules.heinzel._session_repository import PersonalSessionRepository
+from heinzel.modules.heinzel._user_chat import (
+    UserChatAnswer,
+    UserChatService,
+    UserToolActivity,
+    UserTurnResolution,
+    UserTurnState,
+)
 
 Request = Annotated[RequestId, Field(description="A stable client request id; reuse it only for an exact retry.")]
 Identity = Annotated[SessionId, Field(description="The stable personal session id returned by new-chat or sessions.")]
@@ -52,9 +72,10 @@ def _crud(current: CurrentUser) -> SessionCrud:
 class _SessionApprovalIssuer(ApprovalIssuer):
     """Require a current version observed in a daemon tick before issuing exact schedule approval."""
 
-    def __init__(self, service: SessionCrud, daemon: DaemonAttestation | None) -> None:
+    def __init__(self, service: SessionCrud, daemon: DaemonAttestation | None, kernel: Kernel | None = None) -> None:
         self.service = service
         self.daemon = daemon
+        self.kernel = kernel
 
     def _check_daemon(self, module: str, operation: str, arguments: dict[str, JsonValue]) -> None:
         if (
@@ -78,22 +99,61 @@ class _SessionApprovalIssuer(ApprovalIssuer):
                 )
                 raise HeinzelError(msg)
 
+    @staticmethod
+    def _model_args(arguments: dict[str, JsonValue]) -> tuple[str, str]:
+        session, request = arguments.get("session_id"), arguments.get("request_id")
+        if (
+            set(arguments) not in ({"session_id", "request_id"}, {"session_id", "request_id", "review"})
+            or not isinstance(session, str)
+            or not isinstance(request, str)
+        ):
+            msg = "Approval is invalid or unavailable"
+            raise HeinzelError(msg)
+        return session, request
+
     def review(self, module: str, operation: str, arguments: dict[str, JsonValue]) -> dict[str, JsonValue]:
+        if module == "heinzel" and operation == "accept-agent-contract":
+            return ContractReview(self.service).current(*self._model_args(arguments)).model_dump(mode="json")
+        if module == "heinzel" and operation == "approve-model-grant":
+            if self.kernel is None:
+                msg = "Configured model policy review is unavailable"
+                raise HeinzelError(msg)
+            return (
+                ModelPolicyService(self.service, self.kernel.resolve_builtin_service(ConfiguredApiAccess, "ai.access"))
+                .review(*self._model_args(arguments))
+                .proposal
+            )
         self._check_daemon(module, operation, arguments)
         return self.service.review(module, operation, arguments)
 
     def issue(self, module: str, operation: str, arguments: dict[str, JsonValue], provenance: str) -> str:
+        if module == "heinzel" and operation == "accept-agent-contract":
+            session, request = self._model_args(arguments)
+            if arguments.get("review") != self.review(module, operation, arguments):
+                msg = "The reviewed contract changed"
+                raise HeinzelError(msg)
+            return ContractReview(self.service).issue(session, request, provenance)
+        if module == "heinzel" and operation == "approve-model-grant":
+            session, request = self._model_args(arguments)
+            if arguments.get("review") != self.review(module, operation, arguments):
+                msg = "The reviewed model policy changed"
+                raise HeinzelError(msg)
+            return ModelGrants(self.service).issue(session, request, provenance)
         self._check_daemon(module, operation, arguments)
         return self.service.issue(module, operation, arguments, provenance)
 
     def applied(self, module: str, operation: str, arguments: dict[str, JsonValue]) -> bool:
+        if module == "heinzel" and operation == "accept-agent-contract":
+            return ContractReview(self.service).applied(*self._model_args(arguments))
+        if module == "heinzel" and operation == "approve-model-grant":
+            return ModelGrants(self.service).applied(*self._model_args(arguments))
         return self.service.applied(module, operation, arguments)
 
 
 def _approval_issuer(service: SessionCrud, kernel: Kernel) -> ApprovalIssuer:
     """Expose the internal issuer only as a kernel service, never as a callable operation."""
     daemon = kernel.resolve(DaemonAttestation) if kernel.provides(DaemonAttestation) else None
-    return _SessionApprovalIssuer(service, daemon)
+    return _SessionApprovalIssuer(service, daemon, kernel)
 
 
 def _approval_confirmation() -> ApprovalConfirmation:
@@ -125,9 +185,182 @@ def _check_in_context_source(service: SessionCrud) -> CheckInChatContextSource:
     return _CheckInContextSource(service)
 
 
+def _register_skill_operations(module: Module) -> None:
+    """Declare private draft and sharing-review operations; no sharing authority is issued."""
+
+    @module.operation(private=True, read_only=False, heads={"web", "api-private", "mcp-stdio"}, audience="everyday")
+    def propose_skill_draft(  # noqa: PLR0913, PLR0917 - complete private draft and intended scope
+        service: SessionCrud,
+        session_id: Identity,
+        request_id: Request,
+        name: Annotated[str, Field(description="Proposed skill name.", min_length=1, max_length=64)],
+        requested_scope: Annotated[
+            Literal["personal", "team", "org", "site", "company"],
+            Field(description="Requested scope; no grant is created."),
+        ],
+        files: Annotated[
+            dict[str, str], Field(description="Exact SKILL.md, supporting text and optional Python script drafts.")
+        ],
+        scope_ref: Annotated[
+            str | None,
+            Field(
+                description="Opaque target for a requested shared scope; not verified.",
+                max_length=128,
+                pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            ),
+        ] = None,
+    ) -> SkillDraft:
+        """Store a private skill draft; no file is published, executed or shared."""
+        return service.propose_skill_draft(session_id, request_id, name, requested_scope, scope_ref, files)
+
+    @module.operation(private=True, audience="everyday")
+    def skill_draft(service: SessionCrud, session_id: Identity, request_id: Request) -> SkillDraft:
+        """Read exact private skill draft files and requested sharing scope."""
+        return service.skill_draft(session_id, request_id)
+
+    @module.operation(private=True, read_only=False, heads={"web", "api-private"}, audience="everyday")
+    def propose_skill_sharing(
+        service: SessionCrud,
+        session_id: Identity,
+        request_id: Request,
+        draft_request_id: Request,
+        draft_sha256: Annotated[
+            str, Field(description="The exact immutable draft fingerprint.", pattern=r"^[0-9a-f]{64}$")
+        ],
+    ) -> SkillSharingProposal:
+        """Request review of exact private draft and target; membership and authority are unverified."""
+        return service.propose_skill_sharing(session_id, request_id, draft_request_id, draft_sha256)
+
+    @module.operation(private=True, heads={"web", "api-private"}, audience="everyday")
+    def skill_sharing(service: SessionCrud, session_id: Identity, request_id: Request) -> SkillSharingProposal:
+        """Read a private sharing request; it is neither approved nor published."""
+        return service.skill_sharing(session_id, request_id)
+
+    @module.operation(private=True, heads={"web", "api-private"}, audience="everyday")
+    def skill_sharing_proposals(
+        service: SessionCrud,
+        session_id: Identity,
+        cursor: Annotated[int, Field(description="Resume after this session journal position.", ge=0)] = 0,
+        limit: Annotated[
+            int, Field(description="The most private sharing references returned in this page.", ge=1, le=100)
+        ] = 20,
+    ) -> SkillSharingPage:
+        """Discover owner-private pending sharing request references."""
+        return service.skill_sharing_proposals(session_id, cursor, limit)
+
+    @module.operation(private=True, audience="everyday")
+    def skill_drafts(
+        service: SessionCrud,
+        session_id: Identity,
+        cursor: Annotated[int, Field(description="Resume after this session journal position.", ge=0)] = 0,
+        limit: Annotated[
+            int, Field(description="The most private draft references returned in this page.", ge=1, le=100)
+        ] = 20,
+    ) -> SkillDraftPage:
+        """List private draft references without file contents."""
+        return service.skill_drafts(session_id, cursor, limit)
+
+
+def _register_contract_review_operations(module: Module) -> None:
+    """Register exact inert contract review and trusted confirmation."""
+
+    @module.operation(private=True, heads={"web", "api-private"}, audience="everyday")
+    def agent_contract_review(service: SessionCrud, session_id: Identity, request_id: Request) -> ContractReviewView:
+        """Read an exact contract and its acceptance; this grants no execution or access."""
+        review = ContractReview(service)
+        proposal = service.scheduled_agent_proposal(session_id, request_id)
+        return ContractReviewView(proposal=proposal, accepted=review.applied(session_id, request_id))
+
+    @module.operation(private=True, read_only=False, heads={"web", "api-private"}, audience="everyday")
+    def accept_agent_contract(  # noqa: PLR0913, PLR0917 - exact trusted confirmation
+        service: SessionCrud,
+        confirmation: ApprovalConfirmation,
+        session_id: Identity,
+        request_id: Request,
+        review: dict[str, JsonValue],
+        approval_proof: str,
+    ) -> ScheduledAgentProposal:
+        """Record only exact contract acceptance through trusted confirmation.
+
+        Raises:
+            HeinzelError: If confirmation or exact review is invalid.
+        """
+        args: dict[str, JsonValue] = {
+            "session_id": session_id,
+            "request_id": request_id,
+            "review": review,
+            "approval_proof": approval_proof,
+        }
+        if not confirmation.matches("heinzel", "accept-agent-contract", args):
+            msg = "Approval is invalid or unavailable"
+            raise HeinzelError(msg)
+        contracts = ContractReview(service)
+        if contracts.current(session_id, request_id).model_dump(mode="json") != review:
+            msg = "The reviewed contract changed"
+            raise HeinzelError(msg)
+        return contracts.accept(session_id, request_id, approval_proof)
+
+
+def _register_user_chat_operations(module: Module) -> None:
+    """Register private chat, tool activity and profile proposal projections."""
+
+    @module.operation(private=True, heads={"cli", "web", "api-private"}, audience="everyday")
+    def latest_profile_proposal(service: SessionCrud, session_id: Identity) -> ProfileProposal | None:
+        """Inspect the latest suggested name and look; it has not been applied."""
+        return service.latest_profile_proposal(session_id)
+
+    @module.operation(private=True, read_only=False, heads={"cli", "web", "api-private"}, audience="everyday")
+    def answer_chat(service: UserChatService, session_id: Identity, request_id: Request) -> UserChatAnswer:
+        """Answer one authenticated user's accepted message; an interrupted request is never silently replayed."""
+        return asyncio.run(service.answer(session_id, request_id))
+
+    @module.operation(private=True, heads={"cli", "web", "api-private"}, audience="everyday")
+    def chat_turn_state(service: UserChatService, session_id: Identity, request_id: Request) -> UserTurnState:
+        """Read the recorded turn state; unresolved may still be running."""
+        return service.turn_state(session_id, request_id)
+
+    @module.operation(private=True, read_only=False, heads={"cli", "web", "api-private"}, audience="everyday")
+    def abandon_chat_turn(
+        service: UserChatService,
+        session_id: Identity,
+        request_id: Request,
+        acknowledge_uncertain: Annotated[
+            bool, Field(strict=True, description="Confirm the outcome may be unknown and no retry or undo occurs.")
+        ],
+    ) -> UserTurnResolution:
+        """Explicitly set aside a stopped uncertain turn; never retry or undo its possible effects.
+
+        Raises:
+            HeinzelError: If the uncertain outcome was not acknowledged.
+        """
+        if not acknowledge_uncertain:
+            msg = "Acknowledge the uncertain outcome before setting this turn aside"
+            raise HeinzelError(msg)
+        return service.abandon(session_id, request_id)
+
+    @module.operation(private=True, heads={"cli", "web", "api-private"}, audience="everyday")
+    def tool_activity(
+        service: UserChatService,
+        session_id: Identity,
+        limit: Annotated[int, Field(ge=1, le=100, description="Maximum recent recorded tool events to return.")] = 30,
+    ) -> UserToolActivity:
+        """Show owner-private host-observed tool decisions, without their arguments."""
+        return service.activity(session_id, limit)
+
+
+def _user_chat_service(crud: SessionCrud, current: CurrentUser, kernel: Kernel) -> UserChatService:
+    runner = kernel.resolve_builtin_service(RunnerSnapshotProvider, "system.runner")
+    return UserChatService(crud, current, runner)
+
+
 def register_session_operations(module: Module) -> None:  # noqa: C901 - operation declarations define one shared head surface
     """Register once on the owning module; constructing the service performs no private I/O."""
     module.service(SessionCrud, _crud)
+    module.service(UserChatService, _user_chat_service)
+    _register_skill_operations(module)
+    _register_contract_review_operations(module)
+    _register_user_chat_operations(module)
+    register_model_policy_operations(module)
     module.service(ApprovalIssuer, _approval_issuer)
     module.service(ApprovalConfirmation, _approval_confirmation)
     module.service(CheckInChatContextSource, _check_in_context_source)
@@ -197,6 +430,78 @@ def register_session_operations(module: Module) -> None:  # noqa: C901 - operati
     ) -> SessionSnapshot:
         """Propose local five-minute check-ins; the schedule stays inactive until activated."""
         return service.propose_check_in(session_id, request_id, timezone)
+
+    @module.operation(private=True, read_only=False, audience="everyday")
+    def associate_artifact(
+        service: SessionCrud,
+        session_id: Identity,
+        request_id: Request,
+        kind: Annotated[
+            Literal["document", "spreadsheet", "presentation"],
+            Field(description="The claimed Google file type; not verified with the provider."),
+        ],
+        ref: Annotated[
+            str,
+            Field(description="Canonical Google editor URL.", max_length=256),
+        ],
+    ) -> PersonalArtifact:
+        """Associate a Google file locally; no access, provider ownership or permission is verified."""
+        return service.associate_artifact(session_id, request_id, kind, ref)
+
+    @module.operation(private=True, audience="everyday")
+    def personal_artifacts(service: SessionCrud, session_id: Identity) -> PersonalArtifacts:
+        """List local principal-submitted file associations without accessing the provider."""
+        return service.personal_artifacts(session_id)
+
+    @module.operation(private=True, read_only=False, audience="everyday")
+    def propose_scheduled_agent(  # noqa: PLR0913, PLR0917 - flat private API
+        service: SessionCrud,
+        session_id: Identity,
+        request_id: Request,
+        contract: Annotated[
+            str,
+            Field(description="Exact instructions to preview for a future agent turn.", min_length=1, max_length=4000),
+        ],
+        max_usd: Annotated[
+            float, Field(description="Proposed per-turn USD limit; not yet enforced.", gt=0, allow_inf_nan=False)
+        ],
+        timeout_seconds: Annotated[int, Field(description="Proposed maximum seconds per turn.", ge=1, le=300)],
+    ) -> ScheduledAgentProposal:
+        """Save an inert agent execution proposal; it neither approves nor starts a model turn."""
+        return service.propose_scheduled_agent(session_id, request_id, contract, max_usd, timeout_seconds)
+
+    @module.operation(private=True, read_only=False, audience="everyday")
+    def amend_scheduled_agent(  # noqa: PLR0913, PLR0917 - exact revision and complete flat private API terms
+        service: SessionCrud,
+        session_id: Identity,
+        request_id: Request,
+        expected_revision: Annotated[
+            int, Field(description="The exact proposal revision inspected.", strict=True, ge=1)
+        ],
+        contract: Annotated[
+            str, Field(description="Complete replacement instructions.", min_length=1, max_length=4000)
+        ],
+        max_usd: Annotated[
+            float, Field(description="Proposed per-turn USD limit; not yet enforced.", gt=0, allow_inf_nan=False)
+        ],
+        timeout_seconds: Annotated[int, Field(description="Proposed maximum seconds per turn.", ge=1, le=300)],
+    ) -> ScheduledAgentProposal:
+        """Propose revised terms; an independent human review and approval is still required."""
+        return service.amend_scheduled_agent(
+            session_id, request_id, expected_revision, contract, max_usd, timeout_seconds
+        )
+
+    @module.operation(private=True, audience="everyday")
+    def latest_scheduled_agent_proposal(service: SessionCrud, session_id: Identity) -> ScheduledAgentProposal | None:
+        """Read the current inert proposal for the personal session, if one exists."""
+        return service.latest_scheduled_agent_proposal(session_id)
+
+    @module.operation(private=True, audience="everyday")
+    def scheduled_agent_proposal(
+        service: SessionCrud, session_id: Identity, request_id: Request
+    ) -> ScheduledAgentProposal:
+        """Inspect the exact inert proposal; a separate future human approval is required to run it."""
+        return service.scheduled_agent_proposal(session_id, request_id)
 
     @module.operation(private=True, read_only=False, audience="everyday")
     def schedule_control(  # noqa: PLR0913, PLR0917 - flat private HTTP input binds the approval to its preview

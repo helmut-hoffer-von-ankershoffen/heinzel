@@ -18,8 +18,9 @@ from typing import Annotated, Literal
 
 from pydantic import Field
 
-from heinzel import ActionGate, AgentRunner, CurrentUser, HeinzelError, Module
+from heinzel import ActionGate, AgentRunner, CurrentUser, HeinzelError, Module, Settings
 from heinzel.kernel import CheckInChatContextSource, Effort, McpChatSessions
+from heinzel.modules.system.runner._models import RunnerSettings
 from heinzel.modules.system.runner.chat._models import (
     ChatAction,
     ChatContext,
@@ -34,8 +35,18 @@ from heinzel.modules.system.runner.chat._store import ChatStore, StoreGate
 
 module = Module("chat", "Chat with the agent runner about where you are; it acts through hz once you confirm.")
 module.settings(ChatSettings)
-module.service(ChatStore)
-module.service(McpChatSessions, ChatStore)
+
+
+def _chat_store(settings: Settings, chat: ChatSettings, runner: RunnerSettings, current: CurrentUser) -> ChatStore:
+    return ChatStore(settings, chat, runner, current)
+
+
+def _mcp_chats(store: ChatStore) -> McpChatSessions:
+    return store
+
+
+module.service(ChatStore, _chat_store)
+module.service(McpChatSessions, _mcp_chats)
 module.service(ChatService)
 module.service(ActionGate, StoreGate)
 
@@ -246,6 +257,34 @@ def propose_schedule_control(  # noqa: PLR0913, PLR0917 - each argument binds th
         expected_contract_version,
         expected_preview_hash,
     )
+
+
+@module.operation(read_only=False, heads=HEADS, audience="everyday")
+def propose_model_policy(
+    service: ChatService,
+    durable_session: Annotated[
+        str, Field(pattern=r"^hz-[0-9A-HJKMNP-TV-Z]{26}$", description="The personal agent session.")
+    ],
+    request_id: Annotated[
+        str, Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$", description="The policy proposal request id.")
+    ],
+) -> ChatSession:
+    """Stage the exact current model policy for human review; no grant or model call is made."""
+    return service.propose_model_policy(durable_session, request_id)
+
+
+@module.operation(read_only=False, heads=HEADS, audience="everyday")
+def propose_agent_contract(
+    service: ChatService,
+    durable_session: Annotated[
+        str, Field(pattern=r"^hz-[0-9A-HJKMNP-TV-Z]{26}$", description="The personal agent session.")
+    ],
+    request_id: Annotated[
+        str, Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$", description="The contract proposal request id.")
+    ],
+) -> ChatSession:
+    """Stage current agent contract terms for human review."""
+    return service.propose_agent_contract(durable_session, request_id)
 
 
 @module.operation(heads=HEADS)

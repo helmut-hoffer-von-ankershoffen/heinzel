@@ -81,11 +81,24 @@ Your Heinzelmännchen: durable agents that keep your team's documents true.
 
 | Operation | CLI | MCP tool | REST | Web | Changes state | Expert |
 | --- | --- | --- | --- | --- | --- | --- |
+| Read exact private skill draft files and requested sharing scope. | `hz heinzel skill-draft` | `heinzel_skill_draft` | — | `GET /api/heinzel/skill-draft` |  |  |
+| List private draft references without file contents. | `hz heinzel skill-drafts` | `heinzel_skill_drafts` | — | `GET /api/heinzel/skill-drafts` |  |  |
+| Inspect the latest suggested name and look; it has not been applied. | `hz heinzel latest-profile-proposal` | — | — | `GET /api/heinzel/latest-profile-proposal` |  |  |
+| Answer one authenticated user's accepted message; an interrupted request is never silently replayed. | `hz heinzel answer-chat` | — | — | `POST /api/heinzel/answer-chat` | yes |  |
+| Read the recorded turn state; unresolved may still be running. | `hz heinzel chat-turn-state` | — | — | `GET /api/heinzel/chat-turn-state` |  |  |
+| Explicitly set aside a stopped uncertain turn; never retry or undo its possible effects. | `hz heinzel abandon-chat-turn` | — | — | `POST /api/heinzel/abandon-chat-turn` | yes |  |
+| Show owner-private host-observed tool decisions, without their arguments. | `hz heinzel tool-activity` | — | — | `GET /api/heinzel/tool-activity` |  |  |
 | Create a durable personal Heinzel with an idempotent request, name and look. | `hz heinzel new-chat` | `heinzel_new_chat` | — | `POST /api/heinzel/new-chat` | yes |  |
 | List your durable personal Heinzels, including new conversations without an approved contract. | `hz heinzel sessions` | `heinzel_sessions` | — | `GET /api/heinzel/sessions` |  |  |
 | Open one durable Heinzel and an ordered page of its accepted messages, even during an active turn. | `hz heinzel session` | `heinzel_session` | — | `GET /api/heinzel/session` |  |  |
 | Save this Heinzel's name or look against the exact profile revision you saw. | `hz heinzel profile` | `heinzel_profile` | — | `POST /api/heinzel/profile` | yes |  |
 | Propose local five-minute check-ins; the schedule stays inactive until activated. | `hz heinzel propose-check-in` | `heinzel_propose_check_in` | — | `POST /api/heinzel/propose-check-in` | yes |  |
+| Associate a Google file locally; no access, provider ownership or permission is verified. | `hz heinzel associate-artifact` | `heinzel_associate_artifact` | — | `POST /api/heinzel/associate-artifact` | yes |  |
+| List local principal-submitted file associations without accessing the provider. | `hz heinzel personal-artifacts` | `heinzel_personal_artifacts` | — | `GET /api/heinzel/personal-artifacts` |  |  |
+| Save an inert agent execution proposal; it neither approves nor starts a model turn. | `hz heinzel propose-scheduled-agent` | `heinzel_propose_scheduled_agent` | — | `POST /api/heinzel/propose-scheduled-agent` | yes |  |
+| Propose revised terms; an independent human review and approval is still required. | `hz heinzel amend-scheduled-agent` | `heinzel_amend_scheduled_agent` | — | `POST /api/heinzel/amend-scheduled-agent` | yes |  |
+| Read the current inert proposal for the personal session, if one exists. | `hz heinzel latest-scheduled-agent-proposal` | `heinzel_latest_scheduled_agent_proposal` | — | `GET /api/heinzel/latest-scheduled-agent-proposal` |  |  |
+| Inspect the exact inert proposal; a separate future human approval is required to run it. | `hz heinzel scheduled-agent-proposal` | `heinzel_scheduled_agent_proposal` | — | `GET /api/heinzel/scheduled-agent-proposal` |  |  |
 | Pause a schedule; activation and resume require an exact-intent approval from a trusted issuer. | `hz heinzel schedule-control` | `heinzel_schedule_control` | — | `POST /api/heinzel/schedule-control` | yes |  |
 | Durably queue a message for this Heinzel; acceptance is distinct from a completed model answer. | `hz heinzel chat` | `heinzel_chat` | — | `POST /api/heinzel/chat` | yes |  |
 | List your Heinzelmännchen, one per contract: owner, schedule, state, last and next run. | `hz heinzel list` | `heinzel_list` | — | `GET /api/heinzel/list` |  |  |
@@ -355,6 +368,8 @@ Chat with the agent runner about where you are; it acts through hz once you conf
 | Decline an action the agent proposed; it never runs. | `hz chat decline` | — | — | `POST /api/system/runner/chat/decline` | yes |  |
 | Check an interrupted confirmation without running it again; unresolved outcomes stay blocked. | `hz chat recover` | — | — | `POST /api/system/runner/chat/recover` | yes |  |
 | Stage a schedule action for review in chat; creating the proposal never changes or activates it. | `hz chat propose-schedule-control` | — | — | `POST /api/system/runner/chat/propose-schedule-control` | yes |  |
+| Stage the exact current model policy for human review; no grant or model call is made. | `hz chat propose-model-policy` | — | — | `POST /api/system/runner/chat/propose-model-policy` | yes |  |
+| Stage current agent contract terms for human review. | `hz chat propose-agent-contract` | — | — | `POST /api/system/runner/chat/propose-agent-contract` | yes |  |
 | Show a chat session: its context, messages, actions and costs. | `hz chat show` | — | — | `GET /api/system/runner/chat/show` |  | expert |
 | List chat sessions, most recent first; they are kept for system.runner.chat.keep_days. | `hz chat list` | — | — | `GET /api/system/runner/chat/list` |  |  |
 | Delete a chat session and everything it holds; returns the sessions left. | `hz chat remove` | — | — | `POST /api/system/runner/chat/remove` | yes | expert |

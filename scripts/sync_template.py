@@ -58,9 +58,9 @@ def makefile() -> str:
     text = text.replace("check with coverage, template, build", "check with coverage, build")
     text = text.replace("lint, architecture contracts and workflows", "lint and workflows")
     # The web head's app (web/, ADR 0039): plugins bring operations, not UI.
-    text = text.replace(" web-build web-dev test-web", "")
+    text = text.replace(" web-build web-dev test-web", "").replace(" test-browser-deps", "")
     text = re.sub(r"\n# The web head's app in web/.*?\nWEB_TESTS := [^\n]*", "", text, flags=re.DOTALL)
-    text = re.sub(r"\n(web-build|web-dev|test-web):.*?\n(?:\t.*\n)+", "\n", text)
+    text = re.sub(r"\n(web-build|web-dev|test-web|test-browser-deps):.*?\n(?:\t.*\n)+", "\n", text)
     text = re.sub(r"\n\t\t\$\(WEB_LINT\) \$\(WEB_TYPES\) \\", "", text)
     text = re.sub(r" \$\(WEB_(LINT|TYPES|TESTS)\)", "", text)
     text = re.sub(r'\n\t\t"&web-client=[^\n]*', "", text)
@@ -127,6 +127,10 @@ def ci_workflow() -> str:
     text = text.replace("- name: Check the wheel ships the changelog", "- name: Check the wheel ships the package")
     # The web head's app (ADR 0039) and ATTRIBUTIONS.md, the notices of what it bundles: plugins have neither.
     text = re.sub(r"\n      - run: make test-web[^\n]*", "", text)
+    text = text.replace(
+        "\n      - name: Install browser runtimes and host dependencies\n        run: make test-browser-deps",
+        "",
+    )
     text = re.sub(r"\n      - run: make managed-backend-[^\n]*", "", text)
     text = re.sub(r"\n      - name: Check the wheel ships the attributions\n[^\n]*", "", text)
     text = re.sub(r"\n      - name: Check the wheel ships the web app\n[^\n]*", "", text)

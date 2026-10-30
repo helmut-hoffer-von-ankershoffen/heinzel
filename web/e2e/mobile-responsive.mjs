@@ -509,6 +509,12 @@ try {
     );
     await page.keyboard.press("Escape");
     await page.getByRole("textbox", { name: "Your message" }).fill("A draft to keep.");
+    await assertContained(
+      page,
+      page.getByRole("button", { name: "Create Heinzel and take this message" }),
+      `${spec.name}: workshop agent handoff`,
+    );
+    await page.screenshot({ path: join(shots, `mobile-${spec.name}-agent-handoff.png`) });
     await showPage(page);
     await page.getByRole("button", { name: "Open a terminal", exact: true }).click();
     const terminal = page.getByRole("region", { name: "Terminal", exact: true });
@@ -710,6 +716,30 @@ try {
       Object.defineProperty(window, "visualViewport", window.originalVisualViewport);
       visualViewport.dispatchEvent(new Event("resize"));
     });
+    // A private fixture suggestion stays inert until the person selects it and saves the profile.
+    await page.route("**/api/heinzel/latest-profile-proposal?*", async (route) => {
+      const session = new URL(route.request().url()).searchParams.get("session_id");
+      await route.fulfill({
+        json: {
+          session_id: session,
+          request_id: "mobile-look",
+          expected_revision: 1,
+          name: "Mira",
+          appearance: { age: "grown", build: "regular", shirt: "teal", accessories: [] },
+          status: "proposed",
+          preview_sha256: "a".repeat(64),
+        },
+      });
+    });
+    await page.getByRole("textbox", { name: "Your message" }).fill("Keep my notes current.");
+    await page.getByRole("button", { name: "Create Heinzel and take this message" }).click();
+    await page.getByLabel("Message your Heinzel").waitFor();
+    await page.getByText(/Customize.*suggested look/).click();
+    const useSuggestion = page.getByRole("button", { name: "Use suggested identity" });
+    await assertContained(page, useSuggestion, `${spec.name}: suggested identity review`);
+    await useSuggestion.click();
+    assert.equal(await page.getByLabel("Name", { exact: true }).inputValue(), "Mira");
+    await page.screenshot({ path: join(shots, `mobile-${spec.name}-suggested-identity.png`) });
     // A real visual viewport zoom exercises fixed panels independently of layout viewport size.
     await page.goto(`${url.split("#")[0]}?settings=hz${new URL(url).hash}`);
     if (!useWebKit) {

@@ -4,17 +4,63 @@ These are private application models, not kernel primitives. Heads render the sa
 the public session identity, pending decisions or contract versions.
 """
 
+import json
+import re
 from datetime import datetime
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
-from heinzel.kernel import Billing, Effort
+from heinzel.kernel import Billing, Effort, skill_name_problem
 
 SessionId = Annotated[str, Field(pattern=r"^hz-[0-9A-HJKMNP-TV-Z]{26}$")]
 RequestId = Annotated[str, Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$")]
 Digest = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
 BackendMode = Literal["api", "cli-model", "native-cli"]
+MessageOrigin = Literal["unknown", "cli", "mcp-stdio", "daemon", "api-bearer", "web-session", "web-device"]
+MAX_DRAFT_FILES = 16
+MAX_DRAFT_PATH = 160
+MAX_DRAFT_FILE_BYTES = 24 * 1024
+MAX_DRAFT_BYTES = 48 * 1024
+
+
+class SkillDraftReference(BaseModel):
+    """An owner-scoped reference, without draft content."""
+
+    request_id: RequestId = Field(description="The stable request identity for the private draft or sharing request.")
+    seq: int = Field(description="Its position in the owner's session journal.", gt=0)
+
+
+class SkillDraftPage(BaseModel):
+    """A stable page in control-journal order."""
+
+    items: list[SkillDraftReference] = Field(description="Private draft references in journal order.")
+    next_cursor: int | None = Field(default=None, description="Resume after this journal position; null at the end.")
+
+
+class SkillSharingProposal(BaseModel):
+    """Private request for later review; no membership, approval or publication is asserted."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    session_id: SessionId = Field(description="The authenticated owner's personal session.")
+    request_id: RequestId = Field(description="The stable identity of this exact sharing review request.")
+    draft_request_id: RequestId = Field(description="The immutable skill draft being proposed for sharing.")
+    draft_sha256: Digest = Field(description="The exact private draft fingerprint, including its intended target.")
+    requested_scope: Literal["team", "org", "site", "company"] = Field(
+        description="The requested, unverified audience."
+    )
+    scope_ref: RequestId = Field(description="The opaque requested audience identity; no authority is established.")
+    status: Literal["awaiting_review"] = Field(default="awaiting_review", description="No sharing has been approved.")
+    authority: Literal["unverified"] = Field(
+        default="unverified", description="Membership and publishing authority are unverified."
+    )
+
+
+class SkillSharingPage(BaseModel):
+    """Owner-private references to pending sharing requests."""
+
+    items: list[SkillDraftReference] = Field(description="Owner-private pending sharing request references.")
+    next_cursor: int | None = Field(default=None, description="Resume after this journal position; null at the end.")
 
 
 class BackendBinding(BaseModel):
@@ -77,6 +123,143 @@ class ReferenceBlock(BaseModel):
 ResultBlock = Annotated[TextBlock | RendererBlock | ReferenceBlock, Field(discriminator="kind")]
 
 
+class PersonalArtifact(BaseModel):
+    """A principal-submitted association; neither access nor provider ownership has been verified."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    session_id: SessionId = Field(description="The personal session this association belongs to.")
+    request_id: RequestId = Field(description="The stable registration request identity.")
+    provider: Literal["google"] = Field(
+        default="google", description="The user-supplied provider, not an access grant."
+    )
+    kind: Literal["document", "spreadsheet", "presentation"] = Field(description="The declared Google file type.")
+    ref: str = Field(
+        description="Canonical Google editor URL supplied under the authenticated principal; not verified remotely.",
+        max_length=256,
+    )
+    provenance: Literal["principal-submitted"] = Field(
+        default="principal-submitted", description="How this association was recorded; not provider ownership."
+    )
+
+    @model_validator(mode="after")
+    def validate_ref(self) -> "PersonalArtifact":
+        """Reject noncanonical URLs, credentials, query strings and mismatched file types.
+
+        Raises:
+            ValueError: If the declared type and canonical editor URL do not match.
+        """
+        path = {"document": "document", "spreadsheet": "spreadsheets", "presentation": "presentation"}[self.kind]
+        if not re.fullmatch(rf"https://docs\.google\.com/{path}/d/[A-Za-z0-9_-]{{10,128}}/edit", self.ref):
+            msg = "Provide a canonical Google editor link matching the declared file type"
+            raise ValueError(msg)
+        return self
+
+
+class PersonalArtifacts(BaseModel):
+    """Local associations, not a list of files the provider says are accessible."""
+
+    session_id: SessionId = Field(description="The owning personal session.")
+    artifacts: list[PersonalArtifact] = Field(
+        description="Locally recorded associations; provider access is not verified."
+    )
+
+
+def _validate_skill_draft_files(files: dict[str, str]) -> None:
+    if not 1 <= len(files) <= MAX_DRAFT_FILES or not files.get("SKILL.md"):
+        msg = "Supply a nonempty SKILL.md and at most 16 files"
+        raise ValueError(msg)
+    seen: set[str] = set()
+    for path, content in files.items():
+        script = re.fullmatch(r"scripts/(?:[A-Za-z0-9_-]+/){0,2}[A-Za-z0-9_-]+\.py", path)
+        supporting = re.fullmatch(
+            r"(?:references|templates|assets)/(?:[A-Za-z0-9_-]+/){0,2}[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)?", path
+        )
+        if path != "SKILL.md" and not (script or supporting):
+            msg = "Use safe paths for supporting text or Python scripts"
+            raise ValueError(msg)
+        if path.casefold() in seen or len(path) > MAX_DRAFT_PATH or "\x00" in content:
+            msg = "Draft files contain duplicate or invalid paths or content"
+            raise ValueError(msg)
+        seen.add(path.casefold())
+        try:
+            size = len(content.encode("utf-8"))
+        except UnicodeError:
+            msg = "Draft files must be valid UTF-8 text"
+            raise ValueError(msg) from None
+        if size > MAX_DRAFT_FILE_BYTES:
+            msg = "Each draft file must be at most 24 KiB"
+            raise ValueError(msg)
+
+
+class SkillDraft(BaseModel):
+    """Private inert text and requested sharing intent; readiness, publication and grants are not verified."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    session_id: SessionId = Field(description="The authenticated owner's personal session.")
+    request_id: RequestId = Field(description="Stable request identity for exact retries.")
+    name: str = Field(description="The proposed skill name.", min_length=1, max_length=64)
+    requested_scope: Literal["personal", "team", "org", "site", "company"] = Field(
+        description="Proposed sharing scope, not an access grant or verified membership."
+    )
+    scope_ref: RequestId | None = Field(
+        default=None, description="Opaque proposed shared-scope reference; not verified."
+    )
+    files: dict[str, str] = Field(
+        description="Exact SKILL.md, supporting text and optional Python scripts; not validated for publication."
+    )
+    status: Literal["draft"] = Field(default="draft", description="Not published, approved or executable.")
+    preview_sha256: Digest = Field(description="Fingerprint of the proposed terms; not an approval proof.")
+
+    @model_validator(mode="after")
+    def validate_draft(self) -> "SkillDraft":
+        """Validate bounds and names without opening, writing or executing any supplied path.
+
+        Raises:
+            ValueError: If a name, sharing intent, file path or size is invalid.
+        """
+        if skill_name_problem(self.name):
+            msg = "Choose a valid unreserved skill name"
+            raise ValueError(msg)
+        if (self.requested_scope == "personal") != (self.scope_ref is None):
+            msg = "Shared scopes require a target reference; personal drafts do not"
+            raise ValueError(msg)
+        _validate_skill_draft_files(self.files)
+        try:
+            size = len(json.dumps(self.model_dump(mode="json"), ensure_ascii=False, sort_keys=True).encode("utf-8"))
+        except UnicodeError:
+            msg = "Draft files must be valid UTF-8 text"
+            raise ValueError(msg) from None
+        if size > MAX_DRAFT_BYTES:
+            msg = "The complete draft must be at most 48 KiB"
+            raise ValueError(msg)
+        return self
+
+
+class ScheduledAgentProposal(BaseModel):
+    """An inert execution proposal; creating or reading it never authorizes a run."""
+
+    session_id: SessionId = Field(description="The owner-scoped personal session.")
+    request_id: RequestId = Field(description="The proposal's stable request identity.")
+    revision: int = Field(description="The sequential execution proposal revision.", ge=1)
+    based_on_revision: int = Field(
+        description="The previous revision inspected for this proposal; zero for the first.", ge=0
+    )
+    contract: str = Field(
+        description="Exact instructions proposed for each scheduled model turn.", min_length=1, max_length=4000
+    )
+    permitted_tools: list[str] = Field(
+        description="The tools the proposed turn may use; this slice permits none.", max_length=0
+    )
+    max_usd: float | None = Field(
+        description="Proposed API USD limit, or null for subscription plan limits and unknown cost; not yet enforced.",
+        gt=0,
+        allow_inf_nan=False,
+    )
+    timeout_seconds: int = Field(description="Proposed maximum duration per turn in seconds.", ge=1, le=300)
+    status: Literal["proposed"] = Field(default="proposed", description="No execution approval has been granted.")
+    preview_sha256: Digest = Field(description="Hash of the exact proposed terms, not an approval proof.")
+
+
 class SessionMessage(BaseModel):
     """A visible message or an explicit gap where private body content expired."""
 
@@ -84,6 +267,10 @@ class SessionMessage(BaseModel):
     seq: int = Field(description="The authoritative control-journal position; gaps are permitted.", ge=1)
     turn_id: str | None = Field(default=None, description="The owning turn id, when one has been assigned.")
     role: Literal["user", "assistant", "tool", "system"] = Field(description="Who produced this visible message.")
+    origin: MessageOrigin = Field(
+        default="unknown",
+        description="Authenticated acceptance channel if recorded; not proof of human authorship or permission.",
+    )
     text: str = Field(default="", description="The portable plain-text content.")
     blocks: list[ResultBlock] = Field(
         description="Validated rich blocks with portable text fallbacks.", default_factory=list[ResultBlock]
@@ -225,6 +412,19 @@ class HeinzelAppearance(BaseModel):
         description="Personal decorations from the supported closed vocabulary.",
         default_factory=list[Literal["umbrella", "sunglasses", "scarf"]],
     )
+
+
+class ProfileProposal(BaseModel):
+    """Private suggested identity and appearance; applying it requires a separate user save."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    session_id: SessionId = Field(description="The owner's agent receiving this suggested identity.")
+    request_id: RequestId = Field(description="The stable request identifying these exact suggested terms.")
+    expected_revision: int = Field(ge=1, description="The current profile revision this suggestion is based on.")
+    name: str = Field(min_length=1, max_length=100, description="The suggested display name, not yet applied.")
+    appearance: HeinzelAppearance = Field(description="The suggested appearance, pending an explicit user save.")
+    status: Literal["proposed"] = Field(default="proposed", description="This suggestion has not been applied.")
+    preview_sha256: Digest = Field(description="The digest binding the exact suggested profile for review.")
 
 
 class WakeScheduleView(BaseModel):

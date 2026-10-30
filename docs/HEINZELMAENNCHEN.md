@@ -34,6 +34,15 @@ look, and preview it with the active theme. After saving, continue to its chat t
 editing alone does not start a schedule. A profile update does not replace an already queued message or approve a
 contract.
 
+### Scheduled agent execution proposal
+
+You can record an inert proposal for a possible future scheduled model turn with
+`hz heinzel propose-scheduled-agent <session-id> <request-id> <contract> <max-usd> <timeout-seconds>`.
+Read it with `hz heinzel scheduled-agent-proposal <session-id> <request-id> --json` to inspect the exact contract,
+proposed per-turn budget, time limit, and empty permitted-tools list. The preview hash identifies those terms; it is
+not an approval, and it does not bind an owner decision or schedule revision. The limits are not yet enforced and no separate approval or scheduled agent execution exists. The
+existing notification-only check-in contract is unaffected.
+
 ### Five-minute check-in
 
 The first scheduled personal Heinzel stores one immutable versioned check-in contract and its five-minute schedule in
@@ -105,6 +114,14 @@ The web composer also recognizes a narrow fixed request for a check-in every fiv
 schedule preview and opens the existing exact-intent approval card; only the person's separate confirmation activates
 it. This local phrase match does not call a model or infer other schedule changes. Other messages remain queued, and
 general natural-language replies still require a future conversation runner.
+
+The personal session journal does not yet contain an owner-bound agent activity or tool-call timeline. Newly opened
+check-in runner chats record the authenticated owner and personal session, and reject another owner on lookup. A
+personal session reuses its bound chat for subsequent opens and schedule review; generic chat retention does not prune
+it. Older unbound chats or multiple chats claiming one personal session fail closed and require inspection. The chat
+still has bounded message and proposal counts. It records runner-reported aggregate tool counts, not a durable ordered
+activity log for a personal Heinzel. An activity feed requires a trusted runner-to-session link and bounded redacted records;
+client-authored messages must never be interpreted as tool events.
 
 These operations are private: local CLI, stdio MCP, paired web and the authenticated private API use the same owner
 and service. The unauthenticated REST API and network MCP do not expose them. Names, appearance and message text

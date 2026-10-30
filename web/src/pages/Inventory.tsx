@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Badge, Card } from "@/components/ui/card";
 import { t } from "@/i18n";
 import { commandsIn } from "@/lib/utils";
+import { PersonalArtifacts } from "@/pages/PersonalArtifacts";
 
 export function AssetTypes() {
   const playbooks = usePlaybooks();
@@ -75,6 +76,7 @@ export function Assets() {
         </Button>
       }
     >
+      <PersonalArtifacts />
       {asked && (
         <Loaded query={discovery}>
           {(data) => (

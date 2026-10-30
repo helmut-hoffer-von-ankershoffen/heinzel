@@ -217,6 +217,7 @@ def test_context_parses_kinds_and_a_bare_id_is_an_event():
         "detail": "",
         "request_id": None,
         "timezone": None,
+        "owner_id": None,
     }  # type: ignore[union-attr]
     assert parse_context("3f2a", "Build failed").model_dump() == {
         "kind": "event",
@@ -224,6 +225,7 @@ def test_context_parses_kinds_and_a_bare_id_is_an_event():
         "detail": "Build failed",
         "request_id": None,
         "timezone": None,
+        "owner_id": None,
     }  # type: ignore[union-attr]
     assert parse_context(None, None) is None
     with pytest.raises(HeinzelError, match="Unknown chat context 'mail'"):
