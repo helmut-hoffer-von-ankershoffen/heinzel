@@ -168,8 +168,10 @@ function Full({ onToggle, onSearch, onNotifications }: Omit<Props, "collapsed">)
         </ul>
         <ProviderNavigation />
       </nav>
-      <ViewSlot slot="sidebar" />
-      <StatusItems slot="sidebar" className="pb-1" />
+      <div className="mt-4 flex shrink-0 flex-col">
+        <ViewSlot slot="sidebar" />
+        <StatusItems slot="sidebar" className="pb-1" />
+      </div>
       {/* The docked sound player sits here, in the flow between the clock line and the account row: the full width of
           the column, never over its neighbours. Empty (and invisible) when the player isn't docked. */}
       <div ref={registerSlot} data-sound-dock className="-mx-2 shrink-0" />

@@ -41,6 +41,7 @@ Icon = Literal[
     "alarm-clock",
     "bell",
     "bot",
+    "briefcase-business",
     "calendar",
     "calendar-clock",
     "chart-line",
@@ -65,6 +66,8 @@ Icon = Literal[
     "list-checks",
     "mail",
     "message-square",
+    "moon",
+    "party-popper",
     "play",
     "rocket",
     "star",
@@ -380,6 +383,7 @@ class DetailLine(_Data):
     tone: Tone = Field(default="neutral", description="`ok` shows it as good, `warn` and `bad` as needing attention.")
     live: Live | None = Field(default=None, description="Optional live value rendered after the text.")
     secondary: Text | None = Field(default=None, description="Optional supporting text.")
+    badge: Text | None = Field(default=None, description="Optional short designation shown beside the label.")
     tooltip: Body | None = Field(default=None, description="Optional accessible explanation.")
     icon: Icon | None = Field(default=None, description="Optional semantic state icon.")
 
