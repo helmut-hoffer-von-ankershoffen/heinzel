@@ -239,3 +239,52 @@ def test_registered_service_requires_exact_kernel_record_and_factory_instance(se
     other_kernel = Kernel(settings, [other_record])
     with pytest.raises(HeinzelError):
         other_kernel.resolve_registered_service(Contract, other_kernel.module("factory"))
+
+
+def test_selected_service_allows_multiple_plugin_implementations(settings):
+    class ConnectedRead:
+        pass
+
+    class First(ConnectedRead):
+        pass
+
+    class Second(ConnectedRead):
+        pass
+
+    first = Module("first", "First plugin")
+    second = Module("second", "Second plugin")
+    first.service(First)
+    second.service(Second)
+    origin = Origin(distribution="fictional-plugin", version="1", builtin=False)
+    records = [
+        ModuleRecord(qualname="first", module=first, origin=origin),
+        ModuleRecord(qualname="second", module=second, origin=origin),
+    ]
+    kernel = Kernel(settings, records)
+    assert type(kernel.resolve_selected_service(ConnectedRead, kernel.module("first"))) is First
+    assert type(kernel.resolve_selected_service(ConnectedRead, kernel.module("second"))) is Second
+    fake = ModuleRecord(qualname="first", module=first, origin=origin)
+    with pytest.raises(HeinzelError):
+        kernel.resolve_selected_service(ConnectedRead, fake)
+    kernel.bind(First, First())
+    with pytest.raises(HeinzelError):
+        kernel.resolve_selected_service(ConnectedRead, kernel.module("first"))
+
+
+def test_selected_service_refuses_ambiguous_or_aliased_factories(settings):
+    class Contract:
+        pass
+
+    class First(Contract):
+        pass
+
+    class Second(Contract):
+        pass
+
+    module = Module("plug", "plugin")
+    module.service(First)
+    module.service(Second)
+    origin = Origin(distribution="fictional-plugin", version="1", builtin=False)
+    kernel = Kernel(settings, [ModuleRecord(qualname="plug", module=module, origin=origin)])
+    with pytest.raises(HeinzelError):
+        kernel.resolve_selected_service(Contract, kernel.module("plug"))

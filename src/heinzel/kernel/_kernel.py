@@ -318,6 +318,32 @@ class Kernel:
             raise HeinzelError(msg)
         return instance
 
+    def resolve_selected_service[T](self, contract: type[T], record: ModuleRecord) -> T:
+        """Resolve one concrete service offered by the exact host-selected module record.
+
+        Different modules may offer distinct concrete subclasses of one contract without competing for a global
+        service key. The caller must derive the selected record from trusted configuration; this is no grant or
+        publisher authentication.
+
+        Raises:
+            HeinzelError: If the record or its unique concrete class service is unavailable.
+        """
+        if self._records.get(record.qualname) is not record:
+            msg = "The selected registered service is unavailable"
+            raise HeinzelError(msg)
+        matches = [
+            let.provides
+            for owner, let in self.lets(ServiceLet)
+            if owner is record
+            and let.provides is not contract
+            and issubclass(let.provides, contract)
+            and let.factory is let.provides
+        ]
+        if len(matches) != 1:
+            msg = "The selected module does not provide exactly one eligible service"
+            raise HeinzelError(msg)
+        return self.resolve_registered_service(matches[0], record)
+
     def handle_for(self, requester: Requester, capability: str) -> object:
         """A handle on `capability` for `requester`, for code that acts on its behalf without being its function.
 
