@@ -246,9 +246,10 @@ def test_publication_is_fresh_serialized_and_never_records_providers():
     assert workflow[True]["schedule"] == [{"cron": "17 * * * *"}]
     assert "production" in workflow["concurrency"]["group"]
     assert "github.ref" not in workflow["concurrency"]["group"]
+    assert workflow["concurrency"]["cancel-in-progress"] == "${{ github.event_name == 'pull_request' }}"
     site = workflow["jobs"]["site"]
     checkout = next(s for s in site["steps"] if s.get("uses", "").startswith("actions/checkout@"))
-    assert checkout["with"]["ref"].endswith("|| 'main' }}")
+    assert checkout["with"]["ref"] == "${{ github.event_name == 'pull_request' && github.sha || 'main' }}"
     verify = next(s for s in site["steps"] if s.get("run") == "make docs-publish-check")
     assert verify["env"]["REFRESH_PUBLIC"] == "${{ github.event_name != 'pull_request' }}"
     assert "inputs.record == true" in workflow["jobs"]["record"]["if"]
