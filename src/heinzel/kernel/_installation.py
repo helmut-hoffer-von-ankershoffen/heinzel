@@ -237,9 +237,9 @@ class Installation:
         self.prefix = prefix or Path(sys.prefix)
         self._runner = runner
         self._uv = uv or shutil.which("uv")
-        self._tool_scope: ContextVar[tuple[dict[str, str], tuple[tuple[int, int], ...]] | None] = ContextVar(
-            "installation_tool_scope", default=None
-        )
+        self._tool_scope: ContextVar[
+            tuple[dict[str, str], tuple[tuple[int, int], ...], dict[str, tuple[int, int, str]]] | None
+        ] = ContextVar("installation_tool_scope", default=None)
 
     @property
     def is_tool(self) -> bool:
@@ -336,14 +336,47 @@ class Installation:
         """Keep a validated target only for one update and its recovery attempt."""
         target = self._tool_target()
         identities = self._target_directories(target)
-        token = self._tool_scope.set((target, identities))
+        owned = self._owned_tool_links(target)
+        token = self._tool_scope.set((target, identities, owned))
         try:
             yield
         finally:
             self._tool_scope.reset(token)
 
+    def _owned_tool_links(self, target: Mapping[str, str]) -> dict[str, tuple[int, int, str]]:
+        """Capture only receipt-owned, presently verified links for this operation's recovery.
+
+        Raises:
+            HeinzelError: If the entrypoints cannot be verified.
+        """
+        msg = "The verified uv tool entrypoints changed; update it explicitly with uv."
+        try:
+            if self._tool_target() != target:
+                raise HeinzelError(msg)
+            prefix = self.prefix.resolve(strict=True)
+            data = tomllib.loads((prefix / RECEIPT_FILENAME).read_text(encoding="utf-8"))
+            owned = {}
+            for entry in data["tool"]["entrypoints"]:
+                path = Path(entry["install-path"])
+                name = entry["name"]
+                if path.parent.resolve(strict=True) != Path(target["UV_TOOL_BIN_DIR"]) or path.name != name:
+                    raise HeinzelError(msg)
+                info = path.lstat()
+                link = str(path.readlink())
+                if path.resolve(strict=True) != (prefix / "bin" / name).resolve(strict=True):
+                    raise HeinzelError(msg)
+                owned[name] = (info.st_dev, info.st_ino, link)
+            if self._tool_target() != target:
+                raise HeinzelError(msg)
+        except (OSError, ValueError, TypeError, KeyError, AttributeError, tomllib.TOMLDecodeError) as exc:
+            raise HeinzelError(msg) from exc
+        else:
+            return owned
+
     @staticmethod
-    def _target_directories(target: Mapping[str, str]) -> tuple[tuple[int, int], ...]:
+    def _target_directories(
+        target: Mapping[str, str], owned: Mapping[str, tuple[int, int, str]] | None = None
+    ) -> tuple[tuple[int, int], ...]:
         """Refuse a missing, replaced or symlinked authority directory.
 
         Raises:
@@ -364,21 +397,24 @@ class Installation:
                                 try:
                                     entry.stat(follow_symlinks=True)
                                 except OSError as exc:
-                                    detail = "Repair unresolved uv executable symlinks before updating."
-                                    raise HeinzelError(detail) from exc
+                                    link_info = entry.stat(follow_symlinks=False)
+                                    current = (link_info.st_dev, link_info.st_ino, str(Path(entry.path).readlink()))
+                                    if owned is None or owned.get(entry.name) != current:
+                                        detail = "Repair unresolved uv executable symlinks before updating."
+                                        raise HeinzelError(detail) from exc
                 result.append((info.st_dev, info.st_ino))
         except (OSError, KeyError) as exc:
             raise HeinzelError(msg) from exc
         return tuple(result)
 
-    def _current_tool_target(self) -> dict[str, str]:
+    def _current_tool_target(self, *, recovery: bool = False) -> dict[str, str]:
         scope = self._tool_scope.get()
         if scope is None:
             target = self._tool_target()
             self._target_directories(target)
             return target
-        target, identities = scope
-        if self._target_directories(target) != identities:
+        target, identities, owned = scope
+        if self._target_directories(target, owned if recovery else None) != identities:
             msg = "The verified uv tool target changed; update it explicitly with uv."
             raise HeinzelError(msg)
         return target
@@ -418,7 +454,7 @@ class Installation:
             recovery = ""
             if not intact:
                 try:
-                    restored = self.attempt(restore, "Restoring the previous tool", environment)
+                    restored = self.attempt(restore, "Restoring the previous tool", environment, recovery=True)
                     if restored.returncode == 0:
                         self.hz("--version")
                         recovery = "The previous tool was restored."
@@ -437,11 +473,11 @@ class Installation:
         return f"{variables} {shlex.join(command)}"
 
     def attempt(
-        self, command: list[str], activity: str, environment: Mapping[str, str] | None = None
+        self, command: list[str], activity: str, environment: Mapping[str, str] | None = None, *, recovery: bool = False
     ) -> subprocess.CompletedProcess[str]:
         """Run a command with a progress indicator and return how it ended, for callers that explain a failure."""
         if command[1:3] == ["tool", "install"]:
-            environment = dict(environment or {}) | self._current_tool_target()
+            environment = dict(environment or {}) | self._current_tool_target(recovery=recovery)
         with self._progress.task(activity):
             return self._runner(command, environment) if environment else self._runner(command)
 

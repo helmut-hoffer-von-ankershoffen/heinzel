@@ -454,3 +454,33 @@ def test_valid_foreign_symlink_does_not_block_tool_target(tmp_path):
     installation = Installation(Progress(), prefix=prefix, uv="fake-uv", runner=fake_uv)
     installation.attempt(installation.tool_install_command("heinzel", []), "fixture")
     assert len(calls) == 1
+
+
+def test_only_original_receipt_owned_link_can_be_dangling_for_scoped_recovery(tmp_path):
+    prefix, bin_dir = _target_fixture(tmp_path)
+    calls = []
+
+    def fake_uv(command, environment):
+        calls.append((command, environment))
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    installation = Installation(Progress(), prefix=prefix, uv="fake-uv", runner=fake_uv)
+    command = installation.tool_install_command("heinzel", [])
+    with installation.tool_transaction():
+        (prefix / "bin" / "hz").unlink()
+        with pytest.raises(HeinzelError, match="unresolved uv executable symlinks"):
+            installation.attempt(command, "ordinary retry")
+        installation.attempt(command, "restore", recovery=True)
+        foreign = bin_dir / "foreign"
+        foreign.symlink_to(tmp_path / "missing")
+        with pytest.raises(HeinzelError, match="unresolved uv executable symlinks"):
+            installation.attempt(command, "restore with foreign link", recovery=True)
+        foreign.unlink()
+        shim = bin_dir / "hz"
+        old = bin_dir / "old-shim"
+        shim.rename(old)
+        shim.symlink_to(prefix / "bin" / "hz")
+        old.unlink()
+        with pytest.raises(HeinzelError, match="unresolved uv executable symlinks"):
+            installation.attempt(command, "restore with replaced link", recovery=True)
+    assert len(calls) == 1

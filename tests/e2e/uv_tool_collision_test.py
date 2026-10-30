@@ -126,10 +126,10 @@ def test_uv_reinstall_preserves_foreign_entrypoint_and_allows_restoration(tmp_pa
     assert not foreign.is_symlink()
     assert hashlib.sha256(foreign.read_bytes()).digest() == before
 
-    _assert_dangling_guard(root, shim, monkeypatch)
+    _assert_dangling_guard(root, shim, monkeypatch, run, previous)
 
 
-def _assert_dangling_guard(root, shim, monkeypatch):
+def _assert_dangling_guard(root, shim, monkeypatch, run, previous):
     # An unresolved foreign link is invisible to uv's exists() collision check. Our guard must stop
     # the command before its runner, even though the fixture would otherwise let uv replace the link.
     from heinzel import HeinzelError, Progress
@@ -149,3 +149,27 @@ def _assert_dangling_guard(root, shim, monkeypatch):
     assert dangling.readlink() == missing
     assert shim.is_symlink()
     assert (root / "tools" / "fixture-owned" / "uv-receipt.toml").is_file()
+
+    # Recovery may proceed only for the same previously verified owned link, not a foreign one.
+    dangling.unlink()
+    prefix = root / "tools" / "fixture-owned"
+    calls = []
+
+    def guarded_runner(command, environment):
+        calls.append((command, environment))
+        assert environment["UV_TOOL_DIR"] == str(root / "tools")
+        assert environment["UV_TOOL_BIN_DIR"] == str(root / "bin")
+        return run(previous, reinstall=True)
+
+    installation = Installation(Progress(), prefix=prefix, uv="fixture-guard", runner=guarded_runner)
+    with installation.tool_transaction():
+        (prefix / "bin" / "hz").unlink()
+        assert shim.is_symlink()
+        assert not shim.exists()
+        result = installation.attempt(
+            installation.tool_install_command(str(previous), []), "restore fixture", recovery=True
+        )
+    assert result.returncode == 0
+    assert len(calls) == 1
+    assert shim.resolve(strict=True).is_relative_to(prefix)
+    assert (prefix / "uv-receipt.toml").is_file()

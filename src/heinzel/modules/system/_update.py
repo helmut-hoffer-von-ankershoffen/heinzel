@@ -386,9 +386,11 @@ class UpdateService:
                 for p, n in zip(plugins, names, strict=True)
                 if modes[n] != "drop"
             ]
-            result = self._installation.attempt(
-                self._installation.tool_install_command(core, specs, refresh=True), activity, environment
-            )
+            command = self._installation.tool_install_command(core, specs, refresh=True)
+            try:
+                result = self._installation.attempt(command, activity, environment)
+            except HeinzelError as exc:
+                return None, reasons, str(exc)
             if result.returncode == 0:
                 return modes, reasons, ""
             output = result.stderr.strip() or result.stdout.strip()
@@ -537,7 +539,7 @@ class UpdateService:
             pass
         restore = self._installation.tool_install_command(pin.requirement, [p.requirement for p in plugins])
         try:
-            restored = self._installation.attempt(restore, f"Restoring hz {current}", environment)
+            restored = self._installation.attempt(restore, f"Restoring hz {current}", environment, recovery=True)
             if restored.returncode == 0:
                 return f"hz {self._version()} was restored, with every plugin."
         except HeinzelError:
