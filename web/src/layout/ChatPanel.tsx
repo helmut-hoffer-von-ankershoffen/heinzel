@@ -137,6 +137,8 @@ export function ChatPanel({ onCollapse }: { onCollapse: () => void }) {
           "contract-chat",
           "schedule-chat",
           "schedule-request",
+          "notification-chat",
+          "connected-chat",
         ])
           next.delete(key);
         next.set("chat", data.session_id);
@@ -167,6 +169,8 @@ export function ChatPanel({ onCollapse }: { onCollapse: () => void }) {
               "contract-chat",
               "schedule-chat",
               "schedule-request",
+              "notification-chat",
+              "connected-chat",
             ])
               next.delete(key);
             return next;

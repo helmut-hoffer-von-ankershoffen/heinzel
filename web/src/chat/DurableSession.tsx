@@ -13,6 +13,7 @@ import { ContractHistory } from "@/chat/ContractHistory";
 import { ActionCard } from "@/chat/Conversation";
 import { useDurableDraft } from "@/chat/durableDraft";
 import { ModelPolicyReviewCard, supportedPolicy } from "@/chat/ModelPolicyReviewCard";
+import { NotificationPanel } from "@/chat/NotificationPanel";
 import { SkillDraftPanel } from "@/chat/SkillDraftPanel";
 import { ToolEvents } from "@/chat/ToolEvents";
 import { UncertainTurnRecovery } from "@/chat/UncertainTurnRecovery";
@@ -424,6 +425,7 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
       updateComposer({ pending: null, text: "" });
       await client.invalidateQueries({ queryKey: ["heinzel", "session", sessionId] });
       await client.invalidateQueries({ queryKey: ["heinzel", "tool-activity", sessionId] });
+      await client.invalidateQueries({ queryKey: ["heinzel", "notification-proposals", sessionId] });
       await client.invalidateQueries({ queryKey: ["heinzel", "agent-proposal", sessionId] });
       await client.invalidateQueries({ queryKey: ["heinzel", "profile-proposal", sessionId] });
     } catch (reason) {
@@ -665,6 +667,9 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
           <PersonalArtifactLinks key={`artifacts:${sessionId}`} sessionId={sessionId} compact />
         )}
         {query.data?.session_id === sessionId && <AgentProposalSummary sessionId={sessionId} />}
+        {query.data?.session_id === sessionId && (
+          <NotificationPanel key={`notification:${sessionId}`} sessionId={sessionId} />
+        )}
         {query.data?.session_id === sessionId && (
           <ConnectedReadReview key={`connected:${sessionId}`} sessionId={sessionId} />
         )}
