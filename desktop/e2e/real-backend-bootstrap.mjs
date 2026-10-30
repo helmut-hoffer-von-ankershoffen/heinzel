@@ -10,12 +10,18 @@ if (!root) throw new Error("The isolated native test directory is required.");
 app.setPath("userData", join(root, "electron-profile"));
 app.setPath("sessionData", join(root, "electron-session"));
 app.setPath("logs", join(root, "electron-logs"));
+// Initial navigation can deliberately terminate Electron before Playwright can query it.
+writeFileSync(join(root, "electron-paths"), JSON.stringify({
+  userData: app.getPath("userData"),
+  sessionData: app.getPath("sessionData"),
+}), { mode: 0o600 });
 dialog.showErrorBox = (title) => writeFileSync(join(root, "error-title"), title, { mode: 0o600 });
 
 const spawn = childProcess.spawn;
 childProcess.spawn = function observeOwned(command, args, options) {
   const child = spawn(command, args, options);
   if (command === "hz" && JSON.stringify(args) === JSON.stringify(["ui", "--port", "0", "--no-browser"])) {
+    globalThis.ownedTestChild = child;
     writeFileSync(join(root, "owned-pid"), String(child.pid), { mode: 0o600 });
     child.once("exit", (code, signal) => writeFileSync(join(root, "owned-exit"), JSON.stringify({ code, signal }), { mode: 0o600 }));
     let pending = "";
