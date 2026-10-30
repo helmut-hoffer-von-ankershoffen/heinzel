@@ -10723,6 +10723,17 @@
             "title": "Max Requests",
             "type": "integer"
           },
+          "notification_policy": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ScheduledNotificationPolicy"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Separately reviewed bounded local notification scope, or null for no scheduled notifications."
+          },
           "owner": {
             "description": "Authenticated owner identity.",
             "pattern": "^u-[0-9a-f]{32}$",
@@ -10925,6 +10936,120 @@
           "preview_sha256"
         ],
         "title": "ScheduledAgentProposal",
+        "type": "object"
+      },
+      "ScheduledNotificationPage": {
+        "description": "Bounded owner-private attempted notification history.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ScheduledNotificationView"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "session_id": {
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "items",
+          "next_cursor"
+        ],
+        "title": "ScheduledNotificationPage",
+        "type": "object"
+      },
+      "ScheduledNotificationPolicy": {
+        "additionalProperties": false,
+        "description": "Explicit bounded notification scope; it grants no external messaging or data access.",
+        "properties": {
+          "delivery": {
+            "const": "local-notification",
+            "default": "local-notification",
+            "description": "Only the owner's local in-app or native notification policy.",
+            "title": "Delivery",
+            "type": "string"
+          },
+          "disclosure": {
+            "const": "Content may appear on this device. Topics are model-chosen, not verified source identities.",
+            "default": "Content may appear on this device. Topics are model-chosen, not verified source identities.",
+            "description": "The visibility and deduplication limitation the person reviews.",
+            "title": "Disclosure",
+            "type": "string"
+          },
+          "max_per_24h": {
+            "description": "Maximum local queue attempts per rolling 24 hours.",
+            "maximum": 24.0,
+            "minimum": 1.0,
+            "title": "Max Per 24H",
+            "type": "integer"
+          },
+          "per_turn": {
+            "const": 1,
+            "default": 1,
+            "description": "At most one local queue attempt per scheduled turn.",
+            "title": "Per Turn",
+            "type": "integer"
+          },
+          "topic_cooldown_seconds": {
+            "description": "Minimum seconds between attempts for the same model-chosen topic.",
+            "maximum": 2678400.0,
+            "minimum": 60.0,
+            "title": "Topic Cooldown Seconds",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "max_per_24h",
+          "topic_cooldown_seconds"
+        ],
+        "title": "ScheduledNotificationPolicy",
+        "type": "object"
+      },
+      "ScheduledNotificationView": {
+        "description": "Owner-private observed attempt; recorded means queued, never confirmed shown.",
+        "properties": {
+          "proposal": {
+            "$ref": "#/components/schemas/NotificationProposal",
+            "description": "Exact private attempted notification content."
+          },
+          "seq": {
+            "description": "Exclusive journal cursor.",
+            "exclusiveMinimum": 0.0,
+            "title": "Seq",
+            "type": "integer"
+          },
+          "status": {
+            "description": "Recorded outcome; never OS display.",
+            "enum": [
+              "recorded",
+              "unresolved",
+              "abandoned"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "proposal",
+          "seq",
+          "status"
+        ],
+        "title": "ScheduledNotificationView",
         "type": "object"
       },
       "SessionCosts": {
@@ -16517,6 +16642,16 @@
             "title": "Max Requests",
             "type": "integer"
           },
+          "notification_policy": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ScheduledNotificationPolicy"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "request_id": {
             "description": "A stable client request id; reuse it only for an exact retry.",
             "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
@@ -16885,6 +17020,35 @@
           "approval_proof"
         ],
         "title": "heinzel_queue_agent_notification_Input",
+        "type": "object"
+      },
+      "heinzel_resolve_scheduled_notification_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "acknowledge_uncertain": {
+            "description": "Acknowledge the notice may already have been queued; no retry or undo.",
+            "title": "Acknowledge Uncertain",
+            "type": "boolean"
+          },
+          "request_id": {
+            "description": "A stable client request id; reuse it only for an exact retry.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "session_id": {
+            "description": "The stable personal session id returned by new-chat or sessions.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "request_id",
+          "acknowledge_uncertain"
+        ],
+        "title": "heinzel_resolve_scheduled_notification_Input",
         "type": "object"
       },
       "heinzel_revoke_connected_read_Input": {
@@ -19237,6 +19401,48 @@
         ]
       }
     },
+    "/heinzel/resolve-scheduled-notification": {
+      "post": {
+        "description": "Inspect the receipt or set aside uncertainty; never resend or undo a notice.",
+        "operationId": "heinzel_resolve_scheduled_notification",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/heinzel_resolve_scheduled_notification_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduledNotificationView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Inspect the receipt or set aside uncertainty; never resend or undo a notice.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
     "/heinzel/revoke-connected-read": {
       "post": {
         "description": "Revoke this exact connected-read grant before future tool calls.",
@@ -19369,6 +19575,73 @@
           }
         },
         "summary": "Inspect the exact inert proposal; a separate future human approval is required to run it.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/scheduled-notification-attempts": {
+      "get": {
+        "description": "Inspect bounded owner-private scheduled attempts and their recorded outcomes.",
+        "operationId": "heinzel_scheduled_notification_attempts",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Exclusive journal cursor.",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Exclusive journal cursor.",
+              "title": "Cursor",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Maximum attempts per page.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "description": "Maximum attempts per page.",
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduledNotificationPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Inspect bounded owner-private scheduled attempts and their recorded outcomes.",
         "tags": [
           "heinzel"
         ]

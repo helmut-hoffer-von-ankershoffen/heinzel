@@ -14,7 +14,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, JsonValue, TypeAdapter
 
-from heinzel import Config, CurrentUser, HeinzelError
+from heinzel import Config, CurrentUser, HeinzelError, Notifications
 from heinzel.kernel import PRIVATE_WRITE, CapabilitySettings, RunnerSnapshot, RunnerSnapshotProvider
 from heinzel.kernel import ProcessOutcome as Outcome
 from heinzel.kernel import run_bounded_process as run_bounded
@@ -30,6 +30,7 @@ from heinzel.modules.heinzel._connected_grants import ConnectedReadGrants
 from heinzel.modules.heinzel._engine import TurnLimits
 from heinzel.modules.heinzel._interactive_turn import InteractiveTurn, ToolActivity, interactive_turn_id
 from heinzel.modules.heinzel._models import HeinzelSettings
+from heinzel.modules.heinzel._scheduled_notifications import ScheduledNotificationPolicy, ScheduledNotifications
 from heinzel.modules.heinzel._session_crud import SessionCrud
 from heinzel.modules.heinzel._session_models import BackendBinding, RequestId, SessionId, SessionMessage
 from heinzel.modules.heinzel._subscription_slots import SubscriptionSlots
@@ -106,12 +107,14 @@ class UserChatService:
         runner_settings: RunnerSnapshotProvider,
         *,
         connected: Callable[[], ConnectedReadGrants] | None = None,
+        notifications: Callable[[], Notifications] | None = None,
         load: Callable[[], Config] = lambda: Config.load(Path.home()),
         execute: Callable[..., Outcome] = run_bounded,
     ) -> None:
         self._crud, self.current, self._load, self.which, self._execute = crud, current, load, shutil.which, execute
         self._runner_settings = runner_settings
         self._connected = connected
+        self._notifications = notifications
 
     def connected_grants(self) -> ConnectedReadGrants:
         """Resolve owner-bound connected grants only inside an authenticated host call.
@@ -220,6 +223,10 @@ class UserChatService:
         user_proposals: bool,
         prepare: Callable[[], None] | None = None,
         connected_allowed: bool = False,
+        notification_policy: ScheduledNotificationPolicy | None = None,
+        notification_contract: str | None = None,
+        notification_schedule: str | None = None,
+        notification_binding: str | None = None,
     ) -> UserChatAnswer:
         verify()
         events = self._crud.repository.control_read(session).events
@@ -265,6 +272,29 @@ class UserChatService:
             turn_id=turn,
             execute=self._execute,
         )
+        scheduled_notice = None
+        if notification_policy is not None:
+            if (
+                self._notifications is None
+                or notification_contract is None
+                or notification_schedule is None
+                or notification_binding is None
+                or user_proposals
+            ):
+                msg = "Scheduled notification authority is unavailable"
+                raise HeinzelError(msg)
+            scheduled_notice = ScheduledNotifications(
+                self._crud,
+                self.current,
+                self._notifications(),
+                session=session,
+                turn=turn,
+                contract_sha256=notification_contract,
+                schedule_request=notification_schedule,
+                schedule_sha256=notification_binding,
+                policy=notification_policy,
+                verify=verify,
+            )
         message = await InteractiveTurn(self._crud).run(
             session,
             request,
@@ -274,6 +304,7 @@ class UserChatService:
             user_proposal_policy=unchanged if user_proposals else None,
             prepare=prepare,
             connected=self._connected() if (user_proposals or connected_allowed) and self._connected else None,
+            scheduled_notifications=scheduled_notice,
             backend_binding=BackendBinding(backend="claude-code", mode="cli-model", revision=1),
         )
         return UserChatAnswer(session_id=session, request_id=request, message=message)

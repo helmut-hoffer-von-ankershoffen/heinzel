@@ -24,6 +24,7 @@ from heinzel.modules.heinzel._host_tools import HostToolCatalog, OperationFailed
 from heinzel.modules.heinzel._model_admission import ConnectedModelFactory, connected_model
 from heinzel.modules.heinzel._model_grants import ModelGrant, ModelGrants
 from heinzel.modules.heinzel._priced_model import ReservedModel
+from heinzel.modules.heinzel._scheduled_notifications import ScheduledNotifications
 from heinzel.modules.heinzel._session_bodies import immutable_body
 from heinzel.modules.heinzel._session_crud import SessionCrud
 from heinzel.modules.heinzel._session_models import BackendBinding, SessionMessage
@@ -192,6 +193,7 @@ class InteractiveTurn:
         backend_binding: BackendBinding | None = None,
         user_proposal_policy: Callable[[], bool] | None = None,
         connected: ConnectedReadGrants | None = None,
+        scheduled_notifications: ScheduledNotifications | None = None,
         prepare: Callable[[], None] | None = None,
     ) -> SessionMessage:
         """Execute one accepted message; an interrupted attempt never automatically re-executes.
@@ -416,6 +418,20 @@ class InteractiveTurn:
 
             def dispatch(name: str, arguments: dict[str, JsonValue]) -> str:
                 nonlocal calls
+                if name == "notification:send":
+                    self._check_owner()
+                    calls += 1
+                    self._event(session_id, turn, calls, name, "requested")
+                    try:
+                        if scheduled_notifications is None:
+                            msg = "The scheduled notification is unavailable"
+                            raise HeinzelError(msg)  # noqa: TRY301
+                        outcome, text = scheduled_notifications.send(arguments, turn_writer)
+                    except Exception:  # noqa: BLE001 - redact provider and private argument errors
+                        self._event(session_id, turn, calls, name, "denied")
+                        return "The scheduled notification was not authorized or its bounds were reached."
+                    self._event(session_id, turn, calls, name, "completed" if outcome == "recorded" else "failed")
+                    return text
                 if name != "connected_read":
                     return dispatch_general(name, arguments)
                 self._check_owner()
@@ -472,7 +488,8 @@ class InteractiveTurn:
                         [{"name": tool.identity, "schema": tool.schema} for tool in schemas]
                         + (skill_tool_schemas(expected_grant) if expected_grant else [])
                         + (user_proposal_schemas() if user_tools else [])
-                        + ([connected_schema] if connected_schema is not None else []),
+                        + ([connected_schema] if connected_schema is not None else [])
+                        + ([scheduled_notifications.schema()] if scheduled_notifications is not None else []),
                         ensure_ascii=True,
                     )
                 ),

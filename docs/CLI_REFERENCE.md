@@ -646,9 +646,11 @@ $ hz heinzel [OPTIONS] COMMAND [ARGS]...
 * `propose-skill-sharing`: Request review of exact private draft and...
 * `prune`: (expert) Delete drafts and records older...
 * `queue-agent-notification`: Queue the exact owner-confirmed notice;...
+* `resolve-scheduled-notification`: Inspect the receipt or set aside...
 * `revoke-connected-read`: Revoke this exact connected-read grant...
 * `schedule-control`: Pause a schedule; activation and resume...
 * `scheduled-agent-proposal`: Inspect the exact inert proposal; a...
+* `scheduled-notification-attempts`: Inspect bounded owner-private scheduled...
 * `sent`: (expert) Record how much of a draft you...
 * `session`: Open one durable Heinzel and an ordered...
 * `sessions`: List your durable personal Heinzels,...
@@ -1373,6 +1375,7 @@ $ hz heinzel propose-agent-schedule [OPTIONS] {session_id} {request_id} {contrac
 **Options**:
 
 * `--connected-request-id <str>`: An already approved connected-read request, or null for no connected reads.
+* `--notification-policy JSON`
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
@@ -1582,6 +1585,28 @@ $ hz heinzel queue-agent-notification [OPTIONS] {session_id} {request_id} {JSON}
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
 
+### `hz heinzel resolve-scheduled-notification`
+
+Inspect the receipt or set aside uncertainty; never resend or undo a notice.
+
+**Usage**:
+
+```console
+$ hz heinzel resolve-scheduled-notification [OPTIONS] {session_id} {request_id} {acknowledge_uncertain}
+```
+
+**Arguments**:
+
+* `session_id`: [required]
+* `request_id`: [required]
+* `acknowledge_uncertain`: Acknowledge the notice may already have been queued; no retry or undo.  [required]
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
 ### `hz heinzel revoke-connected-read`
 
 Revoke this exact connected-read grant before future tool calls.
@@ -1646,6 +1671,28 @@ $ hz heinzel scheduled-agent-proposal [OPTIONS] {session_id} {request_id}
 
 **Options**:
 
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz heinzel scheduled-notification-attempts`
+
+Inspect bounded owner-private scheduled attempts and their recorded outcomes.
+
+**Usage**:
+
+```console
+$ hz heinzel scheduled-notification-attempts [OPTIONS] {session_id}
+```
+
+**Arguments**:
+
+* `session_id`: [required]
+
+**Options**:
+
+* `--cursor <int>`: Exclusive journal cursor.  [default: 0]
+* `--limit <int>`: Maximum attempts per page.  [default: 20]
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.

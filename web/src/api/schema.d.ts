@@ -934,6 +934,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/heinzel/resolve-scheduled-notification": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Inspect the receipt or set aside uncertainty; never resend or undo a notice.
+         * @description Inspect the receipt or set aside uncertainty; never resend or undo a notice.
+         */
+        post: operations["heinzel_resolve_scheduled_notification"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/heinzel/revoke-connected-read": {
         parameters: {
             query?: never;
@@ -989,6 +1009,26 @@ export interface paths {
          * @description Inspect the exact inert proposal; a separate future human approval is required to run it.
          */
         get: operations["heinzel_scheduled_agent_proposal"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/heinzel/scheduled-notification-attempts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Inspect bounded owner-private scheduled attempts and their recorded outcomes.
+         * @description Inspect bounded owner-private scheduled attempts and their recorded outcomes.
+         */
+        get: operations["heinzel_scheduled_notification_attempts"];
         put?: never;
         post?: never;
         delete?: never;
@@ -9260,6 +9300,8 @@ export interface components {
              * @description Maximum model requests per turn.
              */
             max_requests: number;
+            /** @description Separately reviewed bounded local notification scope, or null for no scheduled notifications. */
+            notification_policy?: components["schemas"]["ScheduledNotificationPolicy"] | null;
             /**
              * Owner
              * @description Authenticated owner identity.
@@ -9380,6 +9422,74 @@ export interface components {
              * @description Proposed maximum duration per turn in seconds.
              */
             timeout_seconds: number;
+        };
+        /**
+         * ScheduledNotificationPage
+         * @description Bounded owner-private attempted notification history.
+         */
+        ScheduledNotificationPage: {
+            /** Items */
+            items: components["schemas"]["ScheduledNotificationView"][];
+            /** Next Cursor */
+            next_cursor: number | null;
+            /** Session Id */
+            session_id: string;
+        };
+        /**
+         * ScheduledNotificationPolicy
+         * @description Explicit bounded notification scope; it grants no external messaging or data access.
+         */
+        ScheduledNotificationPolicy: {
+            /**
+             * Delivery
+             * @description Only the owner's local in-app or native notification policy.
+             * @default local-notification
+             * @constant
+             */
+            delivery: "local-notification";
+            /**
+             * Disclosure
+             * @description The visibility and deduplication limitation the person reviews.
+             * @default Content may appear on this device. Topics are model-chosen, not verified source identities.
+             * @constant
+             */
+            disclosure: "Content may appear on this device. Topics are model-chosen, not verified source identities.";
+            /**
+             * Max Per 24H
+             * @description Maximum local queue attempts per rolling 24 hours.
+             */
+            max_per_24h: number;
+            /**
+             * Per Turn
+             * @description At most one local queue attempt per scheduled turn.
+             * @default 1
+             * @constant
+             */
+            per_turn: 1;
+            /**
+             * Topic Cooldown Seconds
+             * @description Minimum seconds between attempts for the same model-chosen topic.
+             */
+            topic_cooldown_seconds: number;
+        };
+        /**
+         * ScheduledNotificationView
+         * @description Owner-private observed attempt; recorded means queued, never confirmed shown.
+         */
+        ScheduledNotificationView: {
+            /** @description Exact private attempted notification content. */
+            proposal: components["schemas"]["NotificationProposal"];
+            /**
+             * Seq
+             * @description Exclusive journal cursor.
+             */
+            seq: number;
+            /**
+             * Status
+             * @description Recorded outcome; never OS display.
+             * @enum {string}
+             */
+            status: "recorded" | "unresolved" | "abandoned";
         };
         /**
          * SessionCosts
@@ -12558,6 +12668,7 @@ export interface components {
             contract_request_id: string;
             /** Max Requests */
             max_requests: number;
+            notification_policy?: components["schemas"]["ScheduledNotificationPolicy"] | null;
             /**
              * Request Id
              * @description A stable client request id; reuse it only for an exact retry.
@@ -12771,6 +12882,24 @@ export interface components {
             review: {
                 [key: string]: components["schemas"]["JsonValue"];
             };
+            /**
+             * Session Id
+             * @description The stable personal session id returned by new-chat or sessions.
+             */
+            session_id: string;
+        };
+        /** heinzel_resolve_scheduled_notification_Input */
+        heinzel_resolve_scheduled_notification_Input: {
+            /**
+             * Acknowledge Uncertain
+             * @description Acknowledge the notice may already have been queued; no retry or undo.
+             */
+            acknowledge_uncertain: boolean;
+            /**
+             * Request Id
+             * @description A stable client request id; reuse it only for an exact retry.
+             */
+            request_id: string;
             /**
              * Session Id
              * @description The stable personal session id returned by new-chat or sessions.
@@ -13016,6 +13145,9 @@ export type SchemaScheduleBinding = components['schemas']['ScheduleBinding'];
 export type SchemaScheduleReviewPage = components['schemas']['ScheduleReviewPage'];
 export type SchemaScheduleReviewView = components['schemas']['ScheduleReviewView'];
 export type SchemaScheduledAgentProposal = components['schemas']['ScheduledAgentProposal'];
+export type SchemaScheduledNotificationPage = components['schemas']['ScheduledNotificationPage'];
+export type SchemaScheduledNotificationPolicy = components['schemas']['ScheduledNotificationPolicy'];
+export type SchemaScheduledNotificationView = components['schemas']['ScheduledNotificationView'];
 export type SchemaSessionCosts = components['schemas']['SessionCosts'];
 export type SchemaSessionList = components['schemas']['SessionList'];
 export type SchemaSessionMessage = components['schemas']['SessionMessage'];
@@ -13112,6 +13244,7 @@ export type SchemaHeinzelProposeScheduledAgentInput = components['schemas']['hei
 export type SchemaHeinzelProposeSkillDraftInput = components['schemas']['heinzel_propose_skill_draft_Input'];
 export type SchemaHeinzelProposeSkillSharingInput = components['schemas']['heinzel_propose_skill_sharing_Input'];
 export type SchemaHeinzelQueueAgentNotificationInput = components['schemas']['heinzel_queue_agent_notification_Input'];
+export type SchemaHeinzelResolveScheduledNotificationInput = components['schemas']['heinzel_resolve_scheduled_notification_Input'];
 export type SchemaHeinzelRevokeConnectedReadInput = components['schemas']['heinzel_revoke_connected_read_Input'];
 export type SchemaHeinzelScheduleControlInput = components['schemas']['heinzel_schedule_control_Input'];
 export type SchemaSystemStatePushInput = components['schemas']['system_state_push_Input'];
@@ -14595,6 +14728,39 @@ export interface operations {
             };
         };
     };
+    heinzel_resolve_scheduled_notification: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["heinzel_resolve_scheduled_notification_Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScheduledNotificationView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     heinzel_revoke_connected_read: {
         parameters: {
             query?: never;
@@ -14680,6 +14846,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ScheduledAgentProposal"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    heinzel_scheduled_notification_attempts: {
+        parameters: {
+            query: {
+                session_id: string;
+                /** @description Exclusive journal cursor. */
+                cursor?: number;
+                /** @description Maximum attempts per page. */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScheduledNotificationPage"];
                 };
             };
             /** @description Validation Error */
