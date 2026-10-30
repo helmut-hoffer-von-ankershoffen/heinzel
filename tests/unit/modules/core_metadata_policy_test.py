@@ -105,3 +105,15 @@ def test_untrusted_rebound_verifier_cannot_authorize_core_catalog(make_kernel, t
         kernel.bind(CoreMetadataVerifier, CoreMetadataIdentity(kernel))
         with pytest.raises(HeinzelError, match="instance changed"):
             core_metadata_catalog(kernel, current, crud, session)
+
+
+def test_same_type_rebound_core_service_does_not_pass_provenance(make_kernel):
+    kernel = make_kernel(builtins=True)
+    identity = CoreMetadataIdentity(kernel)
+    item = next(
+        item for item in exposed(kernel, "mcp") if item.record.qualname == "system" and item.operation.name == "modules"
+    )
+    assert identity(item)
+    kernel.bind(SystemService, SystemService(kernel))
+    with pytest.raises(HeinzelError, match="registration or source changed"):
+        identity(item)

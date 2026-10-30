@@ -58,8 +58,8 @@ class SubscriptionSlots:
         requested = _Slot(owner=owner, session=session, turn=turn_hash, revision=revision, limit=limit, ordinal=ordinal)
         key = hashlib.sha256(f"{session}\0{turn_hash}\0{ordinal}".encode()).hexdigest()
         with self._repository.subscription_writer(session) as writer:
-            records = []
-            seen = set()
+            records: list[_Slot] = []
+            seen: set[str] = set()
             try:
                 for event in self._repository.subscription_read(session).events:
                     if event.kind != "subscription.slot":

@@ -20,8 +20,8 @@ from heinzel.kernel import PRIVATE_WRITE, CapabilitySettings, RunnerSnapshot, Ru
 from heinzel.kernel import ProcessOutcome as Outcome
 from heinzel.kernel import run_bounded_process as run_bounded
 from heinzel.modules.heinzel._claude_subscription_model import (
-    _COMMAND_FLAGS,
-    _VERSION,
+    COMMAND_FLAGS,
+    VERSION,
     ClaudeSubscriptionModel,
     SubscriptionAdmission,
     executable_digest,
@@ -84,8 +84,8 @@ class _ClaudeVerifier:
             self._check()
             and executable == self._path
             and digest == self._digest
-            and version == _VERSION
-            and flags == _COMMAND_FLAGS
+            and version == VERSION
+            and flags == COMMAND_FLAGS
             and policy == self._policy
         )
 

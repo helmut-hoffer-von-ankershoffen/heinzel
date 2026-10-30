@@ -5,7 +5,7 @@ import inspect
 import json
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 from pydantic import ConfigDict, JsonValue, create_model
 from pydantic_core import to_jsonable_python
@@ -31,11 +31,12 @@ def _schema(item: Exposed, implementation: str) -> tuple[dict[str, Any], str]:
 
     def local_refs(value: object) -> bool:
         if isinstance(value, dict):
+            entries = cast("dict[object, object]", value)
             return all(
                 (key != "$ref" or (isinstance(child, str) and child.startswith("#/"))) and local_refs(child)
-                for key, child in value.items()
+                for key, child in entries.items()
             )
-        return all(local_refs(child) for child in value) if isinstance(value, list) else True
+        return all(local_refs(child) for child in cast("list[object]", value)) if isinstance(value, list) else True
 
     encoded = json.dumps(schema, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
     if len(encoded.encode()) > _MAX_SCHEMA or not local_refs(schema):
@@ -146,7 +147,7 @@ class HostToolCatalog:
             msg = "This operation has no verified implementation identity"
             raise HeinzelError(msg)
         try:
-            identity: object = self._verified_code(item)
+            identity = cast("object", self._verified_code(item))
         except Exception:  # noqa: BLE001 - verifier details may contain private state
             msg = "This operation has no verified implementation identity"
             raise HeinzelError(msg) from None
@@ -165,7 +166,7 @@ class HostToolCatalog:
     def preview(self) -> list[ToolPreview]:
         """Show only independently host-allowed read operations, without running them."""
         self._check_owner()
-        previews = []
+        previews: list[ToolPreview] = []
         for name in sorted(self._host_reads):
             item = self._find(name)
             if item is not None:
@@ -181,7 +182,7 @@ class HostToolCatalog:
             HeinzelError: If a supplied policy or implementation identity is stale or incomplete.
         """
         self._check_owner()
-        descriptors = []
+        descriptors: list[ToolDescriptor] = []
         for name in sorted(self._host_reads):
             item = self._candidate(name)
             if item is None:

@@ -102,11 +102,13 @@ class CoreMetadataIdentity(CoreMetadataVerifier):
             or getattr(_service, "defaultdict", None) is not defaultdict
             or type(self._kernel) is not Kernel
             or Kernel.modules is not self._kernel_modules
-            or self._kernel._factories.get(SystemService) is not SystemService  # noqa: SLF001 - verify injection before resolve
             or tuple(_source(path, self._root) for path in self._source_paths) != self._initial
         ):
             raise HeinzelError(invalid)
-        service = self._kernel.resolve(SystemService)
+        try:
+            service = self._kernel.resolve_builtin_service(SystemService, "system")
+        except HeinzelError:
+            raise HeinzelError(invalid) from None
         if type(service) is not SystemService or vars(service) != {"_kernel": self._kernel}:
             raise HeinzelError(invalid)
         if not _loaded_matches(self._function, self._initial[0], self._source_paths[0]) or not _loaded_matches(
