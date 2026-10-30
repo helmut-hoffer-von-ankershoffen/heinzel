@@ -36,3 +36,10 @@ def test_runner_snapshot_provider_must_be_the_registered_builtin(make_kernel):
     kernel.bind(RunnerSnapshotProvider, RunnerSnapshotProvider())
     with pytest.raises(HeinzelError, match="instance changed"):
         kernel.resolve_builtin_service(RunnerSnapshotProvider, "system.runner")
+
+
+def test_registered_user_chat_resolves_owning_builtin_runner_provider(make_kernel):
+    from heinzel.modules.heinzel._user_chat import UserChatService
+
+    kernel = make_kernel(builtins=True)
+    assert isinstance(kernel.resolve(UserChatService), UserChatService)
