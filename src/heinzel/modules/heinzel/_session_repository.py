@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 from pydantic import JsonValue, TypeAdapter
 
 from heinzel import CurrentUser, HeinzelError, SessionHead, SessionRead, SessionStore, SessionWriter
-from heinzel.kernel._identity import Authentication
+from heinzel.kernel import Authentication
 from heinzel.modules.heinzel._session_models import Digest, RequestId, SessionId
 
 _SESSION = TypeAdapter(SessionId)

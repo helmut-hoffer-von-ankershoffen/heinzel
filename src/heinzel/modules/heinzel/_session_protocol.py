@@ -6,7 +6,7 @@ from typing import Protocol
 from pydantic import JsonValue
 
 from heinzel import SessionHead, SessionRead, SessionWriter
-from heinzel.kernel._identity import Authentication
+from heinzel.kernel import Authentication
 
 
 class SessionRepository(Protocol):

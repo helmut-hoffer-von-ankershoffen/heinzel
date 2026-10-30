@@ -15,7 +15,7 @@ from heinzel.kernel._agents import (
     ToolProfile,
 )
 from heinzel.kernel._ai import AccessStatus, AccessTest, AiAccess, UsageCause, UsageEntry, UsageLog, record_usage
-from heinzel.kernel._bindings import HOWS, Adapters, CapabilityView, How, Requester
+from heinzel.kernel._bindings import HOWS, Adapters, CapabilitySettings, CapabilityView, How, Requester
 from heinzel.kernel._boot import boot
 from heinzel.kernel._capabilities import CAPABILITIES, MODES, NO_ADAPTER, Capability, Mode, Requirement
 from heinzel.kernel._chat import ActionGate, ProposedCall
@@ -87,7 +87,7 @@ from heinzel.kernel._daemon_attestation import DaemonAttestation, DaemonStatusAt
 from heinzel.kernel._directory import ConfirmedLines, ReportingDraft, draft_reporting_lines
 from heinzel.kernel._discovery import BUILTIN_PACKAGE, ENTRY_POINT_GROUP, discover, walk
 from heinzel.kernel._duration import MAX_WINDOW, WINDOW_PATTERN, Span, format_duration, parse_duration, parse_window
-from heinzel.kernel._errors import HeinzelError
+from heinzel.kernel._errors import HeinzelError, SubscriptionUsageLimitError
 from heinzel.kernel._exposure import MCP_HTTP, MCP_STDIO, Exposed, exposed, input_schema, restricts
 from heinzel.kernel._git import (
     GIT_HARDENING,
@@ -97,7 +97,7 @@ from heinzel.kernel._git import (
     check_repository_url,
     git_command,
 )
-from heinzel.kernel._identity import CallIdentity, CurrentUser, Principal
+from heinzel.kernel._identity import PRIVATE_WRITE, Authentication, CallIdentity, CurrentUser, Principal
 from heinzel.kernel._installation import (
     CORE_DISTRIBUTION,
     CorePin,
@@ -283,6 +283,7 @@ __all__ = [
     "MCP_STDIO",
     "MODES",
     "NO_ADAPTER",
+    "PRIVATE_WRITE",
     "PROJECT_FILENAME",
     "RESPONSES",
     "SETUP_PHASES",
@@ -302,6 +303,7 @@ __all__ = [
     "AgentRunner",
     "AiAccess",
     "AssetType",
+    "Authentication",
     "Avatar",
     "Badge",
     "Billing",
@@ -309,6 +311,7 @@ __all__ = [
     "Calendar",
     "CallIdentity",
     "Capability",
+    "CapabilitySettings",
     "CapabilityView",
     "CardWidget",
     "CatchUp",
@@ -475,6 +478,7 @@ __all__ = [
     "StatusLet",
     "StatusMeter",
     "StreamProvider",
+    "SubscriptionUsageLimitError",
     "TeamGraph",
     "TeamPromise",
     "TeamPromises",
