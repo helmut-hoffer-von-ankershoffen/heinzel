@@ -8,6 +8,7 @@ with one more `--with`, and updating Heinzelmännchen means reinstalling it with
 environment (a development checkout) packages are installed with `uv pip install` instead.
 """
 
+import json
 import os
 import re
 import shlex
@@ -20,7 +21,7 @@ import tomllib
 from collections.abc import Callable, Generator, Mapping, MutableMapping, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal, cast
 from urllib.parse import parse_qs, urlsplit, urlunsplit
@@ -255,6 +256,75 @@ def _constraints_from_receipt(data: dict[str, Any]) -> list[str]:
 
 
 _OVERRIDE_ERROR = "The uv receipt overrides do not match the verified artifacts; inspect the installation manually."
+_CONSTRAINT_ERROR = "The uv receipt constraints changed unexpectedly; inspect the installation manually."
+
+
+@dataclass(frozen=True, slots=True)
+class ToolConstraintPolicy:
+    """Opaque snapshot of the validated pre-mutation receipt constraints."""
+
+    present: bool
+    entries: tuple[str, ...] = field(repr=False)
+
+
+def _constraint_policy(data: dict[str, Any]) -> ToolConstraintPolicy:
+    _constraints_from_receipt(data)
+    tool = data["tool"]
+    return ToolConstraintPolicy(
+        present="constraints" in tool,
+        entries=tuple(
+            json.dumps(entry, sort_keys=True, separators=(",", ":")) for entry in tool.get("constraints", [])
+        ),
+    )
+
+
+def _remove_transient_constraint(raw: bytes, original: ToolConstraintPolicy, added: str) -> bytes:
+    """Remove exactly the last, temporary exact-version constraint from a matching policy.
+
+    Raises:
+        HeinzelError: If the policy or added constraint does not match exactly.
+    """
+    try:
+        snapshot = cast("object", original)
+        if (
+            not isinstance(snapshot, ToolConstraintPolicy)
+            or type(cast("object", snapshot.present)) is not bool
+            or not isinstance(cast("object", snapshot.entries), tuple)
+            or any(not isinstance(entry, str) for entry in cast("tuple[object, ...]", snapshot.entries))
+            or (not snapshot.present and snapshot.entries)
+        ):
+            raise HeinzelError(_CONSTRAINT_ERROR)
+        requirement = Requirement(added)
+        specifiers = list(requirement.specifier)
+        if requirement.url or requirement.marker or requirement.extras or len(specifiers) != 1:
+            raise HeinzelError(_CONSTRAINT_ERROR)
+        specifier = specifiers[0]
+        if specifier.operator != "==" or "*" in specifier.version:
+            raise HeinzelError(_CONSTRAINT_ERROR)
+        Version(specifier.version)
+        added_entry = {"name": canonicalize_name(requirement.name, validate=True), "specifier": str(specifier)}
+        data = tomllib.loads(raw.decode("utf-8"))
+        actual = _constraint_policy(data)
+        expected = json.dumps(added_entry, sort_keys=True, separators=(",", ":"))
+        if not actual.present or actual.entries != (*original.entries, expected):
+            raise HeinzelError(_CONSTRAINT_ERROR)
+        document = tomlkit.parse(raw.decode("utf-8"))
+        table = cast("MutableMapping[str, Any]", document["tool"])
+        if original.present:
+            table["constraints"].pop()
+        else:
+            del table["constraints"]
+        replacement = tomlkit.dumps(document).encode("utf-8")
+        if original.present:
+            data["tool"]["constraints"].pop()
+        else:
+            del data["tool"]["constraints"]
+        if tomllib.loads(replacement.decode("utf-8")) != data:
+            raise HeinzelError(_CONSTRAINT_ERROR)
+    except (KeyError, TypeError, ValueError, UnicodeError, InvalidRequirement, InvalidVersion) as exc:
+        raise HeinzelError(_CONSTRAINT_ERROR) from exc
+    else:
+        return replacement
 
 
 def _expected_overrides(overrides: Mapping[str, Path]) -> dict[str, str]:
@@ -475,6 +545,38 @@ class Installation:
             except ValueError as exc:
                 raise HeinzelError(_OVERRIDE_ERROR) from exc
             return _without_verified_overrides(receipt, overrides)
+
+        return _installation_continuity.replace_receipt(self.prefix, self._continuity_authority, expected, transform)
+
+    def capture_tool_constraint_policy(self) -> ToolConstraintPolicy:
+        """Capture validated receipt constraints before a trusted tool mutation.
+
+        Raises:
+            HeinzelError: If the installation or policy changes during inspection.
+        """
+        before = self.startup_fingerprint()
+        try:
+            result = _constraint_policy(_read_tool_receipt(self.prefix))
+        except (OSError, ValueError, TypeError, KeyError, tomllib.TOMLDecodeError) as exc:
+            raise HeinzelError(_CONSTRAINT_ERROR) from exc
+        if self.startup_fingerprint() != before:
+            raise HeinzelError(_CONSTRAINT_ERROR)
+        return result
+
+    def remove_transient_tool_constraint(self, *, expected: str, original: ToolConstraintPolicy, added: str) -> str:
+        """Remove one exact-version guard only from the independently verified post-mutation generation.
+
+        Raises:
+            HeinzelError: If the receipt, policy or installation generation cannot be verified.
+            OSError: If the private receipt replacement cannot be synchronized.
+        """
+
+        def transform() -> bytes:
+            try:
+                receipt = _read_tool_receipt_bytes(self.prefix)
+            except ValueError as exc:
+                raise HeinzelError(_CONSTRAINT_ERROR) from exc
+            return _remove_transient_constraint(receipt, original, added)
 
         return _installation_continuity.replace_receipt(self.prefix, self._continuity_authority, expected, transform)
 

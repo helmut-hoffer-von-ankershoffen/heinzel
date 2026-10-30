@@ -456,6 +456,7 @@ KERNEL = [
     "ToggleControl",
     "TokenUsage",
     "Tone",
+    "ToolConstraintPolicy",
     "ToolProfile",
     "Tracker",
     "Transcript",

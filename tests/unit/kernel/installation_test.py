@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from heinzel import HeinzelError, Progress
-from heinzel.kernel import Installation, _installation, requirement_from_receipt
+from heinzel.kernel import Installation, ToolConstraintPolicy, _installation, requirement_from_receipt
 
 pytestmark = pytest.mark.unit
 
@@ -812,6 +812,131 @@ def test_remove_overrides_sync_failure_after_replace_retains_pending(tmp_path, m
     monkeypatch.setattr(_installation._installation_continuity.os, "fsync", sync)
     with pytest.raises(OSError, match="fixture fsync denied"):
         installation.remove_tool_overrides(expected=expected, overrides={"heinzel": wheel})
+    assert (prefix / ".heinzel-startup-pending").exists()
+    assert not installation.startup_state_matches()
+
+
+@pytest.mark.parametrize("prior", [None, [], [{"name": "heinzel", "specifier": "==0.9.7"}]])
+def test_remove_transient_constraint_preserves_exact_original_policy_and_duplicate(tmp_path, prior):
+    prefix, _ = _target_fixture(tmp_path)
+    receipt = prefix / "uv-receipt.toml"
+    if prior is not None:
+        entries = ", ".join('{name="heinzel", specifier="==0.9.7"}' for _ in prior)
+        receipt.write_text(receipt.read_text() + f"constraints = [{entries}]\n")
+    installation = Installation(Progress(), prefix=prefix)
+    policy = installation.capture_tool_constraint_policy()
+    content = receipt.read_text()
+    if prior is not None:
+        content = content[: content.index("constraints =")]
+    entries = ", ".join('{name="heinzel", specifier="==0.9.7"}' for _ in range(len(prior or []) + 1))
+    receipt.write_text(content + f"constraints = [{entries}]\n")
+    before = tomllib.loads(receipt.read_text())
+    expected = installation.startup_fingerprint()
+    projected = installation.remove_transient_tool_constraint(
+        expected=expected, original=policy, added="heinzel==0.9.7"
+    )
+    actual = tomllib.loads(receipt.read_text())
+    if prior is None:
+        del before["tool"]["constraints"]
+    else:
+        before["tool"]["constraints"] = prior
+    assert actual == before
+    assert projected == installation.startup_fingerprint() != expected
+    assert not (prefix / ".heinzel-startup-pending").exists()
+
+
+@pytest.mark.parametrize("extra", ["other==1", "heinzel==0.9.8", "heinzel>=0.9.7"])
+def test_remove_transient_constraint_refuses_wrong_or_extra_policy(tmp_path, extra):
+    prefix, _ = _target_fixture(tmp_path)
+    receipt = prefix / "uv-receipt.toml"
+    installation = Installation(Progress(), prefix=prefix)
+    policy = installation.capture_tool_constraint_policy()
+    receipt.write_text(receipt.read_text() + f'constraints = ["heinzel==0.9.7", "{extra}"]\n')
+    raw = receipt.read_bytes()
+    with pytest.raises(HeinzelError, match="constraints changed"):
+        installation.remove_transient_tool_constraint(
+            expected=installation.startup_fingerprint(), original=policy, added="heinzel==0.9.7"
+        )
+    assert receipt.read_bytes() == raw
+    assert not (prefix / ".heinzel-startup-pending").exists()
+
+
+def test_remove_transient_constraint_fails_closed_after_interleaved_file_change(tmp_path, monkeypatch):
+    prefix, _ = _target_fixture(tmp_path)
+    receipt = prefix / "uv-receipt.toml"
+    installation = Installation(Progress(), prefix=prefix)
+    policy = installation.capture_tool_constraint_policy()
+    receipt.write_text(receipt.read_text() + 'constraints = [{name="heinzel", specifier="==0.9.7"}]\n')
+    expected = installation.startup_fingerprint()
+    real_replace = _installation._installation_continuity.os.replace
+
+    def replace_then_change(*args, **kwargs):
+        real_replace(*args, **kwargs)
+        (prefix / "bin" / "hz").write_text("changed")
+
+    monkeypatch.setattr(_installation._installation_continuity.os, "replace", replace_then_change)
+    with pytest.raises(HeinzelError, match="could not be verified"):
+        installation.remove_transient_tool_constraint(expected=expected, original=policy, added="heinzel==0.9.7")
+    assert (prefix / ".heinzel-startup-pending").exists()
+    assert not installation.startup_state_matches()
+
+
+def test_remove_transient_constraint_rejects_stale_generation(tmp_path):
+    prefix, _ = _target_fixture(tmp_path)
+    receipt = prefix / "uv-receipt.toml"
+    installation = Installation(Progress(), prefix=prefix)
+    policy = installation.capture_tool_constraint_policy()
+    receipt.write_text(receipt.read_text() + 'constraints = [{name="heinzel", specifier="==0.9.7"}]\n')
+    raw = receipt.read_bytes()
+    with pytest.raises(HeinzelError, match="no longer matches"):
+        installation.remove_transient_tool_constraint(expected="0" * 64, original=policy, added="heinzel==0.9.7")
+    assert receipt.read_bytes() == raw
+    assert not (prefix / ".heinzel-startup-pending").exists()
+
+
+def test_remove_transient_constraint_refuses_inconsistent_snapshot(tmp_path):
+    prefix, _ = _target_fixture(tmp_path)
+    receipt = prefix / "uv-receipt.toml"
+    receipt.write_text(
+        receipt.read_text() + 'constraints = [{name="other", specifier="<3"}, {name="heinzel", specifier="==0.9.7"}]\n'
+    )
+    installation = Installation(Progress(), prefix=prefix)
+    malformed = ToolConstraintPolicy(present=False, entries=('{"name":"other","specifier":"<3"}',))
+    assert "other" not in repr(malformed)
+    raw = receipt.read_bytes()
+    with pytest.raises(HeinzelError, match="constraints changed"):
+        installation.remove_transient_tool_constraint(
+            expected=installation.startup_fingerprint(), original=malformed, added="heinzel==0.9.7"
+        )
+    assert receipt.read_bytes() == raw
+    assert not (prefix / ".heinzel-startup-pending").exists()
+
+
+def test_remove_transient_constraint_sync_failure_retains_pending(tmp_path, monkeypatch):
+    prefix, _ = _target_fixture(tmp_path)
+    receipt = prefix / "uv-receipt.toml"
+    installation = Installation(Progress(), prefix=prefix)
+    policy = installation.capture_tool_constraint_policy()
+    receipt.write_text(receipt.read_text() + 'constraints = [{name="heinzel", specifier="==0.9.7"}]\n')
+    expected = installation.startup_fingerprint()
+    real_replace = _installation._installation_continuity.os.replace
+    real_sync = _installation._installation_continuity.os.fsync
+    replaced = []
+
+    def replace(*args, **kwargs):
+        real_replace(*args, **kwargs)
+        replaced.append(True)
+
+    def sync(fd):
+        if replaced:
+            msg = "fixture fsync denied"
+            raise OSError(msg)
+        return real_sync(fd)
+
+    monkeypatch.setattr(_installation._installation_continuity.os, "replace", replace)
+    monkeypatch.setattr(_installation._installation_continuity.os, "fsync", sync)
+    with pytest.raises(OSError, match="fixture fsync denied"):
+        installation.remove_transient_tool_constraint(expected=expected, original=policy, added="heinzel==0.9.7")
     assert (prefix / ".heinzel-startup-pending").exists()
     assert not installation.startup_state_matches()
 

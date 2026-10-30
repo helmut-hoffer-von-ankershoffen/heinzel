@@ -123,6 +123,7 @@ from heinzel.kernel._installation import (
     CORE_DISTRIBUTION,
     CorePin,
     Installation,
+    ToolConstraintPolicy,
     requirement_from_receipt,
 )
 from heinzel.kernel._jobs import CompiledJobs, JobInactive, tick_interval, using_tick_interval
@@ -546,6 +547,7 @@ __all__ = [
     "ToggleControl",
     "TokenUsage",
     "Tone",
+    "ToolConstraintPolicy",
     "ToolProfile",
     "Tracker",
     "Transcript",
