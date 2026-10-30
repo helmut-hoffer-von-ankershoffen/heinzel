@@ -50,7 +50,7 @@ uv lock --quiet
 # Regenerate what derives from the version (the plugin template's pyproject, generated docs); the release PR's
 # lint fails otherwise.
 make --no-print-directory fix >&2
-# git-cliff writes every release from the commits; the introductions written under the headings come from the old file.
+# Keep published sections verbatim: rebuilding them from git history can drop entries after history is rewritten.
 if [[ -f CHANGELOG.md ]]; then cp CHANGELOG.md "$work/previous.md"; fi
 uv run --frozen git-cliff --offline --tag "$tag" --output CHANGELOG.md
 uv run --script scripts/changelog_intros.py "$work/previous.md" CHANGELOG.md --version "$next" \
