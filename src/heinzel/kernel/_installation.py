@@ -8,6 +8,7 @@ with one more `--with`, and updating Heinzelmännchen means reinstalling it with
 environment (a development checkout) packages are installed with `uv pip install` instead.
 """
 
+import os
 import re
 import shlex
 import shutil
@@ -356,6 +357,15 @@ class Installation:
                 if path.is_symlink() or not path.is_dir() or path.resolve(strict=True) != path:
                     raise HeinzelError(msg)
                 info = path.stat()
+                if key == "UV_TOOL_BIN_DIR":
+                    with os.scandir(path) as entries:
+                        for entry in entries:
+                            if entry.is_symlink():
+                                try:
+                                    entry.stat(follow_symlinks=True)
+                                except OSError as exc:
+                                    detail = "Repair unresolved uv executable symlinks before updating."
+                                    raise HeinzelError(detail) from exc
                 result.append((info.st_dev, info.st_ino))
         except (OSError, KeyError) as exc:
             raise HeinzelError(msg) from exc
@@ -364,7 +374,9 @@ class Installation:
     def _current_tool_target(self) -> dict[str, str]:
         scope = self._tool_scope.get()
         if scope is None:
-            return self._tool_target()
+            target = self._tool_target()
+            self._target_directories(target)
+            return target
         target, identities = scope
         if self._target_directories(target) != identities:
             msg = "The verified uv tool target changed; update it explicitly with uv."

@@ -43,7 +43,7 @@ def _fixture_wheel(directory, version, commands):
     return wheel
 
 
-def test_uv_reinstall_preserves_foreign_entrypoint_and_allows_restoration(tmp_path):
+def test_uv_reinstall_preserves_foreign_entrypoint_and_allows_restoration(tmp_path, monkeypatch):
     uv = shutil.which("uv")
     if uv is None:
         pytest.skip("uv is not available")
@@ -103,9 +103,9 @@ def test_uv_reinstall_preserves_foreign_entrypoint_and_allows_restoration(tmp_pa
             command, env=environment, cwd=root, capture_output=True, text=True, timeout=120, check=False
         )
 
-    first = _fixture_wheel(root / "wheels", "1.0.0", ["fixture-alpha"])
-    previous = _fixture_wheel(root / "wheels", "1.0.1", ["fixture-alpha"])
-    candidate = _fixture_wheel(root / "wheels", "1.0.2", ["fixture-alpha", "fixture-foreign"])
+    first = _fixture_wheel(root / "wheels", "1.0.0", ["hz"])
+    previous = _fixture_wheel(root / "wheels", "1.0.1", ["hz"])
+    candidate = _fixture_wheel(root / "wheels", "1.0.2", ["hz", "fixture-foreign"])
     assert run(first, reinstall=False).returncode == 0
     assert run(previous, reinstall=True).returncode == 0
     foreign = root / "bin" / "fixture-foreign"
@@ -117,11 +117,35 @@ def test_uv_reinstall_preserves_foreign_entrypoint_and_allows_restoration(tmp_pa
     assert not foreign.is_symlink()
     assert hashlib.sha256(foreign.read_bytes()).digest() == before
     assert not (root / "tools" / "fixture-owned" / "uv-receipt.toml").exists()
-    assert not (root / "bin" / "fixture-alpha").exists()
+    assert not (root / "bin" / "hz").exists()
     assert run(previous, reinstall=True).returncode == 0
-    shim = root / "bin" / "fixture-alpha"
+    shim = root / "bin" / "hz"
     assert shim.is_symlink()
     assert shim.resolve(strict=True).is_relative_to(root / "tools" / "fixture-owned")
     assert (root / "tools" / "fixture-owned" / "uv-receipt.toml").is_file()
     assert not foreign.is_symlink()
     assert hashlib.sha256(foreign.read_bytes()).digest() == before
+
+    _assert_dangling_guard(root, shim, monkeypatch)
+
+
+def _assert_dangling_guard(root, shim, monkeypatch):
+    # An unresolved foreign link is invisible to uv's exists() collision check. Our guard must stop
+    # the command before its runner, even though the fixture would otherwise let uv replace the link.
+    from heinzel import HeinzelError, Progress
+    from heinzel.kernel import Installation, _installation
+
+    dangling = root / "bin" / "fixture-dangling"
+    missing = root / "absent-target"
+    dangling.symlink_to(missing)
+    later = _fixture_wheel(root / "wheels", "1.0.3", ["hz", "fixture-dangling"])
+    monkeypatch.setattr(_installation, "CORE_DISTRIBUTION", "fixture-owned")
+    installation = Installation(
+        Progress(), prefix=root / "tools" / "fixture-owned", uv="fixture-guard", runner=lambda *_: pytest.fail("uv ran")
+    )
+    with pytest.raises(HeinzelError, match="unresolved uv executable symlinks"):
+        installation.attempt(installation.tool_install_command(str(later), []), "fixture")
+    assert dangling.is_symlink()
+    assert dangling.readlink() == missing
+    assert shim.is_symlink()
+    assert (root / "tools" / "fixture-owned" / "uv-receipt.toml").is_file()

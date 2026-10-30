@@ -414,3 +414,43 @@ def test_opt_in_current_installed_receipt_target_read_only():
     assert (Path(target["UV_TOOL_BIN_DIR"]) / "hz").resolve(strict=True) == (
         Path(prefix).resolve(strict=True) / "bin" / "hz"
     ).resolve(strict=True)
+
+
+def test_dangling_foreign_executable_refuses_before_runner(tmp_path):
+    prefix, bin_dir = _target_fixture(tmp_path)
+    dangling = bin_dir / "unrelated"
+    dangling.symlink_to(tmp_path / "absent")
+    installation = Installation(Progress(), prefix=prefix, uv="fake-uv", runner=lambda *_args: pytest.fail("uv ran"))
+    with pytest.raises(HeinzelError, match="unresolved uv executable symlinks"):
+        installation.attempt(installation.tool_install_command("heinzel", []), "fixture")
+    with pytest.raises(HeinzelError, match="unresolved uv executable symlinks"), installation.tool_transaction():
+        pytest.fail("transaction started")
+    assert dangling.is_symlink()
+    assert dangling.readlink() == tmp_path / "absent"
+
+
+def test_new_dangling_link_during_transaction_refuses_next_runner(tmp_path):
+    prefix, bin_dir = _target_fixture(tmp_path)
+    installation = Installation(Progress(), prefix=prefix, uv="fake-uv", runner=lambda *_args: pytest.fail("uv ran"))
+    with installation.tool_transaction():
+        dangling = bin_dir / "foreign"
+        dangling.symlink_to(tmp_path / "absent")
+        with pytest.raises(HeinzelError, match="unresolved uv executable symlinks"):
+            installation.attempt(installation.tool_install_command("heinzel", []), "fixture")
+        assert dangling.is_symlink()
+
+
+def test_valid_foreign_symlink_does_not_block_tool_target(tmp_path):
+    prefix, bin_dir = _target_fixture(tmp_path)
+    foreign_target = tmp_path / "foreign-target"
+    foreign_target.write_text("fixture", encoding="utf-8")
+    (bin_dir / "foreign").symlink_to(foreign_target)
+    calls = []
+
+    def fake_uv(command, environment):
+        calls.append((command, environment))
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    installation = Installation(Progress(), prefix=prefix, uv="fake-uv", runner=fake_uv)
+    installation.attempt(installation.tool_install_command("heinzel", []), "fixture")
+    assert len(calls) == 1

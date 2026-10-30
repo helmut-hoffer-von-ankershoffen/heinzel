@@ -82,7 +82,9 @@ release in place, keeping plugins (`--source <spec>` moves to another source or 
 (`--channel main` or setting `update_channel` for the newest commit of `main`); pinned to another branch or a commit,
 it says which `--source` moves it. Updates and plugin changes verify the current uv receipt and its linked entrypoints
 before selecting the tool and executable directories. If entrypoints are copied, missing or cannot be verified, use
-uv directly with the intended tool and executable directories explicitly selected. Shell completion: `hz --install-completion`.
+uv directly with the intended tool and executable directories explicitly selected. An unresolved symlink anywhere in
+the executable directory also stops these changes until it is repaired. This preflight cannot prevent another process
+from changing that directory between the check and uv's write. Shell completion: `hz --install-completion`.
 
 **From Claude Code**, add the plugin and let `/hz-init` do everything — install, plugins, configuration, agent
 skills:
