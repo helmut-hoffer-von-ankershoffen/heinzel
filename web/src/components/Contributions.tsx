@@ -356,7 +356,7 @@ function FooterStatus({
             <span className="min-w-0 flex-1" title={line.tooltip ?? undefined}>
               {line.text}
               {line.badge && (
-                <span className="ml-2 rounded-md border border-primary/40 px-2 py-0.5 text-xs text-primary">
+                <span className="ml-2 rounded-md border border-primary/40 px-2 py-0.5 text-xs text-foreground">
                   {line.badge}
                 </span>
               )}
@@ -567,7 +567,7 @@ function SidebarStatusItem({
                 <span className="min-w-0 flex-1" title={line.tooltip ?? undefined}>
                   {line.text}
                   {line.badge && (
-                    <span className="ml-2 rounded-md border border-primary/40 px-2 py-0.5 text-xs text-primary">
+                    <span className="ml-2 rounded-md border border-primary/40 px-2 py-0.5 text-xs text-foreground">
                       {line.badge}
                     </span>
                   )}
