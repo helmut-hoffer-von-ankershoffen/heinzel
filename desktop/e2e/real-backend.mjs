@@ -19,6 +19,7 @@ if (!electronPath || isAbsolute(electronPath) || relative(electronDist, electron
 await access(electronExecutable, constants.X_OK);
 const cli = process.env.HZ_REAL_CLI;
 if (!cli || !isAbsolute(cli)) throw new Error("Set HZ_REAL_CLI to the absolute installed hz executable.");
+const crashTest = process.argv.slice(2).includes("--crash-test");
 await access(cli, constants.X_OK);
 const root = await mkdtemp(join(tmpdir(), "hz-electron-isolated-"));
 const dirs = ["bin", "home", "config", "data", "state", "cache", "logs", "electron-profile", "electron-session", "electron-logs", "tmp"];
@@ -26,6 +27,7 @@ let app;
 let electronProcess;
 let ownedPid;
 let stopped = false;
+let launchAttempted = false;
 try {
   await Promise.all(dirs.map((name) => mkdir(join(root, name), { mode: 0o700 })));
   await symlink(cli, join(root, "bin", "hz"));
@@ -38,6 +40,7 @@ try {
     HZ_STATE_DIR: join(root, "state"), HZ_CACHE_DIR: join(root, "cache"), HZ_LOG_DIR: join(root, "logs"),
     HZ_NATIVE_TEST_ROOT: root,
   };
+  launchAttempted = true;
   app = await electron.launch({
     executablePath: electronExecutable,
     args: [fileURLToPath(new URL("./real-backend-bootstrap.mjs", import.meta.url))],
@@ -64,20 +67,33 @@ try {
   assert.equal(reloaded.instance, first.instance);
   assert.equal(reloaded.version, first.version);
   const exited = new Promise((resolve) => electronProcess.once("exit", (code, signal) => resolve({ code, signal })));
-  await page.close();
+  if (crashTest) {
+    assert.equal(await app.evaluate((_, expectedPid) => {
+      const child = globalThis.ownedTestChild;
+      return child && child.pid === expectedPid && child.exitCode === null && child.signalCode === null && child.kill("SIGKILL");
+    }, ownedPid), true, "The test-owned child was unavailable for the crash test.");
+  }
+  else await page.close();
   const result = await withTimeout(exited, 15_000, "Electron did not exit after close.");
   stopped = true;
   assert.equal(result.code, 0, `Electron closed abnormally: ${JSON.stringify(result)}`);
   assert.equal(result.signal, null);
   const ownedExit = JSON.parse(await readFile(join(root, "owned-exit"), "utf8"));
-  assert.equal(await exists(join(root, "error-title")), false, `The desktop reported a non-graceful shutdown: ${JSON.stringify(ownedExit)}`);
-  assert.deepEqual(ownedExit, { code: 0, signal: null }, "The owned CLI did not report a clean exit.");
+  if (crashTest) {
+    assert.equal(await readFile(join(root, "error-title"), "utf8"), "Heinzelmännchen stopped unexpectedly");
+    assert.deepEqual(ownedExit, { code: null, signal: "SIGKILL" });
+  } else {
+    assert.equal(await exists(join(root, "error-title")), false, `The desktop reported a non-graceful shutdown: ${JSON.stringify(ownedExit)}`);
+    assert.deepEqual(ownedExit, { code: 0, signal: null }, "The owned CLI did not report a clean exit.");
+  }
   assert.equal(processExists(ownedPid), false, "The owned hz child remained alive after the window closed.");
   assert.equal(await listenerPresent(port), false, "The temporary loopback listener remained after the child exited.");
-  console.log(`Isolated Electron opened and reloaded with installed hz ${first.version}; closing the window stopped its owned child.`);
+  console.log(crashTest
+    ? `Isolated Electron reported its hz ${first.version} child crash and removed its listener.`
+    : `Isolated Electron opened and reloaded with hz ${first.version}; closing the window stopped its owned child.`);
 } finally {
   await cleanupHarness({
-    app, electronProcess, stopped, root, ownedPid,
+    app, electronProcess, stopped, root, ownedPid, launchAttempted,
     loadPid: async () => Number(await readFile(join(root, "owned-pid"), "utf8")),
     processExists,
     remove: (path) => rm(path, { recursive: true, force: true }),

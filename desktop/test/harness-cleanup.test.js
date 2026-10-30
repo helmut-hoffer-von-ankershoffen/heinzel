@@ -49,3 +49,22 @@ test("packaged smoke refuses locally without explicit disposable CI authorizatio
     assert.match(result.stderr, /explicitly disposable CI/);
   }
 });
+
+test("a rejected launch retains the profile when no controller identity is available", async () => {
+  const calls = [];
+  await assert.rejects(cleanupHarness({
+    app: undefined, electronProcess: undefined, stopped: false, launchAttempted: true,
+    root: "/temporary-test-root", processExists: () => { throw new Error("no PID may be queried"); },
+    remove: async () => { calls.push("removed"); },
+  }), /launch did not return a controller.*evidence was retained/);
+  assert.deepEqual(calls, []);
+});
+
+test("failure before attempting a launch can remove its temporary profile", async () => {
+  const calls = [];
+  await cleanupHarness({
+    app: undefined, electronProcess: undefined, stopped: false, launchAttempted: false,
+    root: "/temporary-test-root", remove: async (path) => { calls.push(path); },
+  });
+  assert.deepEqual(calls, ["/temporary-test-root"]);
+});
