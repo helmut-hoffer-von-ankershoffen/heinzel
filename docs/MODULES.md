@@ -87,6 +87,7 @@ Your Heinzelmännchen: durable agents that keep your team's documents true.
 | Answer one authenticated user's accepted message; an interrupted request is never silently replayed. | `hz heinzel answer-chat` | — | — | `POST /api/heinzel/answer-chat` | yes |  |
 | Read the recorded turn state; unresolved may still be running. | `hz heinzel chat-turn-state` | — | — | `GET /api/heinzel/chat-turn-state` |  |  |
 | Explicitly set aside a stopped uncertain turn; never retry or undo its possible effects. | `hz heinzel abandon-chat-turn` | — | — | `POST /api/heinzel/abandon-chat-turn` | yes |  |
+| Show recent private exact-result comparisons from approved reads, without source contents. | `hz heinzel input-snapshot-history` | — | — | `GET /api/heinzel/input-snapshot-history` |  |  |
 | Show owner-private host-observed tool decisions, without their arguments. | `hz heinzel tool-activity` | — | — | `GET /api/heinzel/tool-activity` |  |  |
 | Create a durable personal Heinzel with an idempotent request, name and look. | `hz heinzel new-chat` | `heinzel_new_chat` | — | `POST /api/heinzel/new-chat` | yes |  |
 | List your durable personal Heinzels, including new conversations without an approved contract. | `hz heinzel sessions` | `heinzel_sessions` | — | `GET /api/heinzel/sessions` |  |  |

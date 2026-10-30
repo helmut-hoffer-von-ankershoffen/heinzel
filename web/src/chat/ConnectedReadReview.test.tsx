@@ -187,3 +187,41 @@ it("refuses an action whose provider candidate disclosure changed", async () => 
   expect(screen.queryByRole("button", { name: /^confirm$/i })).not.toBeInTheDocument();
   expect(calls.some((r) => new URL(r.url).pathname.endsWith("/confirm"))).toBe(false);
 });
+
+it("reviews an inert chat source only after an explicit click and preserves its exact arguments", async () => {
+  sessionStorage.clear();
+  const suggestion = { session_id: session, request_id: "turn-1", revision: 1, based_on_revision: 0,
+    capability: "example", method: "read", fixed_arguments: { ref: "https://example.invalid/a" }, status: "suggested" };
+  let submitted: unknown;
+  const { calls } = mockApi({
+    "/api/heinzel/latest-source-suggestion-view": () => suggestion,
+    "/api/heinzel/connected-read-options": () => [{ capability: "example", method: "read", provider: "fixture", source: "fixture", input_schema: {} }],
+    "/api/heinzel/connected-read-state": () => ({ session_id: session, status: "none", proposal: null, descriptor: null }),
+    "/api/heinzel/prepare-suggested-source": async (request: Request) => { submitted = await request.clone().json(); return proposal; },
+  });
+  const user = userEvent.setup();
+  show();
+  expect(await screen.findByText(/has not contacted a provider/)).toBeInTheDocument();
+  expect(calls.some((r) => new URL(r.url).pathname.endsWith("/propose-connected-read"))).toBe(false);
+  await user.click(screen.getByRole("button", { name: "Review source" }));
+  expect(submitted).toMatchObject({ session_id: session, suggestion_request: "turn-1", suggestion_revision: 1 });
+  expect(submitted).not.toHaveProperty("fixed_arguments");
+  expect(calls.some((r) => new URL(r.url).pathname.endsWith("/confirm"))).toBe(false);
+});
+
+it("refuses review if the suggestion changed after it was displayed", async () => {
+  sessionStorage.clear();
+  const suggestion = { session_id: session, request_id: "turn-1", revision: 1, based_on_revision: 0,
+    capability: "example", method: "read", fixed_arguments: { ref: "https://example.invalid/a" }, status: "suggested" };
+  let reads = 0;
+  const { calls } = mockApi({
+    "/api/heinzel/latest-source-suggestion-view": () => ++reads === 1 ? suggestion : { ...suggestion, revision: 2 },
+    "/api/heinzel/connected-read-options": () => [{ capability: "example", method: "read", provider: "fixture", source: "fixture", input_schema: {} }],
+    "/api/heinzel/connected-read-state": () => ({ session_id: session, status: "none", proposal: null, descriptor: null }),
+  });
+  const user = userEvent.setup();
+  show();
+  await user.click(await screen.findByRole("button", { name: "Review source" }));
+  expect(await screen.findByRole("alert")).toBeInTheDocument();
+  expect(calls.some((r) => new URL(r.url).pathname.endsWith("/prepare-suggested-source"))).toBe(false);
+});
