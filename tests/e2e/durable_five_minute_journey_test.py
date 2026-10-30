@@ -131,7 +131,7 @@ def test_mounted_browser_approval_wake_and_restart_deduplicate(  # noqa: PLR0915
     monkeypatch.setenv("PLAYWRIGHT_BROWSERS_PATH", str(BROWSER_CACHE))
     home = tmp_path / "home"
     home.mkdir()
-    clock = [wake_after_now()]
+    clock = [datetime.now(UTC)]
     native_calls: list[list[str]] = []
     script = _Script()
     kernel, current, notices, daemon, settings = _kernel(make_kernel, tmp_path, clock, native_calls, script)
@@ -186,6 +186,8 @@ def test_mounted_browser_approval_wake_and_restart_deduplicate(  # noqa: PLR0915
         thread.join(15)
         assert not thread.is_alive(), "isolated web head did not stop"
 
+    # Browser setup and approval can cross the initially chosen slot; wake after the actual activation.
+    clock[0] = wake_after_now()
     job_id = f"heinzel:check-in-{session.lower()}"
     with current.local("daemon"):
         first = daemon.tick()
