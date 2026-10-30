@@ -3102,6 +3102,266 @@
         "title": "ConflictView",
         "type": "object"
       },
+      "ConnectedGrantProposal": {
+        "additionalProperties": false,
+        "description": "One private exact capability/source/account/window proposal; no access until trusted approval.",
+        "properties": {
+          "binding_sha256": {
+            "description": "Digest of selected source registration and read schema.",
+            "title": "Binding Sha256",
+            "type": "string"
+          },
+          "capability": {
+            "description": "The selected capability requiring human review.",
+            "title": "Capability",
+            "type": "string"
+          },
+          "method": {
+            "description": "The selected read-only capability method.",
+            "title": "Method",
+            "type": "string"
+          },
+          "request_id": {
+            "description": "The exact connected-read proposal request.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "review": {
+            "$ref": "#/components/schemas/ConnectedReadReview",
+            "description": "Exact private provider, account, scope and fixed-argument terms."
+          },
+          "revision": {
+            "description": "The owner-scoped proposal revision.",
+            "title": "Revision",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "request_id",
+          "revision",
+          "capability",
+          "method",
+          "binding_sha256",
+          "review"
+        ],
+        "title": "ConnectedGrantProposal",
+        "type": "object"
+      },
+      "ConnectedReadOption": {
+        "description": "Host-selected registered capability description; this conveys no read authority.",
+        "properties": {
+          "capability": {
+            "description": "Selected capability name.",
+            "title": "Capability",
+            "type": "string"
+          },
+          "input_schema": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "description": "Exact read method argument schema.",
+            "title": "Input Schema",
+            "type": "object"
+          },
+          "method": {
+            "description": "Selected read method.",
+            "title": "Method",
+            "type": "string"
+          },
+          "provider": {
+            "description": "Selected adapter name.",
+            "title": "Provider",
+            "type": "string"
+          },
+          "source": {
+            "description": "Registered module and distribution identity, not publisher verification.",
+            "title": "Source",
+            "type": "string"
+          },
+          "window_parameter": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Unique direct Window parameter eligible for explicit rolling policy, if any.",
+            "title": "Window Parameter"
+          }
+        },
+        "required": [
+          "capability",
+          "method",
+          "provider",
+          "source",
+          "input_schema"
+        ],
+        "title": "ConnectedReadOption",
+        "type": "object"
+      },
+      "ConnectedReadReview": {
+        "additionalProperties": false,
+        "description": "Private observed source/account and exact operation constraints for human review.\n\nThe host must independently bind the selected registry record and operation schema, verify the owner/session,\nand compare these same fields on a fresh lease before invoking. Provider scopes are reported separately from\nhost-granted arguments and may include previously granted rights that the host will not exercise.",
+        "properties": {
+          "account_display": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional provider-reported display name or address.",
+            "title": "Account Display"
+          },
+          "account_identity": {
+            "description": "Provider-reported identity of the selected account.",
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Account Identity",
+            "type": "string"
+          },
+          "candidate_read_disclosure": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Provider-reported description of candidate data read before local filtering, when supplied.",
+            "title": "Candidate Read Disclosure"
+          },
+          "fixed_arguments": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "description": "Exact host-constrained read arguments.",
+            "maxProperties": 32,
+            "title": "Fixed Arguments",
+            "type": "object"
+          },
+          "operation": {
+            "description": "The exact read capability and method.",
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Operation",
+            "type": "string"
+          },
+          "owner": {
+            "description": "The authenticated owner identity.",
+            "pattern": "^u-[0-9a-f]{32}$",
+            "title": "Owner",
+            "type": "string"
+          },
+          "provider_scopes": {
+            "description": "Observed provider scopes, which may exceed the host read grant.",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 128,
+            "title": "Provider Scopes",
+            "type": "array"
+          },
+          "schema_sha256": {
+            "description": "Digest of the reviewed capability schema.",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Schema Sha256",
+            "type": "string"
+          },
+          "session": {
+            "description": "The owner-bound personal agent session.",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Session",
+            "type": "string"
+          },
+          "source_revision": {
+            "description": "The provider-reported source continuity revision.",
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Source Revision",
+            "type": "string"
+          }
+        },
+        "required": [
+          "owner",
+          "session",
+          "operation",
+          "schema_sha256",
+          "source_revision",
+          "account_identity",
+          "provider_scopes",
+          "fixed_arguments"
+        ],
+        "title": "ConnectedReadReview",
+        "type": "object"
+      },
+      "ConnectedReadState": {
+        "description": "Latest owner-scoped proposal and recorded status, without querying the provider.",
+        "properties": {
+          "descriptor": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConnectedReadOption"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Currently selected matching schema, if available."
+          },
+          "proposal": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConnectedGrantProposal"
+              },
+              {
+                "$ref": "#/components/schemas/RollingConnectedGrantProposal"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Latest recorded proposal, if any.",
+            "title": "Proposal"
+          },
+          "session_id": {
+            "description": "Owner-bound personal session.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "status": {
+            "description": "Recorded state; source and account are revalidated before each read.",
+            "enum": [
+              "none",
+              "proposed",
+              "approved",
+              "revoked",
+              "stale"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "proposal",
+          "status",
+          "descriptor"
+        ],
+        "title": "ConnectedReadState",
+        "type": "object"
+      },
       "Connector": {
         "description": "A module that provides adapters, with its state, sign-in, tools and the commands that connect it.",
         "properties": {
@@ -7521,6 +7781,136 @@
         "title": "NoticeList",
         "type": "object"
       },
+      "NotificationProposal": {
+        "additionalProperties": false,
+        "description": "Exact private local-notification draft; no delivery or approval is implied.",
+        "properties": {
+          "body": {
+            "description": "Exact proposed notification body.",
+            "maxLength": 500,
+            "title": "Body",
+            "type": "string"
+          },
+          "delivery": {
+            "const": "local-notification",
+            "default": "local-notification",
+            "description": "Local in-app or native notification under current user policy.",
+            "title": "Delivery",
+            "type": "string"
+          },
+          "disclosure": {
+            "const": "The title and body may appear on this device; queued does not mean shown.",
+            "default": "The title and body may appear on this device; queued does not mean shown.",
+            "description": "The exact local delivery and visibility limitation.",
+            "title": "Disclosure",
+            "type": "string"
+          },
+          "request_id": {
+            "description": "The stable host-generated proposal identity.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "session_id": {
+            "description": "The owner-bound personal session.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "status": {
+            "const": "proposed",
+            "default": "proposed",
+            "description": "A draft, not permission to notify.",
+            "title": "Status",
+            "type": "string"
+          },
+          "title": {
+            "description": "Exact proposed notification title.",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          },
+          "topic": {
+            "description": "Model-chosen topic, not a verified source identity or a deduplication guarantee.",
+            "maxLength": 100,
+            "minLength": 1,
+            "pattern": "^[a-z0-9][a-z0-9._-]*$",
+            "title": "Topic",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "request_id",
+          "topic",
+          "title",
+          "body"
+        ],
+        "title": "NotificationProposal",
+        "type": "object"
+      },
+      "NotificationProposalPage": {
+        "description": "A bounded page of references; bodies are read separately by exact identity.",
+        "properties": {
+          "items": {
+            "description": "Owner-private draft references.",
+            "items": {
+              "$ref": "#/components/schemas/NotificationProposalRef"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Exclusive cursor for the next page, if any.",
+            "title": "Next Cursor"
+          },
+          "session_id": {
+            "description": "The owner-bound personal session.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "items",
+          "next_cursor"
+        ],
+        "title": "NotificationProposalPage",
+        "type": "object"
+      },
+      "NotificationProposalRef": {
+        "description": "One bounded owner-private notification draft reference.",
+        "properties": {
+          "request_id": {
+            "description": "Stable proposal request identity.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "seq": {
+            "description": "Exclusive journal cursor for this reference.",
+            "exclusiveMinimum": 0.0,
+            "title": "Seq",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "request_id",
+          "seq"
+        ],
+        "title": "NotificationProposalRef",
+        "type": "object"
+      },
       "OpenUrl": {
         "additionalProperties": false,
         "description": "Open an https link in a new tab.",
@@ -9896,6 +10286,106 @@
         "title": "Restarted",
         "type": "object"
       },
+      "RollingConnectedGrantProposal": {
+        "additionalProperties": false,
+        "description": "A distinct reviewed rolling-window grant, never an implicit upgrade of a fixed grant.",
+        "properties": {
+          "binding_sha256": {
+            "description": "Digest of selected source registration and read schema.",
+            "title": "Binding Sha256",
+            "type": "string"
+          },
+          "capability": {
+            "description": "The selected capability requiring human review.",
+            "title": "Capability",
+            "type": "string"
+          },
+          "kind": {
+            "const": "rolling-window",
+            "description": "Explicit rolling window grant variant.",
+            "title": "Kind",
+            "type": "string"
+          },
+          "method": {
+            "description": "The selected read-only capability method.",
+            "title": "Method",
+            "type": "string"
+          },
+          "request_id": {
+            "description": "The exact connected-read proposal request.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "review": {
+            "$ref": "#/components/schemas/ConnectedReadReview",
+            "description": "Exact private provider, account, scope and fixed-argument terms."
+          },
+          "revision": {
+            "description": "The owner-scoped proposal revision.",
+            "title": "Revision",
+            "type": "integer"
+          },
+          "window_policy": {
+            "$ref": "#/components/schemas/RollingWindowPolicy",
+            "description": "Exact separately reviewed rolling window policy."
+          }
+        },
+        "required": [
+          "request_id",
+          "revision",
+          "capability",
+          "method",
+          "binding_sha256",
+          "review",
+          "kind",
+          "window_policy"
+        ],
+        "title": "RollingConnectedGrantProposal",
+        "type": "object"
+      },
+      "RollingWindowPolicy": {
+        "additionalProperties": false,
+        "description": "Explicit elapsed-time window around a single trusted UTC instant.",
+        "properties": {
+          "lookahead_seconds": {
+            "description": "Elapsed seconds after each read.",
+            "maximum": 2678400.0,
+            "minimum": 0.0,
+            "title": "Lookahead Seconds",
+            "type": "integer"
+          },
+          "lookback_seconds": {
+            "description": "Elapsed seconds before each read.",
+            "maximum": 2678400.0,
+            "minimum": 0.0,
+            "title": "Lookback Seconds",
+            "type": "integer"
+          },
+          "parameter": {
+            "description": "The unique direct Window argument.",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Parameter",
+            "type": "string"
+          },
+          "timezone": {
+            "description": "IANA display timezone; elapsed bounds use UTC.",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Timezone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "parameter",
+          "lookback_seconds",
+          "lookahead_seconds",
+          "timezone"
+        ],
+        "title": "RollingWindowPolicy",
+        "type": "object"
+      },
       "RunCommand": {
         "additionalProperties": false,
         "description": "Open the terminal with an `hz` command.",
@@ -10176,6 +10666,269 @@
         "title": "SceneStep",
         "type": "object"
       },
+      "ScheduleBinding": {
+        "additionalProperties": false,
+        "description": "Exact reviewed private schedule; no external tools or account permissions are granted.",
+        "properties": {
+          "access": {
+            "const": "claude-code-subscription",
+            "default": "claude-code-subscription",
+            "description": "Selected subscription access mode.",
+            "title": "Access",
+            "type": "string"
+          },
+          "access_fingerprint": {
+            "description": "Opaque selected-access continuity fingerprint.",
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Access Fingerprint",
+            "type": "string"
+          },
+          "cadence_seconds": {
+            "description": "Whole-minute recurrence interval in seconds.",
+            "maximum": 86400.0,
+            "minimum": 60.0,
+            "title": "Cadence Seconds",
+            "type": "integer"
+          },
+          "connected_grant": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConnectedGrantProposal"
+              },
+              {
+                "$ref": "#/components/schemas/RollingConnectedGrantProposal"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Exact separately approved connected read, or null for no external read.",
+            "title": "Connected Grant"
+          },
+          "contract_request_id": {
+            "description": "Accepted contract request.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Contract Request Id",
+            "type": "string"
+          },
+          "contract_revision": {
+            "description": "Accepted contract revision.",
+            "minimum": 1.0,
+            "title": "Contract Revision",
+            "type": "integer"
+          },
+          "contract_sha256": {
+            "description": "Exact accepted contract digest.",
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Contract Sha256",
+            "type": "string"
+          },
+          "first_run": {
+            "const": "current-slot-after-approval",
+            "default": "current-slot-after-approval",
+            "description": "Current interval becomes eligible only after approval.",
+            "title": "First Run",
+            "type": "string"
+          },
+          "max_requests": {
+            "description": "Maximum model requests per turn.",
+            "maximum": 4.0,
+            "minimum": 1.0,
+            "title": "Max Requests",
+            "type": "integer"
+          },
+          "notification_policy": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ScheduledNotificationPolicy"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Separately reviewed bounded local notification scope, or null for no scheduled notifications."
+          },
+          "owner": {
+            "description": "Authenticated owner identity.",
+            "pattern": "^u-[0-9a-f]{32}$",
+            "title": "Owner",
+            "type": "string"
+          },
+          "request_id": {
+            "description": "Stable schedule proposal request.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "session_id": {
+            "description": "Owner-bound personal session.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "status": {
+            "const": "proposed",
+            "default": "proposed",
+            "description": "Proposal status; approval is separate.",
+            "title": "Status",
+            "type": "string"
+          },
+          "timeout_seconds": {
+            "description": "Maximum turn duration in seconds.",
+            "maximum": 120.0,
+            "minimum": 1.0,
+            "title": "Timeout Seconds",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "session_id",
+          "request_id",
+          "owner",
+          "contract_request_id",
+          "contract_revision",
+          "contract_sha256",
+          "cadence_seconds",
+          "max_requests",
+          "timeout_seconds",
+          "access_fingerprint"
+        ],
+        "title": "ScheduleBinding",
+        "type": "object"
+      },
+      "ScheduleReviewPage": {
+        "description": "Bounded owner-private schedule references, including paused and stale decisions.",
+        "properties": {
+          "items": {
+            "description": "Bounded owner-private schedule reviews.",
+            "items": {
+              "$ref": "#/components/schemas/ScheduleReviewView"
+            },
+            "maxItems": 100,
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Cursor for the next page, if present.",
+            "title": "Next Cursor"
+          },
+          "session_id": {
+            "description": "Owner-bound personal session.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "items"
+        ],
+        "title": "ScheduleReviewPage",
+        "type": "object"
+      },
+      "ScheduleReviewView": {
+        "description": "Owner-private schedule proposal or its recorded decision and current eligibility.",
+        "properties": {
+          "binding": {
+            "$ref": "#/components/schemas/ScheduleBinding",
+            "description": "Exact reviewed schedule binding."
+          },
+          "status": {
+            "description": "Recorded decision and current eligibility.",
+            "enum": [
+              "proposed",
+              "approved",
+              "paused",
+              "stale"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "binding",
+          "status"
+        ],
+        "title": "ScheduleReviewView",
+        "type": "object"
+      },
+      "ScheduleSuggestion": {
+        "additionalProperties": false,
+        "description": "Stored owner-private, revisioned schedule suggestion with explicit inert status.",
+        "properties": {
+          "based_on_revision": {
+            "description": "Revision the suggestion amended.",
+            "minimum": 0.0,
+            "title": "Based On Revision",
+            "type": "integer"
+          },
+          "request_id": {
+            "description": "Stable host-derived suggestion identity.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "revision": {
+            "description": "Suggestion revision.",
+            "minimum": 1.0,
+            "title": "Revision",
+            "type": "integer"
+          },
+          "session_id": {
+            "description": "Owner-private durable agent session.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "status": {
+            "const": "suggested",
+            "default": "suggested",
+            "description": "Inert suggestion, without authority.",
+            "title": "Status",
+            "type": "string"
+          },
+          "suggested_reads": {
+            "description": "Unverified suggested read capabilities.",
+            "items": {
+              "$ref": "#/components/schemas/SuggestedRead"
+            },
+            "maxItems": 16,
+            "title": "Suggested Reads",
+            "type": "array"
+          },
+          "trigger": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SuggestedTrigger"
+              },
+              {
+                "$ref": "#/components/schemas/SuggestedInterval"
+              }
+            ],
+            "description": "Suggested schedule, not yet approved or activated.",
+            "title": "Trigger"
+          }
+        },
+        "required": [
+          "session_id",
+          "request_id",
+          "revision",
+          "based_on_revision",
+          "trigger",
+          "suggested_reads"
+        ],
+        "title": "ScheduleSuggestion",
+        "type": "object"
+      },
       "ScheduledAgentProposal": {
         "description": "An inert execution proposal; creating or reading it never authorizes a run.",
         "properties": {
@@ -10265,6 +11018,123 @@
           "preview_sha256"
         ],
         "title": "ScheduledAgentProposal",
+        "type": "object"
+      },
+      "ScheduledNotificationPage": {
+        "description": "Bounded owner-private attempted notification history.",
+        "properties": {
+          "items": {
+            "description": "Bounded owner-private notification attempts.",
+            "items": {
+              "$ref": "#/components/schemas/ScheduledNotificationView"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Exclusive cursor for the next page, if present.",
+            "title": "Next Cursor"
+          },
+          "session_id": {
+            "description": "The authenticated owner's personal session.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "items",
+          "next_cursor"
+        ],
+        "title": "ScheduledNotificationPage",
+        "type": "object"
+      },
+      "ScheduledNotificationPolicy": {
+        "additionalProperties": false,
+        "description": "Explicit bounded notification scope; it grants no external messaging or data access.",
+        "properties": {
+          "delivery": {
+            "const": "local-notification",
+            "default": "local-notification",
+            "description": "Only the owner's local in-app or native notification policy.",
+            "title": "Delivery",
+            "type": "string"
+          },
+          "disclosure": {
+            "const": "Content may appear on this device. Topics are model-chosen, not verified source identities.",
+            "default": "Content may appear on this device. Topics are model-chosen, not verified source identities.",
+            "description": "The visibility and deduplication limitation the person reviews.",
+            "title": "Disclosure",
+            "type": "string"
+          },
+          "max_per_24h": {
+            "description": "Maximum local queue attempts per rolling 24 hours.",
+            "maximum": 24.0,
+            "minimum": 1.0,
+            "title": "Max Per 24H",
+            "type": "integer"
+          },
+          "per_turn": {
+            "const": 1,
+            "default": 1,
+            "description": "At most one local queue attempt per scheduled turn.",
+            "title": "Per Turn",
+            "type": "integer"
+          },
+          "topic_cooldown_seconds": {
+            "description": "Minimum seconds between attempts for the same model-chosen topic.",
+            "maximum": 2678400.0,
+            "minimum": 60.0,
+            "title": "Topic Cooldown Seconds",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "max_per_24h",
+          "topic_cooldown_seconds"
+        ],
+        "title": "ScheduledNotificationPolicy",
+        "type": "object"
+      },
+      "ScheduledNotificationView": {
+        "description": "Owner-private observed attempt; recorded means queued, never confirmed shown.",
+        "properties": {
+          "proposal": {
+            "$ref": "#/components/schemas/NotificationProposal",
+            "description": "Exact private attempted notification content."
+          },
+          "seq": {
+            "description": "Exclusive journal cursor.",
+            "exclusiveMinimum": 0.0,
+            "title": "Seq",
+            "type": "integer"
+          },
+          "status": {
+            "description": "Recorded outcome; never OS display.",
+            "enum": [
+              "recorded",
+              "unresolved",
+              "abandoned"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "proposal",
+          "seq",
+          "status"
+        ],
+        "title": "ScheduledNotificationView",
         "type": "object"
       },
       "SessionCosts": {
@@ -12355,6 +13225,83 @@
           "pending"
         ],
         "title": "StreamStatus",
+        "type": "object"
+      },
+      "SuggestedInterval": {
+        "additionalProperties": false,
+        "description": "An interval supported by the autonomous scheduler, without approval or activation.",
+        "properties": {
+          "cadence_seconds": {
+            "description": "Whole-minute interval between scheduled slots.",
+            "maximum": 86400.0,
+            "minimum": 60.0,
+            "title": "Cadence Seconds",
+            "type": "integer"
+          },
+          "kind": {
+            "const": "interval",
+            "description": "Explicit interval, distinct from calendar cron semantics.",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "cadence_seconds"
+        ],
+        "title": "SuggestedInterval",
+        "type": "object"
+      },
+      "SuggestedRead": {
+        "additionalProperties": false,
+        "description": "An unverified capability reference, not a grant or provider selection.",
+        "properties": {
+          "capability": {
+            "description": "Suggested capability name; not a grant.",
+            "maxLength": 64,
+            "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
+            "title": "Capability",
+            "type": "string"
+          },
+          "method": {
+            "description": "Suggested read method; not verified.",
+            "maxLength": 64,
+            "pattern": "^[a-z][a-z0-9_]*$",
+            "title": "Method",
+            "type": "string"
+          }
+        },
+        "required": [
+          "capability",
+          "method"
+        ],
+        "title": "SuggestedRead",
+        "type": "object"
+      },
+      "SuggestedTrigger": {
+        "additionalProperties": false,
+        "description": "An inert five-field cron expression and its explicit IANA timezone.",
+        "properties": {
+          "cron": {
+            "description": "Suggested five-field cron expression, not necessarily supported by the scheduler.",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Cron",
+            "type": "string"
+          },
+          "timezone": {
+            "description": "Explicit IANA timezone for the suggested expression.",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Timezone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "cron",
+          "timezone"
+        ],
+        "title": "SuggestedTrigger",
         "type": "object"
       },
       "SystemInfo": {
@@ -15515,6 +16462,80 @@
         "title": "heinzel_answer_chat_Input",
         "type": "object"
       },
+      "heinzel_approve_agent_schedule_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "approval_proof": {
+            "title": "Approval Proof",
+            "type": "string"
+          },
+          "request_id": {
+            "description": "A stable client request id; reuse it only for an exact retry.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "review": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "title": "Review",
+            "type": "object"
+          },
+          "session_id": {
+            "description": "The stable personal session id returned by new-chat or sessions.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "request_id",
+          "review",
+          "approval_proof"
+        ],
+        "title": "heinzel_approve_agent_schedule_Input",
+        "type": "object"
+      },
+      "heinzel_approve_connected_read_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "approval_proof": {
+            "description": "In-process proof from the human confirmation boundary.",
+            "title": "Approval Proof",
+            "type": "string"
+          },
+          "request_id": {
+            "description": "A stable client request id; reuse it only for an exact retry.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "review": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "description": "The exact reviewed provider, source, account and read terms.",
+            "title": "Review",
+            "type": "object"
+          },
+          "session_id": {
+            "description": "The stable personal session id returned by new-chat or sessions.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "request_id",
+          "review",
+          "approval_proof"
+        ],
+        "title": "heinzel_approve_connected_read_Input",
+        "type": "object"
+      },
       "heinzel_approve_model_grant_Input": {
         "additionalProperties": false,
         "properties": {
@@ -15670,6 +16691,29 @@
         "title": "heinzel_new_chat_Input",
         "type": "object"
       },
+      "heinzel_pause_agent_schedule_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "request_id": {
+            "description": "A stable client request id; reuse it only for an exact retry.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "session_id": {
+            "description": "The stable personal session id returned by new-chat or sessions.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "request_id"
+        ],
+        "title": "heinzel_pause_agent_schedule_Input",
+        "type": "object"
+      },
       "heinzel_profile_Input": {
         "additionalProperties": false,
         "properties": {
@@ -15725,6 +16769,81 @@
         "title": "heinzel_profile_Input",
         "type": "object"
       },
+      "heinzel_propose_agent_schedule_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "cadence_seconds": {
+            "maximum": 86400.0,
+            "minimum": 60.0,
+            "multipleOf": 60.0,
+            "title": "Cadence Seconds",
+            "type": "integer"
+          },
+          "connected_request_id": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "An already approved connected-read request, or null for no connected reads.",
+            "title": "Connected Request Id"
+          },
+          "contract_request_id": {
+            "description": "A stable client request id; reuse it only for an exact retry.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Contract Request Id",
+            "type": "string"
+          },
+          "max_requests": {
+            "maximum": 4.0,
+            "minimum": 1.0,
+            "title": "Max Requests",
+            "type": "integer"
+          },
+          "notification_policy": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ScheduledNotificationPolicy"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "request_id": {
+            "description": "A stable client request id; reuse it only for an exact retry.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "session_id": {
+            "description": "The stable personal session id returned by new-chat or sessions.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "timeout_seconds": {
+            "maximum": 120.0,
+            "minimum": 1.0,
+            "title": "Timeout Seconds",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "session_id",
+          "request_id",
+          "contract_request_id",
+          "cadence_seconds",
+          "max_requests",
+          "timeout_seconds"
+        ],
+        "title": "heinzel_propose_agent_schedule_Input",
+        "type": "object"
+      },
       "heinzel_propose_check_in_Input": {
         "additionalProperties": false,
         "properties": {
@@ -15756,6 +16875,50 @@
         "title": "heinzel_propose_check_in_Input",
         "type": "object"
       },
+      "heinzel_propose_connected_read_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "capability": {
+            "description": "The selected read capability.",
+            "title": "Capability",
+            "type": "string"
+          },
+          "fixed_arguments": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "description": "Exact fixed read arguments for review.",
+            "title": "Fixed Arguments",
+            "type": "object"
+          },
+          "method": {
+            "description": "The exact read method to review.",
+            "title": "Method",
+            "type": "string"
+          },
+          "request_id": {
+            "description": "A stable client request id; reuse it only for an exact retry.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "session_id": {
+            "description": "The stable personal session id returned by new-chat or sessions.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "request_id",
+          "capability",
+          "method",
+          "fixed_arguments"
+        ],
+        "title": "heinzel_propose_connected_read_Input",
+        "type": "object"
+      },
       "heinzel_propose_model_policy_Input": {
         "additionalProperties": false,
         "properties": {
@@ -15785,6 +16948,54 @@
           "proposal"
         ],
         "title": "heinzel_propose_model_policy_Input",
+        "type": "object"
+      },
+      "heinzel_propose_rolling_connected_read_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "capability": {
+            "description": "Selected read capability.",
+            "title": "Capability",
+            "type": "string"
+          },
+          "fixed_arguments": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "description": "Fixed arguments excluding the rolling window.",
+            "title": "Fixed Arguments",
+            "type": "object"
+          },
+          "method": {
+            "description": "Selected read method.",
+            "title": "Method",
+            "type": "string"
+          },
+          "request_id": {
+            "description": "A stable client request id; reuse it only for an exact retry.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "session_id": {
+            "description": "The stable personal session id returned by new-chat or sessions.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "window_policy": {
+            "$ref": "#/components/schemas/RollingWindowPolicy"
+          }
+        },
+        "required": [
+          "session_id",
+          "request_id",
+          "capability",
+          "method",
+          "fixed_arguments",
+          "window_policy"
+        ],
+        "title": "heinzel_propose_rolling_connected_read_Input",
         "type": "object"
       },
       "heinzel_propose_scheduled_agent_Input": {
@@ -15935,6 +17146,94 @@
           "draft_sha256"
         ],
         "title": "heinzel_propose_skill_sharing_Input",
+        "type": "object"
+      },
+      "heinzel_queue_agent_notification_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "approval_proof": {
+            "title": "Approval Proof",
+            "type": "string"
+          },
+          "request_id": {
+            "description": "A stable client request id; reuse it only for an exact retry.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "review": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "title": "Review",
+            "type": "object"
+          },
+          "session_id": {
+            "description": "The stable personal session id returned by new-chat or sessions.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "request_id",
+          "review",
+          "approval_proof"
+        ],
+        "title": "heinzel_queue_agent_notification_Input",
+        "type": "object"
+      },
+      "heinzel_resolve_scheduled_notification_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "acknowledge_uncertain": {
+            "description": "Acknowledge the notice may already have been queued; no retry or undo.",
+            "title": "Acknowledge Uncertain",
+            "type": "boolean"
+          },
+          "request_id": {
+            "description": "A stable client request id; reuse it only for an exact retry.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "session_id": {
+            "description": "The stable personal session id returned by new-chat or sessions.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "request_id",
+          "acknowledge_uncertain"
+        ],
+        "title": "heinzel_resolve_scheduled_notification_Input",
+        "type": "object"
+      },
+      "heinzel_revoke_connected_read_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "request_id": {
+            "description": "A stable client request id; reuse it only for an exact retry.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "session_id": {
+            "description": "The stable personal session id returned by new-chat or sessions.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "request_id"
+        ],
+        "title": "heinzel_revoke_connected_read_Input",
         "type": "object"
       },
       "heinzel_schedule_control_Input": {
@@ -16490,6 +17789,121 @@
         ]
       }
     },
+    "/heinzel/agent-schedule": {
+      "get": {
+        "description": "Inspect the exact proposed schedule and its recorded state.",
+        "operationId": "heinzel_agent_schedule",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduleReviewView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Inspect the exact proposed schedule and its recorded state.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/agent-schedules": {
+      "get": {
+        "description": "List bounded owner-private schedule proposals and recorded decisions.",
+        "operationId": "heinzel_agent_schedules",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "title": "Cursor",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduleReviewPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List bounded owner-private schedule proposals and recorded decisions.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
     "/heinzel/amend-scheduled-agent": {
       "post": {
         "description": "Propose revised terms; an independent human review and approval is still required.",
@@ -16569,6 +17983,98 @@
           }
         },
         "summary": "Answer one authenticated user's accepted message; an interrupted request is never silently replayed.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/approve-agent-schedule": {
+      "post": {
+        "description": "Record exact human-confirmed autonomous schedule authority.",
+        "operationId": "heinzel_approve_agent_schedule",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/heinzel_approve_agent_schedule_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduleBinding"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Record exact human-confirmed autonomous schedule authority.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/approve-connected-read": {
+      "post": {
+        "description": "Record only a human-confirmed exact connected-read grant; does not execute it.",
+        "operationId": "heinzel_approve_connected_read",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/heinzel_approve_connected_read_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ConnectedGrantProposal"
+                    },
+                    {
+                      "$ref": "#/components/schemas/RollingConnectedGrantProposal"
+                    }
+                  ],
+                  "title": "Response Heinzel Approve Connected Read"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Record only a human-confirmed exact connected-read grant; does not execute it.",
         "tags": [
           "heinzel"
         ]
@@ -16815,6 +18321,156 @@
         ]
       }
     },
+    "/heinzel/connected-read-options": {
+      "get": {
+        "description": "List selected read methods without opening a provider.",
+        "operationId": "heinzel_connected_read_options",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ConnectedReadOption"
+                  },
+                  "title": "Response Heinzel Connected Read Options",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List selected read methods without opening a provider.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/connected-read-review": {
+      "get": {
+        "description": "Inspect current exact connected-read proposal; this does not approve it.",
+        "operationId": "heinzel_connected_read_review",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ConnectedGrantProposal"
+                    },
+                    {
+                      "$ref": "#/components/schemas/RollingConnectedGrantProposal"
+                    }
+                  ],
+                  "title": "Response Heinzel Connected Read Review"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Inspect current exact connected-read proposal; this does not approve it.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/connected-read-state": {
+      "get": {
+        "description": "Inspect the latest recorded connected-read state for this session.",
+        "operationId": "heinzel_connected_read_state",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectedReadState"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Inspect the latest recorded connected-read state for this session.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
     "/heinzel/discover": {
       "get": {
         "description": "Find candidates for each playbook's asset types through the capabilities you have bound; reads only.",
@@ -16959,6 +18615,57 @@
           }
         },
         "summary": "Inspect the latest suggested name and look; it has not been applied.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/latest-schedule-suggestion-view": {
+      "get": {
+        "description": "Inspect the latest inert suggested schedule; it has not been approved or activated.",
+        "operationId": "heinzel_latest_schedule_suggestion_view",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ScheduleSuggestion"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Response Heinzel Latest Schedule Suggestion View"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Inspect the latest inert suggested schedule; it has not been approved or activated.",
         "tags": [
           "heinzel"
         ]
@@ -17203,6 +18910,220 @@
         ]
       }
     },
+    "/heinzel/notification-outcome": {
+      "get": {
+        "description": "Inspect a prior queue attempt without sending again.",
+        "operationId": "heinzel_notification_outcome",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Heinzel Notification Outcome",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Inspect a prior queue attempt without sending again.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/notification-proposal": {
+      "get": {
+        "description": "Read an exact private notification draft without sending it.",
+        "operationId": "heinzel_notification_proposal",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationProposal"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read an exact private notification draft without sending it.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/notification-proposals": {
+      "get": {
+        "description": "List bounded owner-private notification references without sending anything.",
+        "operationId": "heinzel_notification_proposals",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Exclusive journal cursor.",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Exclusive journal cursor.",
+              "title": "Cursor",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Maximum references per page.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "description": "Maximum references per page.",
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationProposalPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List bounded owner-private notification references without sending anything.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/pause-agent-schedule": {
+      "post": {
+        "description": "Stop future launches; a new schedule needs a separate human approval.",
+        "operationId": "heinzel_pause_agent_schedule",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/heinzel_pause_agent_schedule_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduleReviewView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Stop future launches; a new schedule needs a separate human approval.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
     "/heinzel/personal-artifacts": {
       "get": {
         "description": "List local principal-submitted file associations without accessing the provider.",
@@ -17310,6 +19231,48 @@
         ]
       }
     },
+    "/heinzel/propose-agent-schedule": {
+      "post": {
+        "description": "Propose autonomous turns; separate human confirmation is required to authorize them.",
+        "operationId": "heinzel_propose_agent_schedule",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/heinzel_propose_agent_schedule_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduleBinding"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Propose autonomous turns; separate human confirmation is required to authorize them.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
     "/heinzel/propose-check-in": {
       "post": {
         "description": "Propose local five-minute check-ins; the schedule stays inactive until activated.",
@@ -17352,6 +19315,48 @@
         ]
       }
     },
+    "/heinzel/propose-connected-read": {
+      "post": {
+        "description": "Observe and propose exact connected-read terms; this grants no access.",
+        "operationId": "heinzel_propose_connected_read",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/heinzel_propose_connected_read_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectedGrantProposal"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Observe and propose exact connected-read terms; this grants no access.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
     "/heinzel/propose-model-policy": {
       "post": {
         "description": "Stage an inert model policy for independent human review.",
@@ -17389,6 +19394,48 @@
           }
         },
         "summary": "Stage an inert model policy for independent human review.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/propose-rolling-connected-read": {
+      "post": {
+        "description": "Propose explicit bounded rolling read terms; this grants no access.",
+        "operationId": "heinzel_propose_rolling_connected_read",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/heinzel_propose_rolling_connected_read_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RollingConnectedGrantProposal"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Propose explicit bounded rolling read terms; this grants no access.",
         "tags": [
           "heinzel"
         ]
@@ -17520,6 +19567,138 @@
         ]
       }
     },
+    "/heinzel/queue-agent-notification": {
+      "post": {
+        "description": "Queue the exact owner-confirmed notice; recorded means queued, never shown.",
+        "operationId": "heinzel_queue_agent_notification",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/heinzel_queue_agent_notification_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "enum": [
+                    "recorded",
+                    "uncertain"
+                  ],
+                  "title": "Response Heinzel Queue Agent Notification",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Queue the exact owner-confirmed notice; recorded means queued, never shown.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/resolve-scheduled-notification": {
+      "post": {
+        "description": "Inspect the receipt or set aside uncertainty; never resend or undo a notice.",
+        "operationId": "heinzel_resolve_scheduled_notification",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/heinzel_resolve_scheduled_notification_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduledNotificationView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Inspect the receipt or set aside uncertainty; never resend or undo a notice.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/revoke-connected-read": {
+      "post": {
+        "description": "Revoke this exact connected-read grant before future tool calls.",
+        "operationId": "heinzel_revoke_connected_read",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/heinzel_revoke_connected_read_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Heinzel Revoke Connected Read",
+                  "type": "boolean"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Revoke this exact connected-read grant before future tool calls.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
     "/heinzel/schedule-control": {
       "post": {
         "description": "Pause a schedule; activation and resume require an exact-intent approval from a trusted issuer.\n\nRaises:\n    HeinzelError: If the schedule is stale or approval is invalid or unavailable.",
@@ -17609,6 +19788,73 @@
           }
         },
         "summary": "Inspect the exact inert proposal; a separate future human approval is required to run it.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/scheduled-notification-attempts": {
+      "get": {
+        "description": "Inspect bounded owner-private scheduled attempts and their recorded outcomes.",
+        "operationId": "heinzel_scheduled_notification_attempts",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Exclusive journal cursor.",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Exclusive journal cursor.",
+              "title": "Cursor",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Maximum attempts per page.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "description": "Maximum attempts per page.",
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduledNotificationPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Inspect bounded owner-private scheduled attempts and their recorded outcomes.",
         "tags": [
           "heinzel"
         ]
@@ -20447,6 +22693,174 @@
           }
         },
         "summary": "Stage current agent contract terms for human review.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/runner/chat/propose-agent-notification": {
+      "post": {
+        "description": "Stage one exact notification draft for a human decision; no notice is sent.",
+        "operationId": "system_runner_chat_propose_agent_notification",
+        "parameters": [
+          {
+            "description": "The personal agent session.",
+            "in": "query",
+            "name": "durable_session",
+            "required": true,
+            "schema": {
+              "description": "The personal agent session.",
+              "title": "Durable Session",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The notification draft request id.",
+            "in": "query",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "description": "The notification draft request id.",
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatSession"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Stage one exact notification draft for a human decision; no notice is sent.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/runner/chat/propose-agent-schedule-review": {
+      "post": {
+        "description": "Stage the exact current agent schedule for human review; no schedule is approved yet.",
+        "operationId": "system_runner_chat_propose_agent_schedule_review",
+        "parameters": [
+          {
+            "description": "The personal agent session.",
+            "in": "query",
+            "name": "durable_session",
+            "required": true,
+            "schema": {
+              "description": "The personal agent session.",
+              "title": "Durable Session",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The schedule proposal request id.",
+            "in": "query",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "description": "The schedule proposal request id.",
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatSession"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Stage the exact current agent schedule for human review; no schedule is approved yet.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/runner/chat/propose-connected-read-review": {
+      "post": {
+        "description": "Stage current connected-read terms for an explicit human decision.",
+        "operationId": "system_runner_chat_propose_connected_read_review",
+        "parameters": [
+          {
+            "description": "The personal agent session.",
+            "in": "query",
+            "name": "durable_session",
+            "required": true,
+            "schema": {
+              "description": "The personal agent session.",
+              "title": "Durable Session",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The connected read proposal request id.",
+            "in": "query",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "description": "The connected read proposal request id.",
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatSession"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Stage current connected-read terms for an explicit human decision.",
         "tags": [
           "system"
         ]
