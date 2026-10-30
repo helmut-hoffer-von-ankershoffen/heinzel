@@ -74,11 +74,14 @@ async function run(redirectOnStart) {
     launchAttempted = true;
     app = await electron.launch({ executablePath: executable, args: [fileURLToPath(new URL("./real-backend-bootstrap.mjs", import.meta.url))], cwd: root, env, timeout: 30_000 });
     processHandle = app.process();
-    assert.equal(await app.evaluate(({ app: current }) => current.getPath("userData")), join(root, "electron-profile"));
     if (redirectOnStart) {
-      const exited = new Promise((done) => processHandle.once("exit", done));
-      await withTimeout(exited, 15_000, "Electron did not stop after the rejected initial redirect.");
+      const exited = processHandle.exitCode !== null || processHandle.signalCode !== null
+        ? Promise.resolve({ code: processHandle.exitCode, signal: processHandle.signalCode })
+        : new Promise((done) => processHandle.once("exit", (code, signal) => done({ code, signal })));
+      const result = await withTimeout(exited, 15_000, "Electron did not stop after the rejected initial redirect.");
       stopped = true;
+      assert.equal(result.code, 0);
+      assert.equal(result.signal, null);
     } else {
       const page = await app.firstWindow({ timeout: 30_000 });
       await page.locator("p").waitFor();
@@ -102,6 +105,11 @@ async function run(redirectOnStart) {
       await withTimeout(exited, 15_000, "Electron did not exit after closing its window.");
       stopped = true;
     }
+    const paths = JSON.parse(await readFile(join(root, "electron-paths"), "utf8"));
+    assert.deepEqual(paths, {
+      userData: join(root, "electron-profile"),
+      sessionData: join(root, "electron-session"),
+    });
   } finally {
     await cleanupHarness({ app, electronProcess: processHandle, stopped, root, launchAttempted,
       loadPid: async () => Number(await readFile(join(root, "owned-pid"), "utf8")), processExists,
