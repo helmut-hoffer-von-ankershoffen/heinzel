@@ -12,6 +12,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
 from heinzel import HeinzelError, SessionWriter
+from heinzel.modules.heinzel._notification_proposals import NotificationProposal, NotificationProposals
 from heinzel.modules.heinzel._session_crud import SessionCrud
 from heinzel.modules.heinzel._session_models import HeinzelAppearance
 
@@ -43,6 +44,12 @@ class _Skill(_Request):
     files: dict[str, str]
 
 
+class _Notification(_Request):
+    topic: str = Field(min_length=1, max_length=100, pattern=r"^[a-z0-9][a-z0-9._-]*$")
+    title: str = Field(min_length=1, max_length=120)
+    body: str = Field(max_length=500)
+
+
 class _Artifact(_Request):
     kind: Literal["document", "spreadsheet", "presentation"]
     ref: str
@@ -55,6 +62,7 @@ _SCHEMAS: dict[str, type[_Request]] = {
     "profile:propose": _Profile,
     "skill:propose-draft": _Skill,
     "artifact:associate": _Artifact,
+    "notification:propose": _Notification,
 }
 
 
@@ -149,15 +157,32 @@ class UserProposalTools:
                     self._session, request_id, skill.name, skill.requested_scope, skill.scope_ref, skill.files
                 )
                 result = {"request_id": draft.request_id, "preview_sha256": draft.preview_sha256, "status": "draft"}
+            elif name == "notification:propose":
+                notice = _Notification.model_validate(arguments)
+                notification = NotificationProposals(self._crud).propose(
+                    NotificationProposal(
+                        session_id=self._session,
+                        request_id=request_id,
+                        topic=notice.topic,
+                        title=notice.title,
+                        body=notice.body,
+                    ),
+                    self._owner,
+                    self._writer,
+                )
+                result = {"request_id": notification.request_id, "status": "proposed"}
             else:
                 artifact = _Artifact.model_validate(arguments)
-                supplied = any(token.strip("\"'()[]<>,;.") == artifact.ref for token in self._user_text.split())
-                if not supplied:
-                    msg = "The current user message did not supply this artifact link"
-                    raise HeinzelError(msg)  # noqa: TRY301 - errors are redacted to the model
-                link = self._crud.associate_artifact(self._session, request_id, artifact.kind, artifact.ref)
-                result = {"request_id": link.request_id, "status": "associated", "access": "unverified"}
+                result = self._associate(artifact, request_id)
         except Exception:  # noqa: BLE001 - validation and private bodies never leave via error text
             msg = "The private proposal could not be recorded; check the request and current revision"
             raise HeinzelError(msg) from None
         return json.dumps(result, ensure_ascii=True, separators=(",", ":"))
+
+    def _associate(self, artifact: _Artifact, request_id: str) -> dict[str, JsonValue]:
+        supplied = any(token.strip("\"'()[]<>,;.") == artifact.ref for token in self._user_text.split())
+        if not supplied:
+            msg = "The current user message did not supply this artifact link"
+            raise HeinzelError(msg)
+        link = self._crud.associate_artifact(self._session, request_id, artifact.kind, artifact.ref)
+        return {"request_id": link.request_id, "status": "associated", "access": "unverified"}

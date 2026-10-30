@@ -7767,6 +7767,136 @@
         "title": "NoticeList",
         "type": "object"
       },
+      "NotificationProposal": {
+        "additionalProperties": false,
+        "description": "Exact private local-notification draft; no delivery or approval is implied.",
+        "properties": {
+          "body": {
+            "description": "Exact proposed notification body.",
+            "maxLength": 500,
+            "title": "Body",
+            "type": "string"
+          },
+          "delivery": {
+            "const": "local-notification",
+            "default": "local-notification",
+            "description": "Local in-app or native notification under current user policy.",
+            "title": "Delivery",
+            "type": "string"
+          },
+          "disclosure": {
+            "const": "The title and body may appear on this device; queued does not mean shown.",
+            "default": "The title and body may appear on this device; queued does not mean shown.",
+            "description": "The exact local delivery and visibility limitation.",
+            "title": "Disclosure",
+            "type": "string"
+          },
+          "request_id": {
+            "description": "The stable host-generated proposal identity.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "session_id": {
+            "description": "The owner-bound personal session.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "status": {
+            "const": "proposed",
+            "default": "proposed",
+            "description": "A draft, not permission to notify.",
+            "title": "Status",
+            "type": "string"
+          },
+          "title": {
+            "description": "Exact proposed notification title.",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          },
+          "topic": {
+            "description": "Model-chosen topic, not a verified source identity or a deduplication guarantee.",
+            "maxLength": 100,
+            "minLength": 1,
+            "pattern": "^[a-z0-9][a-z0-9._-]*$",
+            "title": "Topic",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "request_id",
+          "topic",
+          "title",
+          "body"
+        ],
+        "title": "NotificationProposal",
+        "type": "object"
+      },
+      "NotificationProposalPage": {
+        "description": "A bounded page of references; bodies are read separately by exact identity.",
+        "properties": {
+          "items": {
+            "description": "Owner-private draft references.",
+            "items": {
+              "$ref": "#/components/schemas/NotificationProposalRef"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Exclusive cursor for the next page, if any.",
+            "title": "Next Cursor"
+          },
+          "session_id": {
+            "description": "The owner-bound personal session.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "items",
+          "next_cursor"
+        ],
+        "title": "NotificationProposalPage",
+        "type": "object"
+      },
+      "NotificationProposalRef": {
+        "description": "One bounded owner-private notification draft reference.",
+        "properties": {
+          "request_id": {
+            "description": "Stable proposal request identity.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "seq": {
+            "description": "Exclusive journal cursor for this reference.",
+            "exclusiveMinimum": 0.0,
+            "title": "Seq",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "request_id",
+          "seq"
+        ],
+        "title": "NotificationProposalRef",
+        "type": "object"
+      },
       "OpenUrl": {
         "additionalProperties": false,
         "description": "Open an https link in a new tab.",
@@ -16721,6 +16851,42 @@
         "title": "heinzel_propose_skill_sharing_Input",
         "type": "object"
       },
+      "heinzel_queue_agent_notification_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "approval_proof": {
+            "title": "Approval Proof",
+            "type": "string"
+          },
+          "request_id": {
+            "description": "A stable client request id; reuse it only for an exact retry.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "review": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "title": "Review",
+            "type": "object"
+          },
+          "session_id": {
+            "description": "The stable personal session id returned by new-chat or sessions.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "request_id",
+          "review",
+          "approval_proof"
+        ],
+        "title": "heinzel_queue_agent_notification_Input",
+        "type": "object"
+      },
       "heinzel_revoke_connected_read_Input": {
         "additionalProperties": false,
         "properties": {
@@ -18367,6 +18533,178 @@
         ]
       }
     },
+    "/heinzel/notification-outcome": {
+      "get": {
+        "description": "Inspect a prior queue attempt without sending again.",
+        "operationId": "heinzel_notification_outcome",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Heinzel Notification Outcome",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Inspect a prior queue attempt without sending again.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/notification-proposal": {
+      "get": {
+        "description": "Read an exact private notification draft without sending it.",
+        "operationId": "heinzel_notification_proposal",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationProposal"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read an exact private notification draft without sending it.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/notification-proposals": {
+      "get": {
+        "description": "List bounded owner-private notification references without sending anything.",
+        "operationId": "heinzel_notification_proposals",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Exclusive journal cursor.",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Exclusive journal cursor.",
+              "title": "Cursor",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Maximum references per page.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "description": "Maximum references per page.",
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationProposalPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List bounded owner-private notification references without sending anything.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
     "/heinzel/pause-agent-schedule": {
       "post": {
         "description": "Stop future launches; a new schedule needs a separate human approval.",
@@ -18847,6 +19185,53 @@
           }
         },
         "summary": "Request review of exact private draft and target; membership and authority are unverified.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/queue-agent-notification": {
+      "post": {
+        "description": "Queue the exact owner-confirmed notice; recorded means queued, never shown.",
+        "operationId": "heinzel_queue_agent_notification",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/heinzel_queue_agent_notification_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "enum": [
+                    "recorded",
+                    "uncertain"
+                  ],
+                  "title": "Response Heinzel Queue Agent Notification",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Queue the exact owner-confirmed notice; recorded means queued, never shown.",
         "tags": [
           "heinzel"
         ]
@@ -21822,6 +22207,62 @@
           }
         },
         "summary": "Stage current agent contract terms for human review.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/runner/chat/propose-agent-notification": {
+      "post": {
+        "description": "Stage one exact notification draft for a human decision; no notice is sent.",
+        "operationId": "system_runner_chat_propose_agent_notification",
+        "parameters": [
+          {
+            "description": "The personal agent session.",
+            "in": "query",
+            "name": "durable_session",
+            "required": true,
+            "schema": {
+              "description": "The personal agent session.",
+              "title": "Durable Session",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The notification draft request id.",
+            "in": "query",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "description": "The notification draft request id.",
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatSession"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Stage one exact notification draft for a human decision; no notice is sent.",
         "tags": [
           "system"
         ]
