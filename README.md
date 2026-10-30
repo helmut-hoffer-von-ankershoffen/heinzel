@@ -5,9 +5,10 @@
 | Name                                                         |    Stmts |     Miss |   Branch |   BrPart |   Cover |   Missing |
 |------------------------------------------------------------- | -------: | -------: | -------: | -------: | ------: | --------: |
 | src/heinzel/heads/\_stream.py                                |       64 |        1 |        4 |        1 |     97% |47-\>49, 58 |
-| src/heinzel/heads/cli/\_\_init\_\_.py                        |      248 |        6 |       64 |        6 |     96% |139-\>141, 163-166, 169, 173-\>exit, 229-\>221, 415, 428-\>430 |
-| src/heinzel/heads/cli/\_chat.py                              |      147 |       13 |       40 |        5 |     90% |29-30, 71-72, 85, 109, 130-133, 157-\>exit, 169-\>exit, 188-190 |
+| src/heinzel/heads/cli/\_\_init\_\_.py                        |      254 |        6 |       66 |        6 |     96% |159-\>161, 183-186, 190, 194-\>exit, 250-\>242, 436, 449-\>451 |
+| src/heinzel/heads/cli/\_chat.py                              |      147 |       11 |       40 |        5 |     91% |71-72, 85, 109, 130-133, 157-\>exit, 169-\>exit, 188-190 |
 | src/heinzel/heads/cli/\_command.py                           |      111 |        3 |       32 |        3 |     96% |89, 97, 189 |
+| src/heinzel/heads/cli/\_discovery.py                         |       27 |        0 |        8 |        1 |     97% |   64-\>62 |
 | src/heinzel/heads/cli/\_join.py                              |      143 |        0 |       32 |        1 |     99% | 213-\>218 |
 | src/heinzel/heads/cli/\_serve.py                             |      103 |        4 |       30 |        5 |     93% |84-\>86, 117-\>exit, 194, 216-217, 241 |
 | src/heinzel/heads/cli/\_setup.py                             |      319 |        8 |       96 |        6 |     97% |275, 342, 427, 434, 481-\>490, 504, 507, 527-528 |
@@ -162,7 +163,7 @@
 | src/heinzel/modules/telemetry/\_render.py                    |       15 |       10 |        2 |        0 |     29% |11-17, 22-27 |
 | src/heinzel/modules/telemetry/\_service.py                   |      236 |        8 |       70 |        3 |     96% |146-\>152, 154-\>152, 162, 219-220, 289-291, 344-345 |
 | src/heinzel/testing.py                                       |      124 |        4 |       32 |        0 |     97% |   240-244 |
-| **TOTAL**                                                    | **32787** | **1750** | **8190** |  **723** | **94%** |           |
+| **TOTAL**                                                    | **32820** | **1748** | **8200** |  **724** | **94%** |           |
 
 133 files skipped due to complete coverage.
 
