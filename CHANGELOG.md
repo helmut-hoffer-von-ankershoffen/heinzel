@@ -4,11 +4,12 @@ All notable changes to Heinzelmännchen, newest first. Versions follow [Semantic
 
 ## [0.9.4](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/releases/tag/v0.9.4) - 2026-10-30
 
-The Electron development shell now uses the correct authenticated lifecycle endpoint and stops its owned CLI cleanly. An isolated smoke test checks real local-service startup, reload and shutdown. Complete native distribution and scheduled connected workflows remain in development.
+The Electron development shell now uses the correct authenticated lifecycle endpoint and stops its owned CLI cleanly. An isolated smoke test checks real local-service startup, reload and shutdown. Documentation artwork follows the selected color mode, and site links use the canonical Pages address. Complete native distribution and scheduled connected workflows remain in development.
 
 ### 🐛 Bug fixes
 
 - **heads:** Authenticate and stop the owned desktop service ([#276](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/276)) ([cf178f3](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/cf178f34d459bad690b6a93e80f5b2bce049e7d3))
+- **docs:** Match hero artwork to the selected color mode ([#281](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/281)) ([804fe19](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/804fe193c249f7dd30ed30fecc6a7d6d09c21251))
 
 ## [0.9.3](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/releases/tag/v0.9.3) - 2026-10-30
 
