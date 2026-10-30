@@ -34,6 +34,7 @@ from heinzel.modules.heinzel._connected_grants import (
     RollingWindowPolicy,
 )
 from heinzel.modules.heinzel._contract_review import ContractReview, ContractReviewView
+from heinzel.modules.heinzel._input_receipts import InputSnapshotPage, snapshot_history
 from heinzel.modules.heinzel._model_grants import ModelGrants
 from heinzel.modules.heinzel._model_policy_operations import ModelPolicyService, register_model_policy_operations
 from heinzel.modules.heinzel._models import HeinzelSettings
@@ -70,6 +71,7 @@ from heinzel.modules.heinzel._session_models import (
     SkillSharingProposal,
 )
 from heinzel.modules.heinzel._session_repository import PersonalSessionRepository
+from heinzel.modules.heinzel._source_suggestions import SourceSuggestion, latest_source_suggestion
 from heinzel.modules.heinzel._user_chat import (
     UserChatAnswer,
     UserChatService,
@@ -447,6 +449,17 @@ def _register_connected_read_operations(module: Module) -> None:
         return service.propose(session_id, request_id, capability, method, fixed_arguments)
 
     @module.operation(private=True, read_only=False, heads={"web", "api-private"}, audience="everyday")
+    def prepare_suggested_source(
+        service: ConnectedReadGrants,
+        session_id: Identity,
+        request_id: Request,
+        suggestion_request: Annotated[str, Field(description="Exact host-derived suggestion request.")],
+        suggestion_revision: Annotated[int, Field(ge=1, description="Exact current suggestion revision.")],
+    ) -> ConnectedGrantProposal:
+        """Prepare the current exact suggestion for separate human approval without executing the read."""
+        return service.propose_suggestion(session_id, request_id, suggestion_request, suggestion_revision)
+
+    @module.operation(private=True, read_only=False, heads={"web", "api-private"}, audience="everyday")
     def propose_rolling_connected_read(  # noqa: PLR0913, PLR0917 - exact explicit reviewed terms
         service: ConnectedReadGrants,
         session_id: Identity,
@@ -571,6 +584,11 @@ def _register_user_chat_operations(module: Module) -> None:
         """Inspect the latest inert suggested schedule; it has not been approved or activated."""
         return latest_schedule_suggestion(service, session_id)
 
+    @module.operation(private=True, heads={"web", "api-private"}, audience="everyday")
+    def latest_source_suggestion_view(service: SessionCrud, session_id: Identity) -> SourceSuggestion | None:
+        """Inspect the latest inert suggested source; no provider was contacted or approved."""
+        return latest_source_suggestion(service, session_id)
+
     @module.operation(private=True, read_only=False, heads={"cli", "web", "api-private"}, audience="everyday")
     def answer_chat(service: UserChatService, session_id: Identity, request_id: Request) -> UserChatAnswer:
         """Answer one authenticated user's accepted message; an interrupted request is never silently replayed."""
@@ -599,6 +617,16 @@ def _register_user_chat_operations(module: Module) -> None:
             msg = "Acknowledge the uncertain outcome before setting this turn aside"
             raise HeinzelError(msg)
         return service.abandon(session_id, request_id)
+
+    @module.operation(private=True, heads={"cli", "web", "api-private"}, audience="everyday")
+    def input_snapshot_history(
+        service: SessionCrud,
+        current: CurrentUser,
+        session_id: Identity,
+        limit: Annotated[int, Field(ge=1, le=100, description="Maximum recent observations to return.")] = 20,
+    ) -> InputSnapshotPage:
+        """Show recent private exact-result comparisons from approved reads, without source contents."""
+        return snapshot_history(service, current, session_id, limit)
 
     @module.operation(private=True, heads={"cli", "web", "api-private"}, audience="everyday")
     def tool_activity(

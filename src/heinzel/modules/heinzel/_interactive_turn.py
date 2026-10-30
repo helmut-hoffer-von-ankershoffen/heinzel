@@ -21,6 +21,7 @@ from heinzel.modules.heinzel._claude_subscription_model import ClaudeSubscriptio
 from heinzel.modules.heinzel._connected_grants import ConnectedReadFailedError, ConnectedReadGrants
 from heinzel.modules.heinzel._engine import EngineCheckpoint, TurnAuthority, TurnDeps, TurnLimits, run_turn
 from heinzel.modules.heinzel._host_tools import HostToolCatalog, OperationFailedError
+from heinzel.modules.heinzel._input_receipts import ApprovedInputSnapshots
 from heinzel.modules.heinzel._model_admission import ConnectedModelFactory, connected_model
 from heinzel.modules.heinzel._model_grants import ModelGrant, ModelGrants
 from heinzel.modules.heinzel._priced_model import ReservedModel
@@ -29,6 +30,7 @@ from heinzel.modules.heinzel._scheduled_notifications import ScheduledNotificati
 from heinzel.modules.heinzel._session_bodies import immutable_body
 from heinzel.modules.heinzel._session_crud import SessionCrud
 from heinzel.modules.heinzel._session_models import BackendBinding, SessionMessage
+from heinzel.modules.heinzel._source_suggestions import SourceSuggestionTools, source_suggestion_schemas
 from heinzel.modules.heinzel._turn_authority_fence import TurnAuthorityFence
 from heinzel.modules.heinzel._turn_skill_adapter import TurnSkillAdapter, skill_tool_schemas
 from heinzel.modules.heinzel._user_proposal_tools import UserProposalTools, user_proposal_schemas
@@ -366,6 +368,11 @@ class InteractiveTurn:
                 else None
             )
             schedule_names = {"schedule:current", "schedule:propose"}
+            source_tools = (
+                SourceSuggestionTools(self._crud, session_id, turn, self._owner, turn_writer, user_proposal_policy)
+                if user_proposal_policy is not None
+                else None
+            )
 
             def dispatch_general(name: str, arguments: dict[str, JsonValue]) -> str:  # noqa: C901, PLR0911, PLR0912 - closed dispatch cases
                 nonlocal calls
@@ -374,13 +381,14 @@ class InteractiveTurn:
                 args = _JSON.validate_python(arguments, strict=True)
                 if len(json.dumps(args, ensure_ascii=False).encode()) > _MAX_ARGUMENT_BYTES:
                     return "Tool request is too large."
-                if schedule_tools is not None and name in schedule_names:
+                proposal_tools = source_tools if name in {"source:current", "source:propose"} else schedule_tools
+                if proposal_tools is not None and name in schedule_names | {"source:current", "source:propose"}:
                     self._event(session_id, turn, calls, name, "requested")
                     try:
-                        result = schedule_tools.dispatch(name, args, calls)
+                        result = proposal_tools.dispatch(name, args, calls)
                     except HeinzelError:
                         self._event(session_id, turn, calls, name, "denied")
-                        return "The private schedule suggestion could not be recorded."
+                        return "The private suggestion could not be recorded."
                     self._event(session_id, turn, calls, name, "completed")
                     return result
                 if user_tools is not None and name in user_names:
@@ -458,7 +466,9 @@ class InteractiveTurn:
                     if connected is None or connected_schema is None or args:
                         msg = "The connected read is unavailable or has dynamic arguments"
                         raise HeinzelError(msg)  # noqa: TRY301
-                    value = connected.read(session_id, turn_writer)
+                    value, _snapshot = ApprovedInputSnapshots(connected, connected.current).read(
+                        session_id, turn_writer, turn=turn, call=calls
+                    )
                 except ConnectedReadFailedError:
                     self._event(session_id, turn, calls, name, "failed")
                     return "The connected read began but did not produce a usable result."
@@ -505,6 +515,7 @@ class InteractiveTurn:
                         + (skill_tool_schemas(expected_grant) if expected_grant else [])
                         + (user_proposal_schemas() if user_tools else [])
                         + (schedule_suggestion_schemas() if schedule_tools else [])
+                        + (source_suggestion_schemas() if source_tools else [])
                         + ([connected_schema] if connected_schema is not None else [])
                         + ([scheduled_notifications.schema()] if scheduled_notifications is not None else []),
                         ensure_ascii=True,

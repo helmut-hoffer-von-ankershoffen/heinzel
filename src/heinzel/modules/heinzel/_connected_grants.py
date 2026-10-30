@@ -42,6 +42,7 @@ from heinzel.modules.heinzel._capability_review import (
 from heinzel.modules.heinzel._session_bodies import immutable_body
 from heinzel.modules.heinzel._session_crud import SessionCrud
 from heinzel.modules.heinzel._session_models import RequestId, SessionId
+from heinzel.modules.heinzel._source_suggestions import latest_source_suggestion
 
 _SESSION = TypeAdapter(SessionId)
 _REQUEST = TypeAdapter(RequestId)
@@ -358,7 +359,20 @@ class ConnectedReadGrants:
         # Resolve the caller-owned session before any provider lease can export credentials or call an API.
         self.crud.repository.control_read(session)
         binding, review = self._observe(session, capability, method, fixed)
-        with self.crud.repository.main_writer(session), self.crud.repository.control_writer(session) as writer:
+        with self.crud.repository.main_writer(session):
+            return self._record_proposal(session, request, capability, method, binding, review, {})
+
+    def _record_proposal(  # noqa: PLR0913, PLR0917 - exact reviewed terms
+        self,
+        session: str,
+        request: str,
+        capability: str,
+        method: str,
+        binding: str,
+        review: ConnectedReadReview,
+        provenance: dict[str, JsonValue],
+    ) -> ConnectedGrantProposal:
+        with self.crud.repository.control_writer(session) as writer:
             events = self.crud.repository.control_read(session).events
             existing = next((e for e in events if e.kind == "connected.proposed" and e.key == request), None)
             if existing:
@@ -387,8 +401,59 @@ class ConnectedReadGrants:
                 review=review,
             )
             body = immutable_body(writer, "connected-read-grant", proposal.model_dump(mode="json"), control=True)
-            writer.append("connected.proposed", key=request, data=body.model_dump(mode="json"))
+            writer.append("connected.proposed", key=request, data={**body.model_dump(mode="json"), **provenance})
         return proposal
+
+    def propose_suggestion(
+        self, session: str, request: str, suggestion_request: str, suggestion_revision: int
+    ) -> ConnectedGrantProposal:
+        """Prepare only the current exact chat suggestion under the owner's main-writer fence.
+
+        Raises:
+            HeinzelError: If owner, suggestion, revision or prepare request is invalid.
+        """
+        self._human()
+        _SESSION.validate_python(session)
+        _REQUEST.validate_python(request)
+        _REQUEST.validate_python(suggestion_request)
+        if type(suggestion_revision) is not int or suggestion_revision < 1:
+            msg = "The source suggestion revision is invalid"
+            raise HeinzelError(msg)
+        with self.crud.repository.main_writer(session):
+            current = latest_source_suggestion(self.crud, session)
+            if current is None or current.request_id != suggestion_request or current.revision != suggestion_revision:
+                msg = "The source suggestion changed; review the latest suggestion"
+                raise HeinzelError(msg)
+            fixed = validate_capability_read_arguments(current.capability, current.method, current.fixed_arguments)
+            events = self.crud.repository.control_read(session).events
+            existing = [e for e in events if e.kind == "connected.proposed" and e.key == request]
+            if existing:
+                if (
+                    len(existing) != 1
+                    or existing[0].data.get("suggestion_request") != suggestion_request
+                    or existing[0].data.get("suggestion_revision") != suggestion_revision
+                ):
+                    msg = "This request identifies a different connected read"
+                    raise HeinzelError(msg)
+                proposal = self._body(session, existing[0])
+                if (
+                    proposal.capability != current.capability
+                    or proposal.method != current.method
+                    or arguments_hash(proposal.review.fixed_arguments) != arguments_hash(fixed)
+                ):
+                    msg = "This request identifies a different connected read"
+                    raise HeinzelError(msg)
+                return proposal
+            binding, review = self._observe(session, current.capability, current.method, fixed)
+            return self._record_proposal(
+                session,
+                request,
+                current.capability,
+                current.method,
+                binding,
+                review,
+                {"suggestion_request": suggestion_request, "suggestion_revision": suggestion_revision},
+            )
 
     def _rolling_arguments(
         self, capability: str, method: str, fixed: dict[str, JsonValue], policy: RollingWindowPolicy

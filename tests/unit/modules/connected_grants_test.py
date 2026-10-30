@@ -77,6 +77,8 @@ def connected(tmp_path, monkeypatch):
 
         def read(self, arguments):
             assert arguments == {}
+            if hook := state.get("read_hook"):
+                hook()
             state["reads"] += 1
             state["last_fixed"] = self.fixed
             return state.get("result", {"events": ["fictional"]})
@@ -364,3 +366,326 @@ def test_provider_without_method_declaration_offers_no_reads(connected, monkeypa
     with pytest.raises(HeinzelError):
         grants.propose(session, "undeclared", "calendar", "events", fixed)
     assert state["opens"] == 0
+
+
+def test_private_input_snapshots_compare_only_approved_real_reads_across_restart(connected):
+    from heinzel.modules.heinzel._input_receipts import ApprovedInputSnapshots
+
+    current, crud, session, grants, fixed, state = connected
+    proposal = grants.propose(session, "snapshot-grant", "calendar", "events", fixed)
+    proof = grants.issue(session, proposal.request_id, "human-confirmation")
+    confirmation = ApprovalConfirmation()
+    review = proposal.model_dump(mode="json")
+    args = {"session_id": session, "request_id": proposal.request_id, "review": review, "approval_proof": proof}
+    with confirmation.using("heinzel", "approve-connected-read", args):
+        grants.approve(session, proposal.request_id, review, proof, confirmation)
+    snapshots = ApprovedInputSnapshots(grants, current)
+    with crud.repository.main_writer(session) as writer:
+        value, first = snapshots.read(session, writer)
+        assert value == {"events": ["fictional"]}
+        assert first.status == "first"
+    restarted = ApprovedInputSnapshots(ConnectedReadGrants(crud, current, grants.kernel), current)
+    with crud.repository.main_writer(session) as writer:
+        _, unchanged = restarted.read(session, writer)
+        assert unchanged.status == "unchanged"
+        assert unchanged.sequence > first.sequence
+        state["result"] = {"events": ["changed"]}
+        _, changed = restarted.read(session, writer)
+        assert changed.status == "changed"
+        assert changed.sequence > first.sequence
+    journal = crud.repository.control_read(session).events
+    receipts = [event for event in journal if event.kind == "input-snapshot.observed"]
+    assert len(receipts) == 3
+    assert "fictional" not in str(receipts)
+    assert "changed" not in str(receipts)
+    assert "account-a" not in str(receipts)
+    grants.revoke(session, proposal.request_id)
+    before = state["reads"]
+    with crud.repository.main_writer(session) as writer, pytest.raises(HeinzelError):
+        restarted.read(session, writer)
+    assert state["reads"] == before
+
+
+def test_input_snapshot_key_loss_and_foreign_context_fail_before_provider_read(connected):
+    from heinzel.modules.heinzel._input_receipts import ApprovedInputSnapshots, snapshot_history
+
+    current, crud, session, grants, fixed, state = connected
+    proposal = grants.propose(session, "snapshot-grant", "calendar", "events", fixed)
+    proof = grants.issue(session, proposal.request_id, "human-confirmation")
+    confirmation = ApprovalConfirmation()
+    review = proposal.model_dump(mode="json")
+    args = {"session_id": session, "request_id": proposal.request_id, "review": review, "approval_proof": proof}
+    with confirmation.using("heinzel", "approve-connected-read", args):
+        grants.approve(session, proposal.request_id, review, proof, confirmation)
+    snapshots = ApprovedInputSnapshots(grants, current)
+    with crud.repository.main_writer(session) as writer:
+        snapshots.read(session, writer)
+        foreign = CallIdentity(
+            Principal("u-" + "b" * 32), "api-bearer", "foreign", "private", frozenset({"private:read"})
+        )
+        before = state["reads"]
+        with current.using(foreign), pytest.raises(HeinzelError):
+            snapshots.read(session, writer)
+        assert state["reads"] == before
+        (current.directory / "input-receipt-key-v1").unlink()
+        with pytest.raises(HeinzelError, match="history needs repair"):
+            snapshot_history(crud, current, session)
+        assert not (current.directory / "input-receipt-key-v1").exists()
+        with pytest.raises(HeinzelError, match="history needs repair"):
+            snapshots.read(session, writer)
+        assert state["reads"] == before
+
+
+def test_input_snapshot_rolling_window_does_not_fake_event_identity(connected):
+    from datetime import UTC, datetime, timedelta
+
+    from heinzel.modules.heinzel._connected_grants import RollingWindowPolicy
+    from heinzel.modules.heinzel._input_receipts import ApprovedInputSnapshots
+
+    current, crud, session, grants, _, state = connected
+    instant = datetime.now(UTC)
+    crud.clock = lambda: instant
+    policy = RollingWindowPolicy(parameter="window", lookback_seconds=60, lookahead_seconds=600, timezone="UTC")
+    proposal = grants.propose_rolling(session, "rolling-receipt", "calendar", "events", {}, policy)
+    proof = grants.issue(session, proposal.request_id, "human-confirmation")
+    confirmation = ApprovalConfirmation()
+    review = proposal.model_dump(mode="json")
+    args = {"session_id": session, "request_id": proposal.request_id, "review": review, "approval_proof": proof}
+    with confirmation.using("heinzel", "approve-connected-read", args):
+        grants.approve(session, proposal.request_id, review, proof, confirmation)
+    snapshots = ApprovedInputSnapshots(grants, current)
+    with crud.repository.main_writer(session) as writer:
+        _, first = snapshots.read(session, writer)
+        first_window = state["last_fixed"]["window"]
+        instant += timedelta(minutes=5)
+        _, second = snapshots.read(session, writer)
+        assert state["last_fixed"]["window"] != first_window
+        assert first.status == "first"
+        assert second.status == "unchanged"
+        state["account"] = "changed"
+        with pytest.raises(HeinzelError):
+            snapshots.read(session, writer)
+        assert state["reads"] == 2
+
+
+def test_input_snapshot_rejects_damaged_history_before_provider_call(connected):
+    from heinzel.modules.heinzel._input_receipts import ApprovedInputSnapshots
+
+    current, crud, session, grants, fixed, state = connected
+    proposal = grants.propose(session, "snapshot-grant", "calendar", "events", fixed)
+    proof = grants.issue(session, proposal.request_id, "human-confirmation")
+    confirmation = ApprovalConfirmation()
+    review = proposal.model_dump(mode="json")
+    args = {"session_id": session, "request_id": proposal.request_id, "review": review, "approval_proof": proof}
+    with confirmation.using("heinzel", "approve-connected-read", args):
+        grants.approve(session, proposal.request_id, review, proof, confirmation)
+    snapshots = ApprovedInputSnapshots(grants, current)
+    with crud.repository.main_writer(session) as writer:
+        snapshots.read(session, writer)
+        before = state["reads"]
+        with crud.repository.control_writer(session) as control:
+            control.append("input-snapshot.observed", data={"version": True})
+        with pytest.raises(HeinzelError, match="history needs repair"):
+            snapshots.read(session, writer)
+        assert state["reads"] == before
+
+
+def test_input_snapshot_rechecks_approval_under_control_writer(connected, monkeypatch):
+    from contextlib import contextmanager
+
+    from heinzel.modules.heinzel._input_receipts import ApprovedInputSnapshots
+
+    current, crud, session, grants, fixed, state = connected
+    proposal = grants.propose(session, "snapshot-grant", "calendar", "events", fixed)
+    proof = grants.issue(session, proposal.request_id, "human-confirmation")
+    confirmation = ApprovalConfirmation()
+    review = proposal.model_dump(mode="json")
+    args = {"session_id": session, "request_id": proposal.request_id, "review": review, "approval_proof": proof}
+    with confirmation.using("heinzel", "approve-connected-read", args):
+        grants.approve(session, proposal.request_id, review, proof, confirmation)
+    snapshots = ApprovedInputSnapshots(grants, current)
+    original = crud.repository.control_writer
+
+    @contextmanager
+    def revoked_before_receipt(session_id):
+        with original(session_id) as control:
+            control.append("connected.revoked", key=proposal.request_id, data={})
+            yield control
+
+    with crud.repository.main_writer(session) as writer:
+        monkeypatch.setattr(crud.repository, "control_writer", revoked_before_receipt)
+        with pytest.raises(HeinzelError):
+            snapshots.read(session, writer)
+    assert state["reads"] == 1  # The read had already started before the simulated revocation.
+    assert not any(e.kind == "input-snapshot.observed" for e in crud.repository.control_read(session).events)
+
+
+def test_input_snapshot_serializes_inflight_read_and_owner_revoke(connected):
+    import threading
+
+    from heinzel.modules.heinzel._input_receipts import ApprovedInputSnapshots
+
+    current, crud, session, grants, fixed, state = connected
+    proposal = grants.propose(session, "snapshot-grant", "calendar", "events", fixed)
+    proof = grants.issue(session, proposal.request_id, "human-confirmation")
+    confirmation = ApprovalConfirmation()
+    review = proposal.model_dump(mode="json")
+    args = {"session_id": session, "request_id": proposal.request_id, "review": review, "approval_proof": proof}
+    with confirmation.using("heinzel", "approve-connected-read", args):
+        grants.approve(session, proposal.request_id, review, proof, confirmation)
+    outcomes = []
+
+    def revoke():
+        with current.local("cli"):
+            try:
+                grants.revoke(session, proposal.request_id)
+            except HeinzelError:
+                outcomes.append("busy")
+
+    def while_reading():
+        thread = threading.Thread(target=revoke)
+        thread.start()
+        thread.join(5)
+        assert not thread.is_alive()
+
+    state["read_hook"] = while_reading
+    with crud.repository.main_writer(session) as writer:
+        _, snapshot = ApprovedInputSnapshots(grants, current).read(session, writer)
+        assert snapshot.status == "first"
+    assert outcomes == ["busy"]
+    grants.revoke(session, proposal.request_id)
+    assert grants.state(session).status == "revoked"
+
+
+def test_input_history_rejects_forged_tool_provenance(connected):
+    from heinzel.modules.heinzel._input_receipts import ApprovedInputSnapshots, snapshot_history
+    from heinzel.modules.heinzel._interactive_turn import interactive_turn_id
+
+    current, crud, session, grants, fixed, _state = connected
+    proposal = grants.propose(session, "snapshot-grant", "calendar", "events", fixed)
+    proof = grants.issue(session, proposal.request_id, "human-confirmation")
+    confirmation = ApprovalConfirmation()
+    review = proposal.model_dump(mode="json")
+    args = {"session_id": session, "request_id": proposal.request_id, "review": review, "approval_proof": proof}
+    with confirmation.using("heinzel", "approve-connected-read", args):
+        grants.approve(session, proposal.request_id, review, proof, confirmation)
+    turn = interactive_turn_id("request")
+    with crud.repository.main_writer(session) as writer:
+        with crud.repository.control_writer(session) as control:
+            control.append("interactive.started", turn=turn, data={"message_id": "request"})
+            control.append(
+                "interactive.tool",
+                turn=turn,
+                key=f"{turn}-1-requested",
+                data={"tool": "connected_read", "status": "requested"},
+            )
+        ApprovedInputSnapshots(grants, current).read(session, writer, turn=turn, call=1)
+        view = snapshot_history(crud, current, session)
+        assert [(item.turn_id, item.status) for item in view.items] == [(turn, "first")]
+        foreign = CallIdentity(
+            Principal("u-" + "b" * 32), "api-bearer", "foreign", "private", frozenset({"private:read"})
+        )
+        with current.using(foreign), pytest.raises(HeinzelError):
+            snapshot_history(crud, current, session)
+        receipt = next(
+            event for event in crud.repository.control_read(session).events if event.kind == "input-snapshot.observed"
+        )
+        with crud.repository.control_writer(session) as control:
+            control.append("input-snapshot.observed", turn=turn, key=f"{turn}-2-input", data=receipt.data)
+        with pytest.raises(HeinzelError, match="matching host read"):
+            snapshot_history(crud, current, session)
+
+
+def test_suggestion_prepare_is_fenced_and_exactly_replayed_before_provider_open(connected, monkeypatch):
+    import json
+
+    from heinzel.modules.heinzel._source_suggestions import SourceSuggestionTools
+
+    current, crud, session, grants, fixed, state = connected
+    repo = crud.repository
+    terms = {"expected_revision": 0, "capability": "calendar", "method": "events", "fixed_arguments": fixed}
+    with repo.main_writer(session) as writer:
+        tools = SourceSuggestionTools(crud, session, "turn", repo.principal_id, writer, lambda: True)
+        first = json.loads(tools.dispatch("source:propose", terms, 1))
+    with pytest.raises(HeinzelError):
+        grants.propose_suggestion(session, "prepare", first["request_id"], 2)
+    assert state["opens"] == 0
+    original = grants._observe
+
+    def observe(*args):
+        with pytest.raises(HeinzelError), repo.main_writer(session):
+            pass
+        return original(*args)
+
+    monkeypatch.setattr(grants, "_observe", observe)
+    proposal = grants.propose_suggestion(session, "prepare", first["request_id"], 1)
+    assert state["opens"] == 1
+    assert proposal.review.fixed_arguments == fixed
+    assert grants.propose_suggestion(session, "prepare", first["request_id"], 1) == proposal
+    assert state["opens"] == 1
+    with pytest.raises(HeinzelError):
+        grants.propose_suggestion(session, "prepare", "other", 1)
+    assert state["opens"] == 1
+    with repo.main_writer(session) as writer:
+        tools = SourceSuggestionTools(crud, session, "turn-2", repo.principal_id, writer, lambda: True)
+        second = json.loads(tools.dispatch("source:propose", {**terms, "expected_revision": 1}, 1))
+    with pytest.raises(HeinzelError):
+        grants.propose_suggestion(session, "prepare-new", first["request_id"], 1)
+    with pytest.raises(HeinzelError):
+        grants.propose_suggestion(session, "prepare", second["request_id"], 2)
+    stranger = CallIdentity(Principal("u-" + "a" * 32), "api-bearer", "other", "private", frozenset({"private:write"}))
+    with current.using(stranger), pytest.raises(HeinzelError):
+        grants.propose_suggestion(session, "prepare-new", second["request_id"], 2)
+    assert state["opens"] == 1
+
+
+def test_preparation_fences_concurrent_suggestion_change_until_persisted(connected, monkeypatch):
+    import json
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event
+
+    from heinzel.modules.heinzel._source_suggestions import SourceSuggestionTools
+
+    current, crud, session, grants, fixed, state = connected
+    repo = crud.repository
+    terms = {"expected_revision": 0, "capability": "calendar", "method": "events", "fixed_arguments": fixed}
+    with repo.main_writer(session) as writer:
+        tool = SourceSuggestionTools(crud, session, "turn", repo.principal_id, writer, lambda: True)
+        original = json.loads(tool.dispatch("source:propose", terms, 1))
+    entered, release = Event(), Event()
+    observe = grants._observe
+
+    def wait_in_provider(*args):
+        entered.set()
+        assert release.wait(5)
+        return observe(*args)
+
+    monkeypatch.setattr(grants, "_observe", wait_in_provider)
+
+    def prepare():
+        with current.local("cli"):
+            return grants.propose_suggestion(session, "prep", original["request_id"], 1)
+
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        future = pool.submit(prepare)
+        try:
+            assert entered.wait(5)
+
+            def amend():
+                with repo.main_writer(session) as writer:
+                    newer = SourceSuggestionTools(crud, session, "next", repo.principal_id, writer, lambda: True)
+                    newer.dispatch("source:propose", {**terms, "expected_revision": 1}, 1)
+
+            with pytest.raises(HeinzelError):
+                amend()
+            assert state["opens"] == 0
+        finally:
+            release.set()
+        assert future.result(timeout=5).review.fixed_arguments == fixed
+    assert state["opens"] == 1
+    with repo.main_writer(session) as writer:
+        newer = SourceSuggestionTools(crud, session, "next", repo.principal_id, writer, lambda: True)
+        newer.dispatch("source:propose", {**terms, "expected_revision": 1}, 1)
+    with pytest.raises(HeinzelError):
+        grants.propose_suggestion(session, "other-prep", original["request_id"], 1)
+    assert state["opens"] == 1
