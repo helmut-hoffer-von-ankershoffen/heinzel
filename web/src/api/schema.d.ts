@@ -774,6 +774,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/heinzel/propose-rolling-connected-read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Propose explicit bounded rolling read terms; this grants no access.
+         * @description Propose explicit bounded rolling read terms; this grants no access.
+         */
+        post: operations["heinzel_propose_rolling_connected_read"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/heinzel/propose-scheduled-agent": {
         parameters: {
             query?: never;
@@ -4750,6 +4770,11 @@ export interface components {
              * @description Registered module and distribution identity, not publisher verification.
              */
             source: string;
+            /**
+             * Window Parameter
+             * @description Unique direct Window parameter eligible for explicit rolling policy, if any.
+             */
+            window_parameter?: string | null;
         };
         /**
          * ConnectedReadReview
@@ -4815,8 +4840,11 @@ export interface components {
         ConnectedReadState: {
             /** @description Currently selected matching schema, if available. */
             descriptor: components["schemas"]["ConnectedReadOption"] | null;
-            /** @description Latest recorded proposal, if any. */
-            proposal: components["schemas"]["ConnectedGrantProposal"] | null;
+            /**
+             * Proposal
+             * @description Latest recorded proposal, if any.
+             */
+            proposal: components["schemas"]["ConnectedGrantProposal"] | components["schemas"]["RollingConnectedGrantProposal"] | null;
             /**
              * Session Id
              * @description Owner-bound personal session.
@@ -8739,6 +8767,73 @@ export interface components {
             version: string;
         };
         /**
+         * RollingConnectedGrantProposal
+         * @description A distinct reviewed rolling-window grant, never an implicit upgrade of a fixed grant.
+         */
+        RollingConnectedGrantProposal: {
+            /**
+             * Binding Sha256
+             * @description Digest of selected source registration and read schema.
+             */
+            binding_sha256: string;
+            /**
+             * Capability
+             * @description The selected capability requiring human review.
+             */
+            capability: string;
+            /**
+             * Kind
+             * @description Explicit rolling window grant variant.
+             * @constant
+             */
+            kind: "rolling-window";
+            /**
+             * Method
+             * @description The selected read-only capability method.
+             */
+            method: string;
+            /**
+             * Request Id
+             * @description The exact connected-read proposal request.
+             */
+            request_id: string;
+            /** @description Exact private provider, account, scope and fixed-argument terms. */
+            review: components["schemas"]["ConnectedReadReview"];
+            /**
+             * Revision
+             * @description The owner-scoped proposal revision.
+             */
+            revision: number;
+            /** @description Exact separately reviewed rolling window policy. */
+            window_policy: components["schemas"]["RollingWindowPolicy"];
+        };
+        /**
+         * RollingWindowPolicy
+         * @description Explicit elapsed-time window around a single trusted UTC instant.
+         */
+        RollingWindowPolicy: {
+            /**
+             * Lookahead Seconds
+             * @description Elapsed seconds after each read.
+             */
+            lookahead_seconds: number;
+            /**
+             * Lookback Seconds
+             * @description Elapsed seconds before each read.
+             */
+            lookback_seconds: number;
+            /**
+             * Parameter
+             * @description The unique direct Window argument.
+             */
+            parameter: string;
+            /**
+             * Timezone
+             * @description IANA display timezone; elapsed bounds use UTC.
+             */
+            timezone: string;
+        };
+        /**
          * RunCommand
          * @description Open the terminal with an `hz` command.
          */
@@ -8944,8 +9039,11 @@ export interface components {
              * @description Whole-minute recurrence interval in seconds.
              */
             cadence_seconds: number;
-            /** @description Exact separately approved connected read, or null for no external read. */
-            connected_grant?: components["schemas"]["ConnectedGrantProposal"] | null;
+            /**
+             * Connected Grant
+             * @description Exact separately approved connected read, or null for no external read.
+             */
+            connected_grant?: components["schemas"]["ConnectedGrantProposal"] | components["schemas"]["RollingConnectedGrantProposal"] | null;
             /**
              * Contract Request Id
              * @description Accepted contract request.
@@ -12353,6 +12451,37 @@ export interface components {
              */
             session_id: string;
         };
+        /** heinzel_propose_rolling_connected_read_Input */
+        heinzel_propose_rolling_connected_read_Input: {
+            /**
+             * Capability
+             * @description Selected read capability.
+             */
+            capability: string;
+            /**
+             * Fixed Arguments
+             * @description Fixed arguments excluding the rolling window.
+             */
+            fixed_arguments: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            /**
+             * Method
+             * @description Selected read method.
+             */
+            method: string;
+            /**
+             * Request Id
+             * @description A stable client request id; reuse it only for an exact retry.
+             */
+            request_id: string;
+            /**
+             * Session Id
+             * @description The stable personal session id returned by new-chat or sessions.
+             */
+            session_id: string;
+            window_policy: components["schemas"]["RollingWindowPolicy"];
+        };
         /** heinzel_propose_scheduled_agent_Input */
         heinzel_propose_scheduled_agent_Input: {
             /**
@@ -12665,6 +12794,8 @@ export type SchemaRendererBlock = components['schemas']['RendererBlock'];
 export type SchemaRequirementStatus = components['schemas']['RequirementStatus'];
 export type SchemaRestart = components['schemas']['Restart'];
 export type SchemaRestarted = components['schemas']['Restarted'];
+export type SchemaRollingConnectedGrantProposal = components['schemas']['RollingConnectedGrantProposal'];
+export type SchemaRollingWindowPolicy = components['schemas']['RollingWindowPolicy'];
 export type SchemaRunCommand = components['schemas']['RunCommand'];
 export type SchemaRunMeasure = components['schemas']['RunMeasure'];
 export type SchemaRunOperation = components['schemas']['RunOperation'];
@@ -12765,6 +12896,7 @@ export type SchemaHeinzelProposeAgentScheduleInput = components['schemas']['hein
 export type SchemaHeinzelProposeCheckInInput = components['schemas']['heinzel_propose_check_in_Input'];
 export type SchemaHeinzelProposeConnectedReadInput = components['schemas']['heinzel_propose_connected_read_Input'];
 export type SchemaHeinzelProposeModelPolicyInput = components['schemas']['heinzel_propose_model_policy_Input'];
+export type SchemaHeinzelProposeRollingConnectedReadInput = components['schemas']['heinzel_propose_rolling_connected_read_Input'];
 export type SchemaHeinzelProposeScheduledAgentInput = components['schemas']['heinzel_propose_scheduled_agent_Input'];
 export type SchemaHeinzelProposeSkillDraftInput = components['schemas']['heinzel_propose_skill_draft_Input'];
 export type SchemaHeinzelProposeSkillSharingInput = components['schemas']['heinzel_propose_skill_sharing_Input'];
@@ -13231,7 +13363,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ConnectedGrantProposal"];
+                    "application/json": components["schemas"]["ConnectedGrantProposal"] | components["schemas"]["RollingConnectedGrantProposal"];
                 };
             };
             /** @description Validation Error */
@@ -13466,7 +13598,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ConnectedGrantProposal"];
+                    "application/json": components["schemas"]["ConnectedGrantProposal"] | components["schemas"]["RollingConnectedGrantProposal"];
                 };
             };
             /** @description Validation Error */
@@ -13974,6 +14106,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ModelPolicyReview"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    heinzel_propose_rolling_connected_read: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["heinzel_propose_rolling_connected_read_Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RollingConnectedGrantProposal"];
                 };
             };
             /** @description Validation Error */

@@ -3,11 +3,12 @@
 import copy
 import json
 import secrets
-from datetime import timedelta
+from datetime import UTC, timedelta
 from pathlib import Path
 from typing import Literal
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, model_validator
 
 from heinzel import (
     Config,
@@ -32,7 +33,11 @@ from heinzel.kernel._approval import (
     arguments_hash,
     consume_approval,
 )
-from heinzel.modules.heinzel._capability_review import describe_capability_read, validate_capability_read_arguments
+from heinzel.modules.heinzel._capability_review import (
+    describe_capability_read,
+    rolling_window_parameter,
+    validate_capability_read_arguments,
+)
 from heinzel.modules.heinzel._session_bodies import immutable_body
 from heinzel.modules.heinzel._session_crud import SessionCrud
 from heinzel.modules.heinzel._session_models import RequestId, SessionId
@@ -86,6 +91,44 @@ class ConnectedGrantProposal(BaseModel):
     review: ConnectedReadReview = Field(description="Exact private provider, account, scope and fixed-argument terms.")
 
 
+class RollingWindowPolicy(BaseModel):
+    """Explicit elapsed-time window around a single trusted UTC instant."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    parameter: str = Field(min_length=1, max_length=128, description="The unique direct Window argument.")
+    lookback_seconds: int = Field(strict=True, ge=0, le=2678400, description="Elapsed seconds before each read.")
+    lookahead_seconds: int = Field(strict=True, ge=0, le=2678400, description="Elapsed seconds after each read.")
+    timezone: str = Field(min_length=1, max_length=128, description="IANA display timezone; elapsed bounds use UTC.")
+
+    @model_validator(mode="after")
+    def validate_window(self) -> "RollingWindowPolicy":
+        """Require a positive span no longer than 31 days and a valid display timezone.
+
+        Raises:
+            ValueError: If the span or timezone is invalid.
+        """
+        if not 0 < self.lookback_seconds + self.lookahead_seconds <= 31 * 86400:
+            msg = "The rolling window span must be between one second and 31 days"
+            raise ValueError(msg)
+        try:
+            ZoneInfo(self.timezone)
+        except (ZoneInfoNotFoundError, ValueError):
+            msg = "The rolling window timezone is invalid"
+            raise ValueError(msg) from None
+        return self
+
+
+class RollingConnectedGrantProposal(ConnectedGrantProposal):
+    """A distinct reviewed rolling-window grant, never an implicit upgrade of a fixed grant."""
+
+    kind: Literal["rolling-window"] = Field(description="Explicit rolling window grant variant.")
+    window_policy: RollingWindowPolicy = Field(description="Exact separately reviewed rolling window policy.")
+
+
+ConnectedGrant = ConnectedGrantProposal | RollingConnectedGrantProposal
+_GRANT = TypeAdapter(ConnectedGrant)
+
+
 class ConnectedReadOption(BaseModel):
     """Host-selected registered capability description; this conveys no read authority."""
 
@@ -94,13 +137,16 @@ class ConnectedReadOption(BaseModel):
     provider: str = Field(description="Selected adapter name.")
     source: str = Field(description="Registered module and distribution identity, not publisher verification.")
     input_schema: dict[str, JsonValue] = Field(description="Exact read method argument schema.")
+    window_parameter: str | None = Field(
+        default=None, description="Unique direct Window parameter eligible for explicit rolling policy, if any."
+    )
 
 
 class ConnectedReadState(BaseModel):
     """Latest owner-scoped proposal and recorded status, without querying the provider."""
 
     session_id: SessionId = Field(description="Owner-bound personal session.")
-    proposal: ConnectedGrantProposal | None = Field(description="Latest recorded proposal, if any.")
+    proposal: ConnectedGrant | None = Field(description="Latest recorded proposal, if any.")
     status: Literal["none", "proposed", "approved", "revoked", "stale"] = Field(
         description="Recorded state; source and account are revalidated before each read."
     )
@@ -120,6 +166,13 @@ class ConnectedReadGrants:
         if kernel.resolve(CurrentUser) is not current:
             msg = "The connected read owner service changed"
             raise HeinzelError(msg)
+
+    @staticmethod
+    def _window_parameter(capability: str, method: str) -> str | None:
+        try:
+            return rolling_window_parameter(capability, method)
+        except HeinzelError:
+            return None
 
     def options(self, session: str) -> list[ConnectedReadOption]:
         """List currently registered owner-selected read methods without opening a provider."""
@@ -141,6 +194,7 @@ class ConnectedReadGrants:
                             provider=desc.adapter,
                             source=f"{desc.owner_module} ({desc.distribution} {desc.version})",
                             input_schema=desc.schema,
+                            window_parameter=self._window_parameter(capability, method),
                         )
                     )
             except HeinzelError:
@@ -178,6 +232,7 @@ class ConnectedReadGrants:
                     provider=desc.adapter,
                     source=f"{desc.owner_module} ({desc.distribution} {desc.version})",
                     input_schema=desc.schema,
+                    window_parameter=self._window_parameter(proposal.capability, proposal.method),
                 )
         except HeinzelError:
             pass
@@ -250,10 +305,10 @@ class ConnectedReadGrants:
         finally:
             _close_review_lease(lease)
 
-    def _body(self, session: str, event: SessionEvent) -> ConnectedGrantProposal:
-        return ConnectedGrantProposal.model_validate(self.crud.read_body(session, event))
+    def _body(self, session: str, event: SessionEvent) -> ConnectedGrant:
+        return _GRANT.validate_python(self.crud.read_body(session, event))
 
-    def _intent(self, session: str, proposal: ConnectedGrantProposal) -> ApprovalIntent:
+    def _intent(self, session: str, proposal: ConnectedGrant) -> ApprovalIntent:
         return ApprovalIntent(
             owner=self.owner,
             audience="personal-connected-read",
@@ -312,7 +367,101 @@ class ConnectedReadGrants:
             writer.append("connected.proposed", key=request, data=body.model_dump(mode="json"))
         return proposal
 
-    def _proposal(self, session: str, request: str) -> ConnectedGrantProposal:
+    def _rolling_arguments(
+        self, capability: str, method: str, fixed: dict[str, JsonValue], policy: RollingWindowPolicy
+    ) -> dict[str, JsonValue]:
+        parameter = rolling_window_parameter(capability, method)
+        if parameter != policy.parameter or parameter in fixed:
+            msg = "The rolling window must replace the unique Window argument"
+            raise HeinzelError(msg)
+        now = self.crud.clock()
+        if now.tzinfo is None or now.utcoffset() is None:
+            msg = "The host clock must be timezone aware"
+            raise HeinzelError(msg)
+        now = now.astimezone(UTC)
+        start = (now - timedelta(seconds=policy.lookback_seconds)).isoformat().replace("+00:00", "Z")
+        end = (now + timedelta(seconds=policy.lookahead_seconds)).isoformat().replace("+00:00", "Z")
+        return {**copy.deepcopy(fixed), parameter: {"since": start, "until": end}}
+
+    def _arguments(self, grant: ConnectedGrant) -> dict[str, JsonValue]:
+        fixed = copy.deepcopy(grant.review.fixed_arguments)
+        if isinstance(grant, RollingConnectedGrantProposal):
+            if grant.window_policy.parameter not in fixed:
+                msg = "The saved rolling window is invalid"
+                raise HeinzelError(msg)
+            del fixed[grant.window_policy.parameter]
+            return self._rolling_arguments(grant.capability, grant.method, fixed, grant.window_policy)
+        return fixed
+
+    def _same_review(self, grant: ConnectedGrant, review: ConnectedReadReview) -> bool:
+        observed = review.model_dump(mode="json")
+        expected = grant.review.model_dump(mode="json")
+        if isinstance(grant, RollingConnectedGrantProposal):
+            # _observe already compared the derived full arguments exactly before this substitution.
+            observed["fixed_arguments"] = expected["fixed_arguments"]
+        return arguments_hash(observed) == arguments_hash(expected)
+
+    def propose_rolling(  # noqa: PLR0913, PLR0917 - exact reviewed terms
+        self,
+        session: str,
+        request: str,
+        capability: str,
+        method: str,
+        fixed: dict[str, JsonValue],
+        policy: RollingWindowPolicy,
+    ) -> RollingConnectedGrantProposal:
+        """Stage a separately reviewed bounded rolling window; never approve or read data.
+
+        Raises:
+            HeinzelError: If owner, policy, source or stable request identity cannot be verified.
+        """
+        self._human()
+        _SESSION.validate_python(session)
+        _REQUEST.validate_python(request)
+        self.crud.repository.control_read(session)
+        args = self._rolling_arguments(capability, method, fixed, policy)
+        binding, review = self._observe(session, capability, method, args)
+        with self.crud.repository.main_writer(session), self.crud.repository.control_writer(session) as writer:
+            events = self.crud.repository.control_read(session).events
+            existing = [event for event in events if event.kind == "connected.proposed" and event.key == request]
+            if existing:
+                if len(existing) != 1:
+                    msg = "This rolling request is inconsistent"
+                    raise HeinzelError(msg)
+                previous = self._body(session, existing[0])
+                if (
+                    not isinstance(previous, RollingConnectedGrantProposal)
+                    or previous.capability != capability
+                    or previous.method != method
+                    or previous.binding_sha256 != binding
+                    or arguments_hash(previous.window_policy.model_dump(mode="json"))
+                    != arguments_hash(policy.model_dump(mode="json"))
+                    or not self._same_review(previous, review)
+                ):
+                    msg = "This request identifies different rolling read terms"
+                    raise HeinzelError(msg)
+                old_fixed = copy.deepcopy(previous.review.fixed_arguments)
+                del old_fixed[policy.parameter]
+                if arguments_hash(old_fixed) != arguments_hash(fixed):
+                    msg = "This request identifies different rolling read arguments"
+                    raise HeinzelError(msg)
+                return previous
+            revisions = [self._body(session, event).revision for event in events if event.kind == "connected.proposed"]
+            proposal = RollingConnectedGrantProposal(
+                request_id=request,
+                revision=max(revisions, default=0) + 1,
+                capability=capability,
+                method=method,
+                binding_sha256=binding,
+                review=review,
+                kind="rolling-window",
+                window_policy=policy,
+            )
+            body = immutable_body(writer, "connected-read-grant", proposal.model_dump(mode="json"), control=True)
+            writer.append("connected.proposed", key=request, data=body.model_dump(mode="json"))
+            return proposal
+
+    def _proposal(self, session: str, request: str) -> ConnectedGrant:
         events = self.crud.repository.control_read(session).events
         proposals = [e for e in events if e.kind == "connected.proposed"]
         matches = [e for e in proposals if e.key == request]
@@ -320,10 +469,8 @@ class ConnectedReadGrants:
             msg = "The connected read proposal changed; review it again"
             raise HeinzelError(msg)
         proposal = self._body(session, matches[0])
-        binding, review = self._observe(session, proposal.capability, proposal.method, proposal.review.fixed_arguments)
-        if binding != proposal.binding_sha256 or arguments_hash(review.model_dump(mode="json")) != arguments_hash(
-            proposal.review.model_dump(mode="json")
-        ):
+        binding, review = self._observe(session, proposal.capability, proposal.method, self._arguments(proposal))
+        if binding != proposal.binding_sha256 or not self._same_review(proposal, review):
             msg = "The connected read source or account changed; review it again"
             raise HeinzelError(msg)
         return proposal
@@ -348,14 +495,14 @@ class ConnectedReadGrants:
             writer.append("approval.issued", key=digest, data=record.model_dump(mode="json"))
         return proof
 
-    def review(self, session: str, request: str) -> ConnectedGrantProposal:
+    def review(self, session: str, request: str) -> ConnectedGrant:
         """Reobserve the exact current proposal for a trusted human review."""
         self._human()
         return self._proposal(session, request)
 
     def approve(
         self, session: str, request: str, review: dict[str, JsonValue], proof: str, confirmation: ApprovalConfirmation
-    ) -> ConnectedGrantProposal:
+    ) -> ConnectedGrant:
         """Consume exact human-confirmed evidence without running a provider read.
 
         Raises:
@@ -404,7 +551,7 @@ class ConnectedReadGrants:
             )
         return proposal
 
-    def approved(self, session: str) -> ConnectedGrantProposal:
+    def approved(self, session: str) -> ConnectedGrant:
         """Project only the latest unrevoked grant with exact trusted issuance evidence.
 
         Raises:
@@ -449,7 +596,7 @@ class ConnectedReadGrants:
             raise HeinzelError(msg)
         return grant
 
-    def verify_approved(self, session: str, expected: ConnectedGrantProposal) -> None:
+    def verify_approved(self, session: str, expected: ConnectedGrant) -> None:
         """Recheck the exact current grant and selected account before an authorized host launch.
 
         Raises:
@@ -459,10 +606,8 @@ class ConnectedReadGrants:
         if arguments_hash(grant.model_dump(mode="json")) != arguments_hash(expected.model_dump(mode="json")):
             msg = "The connected read grant changed"
             raise HeinzelError(msg)
-        binding, review = self._observe(session, grant.capability, grant.method, grant.review.fixed_arguments)
-        if binding != grant.binding_sha256 or arguments_hash(review.model_dump(mode="json")) != arguments_hash(
-            grant.review.model_dump(mode="json")
-        ):
+        binding, review = self._observe(session, grant.capability, grant.method, self._arguments(grant))
+        if binding != grant.binding_sha256 or not self._same_review(grant, review):
             msg = "The connected read source or account changed"
             raise HeinzelError(msg)
 
@@ -481,7 +626,7 @@ class ConnectedReadGrants:
             return None
         return {
             "name": "connected_read",
-            "description": f"Read the approved {grant.capability}.{grant.method} using the fixed reviewed arguments.",
+            "description": f"Read the approved {grant.capability}.{grant.method} with host-controlled arguments.",
             "schema": {"type": "object", "properties": {}, "additionalProperties": False},
         }
 
@@ -524,13 +669,17 @@ class ConnectedReadGrants:
         if descriptor.binding_sha256 != grant.binding_sha256 or descriptor.owner_module != record.qualname:
             msg = "The connected read provider changed"
             raise HeinzelError(msg)
-        lease = _open_lease(service, session, grant.review.operation, copy.deepcopy(grant.review.fixed_arguments))
+        fixed = self._arguments(grant)
+        fixed_hash = arguments_hash(fixed)
+        lease = _open_lease(service, session, grant.review.operation, copy.deepcopy(fixed))
         invoked = False
         try:
-            if arguments_hash(_review_lease(lease).model_dump(mode="json")) != arguments_hash(
-                grant.review.model_dump(mode="json")
-            ) or arguments_hash(self.approved(session).model_dump(mode="json")) != arguments_hash(
-                grant.model_dump(mode="json")
+            live_review = _review_lease(lease)
+            if (
+                arguments_hash(live_review.fixed_arguments) != fixed_hash
+                or not self._same_review(grant, live_review)
+                or arguments_hash(self.approved(session).model_dump(mode="json"))
+                != arguments_hash(grant.model_dump(mode="json"))
             ):
                 msg = "The connected read approval or account changed"
                 raise HeinzelError(msg)

@@ -30,9 +30,17 @@ try {
   await terms.getByText("These exact terms were accepted.").waitFor();
   const panel = page.getByRole("region", { name: "Connected read review" });
   await panel.getByLabel("Read operation").selectOption("calendar.events");
-  await panel
-    .getByLabel("Fixed arguments (JSON)")
-    .fill(JSON.stringify({ window: { since: "2026-01-01T00:00:00Z", until: "2026-01-02T00:00:00Z" } }));
+  if (process.argv[5] === "rolling") {
+    await panel.getByRole("checkbox", { name: /Use a rolling window/ }).check();
+    await panel.getByLabel("Lookback seconds").fill("60");
+    await panel.getByLabel("Lookahead seconds").fill("600");
+    await panel.getByLabel("Display timezone (IANA)").fill("Europe/Berlin");
+    await panel.getByLabel("Fixed arguments (JSON)").fill("{}");
+  } else {
+    await panel
+      .getByLabel("Fixed arguments (JSON)")
+      .fill(JSON.stringify({ window: { since: "2026-01-01T00:00:00Z", until: "2026-01-02T00:00:00Z" } }));
+  }
   await panel.getByRole("button", { name: "Prepare review" }).click();
   await panel.getByText("Account: fixture-account").waitFor();
   await panel.getByRole("button", { name: "Review access" }).click();
@@ -53,6 +61,7 @@ try {
   const card = schedule.getByRole("heading", { name: "Review agent schedule" }).locator("../..");
   assert.match(await card.innerText(), /fixture-account/);
   assert.match(await card.innerText(), /fixture-read/);
+  if (process.argv[5] === "rolling") assert.match(await card.innerText(), /rolling-window/);
   assert.doesNotMatch(await card.innerText(), /approval_proof/);
   await page.evaluate(axe);
   const scheduleViolations = await schedule.evaluate(async (node) =>
@@ -72,7 +81,10 @@ try {
   assert.equal(finished.deduplicated, true);
   await page.reload();
   await page.getByRole("tab", { name: "Chat", exact: true }).click();
-  await page.getByText(/Tool activity for this reply/).nth(1).click();
+  await page
+    .getByText(/Tool activity for this reply/)
+    .nth(1)
+    .click();
   await page
     .getByText(/connected_read · completed/)
     .first()

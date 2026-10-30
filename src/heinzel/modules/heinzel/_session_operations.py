@@ -25,10 +25,13 @@ from heinzel.modules.heinzel._autonomous_schedule import (
     ScheduleReviewView,
 )
 from heinzel.modules.heinzel._connected_grants import (
+    ConnectedGrant,
     ConnectedGrantProposal,
     ConnectedReadGrants,
     ConnectedReadOption,
     ConnectedReadState,
+    RollingConnectedGrantProposal,
+    RollingWindowPolicy,
 )
 from heinzel.modules.heinzel._contract_review import ContractReview, ContractReviewView
 from heinzel.modules.heinzel._model_grants import ModelGrants
@@ -397,10 +400,25 @@ def _register_connected_read_operations(module: Module) -> None:
         """Observe and propose exact connected-read terms; this grants no access."""
         return service.propose(session_id, request_id, capability, method, fixed_arguments)
 
+    @module.operation(private=True, read_only=False, heads={"web", "api-private"}, audience="everyday")
+    def propose_rolling_connected_read(  # noqa: PLR0913, PLR0917 - exact explicit reviewed terms
+        service: ConnectedReadGrants,
+        session_id: Identity,
+        request_id: Request,
+        capability: Annotated[str, Field(description="Selected read capability.")],
+        method: Annotated[str, Field(description="Selected read method.")],
+        fixed_arguments: Annotated[
+            dict[str, JsonValue], Field(description="Fixed arguments excluding the rolling window.")
+        ],
+        window_policy: RollingWindowPolicy,
+    ) -> RollingConnectedGrantProposal:
+        """Propose explicit bounded rolling read terms; this grants no access."""
+        return service.propose_rolling(session_id, request_id, capability, method, fixed_arguments, window_policy)
+
     @module.operation(private=True, heads={"web", "api-private"}, audience="everyday")
     def connected_read_review(
         service: ConnectedReadGrants, session_id: Identity, request_id: Request
-    ) -> ConnectedGrantProposal:
+    ) -> ConnectedGrant:
         """Inspect current exact connected-read proposal; this does not approve it."""
         return service.review(session_id, request_id)
 
@@ -420,7 +438,7 @@ def _register_connected_read_operations(module: Module) -> None:
             dict[str, JsonValue], Field(description="The exact reviewed provider, source, account and read terms.")
         ],
         approval_proof: Annotated[str, Field(description="In-process proof from the human confirmation boundary.")],
-    ) -> ConnectedGrantProposal:
+    ) -> ConnectedGrant:
         """Record only a human-confirmed exact connected-read grant; does not execute it."""
         return service.approve(session_id, request_id, review, approval_proof, confirmation)
 

@@ -51,7 +51,7 @@ def _setup_kernel(make_kernel, tmp_path, monkeypatch):
             )
 
         def read(self, arguments):
-            reads.append(arguments)
+            reads.append({"arguments": arguments, "fixed": self.fixed})
             return {"items": ["fictional result"]}
 
         def close(self):
@@ -87,9 +87,25 @@ def _setup_kernel(make_kernel, tmp_path, monkeypatch):
     return kernel, reads
 
 
+def _assert_read(reads, rolling):
+    assert len(reads) == 1
+    assert reads[0]["arguments"] == {}
+    if rolling:
+        from datetime import UTC, datetime
+
+        window = reads[0]["fixed"]["window"]
+        since = datetime.fromisoformat(window["since"])
+        until = datetime.fromisoformat(window["until"])
+        assert (until - since).total_seconds() == 660
+        assert abs((datetime.now(UTC) - since).total_seconds() - 60) < 60
+    else:
+        assert reads[0]["fixed"]["window"]["since"] == "2026-01-01T00:00:00Z"
+
+
 @pytest.mark.timeout(600)
 @pytest.mark.parametrize("engine", ["chromium", "webkit"])
-def test_mounted_scheduled_connected_read(make_kernel, tmp_path, monkeypatch, engine):
+@pytest.mark.parametrize("rolling", [False, True])
+def test_mounted_scheduled_connected_read(make_kernel, tmp_path, monkeypatch, engine, rolling):
     web_build.ensure_built()
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
     monkeypatch.setenv("PLAYWRIGHT_BROWSERS_PATH", str(BROWSER_CACHE))
@@ -164,6 +180,7 @@ print(json.dumps({{'type':'result','subtype':'success','is_error':False,'permiss
                 urls[0],
                 engine,
                 str(tmp_path),
+                "rolling" if rolling else "fixed",
             ],
             cwd=REPO,
             capture_output=True,
@@ -175,7 +192,7 @@ print(json.dumps({{'type':'result','subtype':'success','is_error':False,'permiss
             pytest.fail((run.stderr + "\n" + run.stdout).replace(token, "<redacted-session>"))
         assert json.loads(run.stdout.strip().splitlines()[-1])["accepted"] is True
         assert marker.read_text() == "xxxx"
-        assert reads == [{}]
+        _assert_read(reads, rolling)
         assert probe["failure"] is None
         assert probe["deduplicated"] is True
     finally:

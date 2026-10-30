@@ -93,7 +93,7 @@ def _fixture(make_kernel, tmp_path, monkeypatch):
     return client, kernel, current, session, state
 
 
-def _approve_read(client, kernel, current, session, state):
+def _approve_read(client, kernel, current, session, state, rolling):  # noqa: PLR0913, PLR0917
     body = {
         "session_id": session,
         "request_id": "grant-one",
@@ -101,7 +101,17 @@ def _approve_read(client, kernel, current, session, state):
         "method": "events",
         "fixed_arguments": {"window": {"since": "2026-01-01T00:00:00Z", "until": "2026-01-02T00:00:00Z"}},
     }
-    proposed = client.post("/api/heinzel/propose-connected-read", headers=AUTH, json=body)
+    endpoint = "/api/heinzel/propose-connected-read"
+    if rolling:
+        endpoint = "/api/heinzel/propose-rolling-connected-read"
+        body["fixed_arguments"] = {}
+        body["window_policy"] = {
+            "parameter": "window",
+            "lookback_seconds": 60,
+            "lookahead_seconds": 600,
+            "timezone": "Europe/Berlin",
+        }
+    proposed = client.post(endpoint, headers=AUTH, json=body)
     assert proposed.status_code == 200, proposed.text
     assert state["reads"] == 0
     assert (
@@ -149,11 +159,12 @@ def _invalidate_grant(client, session, change):
 
 
 @pytest.mark.parametrize("change", ["revoked", "replaced"])
-def test_scheduled_read_requires_exact_separate_consent_and_survives_restart(
-    make_kernel, tmp_path, monkeypatch, settings, change
+@pytest.mark.parametrize("rolling", [False, True])
+def test_scheduled_read_requires_exact_separate_consent_and_survives_restart(  # noqa: PLR0913, PLR0917
+    make_kernel, tmp_path, monkeypatch, settings, change, rolling
 ):
     client, kernel, current, session, state = _fixture(make_kernel, tmp_path, monkeypatch)
-    proposed = _approve_read(client, kernel, current, session, state)
+    proposed = _approve_read(client, kernel, current, session, state, rolling)
     with current.local("cli"):
         crud = kernel.resolve(ConnectedReadGrants).crud
         crud.propose_scheduled_agent(session, "contract", "Read the approved source", None, 30)

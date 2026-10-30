@@ -615,6 +615,7 @@ $ hz heinzel [OPTIONS] COMMAND [ARGS]...
 * `propose-check-in`: Propose local five-minute check-ins; the...
 * `propose-connected-read`: Observe and propose exact connected-read...
 * `propose-model-policy`: Stage an inert model policy for...
+* `propose-rolling-connected-read`: Propose explicit bounded rolling read...
 * `propose-scheduled-agent`: Save an inert agent execution proposal; it...
 * `propose-skill-draft`: Store a private skill draft; no file is...
 * `propose-skill-sharing`: Request review of exact private draft and...
@@ -1347,6 +1348,31 @@ $ hz heinzel propose-model-policy [OPTIONS] {session_id} {billing} {JSON}
 * `session_id`: [required]
 * `billing`: Billing policy; only api-priced is currently supported.  [required]
 * `JSON`: Exact model grant terms and request identity.  [required]
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz heinzel propose-rolling-connected-read`
+
+Propose explicit bounded rolling read terms; this grants no access.
+
+**Usage**:
+
+```console
+$ hz heinzel propose-rolling-connected-read [OPTIONS] {session_id} {request_id} {capability} {method} {JSON} {JSON}
+```
+
+**Arguments**:
+
+* `session_id`: [required]
+* `request_id`: [required]
+* `capability`: Selected read capability.  [required]
+* `method`: Selected read method.  [required]
+* `JSON`: Fixed arguments excluding the rolling window.  [required]
+* `JSON`: [required]
 
 **Options**:
 

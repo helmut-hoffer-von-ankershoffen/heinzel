@@ -2,7 +2,13 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { useSearchParams } from "react-router";
 import { chatKey } from "@/api/chat";
-import { api, problem, type SchemaChatSession, type SchemaConnectedGrantProposal } from "@/api/client";
+import {
+  api,
+  problem,
+  type SchemaChatSession,
+  type SchemaConnectedGrantProposal,
+  type SchemaRollingConnectedGrantProposal,
+} from "@/api/client";
 import { ActionCard } from "@/chat/Conversation";
 import { Button } from "@/components/ui/button";
 
@@ -28,11 +34,16 @@ export function ConnectedReadReview({ sessionId }: { sessionId: string }) {
   const [params, setParams] = useSearchParams();
   const [selection, setSelection] = useState("");
   const [argumentsText, setArgumentsText] = useState("{}");
+  const [rolling, setRolling] = useState(false);
+  const [lookback, setLookback] = useState("");
+  const [lookahead, setLookahead] = useState("");
+  const [timezone, setTimezone] = useState("");
   const [pendingProposal, setPendingProposal] = useState<{
     request_id: string;
     capability: string;
     method: string;
     fixed_arguments: Record<string, never>;
+    window_policy?: { parameter: string; lookback_seconds: number; lookahead_seconds: number; timezone: string };
   } | null>(() => {
     try {
       const saved = JSON.parse(sessionStorage.getItem(`hz.connected-proposal:${sessionId}`) ?? "null");
@@ -128,6 +139,27 @@ export function ConnectedReadReview({ sessionId }: { sessionId: string }) {
           method: option.method,
           fixed_arguments: fixed as Record<string, never>,
         };
+        if (rolling) {
+          if (!option.window_parameter || !lookback.trim() || !lookahead.trim() || !timezone.trim())
+            throw new Error("Complete the rolling window terms");
+          const before = Number(lookback),
+            after = Number(lookahead);
+          if (
+            !Number.isInteger(before) ||
+            !Number.isInteger(after) ||
+            before < 0 ||
+            after < 0 ||
+            before + after < 1 ||
+            before + after > 31 * 86400
+          )
+            throw new Error("Invalid rolling window");
+          request.window_policy = {
+            parameter: option.window_parameter,
+            lookback_seconds: before,
+            lookahead_seconds: after,
+            timezone: timezone.trim(),
+          };
+        }
         // Persist before sending so a lost response can be retried with the exact same request.
         sessionStorage.setItem(`hz.connected-proposal:${sessionId}`, JSON.stringify(request));
         setPendingProposal(request);
@@ -139,7 +171,15 @@ export function ConnectedReadReview({ sessionId }: { sessionId: string }) {
     setBusy(true);
     setError(false);
     try {
-      await result(api.POST("/heinzel/propose-connected-read", { body: { ...request, session_id: sessionId } }));
+      if (request.window_policy) {
+        await result(
+          api.POST("/heinzel/propose-rolling-connected-read", {
+            body: { ...request, window_policy: request.window_policy, session_id: sessionId },
+          }),
+        );
+      } else {
+        await result(api.POST("/heinzel/propose-connected-read", { body: { ...request, session_id: sessionId } }));
+      }
       await client.invalidateQueries({ queryKey: ["heinzel", "connected-read-state", sessionId] });
       sessionStorage.removeItem(`hz.connected-proposal:${sessionId}`);
       setPendingProposal(null);
@@ -293,6 +333,58 @@ export function ConnectedReadReview({ sessionId }: { sessionId: string }) {
               </pre>
             </details>
           )}
+          {options.data.find((item) => `${item.capability}.${item.method}` === selection)?.window_parameter && (
+            <div className="space-y-2">
+              <label>
+                <input
+                  type="checkbox"
+                  checked={rolling}
+                  disabled={busy || !!pendingProposal}
+                  onChange={(event) => setRolling(event.target.checked)}
+                />{" "}
+                Use a rolling window instead of a fixed window
+              </label>
+              {rolling && (
+                <div className="space-y-2">
+                  <p>
+                    Specify elapsed seconds around the host clock. The selected timezone is for display; bounds are
+                    computed in UTC. Omit the window from fixed arguments.
+                  </p>
+                  <label className="block">
+                    Lookback seconds{" "}
+                    <input
+                      className="rounded border p-1"
+                      type="number"
+                      min="0"
+                      value={lookback}
+                      disabled={busy || !!pendingProposal}
+                      onChange={(event) => setLookback(event.target.value)}
+                    />
+                  </label>
+                  <label className="block">
+                    Lookahead seconds{" "}
+                    <input
+                      className="rounded border p-1"
+                      type="number"
+                      min="0"
+                      value={lookahead}
+                      disabled={busy || !!pendingProposal}
+                      onChange={(event) => setLookahead(event.target.value)}
+                    />
+                  </label>
+                  <label className="block">
+                    Display timezone (IANA){" "}
+                    <input
+                      className="rounded border p-1"
+                      value={timezone}
+                      disabled={busy || !!pendingProposal}
+                      onChange={(event) => setTimezone(event.target.value)}
+                    />
+                  </label>
+                </div>
+              )}
+            </div>
+          )}
           <label className="block">
             Fixed arguments (JSON)
             <textarea
@@ -365,7 +457,7 @@ export function ConnectedReadReview({ sessionId }: { sessionId: string }) {
   );
 }
 
-function Terms({ proposal }: { proposal: SchemaConnectedGrantProposal }) {
+function Terms({ proposal }: { proposal: SchemaConnectedGrantProposal | SchemaRollingConnectedGrantProposal }) {
   const terms = proposal.review;
   return (
     <div className="space-y-1 break-words">
@@ -377,7 +469,15 @@ function Terms({ proposal }: { proposal: SchemaConnectedGrantProposal }) {
       <p>Provider-reported source revision: {terms.source_revision}</p>
       <p>Operation: {terms.operation}</p>
       <p>Provider-reported scopes: {terms.provider_scopes.join(", ") || "none"}</p>
-      <p>Fixed arguments:</p>
+      {"window_policy" in proposal && (
+        <p>
+          Rolling window: {proposal.window_policy.lookback_seconds} seconds before and{" "}
+          {proposal.window_policy.lookahead_seconds} seconds after the host clock, display timezone{" "}
+          {proposal.window_policy.timezone}. The window below is the review-time example; each read calculates new UTC
+          bounds.
+        </p>
+      )}
+      <p>Reviewed arguments{"window_policy" in proposal ? " and example window" : ""}:</p>
       <pre className="overflow-x-auto whitespace-pre-wrap break-all">
         {JSON.stringify(terms.fixed_arguments, null, 2)}
       </pre>

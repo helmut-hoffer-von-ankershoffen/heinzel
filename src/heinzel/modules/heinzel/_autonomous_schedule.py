@@ -23,7 +23,7 @@ from heinzel.kernel._approval import (
     arguments_hash,
     consume_approval,
 )
-from heinzel.modules.heinzel._connected_grants import ConnectedGrantProposal
+from heinzel.modules.heinzel._connected_grants import ConnectedGrant
 from heinzel.modules.heinzel._contract_review import ContractReview
 from heinzel.modules.heinzel._interactive_turn import interactive_turn_id
 from heinzel.modules.heinzel._session_bodies import immutable_body
@@ -61,7 +61,7 @@ class ScheduleBinding(BaseModel):
         default="current-slot-after-approval", description="Current interval becomes eligible only after approval."
     )
     status: Literal["proposed"] = Field(default="proposed", description="Proposal status; approval is separate.")
-    connected_grant: ConnectedGrantProposal | None = Field(
+    connected_grant: ConnectedGrant | None = Field(
         default=None, description="Exact separately approved connected read, or null for no external read."
     )
 

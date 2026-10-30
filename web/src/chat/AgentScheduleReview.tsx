@@ -171,7 +171,7 @@ export function AgentScheduleReview({
         Confirmation permits recurring model turns under these exact terms. The first turn may run in the current
         interval after approval; the daemon must be running.
         {proposal.connected_grant
-          ? ` These turns may use the separately approved ${proposal.connected_grant.capability}.${proposal.connected_grant.method} read for ${proposal.connected_grant.review.account_display || proposal.connected_grant.review.account_identity}, with the exact source, scopes and fixed arguments in this review. It stops if the grant or source changes.`
+          ? ` These turns may use the separately approved ${proposal.connected_grant.capability}.${proposal.connected_grant.method} read for ${proposal.connected_grant.review.account_display || proposal.connected_grant.review.account_identity}, with the exact source, scopes and argument policy in this review. A rolling policy derives a new UTC window for each read. It stops if the grant or source changes.`
           : " It grants no external tools or access."}
       </p>
       {review.data?.status === "approved" && (

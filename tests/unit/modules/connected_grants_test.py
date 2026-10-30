@@ -77,6 +77,7 @@ def connected(tmp_path, monkeypatch):
         def read(self, arguments):
             assert arguments == {}
             state["reads"] += 1
+            state["last_fixed"] = self.fixed
             return state.get("result", {"events": ["fictional"]})
 
         def close(self):
@@ -229,3 +230,92 @@ def test_provider_review_cannot_coerce_fixed_json_types(connected, monkeypatch):
     with pytest.raises(HeinzelError, match="did not match"):
         grants.propose(session, "req-coercion", "calendar", "events", {"count": 1})
     assert state["reads"] == 0
+
+
+def test_rolling_window_requires_fresh_review_and_advances_using_host_clock(connected):
+    from datetime import UTC, datetime, timedelta
+
+    from heinzel.modules.heinzel._connected_grants import RollingWindowPolicy
+
+    _current, crud, session, grants, _fixed, state = connected
+    instant = datetime.now(UTC)
+    crud.clock = lambda: instant
+    policy = RollingWindowPolicy(
+        parameter="window", lookback_seconds=60, lookahead_seconds=600, timezone="Europe/Berlin"
+    )
+    proposal = grants.propose_rolling(session, "rolling", "calendar", "events", {}, policy)
+    assert proposal.review.fixed_arguments["window"] == {
+        "since": (instant - timedelta(seconds=60)).isoformat().replace("+00:00", "Z"),
+        "until": (instant + timedelta(seconds=600)).isoformat().replace("+00:00", "Z"),
+    }
+    proof = grants.issue(session, "rolling", "human-confirmation")
+    review = proposal.model_dump(mode="json")
+    confirmation = ApprovalConfirmation()
+    args = {"session_id": session, "request_id": "rolling", "review": review, "approval_proof": proof}
+    with confirmation.using("heinzel", "approve-connected-read", args):
+        grants.approve(session, "rolling", review, proof, confirmation)
+    instant += timedelta(minutes=5)
+    assert grants.propose_rolling(session, "rolling", "calendar", "events", {}, policy) == proposal
+    with crud.repository.main_writer(session) as writer:
+        grants.read(session, writer)
+    assert state["last_fixed"]["window"] == {
+        "since": (instant - timedelta(seconds=60)).isoformat().replace("+00:00", "Z"),
+        "until": (instant + timedelta(seconds=600)).isoformat().replace("+00:00", "Z"),
+    }
+    state["account"] = "changed"
+    with crud.repository.main_writer(session) as writer, pytest.raises(HeinzelError):
+        grants.read(session, writer)
+    assert state["reads"] == 1
+
+
+def test_rolling_policy_rejects_ambiguous_or_unbounded_terms(connected):
+    from pydantic import ValidationError
+
+    from heinzel.modules.heinzel._connected_grants import RollingWindowPolicy
+
+    _current, _crud, session, grants, _fixed, state = connected
+    for back, ahead, zone in [(0, 0, "UTC"), (1, 31 * 86400, "UTC"), (0, 1, "unknown/zone")]:
+        with pytest.raises(ValidationError):
+            RollingWindowPolicy(parameter="window", lookback_seconds=back, lookahead_seconds=ahead, timezone=zone)
+    policy = RollingWindowPolicy(parameter="not-window", lookback_seconds=0, lookahead_seconds=60, timezone="UTC")
+    with pytest.raises(HeinzelError):
+        grants.propose_rolling(session, "bad-rolling", "calendar", "events", {}, policy)
+    assert state["opens"] == 0
+
+
+def test_rolling_parameter_requires_one_unambiguous_direct_window(monkeypatch):
+    from types import SimpleNamespace
+
+    from pydantic import BaseModel
+
+    from heinzel import Window
+    from heinzel.modules.heinzel import _capability_review as module
+
+    class Embedded(BaseModel):
+        nested: Window
+
+    class Protocol:
+        def model(self, first: Window, extra: Embedded) -> None:
+            pass
+
+        def two(self, first: Window, second: Window) -> None:
+            pass
+
+        def nested(self, first: Window, others: list[Window]) -> None:
+            pass
+
+        def optional(self, maybe: Window | None) -> None:
+            pass
+
+    monkeypatch.setattr(
+        module,
+        "CAPABILITIES",
+        {
+            "example": SimpleNamespace(
+                methods={"two": "read", "nested": "read", "optional": "read", "model": "read"}, protocol=Protocol
+            )
+        },
+    )
+    for method in ("two", "nested", "optional", "model"):
+        with pytest.raises(HeinzelError):
+            module.rolling_window_parameter("example", method)

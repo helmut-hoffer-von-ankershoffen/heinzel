@@ -4,11 +4,11 @@ import hashlib
 import inspect
 import json
 from dataclasses import dataclass
-from typing import Any, get_type_hints
+from typing import Any, get_args, get_type_hints
 
-from pydantic import ConfigDict, create_model
+from pydantic import BaseModel, ConfigDict, create_model
 
-from heinzel import HeinzelError, Kernel
+from heinzel import HeinzelError, Kernel, Window
 from heinzel.kernel import CAPABILITIES, capability_read_schema
 
 _MAX_SCHEMA_BYTES = 16_000
@@ -115,3 +115,37 @@ def validate_capability_read_arguments(capability: str, method: str, arguments: 
         raise HeinzelError(msg) from None
     else:
         return validated
+
+
+def rolling_window_parameter(capability: str, method: str) -> str:
+    """Identify exactly one direct Window argument of a registered read protocol method.
+
+    Raises:
+        HeinzelError: If the method has no unique direct Window argument.
+    """
+    spec = CAPABILITIES.get(capability)
+    if spec is None or spec.methods.get(method) != "read":
+        msg = "The method is not an available read"
+        raise HeinzelError(msg)
+    try:
+        function = getattr(spec.protocol, method)
+        hints = get_type_hints(function)
+        parameters = [name for name in inspect.signature(function).parameters if name != "self"]
+        names = [name for name in parameters if hints.get(name) is Window]
+
+        def contains_window(annotation: Any, seen: frozenset[type] = frozenset()) -> bool:  # noqa: ANN401
+            if annotation is Window:
+                return True
+            if isinstance(annotation, type) and issubclass(annotation, BaseModel) and annotation not in seen:
+                return any(
+                    contains_window(field.annotation, seen | {annotation}) for field in annotation.model_fields.values()
+                )
+            return any(contains_window(child, seen) for child in get_args(annotation))
+
+        if len(names) == 1 and not any(contains_window(hints.get(name)) for name in parameters if name != names[0]):
+            return names[0]
+    except Exception:  # noqa: BLE001 - no plugin diagnostics escape
+        msg = "The read must have exactly one direct Window parameter"
+        raise HeinzelError(msg) from None
+    msg = "The read must have exactly one direct Window parameter"
+    raise HeinzelError(msg)

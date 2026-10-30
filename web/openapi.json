@@ -3178,6 +3178,18 @@
             "description": "Registered module and distribution identity, not publisher verification.",
             "title": "Source",
             "type": "string"
+          },
+          "window_parameter": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Unique direct Window parameter eligible for explicit rolling policy, if any.",
+            "title": "Window Parameter"
           }
         },
         "required": [
@@ -3299,10 +3311,14 @@
                 "$ref": "#/components/schemas/ConnectedGrantProposal"
               },
               {
+                "$ref": "#/components/schemas/RollingConnectedGrantProposal"
+              },
+              {
                 "type": "null"
               }
             ],
-            "description": "Latest recorded proposal, if any."
+            "description": "Latest recorded proposal, if any.",
+            "title": "Proposal"
           },
           "session_id": {
             "description": "Owner-bound personal session.",
@@ -10126,6 +10142,106 @@
         "title": "Restarted",
         "type": "object"
       },
+      "RollingConnectedGrantProposal": {
+        "additionalProperties": false,
+        "description": "A distinct reviewed rolling-window grant, never an implicit upgrade of a fixed grant.",
+        "properties": {
+          "binding_sha256": {
+            "description": "Digest of selected source registration and read schema.",
+            "title": "Binding Sha256",
+            "type": "string"
+          },
+          "capability": {
+            "description": "The selected capability requiring human review.",
+            "title": "Capability",
+            "type": "string"
+          },
+          "kind": {
+            "const": "rolling-window",
+            "description": "Explicit rolling window grant variant.",
+            "title": "Kind",
+            "type": "string"
+          },
+          "method": {
+            "description": "The selected read-only capability method.",
+            "title": "Method",
+            "type": "string"
+          },
+          "request_id": {
+            "description": "The exact connected-read proposal request.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "review": {
+            "$ref": "#/components/schemas/ConnectedReadReview",
+            "description": "Exact private provider, account, scope and fixed-argument terms."
+          },
+          "revision": {
+            "description": "The owner-scoped proposal revision.",
+            "title": "Revision",
+            "type": "integer"
+          },
+          "window_policy": {
+            "$ref": "#/components/schemas/RollingWindowPolicy",
+            "description": "Exact separately reviewed rolling window policy."
+          }
+        },
+        "required": [
+          "request_id",
+          "revision",
+          "capability",
+          "method",
+          "binding_sha256",
+          "review",
+          "kind",
+          "window_policy"
+        ],
+        "title": "RollingConnectedGrantProposal",
+        "type": "object"
+      },
+      "RollingWindowPolicy": {
+        "additionalProperties": false,
+        "description": "Explicit elapsed-time window around a single trusted UTC instant.",
+        "properties": {
+          "lookahead_seconds": {
+            "description": "Elapsed seconds after each read.",
+            "maximum": 2678400.0,
+            "minimum": 0.0,
+            "title": "Lookahead Seconds",
+            "type": "integer"
+          },
+          "lookback_seconds": {
+            "description": "Elapsed seconds before each read.",
+            "maximum": 2678400.0,
+            "minimum": 0.0,
+            "title": "Lookback Seconds",
+            "type": "integer"
+          },
+          "parameter": {
+            "description": "The unique direct Window argument.",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Parameter",
+            "type": "string"
+          },
+          "timezone": {
+            "description": "IANA display timezone; elapsed bounds use UTC.",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Timezone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "parameter",
+          "lookback_seconds",
+          "lookahead_seconds",
+          "timezone"
+        ],
+        "title": "RollingWindowPolicy",
+        "type": "object"
+      },
       "RunCommand": {
         "additionalProperties": false,
         "description": "Open the terminal with an `hz` command.",
@@ -10436,10 +10552,14 @@
                 "$ref": "#/components/schemas/ConnectedGrantProposal"
               },
               {
+                "$ref": "#/components/schemas/RollingConnectedGrantProposal"
+              },
+              {
                 "type": "null"
               }
             ],
-            "description": "Exact separately approved connected read, or null for no external read."
+            "description": "Exact separately approved connected read, or null for no external read.",
+            "title": "Connected Grant"
           },
           "contract_request_id": {
             "description": "Accepted contract request.",
@@ -16403,6 +16523,54 @@
         "title": "heinzel_propose_model_policy_Input",
         "type": "object"
       },
+      "heinzel_propose_rolling_connected_read_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "capability": {
+            "description": "Selected read capability.",
+            "title": "Capability",
+            "type": "string"
+          },
+          "fixed_arguments": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "description": "Fixed arguments excluding the rolling window.",
+            "title": "Fixed Arguments",
+            "type": "object"
+          },
+          "method": {
+            "description": "Selected read method.",
+            "title": "Method",
+            "type": "string"
+          },
+          "request_id": {
+            "description": "A stable client request id; reuse it only for an exact retry.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "session_id": {
+            "description": "The stable personal session id returned by new-chat or sessions.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "window_policy": {
+            "$ref": "#/components/schemas/RollingWindowPolicy"
+          }
+        },
+        "required": [
+          "session_id",
+          "request_id",
+          "capability",
+          "method",
+          "fixed_arguments",
+          "window_policy"
+        ],
+        "title": "heinzel_propose_rolling_connected_read_Input",
+        "type": "object"
+      },
       "heinzel_propose_scheduled_agent_Input": {
         "additionalProperties": false,
         "properties": {
@@ -17389,7 +17557,15 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ConnectedGrantProposal"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ConnectedGrantProposal"
+                    },
+                    {
+                      "$ref": "#/components/schemas/RollingConnectedGrantProposal"
+                    }
+                  ],
+                  "title": "Response Heinzel Approve Connected Read"
                 }
               }
             },
@@ -17729,7 +17905,15 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ConnectedGrantProposal"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ConnectedGrantProposal"
+                    },
+                    {
+                      "$ref": "#/components/schemas/RollingConnectedGrantProposal"
+                    }
+                  ],
+                  "title": "Response Heinzel Connected Read Review"
                 }
               }
             },
@@ -18495,6 +18679,48 @@
           }
         },
         "summary": "Stage an inert model policy for independent human review.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/propose-rolling-connected-read": {
+      "post": {
+        "description": "Propose explicit bounded rolling read terms; this grants no access.",
+        "operationId": "heinzel_propose_rolling_connected_read",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/heinzel_propose_rolling_connected_read_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RollingConnectedGrantProposal"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Propose explicit bounded rolling read terms; this grants no access.",
         "tags": [
           "heinzel"
         ]

@@ -113,3 +113,43 @@ it("retains an uncertain proposal and retries its exact request after reload", a
   expect(bodies).toHaveLength(2);
   expect(bodies[1]).toEqual(bodies[0]);
 });
+
+it("requires explicit rolling bounds and sends a separately reviewed window policy", async () => {
+  sessionStorage.clear();
+  let submitted: unknown;
+  mockApi({
+    "/api/heinzel/connected-read-options": () => [
+      {
+        capability: "example",
+        method: "read",
+        provider: "fixture",
+        source: "fixture",
+        input_schema: {},
+        window_parameter: "period",
+      },
+    ],
+    "/api/heinzel/connected-read-state": () => ({
+      session_id: session,
+      status: "none",
+      proposal: null,
+      descriptor: null,
+    }),
+    "/api/heinzel/propose-rolling-connected-read": async (request: Request) => {
+      submitted = await request.clone().json();
+      return proposal;
+    },
+  });
+  const user = userEvent.setup();
+  show();
+  await user.selectOptions(await screen.findByLabelText("Read operation"), "example.read");
+  await user.click(screen.getByRole("checkbox", { name: /Use a rolling window/ }));
+  await user.type(screen.getByLabelText("Lookback seconds"), "60");
+  await user.type(screen.getByLabelText("Lookahead seconds"), "600");
+  await user.type(screen.getByLabelText("Display timezone (IANA)"), "Europe/Berlin");
+  await user.click(screen.getByRole("button", { name: "Prepare review" }));
+  expect(submitted).toMatchObject({
+    session_id: session,
+    fixed_arguments: {},
+    window_policy: { parameter: "period", lookback_seconds: 60, lookahead_seconds: 600, timezone: "Europe/Berlin" },
+  });
+});
