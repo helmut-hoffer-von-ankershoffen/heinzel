@@ -1998,6 +1998,18 @@
             "title": "Kind",
             "type": "string"
           },
+          "owner_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Authenticated owner of a durable personal chat.",
+            "title": "Owner Id"
+          },
           "ref": {
             "default": "",
             "description": "Which one: a route such as `/contracts/weekly`, a contract name, an id.",
@@ -2376,6 +2388,30 @@
             ],
             "description": "The model this chat asks for; none: the runner's default.",
             "title": "Model"
+          },
+          "personal_owner_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Authenticated owner of the personal session, if any.",
+            "title": "Personal Owner Id"
+          },
+          "personal_session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Owner-bound durable personal session, if any.",
+            "title": "Personal Session Id"
           },
           "title": {
             "description": "Its first message, shortened, or its context.",
@@ -3389,6 +3425,26 @@
           "next"
         ],
         "title": "ContractGraph",
+        "type": "object"
+      },
+      "ContractReviewView": {
+        "description": "An owner-private acceptance record, not an execution or access grant.",
+        "properties": {
+          "accepted": {
+            "description": "Whether the trusted confirmation boundary recorded this exact acceptance.",
+            "title": "Accepted",
+            "type": "boolean"
+          },
+          "proposal": {
+            "$ref": "#/components/schemas/ScheduledAgentProposal",
+            "description": "Exact proposal revision and preview hash."
+          }
+        },
+        "required": [
+          "proposal",
+          "accepted"
+        ],
+        "title": "ContractReviewView",
         "type": "object"
       },
       "ContractVersion": {
@@ -6756,6 +6812,48 @@
         "title": "ModelList",
         "type": "object"
       },
+      "ModelPolicyReview": {
+        "description": "The exact inert proposal, with explicit billing semantics.",
+        "properties": {
+          "billing": {
+            "const": "api-priced",
+            "default": "api-priced",
+            "description": "Bounded standard API pricing policy.",
+            "title": "Billing",
+            "type": "string"
+          },
+          "proposal": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "description": "Exact model, request, revision, limits and tool fingerprints.",
+            "title": "Proposal",
+            "type": "object"
+          },
+          "session_id": {
+            "description": "Owner-bound durable session receiving the proposal.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "status": {
+            "default": "proposed",
+            "description": "The policy proposal or approval state.",
+            "enum": [
+              "proposed",
+              "approved"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "proposal"
+        ],
+        "title": "ModelPolicyReview",
+        "type": "object"
+      },
       "ModuleDoc": {
         "description": "One module of a plugin with everything it advertises.",
         "properties": {
@@ -7819,6 +7917,87 @@
           }
         },
         "title": "Participant",
+        "type": "object"
+      },
+      "PersonalArtifact": {
+        "additionalProperties": false,
+        "description": "A principal-submitted association; neither access nor provider ownership has been verified.",
+        "properties": {
+          "kind": {
+            "description": "The declared Google file type.",
+            "enum": [
+              "document",
+              "spreadsheet",
+              "presentation"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "provenance": {
+            "const": "principal-submitted",
+            "default": "principal-submitted",
+            "description": "How this association was recorded; not provider ownership.",
+            "title": "Provenance",
+            "type": "string"
+          },
+          "provider": {
+            "const": "google",
+            "default": "google",
+            "description": "The user-supplied provider, not an access grant.",
+            "title": "Provider",
+            "type": "string"
+          },
+          "ref": {
+            "description": "Canonical Google editor URL supplied under the authenticated principal; not verified remotely.",
+            "maxLength": 256,
+            "title": "Ref",
+            "type": "string"
+          },
+          "request_id": {
+            "description": "The stable registration request identity.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "session_id": {
+            "description": "The personal session this association belongs to.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "request_id",
+          "kind",
+          "ref"
+        ],
+        "title": "PersonalArtifact",
+        "type": "object"
+      },
+      "PersonalArtifacts": {
+        "description": "Local associations, not a list of files the provider says are accessible.",
+        "properties": {
+          "artifacts": {
+            "description": "Locally recorded associations; provider access is not verified.",
+            "items": {
+              "$ref": "#/components/schemas/PersonalArtifact"
+            },
+            "title": "Artifacts",
+            "type": "array"
+          },
+          "session_id": {
+            "description": "The owning personal session.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "artifacts"
+        ],
+        "title": "PersonalArtifacts",
         "type": "object"
       },
       "PlaybookDoc": {
@@ -8971,6 +9150,64 @@
         "title": "Profile",
         "type": "object"
       },
+      "ProfileProposal": {
+        "additionalProperties": false,
+        "description": "Private suggested identity and appearance; applying it requires a separate user save.",
+        "properties": {
+          "appearance": {
+            "$ref": "#/components/schemas/HeinzelAppearance",
+            "description": "The suggested appearance, pending an explicit user save."
+          },
+          "expected_revision": {
+            "description": "The current profile revision this suggestion is based on.",
+            "minimum": 1.0,
+            "title": "Expected Revision",
+            "type": "integer"
+          },
+          "name": {
+            "description": "The suggested display name, not yet applied.",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "preview_sha256": {
+            "description": "The digest binding the exact suggested profile for review.",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Preview Sha256",
+            "type": "string"
+          },
+          "request_id": {
+            "description": "The stable request identifying these exact suggested terms.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "session_id": {
+            "description": "The owner's agent receiving this suggested identity.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "status": {
+            "const": "proposed",
+            "default": "proposed",
+            "description": "This suggestion has not been applied.",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "request_id",
+          "expected_revision",
+          "name",
+          "appearance",
+          "preview_sha256"
+        ],
+        "title": "ProfileProposal",
+        "type": "object"
+      },
       "ProgressWidget": {
         "additionalProperties": false,
         "description": "How much of something is done.",
@@ -9939,6 +10176,97 @@
         "title": "SceneStep",
         "type": "object"
       },
+      "ScheduledAgentProposal": {
+        "description": "An inert execution proposal; creating or reading it never authorizes a run.",
+        "properties": {
+          "based_on_revision": {
+            "description": "The previous revision inspected for this proposal; zero for the first.",
+            "minimum": 0.0,
+            "title": "Based On Revision",
+            "type": "integer"
+          },
+          "contract": {
+            "description": "Exact instructions proposed for each scheduled model turn.",
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Contract",
+            "type": "string"
+          },
+          "max_usd": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Proposed API USD limit, or null for subscription plan limits and unknown cost; not yet enforced.",
+            "title": "Max Usd"
+          },
+          "permitted_tools": {
+            "description": "The tools the proposed turn may use; this slice permits none.",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 0,
+            "title": "Permitted Tools",
+            "type": "array"
+          },
+          "preview_sha256": {
+            "description": "Hash of the exact proposed terms, not an approval proof.",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Preview Sha256",
+            "type": "string"
+          },
+          "request_id": {
+            "description": "The proposal's stable request identity.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "revision": {
+            "description": "The sequential execution proposal revision.",
+            "minimum": 1.0,
+            "title": "Revision",
+            "type": "integer"
+          },
+          "session_id": {
+            "description": "The owner-scoped personal session.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "status": {
+            "const": "proposed",
+            "default": "proposed",
+            "description": "No execution approval has been granted.",
+            "title": "Status",
+            "type": "string"
+          },
+          "timeout_seconds": {
+            "description": "Proposed maximum duration per turn in seconds.",
+            "maximum": 300.0,
+            "minimum": 1.0,
+            "title": "Timeout Seconds",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "session_id",
+          "request_id",
+          "revision",
+          "based_on_revision",
+          "contract",
+          "permitted_tools",
+          "max_usd",
+          "timeout_seconds",
+          "preview_sha256"
+        ],
+        "title": "ScheduledAgentProposal",
+        "type": "object"
+      },
       "SessionCosts": {
         "description": "The same visible budget for every head and backend, with plan estimates labelled separately.",
         "properties": {
@@ -10080,6 +10408,21 @@
             "description": "The stable message id; accepted user messages retain their request id.",
             "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
             "title": "Id",
+            "type": "string"
+          },
+          "origin": {
+            "default": "unknown",
+            "description": "Authenticated acceptance channel if recorded; not proof of human authorship or permission.",
+            "enum": [
+              "unknown",
+              "cli",
+              "mcp-stdio",
+              "daemon",
+              "api-bearer",
+              "web-session",
+              "web-device"
+            ],
+            "title": "Origin",
             "type": "string"
           },
           "role": {
@@ -10634,6 +10977,140 @@
         "title": "SkillDetail",
         "type": "object"
       },
+      "SkillDraft": {
+        "additionalProperties": false,
+        "description": "Private inert text and requested sharing intent; readiness, publication and grants are not verified.",
+        "properties": {
+          "files": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Exact SKILL.md, supporting text and optional Python scripts; not validated for publication.",
+            "title": "Files",
+            "type": "object"
+          },
+          "name": {
+            "description": "The proposed skill name.",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "preview_sha256": {
+            "description": "Fingerprint of the proposed terms; not an approval proof.",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Preview Sha256",
+            "type": "string"
+          },
+          "request_id": {
+            "description": "Stable request identity for exact retries.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "requested_scope": {
+            "description": "Proposed sharing scope, not an access grant or verified membership.",
+            "enum": [
+              "personal",
+              "team",
+              "org",
+              "site",
+              "company"
+            ],
+            "title": "Requested Scope",
+            "type": "string"
+          },
+          "scope_ref": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Opaque proposed shared-scope reference; not verified.",
+            "title": "Scope Ref"
+          },
+          "session_id": {
+            "description": "The authenticated owner's personal session.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "status": {
+            "const": "draft",
+            "default": "draft",
+            "description": "Not published, approved or executable.",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "request_id",
+          "name",
+          "requested_scope",
+          "files",
+          "preview_sha256"
+        ],
+        "title": "SkillDraft",
+        "type": "object"
+      },
+      "SkillDraftPage": {
+        "description": "A stable page in control-journal order.",
+        "properties": {
+          "items": {
+            "description": "Private draft references in journal order.",
+            "items": {
+              "$ref": "#/components/schemas/SkillDraftReference"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Resume after this journal position; null at the end.",
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "SkillDraftPage",
+        "type": "object"
+      },
+      "SkillDraftReference": {
+        "description": "An owner-scoped reference, without draft content.",
+        "properties": {
+          "request_id": {
+            "description": "The stable request identity for the private draft or sharing request.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "seq": {
+            "description": "Its position in the owner's session journal.",
+            "exclusiveMinimum": 0.0,
+            "title": "Seq",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "request_id",
+          "seq"
+        ],
+        "title": "SkillDraftReference",
+        "type": "object"
+      },
       "SkillList": {
         "description": "Every skill in effect, the names nobody decided between, and personal skills that failed their checks.",
         "properties": {
@@ -10674,6 +11151,107 @@
           "skills"
         ],
         "title": "SkillList",
+        "type": "object"
+      },
+      "SkillSharingPage": {
+        "description": "Owner-private references to pending sharing requests.",
+        "properties": {
+          "items": {
+            "description": "Owner-private pending sharing request references.",
+            "items": {
+              "$ref": "#/components/schemas/SkillDraftReference"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Resume after this journal position; null at the end.",
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "SkillSharingPage",
+        "type": "object"
+      },
+      "SkillSharingProposal": {
+        "additionalProperties": false,
+        "description": "Private request for later review; no membership, approval or publication is asserted.",
+        "properties": {
+          "authority": {
+            "const": "unverified",
+            "default": "unverified",
+            "description": "Membership and publishing authority are unverified.",
+            "title": "Authority",
+            "type": "string"
+          },
+          "draft_request_id": {
+            "description": "The immutable skill draft being proposed for sharing.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Draft Request Id",
+            "type": "string"
+          },
+          "draft_sha256": {
+            "description": "The exact private draft fingerprint, including its intended target.",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Draft Sha256",
+            "type": "string"
+          },
+          "request_id": {
+            "description": "The stable identity of this exact sharing review request.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "requested_scope": {
+            "description": "The requested, unverified audience.",
+            "enum": [
+              "team",
+              "org",
+              "site",
+              "company"
+            ],
+            "title": "Requested Scope",
+            "type": "string"
+          },
+          "scope_ref": {
+            "description": "The opaque requested audience identity; no authority is established.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Scope Ref",
+            "type": "string"
+          },
+          "session_id": {
+            "description": "The authenticated owner's personal session.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "status": {
+            "const": "awaiting_review",
+            "default": "awaiting_review",
+            "description": "No sharing has been approved.",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "request_id",
+          "draft_request_id",
+          "draft_sha256",
+          "requested_scope",
+          "scope_ref"
+        ],
+        "title": "SkillSharingProposal",
         "type": "object"
       },
       "SkillView": {
@@ -13689,6 +14267,52 @@
         "title": "Tool",
         "type": "object"
       },
+      "ToolActivity": {
+        "description": "A redacted host-observed tool invocation or denial.",
+        "properties": {
+          "at": {
+            "description": "When the host recorded this event, in UTC.",
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "seq": {
+            "description": "Sequence of this event in the owner's control journal.",
+            "title": "Seq",
+            "type": "integer"
+          },
+          "status": {
+            "description": "Whether dispatch was requested, completed, failed, or refused by the host.",
+            "enum": [
+              "requested",
+              "completed",
+              "failed",
+              "denied"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "tool": {
+            "description": "The host-recorded tool name, without its arguments.",
+            "title": "Tool",
+            "type": "string"
+          },
+          "turn_id": {
+            "description": "The exact durable turn associated with this tool event.",
+            "title": "Turn Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "seq",
+          "at",
+          "turn_id",
+          "tool",
+          "status"
+        ],
+        "title": "ToolActivity",
+        "type": "object"
+      },
       "Uninstalled": {
         "description": "What `uninstall` removed.",
         "properties": {
@@ -14008,6 +14632,125 @@
           "unpriced"
         ],
         "title": "UsageTotal",
+        "type": "object"
+      },
+      "UserChatAnswer": {
+        "description": "A persisted answer for exactly the accepted request; not a schedule or approval.",
+        "properties": {
+          "message": {
+            "$ref": "#/components/schemas/SessionMessage",
+            "description": "The persisted assistant reply for this exact request."
+          },
+          "request_id": {
+            "description": "The accepted message request answered by this turn.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "session_id": {
+            "description": "The authenticated owner's durable agent session.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "request_id",
+          "message"
+        ],
+        "title": "UserChatAnswer",
+        "type": "object"
+      },
+      "UserToolActivity": {
+        "description": "Owner-private, host-observed tool decisions without arguments or secrets.",
+        "properties": {
+          "items": {
+            "description": "Recent host-recorded tool events, with no arguments or credentials.",
+            "items": {
+              "$ref": "#/components/schemas/ToolActivity"
+            },
+            "maxItems": 100,
+            "title": "Items",
+            "type": "array"
+          },
+          "session_id": {
+            "description": "The authenticated owner's durable agent session.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "items"
+        ],
+        "title": "UserToolActivity",
+        "type": "object"
+      },
+      "UserTurnResolution": {
+        "description": "The exact stopped turn was explicitly set aside, not replayed or undone.",
+        "properties": {
+          "request_id": {
+            "description": "The stopped request explicitly set aside by its owner.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "session_id": {
+            "description": "The authenticated owner's durable agent session.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "status": {
+            "const": "abandoned",
+            "default": "abandoned",
+            "description": "The turn was set aside without replaying or undoing possible effects.",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "request_id"
+        ],
+        "title": "UserTurnResolution",
+        "type": "object"
+      },
+      "UserTurnState": {
+        "description": "The recorded state of one owner-bound turn; unresolved may still be running.",
+        "properties": {
+          "request_id": {
+            "description": "The accepted request whose journal state was inspected.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "session_id": {
+            "description": "The authenticated owner's durable agent session.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "status": {
+            "description": "Recorded request state; an unresolved turn may still be running.",
+            "enum": [
+              "pending",
+              "unresolved",
+              "abandoned",
+              "completed"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "request_id",
+          "status"
+        ],
+        "title": "UserTurnState",
         "type": "object"
       },
       "ValidationError": {
@@ -14631,6 +15374,226 @@
         "title": "WidgetEntry",
         "type": "object"
       },
+      "heinzel_abandon_chat_turn_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "acknowledge_uncertain": {
+            "description": "Confirm the outcome may be unknown and no retry or undo occurs.",
+            "title": "Acknowledge Uncertain",
+            "type": "boolean"
+          },
+          "request_id": {
+            "description": "A stable client request id; reuse it only for an exact retry.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "session_id": {
+            "description": "The stable personal session id returned by new-chat or sessions.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "request_id",
+          "acknowledge_uncertain"
+        ],
+        "title": "heinzel_abandon_chat_turn_Input",
+        "type": "object"
+      },
+      "heinzel_accept_agent_contract_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "approval_proof": {
+            "title": "Approval Proof",
+            "type": "string"
+          },
+          "request_id": {
+            "description": "A stable client request id; reuse it only for an exact retry.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "review": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "title": "Review",
+            "type": "object"
+          },
+          "session_id": {
+            "description": "The stable personal session id returned by new-chat or sessions.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "request_id",
+          "review",
+          "approval_proof"
+        ],
+        "title": "heinzel_accept_agent_contract_Input",
+        "type": "object"
+      },
+      "heinzel_amend_scheduled_agent_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "contract": {
+            "description": "Complete replacement instructions.",
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Contract",
+            "type": "string"
+          },
+          "expected_revision": {
+            "description": "The exact proposal revision inspected.",
+            "minimum": 1.0,
+            "title": "Expected Revision",
+            "type": "integer"
+          },
+          "max_usd": {
+            "description": "Proposed per-turn USD limit; not yet enforced.",
+            "exclusiveMinimum": 0.0,
+            "title": "Max Usd",
+            "type": "number"
+          },
+          "request_id": {
+            "description": "A stable client request id; reuse it only for an exact retry.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "session_id": {
+            "description": "The stable personal session id returned by new-chat or sessions.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "timeout_seconds": {
+            "description": "Proposed maximum seconds per turn.",
+            "maximum": 300.0,
+            "minimum": 1.0,
+            "title": "Timeout Seconds",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "session_id",
+          "request_id",
+          "expected_revision",
+          "contract",
+          "max_usd",
+          "timeout_seconds"
+        ],
+        "title": "heinzel_amend_scheduled_agent_Input",
+        "type": "object"
+      },
+      "heinzel_answer_chat_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "request_id": {
+            "description": "A stable client request id; reuse it only for an exact retry.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "session_id": {
+            "description": "The stable personal session id returned by new-chat or sessions.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "request_id"
+        ],
+        "title": "heinzel_answer_chat_Input",
+        "type": "object"
+      },
+      "heinzel_approve_model_grant_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "approval_proof": {
+            "description": "In-process proof issued only by trusted human confirmation.",
+            "title": "Approval Proof",
+            "type": "string"
+          },
+          "request_id": {
+            "description": "The exact proposed policy request id.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "review": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "description": "Exact policy terms displayed in the action card.",
+            "title": "Review",
+            "type": "object"
+          },
+          "session_id": {
+            "description": "Owner-bound durable agent session.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "request_id",
+          "review",
+          "approval_proof"
+        ],
+        "title": "heinzel_approve_model_grant_Input",
+        "type": "object"
+      },
+      "heinzel_associate_artifact_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "description": "The claimed Google file type; not verified with the provider.",
+            "enum": [
+              "document",
+              "spreadsheet",
+              "presentation"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "ref": {
+            "description": "Canonical Google editor URL.",
+            "maxLength": 256,
+            "title": "Ref",
+            "type": "string"
+          },
+          "request_id": {
+            "description": "A stable client request id; reuse it only for an exact retry.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "session_id": {
+            "description": "The stable personal session id returned by new-chat or sessions.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "request_id",
+          "kind",
+          "ref"
+        ],
+        "title": "heinzel_associate_artifact_Input",
+        "type": "object"
+      },
       "heinzel_chat_Input": {
         "additionalProperties": false,
         "properties": {
@@ -14791,6 +15754,187 @@
           "request_id"
         ],
         "title": "heinzel_propose_check_in_Input",
+        "type": "object"
+      },
+      "heinzel_propose_model_policy_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "billing": {
+            "description": "Billing policy; only api-priced is currently supported.",
+            "title": "Billing",
+            "type": "string"
+          },
+          "proposal": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "description": "Exact model grant terms and request identity.",
+            "title": "Proposal",
+            "type": "object"
+          },
+          "session_id": {
+            "description": "Owner-bound durable agent session.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "billing",
+          "proposal"
+        ],
+        "title": "heinzel_propose_model_policy_Input",
+        "type": "object"
+      },
+      "heinzel_propose_scheduled_agent_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "contract": {
+            "description": "Exact instructions to preview for a future agent turn.",
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Contract",
+            "type": "string"
+          },
+          "max_usd": {
+            "description": "Proposed per-turn USD limit; not yet enforced.",
+            "exclusiveMinimum": 0.0,
+            "title": "Max Usd",
+            "type": "number"
+          },
+          "request_id": {
+            "description": "A stable client request id; reuse it only for an exact retry.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "session_id": {
+            "description": "The stable personal session id returned by new-chat or sessions.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "timeout_seconds": {
+            "description": "Proposed maximum seconds per turn.",
+            "maximum": 300.0,
+            "minimum": 1.0,
+            "title": "Timeout Seconds",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "session_id",
+          "request_id",
+          "contract",
+          "max_usd",
+          "timeout_seconds"
+        ],
+        "title": "heinzel_propose_scheduled_agent_Input",
+        "type": "object"
+      },
+      "heinzel_propose_skill_draft_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "files": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Exact SKILL.md, supporting text and optional Python script drafts.",
+            "title": "Files",
+            "type": "object"
+          },
+          "name": {
+            "description": "Proposed skill name.",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "request_id": {
+            "description": "A stable client request id; reuse it only for an exact retry.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "requested_scope": {
+            "description": "Requested scope; no grant is created.",
+            "enum": [
+              "personal",
+              "team",
+              "org",
+              "site",
+              "company"
+            ],
+            "title": "Requested Scope",
+            "type": "string"
+          },
+          "scope_ref": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Opaque target for a requested shared scope; not verified.",
+            "title": "Scope Ref"
+          },
+          "session_id": {
+            "description": "The stable personal session id returned by new-chat or sessions.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "request_id",
+          "name",
+          "requested_scope",
+          "files"
+        ],
+        "title": "heinzel_propose_skill_draft_Input",
+        "type": "object"
+      },
+      "heinzel_propose_skill_sharing_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "draft_request_id": {
+            "description": "A stable client request id; reuse it only for an exact retry.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Draft Request Id",
+            "type": "string"
+          },
+          "draft_sha256": {
+            "description": "The exact immutable draft fingerprint.",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Draft Sha256",
+            "type": "string"
+          },
+          "request_id": {
+            "description": "A stable client request id; reuse it only for an exact retry.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "session_id": {
+            "description": "The stable personal session id returned by new-chat or sessions.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "request_id",
+          "draft_request_id",
+          "draft_sha256"
+        ],
+        "title": "heinzel_propose_skill_sharing_Input",
         "type": "object"
       },
       "heinzel_schedule_control_Input": {
@@ -15210,6 +16354,310 @@
         ]
       }
     },
+    "/heinzel/abandon-chat-turn": {
+      "post": {
+        "description": "Explicitly set aside a stopped uncertain turn; never retry or undo its possible effects.\n\nRaises:\n    HeinzelError: If the uncertain outcome was not acknowledged.",
+        "operationId": "heinzel_abandon_chat_turn",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/heinzel_abandon_chat_turn_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserTurnResolution"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Explicitly set aside a stopped uncertain turn; never retry or undo its possible effects.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/accept-agent-contract": {
+      "post": {
+        "description": "Record only exact contract acceptance through trusted confirmation.\n\nRaises:\n    HeinzelError: If confirmation or exact review is invalid.",
+        "operationId": "heinzel_accept_agent_contract",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/heinzel_accept_agent_contract_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduledAgentProposal"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Record only exact contract acceptance through trusted confirmation.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/agent-contract-review": {
+      "get": {
+        "description": "Read an exact contract and its acceptance; this grants no execution or access.",
+        "operationId": "heinzel_agent_contract_review",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContractReviewView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read an exact contract and its acceptance; this grants no execution or access.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/amend-scheduled-agent": {
+      "post": {
+        "description": "Propose revised terms; an independent human review and approval is still required.",
+        "operationId": "heinzel_amend_scheduled_agent",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/heinzel_amend_scheduled_agent_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduledAgentProposal"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Propose revised terms; an independent human review and approval is still required.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/answer-chat": {
+      "post": {
+        "description": "Answer one authenticated user's accepted message; an interrupted request is never silently replayed.",
+        "operationId": "heinzel_answer_chat",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/heinzel_answer_chat_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserChatAnswer"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Answer one authenticated user's accepted message; an interrupted request is never silently replayed.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/approve-model-grant": {
+      "post": {
+        "description": "Apply an exact human-confirmed policy; direct callers cannot issue or consume approval.",
+        "operationId": "heinzel_approve_model_grant",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/heinzel_approve_model_grant_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelPolicyReview"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Apply an exact human-confirmed policy; direct callers cannot issue or consume approval.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/associate-artifact": {
+      "post": {
+        "description": "Associate a Google file locally; no access, provider ownership or permission is verified.",
+        "operationId": "heinzel_associate_artifact",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/heinzel_associate_artifact_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonalArtifact"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Associate a Google file locally; no access, provider ownership or permission is verified.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
     "/heinzel/chat": {
       "post": {
         "description": "Durably queue a message for this Heinzel; acceptance is distinct from a completed model answer.",
@@ -15247,6 +16695,58 @@
           }
         },
         "summary": "Durably queue a message for this Heinzel; acceptance is distinct from a completed model answer.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/chat-turn-state": {
+      "get": {
+        "description": "Read the recorded turn state; unresolved may still be running.",
+        "operationId": "heinzel_chat_turn_state",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserTurnState"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read the recorded turn state; unresolved may still be running.",
         "tags": [
           "heinzel"
         ]
@@ -15413,6 +16913,108 @@
         ]
       }
     },
+    "/heinzel/latest-profile-proposal": {
+      "get": {
+        "description": "Inspect the latest suggested name and look; it has not been applied.",
+        "operationId": "heinzel_latest_profile_proposal",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ProfileProposal"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Response Heinzel Latest Profile Proposal"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Inspect the latest suggested name and look; it has not been applied.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/latest-scheduled-agent-proposal": {
+      "get": {
+        "description": "Read the current inert proposal for the personal session, if one exists.",
+        "operationId": "heinzel_latest_scheduled_agent_proposal",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ScheduledAgentProposal"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Response Heinzel Latest Scheduled Agent Proposal"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read the current inert proposal for the personal session, if one exists.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
     "/heinzel/list": {
       "get": {
         "description": "List your Heinzelmännchen, one per contract: owner, schedule, state, last and next run.",
@@ -15507,6 +17109,58 @@
         ]
       }
     },
+    "/heinzel/model-policy": {
+      "get": {
+        "description": "Read the current exact proposed policy; no permission is granted.",
+        "operationId": "heinzel_model_policy",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelPolicyReview"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read the current exact proposed policy; no permission is granted.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
     "/heinzel/new-chat": {
       "post": {
         "description": "Create a durable personal Heinzel with an idempotent request, name and look.",
@@ -15544,6 +17198,49 @@
           }
         },
         "summary": "Create a durable personal Heinzel with an idempotent request, name and look.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/personal-artifacts": {
+      "get": {
+        "description": "List local principal-submitted file associations without accessing the provider.",
+        "operationId": "heinzel_personal_artifacts",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonalArtifacts"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List local principal-submitted file associations without accessing the provider.",
         "tags": [
           "heinzel"
         ]
@@ -15655,6 +17352,174 @@
         ]
       }
     },
+    "/heinzel/propose-model-policy": {
+      "post": {
+        "description": "Stage an inert model policy for independent human review.",
+        "operationId": "heinzel_propose_model_policy",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/heinzel_propose_model_policy_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelPolicyReview"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Stage an inert model policy for independent human review.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/propose-scheduled-agent": {
+      "post": {
+        "description": "Save an inert agent execution proposal; it neither approves nor starts a model turn.",
+        "operationId": "heinzel_propose_scheduled_agent",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/heinzel_propose_scheduled_agent_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduledAgentProposal"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Save an inert agent execution proposal; it neither approves nor starts a model turn.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/propose-skill-draft": {
+      "post": {
+        "description": "Store a private skill draft; no file is published, executed or shared.",
+        "operationId": "heinzel_propose_skill_draft",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/heinzel_propose_skill_draft_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillDraft"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Store a private skill draft; no file is published, executed or shared.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/propose-skill-sharing": {
+      "post": {
+        "description": "Request review of exact private draft and target; membership and authority are unverified.",
+        "operationId": "heinzel_propose_skill_sharing",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/heinzel_propose_skill_sharing_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillSharingProposal"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Request review of exact private draft and target; membership and authority are unverified.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
     "/heinzel/schedule-control": {
       "post": {
         "description": "Pause a schedule; activation and resume require an exact-intent approval from a trusted issuer.\n\nRaises:\n    HeinzelError: If the schedule is stale or approval is invalid or unavailable.",
@@ -15692,6 +17557,58 @@
           }
         },
         "summary": "Pause a schedule; activation and resume require an exact-intent approval from a trusted issuer.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/scheduled-agent-proposal": {
+      "get": {
+        "description": "Inspect the exact inert proposal; a separate future human approval is required to run it.",
+        "operationId": "heinzel_scheduled_agent_proposal",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduledAgentProposal"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Inspect the exact inert proposal; a separate future human approval is required to run it.",
         "tags": [
           "heinzel"
         ]
@@ -15832,6 +17749,299 @@
           }
         },
         "summary": "Show a contract as the daemon runs it: schedule, requirements, adapters, readiness, next steps.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/skill-draft": {
+      "get": {
+        "description": "Read exact private skill draft files and requested sharing scope.",
+        "operationId": "heinzel_skill_draft",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillDraft"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read exact private skill draft files and requested sharing scope.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/skill-drafts": {
+      "get": {
+        "description": "List private draft references without file contents.",
+        "operationId": "heinzel_skill_drafts",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Resume after this session journal position.",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Resume after this session journal position.",
+              "title": "Cursor",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "The most private draft references returned in this page.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "description": "The most private draft references returned in this page.",
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillDraftPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List private draft references without file contents.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/skill-sharing": {
+      "get": {
+        "description": "Read a private sharing request; it is neither approved nor published.",
+        "operationId": "heinzel_skill_sharing",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillSharingProposal"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read a private sharing request; it is neither approved nor published.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/skill-sharing-proposals": {
+      "get": {
+        "description": "Discover owner-private pending sharing request references.",
+        "operationId": "heinzel_skill_sharing_proposals",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Resume after this session journal position.",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Resume after this session journal position.",
+              "title": "Cursor",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "The most private sharing references returned in this page.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "description": "The most private sharing references returned in this page.",
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillSharingPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Discover owner-private pending sharing request references.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/tool-activity": {
+      "get": {
+        "description": "Show owner-private host-observed tool decisions, without their arguments.",
+        "operationId": "heinzel_tool_activity",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Maximum recent recorded tool events to return.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 30,
+              "description": "Maximum recent recorded tool events to return.",
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserToolActivity"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Show owner-private host-observed tool decisions, without their arguments.",
         "tags": [
           "heinzel"
         ]
@@ -18181,6 +20391,118 @@
           }
         },
         "summary": "Open a runner chat bound to this owner's durable session and current conversation history.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/runner/chat/propose-agent-contract": {
+      "post": {
+        "description": "Stage current agent contract terms for human review.",
+        "operationId": "system_runner_chat_propose_agent_contract",
+        "parameters": [
+          {
+            "description": "The personal agent session.",
+            "in": "query",
+            "name": "durable_session",
+            "required": true,
+            "schema": {
+              "description": "The personal agent session.",
+              "title": "Durable Session",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The contract proposal request id.",
+            "in": "query",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "description": "The contract proposal request id.",
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatSession"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Stage current agent contract terms for human review.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/runner/chat/propose-model-policy": {
+      "post": {
+        "description": "Stage the exact current model policy for human review; no grant or model call is made.",
+        "operationId": "system_runner_chat_propose_model_policy",
+        "parameters": [
+          {
+            "description": "The personal agent session.",
+            "in": "query",
+            "name": "durable_session",
+            "required": true,
+            "schema": {
+              "description": "The personal agent session.",
+              "title": "Durable Session",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The policy proposal request id.",
+            "in": "query",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "description": "The policy proposal request id.",
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatSession"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Stage the exact current model policy for human review; no grant or model call is made.",
         "tags": [
           "system"
         ]

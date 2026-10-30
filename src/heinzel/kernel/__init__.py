@@ -15,8 +15,11 @@ from heinzel.kernel._agents import (
     ToolProfile,
 )
 from heinzel.kernel._ai import AccessStatus, AccessTest, AiAccess, UsageCause, UsageEntry, UsageLog, record_usage
-from heinzel.kernel._bindings import HOWS, Adapters, CapabilityView, How, Requester
+from heinzel.kernel._api_access import ConfiguredApiAccess, ConfiguredApiLease, ConfiguredApiSnapshot
+from heinzel.kernel._bindings import HOWS, Adapters, CapabilitySettings, CapabilityView, How, Requester
 from heinzel.kernel._boot import boot
+from heinzel.kernel._bounded_process import MAX_OUTPUT as PROCESS_MAX_OUTPUT
+from heinzel.kernel._bounded_process import ProcessExecute, ProcessOutcome, run_bounded_process, signal_process_group
 from heinzel.kernel._capabilities import CAPABILITIES, MODES, NO_ADAPTER, Capability, Mode, Requirement
 from heinzel.kernel._chat import ActionGate, ProposedCall
 from heinzel.kernel._chat_services import (
@@ -87,7 +90,7 @@ from heinzel.kernel._daemon_attestation import DaemonAttestation, DaemonStatusAt
 from heinzel.kernel._directory import ConfirmedLines, ReportingDraft, draft_reporting_lines
 from heinzel.kernel._discovery import BUILTIN_PACKAGE, ENTRY_POINT_GROUP, discover, walk
 from heinzel.kernel._duration import MAX_WINDOW, WINDOW_PATTERN, Span, format_duration, parse_duration, parse_window
-from heinzel.kernel._errors import HeinzelError
+from heinzel.kernel._errors import HeinzelError, SubscriptionUsageLimitError
 from heinzel.kernel._exposure import MCP_HTTP, MCP_STDIO, Exposed, exposed, input_schema, restricts
 from heinzel.kernel._git import (
     GIT_HARDENING,
@@ -97,7 +100,7 @@ from heinzel.kernel._git import (
     check_repository_url,
     git_command,
 )
-from heinzel.kernel._identity import CallIdentity, CurrentUser, Principal
+from heinzel.kernel._identity import PRIVATE_WRITE, Authentication, CallIdentity, CurrentUser, Principal
 from heinzel.kernel._installation import (
     CORE_DISTRIBUTION,
     CorePin,
@@ -138,6 +141,7 @@ from heinzel.kernel._lets import (
     schedule_problem,
 )
 from heinzel.kernel._local_web import LocalWebRuntime
+from heinzel.kernel._metadata_verifier import CoreMetadataVerifier
 from heinzel.kernel._module import Module
 from heinzel.kernel._notifications import Delivery, Notice, NoticeKind, Notifications
 from heinzel.kernel._org import OrgContext, Recommendation, RecommendationKind, TeamPromise, TeamPromises
@@ -188,6 +192,7 @@ from heinzel.kernel._protocols import (
     plain_addresses,
 )
 from heinzel.kernel._release import ReleaseCache, ReleaseSource
+from heinzel.kernel._runner_snapshot import RunnerSnapshot, RunnerSnapshotProvider
 from heinzel.kernel._services import ServiceContract
 from heinzel.kernel._session import SessionEvent, SessionHead, SessionProjector, SessionRead
 from heinzel.kernel._session_store import SessionStore, SessionWriter
@@ -283,6 +288,8 @@ __all__ = [
     "MCP_STDIO",
     "MODES",
     "NO_ADAPTER",
+    "PRIVATE_WRITE",
+    "PROCESS_MAX_OUTPUT",
     "PROJECT_FILENAME",
     "RESPONSES",
     "SETUP_PHASES",
@@ -302,6 +309,7 @@ __all__ = [
     "AgentRunner",
     "AiAccess",
     "AssetType",
+    "Authentication",
     "Avatar",
     "Badge",
     "Billing",
@@ -309,6 +317,7 @@ __all__ = [
     "Calendar",
     "CallIdentity",
     "Capability",
+    "CapabilitySettings",
     "CapabilityView",
     "CardWidget",
     "CatchUp",
@@ -324,9 +333,13 @@ __all__ = [
     "ConfigEditor",
     "ConfigFile",
     "ConfigListChange",
+    "ConfiguredApiAccess",
+    "ConfiguredApiLease",
+    "ConfiguredApiSnapshot",
     "ConfirmedLines",
     "ContractTemplate",
     "ContributionLet",
+    "CoreMetadataVerifier",
     "CorePin",
     "CredentialBackend",
     "CredentialLet",
@@ -419,6 +432,8 @@ __all__ = [
     "PostedMessage",
     "Presence",
     "Principal",
+    "ProcessExecute",
+    "ProcessOutcome",
     "Progress",
     "ProgressWidget",
     "Prompter",
@@ -438,6 +453,8 @@ __all__ = [
     "RunGitCommand",
     "RunOperation",
     "RunStatus",
+    "RunnerSnapshot",
+    "RunnerSnapshotProvider",
     "ScriptExhausted",
     "ScriptedPrompter",
     "SectionReplacement",
@@ -475,6 +492,7 @@ __all__ = [
     "StatusLet",
     "StatusMeter",
     "StreamProvider",
+    "SubscriptionUsageLimitError",
     "TeamGraph",
     "TeamPromise",
     "TeamPromises",
@@ -542,7 +560,9 @@ __all__ = [
     "redact_emails",
     "requirement_from_receipt",
     "restricts",
+    "run_bounded_process",
     "schedule_problem",
+    "signal_process_group",
     "skill_frame",
     "skill_instructions",
     "skill_name_problem",

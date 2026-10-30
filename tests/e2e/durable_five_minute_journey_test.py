@@ -1,4 +1,4 @@
-"""Mounted browser journey for a fake-runner check-in and an isolated daemon wake/restart."""
+"""Mounted refusal of an unverified runner, explicit fixed check-in and isolated daemon restart."""
 
 import importlib.util
 import json
@@ -14,9 +14,8 @@ from urllib.parse import parse_qs, urlsplit
 import pytest
 import uvicorn
 
-from heinzel import AgentResult, Budget, CurrentUser, Module, Progress, Settings, TokenUsage, ToolProfile
-from heinzel.heads import mcp, web
-from heinzel.heads._exposure import exposed
+from heinzel import AgentResult, Budget, CurrentUser, Module, Settings, ToolProfile
+from heinzel.heads import web
 from heinzel.kernel import Config, Kernel
 from heinzel.modules.system.daemon._models import DaemonSettings, Disposition
 from heinzel.modules.system.daemon._service import DaemonService
@@ -42,16 +41,13 @@ def wake_after_now() -> datetime:
 
 
 class _Script:
-    kernel: Kernel
+    calls = 0
 
 
 def _fake_runner(script: _Script) -> Module:
-    module = Module("journeyfake", "Isolated fake agent runner for the mounted schedule journey.")
+    module = Module("journeyfake", "Unverified runner that must not receive the mounted personal chat.")
 
     class FakeRunner:
-        def __init__(self, progress: Progress) -> None:
-            self.progress = progress
-
         def run(
             self,
             prompt: str,
@@ -62,25 +58,10 @@ def _fake_runner(script: _Script) -> Module:
             budget: Budget,
             **choice: object,
         ) -> AgentResult:
-            del prompt, timeout, budget, choice
-            assert not tools.read_files
-            command = tools.mcp_servers["hz"].command
-            session = command[command.index("--chat") + 1]
-            context_line = next(line for line in contract.splitlines() if "check-in for durable session " in line)
-            durable_session = context_line.rpartition("durable session ")[2].removesuffix(".")
-            assert durable_session
-            surface = {item.name: item for item in exposed(script.kernel, "mcp-check-in")}
-            mcp.chat_tool(script.kernel, surface["heinzel_propose_check_in"], session, local=True)(
-                session_id=durable_session,
-                request_id="mounted-browser-proposal",
-            )
-            return AgentResult(
-                runner="journey-fake",
-                status="completed",
-                draft="I proposed the local five-minute check-in.",
-                usage=TokenUsage(cost_usd=0),
-                duration_seconds=0.01,
-            )
+            del prompt, contract, tools, timeout, budget, choice
+            script.calls += 1
+            msg = "An unverified runner must not receive personal chat content"
+            raise AssertionError(msg)
 
     module.provides("agent-runner", modes={"read"}, name="journey-fake")(FakeRunner)
     return module
@@ -127,7 +108,6 @@ def _kernel(
     kernel.bind(Notifications, notices)
     daemon = DaemonService(kernel, settings, DaemonSettings(), platform="isolated", clock=lambda: clock[0], zone=UTC)
     kernel.bind(DaemonService, daemon)
-    script.kernel = kernel
     return kernel, current, notices, daemon, settings
 
 
@@ -199,6 +179,7 @@ def test_mounted_browser_approval_wake_and_restart_deduplicate(  # noqa: PLR0915
         session = result["session"]
         assert notices.recent() == []
         assert native_calls == []
+        assert script.calls == 0
     finally:
         if RecordedServer.instances:
             RecordedServer.instances[0].should_exit = True

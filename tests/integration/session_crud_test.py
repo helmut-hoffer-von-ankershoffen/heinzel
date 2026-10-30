@@ -403,3 +403,144 @@ def test_public_http_schema_and_network_mcp_do_not_expose_private_session_operat
     assert not any(path.startswith("/heinzel/") for path in paths)
     assert client.get("/heinzel/sessions").status_code == 404
     assert not list(exposed(kernel, MCP_HTTP))
+
+
+def test_scheduled_agent_proposal_requires_private_identity_and_remains_inert(kernel):
+    client, auth = protected(kernel)
+    session_id = client.post("/heinzel/new-chat", headers=auth, json={"request_id": "create-preview"}).json()[
+        "session_id"
+    ]
+    payload = {
+        "session_id": session_id,
+        "request_id": "review-1",
+        "contract": "Produce a short check-in",
+        "max_usd": 0.1,
+        "timeout_seconds": 30,
+    }
+    assert client.post("/heinzel/propose-scheduled-agent", json=payload).status_code == 401
+    response = client.post("/heinzel/propose-scheduled-agent", headers=auth, json=payload)
+    assert response.status_code == 200, response.text
+    proposal = response.json()
+    assert proposal["status"] == "proposed"
+    assert proposal["contract"] == payload["contract"]
+    assert proposal["permitted_tools"] == []
+    inspected = client.get(
+        "/heinzel/scheduled-agent-proposal", headers=auth, params={"session_id": session_id, "request_id": "review-1"}
+    )
+    assert inspected.status_code == 200, inspected.text
+    assert inspected.json() == proposal
+    assert client.get("/heinzel/session", headers=auth, params={"session_id": session_id}).json()["schedule"] is None
+
+
+def test_agent_execution_revision_http_replay_and_stale_amendment(kernel):
+    client, auth = protected(kernel)
+    session = client.post("/heinzel/new-chat", headers=auth, json={"request_id": "new-agent-revision"}).json()
+    first = {
+        "session_id": session["session_id"],
+        "request_id": "proposal-one",
+        "contract": "Prepare a check-in",
+        "max_usd": 0.1,
+        "timeout_seconds": 30,
+    }
+    created = client.post("/heinzel/propose-scheduled-agent", headers=auth, json=first)
+    assert created.status_code == 200, created.text
+    assert created.json()["revision"] == 1
+    amendment = first | {"request_id": "proposal-two", "expected_revision": 1, "contract": "Prepare a brief check-in"}
+    changed = client.post("/heinzel/amend-scheduled-agent", headers=auth, json=amendment)
+    assert changed.status_code == 200, changed.text
+    assert changed.json()["revision"] == 2
+    assert changed.json()["status"] == "proposed"
+    assert client.post("/heinzel/amend-scheduled-agent", headers=auth, json=amendment).json() == changed.json()
+    latest = client.get(
+        "/heinzel/latest-scheduled-agent-proposal", headers=auth, params={"session_id": session["session_id"]}
+    )
+    assert latest.json() == changed.json()
+    stale = amendment | {"request_id": "proposal-stale"}
+    assert client.post("/heinzel/amend-scheduled-agent", headers=auth, json=stale).status_code >= 400
+    assert (
+        client.get("/heinzel/session", headers=auth, params={"session_id": session["session_id"]}).json()["schedule"]
+        is None
+    )
+
+
+def test_personal_artifact_associations_are_private_local_and_owner_scoped(kernel):
+    from heinzel import Principal
+
+    client, auth = protected(kernel)
+    session_id = client.post("/heinzel/new-chat", headers=auth, json={"request_id": "artifact-chat"}).json()[
+        "session_id"
+    ]
+    payload = {
+        "session_id": session_id,
+        "request_id": "artifact-one",
+        "kind": "presentation",
+        "ref": "https://docs.google.com/presentation/d/abc123_DEF456/edit",
+    }
+    assert client.post("/heinzel/associate-artifact", json=payload).status_code == 401
+    response = client.post("/heinzel/associate-artifact", headers=auth, json=payload)
+    assert response.status_code == 200, response.text
+    assert response.json()["provenance"] == "principal-submitted"
+    assert client.post("/heinzel/associate-artifact", headers=auth, json=payload).json() == response.json()
+    assert client.get("/heinzel/personal-artifacts", headers=auth, params={"session_id": session_id}).json()[
+        "artifacts"
+    ] == [response.json()]
+    stranger = ApiBearer.issue(Principal("u-" + "a" * 32), "sessions", now=NOW)
+    other = TestClient(api.build(kernel, credentials=stranger, audience="sessions", clock=lambda: NOW), base_url=BASE)
+    stranger_auth = {"Authorization": f"Bearer {stranger.secret}"}
+    assert (
+        other.get("/heinzel/personal-artifacts", headers=stranger_auth, params={"session_id": session_id}).status_code
+        != 200
+    )
+    assert other.post("/heinzel/associate-artifact", headers=stranger_auth, json=payload).status_code != 200
+
+
+def test_private_skill_draft_http_is_owner_scoped_and_never_publishes(kernel):
+    from heinzel import Principal
+
+    client, auth = protected(kernel)
+    session_id = client.post("/heinzel/new-chat", headers=auth, json={"request_id": "draft-chat"}).json()["session_id"]
+    payload = {
+        "session_id": session_id,
+        "request_id": "draft-1",
+        "name": "review-work",
+        "requested_scope": "team",
+        "scope_ref": "team-1",
+        "files": {"SKILL.md": "private draft", "scripts/check.py": "print('never run')"},
+    }
+    assert client.post("/heinzel/propose-skill-draft", json=payload).status_code == 401
+    created = client.post("/heinzel/propose-skill-draft", headers=auth, json=payload)
+    assert created.status_code == 200, created.text
+    assert created.json()["files"] == payload["files"]
+    assert created.json()["status"] == "draft"
+    sharing = {
+        "session_id": session_id,
+        "request_id": "sharing-1",
+        "draft_request_id": "draft-1",
+        "draft_sha256": created.json()["preview_sha256"],
+    }
+    assert client.post("/heinzel/propose-skill-sharing", json=sharing).status_code == 401
+    requested = client.post("/heinzel/propose-skill-sharing", headers=auth, json=sharing)
+    assert requested.status_code == 200, requested.text
+    assert requested.json()["status"] == "awaiting_review"
+    assert requested.json()["authority"] == "unverified"
+    assert "private draft" not in requested.text
+    listing = client.get("/heinzel/skill-sharing-proposals", headers=auth, params={"session_id": session_id})
+    assert listing.json()["items"][0]["request_id"] == "sharing-1"
+    assert client.post("/heinzel/propose-skill-draft", headers=auth, json=payload).json() == created.json()
+    read = client.get("/heinzel/skill-draft", headers=auth, params={"session_id": session_id, "request_id": "draft-1"})
+    assert read.json() == created.json()
+    stranger = ApiBearer.issue(Principal("u-" + "a" * 32), "sessions", now=NOW)
+    other = TestClient(api.build(kernel, credentials=stranger, audience="sessions", clock=lambda: NOW), base_url=BASE)
+    other_auth = {"Authorization": f"Bearer {stranger.secret}"}
+    assert (
+        other.get(
+            "/heinzel/skill-draft", headers=other_auth, params={"session_id": session_id, "request_id": "draft-1"}
+        ).status_code
+        != 200
+    )
+    assert other.post("/heinzel/propose-skill-draft", headers=other_auth, json=payload).status_code != 200
+    assert other.post("/heinzel/propose-skill-sharing", headers=other_auth, json=sharing).status_code != 200
+    assert (
+        other.get("/heinzel/skill-sharing-proposals", headers=other_auth, params={"session_id": session_id}).status_code
+        != 200
+    )

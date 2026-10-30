@@ -11,6 +11,7 @@ export class ApiError extends Error {
   constructor(
     readonly status: number,
     message: string,
+    readonly code?: string,
   ) {
     super(message);
   }
@@ -39,7 +40,8 @@ api.use(bearer);
 /** Why a call failed, in words: the API's `error`, a validation detail, or the HTTP status. */
 export function problem(status: number, body: unknown): ApiError {
   if (body && typeof body === "object") {
-    if ("error" in body && typeof body.error === "string") return new ApiError(status, body.error);
+    if ("error" in body && typeof body.error === "string")
+      return new ApiError(status, body.error, "code" in body && typeof body.code === "string" ? body.code : undefined);
     if ("detail" in body && Array.isArray(body.detail)) {
       const details = body.detail.map((item: { msg?: string }) => item.msg ?? "").filter(Boolean);
       if (details.length) return new ApiError(status, details.join("; "));
