@@ -464,7 +464,7 @@ Stage a schedule action for review in chat; creating the proposal never changes 
 **Usage**:
 
 ```console
-$ hz chat propose-schedule-control [OPTIONS] {durable_session} {request_id} {expected_revision} {action}:<activate|resume> {expected_contract_version} {expected_preview_hash}
+$ hz chat propose-schedule-control [OPTIONS] {durable_session} {request_id} {expected_revision} {action}:<activate|pause|resume> {expected_contract_version} {expected_preview_hash}
 ```
 
 **Arguments**:
@@ -472,7 +472,7 @@ $ hz chat propose-schedule-control [OPTIONS] {durable_session} {request_id} {exp
 * `durable_session`: The personal Heinzel whose schedule you read.  [required]
 * `request_id`: A stable id for this schedule action.  [required]
 * `expected_revision`: The schedule revision you inspected.  [required]
-* `action:<activate|resume>`: The exact schedule change to review.  [required]
+* `action:<activate|pause|resume>`: The exact schedule change to review.  [required]
 * `expected_contract_version`: The contract version shown in the preview.  [required]
 * `expected_preview_hash`: The preview hash shown in the schedule details.  [required]
 

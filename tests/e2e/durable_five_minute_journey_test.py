@@ -112,12 +112,13 @@ def _kernel(
 
 
 @pytest.mark.timeout(600)
+@pytest.mark.parametrize("engine", ["chromium", "webkit"])
 def test_mounted_browser_approval_wake_and_restart_deduplicate(  # noqa: PLR0915
-    make_kernel: Callable[..., Kernel], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    make_kernel: Callable[..., Kernel], tmp_path: Path, monkeypatch: pytest.MonkeyPatch, engine: str
 ) -> None:
     web_build.ensure_built()
     subprocess.run(
-        [sys.executable, str(REPO / "scripts/web_build.py"), "exec", "playwright-core", "install", "chromium"],
+        [sys.executable, str(REPO / "scripts/web_build.py"), "exec", "playwright-core", "install", engine],
         cwd=REPO,
         check=True,
         timeout=600,
@@ -165,7 +166,15 @@ def test_mounted_browser_approval_wake_and_restart_deduplicate(  # noqa: PLR0915
         assert parsed.port
         assert token
         driven = subprocess.run(
-            [sys.executable, str(REPO / "scripts/web_build.py"), "exec", "node", "e2e/durable-five-minute.mjs", url],
+            [
+                sys.executable,
+                str(REPO / "scripts/web_build.py"),
+                "exec",
+                "node",
+                "e2e/durable-five-minute.mjs",
+                url,
+                engine,
+            ],
             cwd=REPO,
             capture_output=True,
             text=True,

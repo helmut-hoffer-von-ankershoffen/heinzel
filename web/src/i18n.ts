@@ -6,6 +6,9 @@ const en = {
   "personal.select": "Choose a Heinzel",
   "personal.customize": "Customize your Heinzel",
   "personal.accessories": "Accessories",
+  "personal.accessory.umbrella": "Umbrella",
+  "personal.accessory.sunglasses": "Sunglasses",
+  "personal.accessory.scarf": "Scarf",
   "personal.create": "Create a personal Heinzel",
   "personal.retryCreate": "Retry creation",
   "personal.createError": "Could not confirm creation. Retry to recover the same Heinzel.",
@@ -65,7 +68,11 @@ const en = {
   "durable.scheduleIntentPrepared":
     "The agent prepared a five-minute schedule proposal. Confirm its action above to create an inactive proposal, then review activation separately.",
   "durable.scheduleReview": "Review activation in chat",
+  "durable.schedulePauseReview": "Review pause in chat",
+  "durable.scheduleResumeReview": "Review resume in chat",
   "durable.scheduleActionTitle": "Review this schedule change",
+  "durable.pauseActionTitle": "Review pause of this schedule",
+  "durable.resumeActionTitle": "Review resuming this schedule",
   "durable.scheduleReviewStale":
     "The schedule changed after this review was created. This saved action cannot be confirmed against the current schedule.",
   "durable.scheduleDiscardStale": "Discard stale review",

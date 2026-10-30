@@ -547,7 +547,7 @@ export function ProfileEditor({
                   })
                 }
               />
-              {accessory}
+              {t(`personal.accessory.${accessory}`)}
             </label>
           ))}
         </fieldset>

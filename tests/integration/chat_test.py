@@ -610,6 +610,92 @@ def test_personal_schedule_approval_uses_the_existing_human_chat_gate(kernel, tm
     assert sum(event.kind == "schedule.activated" for event in events) == 1
 
 
+def _assert_pause_reconciliation(service, pause):
+    assert service.applied("heinzel", "schedule-control", pause)
+    assert not service.applied("heinzel", "schedule-control", pause | {"request_id": "other-pause"})
+    assert not service.applied("heinzel", "schedule-control", pause | {"expected_revision": 1})
+
+
+def test_a_person_can_pause_and_resume_one_schedule_through_chat_confirmation(kernel, tmp_path, monkeypatch):
+    client = web_client(kernel, tmp_path)
+    created = client.post(
+        "/api/heinzel/new-chat", headers=AUTH, json={"request_id": "chat-pause-create", "name": "Quiet helper"}
+    ).json()
+    session_id = created["session_id"]
+    schedule = client.post(
+        "/api/heinzel/propose-check-in",
+        headers=AUTH,
+        json={"session_id": session_id, "request_id": "chat-pause-propose", "timezone": "UTC"},
+    ).json()["schedule"]
+    activation = activation_arguments(session_id, schedule, "chat-pause-activate")
+    activation_chat = stage_schedule(client, session_id, activation)
+    assert activation_chat.status_code == 200, activation_chat.text
+    activated = client.post(
+        "/api/system/runner/chat/confirm",
+        headers=AUTH,
+        params={"session": activation_chat.json()["id"], "action": activation_chat.json()["actions"][0]["id"]},
+    )
+    assert activated.status_code == 200, activated.text
+    current = client.get("/api/heinzel/session", headers=AUTH, params={"session_id": session_id}).json()["schedule"]
+    assert current["status"] == "active"
+
+    pause = {**activation, "request_id": "chat-pause", "expected_revision": 2, "action": "pause"}
+    pause_chat = stage_schedule(client, session_id, pause)
+    assert pause_chat.status_code == 200, pause_chat.text
+    assert pause_chat.json()["id"] == activation_chat.json()["id"]
+    pause_action = next(
+        item for item in pause_chat.json()["actions"] if item["arguments"].get("request_id") == "chat-pause"
+    )
+    assert pause_action["status"] == "pending"
+    assert pause_action["arguments"]["action"] == "pause"
+    assert "approval_proof" not in pause_action["arguments"]
+    service = kernel.resolve(SessionCrud)
+    original_snapshot = service.snapshot
+    interrupted = False
+
+    def lose_pause_acknowledgement(session: str, *, cursor: str | None = None, limit: int = 50):
+        nonlocal interrupted
+        result = original_snapshot(session, cursor=cursor, limit=limit)
+        if not interrupted and result.schedule is not None and result.schedule.status == "paused":
+            interrupted = True
+            msg = "synthetic lost acknowledgement after pause commit"
+            raise RuntimeError(msg)
+        return result
+
+    monkeypatch.setattr(service, "snapshot", lose_pause_acknowledgement)
+    paused = client.post(
+        "/api/system/runner/chat/confirm",
+        headers=AUTH,
+        params={"session": pause_chat.json()["id"], "action": pause_action["id"]},
+    )
+    assert paused.status_code == 200, paused.text
+    paused_action = next(item for item in paused.json()["actions"] if item["id"] == pause_action["id"])
+    assert paused_action["status"] == "done"
+    assert "exact schedule change is recorded" in paused_action["result"]
+    current = client.get("/api/heinzel/session", headers=AUTH, params={"session_id": session_id}).json()["schedule"]
+    assert current["status"] == "paused"
+    with kernel.resolve(CurrentUser).local("cli"):
+        events = PersonalSessionRepository(kernel.resolve(CurrentUser)).control_read(session_id).events
+        _assert_pause_reconciliation(service, pause)
+    assert sum(event.kind == "schedule.pause" for event in events) == 1
+
+    resume = {**pause, "request_id": "chat-resume", "expected_revision": 3, "action": "resume"}
+    resume_chat = stage_schedule(client, session_id, resume)
+    assert resume_chat.status_code == 200, resume_chat.text
+    resume_action = next(
+        item for item in resume_chat.json()["actions"] if item["arguments"].get("request_id") == "chat-resume"
+    )
+    resumed = client.post(
+        "/api/system/runner/chat/confirm",
+        headers=AUTH,
+        params={"session": resume_chat.json()["id"], "action": resume_action["id"]},
+    )
+    assert resumed.status_code == 200, resumed.text
+    assert next(item for item in resumed.json()["actions"] if item["id"] == resume_action["id"])["status"] == "done"
+    current = client.get("/api/heinzel/session", headers=AUTH, params={"session_id": session_id}).json()["schedule"]
+    assert current["status"] == "active"
+
+
 def test_schedule_confirmation_failure_before_effect_is_uncertain_and_not_replayed(kernel, tmp_path, monkeypatch):
     client = web_client(kernel, tmp_path)
     session_id = client.post(

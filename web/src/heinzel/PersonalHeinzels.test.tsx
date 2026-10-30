@@ -86,11 +86,11 @@ describe("personal identities", () => {
     renderAt("/heinzel");
     const section = within(await screen.findByRole("region", { name: "Personal Heinzels" }));
     fireEvent.change(await section.findByLabelText("Personal Heinzel"), { target: { value: first } });
-    const scarf = await section.findByLabelText("scarf");
+    const scarf = await section.findByLabelText("Scarf");
     expect(scarf).toBeChecked();
     fireEvent.click(scarf);
-    fireEvent.click(section.getByLabelText("umbrella"));
-    fireEvent.click(section.getByLabelText("sunglasses"));
+    fireEvent.click(section.getByLabelText("Umbrella"));
+    fireEvent.click(section.getByLabelText("Sunglasses"));
     expect(section.getByRole("img", { name: /with an umbrella, wearing sunglasses/ })).toBeInTheDocument();
     fireEvent.click(section.getByRole("button", { name: "Save name and look" }));
     await waitFor(() => expect(saved).toHaveLength(1));
@@ -115,7 +115,7 @@ describe("personal identities", () => {
     fireEvent.change(await section.findByLabelText("Personal Heinzel"), { target: { value: first } });
     const name = await section.findByLabelText("Name");
     fireEvent.change(name, { target: { value: "Styled Alpha" } });
-    fireEvent.click(section.getByLabelText("umbrella"));
+    fireEvent.click(section.getByLabelText("Umbrella"));
     await waitFor(() => expect(sessionStorage.getItem(firstDraft)).not.toBeNull());
     firstView.unmount();
 
@@ -123,10 +123,10 @@ describe("personal identities", () => {
     section = within(await screen.findByRole("region", { name: "Personal Heinzels" }));
     fireEvent.change(await section.findByLabelText("Personal Heinzel"), { target: { value: first } });
     await waitFor(() => expect(section.getByLabelText("Name")).toHaveValue("Styled Alpha"));
-    expect(section.getByLabelText("umbrella")).toBeChecked();
+    expect(section.getByLabelText("Umbrella")).toBeChecked();
     fireEvent.change(section.getByLabelText("Personal Heinzel"), { target: { value: second } });
     await waitFor(() => expect(section.getByLabelText("Name")).toHaveValue("Beta"));
-    expect(section.getByLabelText("umbrella")).not.toBeChecked();
+    expect(section.getByLabelText("Umbrella")).not.toBeChecked();
     sessionStorage.removeItem(firstDraft);
     sessionStorage.removeItem(secondDraft);
   });
