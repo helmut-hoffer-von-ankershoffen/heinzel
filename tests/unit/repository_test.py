@@ -154,13 +154,14 @@ def test_core_imports_no_concrete_plugin_implementation():
         for point in distribution.entry_points
         if point.group == "heinzel.modules"
     }
-    neutral = {
-        root
-        for root in metadata.packages_distributions()
-        if not root.startswith("heinzel_") or not providers.intersection({root})
-    }
+    assert _forbidden_plugin_imports(REPO, providers) == []
+
+
+def _forbidden_plugin_imports(repo, providers):
+    """Check every import; only inspect installed package names when a candidate needs them."""
+    packages = None
     forbidden = []
-    for source in (REPO / "src/heinzel").rglob("*.py"):
+    for source in (repo / "src/heinzel").rglob("*.py"):
         for node in ast.walk(ast.parse(source.read_text())):
             imported = []
             if isinstance(node, ast.Import):
@@ -169,6 +170,45 @@ def test_core_imports_no_concrete_plugin_implementation():
                 imported = [node.module or ""]
             for name in imported:
                 root = name.split(".")[0]
-                if root in providers or (root.startswith("heinzel_") and root not in neutral):
-                    forbidden.append(f"{source.relative_to(REPO)}:{node.lineno}: {name}")
-    assert forbidden == []
+                if root in providers:
+                    forbidden.append(f"{source.relative_to(repo)}:{node.lineno}: {name}")
+                elif root.startswith("heinzel_"):
+                    if packages is None:
+                        packages = metadata.packages_distributions()
+                    if root not in packages:
+                        forbidden.append(f"{source.relative_to(repo)}:{node.lineno}: {name}")
+    return forbidden
+
+
+def test_plugin_import_scan_checks_providers_neutral_packages_and_uninstalled_names(tmp_path, monkeypatch):
+    source = tmp_path / "src/heinzel/example.py"
+    source.parent.mkdir(parents=True)
+    source.write_text(
+        "import ordinary, vendor_plugin.child\n"
+        "from heinzel_neutral import thing\n"
+        "if True:\n    import heinzel_missing.child\n"
+        "from .heinzel_missing import local\n"
+        "import heinzel_provider\n",
+        encoding="utf-8",
+    )
+    calls = []
+
+    def packages():
+        calls.append(True)
+        return {"heinzel_neutral": ["neutral"], "heinzel_provider": ["provider"]}
+
+    monkeypatch.setattr(metadata, "packages_distributions", packages)
+    assert _forbidden_plugin_imports(tmp_path, {"vendor_plugin", "heinzel_provider"}) == [
+        "src/heinzel/example.py:1: vendor_plugin.child",
+        "src/heinzel/example.py:6: heinzel_provider",
+        "src/heinzel/example.py:4: heinzel_missing.child",
+    ]
+    assert calls == [True]
+
+
+def test_plugin_import_scan_avoids_package_map_without_candidates(tmp_path, monkeypatch):
+    source = tmp_path / "src/heinzel/example.py"
+    source.parent.mkdir(parents=True)
+    source.write_text("import ordinary, vendor_plugin\n", encoding="utf-8")
+    monkeypatch.setattr(metadata, "packages_distributions", lambda: pytest.fail("unneeded package lookup"))
+    assert _forbidden_plugin_imports(tmp_path, {"vendor_plugin"}) == ["src/heinzel/example.py:1: vendor_plugin"]
