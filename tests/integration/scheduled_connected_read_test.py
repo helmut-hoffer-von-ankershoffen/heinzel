@@ -31,6 +31,17 @@ def _mutate_if_requested(state, fixed_arguments):
         fixed_arguments["window"]["since"] = "2025-01-01T00:00:00Z"
 
 
+def _freeze_schedule_time(monkeypatch, now):
+    import heinzel.modules.heinzel._autonomous_schedule as schedule_module
+
+    class Clock(type(now)):
+        @classmethod
+        def now(cls, tz=None):
+            return now
+
+    monkeypatch.setattr(schedule_module, "datetime", Clock)
+
+
 def _fixture(make_kernel, tmp_path, monkeypatch):
     state = {"opens": 0, "reads": 0, "account": "account-one"}
     holder = {}
@@ -227,6 +238,7 @@ def test_scheduled_read_requires_exact_separate_consent_and_survives_restart(  #
         jobs = kernel.resolve(CompiledJobs).jobs
         job = next(job for job in jobs if job.name.startswith("agent-" + session.lower()))
         now = datetime.now(UTC)
+        _freeze_schedule_time(monkeypatch, now)
         daemon = DaemonService(kernel, settings, DaemonSettings(), clock=lambda: now, zone=UTC)
         registered = [item for item in daemon._jobs() if item.id == "heinzel:" + job.name]
         monkeypatch.setattr(daemon, "_jobs", lambda: registered)
@@ -324,6 +336,7 @@ def test_compiled_daemon_notification_requires_exact_read_and_schedule_consents(
     with current.local("daemon"):
         job = next(job for job in kernel.resolve(CompiledJobs).jobs if job.name.startswith("agent-" + session.lower()))
         now = datetime.now(UTC)
+        _freeze_schedule_time(monkeypatch, now)
         daemon = DaemonService(kernel, settings, DaemonSettings(), clock=lambda: now, zone=UTC)
         registered = [item for item in daemon._jobs() if item.id == "heinzel:" + job.name]
         monkeypatch.setattr(daemon, "_jobs", lambda: registered)

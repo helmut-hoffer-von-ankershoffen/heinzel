@@ -12,7 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, m
 from heinzel import CurrentUser, HeinzelError, NoticeKind, Notifications, SessionEvent, SessionWriter
 from heinzel.kernel._approval import arguments_hash
 from heinzel.modules.heinzel._connected_grants import ConnectedReadGrants
-from heinzel.modules.heinzel._input_receipts import _key
+from heinzel.modules.heinzel._input_receipts import existing_input_receipt_key
 from heinzel.modules.heinzel._item_evidence import ItemLookup, dedupe_key, resolve_current_item
 from heinzel.modules.heinzel._notification_proposals import NotificationProposal
 from heinzel.modules.heinzel._session_bodies import immutable_body
@@ -182,7 +182,7 @@ class ScheduledNotifications:
                 self.crud,
                 self.current,
                 ItemLookup(self.session, self.turn, item_request.item_ref, terms),
-                _key(self.current, create=False),
+                existing_input_receipt_key(self.current),
             )
             item_identity = dedupe_key(item, self.policy.item_evidence.deduplicate_by)
             scoped_identity = hashlib.sha256(f"{self.contract_sha256}\0{item_identity}".encode()).hexdigest()

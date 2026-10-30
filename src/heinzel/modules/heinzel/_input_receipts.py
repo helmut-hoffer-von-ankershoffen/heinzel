@@ -83,6 +83,15 @@ def _key(current: CurrentUser, *, create: bool) -> bytes:
         raise HeinzelError(msg) from None
 
 
+def existing_input_receipt_key(current: CurrentUser) -> bytes:
+    """Read the existing owner-private receipt key without creating a new one.
+
+    Raises:
+        HeinzelError: If the owner-private key is unavailable or invalid.
+    """
+    return _key(current, create=False)
+
+
 def _fingerprint(key: bytes, value: object) -> str:
     encoded = json.dumps(value, ensure_ascii=True, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
     return hmac.new(key, encoded, hashlib.sha256).hexdigest()
