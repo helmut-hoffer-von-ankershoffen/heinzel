@@ -199,3 +199,4 @@ of inventing them. Two factual corrections came with it: ADR 0004 names the plug
 | [0105](0105-status-detail-designations-and-state-icons.md) | Status detail rows carry provider designations and work state icons | proposed | 2026-10-30 |
 | [0106](0106-source-bound-connected-provider-loading.md) | Bind connected providers to source-only loading | proposed | 2026-10-30 |
 | [0107](0107-propose-bounded-connected-read-sets.md) | Propose bounded connected read sets separately | proposed | 2026-10-30 |
+| [0108](0108-record-owned-installation-continuity-after-verified-changes.md) | Record owned installation continuity after verified changes | proposed | 2026-10-30 |
