@@ -42,6 +42,16 @@ def test_schedule_suggestions_replay_revision_and_writer_fence(tmp_path):
                 tools.dispatch("schedule:propose", terms, 3)
             amended = {**terms, "expected_revision": 1, "trigger": {"cron": "0 9 * * 1", "timezone": "UTC"}}
             assert json.loads(tools.dispatch("schedule:propose", amended, 4))["revision"] == 2
+            interval = {**terms, "expected_revision": 2, "trigger": {"kind": "interval", "cadence_seconds": 420}}
+            assert json.loads(tools.dispatch("schedule:propose", interval, 6))["revision"] == 3
+            assert json.loads(tools.dispatch("schedule:current", {}, 7))["trigger"] == interval["trigger"]
+            for bad in (True, 61, 0, 86460):
+                with pytest.raises(HeinzelError):
+                    tools.dispatch(
+                        "schedule:propose",
+                        {**interval, "expected_revision": 3, "trigger": {"kind": "interval", "cadence_seconds": bad}},
+                        8,
+                    )
             with pytest.raises(HeinzelError):
                 tools.dispatch("schedule:propose", {**terms, "trigger": {"cron": "bad", "timezone": "UTC"}}, 1)
             assert crud.snapshot(session).schedule is None

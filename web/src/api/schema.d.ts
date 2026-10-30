@@ -9380,8 +9380,11 @@ export interface components {
              * @description Unverified suggested read capabilities.
              */
             suggested_reads: components["schemas"]["SuggestedRead"][];
-            /** @description Suggested schedule, not yet approved or activated. */
-            trigger: components["schemas"]["SuggestedTrigger"];
+            /**
+             * Trigger
+             * @description Suggested schedule, not yet approved or activated.
+             */
+            trigger: components["schemas"]["SuggestedTrigger"] | components["schemas"]["SuggestedInterval"];
         };
         /**
          * ScheduledAgentProposal
@@ -10666,6 +10669,23 @@ export interface components {
              * @description Lines the last push didn't carry yet.
              */
             pending: number;
+        };
+        /**
+         * SuggestedInterval
+         * @description An interval supported by the autonomous scheduler, without approval or activation.
+         */
+        SuggestedInterval: {
+            /**
+             * Cadence Seconds
+             * @description Whole-minute interval between scheduled slots.
+             */
+            cadence_seconds: number;
+            /**
+             * Kind
+             * @description Explicit interval, distinct from calendar cron semantics.
+             * @constant
+             */
+            kind: "interval";
         };
         /**
          * SuggestedRead
@@ -13141,6 +13161,7 @@ export type SchemaStatusItem = components['schemas']['StatusItem'];
 export type SchemaStatusMeter = components['schemas']['StatusMeter'];
 export type SchemaStep = components['schemas']['Step'];
 export type SchemaStreamStatus = components['schemas']['StreamStatus'];
+export type SchemaSuggestedInterval = components['schemas']['SuggestedInterval'];
 export type SchemaSuggestedRead = components['schemas']['SuggestedRead'];
 export type SchemaSuggestedTrigger = components['schemas']['SuggestedTrigger'];
 export type SchemaSystemInfo = components['schemas']['SystemInfo'];

@@ -10881,8 +10881,16 @@
             "type": "array"
           },
           "trigger": {
-            "$ref": "#/components/schemas/SuggestedTrigger",
-            "description": "Suggested schedule, not yet approved or activated."
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SuggestedTrigger"
+              },
+              {
+                "$ref": "#/components/schemas/SuggestedInterval"
+              }
+            ],
+            "description": "Suggested schedule, not yet approved or activated.",
+            "title": "Trigger"
           }
         },
         "required": [
@@ -13075,6 +13083,31 @@
           "pending"
         ],
         "title": "StreamStatus",
+        "type": "object"
+      },
+      "SuggestedInterval": {
+        "additionalProperties": false,
+        "description": "An interval supported by the autonomous scheduler, without approval or activation.",
+        "properties": {
+          "cadence_seconds": {
+            "description": "Whole-minute interval between scheduled slots.",
+            "maximum": 86400.0,
+            "minimum": 60.0,
+            "title": "Cadence Seconds",
+            "type": "integer"
+          },
+          "kind": {
+            "const": "interval",
+            "description": "Explicit interval, distinct from calendar cron semantics.",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "cadence_seconds"
+        ],
+        "title": "SuggestedInterval",
         "type": "object"
       },
       "SuggestedRead": {

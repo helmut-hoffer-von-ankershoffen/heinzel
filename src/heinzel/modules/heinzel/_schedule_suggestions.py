@@ -77,12 +77,33 @@ class SuggestedTrigger(BaseModel):
         return value
 
 
+class SuggestedInterval(BaseModel):
+    """An interval supported by the autonomous scheduler, without approval or activation."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+    kind: Literal["interval"] = Field(description="Explicit interval, distinct from calendar cron semantics.")
+    cadence_seconds: int = Field(ge=60, le=86400, description="Whole-minute interval between scheduled slots.")
+
+    @field_validator("cadence_seconds")
+    @classmethod
+    def whole_minutes(cls, value: int) -> int:
+        """Require the exact cadence supported by the scheduler.
+
+        Raises:
+            ValueError: If the interval is not a whole number of minutes.
+        """
+        if value % 60:
+            msg = "The interval must be a whole number of minutes"
+            raise ValueError(msg)
+        return value
+
+
 class ScheduleSuggestionRequest(BaseModel):
     """Exact chat-suggested terms; this has no activation or access authority."""
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
     expected_revision: int = Field(ge=0, description="Current suggestion revision, or zero for the first.")
-    trigger: SuggestedTrigger = Field(description="Suggested schedule; no activation is performed.")
+    trigger: SuggestedTrigger | SuggestedInterval = Field(description="Suggested schedule; no activation is performed.")
     suggested_reads: list[SuggestedRead] = Field(
         max_length=16, description="Unverified suggested capabilities, not granted access."
     )
@@ -96,7 +117,9 @@ class ScheduleSuggestion(BaseModel):
     request_id: RequestId = Field(description="Stable host-derived suggestion identity.")
     revision: int = Field(ge=1, description="Suggestion revision.")
     based_on_revision: int = Field(ge=0, description="Revision the suggestion amended.")
-    trigger: SuggestedTrigger = Field(description="Suggested schedule, not yet approved or activated.")
+    trigger: SuggestedTrigger | SuggestedInterval = Field(
+        description="Suggested schedule, not yet approved or activated."
+    )
     suggested_reads: list[SuggestedRead] = Field(max_length=16, description="Unverified suggested read capabilities.")
     status: Literal["suggested"] = Field(default="suggested", description="Inert suggestion, without authority.")
 

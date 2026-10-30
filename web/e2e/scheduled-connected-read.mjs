@@ -28,6 +28,10 @@ try {
   await terms.getByRole("button", { name: "Review these terms" }).click();
   await terms.getByRole("button", { name: "Confirm" }).click();
   await terms.getByText("These exact terms were accepted.").waitFor();
+  await page.getByLabel("Message your Heinzel").fill("Suggest an interval for this agent.");
+  await page.getByRole("button", { name: "Queue message" }).click();
+  await page.getByText("Suggest an interval for this agent.").waitFor();
+  await page.getByText("Read complete.").nth(1).waitFor({ timeout: 30000 });
   const panel = page.getByRole("region", { name: "Connected read review" });
   await panel.getByLabel("Read operation").selectOption("calendar.events");
   if (process.argv[5] === "rolling") {
@@ -52,6 +56,11 @@ try {
   await panel.getByText(/Recorded state: approved/).waitFor();
   const schedule = page.locator("details").filter({ has: page.getByText("Recurring agent turns", { exact: true }) });
   await schedule.getByText("Recurring agent turns", { exact: true }).click();
+  await schedule.getByRole("button", { name: "Refresh suggestion" }).click();
+  await schedule.getByText(/Suggested interval: every 7 minutes/).waitFor();
+  assert.equal(await schedule.getByLabel("Every (minutes)").inputValue(), "5");
+  await schedule.getByRole("button", { name: "Use interval in preview" }).click();
+  assert.equal(await schedule.getByLabel("Every (minutes)").inputValue(), "7");
   const consent = await schedule.getByRole("checkbox", { name: /Allow the separately approved calendar.events/ });
   assert.equal(await consent.isChecked(), false);
   await consent.check();
@@ -59,6 +68,7 @@ try {
   await schedule.getByRole("button", { name: "Propose recurring turns" }).click();
   await schedule.getByRole("button", { name: "Review this schedule" }).click();
   const card = schedule.getByRole("heading", { name: "Review agent schedule" }).locator("../..");
+  assert.match(await card.innerText(), /420/);
   assert.match(await card.innerText(), /fixture-account/);
   assert.match(await card.innerText(), /fixture-read/);
   if (process.argv[5] === "rolling") assert.match(await card.innerText(), /rolling-window/);
@@ -83,7 +93,7 @@ try {
   await page.getByRole("tab", { name: "Chat", exact: true }).click();
   await page
     .getByText(/Tool activity for this reply/)
-    .nth(1)
+    .nth(2)
     .click();
   await page
     .getByText(/connected_read · completed/)
