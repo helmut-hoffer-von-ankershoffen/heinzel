@@ -1,6 +1,8 @@
 """Private per-principal session namespaces and the durable creation reservation catalog."""
 
+import os
 import secrets
+import stat
 from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from datetime import UTC, datetime
@@ -12,6 +14,7 @@ from heinzel.kernel import Authentication
 from heinzel.modules.heinzel._session_models import Digest, RequestId, SessionId
 
 _SESSION = TypeAdapter(SessionId)
+_PRIVATE_DIRECTORY_MODE = 0o700
 _REQUEST = TypeAdapter(RequestId)
 _DIGEST = TypeAdapter(Digest)
 _ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
@@ -89,6 +92,99 @@ class PersonalSessionRepository:
                 "creation.reserved", key=request_id, data={"session_id": session_id, "payload_hash": payload_hash}
             )
             return session_id
+
+    def reserved_session_ids(self) -> tuple[str, ...]:
+        """List every owner-reserved session, including incomplete creations.
+
+        Raises:
+            HeinzelError: If the owner catalog is damaged or contains invalid identities.
+        """
+        events = self._catalog().events
+        return tuple(
+            dict.fromkeys(
+                _SESSION.validate_python(event.data.get("session_id"))
+                for event in events
+                if event.kind == "creation.reserved"
+            )
+        )
+
+    def verify_reserved_session_stores(self, sessions: tuple[str, ...]) -> None:
+        """Compare physical owner stores with reservations without relying on a derived index.
+
+        Raises:
+            HeinzelError: If owned journals are missing, unsafe or absent from the owner catalog.
+        """
+        expected = set(sessions)
+        base = os.open(self.current.directory.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        try:
+            try:
+                all_owners = os.open("heinzel-sessions", os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=base)
+                try:
+                    owner = os.open(self.principal_id, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=all_owners)
+                    try:
+                        if os.fstat(all_owners).st_uid != os.getuid() or os.fstat(owner).st_uid != os.getuid():
+                            msg = "The owner session stores need repair"
+                            raise HeinzelError(msg)
+                        for namespace in ("main", "control"):
+                            self._verify_reserved_namespace(owner, namespace, expected)
+                    finally:
+                        os.close(owner)
+                finally:
+                    os.close(all_owners)
+            except FileNotFoundError:
+                if expected:
+                    msg = "The owner session stores need repair"
+                    raise HeinzelError(msg) from None
+        finally:
+            os.close(base)
+
+    @staticmethod
+    def _verify_reserved_namespace(owner: int, namespace: str, expected: set[str]) -> None:
+        try:
+            with PersonalSessionRepository._private_store(owner, namespace) as root:
+                found: set[str] = set()
+                with os.scandir(root) as entries:
+                    for entry in entries:
+                        if entry.is_symlink() or (
+                            entry.name.startswith("hz-") and not entry.is_dir(follow_symlinks=False)
+                        ):
+                            msg = "The owner session stores need repair"
+                            raise HeinzelError(msg)
+                        if entry.is_dir(follow_symlinks=False):
+                            if entry.name not in expected:
+                                msg = "The owner session stores need repair"
+                                raise HeinzelError(msg)
+                            with PersonalSessionRepository._private_store(root, entry.name):
+                                found.add(entry.name)
+                if found != expected:
+                    msg = "The owner session stores need repair"
+                    raise HeinzelError(msg)
+        except FileNotFoundError:
+            if expected:
+                msg = "The owner session stores need repair"
+                raise HeinzelError(msg) from None
+
+    @staticmethod
+    @contextmanager
+    def _private_store(parent: int, name: str) -> Generator[int]:
+        """Inspect an existing private owner store without creating or following it.
+
+        Yields:
+            The verified directory descriptor, closed when inspection ends.
+
+        Raises:
+            HeinzelError: If the store is not private or does not belong to this user.
+            OSError: If the existing directory cannot be safely opened.
+        """
+        descriptor = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent)
+        try:
+            info = os.fstat(descriptor)
+            if info.st_uid != os.getuid() or stat.S_IMODE(info.st_mode) != _PRIVATE_DIRECTORY_MODE:
+                msg = "The owner session stores need repair"
+                raise HeinzelError(msg)
+            yield descriptor
+        finally:
+            os.close(descriptor)
 
     def heads(self) -> list[SessionHead]:
         """Only owned agent spines; the separate catalog and inbox roots are never extra sessions."""

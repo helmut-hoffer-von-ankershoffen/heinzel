@@ -9990,6 +9990,205 @@
         "title": "Question",
         "type": "object"
       },
+      "ReadSetEntry": {
+        "additionalProperties": false,
+        "description": "An opaque host-issued selector and its proposed terms.",
+        "properties": {
+          "handle": {
+            "description": "An opaque host selector for this exact entry.",
+            "pattern": "^read-[0-9a-f]{32}$",
+            "title": "Handle",
+            "type": "string"
+          },
+          "terms": {
+            "$ref": "#/components/schemas/ReadSetTerms",
+            "description": "The exact proposed read terms, without approval."
+          }
+        },
+        "required": [
+          "handle",
+          "terms"
+        ],
+        "title": "ReadSetEntry",
+        "type": "object"
+      },
+      "ReadSetProposal": {
+        "additionalProperties": false,
+        "description": "A private proposal; its existence does not authorize any access.",
+        "properties": {
+          "entries": {
+            "description": "The bounded sources proposed for review together.",
+            "items": {
+              "$ref": "#/components/schemas/ReadSetEntry"
+            },
+            "maxItems": 4,
+            "minItems": 1,
+            "title": "Entries",
+            "type": "array"
+          },
+          "owner": {
+            "description": "The authenticated owner of this private proposal.",
+            "pattern": "^u-[0-9a-f]{32}$",
+            "title": "Owner",
+            "type": "string"
+          },
+          "provenance": {
+            "const": "owner-request",
+            "default": "owner-request",
+            "description": "How this proposal was staged.",
+            "title": "Provenance",
+            "type": "string"
+          },
+          "request_id": {
+            "description": "The stable request identifying this proposal.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "revision": {
+            "description": "The recorded proposal revision.",
+            "minimum": 1.0,
+            "title": "Revision",
+            "type": "integer"
+          },
+          "session": {
+            "description": "The owner's agent conversation receiving these proposed sources.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session",
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_id",
+          "revision",
+          "owner",
+          "session",
+          "entries"
+        ],
+        "title": "ReadSetProposal",
+        "type": "object"
+      },
+      "ReadSetReview": {
+        "additionalProperties": false,
+        "description": "Bounded host observations, without approval, read authority or an atomic multi-provider snapshot.\n\nAny later grant or read must freshly revalidate each selected source and account.",
+        "properties": {
+          "proposal": {
+            "$ref": "#/components/schemas/ReadSetProposal",
+            "description": "The whole exact proposal covered by this review."
+          },
+          "provenance": {
+            "const": "host-observed",
+            "default": "host-observed",
+            "description": "The host re-observed each selected provider and account.",
+            "title": "Provenance",
+            "type": "string"
+          },
+          "request_id": {
+            "description": "The stable request identifying this exact review.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "revision": {
+            "description": "The recorded review revision.",
+            "minimum": 1.0,
+            "title": "Revision",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "request_id",
+          "revision",
+          "proposal"
+        ],
+        "title": "ReadSetReview",
+        "type": "object"
+      },
+      "ReadSetSelection": {
+        "additionalProperties": false,
+        "description": "The owner's requested fixed capability and arguments; it is not a source review.",
+        "properties": {
+          "capability": {
+            "description": "The configured capability to inspect.",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Capability",
+            "type": "string"
+          },
+          "fixed_arguments": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "description": "Exact arguments proposed for this read.",
+            "maxProperties": 32,
+            "title": "Fixed Arguments",
+            "type": "object"
+          },
+          "method": {
+            "description": "The fixed read operation to review.",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Method",
+            "type": "string"
+          }
+        },
+        "required": [
+          "capability",
+          "method",
+          "fixed_arguments"
+        ],
+        "title": "ReadSetSelection",
+        "type": "object"
+      },
+      "ReadSetTerms": {
+        "additionalProperties": false,
+        "description": "Unverified proposed terms, not a provider observation or a grant.",
+        "properties": {
+          "binding_sha256": {
+            "description": "The proposed provider binding, rechecked by the host before approval.",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Binding Sha256",
+            "type": "string"
+          },
+          "capability": {
+            "description": "The selected configured capability.",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Capability",
+            "type": "string"
+          },
+          "method": {
+            "description": "The selected read operation.",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Method",
+            "type": "string"
+          },
+          "review": {
+            "$ref": "#/components/schemas/ConnectedReadReview",
+            "description": "Proposed source, account, scopes and read arguments; not independent evidence."
+          },
+          "window_policy": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RollingWindowPolicy"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional proposed rolling bounds; their presence does not authorize a schedule."
+          }
+        },
+        "required": [
+          "capability",
+          "method",
+          "binding_sha256",
+          "review"
+        ],
+        "title": "ReadSetTerms",
+        "type": "object"
+      },
       "RecipientPreview": {
         "description": "A resolved recipient in the exact snapshot awaiting human review.",
         "properties": {
@@ -12827,6 +13026,97 @@
           "effective"
         ],
         "title": "SoundscapeView",
+        "type": "object"
+      },
+      "SourceSetItem": {
+        "additionalProperties": false,
+        "description": "One unverified model-suggested fixed read.",
+        "properties": {
+          "capability": {
+            "description": "The suggested configured capability.",
+            "maxLength": 64,
+            "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
+            "title": "Capability",
+            "type": "string"
+          },
+          "fixed_arguments": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "description": "Suggested arguments for the person to inspect.",
+            "title": "Fixed Arguments",
+            "type": "object"
+          },
+          "method": {
+            "description": "The suggested fixed read operation.",
+            "maxLength": 64,
+            "pattern": "^[a-z][a-z0-9_]*$",
+            "title": "Method",
+            "type": "string"
+          }
+        },
+        "required": [
+          "capability",
+          "method",
+          "fixed_arguments"
+        ],
+        "title": "SourceSetItem",
+        "type": "object"
+      },
+      "SourceSetSuggestion": {
+        "additionalProperties": false,
+        "description": "Owner-private inert suggestion, with host-derived identity.",
+        "properties": {
+          "based_on_revision": {
+            "description": "The previous revision this suggestion replaces.",
+            "minimum": 0.0,
+            "title": "Based On Revision",
+            "type": "integer"
+          },
+          "entries": {
+            "description": "Unverified sources suggested for the person to select and review.",
+            "items": {
+              "$ref": "#/components/schemas/SourceSetItem"
+            },
+            "maxItems": 4,
+            "minItems": 1,
+            "title": "Entries",
+            "type": "array"
+          },
+          "request_id": {
+            "description": "The host-derived identity of this exact suggestion.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "revision": {
+            "description": "The recorded suggestion revision.",
+            "minimum": 1.0,
+            "title": "Revision",
+            "type": "integer"
+          },
+          "session_id": {
+            "description": "The owner's private agent conversation.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "status": {
+            "const": "suggested",
+            "default": "suggested",
+            "description": "A draft suggestion, never an approval.",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "request_id",
+          "revision",
+          "based_on_revision",
+          "entries"
+        ],
+        "title": "SourceSetSuggestion",
         "type": "object"
       },
       "SourceSuggestion": {
@@ -16798,6 +17088,42 @@
         "title": "heinzel_approve_connected_read_Input",
         "type": "object"
       },
+      "heinzel_approve_connected_read_set_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "approval_proof": {
+            "title": "Approval Proof",
+            "type": "string"
+          },
+          "request_id": {
+            "description": "A stable client request id; reuse it only for an exact retry.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "review": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "title": "Review",
+            "type": "object"
+          },
+          "session_id": {
+            "description": "The stable personal session id returned by new-chat or sessions.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "request_id",
+          "review",
+          "approval_proof"
+        ],
+        "title": "heinzel_approve_connected_read_set_Input",
+        "type": "object"
+      },
       "heinzel_approve_model_grant_Input": {
         "additionalProperties": false,
         "properties": {
@@ -16974,6 +17300,42 @@
           "request_id"
         ],
         "title": "heinzel_pause_agent_schedule_Input",
+        "type": "object"
+      },
+      "heinzel_prepare_connected_read_set_review_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "proposal_request": {
+            "description": "A stable client request id; reuse it only for an exact retry.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Proposal Request",
+            "type": "string"
+          },
+          "proposal_revision": {
+            "minimum": 1.0,
+            "title": "Proposal Revision",
+            "type": "integer"
+          },
+          "request_id": {
+            "description": "A stable client request id; reuse it only for an exact retry.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "session_id": {
+            "description": "The stable personal session id returned by new-chat or sessions.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "request_id",
+          "proposal_request",
+          "proposal_revision"
+        ],
+        "title": "heinzel_prepare_connected_read_set_review_Input",
         "type": "object"
       },
       "heinzel_prepare_suggested_source_Input": {
@@ -17215,6 +17577,39 @@
           "fixed_arguments"
         ],
         "title": "heinzel_propose_connected_read_Input",
+        "type": "object"
+      },
+      "heinzel_propose_connected_read_set_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "request_id": {
+            "description": "A stable client request id; reuse it only for an exact retry.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "selections": {
+            "items": {
+              "$ref": "#/components/schemas/ReadSetSelection"
+            },
+            "maxItems": 4,
+            "minItems": 1,
+            "title": "Selections",
+            "type": "array"
+          },
+          "session_id": {
+            "description": "The stable personal session id returned by new-chat or sessions.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "request_id",
+          "selections"
+        ],
+        "title": "heinzel_propose_connected_read_set_Input",
         "type": "object"
       },
       "heinzel_propose_model_policy_Input": {
@@ -17532,6 +17927,29 @@
           "request_id"
         ],
         "title": "heinzel_revoke_connected_read_Input",
+        "type": "object"
+      },
+      "heinzel_revoke_connected_read_set_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "request_id": {
+            "description": "A stable client request id; reuse it only for an exact retry.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "session_id": {
+            "description": "The stable personal session id returned by new-chat or sessions.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "request_id"
+        ],
+        "title": "heinzel_revoke_connected_read_set_Input",
         "type": "object"
       },
       "heinzel_schedule_control_Input": {
@@ -18378,6 +18796,48 @@
         ]
       }
     },
+    "/heinzel/approve-connected-read-set": {
+      "post": {
+        "description": "Record an exact trusted human-confirmed read-set approval; do not execute a read.",
+        "operationId": "heinzel_approve_connected_read_set",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/heinzel_approve_connected_read_set_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadSetReview"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Record an exact trusted human-confirmed read-set approval; do not execute a read.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
     "/heinzel/approve-model-grant": {
       "post": {
         "description": "Apply an exact human-confirmed policy; direct callers cannot issue or consume approval.",
@@ -18721,6 +19181,199 @@
           }
         },
         "summary": "Inspect current exact connected-read proposal; this does not approve it.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/connected-read-set-approval": {
+      "get": {
+        "description": "Inspect the latest valid, unrevoked whole-set approval without executing a read.",
+        "operationId": "heinzel_connected_read_set_approval",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadSetReview"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Inspect the latest valid, unrevoked whole-set approval without executing a read.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/connected-read-set-context": {
+      "get": {
+        "description": "Bind local review recovery state to the authenticated owner and session.",
+        "operationId": "heinzel_connected_read_set_context",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Heinzel Connected Read Set Context",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Bind local review recovery state to the authenticated owner and session.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/connected-read-set-proposal": {
+      "get": {
+        "description": "Inspect the latest private read-set proposal; this is not an approval.",
+        "operationId": "heinzel_connected_read_set_proposal",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ReadSetProposal"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Response Heinzel Connected Read Set Proposal"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Inspect the latest private read-set proposal; this is not an approval.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/connected-read-set-review": {
+      "get": {
+        "description": "Inspect the latest exact set review after fresh source and account checks.",
+        "operationId": "heinzel_connected_read_set_review",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadSetReview"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Inspect the latest exact set review after fresh source and account checks.",
         "tags": [
           "heinzel"
         ]
@@ -19070,6 +19723,57 @@
           }
         },
         "summary": "Read the current inert proposal for the personal session, if one exists.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/latest-source-set-suggestion-view": {
+      "get": {
+        "description": "Inspect the latest inert suggested sources; no provider was contacted or approved.",
+        "operationId": "heinzel_latest_source_set_suggestion_view",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/SourceSetSuggestion"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Response Heinzel Latest Source Set Suggestion View"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Inspect the latest inert suggested sources; no provider was contacted or approved.",
         "tags": [
           "heinzel"
         ]
@@ -19593,6 +20297,48 @@
         ]
       }
     },
+    "/heinzel/prepare-connected-read-set-review": {
+      "post": {
+        "description": "Re-observe the exact current set; this does not issue or consume approval.",
+        "operationId": "heinzel_prepare_connected_read_set_review",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/heinzel_prepare_connected_read_set_review_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadSetReview"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Re-observe the exact current set; this does not issue or consume approval.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
     "/heinzel/prepare-suggested-source": {
       "post": {
         "description": "Prepare the current exact suggestion for separate human approval without executing the read.",
@@ -19798,6 +20544,48 @@
           }
         },
         "summary": "Observe and propose exact connected-read terms; this grants no access.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/propose-connected-read-set": {
+      "post": {
+        "description": "Observe the selected fixed reads and propose them together without granting access.",
+        "operationId": "heinzel_propose_connected_read_set",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/heinzel_propose_connected_read_set_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadSetProposal"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Observe the selected fixed reads and propose them together without granting access.",
         "tags": [
           "heinzel"
         ]
@@ -20140,6 +20928,49 @@
           }
         },
         "summary": "Revoke this exact connected-read grant before future tool calls.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/revoke-connected-read-set": {
+      "post": {
+        "description": "Revoke the complete exact set before any later reads.",
+        "operationId": "heinzel_revoke_connected_read_set",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/heinzel_revoke_connected_read_set_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Heinzel Revoke Connected Read Set",
+                  "type": "boolean"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Revoke the complete exact set before any later reads.",
         "tags": [
           "heinzel"
         ]
@@ -23307,6 +24138,62 @@
           }
         },
         "summary": "Stage current connected-read terms for an explicit human decision.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/runner/chat/propose-connected-read-set-review": {
+      "post": {
+        "description": "Stage the current read-set review for an explicit human decision.",
+        "operationId": "system_runner_chat_propose_connected_read_set_review",
+        "parameters": [
+          {
+            "description": "The personal agent session.",
+            "in": "query",
+            "name": "durable_session",
+            "required": true,
+            "schema": {
+              "description": "The personal agent session.",
+              "title": "Durable Session",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The exact read-set review request id.",
+            "in": "query",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "description": "The exact read-set review request id.",
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatSession"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Stage the current read-set review for an explicit human decision.",
         "tags": [
           "system"
         ]

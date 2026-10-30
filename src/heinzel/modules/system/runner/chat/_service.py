@@ -472,7 +472,7 @@ class ChatService:
             )
             return self._store.load(personal_chat.id)
 
-    def propose_connected_read_review(self, durable_session: str, request_id: str) -> ChatSession:
+    def _propose_connected_review(self, durable_session: str, request_id: str, operation: str) -> ChatSession:
         """Stage the exact owner-private connected read for a human decision, without granting it.
 
         Raises:
@@ -484,7 +484,7 @@ class ChatService:
         issuer = self._kernel.resolve(ApprovalIssuer)
         base: dict[str, JsonValue] = {"session_id": durable_session, "request_id": request_id}
         with self._store.proposal_request_lock():
-            prior = self._store.find_proposal("heinzel", "approve-connected-read", durable_session, request_id)
+            prior = self._store.find_proposal("heinzel", operation, durable_session, request_id)
             if prior is not None:
                 chat, found = prior
                 # Returning the original owner-bound action does not reissue or consume a proof. The issuer
@@ -497,7 +497,7 @@ class ChatService:
                     msg = "This connected read review no longer matches its original action"
                     raise HeinzelError(msg)
                 return chat
-            preview = issuer.review("heinzel", "approve-connected-read", base)
+            preview = issuer.review("heinzel", operation, base)
             arguments: dict[str, JsonValue] = {**base, "review": preview}
             personal_chat = self._store.find_personal_chat(durable_session)
             if personal_chat is None:
@@ -514,13 +514,21 @@ class ChatService:
                 ProposedCall(
                     session=personal_chat.id,
                     module="heinzel",
-                    operation="approve-connected-read",
-                    tool="heinzel_approve_connected_read",
+                    operation=operation,
+                    tool="heinzel_" + operation.replace("-", "_"),
                     arguments=arguments,
-                    command="Review connected read",
+                    command="Review connected read set" if operation.endswith("-set") else "Review connected read",
                 )
             )
             return self._store.load(personal_chat.id)
+
+    def propose_connected_read_review(self, durable_session: str, request_id: str) -> ChatSession:
+        """Stage one exact owner-private connected read for human confirmation."""
+        return self._propose_connected_review(durable_session, request_id, "approve-connected-read")
+
+    def propose_connected_read_set_review(self, durable_session: str, request_id: str) -> ChatSession:
+        """Stage the exact owner-private read set for human confirmation."""
+        return self._propose_connected_review(durable_session, request_id, "approve-connected-read-set")
 
     def propose_agent_schedule_review(self, durable_session: str, request_id: str) -> ChatSession:
         """Stage the exact owner-private agent schedule for a human decision, without granting it.
@@ -834,6 +842,7 @@ class ChatService:
                 "approve-model-grant",
                 "accept-agent-contract",
                 "approve-connected-read",
+                "approve-connected-read-set",
                 "approve-agent-schedule",
                 "queue-agent-notification",
             }
@@ -866,7 +875,8 @@ class ChatService:
                 else "The model policy approval was recorded. No model request was started."
                 if found.module == "heinzel" and found.operation == "approve-model-grant"
                 else "The connected read approval was recorded. No requested data was read."
-                if found.module == "heinzel" and found.operation == "approve-connected-read"
+                if found.module == "heinzel"
+                and found.operation in {"approve-connected-read", "approve-connected-read-set"}
                 else "The agent schedule approval was recorded. No external access was granted."
                 if found.module == "heinzel" and found.operation == "approve-agent-schedule"
                 else "The contract acceptance was recorded. No schedule or access was activated."
@@ -904,6 +914,7 @@ class ChatService:
                 "approve-model-grant",
                 "accept-agent-contract",
                 "approve-connected-read",
+                "approve-connected-read-set",
                 "approve-agent-schedule",
                 "queue-agent-notification",
             }
@@ -929,7 +940,7 @@ class ChatService:
                 else "The exact schedule change is recorded. It was not run again."
                 if found.operation == "schedule-control"
                 else "The exact connected read approval is recorded. It was not run again."
-                if found.operation == "approve-connected-read"
+                if found.operation in {"approve-connected-read", "approve-connected-read-set"}
                 else "The exact agent schedule approval is recorded. It was not run again."
                 if found.operation == "approve-agent-schedule"
                 else "The exact contract acceptance is recorded. It was not run again."
@@ -976,7 +987,7 @@ class ChatService:
                         else "The exact schedule change is recorded. It was not run again."
                         if found.operation == "schedule-control"
                         else "The exact connected read approval is recorded. It was not run again."
-                        if found.operation == "approve-connected-read"
+                        if found.operation in {"approve-connected-read", "approve-connected-read-set"}
                         else "The exact agent schedule approval is recorded. It was not run again."
                         if found.operation == "approve-agent-schedule"
                         else "The exact contract acceptance is recorded. It was not run again."
@@ -1036,6 +1047,7 @@ class ChatService:
                         "approve-model-grant",
                         "accept-agent-contract",
                         "approve-connected-read",
+                        "approve-connected-read-set",
                         "approve-agent-schedule",
                         "queue-agent-notification",
                     }
