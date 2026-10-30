@@ -119,6 +119,7 @@ def test_failed_step_cancels_concurrent_group_and_never_starts_later_step(tmp_pa
     )
     result = subprocess.run(
         [sys.executable, str(_RUNNER), f"fail={failure}", f"&slow={slow}", f"later={later}"],
+        env=dict(os.environ, VERBOSE="0"),
         capture_output=True,
         text=True,
         timeout=8,

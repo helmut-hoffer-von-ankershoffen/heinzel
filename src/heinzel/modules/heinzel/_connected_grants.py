@@ -841,7 +841,7 @@ class ConnectedReadGrants:
             except Exception:  # noqa: BLE001 - never return provider or input diagnostics
                 msg = "The connected read began but did not produce a usable result"
                 raise ConnectedReadFailedError(msg) from None
-            return result
+            self._verify_read_lease(lease, grant, fixed_hash)
         finally:
             try:
                 lease.close()
@@ -850,6 +850,37 @@ class ConnectedReadGrants:
                 if invoked:
                     raise ConnectedReadFailedError(msg) from None
                 raise HeinzelError(msg) from None
+        self._verify_after_read(session, turn_writer, grant)
+        return result
+
+    def _verify_read_lease(self, lease: ConnectedReadLease, grant: ConnectedGrant, fixed_hash: str) -> None:
+        try:
+            live_after = _review_lease(lease)
+            if arguments_hash(live_after.fixed_arguments) != fixed_hash or not self._same_review(grant, live_after):
+                raise ValueError  # noqa: TRY301 - safe failure below
+        except Exception:  # noqa: BLE001 - read has occurred; discard provider diagnostics
+            msg = "The connected read completed but its source or account could not be confirmed"
+            raise ConnectedReadFailedError(msg) from None
+
+    def _verify_after_read(self, session: str, turn_writer: SessionWriter, grant: ConnectedGrant) -> None:
+        try:
+            current = self.current.context()
+            if (
+                current.authentication not in _HEADS | {"daemon"}
+                or current.principal != self.current.owner()
+                or current.principal.id != self.owner
+                or _READ_PERMISSION not in current.permissions
+                or not self.crud.repository.is_main_writer(session, turn_writer)
+            ):
+                raise ValueError  # noqa: TRY301 - safe failure below
+            self.verify_approved(session, grant)
+            if arguments_hash(self.approved(session).model_dump(mode="json")) != arguments_hash(
+                grant.model_dump(mode="json")
+            ):
+                raise ValueError  # noqa: TRY301 - safe failure below
+        except Exception:  # noqa: BLE001 - never expose the value if its authority changed
+            msg = "The connected read completed but its authority could not be revalidated"
+            raise ConnectedReadFailedError(msg) from None
 
     def read_set_entry(
         self, session: str, writer: SessionWriter, call: "ReadSetCall", approvals: "ConnectedReadSetApprovals"
@@ -913,6 +944,7 @@ class ConnectedReadGrants:
             self._check_current_config(grant.capability)
             invoked = True
             result = _bounded_set_read(lease)
+            self._verify_read_lease(lease, grant, arguments_hash(fixed))
         finally:
             try:
                 lease.close()

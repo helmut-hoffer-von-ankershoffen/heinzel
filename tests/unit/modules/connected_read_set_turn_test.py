@@ -149,3 +149,54 @@ def test_daemon_cannot_read_the_human_set(connected):
     assert not any(
         event.kind == "connected-set-input.observed" for event in crud.repository.control_read(session).events
     )
+
+
+@pytest.mark.parametrize("failure", ["changed-account", "review-error", "malformed"])
+def test_same_lease_postread_drift_is_failed_without_receipt(connected, monkeypatch, failure):
+    from heinzel import ConnectedReadService
+
+    _, crud, session, grants, state, _, _, review, approvals = _approved(connected)
+    handle = review.proposal.entries[0].handle
+    _record, provider = grants.kernel.selected_capability_service(ConnectedReadService, "calendar")
+    open_original = provider.open_lease
+
+    def open_lease(*args):
+        lease = open_original(*args)
+        read_original, review_original = lease.read, lease.review
+
+        def read(arguments):
+            value = read_original(arguments)
+
+            def changed_review():
+                if failure == "review-error":
+                    msg = "private provider error"
+                    raise HeinzelError(msg)
+                if failure == "malformed":
+                    return {}
+                return review_original().model_copy(update={"account_identity": "different-account"})
+
+            lease.review = changed_review
+            return value
+
+        lease.read = read
+        return lease
+
+    monkeypatch.setattr(provider, "open_lease", open_lease)
+    crud.accept(session, MessageRequest(request_id="read-drift", text="Read the approved source."))
+    result = asyncio.run(
+        InteractiveTurn(crud).run(
+            session,
+            "read-drift",
+            _model(handle, "did not produce"),
+            limits=TurnLimits(),
+            connected=grants,
+            connected_set=approvals,
+        )
+    )
+    assert result.text == "Inspected"
+    assert state["reads"] == 1
+    events = crud.repository.control_read(session).events
+    activity = [event.data.get("status") for event in events if event.kind == "interactive.tool"]
+    assert activity == ["requested", "failed"]
+    assert not any(event.kind == "connected-set-input.observed" for event in events)
+    assert "private provider error" not in str(events)

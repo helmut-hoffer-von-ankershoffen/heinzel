@@ -69,6 +69,8 @@ class CapturedOutput:
     def __init__(self, process):
         self.selector = selectors.DefaultSelector()
         self.buffers = {"stdout": b"", "stderr": b""}
+        self.started = time.monotonic()
+        self.markers = {}
         for name in self.buffers:
             stream = getattr(process, name)
             if stream is not None:
@@ -84,7 +86,16 @@ class CapturedOutput:
                 chunk = os.read(key.fd, 8192)
                 if chunk:
                     name = key.data
-                    self.buffers[name] = (self.buffers[name] + chunk)[-MAX_OUTPUT:]
+                    combined = self.buffers[name] + chunk
+                    for label, pattern in (
+                        ("packages-output", rb"Installed [0-9]+ packages in"),
+                        ("app-install-output", rb"Installing Heinzelm"),
+                        ("executables-output", rb"Installed [0-9]+ executables:"),
+                        ("loopback-url-output", rb"http://127\.0\.0\.1:[0-9]+/"),
+                    ):
+                        if label not in self.markers and re.search(pattern, combined):
+                            self.markers[label] = time.monotonic() - self.started
+                    self.buffers[name] = combined[-MAX_OUTPUT:]
                 else:
                     self.selector.unregister(key.fileobj)
 
@@ -294,7 +305,15 @@ def launch_documented_app(command, env, tmp_path, deadline, *, bootstrap_wheels)
             assert process.returncode is None, safe_diagnostics(text)
         else:
             diagnostic = safe_diagnostics(process.capture.text("stdout") + process.capture.text("stderr"))
-            pytest.fail(f"Documented launcher did not serve its app:\n{diagnostic}")
+            marker_times = ", ".join(
+                f"{label}={process.capture.markers[label]:.1f}s"
+                if label in process.capture.markers
+                else f"{label}=missing"
+                for label in ("packages-output", "app-install-output", "executables-output", "loopback-url-output")
+            )
+            pytest.fail(
+                f"Documented launcher did not serve its app:\n{diagnostic}\nREADME output markers: {marker_times}"
+            )
     finally:
         process.stop()
         log.write_text(safe_diagnostics(process.capture.text("stdout") + process.capture.text("stderr")))
