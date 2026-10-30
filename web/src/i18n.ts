@@ -115,6 +115,8 @@ const en = {
   "daemon.persistenceHint": "This changes what starts automatically when you sign in. Confirm to apply it now.",
   "daemon.configuration": "Service configuration",
   "contrib.toggle.pending": "Requested; not ready. Switch off to cancel.",
+  "contrib.toggle.on": "On",
+  "contrib.toggle.off": "Off",
   "contrib.toggle.working": "Applying…",
   "contrib.toggle.copyUrl": "Copy URL",
   "contrib.toggle.copySignIn": "Copy sign-in link",

@@ -54,6 +54,11 @@ beforeEach(() => {
 afterEach(() => vi.restoreAllMocks());
 
 describe("generic provider toggle", () => {
+  it.each([true, false])("shows the verified switch state as visible text (%s)", (checked) => {
+    show(control({ checked }));
+    expect(screen.getByRole("switch", { name: "Share this service" })).toHaveAttribute("aria-checked", String(checked));
+    expect(screen.getByText(checked ? "On" : "Off")).toBeVisible();
+  });
   it("one gesture sends the host-built private JSON call without query or a second confirmation", async () => {
     const user = userEvent.setup();
     const value = control({

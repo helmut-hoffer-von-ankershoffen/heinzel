@@ -3357,7 +3357,7 @@ export interface components {
              * @description The icon the app shows.
              * @enum {string}
              */
-            icon: "activity" | "alarm-clock" | "bell" | "bot" | "calendar" | "calendar-clock" | "chart-line" | "circle-alert" | "circle-check" | "clock" | "cloud" | "cloud-drizzle" | "cloud-fog" | "cloud-lightning" | "cloud-rain" | "cloud-snow" | "cloud-sun" | "code" | "file-text" | "git-pull-request" | "globe" | "heart" | "inbox" | "info" | "link" | "list-checks" | "mail" | "message-square" | "play" | "rocket" | "star" | "sun" | "terminal" | "timer" | "users" | "video" | "wind" | "zap";
+            icon: "activity" | "alarm-clock" | "bell" | "bot" | "briefcase-business" | "calendar" | "calendar-clock" | "chart-line" | "circle-alert" | "circle-check" | "clock" | "cloud" | "cloud-drizzle" | "cloud-fog" | "cloud-lightning" | "cloud-rain" | "cloud-snow" | "cloud-sun" | "code" | "file-text" | "git-pull-request" | "globe" | "heart" | "inbox" | "info" | "link" | "list-checks" | "mail" | "message-square" | "moon" | "party-popper" | "play" | "rocket" | "star" | "sun" | "terminal" | "timer" | "users" | "video" | "wind" | "zap";
             /**
              * Id
              * @description `<module>:<name>`, what `--item` takes, e.g. `clock:primary-zone`.
@@ -4139,7 +4139,7 @@ export interface components {
              * Icon
              * @description An icon beside the title.
              */
-            icon?: ("activity" | "alarm-clock" | "bell" | "bot" | "calendar" | "calendar-clock" | "chart-line" | "circle-alert" | "circle-check" | "clock" | "cloud" | "cloud-drizzle" | "cloud-fog" | "cloud-lightning" | "cloud-rain" | "cloud-snow" | "cloud-sun" | "code" | "file-text" | "git-pull-request" | "globe" | "heart" | "inbox" | "info" | "link" | "list-checks" | "mail" | "message-square" | "play" | "rocket" | "star" | "sun" | "terminal" | "timer" | "users" | "video" | "wind" | "zap") | null;
+            icon?: ("activity" | "alarm-clock" | "bell" | "bot" | "briefcase-business" | "calendar" | "calendar-clock" | "chart-line" | "circle-alert" | "circle-check" | "clock" | "cloud" | "cloud-drizzle" | "cloud-fog" | "cloud-lightning" | "cloud-rain" | "cloud-snow" | "cloud-sun" | "code" | "file-text" | "git-pull-request" | "globe" | "heart" | "inbox" | "info" | "link" | "list-checks" | "mail" | "message-square" | "moon" | "party-popper" | "play" | "rocket" | "star" | "sun" | "terminal" | "timer" | "users" | "video" | "wind" | "zap") | null;
             /**
              * @description A card. (enum property replaced by openapi-typescript)
              * @enum {string}
@@ -5579,10 +5579,15 @@ export interface components {
          */
         DetailLine: {
             /**
+             * Badge
+             * @description Optional short designation shown beside the label.
+             */
+            badge?: string | null;
+            /**
              * Icon
              * @description Optional semantic state icon.
              */
-            icon?: ("activity" | "alarm-clock" | "bell" | "bot" | "calendar" | "calendar-clock" | "chart-line" | "circle-alert" | "circle-check" | "clock" | "cloud" | "cloud-drizzle" | "cloud-fog" | "cloud-lightning" | "cloud-rain" | "cloud-snow" | "cloud-sun" | "code" | "file-text" | "git-pull-request" | "globe" | "heart" | "inbox" | "info" | "link" | "list-checks" | "mail" | "message-square" | "play" | "rocket" | "star" | "sun" | "terminal" | "timer" | "users" | "video" | "wind" | "zap") | null;
+            icon?: ("activity" | "alarm-clock" | "bell" | "bot" | "briefcase-business" | "calendar" | "calendar-clock" | "chart-line" | "circle-alert" | "circle-check" | "clock" | "cloud" | "cloud-drizzle" | "cloud-fog" | "cloud-lightning" | "cloud-rain" | "cloud-snow" | "cloud-sun" | "code" | "file-text" | "git-pull-request" | "globe" | "heart" | "inbox" | "info" | "link" | "list-checks" | "mail" | "message-square" | "moon" | "party-popper" | "play" | "rocket" | "star" | "sun" | "terminal" | "timer" | "users" | "video" | "wind" | "zap") | null;
             /**
              * Live
              * @description Optional live value rendered after the text.
@@ -6212,7 +6217,7 @@ export interface components {
              * Icon
              * @description An icon beside the value.
              */
-            icon?: ("activity" | "alarm-clock" | "bell" | "bot" | "calendar" | "calendar-clock" | "chart-line" | "circle-alert" | "circle-check" | "clock" | "cloud" | "cloud-drizzle" | "cloud-fog" | "cloud-lightning" | "cloud-rain" | "cloud-snow" | "cloud-sun" | "code" | "file-text" | "git-pull-request" | "globe" | "heart" | "inbox" | "info" | "link" | "list-checks" | "mail" | "message-square" | "play" | "rocket" | "star" | "sun" | "terminal" | "timer" | "users" | "video" | "wind" | "zap") | null;
+            icon?: ("activity" | "alarm-clock" | "bell" | "bot" | "briefcase-business" | "calendar" | "calendar-clock" | "chart-line" | "circle-alert" | "circle-check" | "clock" | "cloud" | "cloud-drizzle" | "cloud-fog" | "cloud-lightning" | "cloud-rain" | "cloud-snow" | "cloud-sun" | "code" | "file-text" | "git-pull-request" | "globe" | "heart" | "inbox" | "info" | "link" | "list-checks" | "mail" | "message-square" | "moon" | "party-popper" | "play" | "rocket" | "star" | "sun" | "terminal" | "timer" | "users" | "video" | "wind" | "zap") | null;
             /**
              * @description A graphic. (enum property replaced by openapi-typescript)
              * @enum {string}
@@ -7430,7 +7435,7 @@ export interface components {
              * @description The provider's checked semantic icon.
              * @enum {string}
              */
-            icon: "activity" | "alarm-clock" | "bell" | "bot" | "calendar" | "calendar-clock" | "chart-line" | "circle-alert" | "circle-check" | "clock" | "cloud" | "cloud-drizzle" | "cloud-fog" | "cloud-lightning" | "cloud-rain" | "cloud-snow" | "cloud-sun" | "code" | "file-text" | "git-pull-request" | "globe" | "heart" | "inbox" | "info" | "link" | "list-checks" | "mail" | "message-square" | "play" | "rocket" | "star" | "sun" | "terminal" | "timer" | "users" | "video" | "wind" | "zap";
+            icon: "activity" | "alarm-clock" | "bell" | "bot" | "briefcase-business" | "calendar" | "calendar-clock" | "chart-line" | "circle-alert" | "circle-check" | "clock" | "cloud" | "cloud-drizzle" | "cloud-fog" | "cloud-lightning" | "cloud-rain" | "cloud-snow" | "cloud-sun" | "code" | "file-text" | "git-pull-request" | "globe" | "heart" | "inbox" | "info" | "link" | "list-checks" | "mail" | "message-square" | "moon" | "party-popper" | "play" | "rocket" | "star" | "sun" | "terminal" | "timer" | "users" | "video" | "wind" | "zap";
             /**
              * Id
              * @description Stable `<qualified-module>:<name>` identity; legacy Settings use reserved `:@settings`.
@@ -10894,7 +10899,7 @@ export interface components {
              * Icon
              * @description An icon before the text.
              */
-            icon?: ("activity" | "alarm-clock" | "bell" | "bot" | "calendar" | "calendar-clock" | "chart-line" | "circle-alert" | "circle-check" | "clock" | "cloud" | "cloud-drizzle" | "cloud-fog" | "cloud-lightning" | "cloud-rain" | "cloud-snow" | "cloud-sun" | "code" | "file-text" | "git-pull-request" | "globe" | "heart" | "inbox" | "info" | "link" | "list-checks" | "mail" | "message-square" | "play" | "rocket" | "star" | "sun" | "terminal" | "timer" | "users" | "video" | "wind" | "zap") | null;
+            icon?: ("activity" | "alarm-clock" | "bell" | "bot" | "briefcase-business" | "calendar" | "calendar-clock" | "chart-line" | "circle-alert" | "circle-check" | "clock" | "cloud" | "cloud-drizzle" | "cloud-fog" | "cloud-lightning" | "cloud-rain" | "cloud-snow" | "cloud-sun" | "code" | "file-text" | "git-pull-request" | "globe" | "heart" | "inbox" | "info" | "link" | "list-checks" | "mail" | "message-square" | "moon" | "party-popper" | "play" | "rocket" | "star" | "sun" | "terminal" | "timer" | "users" | "video" | "wind" | "zap") | null;
             /**
              * Live
              * @description A time the app renders after `text` and keeps current.
@@ -12666,7 +12671,7 @@ export interface components {
              * Icon
              * @description An icon before the label.
              */
-            icon?: ("activity" | "alarm-clock" | "bell" | "bot" | "calendar" | "calendar-clock" | "chart-line" | "circle-alert" | "circle-check" | "clock" | "cloud" | "cloud-drizzle" | "cloud-fog" | "cloud-lightning" | "cloud-rain" | "cloud-snow" | "cloud-sun" | "code" | "file-text" | "git-pull-request" | "globe" | "heart" | "inbox" | "info" | "link" | "list-checks" | "mail" | "message-square" | "play" | "rocket" | "star" | "sun" | "terminal" | "timer" | "users" | "video" | "wind" | "zap") | null;
+            icon?: ("activity" | "alarm-clock" | "bell" | "bot" | "briefcase-business" | "calendar" | "calendar-clock" | "chart-line" | "circle-alert" | "circle-check" | "clock" | "cloud" | "cloud-drizzle" | "cloud-fog" | "cloud-lightning" | "cloud-rain" | "cloud-snow" | "cloud-sun" | "code" | "file-text" | "git-pull-request" | "globe" | "heart" | "inbox" | "info" | "link" | "list-checks" | "mail" | "message-square" | "moon" | "party-popper" | "play" | "rocket" | "star" | "sun" | "terminal" | "timer" | "users" | "video" | "wind" | "zap") | null;
             /**
              * Label
              * @description What the button says.
