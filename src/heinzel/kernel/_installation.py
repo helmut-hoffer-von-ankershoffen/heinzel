@@ -355,7 +355,7 @@ class Installation:
                 raise HeinzelError(msg)
             prefix = self.prefix.resolve(strict=True)
             data = tomllib.loads((prefix / RECEIPT_FILENAME).read_text(encoding="utf-8"))
-            owned = {}
+            owned: dict[str, tuple[int, int, str]] = {}
             for entry in data["tool"]["entrypoints"]:
                 path = Path(entry["install-path"])
                 name = entry["name"]
@@ -382,7 +382,7 @@ class Installation:
         Raises:
             HeinzelError: If a target directory cannot be verified.
         """
-        result = []
+        result: list[tuple[int, int]] = []
         msg = "The verified uv tool target changed; update it explicitly with uv."
         try:
             for key in ("UV_TOOL_DIR", "UV_TOOL_BIN_DIR"):
