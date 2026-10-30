@@ -12,14 +12,25 @@ url.pathname = "/doctor";
 const browser = await (process.argv[3] === "webkit" ? webkit : chromium).launch({ headless: true });
 const context = await browser.newContext({ serviceWorkers: "block", viewport: { width: 390, height: 844 } });
 const page = await context.newPage();
+/** A reload can render tabs before startup releases the app's inert interaction guard. */
+async function revealChat() {
+  await page.locator("#splash").waitFor({ state: "hidden" });
+  await page.waitForFunction(() => {
+    const root = document.getElementById("root");
+    return root !== null && !root.hasAttribute("inert");
+  });
+  await page.getByRole("tab", { name: "Chat", exact: true }).click();
+  await page.getByRole("tab", { name: "Chat", exact: true, selected: true }).waitFor();
+  await page.getByRole("tabpanel", { name: "Chat", exact: true }).waitFor();
+}
+
 try {
   await page.goto(url.href);
   await page.locator("#splash").waitFor({ state: "hidden", timeout: 30000 });
   const setup = page.getByRole("dialog");
   await setup.waitFor({ state: "visible", timeout: 5000 }).catch(() => {});
   if (await setup.isVisible().catch(() => false)) await setup.getByRole("button", { name: "Close setup" }).click();
-  if (!(await page.getByLabel("Your message").isVisible()))
-    await page.getByRole("tab", { name: "Chat", exact: true }).click();
+  if (!(await page.getByLabel("Your message").isVisible())) await revealChat();
   await page.getByLabel("Your message").fill("Read my selected source.");
   await page.getByRole("button", { name: "Create Heinzel and take this message" }).click();
   await page.getByRole("button", { name: "Queue message" }).click();
@@ -91,7 +102,7 @@ try {
   assert.equal(finished.ok, true, `daemon failed: ${finished.failure}`);
   assert.equal(finished.deduplicated, true);
   await page.reload();
-  await page.getByRole("tab", { name: "Chat", exact: true }).click();
+  await revealChat();
   await page
     .getByText(/Tool activity for this reply/)
     .nth(2)
@@ -106,7 +117,7 @@ try {
   await panel.getByRole("button", { name: "Revoke this grant" }).click();
   await panel.getByText(/Recorded state: revoked/).waitFor();
   await page.reload();
-  await page.getByRole("tab", { name: "Chat", exact: true }).click();
+  await revealChat();
   await schedule.getByText("Recurring agent turns", { exact: true }).click();
   await schedule.getByText(/stale · contract revision/).waitFor();
   assert.equal(await panel.evaluate((node) => node.scrollWidth > node.clientWidth), false);
@@ -117,7 +128,39 @@ try {
     .locator("body")
     .innerText()
     .catch(() => "");
-  process.stderr.write(`${message}\n${visible}`.replaceAll(decodeURIComponent(token), "<redacted-session>") + "\n");
+  const layout = await page
+    .evaluate(() => {
+      const summary = [...document.querySelectorAll("summary")].find(
+        (node) => node.textContent === "Recurring agent turns",
+      );
+      const ancestors = [];
+      for (let node = summary; node; node = node.parentElement) {
+        const box = node.getBoundingClientRect();
+        const style = getComputedStyle(node);
+        ancestors.push({
+          tag: node.tagName,
+          className: node.className,
+          hidden: node.hidden,
+          inert: node.inert,
+          display: style.display,
+          visibility: style.visibility,
+          width: box.width,
+          height: box.height,
+          ariaHidden: node.getAttribute("aria-hidden"),
+        });
+      }
+      return {
+        ancestors,
+        tabs: [...document.querySelectorAll('[role="tab"]')].map((node) => ({
+          text: node.textContent,
+          selected: node.getAttribute("aria-selected"),
+        })),
+      };
+    })
+    .catch(() => null);
+  await page.screenshot({ path: join(process.argv[4], `scheduled-${process.argv[3]}-failure.png`) }).catch(() => {});
+  const diagnostic = `${message}\n${visible}\nLayout: ${JSON.stringify(layout)}`;
+  process.stderr.write(`${diagnostic.replaceAll(decodeURIComponent(token), "<redacted-session>")}\n`);
   process.exitCode = 1;
 } finally {
   await context.close();
