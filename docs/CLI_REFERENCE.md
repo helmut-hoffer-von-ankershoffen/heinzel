@@ -592,13 +592,16 @@ $ hz heinzel [OPTIONS] COMMAND [ARGS]...
 * `discover`: (expert) Find candidates for each...
 * `drafts`: List the drafts runs saved locally, newest...
 * `graph`: (expert) Show the workflow your contracts...
+* `input-snapshot-history`: Show recent private exact-result...
 * `latest-profile-proposal`: Inspect the latest suggested name and...
 * `latest-scheduled-agent-proposal`: Read the current inert proposal for the...
+* `latest-source-suggestion-view`: Inspect the latest inert suggested source;...
 * `list`: List your Heinzelmännchen, one per...
 * `new`: Write a starter contract, or a playbook&#x27;s...
 * `new-chat`: Create a durable personal Heinzel with an...
 * `personal-artifacts`: List local principal-submitted file...
 * `playbooks`: (expert) List the playbooks plugins...
+* `prepare-suggested-source`: Prepare the current exact suggestion for...
 * `profile`: Save this Heinzel&#x27;s name or look against...
 * `propose-check-in`: Propose local five-minute check-ins; the...
 * `propose-scheduled-agent`: Save an inert agent execution proposal; it...
@@ -818,6 +821,27 @@ $ hz heinzel graph [OPTIONS]
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
 
+### `hz heinzel input-snapshot-history`
+
+Show recent private exact-result comparisons from approved reads, without source contents.
+
+**Usage**:
+
+```console
+$ hz heinzel input-snapshot-history [OPTIONS] {session_id}
+```
+
+**Arguments**:
+
+* `session_id`: [required]
+
+**Options**:
+
+* `--limit <int>`: Maximum recent observations to return.  [default: 20]
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
 ### `hz heinzel latest-profile-proposal`
 
 Inspect the latest suggested name and look; it has not been applied.
@@ -846,6 +870,26 @@ Read the current inert proposal for the personal session, if one exists.
 
 ```console
 $ hz heinzel latest-scheduled-agent-proposal [OPTIONS] {session_id}
+```
+
+**Arguments**:
+
+* `session_id`: [required]
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz heinzel latest-source-suggestion-view`
+
+Inspect the latest inert suggested source; no provider was contacted or approved.
+
+**Usage**:
+
+```console
+$ hz heinzel latest-source-suggestion-view [OPTIONS] {session_id}
 ```
 
 **Arguments**:
@@ -951,6 +995,29 @@ $ hz heinzel personal-artifacts [OPTIONS] {session_id}
 ```console
 $ hz heinzel playbooks [OPTIONS]
 ```
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz heinzel prepare-suggested-source`
+
+Prepare the current exact suggestion for separate human approval without executing the read.
+
+**Usage**:
+
+```console
+$ hz heinzel prepare-suggested-source [OPTIONS] {session_id} {request_id} {suggestion_request} {suggestion_revision}
+```
+
+**Arguments**:
+
+* `session_id`: [required]
+* `request_id`: [required]
+* `suggestion_request`: Exact host-derived suggestion request.  [required]
+* `suggestion_revision`: Exact current suggestion revision.  [required]
 
 **Options**:
 
