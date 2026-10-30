@@ -71,8 +71,9 @@ respect the person's current installation without inventing publisher trust or e
 - Initial verified composition installation can seed the record. Legacy exact composition inspection may remain
   supported without writing one; unverifiable later state needs explicit inspection, never automatic downgrade.
 - Daemon handover uses the state observed before a package mutation. An uninstalled, unloaded or paused daemon
-  stays off or paused. An existing active service can reload, but only a fresh manager-bound execution receipt can
-  establish the code and contributions that actually ran; service-manager acceptance alone remains pending evidence.
+  stays off or paused. An existing active service can reload, but service-manager acceptance alone remains pending
+  evidence. A fresh manager-bound tick records the local version, fingerprint and contribution inventory observed
+  by that process; it does not attest every executed instruction or establish publisher trust.
 - Job dispatch holds the same nonblocking lifecycle lock as a package mutation, before the tick and session locks.
   A pending mutation or concurrent lifecycle writer prevents dispatch; an already running tick prevents mutation.
   A timed-out job thread retains the lock until it finishes or its process exits. Interpreter startup, pre-lock job
@@ -103,6 +104,13 @@ respect the person's current installation without inventing publisher trust or e
   route does not ask a session bus to activate a manager. Versions with different transport behavior require proof.
 
 ### Consequences
+
+A trusted caller may temporarily append an exact-version constraint to preserve the selected core during a plugin
+mutation. The caller captures the original parsed receipt policy before uv, independently verifies the resulting
+generation and metadata, then removes only that exact appended entry if the complete ordered policy matches the
+captured policy plus the guard. The projected receipt generation is rechecked before any checkpoint refresh or
+handover. Existing duplicate constraints remain intact, and uncertain or unexpected changes are not cleaned up
+automatically; they require explicit inspection and recovery. The constraint itself grants no authority.
 
 - Good: independent updates and removals survive offline relaunch, while inspection remains separate from execution.
 - Bad: continuity must be maintained by every successful supported mutation, and damaged or externally changed
