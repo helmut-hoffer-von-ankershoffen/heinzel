@@ -14,6 +14,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.e2e._interpreter_diagnostics import interpreter_diagnostics
+
 pytestmark = pytest.mark.e2e
 
 
@@ -143,8 +145,11 @@ def _assert_dangling_guard(root, shim, monkeypatch, run, previous):
     installation = Installation(
         Progress(), prefix=root / "tools" / "fixture-owned", uv="fixture-guard", runner=lambda *_: pytest.fail("uv ran")
     )
-    with pytest.raises(HeinzelError, match="unresolved uv executable symlinks"):
+    with pytest.raises(HeinzelError) as failure:
         installation.attempt(installation.tool_install_command(str(later), []), "fixture")
+    assert "unresolved uv executable symlinks" in str(failure.value), interpreter_diagnostics(
+        root / "tools/fixture-owned"
+    )
     assert dangling.is_symlink()
     assert dangling.readlink() == missing
     assert shim.is_symlink()

@@ -30,6 +30,12 @@ def makefile() -> str:
     text = re.sub(r"(?m)^(\.PHONY:.*?) icons\b", r"\1", text)
     text = re.sub(r"\nlinux-user-manager-proof:.*?\n(?:\t.*\n)+", "\n", text)
     text = text.replace(" linux-user-manager-proof", "")
+    # Core README e2e builds its own candidate wheel; plugins have no core web/notifier assets to prepare.
+    text = (
+        re.sub(r"\ne2e-prepare:.*?\n(?:\t.*\n)+", "\n", text)
+        .replace(" test-e2e e2e-prepare ", " test-e2e ")
+        .replace("test-e2e: e2e-prepare", "test-e2e:")
+    )
     # The core's generate_docs.py writes the plugin pages with everything else; a plugin runs the builder (ADR 0082).
     text = text.replace(
         '"&docs=env -u HZ_SYSTEM_AGENT__SKILL_DIRS uv run python scripts/generate_docs.py --check"',

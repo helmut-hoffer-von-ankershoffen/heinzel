@@ -870,3 +870,58 @@ def test_linux_electron_sandbox_target_configures_only_the_packaged_helper():
     assert '--configure-file "$$packaged_sandbox"' in recipe
     assert 'require.resolve("electron"' not in recipe
     assert 'python3 desktop/ci/restore_linux_sandbox.py "$$electron_root"' not in recipe
+
+
+@pytest.mark.parametrize("fail", [False, True])
+def test_e2e_prepares_core_build_before_suite_and_removes_owned_temp(tmp_path, fail):
+    """A failed build cannot start pytest; the suite still performs its own candidate build."""
+    tool_dir = tmp_path / "bin"
+    tool_dir.mkdir()
+    trace = tmp_path / "trace"
+    uv = tool_dir / "uv"
+    steps = tool_dir / "fake-steps"
+    for path, text in (
+        (
+            uv,
+            (
+                '#!/bin/sh\nprintf "build:%s\\n" "$*" >> "$TRACE"\n'
+                'for last do :; done\nprintf "dir:%s\\n" "$last" >> "$TRACE"\n'
+                'test "$FAIL_PREP" != 1\n'
+            ),
+        ),
+        (steps, '#!/bin/sh\nprintf "suite:%s\\n" "$*" >> "$TRACE"\n'),
+    ):
+        assert not path.exists()
+        assert not path.is_symlink()
+        assert path.parent.resolve().is_relative_to(tmp_path.resolve())
+        path.write_text(text)
+        assert not path.samefile(os.path.realpath(os.sys.executable))
+        assert not path.samefile(os.path.realpath(os.sys._base_executable))
+        path.chmod(0o700)
+    env = {
+        **os.environ,
+        "PATH": f"{tool_dir}:/usr/bin:/bin",
+        "TMPDIR": str(tmp_path),
+        "TRACE": str(trace),
+        "FAIL_PREP": "1" if fail else "0",
+    }
+    result = subprocess.run(
+        ["make", "--no-print-directory", "test-e2e", f"STEPS={steps}"],
+        cwd=REPO,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=20,
+        check=False,
+    )
+    lines = trace.read_text().splitlines()
+    assert lines[0].startswith("build:build --quiet --wheel --out-dir ")
+    assert lines[1].startswith("dir:")
+    directory = Path(lines[1].removeprefix("dir:"))
+    assert directory.is_relative_to(tmp_path)
+    assert not directory.exists()
+    assert (result.returncode == 0) is not fail
+    assert any(line.startswith("suite:e2e=uv run pytest ") for line in lines) is not fail
+    generated = _template_sync_module().makefile()
+    assert "e2e-prepare" not in generated
+    assert generated == (REPO / "template/Makefile").read_text(encoding="utf-8")

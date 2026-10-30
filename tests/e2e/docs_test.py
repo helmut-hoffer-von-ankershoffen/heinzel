@@ -23,6 +23,7 @@ import time
 from pathlib import Path
 from urllib.request import urlopen
 
+import psutil
 import pytest
 
 pytestmark = pytest.mark.e2e
@@ -36,6 +37,20 @@ MAX_OUTPUT = 65536
 GUARDIAN_UNCERTAIN = "README process-group cleanup is uncertain: guardian exited unexpectedly."
 GUARDIAN_INVALID = "README guardian returned invalid status."
 GUARDIAN_START = "README guardian could not start its command."
+_LIVE_GUARDIAN_STATES = frozenset(
+    {
+        psutil.STATUS_RUNNING,
+        psutil.STATUS_SLEEPING,
+        psutil.STATUS_DISK_SLEEP,
+        psutil.STATUS_STOPPED,
+        psutil.STATUS_TRACING_STOP,
+        psutil.STATUS_IDLE,
+        psutil.STATUS_LOCKED,
+        psutil.STATUS_WAITING,
+        psutil.STATUS_WAKING,
+        psutil.STATUS_PARKED,
+    }
+)
 PROCEDURE_BUDGET = 100  # Reserve cleanup time within the unchanged outer 120s test limit.
 
 
@@ -122,6 +137,12 @@ class GuardedCommand:
         finally:
             os.close(writer)
         os.set_blocking(self.status_fd, False)
+        try:
+            self.guardian = psutil.Process(self.process.pid)
+            self.guardian_started = self.guardian.create_time()
+        except (psutil.Error, OSError):
+            self.guardian = None
+            self.guardian_started = None
         self.capture = CapturedOutput(self.process)
         self.buffer = bytearray()
         self.ready = False
@@ -129,7 +150,16 @@ class GuardedCommand:
 
     def alive(self):
         """Observe but do not reap the process-group leader before its final signal."""
-        return os.waitid(os.P_PID, self.process.pid, os.WEXITED | os.WNOHANG | os.WNOWAIT) is None
+        if self.process.returncode is not None or self.guardian is None or self.guardian_started is None:
+            return False
+        try:
+            return (
+                self.guardian.is_running()
+                and psutil.Process(self.process.pid).create_time() == self.guardian_started
+                and self.guardian.status() in _LIVE_GUARDIAN_STATES
+            )
+        except (psutil.Error, OSError):
+            return False
 
     def poll_command(self):
         """Read only the fixed ready/return-code messages, never command output or arguments."""
@@ -172,7 +202,8 @@ class GuardedCommand:
         """Signal only the original group while its trusted guardian is alive; detached sessions are excluded."""
         try:
             if not self.alive():
-                self.process.wait(timeout=1)
+                with contextlib.suppress(subprocess.TimeoutExpired):
+                    self.process.wait(timeout=1)
                 raise RuntimeError(GUARDIAN_UNCERTAIN)
             status_error = None
             try:
@@ -184,7 +215,8 @@ class GuardedCommand:
                 with contextlib.suppress(subprocess.TimeoutExpired):
                     self.wait(10)
             if not self.alive():
-                self.process.wait(timeout=1)
+                with contextlib.suppress(subprocess.TimeoutExpired):
+                    self.process.wait(timeout=1)
                 raise RuntimeError(GUARDIAN_UNCERTAIN)
             os.killpg(self.process.pid, signal.SIGKILL)
             self.process.wait(timeout=5)

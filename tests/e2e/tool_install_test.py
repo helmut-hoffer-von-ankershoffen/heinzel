@@ -14,6 +14,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.e2e._interpreter_diagnostics import interpreter_diagnostics
+
 pytestmark = pytest.mark.e2e
 
 REPO = Path(__file__).resolve().parents[2]
@@ -114,6 +116,7 @@ class Sandbox:
     def diagnose(self) -> str:
         """What the sandbox's bin directory holds, and where the hz launcher's interpreter points."""
         lines = [f"bin: {sorted(p.name for p in (self.root / 'bin').glob('*'))}"]
+        lines.append(interpreter_diagnostics(self.root / "tools/heinzel"))
         if self.hz_bin.is_symlink() or self.hz_bin.exists():
             lines.append(f"hz -> {self.hz_bin.resolve()} (exists: {self.hz_bin.resolve().exists()})")
             if self.hz_bin.resolve().exists():

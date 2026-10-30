@@ -176,3 +176,96 @@ def test_guardian_start_failure_is_reported_after_owned_group_cleanup(tmp_path):
         if command.process.poll() is None:
             command.process.kill()
             command.process.wait(timeout=2)
+
+
+def test_guardian_observation_works_without_waitid_or_reaping(tmp_path, monkeypatch):
+    monkeypatch.delattr(os, "waitid", raising=False)
+    command = docs_test.GuardedCommand([sys.executable, "-I", "-c", "raise SystemExit(0)"], env=None, cwd=tmp_path)
+    try:
+        assert command.wait(3) == 0
+        assert command.alive()
+        assert command.process.returncode is None
+    finally:
+        command.stop()
+    assert command.process.returncode == -signal.SIGKILL
+
+
+def test_dead_guardian_is_not_live_when_descendant_retains_status_writer(tmp_path, monkeypatch):
+    # Model the fork/exec interval before the guardian can report ready: the child still owns the status writer.
+    guardian = """import os, subprocess, sys, time
+fd = int(sys.argv[1])
+child = subprocess.Popen(sys.argv[2:], pass_fds=(fd,))
+time.sleep(60)
+"""
+    monkeypatch.setattr(docs_test, "_GUARDIAN", guardian)
+    listener = socket.socket()
+    listener.bind(("127.0.0.1", 0))
+    listener.listen(1)
+    listener.settimeout(3)
+    child = (
+        "import socket,sys; s=socket.create_connection(('127.0.0.1',int(sys.argv[1]))); "
+        "s.sendall(b'R'); s.recv(1); s.close()"
+    )
+    command = docs_test.GuardedCommand(
+        [sys.executable, "-I", "-c", child, str(listener.getsockname()[1])], env=None, cwd=tmp_path
+    )
+    connection = None
+    original_killpg = os.killpg
+    try:
+        connection, _address = listener.accept()
+        connection.settimeout(3)
+        assert connection.recv(1) == b"R"
+        assert not command.ready
+        os.kill(command.process.pid, signal.SIGKILL)
+        deadline = time.monotonic() + 3
+        while command.alive() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert not command.alive()
+        assert command.process.returncode is None
+        watcher = select.poll()
+        watcher.register(command.status_fd, select.POLLIN | select.POLLHUP | select.POLLERR)
+        assert not any(flags & (select.POLLHUP | select.POLLERR | select.POLLNVAL) for _, flags in watcher.poll(0))
+        monkeypatch.setattr(os, "killpg", lambda *_args: pytest.fail("Must not signal after guardian exit"))
+        with pytest.raises(RuntimeError, match="cleanup is uncertain"):
+            command.stop()
+        connection.sendall(b"X")
+        assert connection.recv(1) == b""
+    finally:
+        if connection is not None:
+            with contextlib.suppress(OSError):
+                connection.sendall(b"X")
+            connection.close()
+        listener.close()
+        if command.process.returncode is None:
+            if command.alive():
+                original_killpg(command.process.pid, signal.SIGKILL)
+            command.process.wait(timeout=3)
+
+
+@pytest.mark.parametrize("problem", ["denied", "unknown-status"])
+def test_unknown_guardian_identity_fails_closed_without_group_signal(tmp_path, monkeypatch, problem):
+    import psutil
+
+    command = docs_test.GuardedCommand(
+        [sys.executable, "-I", "-c", "import time; time.sleep(60)"], env=None, cwd=tmp_path
+    )
+    original_killpg = os.killpg
+    try:
+        assert command.guardian is not None
+
+        def denied():
+            raise psutil.AccessDenied(command.process.pid)
+
+        if problem == "denied":
+            monkeypatch.setattr(command.guardian, "is_running", denied)
+        else:
+            monkeypatch.setattr(command.guardian, "status", lambda: "unknown")
+        monkeypatch.setattr(os, "killpg", lambda *_args: pytest.fail("Must not signal uncertain guardian"))
+        with pytest.raises(RuntimeError, match="cleanup is uncertain"):
+            command.stop()
+        assert command.process.returncode is None
+    finally:
+        if command.process.returncode is None:
+            with contextlib.suppress(ProcessLookupError):
+                original_killpg(command.process.pid, signal.SIGKILL)
+            command.process.wait(timeout=3)
