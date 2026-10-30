@@ -14,7 +14,7 @@ import secrets
 from collections.abc import Callable
 from typing import Any, Never, SupportsIndex
 
-from heinzel import ConfiguredApiAccess, ConfiguredApiLease, ConfiguredApiSnapshot, CurrentUser, HeinzelError
+from heinzel import ConfiguredApiAccess, ConfiguredApiLease, ConfiguredApiSnapshot, CurrentUser, HeinzelError, Kernel
 from heinzel.modules.ai.access._pydantic import PydanticAiAccess, build_reserved_openai
 
 MODEL = "openai:gpt-4.1-mini-2025-04-14"
@@ -134,7 +134,7 @@ class ConfiguredApiBinding(ConfiguredApiAccess):
             settings != self._access._settings  # noqa: SLF001
             or settings.model != MODEL
             or settings.base_url is not None
-            or os.environ.get("OPENAI_CUSTOM_HEADERS")
+            or any(os.environ.get(name) for name in ("OPENAI_CUSTOM_HEADERS", "OPENAI_ORG_ID", "OPENAI_PROJECT_ID"))
         ):
             raise HeinzelError(invalid)
 
@@ -182,3 +182,27 @@ class ConfiguredApiBinding(ConfiguredApiAccess):
         if type(snapshot) is not ConfiguredApiSnapshot or self.capture() != snapshot:
             msg = "The configured API binding changed; review current access again"
             raise HeinzelError(msg)
+
+
+class TrustedConfiguredApiAccess(ConfiguredApiAccess):
+    """Resolve the owner adapter through the kernel's built-in factory provenance fence."""
+
+    def __init__(self, current: CurrentUser, kernel: Kernel) -> None:
+        self._current = current
+        self._kernel = kernel
+
+    def _binding(self) -> ConfiguredApiBinding:
+        adapter = self._kernel.resolve_builtin_service(PydanticAiAccess, "ai.access")
+        return ConfiguredApiBinding(self._current, adapter)
+
+    def capture(self) -> ConfiguredApiSnapshot:
+        """Capture the exact current configured API identity."""
+        return self._binding().capture()
+
+    def recheck(self, snapshot: ConfiguredApiSnapshot) -> None:
+        """Reject changes to the registered adapter, selection or credential."""
+        self._binding().recheck(snapshot)
+
+    def lease(self) -> ConfiguredApiLease:
+        """Capture one exact credential for an approved provider request."""
+        return self._binding().lease()

@@ -92,8 +92,8 @@ def build_reserved_openai(key: str) -> Any:  # noqa: ANN401 - optional provider
     Raises:
         HeinzelError: If ambient SDK headers could alter the approved request.
     """
-    if os.environ.get("OPENAI_CUSTOM_HEADERS"):
-        msg = "Custom OpenAI headers are not supported for reserved turns"
+    if any(os.environ.get(name) for name in ("OPENAI_CUSTOM_HEADERS", "OPENAI_ORG_ID", "OPENAI_PROJECT_ID")):
+        msg = "Custom OpenAI headers or account selectors are not supported for reserved turns"
         raise HeinzelError(msg)
     import httpx2  # noqa: PLC0415
     from pydantic_ai.models.openai import OpenAIResponsesModel  # noqa: PLC0415

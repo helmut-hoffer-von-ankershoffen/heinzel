@@ -6,22 +6,16 @@ from datetime import datetime
 import httpx2
 import pydantic_ai.models
 import pytest
-from pydantic_ai.models.openai import OpenAIResponsesModel
-from pydantic_ai.providers.openai import OpenAIProvider
 
 from heinzel import (
     CallIdentity,
-    Config,
     ConfiguredApiAccess,
-    Credentials,
     CurrentUser,
     HeinzelError,
     Principal,
-    Settings,
 )
-from heinzel.kernel._credentials import EnvironmentBackend
 from heinzel.modules.ai.access._models import AccessSettings
-from heinzel.modules.ai.access._pydantic import API_KEY, PydanticAiAccess
+from heinzel.modules.ai.access._pydantic import PydanticAiAccess
 from heinzel.modules.heinzel import _interactive_turn
 from heinzel.modules.heinzel._interactive_turn import InteractiveTurn
 from heinzel.modules.heinzel._model_grants import ModelGrant, ModelGrants
@@ -79,25 +73,21 @@ def test_approved_owner_binding_drives_fake_transport_and_survives_restart(tmp_p
             },
         )
 
-    client = httpx2.AsyncClient(transport=httpx2.MockTransport(reply))
-    model = OpenAIResponsesModel(
-        "gpt-4.1-mini-2025-04-14", provider=OpenAIProvider(api_key="test-only", http_client=client)
-    )
-    from heinzel.modules.ai.access._configured import ConfiguredApiBinding
+    client_type = httpx2.AsyncClient
 
+    class IsolatedClient(client_type):
+        def __init__(self, **kwargs):
+            super().__init__(transport=httpx2.MockTransport(reply), **kwargs)
+
+    monkeypatch.setattr(httpx2, "AsyncClient", IsolatedClient)
     selected = ["pydantic-ai"]
-    access = PydanticAiAccess(
-        AccessSettings(model="openai:gpt-4.1-mini-2025-04-14"),
-        Credentials(EnvironmentBackend(), [("ai.access", API_KEY)]),
-        Config.empty().settings(Settings, "hz"),
-        build=lambda *_: model,
-        installed=lambda _: True,
-        binding=lambda: selected[0],
-        current_settings=lambda: AccessSettings(model="openai:gpt-4.1-mini-2025-04-14"),
-    )
-    binding = ConfiguredApiBinding(current, access, build=lambda _key: model)
     kernel = make_kernel(builtins=True)
-    kernel.bind(ConfiguredApiAccess, binding)
+    kernel.bind(CurrentUser, current)
+    access = kernel.resolve_builtin_service(PydanticAiAccess, "ai.access")
+    access._settings = AccessSettings(model="openai:gpt-4.1-mini-2025-04-14")
+    access._binding = lambda: selected[0]
+    access._current_settings = lambda: AccessSettings(model="openai:gpt-4.1-mini-2025-04-14")
+    binding = kernel.resolve_builtin_service(ConfiguredApiAccess, "ai.access")
     with current.local("cli"):
         repo = PersonalSessionRepository(current)
         crud = SessionCrud(repo, lambda: SessionCosts(session_max_usd=2, message_max_usd=0.6))
@@ -107,7 +97,7 @@ def test_approved_owner_binding_drives_fake_transport_and_survives_restart(tmp_p
         grant = ModelGrant(
             request_id="grant-one",
             revision=1,
-            binding=ConfiguredApiBinding(current, access).capture(),
+            binding=binding.capture(),
             access="pydantic-ai",
             model="openai:gpt-4.1-mini-2025-04-14",
             requests=2,
@@ -125,14 +115,14 @@ def test_approved_owner_binding_drives_fake_transport_and_survives_restart(tmp_p
         assert grants.approve(session, "grant-one", proof) == grant
         assert grants.approve(session, "grant-one", proof) == grant
 
-        class UnverifiedBinding(ConfiguredApiAccess):
-            def lease(self):
-                raise AssertionError
+        from heinzel.modules.ai.access._configured import TrustedConfiguredApiAccess
 
-        kernel.bind(ConfiguredApiAccess, UnverifiedBinding())
+        bad_kernel = make_kernel(builtins=True)
+        bad_kernel.bind(CurrentUser, current)
+        bad_kernel.resolve_builtin_service(ConfiguredApiAccess, "ai.access")
+        bad_kernel.bind(ConfiguredApiAccess, TrustedConfiguredApiAccess(current, bad_kernel))
         with pytest.raises(HeinzelError, match="built-in service instance changed"):
-            asyncio.run(InteractiveTurn(crud).run_granted(session, "one", current, kernel))
-        kernel.bind(ConfiguredApiAccess, binding)
+            asyncio.run(InteractiveTurn(crud).run_granted(session, "one", current, bad_kernel))
         reopened = SessionCrud(
             PersonalSessionRepository(current), lambda: SessionCosts(session_max_usd=2, message_max_usd=0.6)
         )

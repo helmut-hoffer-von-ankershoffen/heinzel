@@ -142,3 +142,29 @@ def test_lease_builds_once_with_exact_captured_credential_even_if_store_changes(
         with pytest.raises(HeinzelError):
             denied.build_approved(denied.snapshot)
         assert built == ["fixture-original"]
+
+
+def test_registered_binding_rejects_rebound_exact_adapter(tmp_path, make_kernel):
+    from heinzel import ConfiguredApiAccess
+
+    current = CurrentUser(tmp_path / "identity")
+    kernel = make_kernel(builtins=True)
+    kernel.bind(CurrentUser, current)
+    selected = ["pydantic-ai"]
+    settings = [AccessSettings(model=MODEL)]
+    with current.local("cli"):
+        binding = kernel.resolve_builtin_service(ConfiguredApiAccess, "ai.access")
+        kernel.resolve_builtin_service(PydanticAiAccess, "ai.access")
+        kernel.bind(PydanticAiAccess, service(selected, settings))
+        with pytest.raises(HeinzelError, match="built-in service instance changed"):
+            binding.capture()
+
+
+@pytest.mark.parametrize("name", ["OPENAI_ORG_ID", "OPENAI_PROJECT_ID"])
+def test_binding_rejects_unreviewed_account_selector(tmp_path, monkeypatch, name):
+    monkeypatch.setenv("OPENAI_API_KEY", "fixture-key")
+    monkeypatch.setenv(name, "unreviewed-selector")
+    current = CurrentUser(tmp_path / "identity")
+    binding = ConfiguredApiBinding(current, service(["pydantic-ai"], [AccessSettings(model=MODEL)]))
+    with current.local("cli"), pytest.raises(HeinzelError, match="unavailable or changed"):
+        binding.capture()

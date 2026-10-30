@@ -37,6 +37,15 @@ def test_reserved_direct_client_ignores_proxy_and_endpoint_environment(monkeypat
         build_reserved_openai("test-only")
 
 
+@pytest.mark.parametrize("name", ["OPENAI_ORG_ID", "OPENAI_PROJECT_ID"])
+def test_reserved_client_rejects_unreviewed_account_selector(monkeypatch, name):
+    from heinzel.modules.ai.access._pydantic import build_reserved_openai
+
+    monkeypatch.setenv(name, "unreviewed-selector")
+    with pytest.raises(HeinzelError, match="account selectors"):
+        build_reserved_openai("test-only")
+
+
 def test_reserved_provider_uses_captured_key_and_never_retries_http_failure(monkeypatch):
     import httpx2
     from openai import InternalServerError
