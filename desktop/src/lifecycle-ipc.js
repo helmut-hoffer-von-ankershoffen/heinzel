@@ -6,9 +6,11 @@ export function createLifecycleHandler({ windows, fromWebContents, connection, l
     const main = event.sender.isDestroyed() ? null : event.sender.mainFrame;
     if (!window || !windows.has(window) || window.isDestroyed() || !frame || !main ||
         frame.isDestroyed() || main.isDestroyed() || frame.detached ||
-        frame.processId !== main.processId || frame.frameToken !== main.frameToken) {
+        frame.processId !== main.processId || frame.frameToken !== main.frameToken ||
+        !isOwnedUiNavigation(frame.url, connection())) {
       throw new Error("Unknown window or frame.");
     }
     return lifecycle(connection());
   };
 }
+import { isOwnedUiNavigation } from "./ui-navigation.js";
