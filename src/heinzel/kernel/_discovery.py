@@ -11,6 +11,7 @@ import pkgutil
 from collections.abc import Iterator
 from importlib.metadata import Distribution, PackageNotFoundError, distribution, entry_points
 from types import ModuleType
+from typing import TYPE_CHECKING
 
 from heinzel import __version__
 from heinzel.kernel._installation import CORE_DISTRIBUTION
@@ -22,10 +23,15 @@ REPOSITORY_LABELS = ("source", "sourcecode", "repository", "homepage")
 """Project-URL labels naming the source repository, normalized as in PEP 753, most specific first."""
 ENTRY_POINT_GROUP = "heinzel.modules"
 
+if TYPE_CHECKING:
+    from heinzel.kernel._source_loading import SourceDiscovery
+
 logger = logging.getLogger(__name__)
 
 
-def discover(*, plugins: bool = True) -> tuple[list[ModuleRecord], dict[str, str]]:
+def discover(
+    *, plugins: bool = True, source_discovery: "SourceDiscovery | None" = None
+) -> tuple[list[ModuleRecord], dict[str, str]]:
     """Find built-in modules and, unless disabled, plugin modules.
 
     A plugin that fails to import is reported in the returned errors and skipped, so one broken plugin never takes
@@ -47,6 +53,15 @@ def discover(*, plugins: bool = True) -> tuple[list[ModuleRecord], dict[str, str
             builtin=False,
             url=repository_of(dist) if dist else None,
         )
+        if source_discovery is not None:
+            try:
+                captured = source_discovery.try_capture(entry_point, origin)
+            except Exception as exc:  # noqa: BLE001 - never reexecute a failed captured initializer
+                _skip(errors, entry_point.name, f"{type(exc).__name__}: {exc}")
+                continue
+            if captured is not None:
+                records.extend(captured.records)
+                continue
         try:
             target = entry_point.load()
         except Exception as exc:  # noqa: BLE001 - isolate broken plugins

@@ -22,6 +22,7 @@ from heinzel.kernel._bounded_process import MAX_OUTPUT as PROCESS_MAX_OUTPUT
 from heinzel.kernel._bounded_process import ProcessExecute, ProcessOutcome, run_bounded_process, signal_process_group
 from heinzel.kernel._capabilities import CAPABILITIES, MODES, NO_ADAPTER, Capability, Mode, Requirement
 from heinzel.kernel._capability_schema import capability_read_schema
+from heinzel.kernel._captured_source import captured_source_active
 from heinzel.kernel._chat import ActionGate, ProposedCall
 from heinzel.kernel._chat_services import (
     CheckInChatContext,
@@ -241,6 +242,7 @@ from heinzel.kernel._soundscapes import (
     StreamProvider,
     ThemeChoice,
 )
+from heinzel.kernel._source_loading import SourceGuardedConnectedService
 from heinzel.kernel._telemetry import (
     HEINZEL_ID,
     VERBS,
@@ -499,6 +501,7 @@ __all__ = [
     "SoundStream",
     "Soundscape",
     "SoundscapeLet",
+    "SourceGuardedConnectedService",
     "Span",
     "Status",
     "StatusItem",
@@ -545,6 +548,7 @@ __all__ = [
     "Window",
     "boot",
     "capability_read_schema",
+    "captured_source_active",
     "check_repository_url",
     "check_target",
     "clean_text",
