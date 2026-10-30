@@ -25,7 +25,8 @@ access disabled. It does not test a packaged, signed or notarized app.
 
 `HZ_REAL_CLI="$(command -v hz)" pnpm test:real-backend-crash` uses the same isolation and kills only the verified
 test-owned child after the UI loads. It checks that the shell reports the unexpected stop and that the child and
-its temporary listener are gone. It does not simulate installation, update or background operation.
+its temporary listener are gone. If launch or shutdown leaves the controller's state uncertain, the harness retains
+and reports the temporary profile for inspection. It does not simulate installation, update or background operation.
 
 The web head adopts its initial bearer fragment into the window's session storage, as in the browser. The native
 preload exposes only lifecycle status, checks the owning main frame and exact loopback origin, and exposes no token

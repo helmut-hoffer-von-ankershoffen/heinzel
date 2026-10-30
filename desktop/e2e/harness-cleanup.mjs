@@ -12,7 +12,9 @@ export async function withTimeout(promise, milliseconds, message) {
 }
 
 /** Preserve temporary evidence whenever this test cannot establish that its owned child has exited. */
-export async function cleanupHarness({ app, electronProcess, stopped, root, ownedPid, loadPid, processExists, remove, timeoutMs = 15_000 }) {
+export async function cleanupHarness({ app, electronProcess, stopped, root, ownedPid, loadPid, processExists, remove, launchAttempted = false, timeoutMs = 15_000 }) {
+  if (launchAttempted && !app)
+    throw new Error(`The isolated Electron launch did not return a controller; temporary evidence was retained at ${root}.`);
   if (app && !electronProcess)
     throw new Error(`The isolated Electron identity is unavailable; temporary evidence was retained at ${root}.`);
   if (app && !stopped) {

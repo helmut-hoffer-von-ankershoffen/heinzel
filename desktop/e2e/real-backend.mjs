@@ -27,6 +27,7 @@ let app;
 let electronProcess;
 let ownedPid;
 let stopped = false;
+let launchAttempted = false;
 try {
   await Promise.all(dirs.map((name) => mkdir(join(root, name), { mode: 0o700 })));
   await symlink(cli, join(root, "bin", "hz"));
@@ -39,6 +40,7 @@ try {
     HZ_STATE_DIR: join(root, "state"), HZ_CACHE_DIR: join(root, "cache"), HZ_LOG_DIR: join(root, "logs"),
     HZ_NATIVE_TEST_ROOT: root,
   };
+  launchAttempted = true;
   app = await electron.launch({
     executablePath: electronExecutable,
     args: [fileURLToPath(new URL("./real-backend-bootstrap.mjs", import.meta.url))],
@@ -91,7 +93,7 @@ try {
     : `Isolated Electron opened and reloaded with hz ${first.version}; closing the window stopped its owned child.`);
 } finally {
   await cleanupHarness({
-    app, electronProcess, stopped, root, ownedPid,
+    app, electronProcess, stopped, root, ownedPid, launchAttempted,
     loadPid: async () => Number(await readFile(join(root, "owned-pid"), "utf8")),
     processExists,
     remove: (path) => rm(path, { recursive: true, force: true }),

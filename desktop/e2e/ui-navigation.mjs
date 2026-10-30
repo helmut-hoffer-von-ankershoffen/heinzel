@@ -57,7 +57,7 @@ try {
 async function run(redirectOnStart) {
   initialRedirect = redirectOnStart;
   const root = await mkdtemp(join(tmpdir(), "hz-navigation-isolated-"));
-  let app, processHandle, stopped = false;
+  let app, processHandle, stopped = false, launchAttempted = false;
   try {
     const dirs = ["bin", "home", "config", "data", "state", "cache", "logs", "tmp", "electron-profile", "electron-session", "electron-logs"];
     await Promise.all(dirs.map((name) => mkdir(join(root, name), { mode: 0o700 })));
@@ -71,6 +71,7 @@ async function run(redirectOnStart) {
       HZ_NATIVE_TEST_ROOT: root, HZ_TEST_URL: `http://127.0.0.1:${source.address().port}/#token=${token}`,
       ...(process.env.DISPLAY ? { DISPLAY: process.env.DISPLAY } : {}), ...(process.env.XAUTHORITY ? { XAUTHORITY: process.env.XAUTHORITY } : {}),
     };
+    launchAttempted = true;
     app = await electron.launch({ executablePath: executable, args: [fileURLToPath(new URL("./real-backend-bootstrap.mjs", import.meta.url))], cwd: root, env, timeout: 30_000 });
     processHandle = app.process();
     assert.equal(await app.evaluate(({ app: current }) => current.getPath("userData")), join(root, "electron-profile"));
@@ -102,7 +103,7 @@ async function run(redirectOnStart) {
       stopped = true;
     }
   } finally {
-    await cleanupHarness({ app, electronProcess: processHandle, stopped, root,
+    await cleanupHarness({ app, electronProcess: processHandle, stopped, root, launchAttempted,
       loadPid: async () => Number(await readFile(join(root, "owned-pid"), "utf8")), processExists,
       remove: (directory) => rm(directory, { recursive: true, force: true }) });
   }
