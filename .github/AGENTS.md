@@ -12,7 +12,7 @@
 | `codeql.yml`, `scorecard.yml` | `main`, PRs, weekly | code scanning and supply-chain checks |
 | `fuzz.yml` | PRs touching the contract parser, weekly, dispatch | fuzzes the workflow contract parser with atheris (`make fuzz`, core only) |
 | `claude-review.yml` | PRs, opt-in (`vars.CLAUDE_REVIEW`) | reviewer agents comment GO / NO-GO |
-| `docs.yml` | push to `main` changing `docs/scenes.toml` or `docs/assets/demo.tape`, dispatch (re-record); called by `release-tag.yml` on a release (site only) | re-records every plugin page's scenes and the README's intro (`make docs-record`) and opens the PR `docs: re-record the plugin pages`; builds the MkDocs site and deploys it to GitHub Pages when the repository is public or `vars.DOCS_PAGES` is `true`, else keeps it as an artifact (ADR 0082; shared with plugins) |
+| `docs.yml` | documentation changes on PRs and `main`, hourly public catalog refresh, dispatch (optional re-record), release (site only) | re-records every plugin page's scenes and the README's intro (`make docs-record`) and opens the PR `docs: re-record the plugin pages`; builds the MkDocs site and deploys it to GitHub Pages when the repository is public or `vars.DOCS_PAGES` is `true`, else keeps it as an artifact (ADR 0082; shared with plugins) |
 
 Pin actions to full SHAs with the tag as a comment (`gh api repos/<o>/<r>/commits/<tag> --jq .sha`), `permissions: {}`
 at the top and least privilege per job, `persist-credentials: false`, untrusted `${{ }}` into `run:` only via `env:`.

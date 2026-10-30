@@ -4,7 +4,7 @@ date: 2026-10-30
 related: 0028, 0043, 0045, 0049, 0067, 0068, 0094
 ---
 
-# 0098: Review connected reads and local agent notifications separately
+# 0099: Review connected reads and local agent notifications separately
 
 ## Context and Problem Statement
 
