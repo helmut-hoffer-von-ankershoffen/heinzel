@@ -54,6 +54,16 @@ it("shows a green update control when the installed version is current", async (
   expect(screen.queryByText("Up to date · hz 0.1.0")).not.toBeInTheDocument();
 });
 
+it("allows an explicit plugin refresh while core is current without starting it on inspection", async () => {
+  mockApi({ ...shell, "/api/update-status": { ...status, latest: status.current, available: false } });
+  const user = userEvent.setup();
+  renderAt("/");
+  await user.click(await screen.findByRole("button", { name: "Up to date, OK" }));
+  expect(startUpdate).not.toHaveBeenCalled();
+  await user.click(screen.getByRole("button", { name: "Update hz and plugins" }));
+  expect(startUpdate).toHaveBeenCalledTimes(1);
+});
+
 it("shows a manual-install reason instead of overriding a deliberate pin", async () => {
   mockApi({
     ...shell,
@@ -63,6 +73,7 @@ it("shows a manual-install reason instead of overriding a deliberate pin", async
   renderAt("/");
   await user.click(await screen.findByRole("button", { name: "Update available, warning" }));
   expect(await screen.findByText(/Deliberate pin/)).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Update hz and plugins" })).not.toBeInTheDocument();
   expect(startUpdate).not.toHaveBeenCalled();
 });
 

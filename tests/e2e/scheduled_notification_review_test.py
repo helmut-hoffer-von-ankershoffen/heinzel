@@ -103,7 +103,7 @@ print(json.dumps({{'type':'result','subtype':'success','is_error':False,'permiss
     thread.start()
     from tests.e2e.scheduled_connected_support import start_daemon_probe
 
-    probe = start_daemon_probe(kernel, tmp_path)
+    probe = start_daemon_probe(kernel, tmp_path, cadence_seconds=3600)
     try:
         assert ready.wait(15)
         token = parse_qs(urlsplit(urls[0]).fragment).get("token", [""])[0]

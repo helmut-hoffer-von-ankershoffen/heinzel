@@ -2,11 +2,10 @@
 
 This development shell starts the installed `hz` CLI as an owned foreground child, verifies its authenticated
 lifecycle and opens the actual product UI in a sandboxed Electron window. It stops that child when the app quits.
-Install Heinzelmännchen from PyPI so `hz` is
-on `PATH` before launching the desktop app:
+Run `uvx heinzel@latest` once to install the standard app and its default plugins. After the workspace opens,
+stop that foreground session with Ctrl-C. Then, from this directory:
 
 ```sh
-uv tool install heinzel
 pnpm install
 pnpm start
 pnpm test

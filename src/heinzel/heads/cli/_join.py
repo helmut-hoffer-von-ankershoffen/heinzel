@@ -19,11 +19,9 @@ from pathlib import Path
 from typing import Annotated, Any
 
 import typer
-from packaging.version import Version
 from pydantic import BaseModel
 from rich.console import Console
 
-from heinzel import __version__
 from heinzel.heads._presence import mark_presence
 from heinzel.heads.cli._journey import SetupState, load_answers
 from heinzel.heads.cli._render import message
@@ -45,8 +43,6 @@ SCOPE = "join"
 
 `join` is a reserved module name, so no module's questions share it.
 """
-SOURCE = "git+https://github.com/helmut-hoffer-von-ankershoffen/heinzel"
-"""Where the invite line installs hz from, until the distribution is published on an index."""
 NONE_OF_THESE = "none of these"
 HELP = "Join a team from its invite line: finds out who you are, joins the team, then sets up what is missing."
 URL_HELP = "The team repository's URL, the invite: https, ssh or a local path."
@@ -61,10 +57,8 @@ HINTS = {
 
 
 def invite_line(url: str) -> str:
-    """The line to post for the next person: runs this release of hz without an install, then joins `url`."""
-    version = Version(__version__)
-    ref = "main" if version.is_devrelease or version.local or version == Version("0.0.0") else f"v{version}"
-    return f"uvx --from {SOURCE}@{ref} heinzel join {shlex.quote(url)}"
+    """The versionless managed-app launcher, followed by the repository to join."""
+    return f"uvx heinzel@latest join {shlex.quote(url)}"
 
 
 @dataclass(frozen=True, slots=True)
@@ -243,7 +237,7 @@ class JoinCommand:
             prompter.say(f"Pull request: {joined['pull_request']}")
         prompter.say("")
         prompter.say("What happens next")
-        prompter.say(f"  keep hz             uv tool install {SOURCE}")
+        prompter.say("  open hz             uvx heinzel@latest")
         prompter.say("  what is missing     hz setup, any time")
         prompter.say(f"  invite the next one post the same line: {invite_line(url)}")
 

@@ -169,12 +169,23 @@ class UpdateService:
             raise
 
     def _verify_selection(self, pin: CorePin, plugins: list[CorePin], scope: DaemonMutationScope | None) -> None:
-        if self._installation.core_pin() == pin and self._installation.plugin_pins() == plugins:
-            return
-        if scope is not None:
-            self._abort_or_leave_pending(scope)
-        msg = "The installation requirements changed before the update; review them and retry."
-        raise HeinzelError(msg)
+        if self._installation.core_pin() != pin or self._installation.plugin_pins() != plugins:
+            if scope is not None:
+                self._abort_or_leave_pending(scope)
+            msg = "The installation requirements changed before the update; review them and retry."
+            raise HeinzelError(msg)
+        try:
+            names = [canonicalize_name(Requirement(plugin.requirement).name) for plugin in plugins]
+        except InvalidRequirement as exc:
+            if scope is not None:
+                self._abort_or_leave_pending(scope)
+            msg = "The installed plugin requirements are invalid; inspect them before updating."
+            raise HeinzelError(msg) from exc
+        if "heinzel" in names or len(set(names)) != len(names):
+            if scope is not None:
+                self._abort_or_leave_pending(scope)
+            msg = "The installed tool requirements name the same distribution more than once; inspect them first."
+            raise HeinzelError(msg)
 
     @staticmethod
     def _abort_or_leave_pending(scope: DaemonMutationScope) -> bool:
@@ -637,7 +648,9 @@ class UpdateService:
             if enabled and requirement.url is None and not pinned:
                 constraints.append(f"heinzel>={Version(current)}")
             captured = tuple(constraints)
-            self._installation.validate_install_constraints(candidates, captured)
+            # Candidates include new and keep alternatives for each plugin, not one simultaneous selection.
+            for candidate in candidates:
+                self._installation.validate_install_constraints([candidate], captured)
             if not constraints:
                 yield None, captured
                 return

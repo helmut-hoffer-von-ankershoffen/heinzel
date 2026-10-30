@@ -47,6 +47,12 @@ describe("plugin source labels", () => {
   it.each([
     ["https://github.com/helmut-hoffer-von-ankershoffen/heinzel/tree/main/plugins/heinzel-clock", null, "First-Party"],
     ["https://github.com/HELMUT-HOFFER-VON-ANKERSHOFFEN/HEINZEL.git", null, "First-Party"],
+    [
+      "https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/tree/main/plugins/heinzel-clock",
+      null,
+      "First-Party",
+    ],
+    ["https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins-fork", true, "Private"],
     ["https://github.com/helmut-hoffer-von-ankershoffen/heinzel-contrib", null, "Community"],
     ["https://github.com/helmut-hoffer-von-ankershoffen/heinzel-fork", true, "Private"],
     ["https://github.com/helmut-hoffer-von-ankershoffen/heinzel-acme", false, "Custom"],
@@ -166,9 +172,13 @@ function serve(answer: Answer) {
       }
       if (!found) return Response.json({ error: `no answer for ${url.pathname}` }, { status: 404 });
       if (url.pathname.startsWith("/api/stream/")) {
-        const task = `event: task\ndata: ${JSON.stringify({ text: "Adding plugin heinzel-crm" })}\n\n`;
+        const text = url.pathname.endsWith("/remove") ? "Removing heinzel-clock" : "Adding plugin heinzel-crm";
+        const task = `event: task\ndata: ${JSON.stringify({ text })}\n\n`;
         const result = `event: result\ndata: ${JSON.stringify({ data: found.body })}\n\n`;
-        if (confirmedStreamDelay > 0 && url.searchParams.get("confirm") === "true") {
+        if (
+          confirmedStreamDelay > 0 &&
+          (url.searchParams.get("confirm") === "true" || url.pathname === "/api/stream/system/plugin/remove")
+        ) {
           let timer: ReturnType<typeof setTimeout> | undefined;
           return new Response(
             new ReadableStream<Uint8Array>({
@@ -462,30 +472,84 @@ describe("PluginsSection", () => {
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
   });
 
-  it("keeps a streamed confirmed install alive beyond the four-second request bound", { timeout: 15_000 }, async () => {
-    confirmedStreamDelay = 4_250;
+  it.each(["add", "remove"])(
+    "keeps streamed %s alive beyond the four-second request bound",
+    { timeout: 15_000 },
+    async (action) => {
+      confirmedStreamDelay = 4_250;
+      const calls = serve((url) => {
+        if (url.pathname === "/api/system/plugin/add" || url.pathname === "/api/stream/system/plugin/add") {
+          return { body: change("add", url.searchParams.get("confirm") === "true") };
+        }
+        if (url.pathname === "/api/stream/system/plugin/remove") {
+          return { body: change("remove", true, { distribution: "heinzel-clock", plugins: [] }) };
+        }
+        return base(url);
+      });
+      const user = userEvent.setup();
+      const reload = vi.fn();
+      show({ reload, restartInterval: 1 });
+      if (action === "add") {
+        await user.click(screen.getByRole("button", { name: "Add" }));
+        await user.type(screen.getByLabelText(/A plugin's name/), candidate.spec);
+        await user.click(screen.getByRole("button", { name: "Install" }));
+      } else {
+        await user.click(await screen.findByRole("button", { name: "Remove heinzel-clock" }));
+      }
+      const preview = await screen.findByRole("group", {
+        name: action === "add" ? /Install this plugin/ : /Remove heinzel-clock/,
+      });
+      await user.click(within(preview).getByRole("button", { name: "Restart and apply" }));
+      await user.click(await screen.findByRole("button", { name: "Restart and apply Plugins" }));
+
+      expect(
+        await screen.findByText(action === "add" ? "Adding plugin heinzel-crm" : "Removing heinzel-clock"),
+      ).toBeInTheDocument();
+      await waitFor(() => expect(reload).toHaveBeenCalledOnce(), { timeout: 10_000 });
+      const paths = calls.map((request) => new URL(request.url).pathname);
+      expect(paths.filter((path) => path === `/api/stream/system/plugin/${action}`)).toHaveLength(1);
+      expect(paths.filter((path) => path === "/api/system/plugin/remove")).toHaveLength(0);
+      expect(paths.filter((path) => path === "/api/restart")).toHaveLength(1);
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    },
+  );
+
+  it("does not repeat an uncertain removal in the same confirmation", async () => {
     const calls = serve((url) => {
-      if (url.pathname === "/api/system/plugin/add" || url.pathname === "/api/stream/system/plugin/add") {
-        return { body: change("add", url.searchParams.get("confirm") === "true") };
+      if (url.pathname === "/api/stream/system/plugin/remove") {
+        return { body: change("remove", true, { distribution: "heinzel-clock", plugins: [] }) };
       }
       return base(url);
     });
+    const originalFetch = vi.mocked(fetch).getMockImplementation();
+    if (!originalFetch) throw new Error("missing fetch fixture");
+    vi.mocked(fetch).mockImplementation(async (request) => {
+      const response = await originalFetch(request);
+      if (new URL((request as Request).url).pathname === "/api/stream/system/plugin/remove") {
+        throw new Error("response lost");
+      }
+      return response;
+    });
     const user = userEvent.setup();
-    const reload = vi.fn();
-    show({ reload, restartInterval: 1 });
-    await user.click(screen.getByRole("button", { name: "Add" }));
-    await user.type(screen.getByLabelText(/A plugin's name/), candidate.spec);
-    await user.click(screen.getByRole("button", { name: "Install" }));
-    const preview = await screen.findByRole("group", { name: /Install this plugin/ });
+    show({ reload: vi.fn(), restartInterval: 1 });
+    await user.click(await screen.findByRole("button", { name: "Remove heinzel-clock" }));
+    const preview = await screen.findByRole("group", { name: /Remove heinzel-clock/ });
     await user.click(within(preview).getByRole("button", { name: "Restart and apply" }));
     await user.click(await screen.findByRole("button", { name: "Restart and apply Plugins" }));
-
-    expect(await screen.findByText("Adding plugin heinzel-crm")).toBeInTheDocument();
-    await waitFor(() => expect(reload).toHaveBeenCalledOnce(), { timeout: 10_000 });
-    const paths = calls.map((request) => new URL(request.url).pathname);
-    expect(paths.filter((path) => path === "/api/stream/system/plugin/add")).toHaveLength(1);
-    expect(paths.filter((path) => path === "/api/restart")).toHaveLength(1);
-    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(await screen.findAllByText("response lost")).not.toHaveLength(0);
+    await user.click(within(preview).getByRole("button", { name: "Restart and apply" }));
+    await user.click(await screen.findByRole("button", { name: "Restart and apply Plugins" }));
+    expect(await screen.findByText(/The request result is unknown/)).toBeInTheDocument();
+    expect(calls.filter((call) => new URL(call.url).pathname === "/api/stream/system/plugin/remove")).toHaveLength(1);
+    expect(calls.filter((call) => new URL(call.url).pathname === "/api/restart")).toHaveLength(0);
+    // Reopening the still-present plugin is a new explicit choice after the invalidated list has been read.
+    await user.click(within(preview).getByRole("button", { name: "Cancel" }));
+    await user.click(await screen.findByRole("button", { name: "Remove heinzel-clock" }));
+    const reopened = await screen.findByRole("group", { name: /Remove heinzel-clock/ });
+    await user.click(within(reopened).getByRole("button", { name: "Restart and apply" }));
+    await user.click(await screen.findByRole("button", { name: "Restart and apply Plugins" }));
+    expect(await screen.findAllByText("response lost")).not.toHaveLength(0);
+    expect(calls.filter((call) => new URL(call.url).pathname === "/api/stream/system/plugin/remove")).toHaveLength(2);
   });
 
   it("installs a first-party plugin from Discover by name and a community one by its spec", async () => {

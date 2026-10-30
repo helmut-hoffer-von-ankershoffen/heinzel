@@ -1,4 +1,4 @@
-# 🧝 Heinzelmännchen
+# Heinzelmännchen
 
 <!-- badges:start -->
 [![CI](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/actions/workflows/ci.yml/badge.svg)](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/actions/workflows/ci.yml)
@@ -68,15 +68,33 @@ installs hz, creates the team repository, gets the first weekly report drafted a
 
 ## Install
 
-You need [uv](https://docs.astral.sh/uv/) (`brew install uv`). Then:
+Supported on **macOS and Linux**. Windows may work, but is not supported.
+If you already have [uv](https://docs.astral.sh/uv/), run:
 
+<!-- install:start -->
 <!-- docs-test -->
-```bash
-uvx --from heinzel hz-install
+```sh
+uvx heinzel@latest
 ```
+<!-- install:end -->
 
-The standard app includes its verified default plugins. For a minimal core with no plugins use
-`uv tool install heinzel`. Install a specific standard release with `uvx --from heinzel==X.Y.Z hz-install`;
+**Need uv installed for you?** Use the guided installer instead:
+
+<!-- install-script:start -->
+```sh
+curl -LsSf https://helmut.hoffer-von-ankershoffen.me/heinzel/install.sh | sh
+```
+<!-- install-script:end -->
+
+It reuses uv when available, otherwise runs [Astral's official installer](https://docs.astral.sh/uv/getting-started/installation/).
+It then runs the same app launcher. No administrator access or separate Python installation is needed.
+You can [inspect the script](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/blob/main/docs/install.sh) first.
+
+The first run installs the verified standard app with all default plugins and opens the workspace.
+Later runs open the installed app. Ctrl-C stops the foreground session; background operation stays optional.
+On Linux, standard installation needs an accessible systemd user manager in your user session.
+For a minimal core with no plugins use
+`uv tool install heinzel`. The installer selects the newest published standard app and verifies its artifacts;
 `hz system update` then moves core to the latest PyPI
 release in place, keeping plugins (`--source <spec>` moves to another source or ref). It follows releases
 (`--channel main` or setting `update_channel` for the newest commit of `main`); pinned to another branch or a commit,
@@ -101,6 +119,7 @@ Other agents: `hz system agent install` copies the skills into the directories s
 
 <!-- docs-test -->
 ```bash
+hz system daemon uninstall            # remove the background service, if installed
 hz system agent uninstall             # remove the skills from your agents
 uv tool uninstall heinzel      # remove Heinzelmännchen and its plugins
 ```
@@ -286,9 +305,9 @@ Joining a team is one line, the same for everyone, posted in its chat. It finds 
 `gws` logins, joins the team and sets up what is missing (`hz join` prints the line for the next person):
 
 ```bash
-uvx --from heinzel heinzel join <team repository>
+uvx heinzel@latest join <team repository>
 # from a coding agent, without a terminal:
-uvx --from heinzel heinzel join <team repository> \
+uvx heinzel@latest join <team repository> \
   --role engineer --yes --json
 ```
 

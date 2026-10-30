@@ -74,6 +74,37 @@ def test_conflicting_or_invalid_additional_constraints_deny_before_uv(target):
     assert calls == []
 
 
+@pytest.mark.parametrize(
+    "requirements",
+    [
+        ["heinzel==0.9.7", "heinzel @ file:///fixture/heinzel-0.9.7-py3-none-any.whl"],
+        ["heinzel-extra==1", "Heinzel_Extra @ git+https://example.test/repository"],
+        ["heinzel-extra[a]==1", "heinzel-extra[b]==1"],
+    ],
+)
+def test_selected_distribution_names_must_be_unique_after_normalization(target, requirements):
+    installation, _receipt, _binary, calls = target
+    with pytest.raises(HeinzelError, match="same distribution more than once"):
+        installation.validate_install_constraints(requirements, ())
+    assert calls == []
+
+
+def test_duplicate_core_selection_refuses_before_uv_and_preserves_receipt(target):
+    installation, receipt, _binary, calls = target
+    before = receipt.read_bytes()
+    command = installation.tool_install_command("heinzel", ["heinzel @ git+https://example.test/core"])
+    with pytest.raises(HeinzelError, match="same distribution more than once"):
+        installation.run(command, "Failed", "Changing", additional_constraints=("heinzel==0.9.7",))
+    assert calls == []
+    assert receipt.read_bytes() == before
+
+
+def test_duplicate_constraints_for_one_selected_distribution_remain_supported(target):
+    installation, _receipt, _binary, calls = target
+    installation.validate_install_constraints(["heinzel"], ("heinzel>=0.9", "heinzel==0.9.7", "heinzel==0.9.7"))
+    assert calls == []
+
+
 def test_nested_tool_transaction_revalidates_owned_entrypoint_before_uv(target, tmp_path):
     installation, _receipt, binary, calls = target
     foreign = tmp_path / "foreign"

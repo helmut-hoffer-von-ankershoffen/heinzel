@@ -5,7 +5,8 @@ from typing import Annotated, Literal
 
 from pydantic import Field
 
-from heinzel import CurrentUser, HeinzelError, Module, Prompter
+from heinzel import CurrentUser, HeinzelError, Kernel, Module, Prompter
+from heinzel.kernel import DaemonInstallationLifecycle, Installation
 from heinzel.modules.system.plugin._models import (
     AvailablePlugin,
     PluginCandidate,
@@ -22,7 +23,14 @@ from heinzel.modules.system.plugin._service import TEMPLATE, PluginService
 
 module = Module("plugin", "Find, add, remove, enable, disable, list and scaffold plugins.")
 module.settings(PluginSettings)
-module.service(PluginService)
+
+
+def _plugin_service(kernel: Kernel, installation: Installation, settings: PluginSettings) -> PluginService:
+    lifecycle = kernel.resolve(DaemonInstallationLifecycle) if kernel.provides(DaemonInstallationLifecycle) else None
+    return PluginService(kernel, installation, settings, lifecycle=lifecycle)
+
+
+module.service(PluginService, _plugin_service)
 
 # Changing plugins installs or switches off code that runs with your rights, so it happens where a person or their
 # agent is (the CLI, MCP over stdio) or behind the web head's session token, never on the unauthenticated REST head or
@@ -67,7 +75,9 @@ def add(
             description="A first-party plugin by name (`github`, `acme`), a PyPI package named heinzel-<name> "
             "(`heinzel-crm==1.2.0`), or a git repository over https "
             "(`git+https://github.com/acme-example/heinzel-crm@v1.0.0`); private GitHub repositories use your gh "
-            "login. Pass `requirement` from an earlier answer to install exactly what it showed."
+            "login. If the repository's distribution name cannot be resolved, provide its actual name in a named "
+            "requirement, such as `heinzel-example @ git+https://example.com/repository`. Pass `requirement` from an "
+            "earlier answer to install exactly what it showed."
         ),
     ],
     confirm: Annotated[

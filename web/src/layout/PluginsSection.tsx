@@ -47,7 +47,7 @@ export function sourceLabel(
   sourceUrl?: string | null,
 ): string {
   const repository = knownRepository(sourceUrl ?? plugin.source_url ?? plugin.homepage);
-  if (repository === "heinzel") return t("plugins.firstParty");
+  if (repository === "heinzel" || repository === "heinzel-plugins") return t("plugins.firstParty");
   if (repository === "heinzel-contrib") return t("plugins.community");
   if (privateRepository === true) return t("plugins.private");
   if (privateRepository === false) return t("plugins.custom");
@@ -70,7 +70,7 @@ function knownRepository(sourceUrl: string | null | undefined): string | null {
     )
       return null;
     const name = repository?.replace(/\.git$/, "");
-    return name === "heinzel" || name === "heinzel-contrib" ? name : null;
+    return name === "heinzel" || name === "heinzel-plugins" || name === "heinzel-contrib" ? name : null;
   } catch {
     return null;
   }
@@ -403,9 +403,9 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
       }
       attempted.current = true;
     }
-    const answer = await change.mutateAsync(
-      "add" in operation ? { ...operation, signal, onProgress: setPluginProgress } : { ...operation, signal },
-    );
+    // A lost removal response is also uncertain. Require a fresh, explicit choice after status reconciliation.
+    if ("remove" in operation) attempted.current = true;
+    const answer = await change.mutateAsync({ ...operation, signal, onProgress: setPluginProgress });
     if (!answer.done) throw new Error(t("plugins.notCompleted"));
     completed.current = answer;
     pluginRestartRequired.current = answer.restart_required;
@@ -577,7 +577,9 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
                     if (pluginRestartRequired.current) (reload ?? (() => window.location.reload()))();
                   }}
                   options={{
-                    ...(pending.action === "add" ? { preserveTimeout: 20 * 60_000 } : {}),
+                    ...(pending.action === "add" || pending.action === "remove"
+                      ? { preserveTimeout: 20 * 60_000 }
+                      : {}),
                     ...(restartInterval ? { interval: restartInterval } : {}),
                     ...(pending.action === "add"
                       ? {

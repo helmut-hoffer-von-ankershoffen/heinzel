@@ -181,7 +181,6 @@ export function StatusBar() {
       <FooterPart id="@updates" pinned priority={100} label={t("updates.title")}>
         <UpdateStatus />
       </FooterPart>
-      <StatusItems slot="footer" except={NATIVE_FOOTER} measured />
       <FooterPart id="@heinzels" priority={70} label={t("nav.heinzelmaennchen")}>
         <DurableHeinzelStatus />
       </FooterPart>
@@ -192,6 +191,7 @@ export function StatusBar() {
         <MeetingItem now={now} />
       </FooterPart>
       <FooterMore />
+      <StatusItems slot="footer" except={NATIVE_FOOTER} measured />
     </FooterLayout>
   );
 }

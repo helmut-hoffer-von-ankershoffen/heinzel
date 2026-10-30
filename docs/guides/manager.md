@@ -13,8 +13,15 @@ You need [uv](https://docs.astral.sh/uv/) (`brew install uv`), the [GitHub CLI](
 (`brew install gh`), the right to create a private repository in your GitHub organisation, and, for drafting, the
 [Claude Code](https://docs.claude.com/en/docs/claude-code) CLI installed and signed in (the default agent runner).
 
+Start the workspace with:
+
+```sh
+uvx heinzel@latest
+```
+
+Leave it running and use another terminal for the following commands:
+
 ```bash
-uv tool install heinzel
 gh auth login                                            # once; hz stores no token
 hz setup                                                 # who you are: found from gh, the rest asked once
 hz system plugin add github --confirm                              # pull requests and issues through gh
@@ -43,14 +50,13 @@ the same path with what you should see, and the choices along the way.
 
 You need [uv](https://docs.astral.sh/uv/) (`brew install uv`).
 
-```bash
-uv tool install heinzel
-hz --version
+```sh
+uvx heinzel@latest
 ```
 
-What you should see: the version on the first line (hz 0.x.y), then the repository, Python, platform and installation, and one line
-per installed plugin (none on a fresh install). Pin a release with `@vX.Y.Z`; `hz system update` then moves to the latest release and keeps your plugins. From
-Claude Code, `/hz-init` does the same ([README](../../README.md#install)).
+The first run installs the standard app and its default plugins and opens the workspace. In another terminal,
+`hz --version` shows the installed version and plugins. `hz system update` keeps the app current while preserving
+plugins and configuration. From Claude Code, `/hz-init` provides the setup flow ([README](../../README.md#install)).
 
 ## 2. Sign in to the tools you already use
 
@@ -304,7 +310,7 @@ says what hz keeps about the person, finds out who they are from their `gh` and 
 up what is still missing:
 
 ```bash
-uvx --from heinzel heinzel join https://github.com/acme-example/hz-team-checkout.git
+uvx heinzel@latest join https://github.com/acme-example/hz-team-checkout.git
 ```
 
 The invite printed by `hz join` currently uses the Git repository at your release tag (`@vX.Y.Z`). Whoever can read

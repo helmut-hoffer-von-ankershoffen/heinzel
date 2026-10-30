@@ -222,11 +222,11 @@ export const readPluginOperation = async (operationId: string) =>
   unwrap(api.GET("/system/plugin/operation", { params: { query: { operation_id: operationId } } }));
 
 export type PluginChangeRequest = (
-  | { add: string; operationId: string; onProgress?: (text: string) => void; signal?: AbortSignal }
+  | { add: string; operationId: string }
   | { remove: string }
   | { enable: string }
   | { disable: string }
-) & { signal?: AbortSignal };
+) & { signal?: AbortSignal; onProgress?: (text: string) => void };
 
 /** `hz system plugin add --confirm|remove|enable|disable`: changes what code runs, so the UI asks first (ADR 0047). */
 export const useChangePlugin = () => {
@@ -247,11 +247,14 @@ export const useChangePlugin = () => {
         );
       }
       if ("remove" in variables) {
-        return unwrap(
-          api.POST("/system/plugin/remove", {
-            params: { query: { distribution: variables.remove } },
-            signal: variables.signal,
-          }),
+        // Removal also rebuilds the tool and can outlast a normal request or a proxy's quiet-work timeout.
+        return stream<components["schemas"]["PluginChange"]>(
+          "/system/plugin/remove",
+          { distribution: variables.remove },
+          (event) => {
+            if (event.event === "task" && typeof event.data.text === "string") variables.onProgress?.(event.data.text);
+          },
+          variables.signal,
         );
       }
       if ("enable" in variables) {

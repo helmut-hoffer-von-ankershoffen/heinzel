@@ -65,6 +65,9 @@ class PluginReceipts:
                 record.status = "unknown"
                 record.owner_pid = None
                 self._write(record)
+            if record.status == "running":
+                msg = "This plugin operation is already running; inspect its status before retrying."
+                raise HeinzelError(msg)
             if record.status != "previewed":
                 return record.public()
             record.status = "running"

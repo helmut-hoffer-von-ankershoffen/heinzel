@@ -201,3 +201,5 @@ of inventing them. Two factual corrections came with it: ADR 0004 names the plug
 | [0107](0107-propose-bounded-connected-read-sets.md) | Propose bounded connected read sets separately | proposed | 2026-10-30 |
 | [0108](0108-record-owned-installation-continuity-after-verified-changes.md) | Record owned installation continuity after verified changes | proposed | 2026-10-30 |
 | [0109](0109-adopt-plugin-playbook-terms-as-inert-chat-drafts.md) | Adopt plugin playbook terms as inert chat drafts | proposed | 2026-10-30 |
+| [0110](0110-one-versionless-launcher-installs-and-opens-the-standard-app.md) | One versionless launcher installs and opens the standard app | proposed | 2026-10-30 |
+| [0111](0111-plugins-recommend-the-default-theme-with-a-core-recovery-fallback.md) | Plugins recommend the default theme with a Core recovery fallback | proposed | 2026-10-30 |

@@ -4,7 +4,7 @@ date: 2026-10-29
 decision-makers: maintainer
 amends: 0017, 0056, 0063, 0065, 0072, 0074, 0082
 related: 0026, 0028, 0044, 0060, 0073, 0084, 0089
-amended-by: 0095, 0096
+amended-by: 0095, 0096, 0110
 ---
 
 # 0094: Plugins own their features and independent delivery

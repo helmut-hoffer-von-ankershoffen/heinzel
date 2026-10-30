@@ -1114,6 +1114,68 @@ def test_index_floor_preserves_original_requirement_and_constraints_through_plug
     assert not lifecycle.pending
 
 
+def test_update_validates_both_plugin_alternatives_without_treating_them_as_one_selection(tmp_path, monkeypatch):
+    uv = FakeUv("0.9.9")
+    target = installation(tmp_path, 'specifier = ">=0.1,<2"', uv)
+    target.startup_fingerprint = lambda: "a" * 64  # type: ignore[method-assign]
+    target.startup_state_matches = lambda: False  # type: ignore[method-assign]
+    lifecycle = FakeMutationLifecycle([], checkpoint_matched=False)
+    validate = target.validate_install_constraints
+    checked = []
+
+    def capture(requirements, constraints):
+        checked.append((requirements, constraints))
+        validate(requirements, constraints)
+
+    monkeypatch.setattr(target, "validate_install_constraints", capture)
+    UpdateService(target, FakeReleases("1.0.0"), lifecycle=lifecycle).update(current="0.9.9")
+    assert len(checked) == 3
+    assert all(len(requirements) == 1 and constraints == ("heinzel>=0.9.9",) for requirements, constraints in checked)
+    assert checked[0][0][0] == "heinzel<2,>=0.1"
+    assert all("heinzel-acme @ git+" in entry[0][0] for entry in checked[1:])
+    assert len(uv.commands) == 1
+    assert not lifecycle.pending
+
+
+def test_incompatible_keep_alternative_refuses_before_uv(tmp_path):
+    uv = FakeUv("0.9.9")
+    target = installation(tmp_path, 'specifier = ">=0.1,<2"', uv)
+    receipt = target.prefix / "uv-receipt.toml"
+    receipt.write_text(
+        receipt.read_text().replace(
+            f'{{ name = "heinzel-acme", git = "{REPO}-acme?rev=v1.0.0" }}',
+            '{ name = "heinzel-acme", specifier = ">=1.5" }',
+        )
+        + 'constraints = [{name="heinzel-acme", specifier=">=1.5"}]\n'
+    )
+    target.startup_fingerprint = lambda: "a" * 64  # type: ignore[method-assign]
+    target.startup_state_matches = lambda: False  # type: ignore[method-assign]
+    lifecycle = FakeMutationLifecycle([], checkpoint_matched=False)
+    with pytest.raises(HeinzelError, match="conflict with existing constraints"):
+        UpdateService(target, FakeReleases("1.0.0"), lifecycle=lifecycle).update(current="0.9.9")
+    assert not uv.commands
+    assert lifecycle.aborted
+    assert not lifecycle.pending
+
+
+@pytest.mark.parametrize("extra", ['{ name = "HEINZEL_ACME", specifier = "==1.0.0" }', '{ name = "heinzel" }'])
+def test_duplicate_selected_plugin_or_core_refuses_before_uv_and_aborts_unchanged(tmp_path, extra):
+    uv = FakeUv("0.9.9")
+    target = installation(tmp_path, 'specifier = ">=0.1,<2"', uv)
+    receipt = target.prefix / "uv-receipt.toml"
+    receipt.write_text(receipt.read_text().replace("\n]\n", f",\n{extra}\n]\n"))
+    original = receipt.read_bytes()
+    target.startup_fingerprint = lambda: "a" * 64  # type: ignore[method-assign]
+    target.startup_state_matches = lambda: False  # type: ignore[method-assign]
+    lifecycle = FakeMutationLifecycle([], checkpoint_matched=False)
+    with pytest.raises(HeinzelError, match="same distribution more than once"):
+        UpdateService(target, FakeReleases("1.0.0"), lifecycle=lifecycle).update(current="0.9.9")
+    assert not uv.commands
+    assert receipt.read_bytes() == original
+    assert lifecycle.aborted
+    assert not lifecycle.pending
+
+
 def test_floating_git_downgrade_is_refused_before_starting_changed_runtime(tmp_path):
     uv = FakeUv("0.9.9")
     uv.next_version = "0.9.8"

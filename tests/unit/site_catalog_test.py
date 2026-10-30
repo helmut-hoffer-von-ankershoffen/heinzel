@@ -126,7 +126,7 @@ def test_provider_html_is_text_and_never_executable_markup(tmp_path):
     validated = pages.load_snapshot(path)
     assert validated["plugins"][0]["url"].startswith("https://github.com/fictional-lab/harbor/")
     assert validated["plugins"][0]["install"].startswith("hz system plugin add git+")
-    assert validated["release"]["install"] == "uvx --from heinzel==0.9.2 hz-install"
+    assert validated["release"]["install"] == "uvx heinzel@latest"
 
 
 def test_supplier_svg_cannot_enter_snapshot(tmp_path):

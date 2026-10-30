@@ -7,6 +7,23 @@ url.pathname = "/doctor";
 const browser = await (process.argv[3] === "webkit" ? webkit : chromium).launch({ headless: true });
 const context = await browser.newContext({ serviceWorkers: "block", viewport: { width: 390, height: 844 } });
 const page = await context.newPage();
+const trace = [];
+const watched = new Set([
+  "/api/heinzel/chat",
+  "/api/heinzel/answer-chat",
+  "/api/heinzel/chat-turn-state",
+  "/api/heinzel/abandon-chat-turn",
+  "/api/heinzel/session",
+]);
+page.on("response", (response) => {
+  const request = response.request();
+  const path = new URL(response.url()).pathname;
+  if (watched.has(path)) trace.push(`${request.method()} ${path} ${response.status()}`);
+});
+page.on("requestfailed", (request) => {
+  const path = new URL(request.url()).pathname;
+  if (watched.has(path)) trace.push(`${request.method()} ${path} failed`);
+});
 try {
   await page.goto(url.href);
   await page.locator("#splash").waitFor({ state: "hidden", timeout: 30000 });
@@ -88,9 +105,23 @@ try {
   await page.getByRole("tab", { name: "Chat", exact: true }).click();
   await page.getByText(/This turn was set aside/).waitFor();
   await page.getByRole("button", { name: "Continue conversation" }).click();
-  await page.getByLabel("Message your Heinzel").fill("Please continue with the draft.");
-  await page.getByRole("button", { name: "Queue message" }).click();
-  await page.getByText("I prepared proposals for your review.").nth(1).waitFor({ timeout: 30000 });
+  const composer = page.getByLabel("Message your Heinzel");
+  await composer.fill("Please continue with the draft.");
+  const submit = page.getByRole("button", { name: "Queue message" });
+  trace.push(`before-submit enabled=${await submit.isEnabled()} input=${(await composer.inputValue()).length}`);
+  assert.equal(await composer.inputValue(), "Please continue with the draft.");
+  const accepted = page.waitForResponse(
+    (response) => response.request().method() === "POST" && new URL(response.url()).pathname === "/api/heinzel/chat",
+  );
+  const answered = page.waitForResponse(
+    (response) =>
+      response.request().method() === "POST" && new URL(response.url()).pathname === "/api/heinzel/answer-chat",
+  );
+  const rendered = page.getByText("I prepared proposals for your review.").nth(1).waitFor({ timeout: 30000 });
+  await submit.click();
+  const [acceptResponse, answerResponse] = await Promise.all([accepted, answered, rendered]);
+  assert.equal(acceptResponse.status(), 200, "the new message must be accepted");
+  assert.equal(answerResponse.status(), 200, "the new message must receive an answer");
   console.log(JSON.stringify({ accepted: true }));
 } catch (error) {
   const message = error instanceof Error ? (error.stack ?? error.message) : String(error);
@@ -98,7 +129,12 @@ try {
     .locator("body")
     .innerText()
     .catch(() => "");
-  process.stderr.write(`${message}\n${visible}`.replaceAll(decodeURIComponent(token), "<redacted-session>") + "\n");
+  process.stderr.write(
+    `${message}\n${visible}\nHTTP trace: ${trace.join(" | ")}`.replaceAll(
+      decodeURIComponent(token),
+      "<redacted-session>",
+    ) + "\n",
+  );
   process.exitCode = 1;
 } finally {
   await context.close();

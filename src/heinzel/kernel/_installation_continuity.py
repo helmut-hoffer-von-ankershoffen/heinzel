@@ -57,12 +57,12 @@ def _regular(fd: int, digest: _Digest, budget: list[int]) -> None:
     while remaining:
         chunk = os.read(fd, min(remaining, 1024 * 1024))
         if not chunk:
-            msg = "Installation changed during inspection."
+            msg = "Installation changed during inspection (file short read)."
             raise HeinzelError(msg)
         digest.update(chunk)
         remaining -= len(chunk)
     if _identity(info) != _identity(os.fstat(fd)):
-        msg = "Installation changed during inspection."
+        msg = "Installation changed during inspection (file metadata)."
         raise HeinzelError(msg)
 
 
@@ -107,7 +107,7 @@ class _Observation:
                     self.digest.update(repr(_identity(info)).encode("ascii"))
             self.entry(directory, name, path, info)
         if before != _identity(os.fstat(directory)):
-            msg = "Installation changed during inspection."
+            msg = "Installation changed during inspection (directory metadata)."
             raise HeinzelError(msg)
 
     def entry(self, directory: int, name: str, path: Path, info: os.stat_result) -> None:
@@ -116,7 +116,7 @@ class _Observation:
             fd = os.open(name, _DIRECTORY if is_directory else _FLAGS, dir_fd=directory)
             try:
                 if _identity(info) != _identity(os.fstat(fd)):
-                    msg = "Installation changed during inspection."
+                    msg = "Installation changed during inspection (entry identity)."
                     raise HeinzelError(msg)
                 if is_directory:
                     self.visit(fd, path)
@@ -161,7 +161,7 @@ class _Observation:
             finally:
                 os.close(fd)
         if _identity(info) != _identity(os.stat(name, dir_fd=directory, follow_symlinks=False)):
-            msg = "Installation changed during inspection."
+            msg = "Installation changed during inspection (link metadata)."
             raise HeinzelError(msg)
 
 
@@ -202,8 +202,11 @@ def fingerprint(
         else:
             first = _snapshot(prefix, strict_identity=True) if strict_identity else _snapshot(prefix)
             second = _snapshot(prefix, strict_identity=True) if strict_identity else _snapshot(prefix)
-        if first != second or authority() != target:
-            msg = "Installation changed during inspection."
+        if first != second:
+            msg = "Installation changed during inspection (snapshot mismatch)."
+            raise HeinzelError(msg)
+        if authority() != target:
+            msg = "Installation changed during inspection (authority mismatch)."
             raise HeinzelError(msg)
     except (OSError, ValueError) as exc:
         msg = "Cannot inspect the owned installation safely."

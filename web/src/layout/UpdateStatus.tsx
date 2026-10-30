@@ -81,7 +81,8 @@ export function UpdateStatus() {
     installed && !Number.isNaN(installed.getTime())
       ? installed.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })
       : null;
-  const canUpdate = available && status?.supported && !busy && !recovery;
+  // Plugins release independently: a current core must still allow an explicit plugin refresh.
+  const canUpdate = status?.supported && !busy && !recovery;
   const current = checked && status?.supported === true;
   const label = available ? t("updates.availableLabel") : current ? t("updates.currentLabel") : t("updates.title");
   const summary =

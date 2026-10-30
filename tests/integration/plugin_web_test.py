@@ -19,6 +19,7 @@ from heinzel.heads._exposure import exposed
 from heinzel.heads.cli import build as cli_app
 from heinzel.kernel import Installation, user_config_dir
 from heinzel.modules.system.plugin import PluginService, _sources
+from heinzel.modules.system.plugin._models import PluginInfo
 
 pytestmark = pytest.mark.integration
 
@@ -51,14 +52,37 @@ def kernel(make_kernel, tmp_path, monkeypatch):
     kernel = make_kernel(builtins=True, config=Config.load(tmp_path), crm=crm())
     service = kernel.resolve(PluginService)
     runs: list[list[str]] = []
+    installed = []
 
     def runner(command, environment=None):
         runs.append(command)
+        installed.clear()
+        if "install" in command:
+            source = _sources.parse(command[-1])
+            name = source.name or "heinzel-crm"
+            installed.append(
+                {
+                    "distribution": name,
+                    "version": "1.1.0",
+                    "modules": ["crm"],
+                    "name": "crm",
+                    "source_kind": source.kind,
+                    "revision": "a" * 40 if source.kind == "git" else None,
+                    "source_url": _sources.installed_repository_url(source.url, "a" * 40, source.subdirectory),
+                }
+            )
         return subprocess.CompletedProcess(command, 0, "", "")
 
     service._installation = Installation(Progress(), prefix=tmp_path, uv="uv", runner=runner)
-    monkeypatch.setattr(service._installation, "hz", lambda *args: "[]")
+    monkeypatch.setattr(
+        service._installation,
+        "hz",
+        lambda *args: json.dumps(installed) if args[:3] == ("system", "plugin", "list") else "[]",
+    )
     monkeypatch.setattr(_sources.shutil, "which", lambda name: None)
+    monkeypatch.setattr(
+        service, "_host_list", lambda **_kwargs: [PluginInfo.model_validate(item) for item in installed]
+    )
     service.pypi = lambda url: {
         "info": {"version": "1.1.0", "summary": "CRM notes.", "author": "Ada Example"},
         "releases": {"1.1.0": [{}]},
@@ -190,6 +214,21 @@ def test_confirmed_the_shown_requirement_is_installed_recorded_and_a_restart_ask
     assert receipt["result"] == change
     history = client.get("/api/system/plugin/history", headers=AUTH).json()
     assert [(e["action"], e["requirement"]) for e in history] == [("add", "heinzel-crm==1.1.0")]
+
+
+def test_an_installer_noop_is_an_error_in_the_web_app_and_never_records_success(client, kernel, monkeypatch):
+    service = kernel.resolve(PluginService)
+    monkeypatch.setattr(service, "_host_list", lambda **_kwargs: [])
+    shown = client.post("/api/system/plugin/add", params={"spec": "heinzel-crm"}, headers=AUTH).json()
+    response = client.post(
+        "/api/system/plugin/add",
+        params={"spec": "heinzel-crm==1.1.0", "confirm": True, "operation_id": shown["operation_id"]},
+        headers=AUTH,
+    )
+    assert response.status_code == 400
+    assert "not present after installation" in response.json()["error"]
+    assert service.history() == []
+    assert service.operation(shown["operation_id"]).status == "unknown"
 
 
 def test_a_confirmed_plugin_install_streams_progress_and_its_result(client, kernel):

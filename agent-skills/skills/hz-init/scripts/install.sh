@@ -26,7 +26,8 @@ hz="$(uv --color never tool dir --bin)/hz"
 if [[ -z "${HZ_SOURCE:-}" ]]; then
   spec="heinzel${version:+==${version#v}}"
   echo "==> Installing the verified standard app from $spec"
-  uvx --from "$spec" hz-install
+  # Refresh the bootstrap SDK as the public @latest launcher does; a cached older installer may use obsolete profiles.
+  uvx --upgrade-package heinzel --from "$spec" hz-install
 elif [[ -x "$hz" ]]; then
   echo "==> Updating Heinzelmännchen from $spec, keeping its plugins"
   "$hz" system update --source "$spec"

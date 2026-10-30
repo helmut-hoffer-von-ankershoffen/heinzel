@@ -193,6 +193,14 @@ def validate_constraint_policy(requirements: list[str], constraints: tuple[str, 
         HeinzelError: If selected requirement and constraint policy cannot be safely combined.
     """
     try:
+        names = [canonicalize_name(Requirement(item).name) for item in requirements]
+    except ValueError as exc:
+        msg = "The selected tool requirements are invalid; inspect them before retrying."
+        raise HeinzelError(msg) from exc
+    if len(set(names)) != len(names):
+        msg = "The selected tool requirements name the same distribution more than once; inspect them before retrying."
+        raise HeinzelError(msg)
+    try:
         _requirement_policies(requirements, constraints)
     except ValueError as exc:
         msg = (

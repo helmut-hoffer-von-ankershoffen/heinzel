@@ -430,3 +430,72 @@ def test_unstable_observation_cannot_be_recorded(tool, monkeypatch):
         tool.record_startup_state(expected=expected)
     assert record.read_bytes() == prior
     assert not tool.startup_state_matches()
+
+
+def test_inspection_diagnostic_identifies_directory_change_without_path(tool, monkeypatch):
+    package = tool.prefix / "lib/site-packages/example"
+    cache = package / "__pycache__"
+    cache.mkdir()
+    (cache / "old.pyc").write_bytes(b"inert")
+    original = os.scandir
+
+    class ChangingScan:
+        def __init__(self, fd):
+            self.inner = original(fd)
+
+        def __enter__(self):
+            return self
+
+        def __iter__(self):
+            yield from self.inner
+            (cache / "new.pyc").write_bytes(b"inert")
+
+        def __exit__(self, *_args):
+            self.inner.close()
+
+    def scan(fd):
+        return ChangingScan(fd) if isinstance(fd, int) and os.fstat(fd).st_ino == cache.stat().st_ino else original(fd)
+
+    monkeypatch.setattr(os, "scandir", scan)
+    with pytest.raises(HeinzelError, match=r"inspection \(directory metadata\)") as error:
+        tool.startup_fingerprint()
+    assert str(tool.prefix) not in str(error.value)
+    assert "example" not in str(error.value)
+
+
+def test_inspection_diagnostic_distinguishes_snapshot_and_authority(tool, monkeypatch):
+    snapshots = iter(("first", "second"))
+    monkeypatch.setattr(_installation_continuity, "_snapshot", lambda *_args, **_kwargs: next(snapshots))
+    with pytest.raises(HeinzelError, match=r"inspection \(snapshot mismatch\)"):
+        _installation_continuity.fingerprint(tool.prefix, lambda: "target")
+    monkeypatch.setattr(_installation_continuity, "_snapshot", lambda *_args, **_kwargs: "stable")
+    targets = iter(("first", "second"))
+    with pytest.raises(HeinzelError, match=r"inspection \(authority mismatch\)"):
+        _installation_continuity.fingerprint(tool.prefix, lambda: next(targets))
+
+
+def test_inspection_diagnostic_distinguishes_file_read_and_metadata(tmp_path, monkeypatch):
+    import hashlib
+
+    path = tmp_path / "private-name"
+    path.write_bytes(b"fixture")
+    fd = os.open(path, os.O_RDONLY)
+    original = os.read
+    try:
+        monkeypatch.setattr(os, "read", lambda target, size: b"" if target == fd else original(target, size))
+        with pytest.raises(HeinzelError, match=r"inspection \(file short read\)") as error:
+            _installation_continuity._regular(fd, hashlib.sha256(), [0, 0])
+        assert "private-name" not in str(error.value)
+        os.lseek(fd, 0, os.SEEK_SET)
+
+        def changed(target, size):
+            chunk = original(target, size)
+            if target == fd:
+                path.write_bytes(b"changed")
+            return chunk
+
+        monkeypatch.setattr(os, "read", changed)
+        with pytest.raises(HeinzelError, match=r"inspection \(file metadata\)"):
+            _installation_continuity._regular(fd, hashlib.sha256(), [0, 0])
+    finally:
+        os.close(fd)
