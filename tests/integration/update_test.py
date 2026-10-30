@@ -1,7 +1,7 @@
 """`hz system update` through the CLI with a fake `uv` on PATH, a uv tool receipt and a fake GitHub. Offline.
 
-The fake `uv` rewrites the receipt and the version a fresh `hz` reports, as a real `uv tool install --force` would, or
-fails resolving the way uv does when told to; the fresh `hz` is a script standing in for the tool's interpreter.
+The fake `uv` rewrites the receipt and the version a fresh `hz` reports, as a real `uv tool install --reinstall`
+would, or fails resolving the way uv does when told to; the fresh `hz` stands in for the tool's interpreter.
 """
 
 import json
@@ -60,7 +60,7 @@ esac
 @pytest.fixture
 def env(tmp_path, monkeypatch):
     """A uv tool environment pinned to the running version's tag, with one plugin; fake uv and hz; fake GitHub."""
-    env = tmp_path / "env"
+    env = tmp_path / "tools" / "heinzel"
     (env / "bin").mkdir(parents=True)
     (env / "version").write_text(__version__)
     (env / "uv-receipt.toml").write_text(
@@ -75,6 +75,15 @@ def env(tmp_path, monkeypatch):
     }.items():
         (env / "bin" / name).write_text(script)
         (env / "bin" / name).chmod(0o755)
+    entrypoints = tmp_path / "entrypoints"
+    entrypoints.mkdir()
+    shim = entrypoints / "hz"
+    shim.symlink_to(env / "bin" / "hz")
+    receipt = env / "uv-receipt.toml"
+    receipt.write_text(
+        receipt.read_text(encoding="utf-8") + f"entrypoints = [{{ name = 'hz', install-path = {str(shim)!r} }}]\n",
+        encoding="utf-8",
+    )
     monkeypatch.setenv("PATH", f"{env / 'bin'}{os.pathsep}{os.environ['PATH']}")
     monkeypatch.setattr(sys, "prefix", str(env))
     monkeypatch.setattr(sys, "executable", str(env / "bin" / "hz"))  # the fresh `hz` that reports the version
@@ -106,7 +115,7 @@ def test_a_tag_pinned_install_updates_to_the_latest_release_and_keeps_plugins(ap
     assert result.exit_code == 0, result.output
     assert result.output.strip() == f"Updated hz {__version__} → 99.0.0.\nPlugins unchanged: heinzel-acme."
     [command] = uv_log(env)
-    assert command.startswith("tool install --force --refresh ")
+    assert command.startswith("tool install --reinstall --refresh ")
     assert command.endswith(f"heinzel @ git+{REPO}@v99.0.0 --with {PLUGIN}")
     assert "rev=v99.0.0" in (env / "uv-receipt.toml").read_text()
 
