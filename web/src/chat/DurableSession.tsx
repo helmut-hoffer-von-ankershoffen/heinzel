@@ -30,6 +30,13 @@ async function result<T>(call: Promise<{ data?: T; error?: unknown; response: Re
 
 const DAEMON_TICK_CLOCK_SKEW_MS = 60_000;
 
+function inputComparison(status: "first" | "unchanged" | "changed"): string {
+  if (status === "first") return "first recorded result";
+  return status === "unchanged"
+    ? "same exact result as the previous read under this approval"
+    : "different exact result from the previous read under this approval";
+}
+
 function canonical(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
   if (value && typeof value === "object") {
@@ -123,6 +130,28 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
         api.GET("/heinzel/tool-activity", { params: { query: { session_id: sessionId, limit: activityLimit } } }),
       );
       if (page.session_id !== sessionId) throw new Error("Unexpected activity session");
+      return page;
+    },
+    retry: false,
+  });
+  const inputSnapshots = useQuery({
+    queryKey: ["heinzel", "input-snapshot-history", sessionId],
+    queryFn: async () => {
+      const page = await result(
+        api.GET("/heinzel/input-snapshot-history", { params: { query: { session_id: sessionId, limit: 20 } } }),
+      );
+      if (
+        page.session_id !== sessionId ||
+        page.items.length > 20 ||
+        page.items.some(
+          (item, index) =>
+            !Number.isInteger(item.seq) ||
+            item.seq <= (index === 0 ? 0 : (page.items[index - 1]?.seq ?? 0)) ||
+            !/^interactive-[0-9a-f]{64}$/.test(item.turn_id) ||
+            !["first", "unchanged", "changed"].includes(item.status),
+        )
+      )
+        throw new Error("Unexpected input history");
       return page;
     },
     retry: false,
@@ -425,10 +454,12 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
       updateComposer({ pending: null, text: "" });
       await client.invalidateQueries({ queryKey: ["heinzel", "session", sessionId] });
       await client.invalidateQueries({ queryKey: ["heinzel", "tool-activity", sessionId] });
+      await client.invalidateQueries({ queryKey: ["heinzel", "input-snapshot-history", sessionId] });
       await client.invalidateQueries({ queryKey: ["heinzel", "notification-proposals", sessionId] });
       await client.invalidateQueries({ queryKey: ["heinzel", "agent-proposal", sessionId] });
       await client.invalidateQueries({ queryKey: ["heinzel", "profile-proposal", sessionId] });
       await client.invalidateQueries({ queryKey: ["heinzel", "latest-schedule-suggestion", sessionId] });
+      await client.invalidateQueries({ queryKey: ["heinzel", "latest-source-suggestion", sessionId] });
     } catch (reason) {
       if (acceptedConfirmed && reason instanceof ApiError && reason.code === "subscription_usage_limit") {
         updateComposer({ pending: { ...request, accepted: true, outcome: "subscription_usage_limit" } });
@@ -748,6 +779,15 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
                 )}
               </p>
               {turnItems.length > 0 && <ToolEvents items={turnItems} label="Tool activity for this reply" />}
+              {message.role === "assistant" &&
+                message.turn_id &&
+                inputSnapshots.data?.items
+                  .filter((item) => item.turn_id === message.turn_id)
+                  .map((item) => (
+                    <p key={item.seq} className="text-xs text-muted-foreground">
+                      Approved read: {inputComparison(item.status)}.
+                    </p>
+                  ))}
               {message.role === "user" && message.origin === "daemon" && (
                 <DaemonTurnInspection
                   sessionId={sessionId}
@@ -765,6 +805,31 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
             Recorded tool activity is unavailable.
           </p>
         )}
+        {inputSnapshots.isError && (
+          <p role="status" className="text-sm">
+            Input comparison history is unavailable.
+          </p>
+        )}
+        {!!inputSnapshots.data?.items.length &&
+          (() => {
+            const visibleTurns = new Set(
+              (query.data?.messages ?? [])
+                .filter((message) => message.role === "assistant")
+                .map((message) => message.turn_id),
+            );
+            const unmatched = inputSnapshots.data.items.filter((item) => !visibleTurns.has(item.turn_id));
+            return (
+              <section aria-label="Recent input comparisons" className="text-xs text-muted-foreground">
+                <p>
+                  Showing up to 20 recent approved read comparisons. Exact results may omit source events; this is not
+                  event deduplication or complete history.
+                </p>
+                {unmatched.map((item) => (
+                  <p key={item.seq}>Read without a visible reply: {inputComparison(item.status)}.</p>
+                ))}
+              </section>
+            );
+          })()}
         {activity.data?.session_id === sessionId &&
           activity.data.items.length > 0 &&
           (() => {
@@ -1118,9 +1183,11 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
               updateComposer({ pending: null, text: "" });
               void client.invalidateQueries({ queryKey: ["heinzel", "session", sessionId] });
               void client.invalidateQueries({ queryKey: ["heinzel", "tool-activity", sessionId] });
+              void client.invalidateQueries({ queryKey: ["heinzel", "input-snapshot-history", sessionId] });
               void client.invalidateQueries({ queryKey: ["heinzel", "agent-proposal", sessionId] });
               void client.invalidateQueries({ queryKey: ["heinzel", "profile-proposal", sessionId] });
               void client.invalidateQueries({ queryKey: ["heinzel", "latest-schedule-suggestion", sessionId] });
+              void client.invalidateQueries({ queryKey: ["heinzel", "latest-source-suggestion", sessionId] });
             }}
           />
         )}

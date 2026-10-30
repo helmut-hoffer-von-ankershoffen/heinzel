@@ -32,7 +32,7 @@ def _mutate_if_requested(state, fixed_arguments):
         fixed_arguments["window"]["since"] = "2025-01-01T00:00:00Z"
 
 
-def test_human_action_only_approves_exact_private_connected_read(make_kernel, tmp_path, monkeypatch):  # noqa: PLR0915
+def test_human_action_only_approves_exact_private_connected_read(make_kernel, tmp_path, monkeypatch):  # noqa: C901, PLR0915
     state = {"opens": 0, "reads": 0, "account": "account-one", "disclosure": "Candidate metadata is locally filtered."}
     holder = {}
 
@@ -209,6 +209,65 @@ def test_human_action_only_approves_exact_private_connected_read(make_kernel, tm
         ("connected_read", "requested"),
         ("connected_read", "completed"),
     ]
+    assert client.get("/api/heinzel/input-snapshot-history", params={"session_id": session}).status_code == 401
+    assert (
+        client.get(
+            "/api/heinzel/input-snapshot-history",
+            headers=AUTH,
+            params={"session_id": "hz-01ARZ3NDEKTSV4RRFFQ69G5FAV"},
+        ).status_code
+        == 400
+    )
+    before_history = state["opens"]
+    history = client.get("/api/heinzel/input-snapshot-history", headers=AUTH, params={"session_id": session})
+    assert history.status_code == 200, history.text
+    assert state["opens"] == before_history
+    assert [item["status"] for item in history.json()["items"]] == ["first"]
+    assert "account-one" not in history.text
+    assert "scope" not in history.text
+    assert "digest" not in history.text
+    assert history.json()["items"][0]["turn_id"] == answer.json()["message"]["turn_id"]
+    second = client.post(
+        "/api/heinzel/chat",
+        headers=AUTH,
+        json={"session_id": session, "request_id": "ask-again", "message": "Read again."},
+    )
+    assert second.status_code == 200
+    assert (
+        client.post(
+            "/api/heinzel/answer-chat", headers=AUTH, json={"session_id": session, "request_id": "ask-again"}
+        ).status_code
+        == 200
+    )
+    history = client.get("/api/heinzel/input-snapshot-history", headers=AUTH, params={"session_id": session})
+    assert [item["status"] for item in history.json()["items"]] == ["first", "unchanged"]
+    assert state["reads"] == 2
+    from heinzel.modules.heinzel._input_receipts import ApprovedInputSnapshots
+
+    def fail_receipt(*_args, **_kwargs):
+        msg = "private-receipt-error"
+        raise OSError(msg)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(ApprovedInputSnapshots, "_record", fail_receipt)
+        assert (
+            client.post(
+                "/api/heinzel/chat",
+                headers=AUTH,
+                json={"session_id": session, "request_id": "record-fails", "message": "Read once more."},
+            ).status_code
+            == 200
+        )
+        failed = client.post(
+            "/api/heinzel/answer-chat", headers=AUTH, json={"session_id": session, "request_id": "record-fails"}
+        )
+        assert failed.status_code == 200, failed.text
+        assert "private-receipt-error" not in failed.text
+    assert state["reads"] == 3
+    activity = client.get("/api/heinzel/tool-activity", headers=AUTH, params={"session_id": session}).json()
+    assert activity["items"][-1]["status"] == "failed"
+    history = client.get("/api/heinzel/input-snapshot-history", headers=AUTH, params={"session_id": session})
+    assert [item["status"] for item in history.json()["items"]] == ["first", "unchanged"]
     revoke = client.post(
         "/api/heinzel/revoke-connected-read", headers=AUTH, json={"session_id": session, "request_id": "grant-one"}
     )
@@ -219,7 +278,7 @@ def test_human_action_only_approves_exact_private_connected_read(make_kernel, tm
         pytest.raises(HeinzelError),
     ):
         kernel.resolve(ConnectedReadGrants).read(session, writer)
-    assert state["reads"] == 1
+    assert state["reads"] == 3
     later = client.post(
         "/api/heinzel/chat",
         headers=AUTH,
@@ -232,4 +291,4 @@ def test_human_action_only_approves_exact_private_connected_read(make_kernel, tm
         json={"session_id": session, "request_id": "after-revocation"},
     )
     assert answered.status_code == 200, answered.text
-    assert state["reads"] == 1
+    assert state["reads"] == 3

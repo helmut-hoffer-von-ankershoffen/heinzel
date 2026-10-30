@@ -5798,6 +5798,71 @@
         "title": "HintView",
         "type": "object"
       },
+      "InputSnapshotPage": {
+        "description": "Bounded recent snapshot observations; not a complete event history.",
+        "properties": {
+          "items": {
+            "description": "Recent actual host-recorded observations.",
+            "items": {
+              "$ref": "#/components/schemas/InputSnapshotView"
+            },
+            "maxItems": 100,
+            "title": "Items",
+            "type": "array"
+          },
+          "session_id": {
+            "description": "The authenticated owner's durable session.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "items"
+        ],
+        "title": "InputSnapshotPage",
+        "type": "object"
+      },
+      "InputSnapshotView": {
+        "description": "A private redacted exact-result comparison for a recorded connected read.",
+        "properties": {
+          "at": {
+            "description": "When the host recorded this successful read.",
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "seq": {
+            "description": "Sequence in the owner's control journal.",
+            "title": "Seq",
+            "type": "integer"
+          },
+          "status": {
+            "description": "Comparison with the prior exact result under the same approved grant.",
+            "enum": [
+              "first",
+              "unchanged",
+              "changed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "turn_id": {
+            "description": "The durable turn which performed the approved read.",
+            "title": "Turn Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "seq",
+          "at",
+          "turn_id",
+          "status"
+        ],
+        "title": "InputSnapshotView",
+        "type": "object"
+      },
       "Installed": {
         "description": "What `install` wrote, or would write, and how it was loaded.",
         "properties": {
@@ -12639,6 +12704,72 @@
         "title": "SoundscapeView",
         "type": "object"
       },
+      "SourceSuggestion": {
+        "additionalProperties": false,
+        "description": "Stored private source suggestion; no access or approval is implied.",
+        "properties": {
+          "based_on_revision": {
+            "description": "Revision this suggestion amended.",
+            "minimum": 0.0,
+            "title": "Based On Revision",
+            "type": "integer"
+          },
+          "capability": {
+            "description": "Unverified suggested capability.",
+            "title": "Capability",
+            "type": "string"
+          },
+          "fixed_arguments": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "description": "Exact suggested arguments, not provider-verified.",
+            "title": "Fixed Arguments",
+            "type": "object"
+          },
+          "method": {
+            "description": "Unverified suggested method.",
+            "title": "Method",
+            "type": "string"
+          },
+          "request_id": {
+            "description": "Host-derived suggestion identity.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "revision": {
+            "description": "Suggestion revision.",
+            "minimum": 1.0,
+            "title": "Revision",
+            "type": "integer"
+          },
+          "session_id": {
+            "description": "Owner-private agent session.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "status": {
+            "const": "suggested",
+            "default": "suggested",
+            "description": "Inert suggestion, without authority.",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "request_id",
+          "revision",
+          "based_on_revision",
+          "capability",
+          "method",
+          "fixed_arguments"
+        ],
+        "title": "SourceSuggestion",
+        "type": "object"
+      },
       "StackView": {
         "description": "`hz system layer show`: the layers you are in, general to specific, and what they bring together.",
         "properties": {
@@ -16714,6 +16845,42 @@
         "title": "heinzel_pause_agent_schedule_Input",
         "type": "object"
       },
+      "heinzel_prepare_suggested_source_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "request_id": {
+            "description": "A stable client request id; reuse it only for an exact retry.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "session_id": {
+            "description": "The stable personal session id returned by new-chat or sessions.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "suggestion_request": {
+            "description": "Exact host-derived suggestion request.",
+            "title": "Suggestion Request",
+            "type": "string"
+          },
+          "suggestion_revision": {
+            "description": "Exact current suggestion revision.",
+            "minimum": 1.0,
+            "title": "Suggestion Revision",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "session_id",
+          "request_id",
+          "suggestion_request",
+          "suggestion_revision"
+        ],
+        "title": "heinzel_prepare_suggested_source_Input",
+        "type": "object"
+      },
       "heinzel_profile_Input": {
         "additionalProperties": false,
         "properties": {
@@ -18569,6 +18736,61 @@
         ]
       }
     },
+    "/heinzel/input-snapshot-history": {
+      "get": {
+        "description": "Show recent private exact-result comparisons from approved reads, without source contents.",
+        "operationId": "heinzel_input_snapshot_history",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Maximum recent observations to return.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "description": "Maximum recent observations to return.",
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputSnapshotPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Show recent private exact-result comparisons from approved reads, without source contents.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
     "/heinzel/latest-profile-proposal": {
       "get": {
         "description": "Inspect the latest suggested name and look; it has not been applied.",
@@ -18717,6 +18939,57 @@
           }
         },
         "summary": "Read the current inert proposal for the personal session, if one exists.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/latest-source-suggestion-view": {
+      "get": {
+        "description": "Inspect the latest inert suggested source; no provider was contacted or approved.",
+        "operationId": "heinzel_latest_source_suggestion_view",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/SourceSuggestion"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Response Heinzel Latest Source Suggestion View"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Inspect the latest inert suggested source; no provider was contacted or approved.",
         "tags": [
           "heinzel"
         ]
@@ -19184,6 +19457,48 @@
           }
         },
         "summary": "List the playbooks plugins contribute: asset types, template contracts and recommended settings.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/prepare-suggested-source": {
+      "post": {
+        "description": "Prepare the current exact suggestion for separate human approval without executing the read.",
+        "operationId": "heinzel_prepare_suggested_source",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/heinzel_prepare_suggested_source_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectedGrantProposal"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Prepare the current exact suggestion for separate human approval without executing the read.",
         "tags": [
           "heinzel"
         ]
