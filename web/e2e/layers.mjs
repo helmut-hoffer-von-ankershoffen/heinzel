@@ -1,3 +1,5 @@
+import { reportMediaFailure, watchMedia } from "./media-diagnostics.mjs";
+
 // Real CSS hit testing over a live iframe. The local canvas stream avoids external playback/network requirements.
 let stabilityCheck = 0;
 
@@ -66,6 +68,7 @@ export async function verifyLayers(page, shots, screenshot) {
       ],
     }),
   );
+  await watchMedia(page);
   await page.reload();
   await page.getByRole("button", { name: "Choose a soundscape", exact: true }).click();
   await page
@@ -75,7 +78,12 @@ export async function verifyLayers(page, shots, screenshot) {
   await page.keyboard.press("Escape");
   const card = page.getByRole("region", { name: "Layer probe player" });
   const iframe = card.locator("iframe");
-  await iframe.waitFor();
+  try {
+    await iframe.waitFor();
+  } catch (error) {
+    await reportMediaFailure(page, "layer iframe");
+    throw error;
+  }
   await page.evaluate(() => {
     window.layerProofFrame = document.querySelector("[data-dock] iframe");
   });

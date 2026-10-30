@@ -182,7 +182,10 @@ def _snapshot(prefix: Path, *, strict_identity: bool = False, receipt: bytes | N
 def fingerprint(
     prefix: Path, authority: Callable[[], object], *, strict_identity: bool = False, receipt: bytes | None = None
 ) -> str:
-    """Capture twice and validate the tool authority on both sides.
+    """Observe two consecutive matching snapshots under the same tool authority.
+
+    Up to three snapshots allow a later stable observation after a transient change.
+    This does not establish an atomic snapshot or uninterrupted history.
 
     Raises:
         HeinzelError: If the installation cannot be inspected safely.
@@ -196,23 +199,26 @@ def fingerprint(
         if info.st_uid != os.getuid() or info.st_mode & 0o022:
             msg = "The installation prefix is not privately owned."
             raise HeinzelError(msg)
-        if receipt is not None:
-            first = _snapshot(prefix, strict_identity=strict_identity, receipt=receipt)
-            second = _snapshot(prefix, strict_identity=strict_identity, receipt=receipt)
-        else:
-            first = _snapshot(prefix, strict_identity=True) if strict_identity else _snapshot(prefix)
-            second = _snapshot(prefix, strict_identity=True) if strict_identity else _snapshot(prefix)
-        if first != second:
-            msg = "Installation changed during inspection (snapshot mismatch)."
-            raise HeinzelError(msg)
-        if authority() != target:
-            msg = "Installation changed during inspection (authority mismatch)."
-            raise HeinzelError(msg)
+        previous = None
+        for _ in range(3):
+            if authority() != target:
+                msg = "Installation changed during inspection (authority mismatch)."
+                raise HeinzelError(msg)
+            if receipt is not None:
+                current = _snapshot(prefix, strict_identity=strict_identity, receipt=receipt)
+            else:
+                current = _snapshot(prefix, strict_identity=True) if strict_identity else _snapshot(prefix)
+            if authority() != target:
+                msg = "Installation changed during inspection (authority mismatch)."
+                raise HeinzelError(msg)
+            if previous == current:
+                return current
+            previous = current
+        msg = "Installation changed during inspection (snapshot mismatch)."
+        raise HeinzelError(msg)
     except (OSError, ValueError) as exc:
         msg = "Cannot inspect the owned installation safely."
         raise HeinzelError(msg) from exc
-    else:
-        return first
 
 
 def _pending_exists(directory: int) -> bool:

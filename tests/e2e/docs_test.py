@@ -201,7 +201,8 @@ class GuardedCommand:
 
 def run_documented_command(command, *, env, cwd, deadline):
     """Capture bounded command output and clean up the owned original process group."""
-    remaining(deadline)
+    budget = remaining(deadline)
+    started = time.monotonic()
     process = GuardedCommand(command, env=env, cwd=cwd)
     timed_out = False
     try:
@@ -214,7 +215,8 @@ def run_documented_command(command, *, env, cwd, deadline):
     if timed_out:
         heading = safe_diagnostics(f"README command exceeded its shared budget:\n{shlex.join(command)}")
         diagnostic = safe_diagnostics(f"{output}\n{problem}")
-        pytest.fail(f"{heading}\n{diagnostic}")
+        elapsed = time.monotonic() - started
+        pytest.fail(f"{heading}\nCommand began with {budget:.1f}s remaining and ran for {elapsed:.1f}s.\n{diagnostic}")
     return subprocess.CompletedProcess(command, process.returncode, output, problem)
 
 
@@ -277,15 +279,27 @@ def candidate_update(block, wheel):
     return selected
 
 
+@contextlib.contextmanager
+def readme_phase(label, deadline):
+    """Retain fixed phase timings on a failing hosted run without changing its budgets."""
+    started = time.monotonic()
+    try:
+        yield
+    finally:
+        now = time.monotonic()
+        sys.stderr.write(f"README phase={label} elapsed={now - started:.1f}s remaining={deadline - now:.1f}s\n")
+
+
 def test_readme_instructions(tmp_path):
     deadline = time.monotonic() + PROCEDURE_BUDGET
     with socket.socket() as listener:
         listener.bind(("127.0.0.1", 0))
         port = listener.getsockname()[1]
     artifacts = tmp_path / "artifacts"
-    built = run_documented_command(
-        ["uv", "build", "--wheel", "--out-dir", str(artifacts)], env=None, cwd=REPO, deadline=deadline
-    )
+    with readme_phase("build", deadline):
+        built = run_documented_command(
+            ["uv", "build", "--wheel", "--out-dir", str(artifacts)], env=None, cwd=REPO, deadline=deadline
+        )
     assert built.returncode == 0, safe_diagnostics(built.stdout + built.stderr)
     [wheel] = artifacts.glob("heinzel-*.whl")
     from heinzel import __version__
@@ -312,6 +326,8 @@ def test_readme_instructions(tmp_path):
     env = {
         **{key: value for key, value in os.environ.items() if not key.startswith(("HZ_", "UV_"))},
         "UV_NO_CONFIG": "1",
+        # Other E2E installs must not change shared cache inode metadata during this tool's inspection.
+        "UV_CACHE_DIR": str(tmp_path / "uv-cache"),
         "HZ_APP_PROFILE": str(profile),
         "HZ_SYSTEM_CREDENTIAL__BACKEND": "environment",
         "UV_TOOL_DIR": str(tmp_path / "tools"),
@@ -329,6 +345,8 @@ def test_readme_instructions(tmp_path):
     }
     env.pop("VIRTUAL_ENV", None)
     env.pop("UV_OVERRIDE", None)
+    if python_directory := os.environ.get("UV_PYTHON_INSTALL_DIR"):
+        env["UV_PYTHON_INSTALL_DIR"] = python_directory
     # A stale checkout is a common developer environment; all packaged heads must still use this wheel.
     shadow = tmp_path / "stale-source/heinzel"
     shadow.mkdir(parents=True)
@@ -337,15 +355,16 @@ def test_readme_instructions(tmp_path):
 
     for block in documented_blocks(REPO / "README.md"):
         if block.strip() == (REPO / "docs/_data/install-command.txt").read_text().strip():
-            launch_documented_app(block, env, tmp_path, deadline, bootstrap_wheels=artifacts)
+            with readme_phase("install-and-launch", deadline):
+                launch_documented_app(block, env, tmp_path, deadline, bootstrap_wheels=artifacts)
             assert (tmp_path / "data/standard-app.json").is_file()
             continue
-        result = run_documented_command(
-            ["bash", "-exuo", "pipefail", "-c", candidate_update(block, wheel)],
-            env=env,
-            cwd=tmp_path,
-            deadline=deadline,
-        )
+        with readme_phase("uninstall" if UNINSTALL in block else "documented-cli", deadline):
+            # Bash expands SECONDS for each traced command, identifying a slow phase without extra operations.
+            traced = "PS4='+${SECONDS}s ';\n" + candidate_update(block, wheel)
+            result = run_documented_command(
+                ["bash", "-exuo", "pipefail", "-c", traced], env=env, cwd=tmp_path, deadline=deadline
+            )
         tokenless = not any(os.environ.get(name) for name in TOKENS)
         if result.returncode and tokenless and (limited := RATE_LIMITED.search(result.stderr)):
             pytest.skip(f"GitHub rate-limited the unauthenticated releases API ({limited[0]}); set GH_TOKEN")

@@ -382,7 +382,7 @@ def test_unconfirmed_record_does_not_remove_an_already_replaced_record(tool, mon
     assert not tool.startup_state_matches()
 
 
-def test_observation_reads_fixture_content_twice_and_validates_receipt_twice(tool, monkeypatch):
+def test_observation_reads_fixture_content_twice_and_rechecks_authority(tool, monkeypatch):
     files = tool.prefix / "lib/site-packages/example"
     for index in range(128):
         (files / f"part-{index}.py").write_bytes(b"x" * 1024)
@@ -398,7 +398,7 @@ def test_observation_reads_fixture_content_twice_and_validates_receipt_twice(too
     monkeypatch.setattr(os, "read", counted)
     tool.startup_fingerprint()
     receipt_size = (tool.prefix / "uv-receipt.toml").stat().st_size
-    assert sum(read_sizes) == 2 * expected + 2 * receipt_size
+    assert sum(read_sizes) == 2 * expected + 5 * receipt_size
 
 
 def test_replaced_prefix_does_not_inherit_prior_record(tool):
@@ -426,7 +426,7 @@ def test_unstable_observation_cannot_be_recorded(tool, monkeypatch):
         return result
 
     monkeypatch.setattr(_installation_continuity, "_snapshot", changing)
-    with pytest.raises(HeinzelError, match="changed"):
+    with pytest.raises(HeinzelError, match="verified generation"):
         tool.record_startup_state(expected=expected)
     assert record.read_bytes() == prior
     assert not tool.startup_state_matches()
@@ -464,7 +464,7 @@ def test_inspection_diagnostic_identifies_directory_change_without_path(tool, mo
 
 
 def test_inspection_diagnostic_distinguishes_snapshot_and_authority(tool, monkeypatch):
-    snapshots = iter(("first", "second"))
+    snapshots = iter(("first", "second", "third"))
     monkeypatch.setattr(_installation_continuity, "_snapshot", lambda *_args, **_kwargs: next(snapshots))
     with pytest.raises(HeinzelError, match=r"inspection \(snapshot mismatch\)"):
         _installation_continuity.fingerprint(tool.prefix, lambda: "target")
@@ -472,6 +472,145 @@ def test_inspection_diagnostic_distinguishes_snapshot_and_authority(tool, monkey
     targets = iter(("first", "second"))
     with pytest.raises(HeinzelError, match=r"inspection \(authority mismatch\)"):
         _installation_continuity.fingerprint(tool.prefix, lambda: next(targets))
+
+
+def test_retry_observes_stable_later_state_without_adopting_it(tool, monkeypatch):
+    _record(tool)
+    old = tool.startup_fingerprint()
+    record = (tool.prefix / ".heinzel-startup-state").read_bytes()
+    original = _installation_continuity._snapshot
+    calls = []
+
+    def change_once(prefix, **kwargs):
+        result = original(prefix, **kwargs)
+        calls.append(result)
+        if len(calls) == 1:
+            (prefix / "bin/hz").write_text("new executable bytes")
+        return result
+
+    monkeypatch.setattr(_installation_continuity, "_snapshot", change_once)
+    current = tool.startup_fingerprint()
+    assert len(calls) == 3
+    assert calls[0] != calls[1] == calls[2] == current
+    assert current != old
+    assert not tool.startup_state_matches()
+    with pytest.raises(HeinzelError, match="verified generation"):
+        tool.record_startup_state(expected=old)
+    assert (tool.prefix / ".heinzel-startup-state").read_bytes() == record
+
+
+def test_retry_recovers_after_real_atomic_bytecode_temporary_file(tool, monkeypatch):
+    import importlib._bootstrap_external as bootstrap
+    import threading
+
+    cache = tool.prefix / "lib/site-packages/example/__pycache__"
+    cache.mkdir()
+    target = cache / "fixture.pyc"
+    started = threading.Event()
+    release = threading.Event()
+    original_replace = bootstrap._os.replace
+    original_snapshot = _installation_continuity._snapshot
+    calls = []
+
+    def blocked_replace(source, destination):
+        assert Path(source).name.startswith("fixture.pyc.")
+        started.set()
+        assert release.wait(10)
+        return original_replace(source, destination)
+
+    def snapshot(prefix, **kwargs):
+        result = original_snapshot(prefix, **kwargs)
+        calls.append(result)
+        if len(calls) == 1:
+            release.set()
+            worker.join(timeout=10)
+            assert not worker.is_alive()
+        return result
+
+    monkeypatch.setattr(bootstrap._os, "replace", blocked_replace)
+    monkeypatch.setattr(_installation_continuity, "_snapshot", snapshot)
+    worker = threading.Thread(target=bootstrap._write_atomic, args=(str(target), b"inert"))
+    worker.start()
+    try:
+        assert started.wait(10)
+        result = tool.startup_fingerprint()
+        assert len(calls) == 3
+        assert calls[0] != calls[1] == calls[2] == result
+    finally:
+        release.set()
+        worker.join(timeout=10)
+        assert not worker.is_alive()
+
+
+def test_retry_keeps_strict_inode_identity_for_rollback(tool, monkeypatch):
+    before = tool.rollback_identity()
+    original = _installation_continuity._snapshot
+    calls = []
+
+    def replace_once(prefix, **kwargs):
+        result = original(prefix, **kwargs)
+        calls.append(result)
+        if len(calls) == 1:
+            binary = prefix / "bin/hz"
+            replacement = prefix / "bin/new"
+            replacement.write_bytes(binary.read_bytes())
+            replacement.replace(binary)
+        return result
+
+    monkeypatch.setattr(_installation_continuity, "_snapshot", replace_once)
+    after = tool.rollback_identity()
+    assert len(calls) == 3
+    assert calls[0] != calls[1] == calls[2] == after
+    assert after != before
+
+
+@pytest.mark.parametrize("changed_call", range(1, 7))
+def test_retry_refuses_authority_change_at_any_observation_boundary(tool, monkeypatch, changed_call):
+    calls = []
+    snapshots = []
+
+    def authority():
+        calls.append(1)
+        return "changed" if len(calls) == changed_call + 1 else "initial"
+
+    def snapshot(*_args, **_kwargs):
+        snapshots.append(1)
+        return str(len(snapshots))
+
+    monkeypatch.setattr(_installation_continuity, "_snapshot", snapshot)
+    with pytest.raises(HeinzelError, match="authority mismatch"):
+        _installation_continuity.fingerprint(tool.prefix, authority)
+    assert len(calls) == changed_call + 1
+    assert len(snapshots) <= 3
+
+
+def test_retry_does_not_retry_inspection_errors(tool, monkeypatch):
+    calls = []
+
+    def fail(*_args, **_kwargs):
+        calls.append(1)
+        msg = "unsafe ownership"
+        raise HeinzelError(msg)
+
+    monkeypatch.setattr(_installation_continuity, "_snapshot", fail)
+    with pytest.raises(HeinzelError, match="unsafe ownership"):
+        _installation_continuity.fingerprint(tool.prefix, lambda: "fixed")
+    assert len(calls) == 1
+
+
+def test_retry_preserves_projected_receipt_and_strict_flags(tool, monkeypatch):
+    calls = []
+
+    def snapshot(_prefix, **kwargs):
+        calls.append(kwargs)
+        return "first" if len(calls) == 1 else "later"
+
+    monkeypatch.setattr(_installation_continuity, "_snapshot", snapshot)
+    assert (
+        _installation_continuity.fingerprint(tool.prefix, lambda: "fixed", strict_identity=True, receipt=b"projected")
+        == "later"
+    )
+    assert calls == [{"strict_identity": True, "receipt": b"projected"}] * 3
 
 
 def test_inspection_diagnostic_distinguishes_file_read_and_metadata(tmp_path, monkeypatch):

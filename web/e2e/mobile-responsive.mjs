@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { chromium, webkit } from "playwright-core";
 import ts from "typescript";
 import { contributePanel } from "./contributed-panel.mjs";
+import { reportMediaFailure, watchMedia } from "./media-diagnostics.mjs";
 
 const [url, shots] = process.argv.slice(2);
 mkdirSync(shots, { recursive: true });
@@ -995,6 +996,7 @@ try {
       body: `<!doctype html><html><body style="margin:0"><video muted autoplay playsinline></video><script>const c=document.createElement('canvas');c.width=320;c.height=180;const x=c.getContext('2d');setInterval(()=>{x.fillStyle='#308090';x.fillRect(0,0,320,180)},40);const v=document.querySelector('video');v.srcObject=c.captureStream(25);v.play();</script></body></html>`,
     }),
   );
+  await watchMedia(soundPage);
   await soundPage.goto(url);
   await soundPage.getByRole("heading", { name: "Today" }).waitFor();
   await soundPage.locator("#splash").waitFor({ state: "hidden", timeout: 15_000 });
@@ -1015,7 +1017,12 @@ try {
   const player = soundPage.getByRole("region", { name: "Mobile dock probe player" });
   await player.waitFor();
   const privateFrame = await (await player.locator("iframe").elementHandle()).contentFrame();
-  await privateFrame.waitForURL(/youtube-nocookie\.com\/embed\//);
+  try {
+    await privateFrame.waitForURL(/youtube-nocookie\.com\/embed\//);
+  } catch (error) {
+    await reportMediaFailure(soundPage, "mobile private frame");
+    throw error;
+  }
   assert.equal(await privateFrame.evaluate(() => document.cookie.includes("hz_test=signed")), false);
   const playerFrameBox = await player.locator("iframe").boundingBox();
   assert.ok(playerFrameBox.width >= 200 && playerFrameBox.height >= 200, "YouTube's minimum player size");

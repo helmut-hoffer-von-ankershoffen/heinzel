@@ -23,9 +23,6 @@ HEAD = subprocess.run(
 DUMMY_PLUGIN = REPO / "tests" / "fixtures" / "heinzel-dummy"
 SKILLS = REPO / "agent-skills" / "skills"
 # --color never: with FORCE_COLOR (as in CI) uv would wrap the path in escape codes.
-UV_CACHE_DIR = subprocess.run(
-    ["uv", "--color", "never", "cache", "dir"], capture_output=True, text=True, check=False, timeout=60
-).stdout.strip()
 UV_PYTHON_DIR = subprocess.run(
     ["uv", "--color", "never", "python", "dir"], capture_output=True, text=True, check=False, timeout=60
 ).stdout.strip()
@@ -72,6 +69,8 @@ class Sandbox:
             **os.environ,
             "UV_TOOL_DIR": str(self.root / "tools"),
             "UV_TOOL_BIN_DIR": str(self.root / "bin"),
+            "UV_CACHE_DIR": str(self.root / "uv-cache"),
+            "UV_PYTHON_INSTALL_DIR": UV_PYTHON_DIR,
             "HZ_SYSTEM_AGENT__SKILL_DIRS": json.dumps([str(self.skills)]),
         }
         for name in ("VIRTUAL_ENV", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME", "XDG_STATE_HOME"):
@@ -79,8 +78,8 @@ class Sandbox:
         if self.own_home:
             for name in ("HZ_CONFIG", "HZ_CONFIG_HOME", "HZ_DATA_DIR", "HZ_CACHE_DIR", "HZ_STATE_DIR", "HZ_LOG_DIR"):
                 env.pop(name, None)
-            # Keep uv's caches and Pythons from the real home, so the sandbox doesn't download everything again.
-            env |= {"HOME": str(self.home), "UV_CACHE_DIR": UV_CACHE_DIR, "UV_PYTHON_INSTALL_DIR": UV_PYTHON_DIR}
+            # Reuse managed Pythons while keeping package cache in this sandbox.
+            env["HOME"] = str(self.home)
         else:
             env |= {
                 "HZ_CONFIG_HOME": str(self.root / "config"),
@@ -127,6 +126,18 @@ class Sandbox:
 
     def hz(self, *args: str) -> str:
         return self.run(self.hz_bin, *args)
+
+
+def test_sandboxes_keep_separate_uv_caches_and_normal_link_policy(tmp_path, monkeypatch):
+    monkeypatch.setenv("UV_CACHE_DIR", str(tmp_path / "foreign-cache"))
+    monkeypatch.delenv("UV_LINK_MODE", raising=False)
+    first = Sandbox(tmp_path / "one").env
+    second = Sandbox(tmp_path / "two", own_home=True).env
+    assert first["UV_CACHE_DIR"] == str(tmp_path / "one/uv-cache")
+    assert second["UV_CACHE_DIR"] == str(tmp_path / "two/uv-cache")
+    assert first["UV_PYTHON_INSTALL_DIR"] == second["UV_PYTHON_INSTALL_DIR"] == UV_PYTHON_DIR
+    assert "UV_LINK_MODE" not in first
+    assert "UV_LINK_MODE" not in second
 
 
 @pytest.fixture(scope="module")
