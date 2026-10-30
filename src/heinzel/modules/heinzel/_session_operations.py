@@ -764,6 +764,7 @@ def _user_chat_service(crud: SessionCrud, current: CurrentUser, kernel: Kernel) 
         runner,
         connected=lambda: ConnectedReadGrants(crud, current, kernel),
         notifications=lambda: kernel.resolve(Notifications),
+        playbook_kernel=kernel,
     )
 
 

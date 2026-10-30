@@ -200,3 +200,4 @@ of inventing them. Two factual corrections came with it: ADR 0004 names the plug
 | [0106](0106-source-bound-connected-provider-loading.md) | Bind connected providers to source-only loading | proposed | 2026-10-30 |
 | [0107](0107-propose-bounded-connected-read-sets.md) | Propose bounded connected read sets separately | proposed | 2026-10-30 |
 | [0108](0108-record-owned-installation-continuity-after-verified-changes.md) | Record owned installation continuity after verified changes | proposed | 2026-10-30 |
+| [0109](0109-adopt-plugin-playbook-terms-as-inert-chat-drafts.md) | Adopt plugin playbook terms as inert chat drafts | proposed | 2026-10-30 |
