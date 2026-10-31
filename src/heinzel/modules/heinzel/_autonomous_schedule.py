@@ -373,7 +373,7 @@ class AutonomousSchedules:
                 writer, "approved-agent-schedule", binding.model_dump(mode="json"), control=True
             ).model_dump(mode="json")
 
-        with self.crud.repository.main_writer(session):
+        with self.crud.repository.main_writer(session, wait=True):
             consume_approval(
                 self.crud.repository,
                 session,
@@ -510,7 +510,7 @@ class AutonomousSchedules:
             HeinzelError: If the caller is not the owner through a human-facing head.
         """
         self._require_owner_write()
-        with self.crud.repository.main_writer(session):
+        with self.crud.repository.main_writer(session, wait=True):
             self.approved(session, request, validate_current=False, allow_paused=True)
             events = self.crud.repository.control_read(session).events
             if self._paused(session, request, events):

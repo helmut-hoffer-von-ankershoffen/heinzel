@@ -712,7 +712,7 @@ class ConnectedReadGrants:
             body = immutable_body(writer, "approved-connected-read", proposal.model_dump(mode="json"), control=True)
             return body.model_dump(mode="json")
 
-        with self.crud.repository.main_writer(session):
+        with self.crud.repository.main_writer(session, wait=True):
             consume_approval(
                 self.crud.repository,
                 session,

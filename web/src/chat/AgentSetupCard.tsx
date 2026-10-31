@@ -48,7 +48,8 @@ async function confirmStaged(
   const updated = await result(
     api.POST("/system/runner/chat/confirm", { params: { query: { session: chat.id, action: action.id } } }),
   );
-  if (updated.actions?.find((item) => item.id === action.id)?.status !== "done") throw new Error("Not confirmed");
+  const decided = updated.actions?.find((item) => item.id === action.id);
+  if (decided?.status !== "done") throw new Error(decided?.result || "This was not confirmed.");
 }
 
 type PendingDraft = {
@@ -145,7 +146,9 @@ export function DocumentDrafts({ snapshot }: { snapshot: Snapshot }) {
   const refresh = () => void client.invalidateQueries({ queryKey: ["heinzel", "document-drafts", sessionId] });
   return (
     <>
-      {drafts.data?.activity.map((item) => (
+      {drafts.data?.activity
+        .filter((item) => item.status !== "draft")
+        .map((item) => (
         <p key={item.seq} role="status" className="rounded-lg border border-border p-3 text-sm">
           {item.status === "acknowledged" ? "Written to " : "Outcome unknown for "}
           <a className="underline" href={item.reference} target="_blank" rel="noreferrer">

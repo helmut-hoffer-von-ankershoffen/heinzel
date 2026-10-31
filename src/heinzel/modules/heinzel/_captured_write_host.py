@@ -189,7 +189,7 @@ class CapturedWriteHost:
             finally:
                 lease.close()
         except Exception:  # noqa: BLE001 - provider failures may contain private credentials
-            msg = "The captured write review is unavailable; check the account, scope and revision"
+            msg = "The document or connection changed since this draft; nothing was written. Set it aside and ask again"
             raise HeinzelError(msg) from None
 
     def review(self, session: str, request: str) -> dict[str, JsonValue]:
@@ -353,7 +353,7 @@ class CapturedWriteHost:
         if not confirmation.matches("heinzel", "execute-captured-write", args):
             msg = "The captured write requires trusted human confirmation"
             raise HeinzelError(msg)
-        with self.crud.repository.main_writer(session):
+        with self.crud.repository.main_writer(session, wait=True):
             draft = self.current(session, request)
             if review != review_payload(draft):
                 msg = "The reviewed write draft changed"
