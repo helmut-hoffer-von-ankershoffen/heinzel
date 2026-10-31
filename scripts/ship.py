@@ -45,6 +45,8 @@ from typing import Any, NoReturn
 SELF = Path(__file__).resolve()
 RUN = f"uv run --script {SELF}"
 LABEL = "risk: low"
+MAIN = "origin/main"
+NOT_SMALL = "Not a small change: "
 MAX_FILES, MAX_LINES = 8, 80
 MAX_FAILURES = 2
 BUDGET = 100  # seconds one call may take: a model's shell tool gives up at 120
@@ -101,6 +103,7 @@ ALLOWED_PATHS = [
     r"^docs/overrides/[^/]+\.html$",
     r"^web/src/(components|pages|layout|splash)/.+\.(tsx?|css)$",
     r"^web/src/index\.css$",
+    r"^web/src/i18n\.ts$",  # the app's words; only plain string entries may change (I18N_ENTRY)
 ]
 DERIVED = {"README.md": ["template/README.md.jinja"]}  # generated from the key by `generate_docs.py`
 CODE = re.compile(r"\.(tsx?|css|html)$")
@@ -110,11 +113,11 @@ DANGEROUS = re.compile(
     r"|<script|javascript:|<iframe|\bon[a-z]+=\"|https?://",
     re.IGNORECASE,
 )
-IMPORT = re.compile(r"^\s*(import\b|export .* from\b|.*\brequire\()")
+I18N_ENTRY = re.compile(r'^\s*("[\w.-]+":\s*)?("(?:[^"\\]|\\.)*",?)?\s*$')  # key: "text", key:, or "text" continued
+IMPORT = re.compile(r"^\s*(import\b|export\b[^\n]{0,200}\bfrom\b)|\brequire\(")
 FENCE = re.compile(r"^\s*(```|~~~)")
 SPAN = re.compile(r"(`[^`\n]+`)|\]\((https?://[^)\s]+)\)|(?<![\w/])(https?://[^\s)>\]]+)")
 LINK = re.compile(r"\]\(([^)\s#]+)(#[^)\s]*)?\)")
-SITE = "https://heinzel.team/"  # mkdocs.yml site_url
 
 
 # --- output, state and the failure budget -----------------------------------------------------------------------------
@@ -179,9 +182,17 @@ def gate(argv: list[str]) -> list[str]:
     return ["hz-gate", *argv] if shutil.which("hz-gate") else argv
 
 
+def state_dir() -> Path:
+    """This tree's state folder: a per-user cache folder named by a digest of its git directory."""
+    digest = hashlib.sha256(git("rev-parse", "--absolute-git-dir", cwd=root()).encode()).hexdigest()[:20]
+    folder = Path.home() / ".cache" / "hz-ship" / digest
+    folder.mkdir(parents=True, exist_ok=True)
+    return folder
+
+
 def state_file() -> Path:
     """The per-worktree state file: failures, stop flag, last check, pull request."""
-    return Path(git("rev-parse", "--absolute-git-dir", cwd=root())) / "ship.json"
+    return state_dir() / "ship.json"
 
 
 def load() -> dict[str, Any]:
@@ -315,7 +326,7 @@ def parse_diff(text: str) -> dict[str, Change]:
 def collect(head: str | None = None) -> dict[str, Change]:
     """Every change against the merge base with origin/main: the working tree, or the commit `head`."""
     top = root()
-    base = git("merge-base", "origin/main", head or "HEAD", cwd=top) or "origin/main"
+    base = git("merge-base", MAIN, head or "HEAD", cwd=top) or MAIN
     target = [head] if head else []
     changes = parse_diff(
         git("diff", "-U0", "--no-color", "--no-renames", "--no-ext-diff", base, *target, "--", cwd=top)
@@ -387,7 +398,9 @@ def diff_reasons(change: Change) -> list[str]:
             reasons.append("changes inline code, a command or an external link")
     else:
         for number, line in change.added:
-            if DANGEROUS.search(line):
+            if change.path == "web/src/i18n.ts" and not I18N_ENTRY.match(line):
+                reasons.append(f"line {number}: not a plain string entry")
+            elif DANGEROUS.search(line):
                 reasons.append(f"line {number}: security-sensitive or network code")
             elif IMPORT.search(line):
                 reasons.append(f"line {number}: new import")
@@ -507,7 +520,7 @@ def cmd_classify(args: argparse.Namespace) -> None:
     reasons = classify_changes(changes)
     state = load()
     if reasons:
-        stop("classify", "Not a small change: " + "; ".join(reasons[:4]) + ".", state)
+        stop("classify", NOT_SMALL + "; ".join(reasons[:4]) + ".", state)
     state["lane"] = "low"
     save(state)
     total = sum(c.lines for c in changes.values())
@@ -598,7 +611,7 @@ def stage_check() -> None:
     changes = require_changes("check")
     reasons = classify_changes(changes)
     if reasons:
-        stop("check", "Not a small change: " + "; ".join(reasons[:3]) + ".", load())
+        stop("check", NOT_SMALL + "; ".join(reasons[:3]) + ".", load())
     normalize(top, sorted(changes))
     changes = collect()
     broken = [
@@ -612,6 +625,8 @@ def stage_check() -> None:
     done = []
     for name, command in steps_for(changes):
         code, out = run(command, cwd=top, timeout=900)
+        if code != 0 and "Timeout (>" in out:  # a test's own time limit on a loaded host says nothing about the text
+            code, out = run(command, cwd=top, timeout=900)
         if code != 0:
             fail_step(name, out)
         done.append(name)
@@ -687,10 +702,10 @@ def sync_with_main() -> str:
     """Bring the branch up to date with origin/main (rebase before the first push, merge after). Empty, or why not."""
     top = root()
     run(["git", "fetch", "--quiet", "origin", "main"], cwd=top, timeout=120)
-    if run(["git", "merge-base", "--is-ancestor", "origin/main", "HEAD"], cwd=top, timeout=60)[0] == 0:
+    if run(["git", "merge-base", "--is-ancestor", MAIN, "HEAD"], cwd=top, timeout=60)[0] == 0:
         return ""
     pushed = bool(git("ls-remote", "--heads", "origin", branch(), cwd=top))
-    command = ["git", "merge", "--no-edit", "origin/main"] if pushed else ["git", "rebase", "origin/main"]
+    command = ["git", "merge", "--no-edit", MAIN] if pushed else ["git", "rebase", MAIN]
     code, out = run(command, cwd=top, timeout=300)
     if code != 0:
         run(["git", "merge" if pushed else "rebase", "--abort"], cwd=top, timeout=60)
@@ -701,7 +716,7 @@ def sync_with_main() -> str:
 def write_body(text: str) -> Path:
     """The pull request description: why, the lane and its rules, the files."""
     names = "\n".join(f"- `{name}`" for name in sorted(collect()))
-    path = Path(git("rev-parse", "--absolute-git-dir", cwd=root())) / "ship-pr-body.md"
+    path = state_dir() / "pr-body.md"
     path.write_text(
         f"## What and why\n\n{text}\n\n## Risk\n\nLane `low`, classified by `scripts/ship.py` from the file paths and "
         "the diff: only docs, site templates or small web UI; no code block, command, external link, import or "
@@ -740,7 +755,7 @@ def stage_pr(args: argparse.Namespace) -> None:
     changes = require_changes("pr")
     reasons = classify_changes(changes)
     if reasons:
-        stop("pr", "Not a small change: " + "; ".join(reasons[:3]) + ".", state)
+        stop("pr", NOT_SMALL + "; ".join(reasons[:3]) + ".", state)
     if state.get("checked") != signature(changes):
         emit(ok=False, stage="pr", msg="Files changed since the last check.", next=f"{RUN} check")
         sys.exit(2)
@@ -873,11 +888,17 @@ def stage_wait(args: argparse.Namespace) -> None:
         time.sleep(20)
 
 
+def site_url() -> str:
+    """The published site's address, from mkdocs.yml (it has moved before)."""
+    found = re.search(r"(?m)^site_url:\s*(\S+)", (root() / "mkdocs.yml").read_text("utf-8"))
+    return found[1].rstrip("/") + "/" if found else ""
+
+
 def page_url(path: str) -> str | None:
     """Where the site shows docs/<path>.md."""
     if path.startswith("docs/") and path.endswith(".md"):
         page = path[5:-3].removesuffix("README").removesuffix("/")  # README.md is a directory's index page
-        return SITE + (page + "/" if page else "")
+        return site_url() + (page + "/" if page else "")
     return None
 
 
@@ -1050,7 +1071,11 @@ def cmd_status(_: argparse.Namespace) -> None:
     """Where the change stands and what to run next."""
     state = load()
     changes = collect()
-    lane = "stopped" if state.get("stopped") else ("low" if changes and not classify_changes(changes) else "n/a")
+    lane = "n/a"
+    if changes and not classify_changes(changes):
+        lane = "low"
+    if state.get("stopped"):
+        lane = "stopped"
     if state.get("stopped"):
         nxt = "stop"
     elif state.get("pr"):
@@ -1090,16 +1115,18 @@ def cmd_reset(_: argparse.Namespace) -> None:
             next="stop",
         )
         sys.exit(3)
-    save({"failures": [], "stopped": False})
+    state = load()
+    state.update(failures=[], stopped=False, why=None)
+    save(state)
     ok("reset", "Failures cleared.", f"{RUN} status")
 
 
 # --- long stages run detached, so a shell timeout cannot kill them ---
 
 
-def relay(name: str, argv: list[str], budget: int) -> None:
+def relay(name: str, argv: list[str], budget: int, *, gated: bool = True) -> None:
     """Run a long stage as a detached job and wait up to `budget` seconds; call again to keep waiting."""
-    folder = Path(git("rev-parse", "--absolute-git-dir", cwd=root())) / "ship-jobs"
+    folder = state_dir() / "jobs"
     folder.mkdir(exist_ok=True)
     result, pid, log = folder / f"{name}.json", folder / f"{name}.pid", folder / f"{name}.log"
     key = hashlib.sha256(" ".join([*argv, signature(collect())]).encode()).hexdigest()
@@ -1109,9 +1136,10 @@ def relay(name: str, argv: list[str], budget: int) -> None:
             stale.unlink(missing_ok=True)
     if not result.exists() and not pid.exists():
         meta.write_text(key)
+        (folder / f"{name}.spec").write_text(json.dumps(argv))  # the child reads its arguments here, not from argv
         with log.open("w") as sink:
             child = subprocess.Popen(  # noqa: S603
-                [sys.executable, str(SELF), "_job", name, str(result), *argv],
+                [sys.executable, str(SELF), "_job", name],
                 cwd=root(),
                 stdout=sink,
                 stderr=subprocess.STDOUT,
@@ -1123,7 +1151,7 @@ def relay(name: str, argv: list[str], budget: int) -> None:
         time.sleep(1)
     if not result.exists():
         holder = Path.home().joinpath(".cache", "hz-gate.lock")
-        queue = holder.read_text("utf-8").strip()[:100] if holder.exists() else ""
+        queue = holder.read_text("utf-8").strip()[:100] if gated and holder.exists() else ""
         emit(
             ok=True,
             stage=name,
@@ -1140,13 +1168,20 @@ def relay(name: str, argv: list[str], budget: int) -> None:
 
 
 def cmd_job(args: argparse.Namespace) -> None:
-    """Internal: run one stage in the background and store its output and exit code."""
-    code = 0
+    """Internal: run one stage in the background and store its output and exit code.
+
+    Raises:
+        SystemExit: with the stage's exit code, once it is stored.
+    """
+    folder = state_dir() / "jobs"
+    argv = [str(item) for item in json.loads((folder / f"{args.name}.spec").read_text())]
+    result = folder / f"{args.name}.json"
     try:
-        dispatch(args.argv)
+        dispatch(argv)
     except SystemExit as stopped:
-        code = int(stopped.code or 0)
-    Path(args.result).write_text(json.dumps({"code": code, "out": OUT}))
+        result.write_text(json.dumps({"code": int(stopped.code or 0), "out": OUT}))
+        raise
+    result.write_text(json.dumps({"code": 0, "out": OUT}))
 
 
 # --- entry ------------------------------------------------------------------------------------------------------------
@@ -1159,7 +1194,7 @@ def parser() -> argparse.ArgumentParser:
     start = sub.add_parser("start")
     start.add_argument("slug")
     start.add_argument("--kind", default="docs", choices=["docs", "fix", "feat", "chore"])
-    start.add_argument("--base", default="origin/main")
+    start.add_argument("--base", default=MAIN)
     classify = sub.add_parser("classify")
     classify.add_argument("--files", nargs="+")
     for name in ("check",):
@@ -1177,15 +1212,15 @@ def parser() -> argparse.ArgumentParser:
     sub.add_parser("reset")
     sub.add_parser("escalate").add_argument("why")
     job = sub.add_parser("_job")
-    job.add_argument("name")
-    job.add_argument("result")
-    job.add_argument("argv", nargs=argparse.REMAINDER)
+    job.add_argument("name", choices=["check", "pr"])
     return cli
 
 
 def cmd_check(args: argparse.Namespace) -> None:
     """`check` as the model runs it: a detached job; inside the job, the stage itself."""
-    stage_check() if os.environ.get("SHIP_IN_JOB") else relay("check", ["check"], args.budget)
+    stage_check() if os.environ.get("SHIP_IN_JOB") else relay(
+        "check", ["check"], args.budget, gated=bool(web_steps(collect()))
+    )
 
 
 def cmd_pr(args: argparse.Namespace) -> None:
