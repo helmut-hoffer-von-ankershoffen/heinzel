@@ -3,7 +3,7 @@
 import json
 import re
 from collections.abc import Callable
-from typing import Annotated, Any, ClassVar, Literal, Self, get_args
+from typing import Annotated, Any, ClassVar, Literal, Self, cast, get_args
 from zoneinfo import available_timezones
 
 from pydantic import (
@@ -200,10 +200,12 @@ class OrgSettings(ModuleSettings):
     @model_validator(mode="wrap")
     @classmethod
     def _retire(cls, data: Any, handler: ModelWrapValidatorHandler[Self]) -> Self:  # noqa: ANN401 - what the sources give
-        retired = None
-        if isinstance(data, dict) and data.get("role") in REMOVED_ROLES:
-            retired = data["role"]
-            data = {**data, "role": None}
+        retired: str | None = None
+        if isinstance(data, dict):
+            table = cast("dict[str, Any]", data)
+            if table.get("role") in REMOVED_ROLES:
+                retired = table["role"]
+                data = {**table, "role": None}
         settings = handler(data)
         settings._retired_role = retired  # noqa: SLF001 - the model's own validator
         return settings

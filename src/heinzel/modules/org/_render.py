@@ -28,7 +28,7 @@ def render_profile(profile: Profile) -> RenderableType:
     }
     for name, value in rows.items():
         table.add_row(name, Text(value or "not set"))
-    notes = []
+    notes: list[Text] = []
     if profile.retired_role:
         notes.append(Text(f"Your saved role {profile.retired_role!r} is no longer offered: choose a new one."))
     if not profile.complete:
