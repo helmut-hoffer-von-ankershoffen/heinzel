@@ -37,5 +37,5 @@ terminal is what an agent can call. See the [CLI reference](../CLI_REFERENCE.md)
 | Build your own capability | [Create a plugin](../PLUGIN_AUTHORING.md): start with one operation and one test. |
 | Understand the design | [Architecture tour](architecture.md) and [vision](../VISION.md). |
 
-This release is the foundation. Autonomous team workflows are not built yet; check each integration's docs and
+This release is the foundation. Team workflows that run on a schedule without you are not built yet; check each integration's docs and
 health before you rely on it.
