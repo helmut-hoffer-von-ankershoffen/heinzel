@@ -262,7 +262,7 @@ docs-site-check: docs-site ## Check the built site's catalog, keyboard flow, mob
 design-check: docs-site ## Check computed styles in a browser: the built site and the running app against design/tokens.json
 	$(WEB) install
 	uv run --quiet --script scripts/site_check.py --install
-	uv run python scripts/design_check.py
+	uv run --quiet --script scripts/design_check.py
 
 docs-publish-check: ## Validate publication with fresh public metadata, or build a standalone plugin's ordinary docs
 	@if [ -f docs/catalog-sources.toml ]; then \

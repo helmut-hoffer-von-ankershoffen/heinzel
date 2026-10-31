@@ -23,9 +23,9 @@
   --color-main-tint: #faf8f300;
   --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: ui-monospace, "SF Mono", Menlo, monospace;
-  --radius-lg: 0.5rem;
-  --radius-xl: 0.75rem;
-  --page-max: 56rem;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+  --page-max: 896px;
   --home-max: 1200px;
   --target: 44px;
 }

@@ -85,6 +85,13 @@ def styles(data: dict) -> dict[str, dict]:
     return {style["name"]: style for group in data["type"]["groups"] for style in group["styles"]}
 
 
+def pixels(value: str) -> str:
+    """A rem length as px at the browser's 16px root: Material sets the site's root to 20px, so rem would grow."""
+    if value.endswith("rem"):
+        return f"{round(float(value.removesuffix('rem')) * 16, 2):g}px"
+    return value
+
+
 def render_css(data: dict) -> str:
     """The Pages site's token stylesheet: light values on :root, dark ones under Material's slate scheme."""
     palette = app_colours(data)
@@ -93,7 +100,7 @@ def render_css(data: dict) -> str:
     families = data["type"]["families"]
     shared = {"--font-sans": families["sans"], "--font-mono": families["mono"]}
     for variable, name in SITE_VARIABLES.items():
-        shared[variable] = radius.get(name) or spacing[name]
+        shared[variable] = pixels(radius.get(name) or spacing[name])
     lines = [HEADER, ":root {"]
     lines += [f"  --{name}: {light};" for name, (light, _dark) in palette.items()]
     lines += [f"  {variable}: {value};" for variable, value in shared.items()]

@@ -49,12 +49,15 @@ async function measure(page) {
   return await page.evaluate(() => {
     const root = getComputedStyle(document.documentElement);
     const body = getComputedStyle(document.body);
-    let button = [...document.querySelectorAll("button")].find((candidate) => candidate.classList.contains("bg-primary"));
+    let button = [...document.querySelectorAll("button")].find((candidate) =>
+      candidate.classList.contains("bg-primary"),
+    );
     let card = document.querySelector(".rounded-xl");
     const injected = [];
     if (!button) {
       button = document.createElement("button");
-      button.className = "inline-flex items-center justify-center rounded-lg bg-primary text-primary-foreground h-9 px-3";
+      button.className =
+        "inline-flex items-center justify-center rounded-lg bg-primary text-primary-foreground h-9 px-3";
       button.textContent = "Probe";
       injected.push(button);
     }
@@ -89,7 +92,11 @@ async function check(page, mode, label) {
   const got = await measure(page);
   assert.equal(got.dark, mode === "dark", `${label}: .dark class`);
   assert.equal(await resolve(page, "colour", got.primary), await want("color-primary"), `${label}: --color-primary`);
-  assert.equal(await resolve(page, "colour", got.background), await want("color-background"), `${label}: --color-background`);
+  assert.equal(
+    await resolve(page, "colour", got.background),
+    await want("color-background"),
+    `${label}: --color-background`,
+  );
   assert.equal(got.bodyBackground, await want("color-background"), `${label}: body background`);
   assert.equal(got.bodyColor, await want("color-foreground"), `${label}: body colour`);
   assert.equal(got.buttonBackground, await want("color-primary"), `${label}: primary button fill`);

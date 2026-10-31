@@ -13,6 +13,7 @@ Usage: uv run --script scripts/design_check.py [--site] [--app]   (both without 
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -27,6 +28,7 @@ ROOT = Path(__file__).resolve().parents[1]
 TOKENS = json.loads((ROOT / "design" / "tokens.json").read_text(encoding="utf-8"))
 VIEWPORTS = {"phone": (375, 812), "desktop": (1280, 900)}
 STARTUP_SECONDS = 90
+UV = shutil.which("uv") or "uv"
 
 
 class CheckError(Exception):
@@ -36,6 +38,13 @@ class CheckError(Exception):
 def token(group: str, name: str) -> object:
     """The value of a named token."""
     return next(t["value"] for t in TOKENS[group]["tokens"] if t["name"] == name)
+
+
+def pixels(value: str) -> str:
+    """A token length in px at the browser's 16px root; Material's 20px root would stretch rem on the site."""
+    if value.endswith("rem"):
+        return f"{float(value.removesuffix('rem')) * 16:g}px"
+    return value
 
 
 class Handler(SimpleHTTPRequestHandler):
@@ -130,7 +139,10 @@ def check_site(playwright_api: object) -> list[dict[str, object]]:
                             "color-primary-foreground",
                         )
                     }
-                    lengths = {"lg": token("radius", "radius-lg"), "xl": token("radius", "radius-xl")}
+                    lengths = {
+                        "lg": pixels(str(token("radius", "radius-lg"))),
+                        "xl": pixels(str(token("radius", "radius-xl"))),
+                    }
                     want = page.evaluate(PROBE, [pick, lengths])
                     got = page.evaluate(READ)
                     label = f"site {mode} {size}"
@@ -206,14 +218,27 @@ def check_app() -> dict[str, object]:
     Raises:
         CheckError: If the driver fails.
     """
-    subprocess.run(  # noqa: S603 - fixed interpreter and script
-        [sys.executable, str(ROOT / "scripts" / "web_build.py"), "build"], cwd=ROOT, check=True, timeout=600
+    subprocess.run(  # noqa: S603 - fixed uv invocation and script
+        [UV, "run", "--quiet", "--script", str(ROOT / "scripts" / "web_build.py"), "build"],
+        cwd=ROOT,
+        check=True,
+        timeout=600,
     )
     with tempfile.TemporaryDirectory(prefix="heinzel-design-") as directory:
         process, url = start_app(Path(directory))
         try:
-            driven = subprocess.run(  # noqa: S603 - fixed interpreter and script
-                [sys.executable, str(ROOT / "scripts" / "web_build.py"), "exec", "node", "e2e/design-tokens.mjs", url],
+            driven = subprocess.run(  # noqa: S603 - fixed uv invocation and script
+                [
+                    UV,
+                    "run",
+                    "--quiet",
+                    "--script",
+                    str(ROOT / "scripts" / "web_build.py"),
+                    "exec",
+                    "node",
+                    "e2e/design-tokens.mjs",
+                    url,
+                ],
                 cwd=ROOT,
                 capture_output=True,
                 text=True,
