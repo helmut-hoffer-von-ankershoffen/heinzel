@@ -4,6 +4,7 @@ import base64
 import re
 import tomllib
 import unicodedata
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import PurePosixPath
 from typing import Any, cast
@@ -211,3 +212,102 @@ def _soundscapes(
                 )
             )
     return sounds
+
+
+RawText = Callable[[str, int], str]
+"""Reads a small public text file by URL (raises LookupError when it is not there)."""
+RawSize = Callable[[str], tuple[int, str]]
+"""The byte size and content type of a public file by URL, without downloading it."""
+
+
+def raw_showcase(source: PluginSource, text: RawText, size: RawSize) -> tuple[PluginShowcase, bool] | None:
+    """Preview a public source pinned to an immutable revision from raw.githubusercontent.com, with no API request.
+
+    Anonymous raw access only serves public repositories, so a file that is there proves the source is public.
+    Returns the preview and whether soundscapes the project does not declare still need its file tree (the API) to be
+    discovered; None when the source is not a pinned GitHub revision.
+
+    Raises:
+        HeinzelError: If public source identities or declared media are unsafe.
+        OSError: If the public source cannot be read.
+        ValueError: If source metadata cannot be decoded.
+    """
+    if source.github is None or not source.ref or not REVISION.fullmatch(source.ref):
+        return None
+    owner, repository = source.github
+    prefix = _relative(source.subdirectory) + "/" if source.subdirectory else ""
+    base = f"https://raw.githubusercontent.com/{quote(owner)}/{quote(repository)}/{source.ref}/{prefix}"
+    try:
+        data = tomllib.loads(text(base + "pyproject.toml", MAX_METADATA))
+    except LookupError:
+        return (
+            PluginShowcase(
+                title=source.name or "Plugin",
+                notice="No public previews: this revision is private or not readable. Open its owning repository.",
+            ),
+            False,
+        )
+    project = _table(data.get("project"))
+    name = project.get("name")
+    if not isinstance(name, str) or (source.name and canonicalize_name(name) != source.name):
+        message = "The preview source does not match the selected plugin distribution"
+        raise HeinzelError(message)
+    catalog = _table(_table(_table(data.get("tool")).get("heinzel")).get("catalog"))
+    declarations = _items(
+        catalog.get("screenshots", []), MAX_IMAGES, "A plugin preview may declare at most eight screenshots"
+    )
+    images: list[PluginScreenshot] = []
+    for value in declarations:
+        item = _table(value)
+        relative = _relative(item.get("path"))
+        url = base + relative
+        try:
+            length, kind = size(url)
+        except LookupError:
+            length, kind = -1, ""
+        if (
+            PurePosixPath(relative).suffix not in {".png", ".jpg", ".webp"}
+            or item.get("surface") not in {"ui", "cli"}
+            or not 0 <= length <= MAX_ASSET
+            or not kind.startswith("image/")
+        ):
+            message = "Preview screenshots must be bounded regular raster images with UI or CLI labels"
+            raise HeinzelError(message)
+        images.append(
+            PluginScreenshot(url=url, surface=item["surface"], caption=_text(item.get("caption", "Screenshot"), 180))
+        )
+    declared = _items(catalog.get("soundscapes", []), MAX_SOUNDS, "Soundscape previews must be bounded")
+    sounds: list[PluginSoundscape] = []
+    for path in declared:
+        sound = tomllib.loads(text(base + _relative(path), MAX_METADATA))
+        link = _sound(sound)
+        if link:
+            sounds.append(link)
+    targets = _table(_table(_table(data.get("tool")).get("hatch")).get("build")).get("targets")
+    discover = not declared and bool(_table(_table(targets).get("wheel")).get("packages", ["src"]))
+    title = _text(catalog.get("title", name), 100)
+    return (
+        PluginShowcase(
+            title=title,
+            revision=source.ref,
+            screenshots=images,
+            soundscapes=sounds,
+            notice="Screenshots and soundscapes are declared by the owning public plugin.",
+        ),
+        discover,
+    )
+
+
+def _sound(sound: dict[str, Any]) -> PluginSoundscape | None:
+    stream = _table(sound.get("stream"))
+    video = stream.get("video", "")
+    if (
+        sound.get("kind") == "stream"
+        and stream.get("provider") == "youtube"
+        and isinstance(video, str)
+        and VIDEO.fullmatch(video)
+    ):
+        return PluginSoundscape(
+            title=_text(sound.get("title", "Soundscape"), 100), url=f"https://www.youtube.com/watch?v={video}"
+        )
+    return None

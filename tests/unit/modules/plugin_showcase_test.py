@@ -15,6 +15,7 @@ PROJECT_SHA = "b" * 40
 SOUND_SHA = "c" * 40
 ROOT = "plugins/heinzel-harbor/"
 SPEC = f"heinzel-harbor @ git+https://github.com/fictional-lab/plugins@{SHA}#subdirectory={ROOT.rstrip('/')}"
+DEFAULT_SPEC = f"heinzel-harbor @ git+https://github.com/fictional-lab/plugins#subdirectory={ROOT.rstrip('/')}"
 PROJECT = b"""[project]
 name = "heinzel-harbor"
 [tool.heinzel.catalog]
@@ -184,10 +185,13 @@ def test_service_resolves_short_catalog_names_without_installing_the_provider(gi
 
     service = object.__new__(PluginService)
     service.github_api = github.get
+    service.feed = list
+    service.raw_text = lambda url, limit: (_ for _ in ()).throw(AssertionError(url))
+    service.raw_size = lambda url: (_ for _ in ()).throw(AssertionError(url))
     monkeypatch.setattr(
         service,
         "search",
-        lambda text: SimpleNamespace(plugins=[SimpleNamespace(name="heinzel-harbor", install_spec=SPEC)]),
+        lambda text: SimpleNamespace(plugins=[SimpleNamespace(name="heinzel-harbor", install_spec=DEFAULT_SPEC)]),
     )
     assert service.showcase(spec).screenshots[0].caption == "The harbor interface"
 
@@ -197,6 +201,9 @@ def test_service_reports_malformed_metadata_as_an_actionable_preview_error(githu
 
     service = object.__new__(PluginService)
     service.github_api = github.get
+    service.feed = list
+    service.raw_text = lambda url, limit: (_ for _ in ()).throw(AssertionError(url))
+    service.raw_size = lambda url: (_ for _ in ()).throw(AssertionError(url))
     github.project = b"invalid TOML ["
     with pytest.raises(HeinzelError, match="could not be read"):
-        service.showcase(SPEC)
+        service.showcase(DEFAULT_SPEC)

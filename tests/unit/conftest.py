@@ -18,3 +18,14 @@ settings.load_profile(os.environ.get("HYPOTHESIS_PROFILE") or ("ci" if os.enviro
 def no_paid_model_requests(monkeypatch: pytest.MonkeyPatch) -> None:
     """Unit tests can use FunctionModel/TestModel, never a real paid provider by accident."""
     monkeypatch.setattr("pydantic_ai.models.ALLOW_MODEL_REQUESTS", False)
+
+
+@pytest.fixture(autouse=True)
+def no_catalog_feed_requests(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Unit tests never read the published plugin catalog from the network; they inject their own."""
+
+    def refuse(url: str, etag: str | None) -> tuple[int, str | None, bytes]:
+        message = "no network in unit tests"
+        raise OSError(message)
+
+    monkeypatch.setattr("heinzel.modules.system.plugin._feed._fetch", refuse)

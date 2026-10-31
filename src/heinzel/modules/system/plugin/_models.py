@@ -23,7 +23,7 @@ class PluginSettings(ModuleSettings):
     model_config = SettingsConfigDict(populate_by_name=True)
     section_title: ClassVar[str | None] = "Plugins"  # the heading in Settings
 
-    ignored_in_project: ClassVar[frozenset[str]] = frozenset({"catalog_sources", "github_token"})
+    ignored_in_project: ClassVar[frozenset[str]] = frozenset({"catalog_feed", "catalog_sources", "github_token"})
     catalog_sources: list[Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")]] = Field(
         default=[
             "helmut-hoffer-von-ankershoffen/heinzel-plugins",
@@ -32,6 +32,15 @@ class PluginSettings(ModuleSettings):
         title="Plugin catalogs",
         description="GitHub repositories scanned for plugin projects, in addition to topic discovery.",
         max_length=16,
+    )
+
+    catalog_feed: str = Field(
+        default="https://helmut.hoffer-von-ankershoffen.me/heinzel/catalog.json",
+        pattern=r"^(https://[^\s]+)?$",
+        title="Published plugin catalog",
+        description="The static catalog of first-party plugins, read before GitHub so that Discover and "
+        "screenshot previews need no GitHub API request. Empty turns it off.",
+        json_schema_extra={"x-expert": True},
     )
 
     github_token: SecretStr | None = Field(
