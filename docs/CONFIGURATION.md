@@ -146,6 +146,7 @@ Plugins add their own tables.
 | `doctor` | `HZ_SYSTEM_NOTIFY__DOCTOR` | `True` | Notify when a health check finds something degraded or down. Never read from a project's hz.toml. |
 | `release` | `HZ_SYSTEM_NOTIFY__RELEASE` | `False` | Notify when a newer release of Heinzelmännchen is out. Never read from a project's hz.toml. |
 | `plugin` | `HZ_SYSTEM_NOTIFY__PLUGIN` | `True` | Notify when an installed plugin reports something that needs attention. Never read from a project's hz.toml. |
+| `sound` | `HZ_SYSTEM_NOTIFY__SOUND` | `True` | Play the system's notification sound with a pop-up (Heinzel Notifier on macOS). Never read from a project's hz.toml. |
 | `quiet` | `HZ_SYSTEM_NOTIFY__QUIET` | `False` | Keep notices in the list but never pop one up, not even an urgent one. Never read from a project's hz.toml. |
 | `working_hours` | `HZ_SYSTEM_NOTIFY__WORKING_HOURS` | `True` | Hold notices that aren't urgent until your working hours start, Monday to Friday, in your time zone (both under Your profile). Never read from a project's hz.toml. |
 | `per_hour` | `HZ_SYSTEM_NOTIFY__PER_HOUR` | `6` | At most this many pop-ups an hour; the rest go to the list only. Never read from a project's hz.toml. |

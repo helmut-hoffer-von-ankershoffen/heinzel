@@ -9,7 +9,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, model_validator
 
-from heinzel import CurrentUser, HeinzelError, NoticeKind, Notifications, SessionEvent, SessionWriter
+from heinzel import CurrentUser, HeinzelError, NoticeHelper, NoticeKind, Notifications, SessionEvent, SessionWriter
 from heinzel.kernel._approval import arguments_hash
 from heinzel.modules.heinzel._connected_grants import ConnectedReadGrants
 from heinzel.modules.heinzel._input_receipts import existing_input_receipt_key
@@ -227,6 +227,7 @@ class ScheduledNotifications:
                 route=f"/heinzel?chat={self.session}",
                 command="hz heinzel sessions",
                 key=key,
+                helper=self._helper("reviewed scheduled notice"),
             )
         except Exception:  # noqa: BLE001 - never disclose provider diagnostics
             recorded = False
@@ -240,6 +241,14 @@ class ScheduledNotifications:
                 self.notifications.forget_completed({key})
             return "recorded", "The local notification was queued; it may be held and is not confirmed shown."
         return "uncertain", "The notification outcome is uncertain and will not be retried automatically."
+
+    def _helper(self, reason: str) -> NoticeHelper | None:
+        """Whose notice this is, for the pop-up's name and face; None if the profile cannot be read."""
+        try:
+            snapshot = self.crud.snapshot(self.session, limit=1)
+        except Exception:  # noqa: BLE001 - a pop-up without a face is better than a lost notice
+            return None
+        return NoticeHelper(name=snapshot.name[:100], hat=snapshot.appearance.hat, reason=reason)
 
     def _check_rate(self, topic: str, *, once: bool = False) -> None:
         now = self.crud.clock()

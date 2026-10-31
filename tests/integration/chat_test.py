@@ -1975,7 +1975,7 @@ def test_owner_confirms_exact_notification_once_and_mcp_cannot_self_authorize(ke
             self.calls = []
             self.keys = set()
 
-        def emit_once(self, _kind, title, body, *, route, command, key):
+        def emit_once(self, _kind, title, body, *, route, command, key, helper=None):  # noqa: PLR0913 - the port's signature
             self.calls.append((title, body, key))
             self.keys.add(key)
             return acknowledged

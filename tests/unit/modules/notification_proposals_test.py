@@ -74,7 +74,7 @@ def test_one_exact_human_confirmation_records_once_and_never_replays(tmp_path, m
             self.keys = set()
 
         @override
-        def emit_once(self, kind, title, body, *, route, command, key):
+        def emit_once(self, kind, title, body, *, route, command, key, helper=None):
             self.calls.append((title, body, route, command, key))
             self.keys.add(key)
             return True
@@ -143,7 +143,7 @@ def test_uncertain_queue_recovery_inspects_receipt_without_redelivery(tmp_path):
             self.seen = None
 
         @override
-        def emit_once(self, _kind, _title, _body, *, route, command, key):
+        def emit_once(self, _kind, _title, _body, *, route, command, key, helper=None):
             self.calls += 1
             msg = "private provider diagnostic"
             raise RuntimeError(msg)

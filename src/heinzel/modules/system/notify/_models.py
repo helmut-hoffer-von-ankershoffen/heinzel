@@ -40,6 +40,11 @@ class NotifySettings(ModuleSettings):
         title="Plugin notices",
         description="Notify when an installed plugin reports something that needs attention.",
     )
+    sound: bool = Field(
+        default=True,
+        title="Sound",
+        description="Play the system's notification sound with a pop-up (Heinzel Notifier on macOS).",
+    )
     quiet: bool = Field(
         default=False,
         title="Quiet mode",
@@ -83,6 +88,7 @@ class NotifySettings(ModuleSettings):
             "doctor",
             "release",
             "plugin",
+            "sound",
             "quiet",
             "working_hours",
             "per_hour",

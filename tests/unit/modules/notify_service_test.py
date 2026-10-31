@@ -8,7 +8,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from heinzel import Check, Delivery, Module, NoticeKind, Notifications, Status
+from heinzel import Check, Delivery, Module, NoticeHelper, NoticeKind, Notifications, Status
 from heinzel.modules.system.notify import NotifyService, NotifySettings
 from heinzel.modules.system.notify._macos import NotifierApp
 from heinzel.modules.system.notify._native import ALLOW, DENIED, HEINZEL, Native
@@ -359,6 +359,21 @@ def test_doctor_names_a_denial_and_a_quarantine(settings, clock, tmp_path):
     assert checks["heinzel notifier quarantine"].fix.startswith("xattr -d com.apple.quarantine")
 
 
+def test_doctor_tells_allowed_but_no_banner_from_a_denial(settings, clock, tmp_path):
+    service = heinzel_service(settings, clock, tmp_path, "authorized banners=none sound=disabled")
+    assert service.notifier.app is not None
+    service.notifier.app.ensure()
+    checks = {check.name: check for check in service.health()}
+    assert checks["heinzel notifier permission"].status is Status.UP  # allowed, so not a refusal
+    assert checks["heinzel notifier permission"].detail == "authorized"
+    assert checks["heinzel notifier banners"].status is Status.DEGRADED
+    assert "Choose Banners or Alerts".lower() in checks["heinzel notifier banners"].fix.lower()
+    allowed = heinzel_service(settings, clock, tmp_path / "ok", "authorized banners=banner sound=enabled")
+    assert allowed.notifier.app is not None
+    allowed.notifier.app.ensure()
+    assert "heinzel notifier banners" not in {check.name for check in allowed.health()}
+
+
 def test_install_puts_heinzel_notifier_in_place_and_pops_up_a_test(settings, clock, tmp_path):
     service = heinzel_service(settings, clock, tmp_path, "authorized")
     installed = service.install()
@@ -599,3 +614,66 @@ def test_unknown_acknowledgement_after_atomic_commit_replays_without_duplicate(m
     assert len(service.recent()) == 1
     assert make(repeat_hours=0).emit_once(*args, **kwargs)
     assert len(service.recent()) == 1
+
+
+def helper_notice(service: NotifyService, key: str = "heinzel:mira:1"):
+    assert service.emit_once(
+        NoticeKind.HEINZEL,
+        "Mira checked in",
+        "Your scheduled check-in is due.",
+        route="/heinzel?chat=abc123",
+        command="hz heinzel sessions",
+        key=key,
+        helper=NoticeHelper(name="Mira", hat="blue", reason="scheduled check-in"),
+    )
+    return service.recent()[0]
+
+
+def test_a_notice_keeps_its_helper_and_the_native_popup_shows_name_face_reason_sound_and_one_identity(
+    settings, clock, monkeypatch
+):
+    posted: list[tuple[tuple[str, str], dict[str, object]]] = []
+
+    def record(self, title, body, **values):
+        posted.append(((title, body), values))
+
+    monkeypatch.setattr(Native, "post", record)
+    service = NotifyService(
+        settings,
+        NotifySettings(),
+        ORG,
+        clock=clock,
+        notifier=Native("notify-send", "/usr/bin/notify-send", detail="x", clicks=True),
+        ui_url=lambda route: f"http://127.0.0.1:8737{route}",
+    )
+    notice = helper_notice(service)
+    assert notice.helper == NoticeHelper(name="Mira", hat="blue", reason="scheduled check-in")
+    assert service.post_native() == 1
+    ((title, _body), values) = posted[0]
+    assert title == "Mira checked in"
+    assert values["helper"] == notice.helper
+    assert values["sound"] is True
+    assert values["ident"] == notice.id  # macOS replaces a notification with the same identity: a repeat never stacks
+    assert values["thread"] == "/heinzel?chat=abc123"
+    assert values["url"] == f"http://127.0.0.1:8737/heinzel?chat=abc123&event={notice.id}"  # the exact chat
+
+
+def test_the_sound_setting_turns_the_native_sound_off(make, monkeypatch):
+    seen: list[object] = []
+    monkeypatch.setattr(Native, "post", lambda self, title, body, **values: seen.append(values["sound"]))
+    service = make(sound=False)
+    helper_notice(service)
+    assert service.post_native() == 1
+    assert seen == [False]
+
+
+def test_the_same_durable_key_is_one_notice_and_pops_up_once(make, monkeypatch):
+    posted: list[object] = []
+    monkeypatch.setattr(Native, "post", lambda self, title, body, **values: posted.append(values["ident"]))
+    service = make()
+    helper_notice(service)
+    assert service.emit_once(NoticeKind.HEINZEL, "again", "", route="/", command="hz", key="heinzel:mira:1") is True
+    assert len(service.recent()) == 1
+    assert service.post_native() == 1
+    assert service.post_native() == 0
+    assert len(posted) == 1
