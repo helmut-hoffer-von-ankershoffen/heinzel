@@ -5,6 +5,7 @@ decision-makers: maintainer
 amends: 0094
 related: 0097, 0098
 implemented-by: 304, 310
+amended-by: 0114
 ---
 
 # 0110: One versionless launcher installs and opens the standard app
