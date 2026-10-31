@@ -4,6 +4,7 @@ date: 2026-10-30
 decision-makers: maintainer
 amends: 0044, 0095
 related: 0094, 0110
+implemented-by: 304
 ---
 
 # 0111: Plugins recommend the default theme with a Core recovery fallback

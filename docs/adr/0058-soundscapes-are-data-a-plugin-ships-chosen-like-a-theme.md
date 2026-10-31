@@ -3,8 +3,12 @@ status: proposed
 date: 2026-10-24
 decision-makers: maintainer
 amends: 0027, 0039, 0046
+amends-0027: fixed allowlisted player origins while a stream is in effect; the player loads only after Play
+amends-0039: fixed allowlisted player origins while a stream is in effect; the player loads only after Play
+amends-0046: fixed allowlisted player origins while a stream is in effect; the player loads only after Play
 amended-by: 0088, 0092, 0095
 related: 0003, 0018, 0026, 0040, 0043, 0044
+implemented-by: 140
 ---
 
 # 0058: Soundscapes are data a plugin ships, chosen like a theme: `module.soundscape(...)`, `hz system sound use`
