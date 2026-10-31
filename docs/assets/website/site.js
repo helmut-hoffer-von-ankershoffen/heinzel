@@ -204,15 +204,35 @@
         attributes: true, attributeFilter: ['data-md-color-scheme'],
       });
     }
-    document.querySelectorAll('[data-hz-version]').forEach(link => {
-      // The header's repository widget (Material, from the GitHub API) knows the latest release; show it here too.
-      const show = () => {
-        const fact = document.querySelector('.md-source__fact--version');
-        if (fact && fact.textContent.trim()) link.textContent = `Latest release ${fact.textContent.trim()}`;
-        return Boolean(fact);
-      };
-      if (!show()) new MutationObserver((_, observer) => show() && observer.disconnect()).observe(document.body, { childList: true, subtree: true });
-    });
+    // The header widget gets its release from the GitHub API in the browser; that call can fail (shared-IP rate limit).
+    // Then the build's own lookup of the latest release fills in, and only when the widget has no version.
+    const built = document.querySelector('meta[name="hz-latest-release"]')?.content;
+    const versionFact = () => document.querySelector('.md-source__fact--version');
+    const showVersion = () => {
+      document.querySelectorAll('[data-hz-version]').forEach(link => {
+        const text = versionFact()?.textContent.trim() || built;
+        const label = `Latest release ${text}`;
+        if (text && link.textContent !== label) link.textContent = label;
+      });
+    };
+    showVersion();
+    new MutationObserver(showVersion).observe(document.body, { childList: true, subtree: true });
+    if (built) setTimeout(() => {
+      if (versionFact()) return;
+      document.querySelectorAll('.md-source').forEach(source => {
+        let facts = source.querySelector('.md-source__facts');
+        if (!facts) {
+          facts = document.createElement('ul');
+          facts.className = 'md-source__facts';
+          source.querySelector('.md-source__repository')?.append(facts);
+        }
+        const item = document.createElement('li');
+        item.className = 'md-source__fact md-source__fact--version';
+        item.textContent = built;
+        facts.prepend(item);
+      });
+      showVersion();
+    }, 4000);
     document.querySelectorAll('[data-copy]').forEach(button => {
       if (button.dataset.ready) return;
       button.dataset.ready = 'true';
