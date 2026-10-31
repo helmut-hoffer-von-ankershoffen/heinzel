@@ -12,7 +12,9 @@ The format is a trimmed [MADR 4](https://adr.github.io/madr/); `docs/adr/0000-te
    `# NNNN: Title that states the decision`. Delete the template's comment.
 3. Front matter, flat `key: value` only: `status: proposed`, `date: YYYY-MM-DD`, optional `decision-makers` (roles,
    never names), `supersedes` / `amends` when the decision replaces or changes another ADR, and `related` for ADRs
-   it builds on without changing them.
+   it builds on without changing them. For each ADR it amends or supersedes, add `amends-NNNN: what it changes` (a few
+   words, no `: ` or ` #` inside); the index and both pages show it. Once a pull request builds the decision, add
+   `implemented-by: 123, 145` (PR numbers of the code, never the PR that only wrote the record); leave it out until then.
 4. Fill in, keeping it to a page or two:
    - Context and Problem Statement: forces and verified facts, sources linked.
    - Decision Drivers (optional).
@@ -23,6 +25,6 @@ The format is a trimmed [MADR 4](https://adr.github.io/madr/); `docs/adr/0000-te
    - More Information (optional): related ADRs, research, open questions.
 5. Superseding or amending: set `superseded-by: NNNN` and `status: superseded` (or `amended-by: NNNN`) on the old ADR.
    Front matter is the only part of an accepted ADR that may change.
-6. Add the row `| [NNNN](file.md) | Title | status | date |` to `docs/adr/README.md` and update rows whose status
-   changed. In Heinzelmännchen, `uv run pytest tests/unit/documentation_test.py` checks template, index and links.
+6. Do not edit the index table of `docs/adr/README.md`: it is generated. Run `make docs` (in Heinzelmännchen)
+   and commit the result; `uv run pytest tests/unit/documentation_test.py` checks template, index and links.
 7. Status stays `proposed` until a maintainer accepts it. Commit with `docs(adr): ...`.

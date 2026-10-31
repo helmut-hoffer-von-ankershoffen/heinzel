@@ -3,8 +3,11 @@ status: proposed
 date: 2026-10-24
 decision-makers: maintainer (direction), architect (evaluation and shape)
 amends: 0029, 0045
+amends-0029: Pydantic AI in the core as the turn engine; runners are the handoff
+amends-0045: the chat on the same engine
 related: 0014, 0021, 0027, 0028, 0030, 0037, 0040, 0049, 0051, 0052
 amended-by: 0057, 0061, 0067
+implemented-by: 167
 ---
 
 # 0050: Pydantic AI runs a turn; a coding agent is a handoff
