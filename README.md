@@ -43,6 +43,7 @@
 | src/heinzel/kernel/\_local\_web.py                               |       23 |        1 |        4 |        1 |     93% |        39 |
 | src/heinzel/kernel/\_metadata\_verifier.py                       |        6 |        2 |        0 |        0 |     67% |     16-17 |
 | src/heinzel/kernel/\_org.py                                      |       31 |        1 |        0 |        0 |     97% |        55 |
+| src/heinzel/kernel/\_playbooks.py                                |      194 |        2 |       64 |        1 |     99% |   293-294 |
 | src/heinzel/kernel/\_prompter.py                                 |      182 |        1 |       56 |        0 |     99% |        66 |
 | src/heinzel/kernel/\_runner\_snapshot.py                         |       10 |        2 |        0 |        0 |     80% |     27-28 |
 | src/heinzel/kernel/\_session\_io.py                              |      150 |       13 |       24 |        3 |     91% |84-85, 160-162, 164-165, 179-180, 196-199 |
@@ -91,7 +92,7 @@
 | src/heinzel/modules/heinzel/\_models.py                          |      407 |        2 |       74 |        2 |     99% |88, 108, 556-\>554 |
 | src/heinzel/modules/heinzel/\_notification\_delivery.py          |      111 |       14 |       26 |        7 |     85% |72-73, 120-121, 180-181, 185-186, 205-206, 209-210, 215-216, 219-\>223 |
 | src/heinzel/modules/heinzel/\_notification\_proposals.py         |       78 |       10 |       18 |        5 |     84% |70-71, 77-78, 102-103, 106-107, 127-128 |
-| src/heinzel/modules/heinzel/\_playbook\_adoption.py              |      104 |       12 |       26 |        3 |     87% |60-62, 148-155, 190-191, 202 |
+| src/heinzel/modules/heinzel/\_playbook\_adoption.py              |      106 |        8 |       26 |        3 |     92% |68-70, 163-164, 200-201, 212 |
 | src/heinzel/modules/heinzel/\_priced\_model.py                   |      108 |       17 |       36 |        8 |     83% |86-87, 122-124, 166-167, 171, 178-179, 182-183, 197-201, 236 |
 | src/heinzel/modules/heinzel/\_render.py                          |      216 |       16 |      104 |       11 |     90% |42, 103, 121, 164-\>166, 169, 170-\>172, 202-208, 234, 268, 289-299, 357 |
 | src/heinzel/modules/heinzel/\_retention.py                       |      102 |        0 |       24 |        1 |     99% |   84-\>78 |
@@ -178,9 +179,9 @@
 | src/heinzel/modules/telemetry/\_render.py                        |       15 |       10 |        2 |        0 |     29% |11-17, 22-27 |
 | src/heinzel/modules/telemetry/\_service.py                       |      236 |        8 |       70 |        3 |     96% |146-\>152, 154-\>152, 162, 219-220, 289-291, 344-345 |
 | src/heinzel/testing.py                                           |      124 |        4 |       32 |        0 |     97% |   240-244 |
-| **TOTAL**                                                        | **37332** | **2266** | **9582** |  **970** | **93%** |           |
+| **TOTAL**                                                        | **37361** | **2264** | **9590** |  **971** | **93%** |           |
 
-132 files skipped due to complete coverage.
+131 files skipped due to complete coverage.
 
 
 ## Setup coverage badge
