@@ -203,7 +203,7 @@ def test_someone_not_on_the_roster_can_read_and_proposes_to_be_added(created, tm
 
 
 def test_an_owner_adds_someone_by_a_pull_request(created, tmp_path, monkeypatch):
-    code, plan = hz("team", "add", "priya", "--login", "priya-example", "--role", "principal", "--yes")
+    code, plan = hz("team", "add", "priya", "--login", "priya-example", "--role", "product-manager", "--yes")
     assert code == 0, plan
     assert plan["pull_request"]
     assert "handle: priya" in bare_file(created, "team/roster.yaml", "hz/add-priya")
