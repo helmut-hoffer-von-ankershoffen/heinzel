@@ -54,6 +54,18 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
         "tar -xzf notifier.tar.gz": "unpacks Heinzel Notifier into the package before the wheel is built",
         "unzip -l ": "asserts that the released wheel ships Heinzel Notifier",
     },
+    "edge.yml": {
+        'commit="$(git rev-parse HEAD)"': "plans the edge release from the commit and the releases so far",
+        "tar -czf notifier.tar.gz": "preserves the notifier executable bits and signature across runners",
+        "tar -xzf notifier.tar.gz": "restores the notifier built without publishing credentials",
+        "uv run --script scripts/check_confidentiality.py": "scans the tree with the term list from the secret",
+        "uv run --script scripts/release_channel.py": "stamps and describes the edge release",
+        "uv build --package heinzel": "builds only the core project",
+        'test -f "dist/heinzel-': "asserts the wheel's version and payload",
+        "uv export ": "exports the release's CycloneDX bill of materials",
+        'cp "$BUNDLE"': "attaches the provenance attestation and creates the pre-release",
+        "gh release view edge-channel": "moves the pointer the opt-in path reads",
+    },
     "pypi.yml": {
         '[[ "$TAG" =~': "binds publishing to the exact tag and main ancestry before build tooling",
         "gh api ": "verifies the published GitHub release and exports its exact source commit",

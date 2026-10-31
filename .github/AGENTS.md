@@ -7,6 +7,7 @@
 | `prepare-release.yml` | dispatch (`make release`) | opens the release PR `chore(release): vX.Y.Z`, dispatches CI on it (token-made PRs trigger none; the dispatched run reports `CI OK`) and enables squash auto-merge |
 | `release-tag.yml` | push to `main` of a release commit | tags it and calls `publish.yml` |
 | `publish.yml` | tags `v*`, called | builds, attests provenance, creates the GitHub release |
+| `edge.yml` | green CI on `main`; pull requests changing it | dark until `vars.RELEASE_CHANNELS` is set (ADR 0114); then publishes each releasable commit as a GitHub pre-release `edge-v<version>`, never latest and never on PyPI; otherwise only builds and verifies |
 | `pypi.yml` | manual dispatch on a final version tag | validates a published core GitHub release, builds without OIDC, verifies artifacts, then uploads only core with trusted publishing in environment `pypi` |
 | `release.yml` | manual dispatch for one optional source plugin | owning checks, wheel acceptance and protected publication through the versioned toolkit; never builds or tests core |
 | `codeql.yml`, `scorecard.yml` | `main`, PRs, weekly | code scanning and supply-chain checks |
