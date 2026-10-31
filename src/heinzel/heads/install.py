@@ -11,12 +11,12 @@ import sys
 import tempfile
 from collections.abc import Generator, Mapping
 from contextlib import contextmanager
-from http import HTTPStatus
+from http.client import HTTPMessage
 from pathlib import Path
-from typing import cast
+from typing import IO, cast, override
 from urllib.error import HTTPError
 from urllib.parse import urlsplit
-from urllib.request import urlopen
+from urllib.request import HTTPRedirectHandler, Request, build_opener, urlopen
 
 from packaging.requirements import Requirement
 from packaging.utils import canonicalize_name, parse_wheel_filename
@@ -34,10 +34,8 @@ from heinzel.heads._tool_install import (
 from heinzel.kernel import DaemonInstallationLifecycle, Installation, boot, subprocess_environment
 
 PROFILE_ROOT = "https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/releases/download"
-PROFILE_REFS = (
-    "https://api.github.com/repos/helmut-hoffer-von-ankershoffen/heinzel-plugins/git/matching-refs/tags/app-v"
-)
-PROFILE_RELEASES = "https://api.github.com/repos/helmut-hoffer-von-ankershoffen/heinzel-plugins/releases/tags"
+PROFILE_LATEST = "https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/releases/latest"
+PROFILE_TAG = "https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/releases/tag/app-v"
 MAX_PROFILE = 1024 * 1024
 MAX_WHEEL = 128 * 1024 * 1024
 TIMEOUT = 60
@@ -66,16 +64,63 @@ class AppProfile(BaseModel):
     artifacts: list[Artifact] = Field(min_length=1, max_length=64)
 
 
+def _app_release_version(source: str) -> Version:
+    parsed = urlsplit(source)
+    raw = source.removeprefix(PROFILE_TAG)
+    if not source.startswith(PROFILE_TAG) or parsed.query or parsed.fragment:
+        msg = "App profile discovery returned an unexpected release authority; retry after the publisher fixes it."
+        raise HeinzelError(msg)
+    try:
+        version = Version(raw)
+    except InvalidVersion:
+        version = None
+    if version is None or str(version) != raw or version.is_prerelease or version.is_devrelease:
+        msg = "App profile discovery did not identify a canonical stable standard app release."
+        raise HeinzelError(msg)
+    return version
+
+
+def _app_asset_authority(source: str) -> bool:
+    parsed = urlsplit(source)
+    return (
+        parsed.scheme == "https"
+        and parsed.netloc in {"release-assets.githubusercontent.com", "objects.githubusercontent.com"}
+        and parsed.path.startswith("/github-production-release-asset/")
+        and not parsed.fragment
+    )
+
+
+class _AppRedirects(HTTPRedirectHandler):
+    """Validate release and artifact redirects before sending another request; never forward headers."""
+
+    @override
+    def redirect_request(
+        self, req: Request, fp: IO[bytes], code: int, msg: str, headers: HTTPMessage, newurl: str
+    ) -> Request:
+        del fp, code, msg, headers  # Redirects carry no response-derived headers into another request.
+        if req.get_method() == "HEAD":
+            _app_release_version(newurl)
+        elif not _app_asset_authority(newurl):
+            reason = "App artifact verification refused an unexpected download authority."
+            raise HeinzelError(reason)
+        return Request(newurl, method=req.get_method())  # noqa: S310 - canonical HTTPS authority checked above
+
+
 def _read(source: str, limit: int) -> bytes:
     parsed = urlsplit(source)
     if parsed.scheme:
         if parsed.scheme != "https" or parsed.username or parsed.password or parsed.fragment:
             msg = "App artifacts require HTTPS without credentials or fragments"
             raise ValueError(msg)
-        with urlopen(source, timeout=TIMEOUT) as response:  # noqa: S310 - checked HTTPS, no credential headers
+        official = source.startswith(PROFILE_ROOT + "/")
+        reader = build_opener(_AppRedirects()).open if official else urlopen  # noqa: S310 - checked HTTPS
+        with reader(source, timeout=TIMEOUT) as response:
             if urlsplit(cast("str", response.url)).scheme != "https":
                 msg = "App artifact redirected away from HTTPS"
                 raise ValueError(msg)
+            if official and response.url != source and not _app_asset_authority(cast("str", response.url)):
+                msg = "App artifact verification refused an unexpected download authority."
+                raise HeinzelError(msg)
             content = cast("bytes", response.read(limit + 1))
     else:
         with Path(source).open("rb") as handle:
@@ -111,74 +156,52 @@ def read_profile(source: str) -> AppProfile:
     return profile
 
 
-def _stable_release(version: Version) -> bool:
-    """Require a published stable release as well as a stable-looking tag.
-
-    Raises:
-        ValueError: If GitHub's release metadata is malformed.
-    """
-    value: object = json.loads(_read(f"{PROFILE_RELEASES}/app-v{version}", MAX_PROFILE))
-    release = cast("dict[str, object]", value) if isinstance(value, dict) else {}
-    if not all(isinstance(release.get(key), bool) for key in ("draft", "prerelease")):
-        msg = "The standard app release metadata is invalid"
-        raise ValueError(msg)
-    return release["draft"] is False and release["prerelease"] is False
-
-
-def _profile_versions() -> list[Version]:
-    """Read the bounded stable app-tag index, newest first.
-
-    Raises:
-        TypeError: If the release index is not an array.
-    """
-    refs: object = json.loads(_read(PROFILE_REFS, MAX_PROFILE))
-    if not isinstance(refs, list):
-        msg = "The standard app release index is invalid"
-        raise TypeError(msg)
-    versions: set[Version] = set()
-    for item in cast("list[object]", refs):
-        ref = cast("dict[str, object]", item).get("ref", "") if isinstance(item, dict) else ""
-        if not isinstance(ref, str) or not ref.startswith("refs/tags/app-v"):
-            continue
-        raw = ref.removeprefix("refs/tags/app-v")
-        try:
-            version = Version(raw)
-        except InvalidVersion:
-            continue
-        if str(version) == raw and not version.is_prerelease and not version.is_devrelease:
-            versions.add(version)
-    return sorted(versions, reverse=True)[:32]
+def _http_problem(phase: str, error: HTTPError) -> str:
+    status = error.code
+    limited = error.headers.get("X-RateLimit-Remaining") == "0" if error.headers else False
+    error.close()
+    detail = " The public request limit was reached." if limited else ""
+    return (
+        f"{phase} failed (HTTP {status}).{detail} "
+        "Check your connection and retry the same install command; no installation was started."
+    )
 
 
 def latest_profile() -> AppProfile:
-    """Select the newest published app independently of the bootstrap SDK's version.
+    """Resolve the governed latest stable app without GitHub's anonymous REST API quota.
 
     Raises:
-        ValueError: If the public release index is invalid.
-        HeinzelError: If no compatible composition is published yet.
-        OSError: If GitHub cannot be reached or refuses the request.
-        HTTPError: If GitHub refuses a request for a published profile.
-        TypeError: If the release index is not an array.
+        HeinzelError: If discovery, release authority or the immutable profile cannot be verified.
+        OSError: If a published profile cannot be fetched.
+        ValueError: If its schema or wheel identity is invalid.
     """
-    # A tag can exist while its independently tested composition is still being published.
-    for version in _profile_versions():
-        try:
-            if not _stable_release(version):
-                continue
-            profile = read_profile(f"{PROFILE_ROOT}/app-v{version}/standard.json")
-        except HTTPError as error:
-            error.close()
-            if error.code == HTTPStatus.NOT_FOUND:
-                continue
-            raise
-        if profile.core_version != str(version):
-            msg = "The standard app profile does not match its release"
-            raise ValueError(msg)
-        if profile.format != PROFILE_FORMAT:
-            continue  # Recognized legacy apps cannot preserve this launcher's verified update lifecycle.
-        return profile
-    msg = "No compatible standard app release is available yet; try again shortly"
-    raise HeinzelError(msg)
+    try:
+        with build_opener(_AppRedirects()).open(Request(PROFILE_LATEST, method="HEAD"), timeout=TIMEOUT) as response:
+            version = _app_release_version(response.url)
+        profile = read_profile(f"{PROFILE_ROOT}/app-v{version}/standard.json")
+    except HTTPError as error:
+        msg = _http_problem("App profile discovery", error)
+        raise HeinzelError(msg) from None
+    except OSError:
+        msg = "App profile discovery could not reach the release server. Check your connection and retry."
+        raise HeinzelError(msg) from None
+    except ValueError:
+        msg = (
+            "App profile verification failed: its schema or package identities are invalid; "
+            "no installation was started."
+        )
+        raise HeinzelError(msg) from None
+    if profile.core_version != str(version):
+        msg = "App profile verification failed: its Core version does not match its immutable app release."
+        raise HeinzelError(msg)
+    if profile.format != PROFILE_FORMAT:
+        msg = "No compatible standard app release is designated yet; retry after the publisher updates it."
+        raise HeinzelError(msg)
+    for artifact in profile.artifacts:
+        if artifact.url != f"{PROFILE_ROOT}/app-v{version}/{artifact.filename}":
+            msg = "App profile verification refused a package outside its immutable standard app release."
+            raise HeinzelError(msg)
+    return profile
 
 
 def excluded_plugins(history: Path) -> set[str]:
@@ -205,17 +228,26 @@ def prepare(profile: AppProfile, directory: Path, exclusions: set[str]) -> list[
     """Fetch and verify every selected wheel before starting the single installation command.
 
     Raises:
-        ValueError: If any selected artifact fails its digest.
+        HeinzelError: If a package cannot be downloaded or fails its digest.
         OSError: If an artifact cannot be read or saved.
     """
     paths: list[Path] = []
     for artifact in sorted(profile.artifacts, key=lambda item: item.name != "heinzel"):
         if artifact.name in exclusions and artifact.name != "heinzel":
             continue
-        content = _read(artifact.url, MAX_WHEEL)
+        try:
+            content = _read(artifact.url, MAX_WHEEL)
+        except HTTPError as error:
+            msg = _http_problem("App package download", error)
+            raise HeinzelError(msg) from None
+        except OSError:
+            msg = "App package download failed. Check your connection and access to the selected release, then retry."
+            raise HeinzelError(msg) from None
         if hashlib.sha256(content).hexdigest() != artifact.sha256:
-            msg = f"Artifact digest does not match for {artifact.name}; nothing was installed"
-            raise ValueError(msg)
+            msg = (
+                f"App package verification failed for {artifact.name}: its hash does not match; nothing was installed."
+            )
+            raise HeinzelError(msg)
         target = _publish_artifact(directory, artifact, content)
         paths.append(target)
     return paths
