@@ -320,31 +320,28 @@ def home_gallery(data: Object, page_url: str) -> str:
             "plugin": "heinzel-clock",
             "scene": "world-clock",
             "art": "timekeeper",
-            "name": "Pip, the timekeeper",
+            "name": "Pip",
             "title": "Find a moment for the whole team.",
-            "quote": "I keep the team's time zones in view, so you can find a good moment to talk.",
-            "detail": "Local times, working hours and a globe, with compact clocks close at hand.",
+            "quote": "I find time for everyone.",
+            "link": "World Clock",
         },
         {
             "plugin": "heinzel-acme",
             "scene": "company-workflow",
             "art": "draftkeeper",
-            "name": "Ada, the draftkeeper",
+            "name": "Ada",
             "title": "See how the work connects.",
-            "quote": "Give me a clear contract. I'll gather its inputs and prepare a draft for your review.",
-            "detail": "ACME's example connects code changes, tracker updates and documents to a weekly report.",
+            "quote": "I turn changes into a draft.",
+            "link": "Workflows",
         },
         {
             "plugin": "heinzel-acme-payments-checkout",
             "scene": "draft-in-terminal",
             "art": "reviewer",
-            "name": "Otto, your review partner",
+            "name": "Otto",
             "title": "A draft you can make your own.",
-            "quote": "I've done the drafting. You decide what happens next.",
-            "detail": (
-                "Inspect the saved local draft, edit it and share it yourself. "
-                "This report uses a fictional demo runner."
-            ),
+            "quote": "You decide what happens next.",
+            "link": "Review drafts",
         },
     )
     result = []
@@ -362,10 +359,10 @@ def home_gallery(data: Object, page_url: str) -> str:
         result.append(
             '<article class="hz-product-story" data-heinzel-helper>'
             '<div class="hz-story-intro">'
-            f'<img src="{art}" alt="" width="90" height="150" loading="lazy">'
+            f'<img src="{art}" alt="" width="140" height="230" loading="lazy">'
             f'<div><p class="hz-story-name">{escape(story["name"])}</p>'
-            f'<h3>{escape(story["title"])}</h3><p class="hz-story-quote">“{escape(story["quote"])}”</p>'
-            f'<p>{escape(story["detail"])}</p><a href="{target}">Explore the full gallery →</a></div></div>'
+            f'<p class="hz-story-quote">“{escape(story["quote"])}”</p>'
+            f'<a href="{target}">{escape(story["link"])} →</a></div></div>'
             f'<figure><a href="{image_url}" aria-label="Open full-size {escape(story["title"])}">'
             f'<img src="{image_url}" alt="{escape(image["caption"])}" loading="lazy" referrerpolicy="no-referrer">'
             f"</a><figcaption>{escape(image['caption'])}</figcaption></figure></article>"

@@ -71,8 +71,7 @@ Plugins own their operations, views, widgets and notifications. Themes bring pal
 
 ## Small jobs. A little time back.
 
-Imagine your team's helpers like this. These real product screens use fictional, isolated demonstration data.
-Select any image to look closer, or open its plugin's full gallery.
+Imagined helpers. Real product screens with fictional demonstration data. Select an image to zoom.
 
 <!-- hz:home-gallery -->
 

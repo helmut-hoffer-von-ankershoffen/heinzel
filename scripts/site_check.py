@@ -188,6 +188,10 @@ def zoom_flow(page: "Page", axe: Path, identity: str, selector: str = ".hz-scree
     """Inspect an actual image, zoom to native pixels, pan, fit and return focus."""
     link = page.locator(selector).first
     source = link.locator("img")
+    link.scroll_into_view_if_needed()
+    page.wait_for_function(
+        "image => image.complete && image.naturalWidth > 0", arg=source.element_handle(), timeout=15000
+    )
     source.evaluate("image => image.decode()")
     link.click()
     viewer = page.locator("dialog.hz-image-viewer")

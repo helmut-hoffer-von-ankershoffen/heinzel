@@ -675,7 +675,8 @@ def test_homepage_product_tour_uses_three_real_owners_with_escaped_captions():
     assert rendered.count("<figure>") == 3
     assert "&lt;team&gt; &amp; &quot;review&quot;" in rendered
     assert all(f"/{name}.png" in rendered for name in ("world-clock", "company-workflow", "draft-in-terminal"))
-    assert "fictional demo runner" in rendered
+    assert "<h3>" not in rendered
+    assert all(label in rendered for label in ("World Clock →", "Workflows →", "Review drafts →"))
     assert 'referrerpolicy="no-referrer"' in rendered
     assert "aspect-ratio" not in rendered
 
