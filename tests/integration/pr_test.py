@@ -299,13 +299,27 @@ def test_pushes_a_branch_that_fast_forwards_after_preflight(repo):
     assert f"✓ {URL} (squash auto-merge on)" in done.stdout
 
 
+def install_scope_toolkit_stub(repo):
+    """Log the external toolkit boundary without downloading or running plugin checks."""
+    repo.commit(
+        "scripts/plugin_tooling.py",
+        "import json,os,sys\nfrom pathlib import Path\n"
+        "args=sys.argv[1:]\n"
+        "with (Path(os.environ['LOG'])/'scope').open('a') as stream: stream.write(json.dumps(args)+'\\n')\n"
+        "if 'plan' in args: print(json.dumps({'include':[{'name':'heinzel-harbor'},{'name':'heinzel-reader'}]}))\n",
+    )
+    repo.commit("scripts/check_confidentiality.py", (SCRIPT.parent / "check_confidentiality.py").read_text())
+
+
 @pytest.mark.parametrize("mixed", [False, True])
 def test_actual_pr_selects_owning_preflight_for_plugin_only_changes_and_preserves_core_checks(repo, mixed):
     helper = repo.dir / "scripts/scoped_checks.py"
     helper.parent.mkdir()
     repo.commit("scripts/scoped_checks.py", (SCRIPT.parent / "scoped_checks.py").read_text())
+    install_scope_toolkit_stub(repo)
     repo.git("push", "--quiet", "origin", "HEAD:main")
     repo.git("fetch", "--quiet", "origin", "main")
+    base = repo.git("rev-parse", "origin/main")
     (repo.dir / "plugins/heinzel-harbor").mkdir(parents=True)
     repo.commit("plugins/heinzel-harbor/feature.py", "value = 1")
     if mixed:
@@ -326,11 +340,11 @@ def test_actual_pr_selects_owning_preflight_for_plugin_only_changes_and_preserve
     calls = [json.loads(line) for line in repo.log("scope")]
     owning = [call[call.index("hz-plugin") + 1 :] for call in calls if "hz-plugin" in call]
     if mixed:
-        assert repo.log("make") == ["preflight BASE=origin/main"]
+        assert repo.log("make") == [f"preflight BASE={base}"]
         assert owning == []
     else:
-        assert repo.log("make") == ["commits secrets BASE=origin/main"]
-        assert ["run", "--script", "scripts/check_confidentiality.py"] in calls
+        assert repo.log("make") == [f"commits secrets BASE={base}"]
+        assert "Confidentiality check skipped" in done.stdout
         assert owning == [
             ["plan", "--changed", "plugins/heinzel-harbor/feature.py"],
             ["preflight", "heinzel-harbor"],
@@ -343,6 +357,7 @@ def test_core_root_agent_scope_uses_owning_checks_including_deletions_and_untrac
     (repo.dir / "scripts").mkdir()
     helper = repo.dir / "scripts/scoped_checks.py"
     repo.commit("scripts/scoped_checks.py", (SCRIPT.parent / "scoped_checks.py").read_text())
+    install_scope_toolkit_stub(repo)
     (repo.dir / "plugins/heinzel-harbor").mkdir(parents=True)
     repo.commit("plugins/heinzel-harbor/obsolete.py", "value = 1")
     if change == "deleted-plugin":
@@ -361,10 +376,14 @@ def test_core_root_agent_scope_uses_owning_checks_including_deletions_and_untrac
     )
     assert done.returncode == 0, done.stderr
     if change == "core":
-        assert repo.log("make") == ["check-fast BASE=origin/main"]
+        assert repo.log("make") == ["check-fast"]
     else:
         assert repo.log("make") == []
-        assert any("hz-plugin check-changed --changed plugins/heinzel-harbor/" in call for call in repo.log("uv"))
+        assert any(
+            json.loads(call)[-3:-1] == ["check-changed", "--changed"]
+            and json.loads(call)[-1].startswith("plugins/heinzel-harbor/")
+            for call in repo.log("scope")
+        )
 
 
 @pytest.mark.parametrize("core_host", [False, True])
@@ -438,7 +457,9 @@ def test_the_description_of_a_new_pull_request(repo, env, body):
 
     assert repo.pr(**env).returncode == 0
     assert repo.created_body() == body
-    assert f"--quiet --script scripts/check_confidentiality.py --text {body}" in "\n".join(repo.log("uv"))
+    assert f"--quiet --frozen --no-sync --no-build python scripts/check_confidentiality.py --text {body}" in "\n".join(
+        repo.log("uv")
+    )
 
 
 @pytest.mark.parametrize(
@@ -473,3 +494,45 @@ def test_an_existing_pull_request_keeps_its_description_and_says_so(repo):
     assert "its description stays" in done.stderr
     assert repo.log("gh-pr-create") == []
     assert repo.log("gh-pr-edit") == ["pr", "edit", URL, "--title", "feat: add widgets"]
+
+
+@pytest.mark.parametrize("attack", ["git-option", "make-expression"])
+def test_scoped_preflight_rejects_untrusted_base_before_make(repo, attack):
+    (repo.dir / "scripts").mkdir()
+    helper = repo.dir / "scripts/scoped_checks.py"
+    helper.write_text((SCRIPT.parent / "scoped_checks.py").read_text())
+    sentinel = repo.tmp / "must-not-exist"
+    base = f"--output={sentinel}" if attack == "git-option" else f"$(shell touch {sentinel})"
+    done = subprocess.run(
+        [sys.executable, str(helper), "preflight", "--base=" + base],
+        cwd=repo.dir,
+        env=repo.env,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=30,
+    )
+    assert done.returncode == 2, done.stderr
+    assert "valid commit revision" in done.stderr
+    assert repo.log("make") == []
+    assert not sentinel.exists()
+
+
+@pytest.mark.parametrize("reference", ["origin/main", "main", "HEAD~1"])
+def test_scoped_preflight_passes_only_canonical_commit_to_make(repo, reference):
+    (repo.dir / "scripts").mkdir()
+    helper = repo.dir / "scripts/scoped_checks.py"
+    repo.commit("scripts/scoped_checks.py", (SCRIPT.parent / "scoped_checks.py").read_text())
+    repo.commit("core.py", "changed = True")
+    base = repo.git("rev-parse", reference)
+    done = subprocess.run(
+        [sys.executable, str(helper), "preflight", "--base", reference],
+        cwd=repo.dir,
+        env=repo.env,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=30,
+    )
+    assert done.returncode == 0, done.stderr
+    assert repo.log("make") == [f"preflight BASE={base}"]

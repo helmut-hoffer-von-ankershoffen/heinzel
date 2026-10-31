@@ -32,6 +32,7 @@ import argparse
 import contextlib
 import os
 import re
+import shutil
 import subprocess
 import sys
 import unicodedata
@@ -108,7 +109,12 @@ def scan(where: str, text: str, compiled: list[re.Pattern[str]]) -> Iterator[Fin
 
 
 def _git(*args: str) -> str:
-    return subprocess.run(["git", *args], check=True, capture_output=True, text=True, timeout=60).stdout  # noqa: S603, S607
+    executable = shutil.which("git")
+    if executable is None:
+        msg = "Git is required to inspect repository content"
+        raise RuntimeError(msg)
+    # Fixed Git operations with operand boundaries
+    return subprocess.run([executable, *args], check=True, capture_output=True, text=True, timeout=60).stdout  # noqa: S603
 
 
 def _read(path: Path) -> str | None:
@@ -161,7 +167,7 @@ def sources(args: argparse.Namespace) -> Iterator[tuple[str, str]]:
     if args.commit_msg:
         yield "commit message", Path(args.commit_msg).read_text(encoding="utf-8")
     elif args.messages:
-        for sha in _git("rev-list", args.messages).split():
+        for sha in _git("rev-list", "--end-of-options", args.messages, "--").split():
             yield f"commit {sha[:12]}", _git("log", "-1", "--format=%an <%ae>%n%cn <%ce>%n%B", sha)
     elif args.branch:
         yield "branch", _git("rev-parse", "--abbrev-ref", "HEAD")
@@ -190,6 +196,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--branch", action="store_true")
     parser.add_argument("--require", action="store_true")
     args = parser.parse_args(argv)
+    if args.messages and args.messages.startswith("-"):
+        parser.error("--messages must be a revision range, not a Git option")
 
     # Independent of the term list, which plugin developers usually don't have.
     problems = identity_problems() if args.identity else []

@@ -27,8 +27,9 @@ path.write_text(re.sub(r'"heinzel==[^"]*"', local, path.read_text()))
 PY
 
 unset VIRTUAL_ENV UV_FROZEN # the rendered plugin has no lockfile yet, and is not this project
-uv lock --quiet
+[[ ! -e uv.lock ]] # a fresh project: the documented `make setup` creates the lock itself, then syncs frozen
 make setup
+[[ -f uv.lock ]]
 make fix
 git add --all
 git -c user.name=template-test -c user.email=template-test@example.test commit --quiet -m "chore: scaffold from template"

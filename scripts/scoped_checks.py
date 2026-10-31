@@ -7,7 +7,9 @@
 import argparse
 import json
 import os
+import re
 import subprocess
+import sys
 from pathlib import Path
 
 TOOLKIT = (
@@ -17,11 +19,34 @@ TOOLKIT = (
 )
 
 
+def resolve_base(base: str) -> str:
+    """Resolve a revision once so Git and Make receive only a canonical commit identity.
+
+    Raises:
+        ValueError: If the input is option-shaped or Git returned an invalid identity.
+    """
+    if base.startswith("-"):
+        msg = "The base must be a revision, not a Git option"
+        raise ValueError(msg)
+    # Fixed Git operation, revision explicitly separated from options
+    revision = subprocess.check_output(  # noqa: S603
+        # Repository Git from PATH
+        ["git", "rev-parse", "--verify", "--end-of-options", f"{base}^{{commit}}"],  # noqa: S607
+        text=True,
+        timeout=30,
+    ).strip()
+    if not re.fullmatch(r"[0-9a-f]{40}(?:[0-9a-f]{24})?", revision):
+        msg = "Git returned an invalid commit identity"
+        raise ValueError(msg)
+    return revision
+
+
 def changed_paths(mode: str, base: str) -> list[str]:
     """Include deleted, moved and untracked paths without parsing Git's quoted display format."""
     revision = [f"{base}...HEAD"] if mode == "preflight" else ["HEAD"]
     result = subprocess.check_output(  # noqa: S603 - fixed git argument lists, no shell
-        ["git", "diff", "--name-only", "--no-renames", "-z", *revision],  # noqa: S607 - git from PATH
+        # Git from PATH
+        ["git", "diff", "--name-only", "--no-renames", "-z", "--end-of-options", *revision, "--"],  # noqa: S607
         text=True,
         timeout=30,
     )
@@ -40,22 +65,29 @@ def main() -> None:
     parser.add_argument("mode", choices=["fast", "preflight"])
     parser.add_argument("--base", default="origin/main")
     args = parser.parse_args()
-    changed = changed_paths(args.mode, args.base)
+    try:
+        base = resolve_base(args.base) if args.mode == "preflight" else "HEAD"
+    except (ValueError, subprocess.CalledProcessError):
+        parser.error("Use a valid commit revision for --base")
+    changed = changed_paths(args.mode, base)
+    base_arguments = [f"BASE={base}"] if args.mode == "preflight" else []
     if not changed or not all(path.startswith("plugins/") for path in changed):
         subprocess.run(  # noqa: S603 - explicit owning commands, no shell
-            ["make", "preflight" if args.mode == "preflight" else "check-fast", f"BASE={args.base}"],  # noqa: S607 - make from PATH
+            # Make from PATH
+            ["make", "preflight" if args.mode == "preflight" else "check-fast", *base_arguments],  # noqa: S607
             check=True,
             timeout=1800 if args.mode == "preflight" else 300,
         )
         return
-    toolkit = ["uv", "run", "--quiet", "--no-project", "--with", TOOLKIT, "hz-plugin"]
+    toolkit = [sys.executable, str(Path(__file__).with_name("plugin_tooling.py")), "--toolkit", TOOLKIT, "hz-plugin"]
     if args.mode == "fast":
         subprocess.run([*toolkit, "check-changed", "--changed", *changed], check=True, timeout=300)  # noqa: S603 - pinned toolkit, literal paths
         return
     # These policies apply to plugin source too; no core build, native job or test suite runs.
-    subprocess.run(["make", "commits", "secrets", f"BASE={args.base}"], check=True, timeout=120)  # noqa: S603, S607 - shared policy targets
+    # Shared policy targets
+    subprocess.run(["make", "commits", "secrets", *base_arguments], check=True, timeout=120)  # noqa: S603, S607
     subprocess.run(
-        ["uv", "run", "--script", "scripts/check_confidentiality.py"],  # noqa: S607 - pinned script runner
+        [sys.executable, "scripts/check_confidentiality.py"],
         check=True,
         timeout=120,
     )
