@@ -34,3 +34,8 @@ reviewed in that helper's schedule.
 - Good: native notifications and chat channels plug in without Core knowing either; a delivery receipt can say
   `unknown` rather than claim delivery.
 - Bad: services found by base class are not listed in the capability matrix until a later change adds them.
+
+### Confirmation
+
+`tests/unit/kernel/channels_test.py` covers finding channels and the bounds of their messages. A channel plugin's own
+tests cover delivery; a real receipt on the real provider proves it.
