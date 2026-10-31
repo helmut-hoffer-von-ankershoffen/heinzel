@@ -105,13 +105,13 @@ def main() -> None:
         steps = scoped_steps(changed)
         if steps:
             command = ["uv", "run", "--quiet", "--script", "scripts/steps.py", *steps]
-            done = subprocess.run(command, check=False, timeout=600)  # noqa: S603 - fixed steps, no shell
+            done = subprocess.run(command, check=False, timeout=600)  # noqa: S603
             sys.exit(done.returncode)
         if changed and not touches_web(changed) and not all(path.startswith("plugins/") for path in changed):
             # Python, scripts, tests and documents: everything of the fast gate but the web app's tests and the managed
             # backend's check, which read nothing of it (the generated client is still checked by web-lint).
-            command = ["make", "check-fast", "WEB_TESTS=", "MANAGED_CHECK=", f"BASE={args.base}"]
-            sys.exit(subprocess.run(command, check=False, timeout=1800).returncode)  # noqa: S603 - fixed arguments
+            command = ["make", "check-fast", "WEB_TESTS=", "MANAGED_CHECK="]
+            sys.exit(subprocess.run(command, check=False, timeout=1800).returncode)  # noqa: S603
         args.mode = "fast"  # everything else is the full fast gate
     if not changed or not all(path.startswith("plugins/") for path in changed):
         subprocess.run(  # noqa: S603 - explicit owning commands, no shell
