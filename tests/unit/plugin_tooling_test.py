@@ -94,3 +94,20 @@ def test_local_candidate_with_option_shaped_name_becomes_an_absolute_path(tmp_pa
     candidate = Path("--target=unexpected.whl")
     candidate.write_bytes(b"local developer wheel fixture")
     assert tooling.candidate_wheel(str(candidate), tmp_path) == candidate.resolve()
+
+
+def test_toolkit_runs_with_its_environment_first_on_path(monkeypatch):
+    """The toolkit finds `typos` and its interpreter in the disposable environment, as under `uv run`."""
+    runs = []
+    monkeypatch.setattr(tooling.shutil, "which", lambda _: "/fictional/uv")
+    monkeypatch.setenv("PATH", "/usr/bin")
+    monkeypatch.setattr(
+        tooling.subprocess,
+        "run",
+        lambda command, **kwargs: runs.append((command, kwargs)) or SimpleNamespace(returncode=0),
+    )
+    assert tooling.run("hz-plugin", ["check"]) == 0
+    command, kwargs = runs[-1]
+    environment = Path(command[0]).parent.parent
+    assert kwargs["env"]["PATH"] == f"{environment / 'bin'}{tooling.os.pathsep}/usr/bin"
+    assert kwargs["env"]["VIRTUAL_ENV"] == str(environment)

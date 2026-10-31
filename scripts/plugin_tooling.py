@@ -6,6 +6,7 @@
 
 import argparse
 import hashlib
+import os
 import re
 import shutil
 import subprocess
@@ -82,9 +83,16 @@ def run(program: str, arguments: list[str], requirements: Path = REQUIREMENTS, t
             check=True,
             timeout=300,
         )
+        # Like `uv run`: the environment's programs (typos, the interpreter) come first on PATH for the toolkit.
+        env = {
+            **os.environ,
+            "PATH": f"{environment / 'bin'}{os.pathsep}{os.environ.get('PATH', '')}",
+            "VIRTUAL_ENV": str(environment),
+        }
         return subprocess.run(  # noqa: S603 - allowlisted executable in the verified environment, intentional local argv
             [str(environment / "bin" / program), *arguments],
             check=False,
+            env=env,
             timeout=1800,
         ).returncode
 
