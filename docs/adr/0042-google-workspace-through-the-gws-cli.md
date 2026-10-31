@@ -4,6 +4,7 @@ date: 2026-10-24
 decision-makers: maintainer
 related: 0017, 0027, 0028, 0030, 0032, 0035
 amended-by: 0059
+implemented-by: 47
 ---
 
 # 0042: Read Google Workspace through the Google Workspace CLI (`gws`)

@@ -3,8 +3,11 @@ status: proposed
 date: 2026-10-24
 decision-makers: maintainer
 amends: 0039, 0043
+amends-0039: a fixed port and paired devices
+amends-0043: notifications in the web app
 amended-by: 0058, 0078, 0084
 related: 0019, 0020, 0027, 0030
+implemented-by: 72
 ---
 
 # 0046: An installable web app on a fixed port, with paired devices and notifications from its service worker
