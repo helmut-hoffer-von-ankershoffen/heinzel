@@ -204,6 +204,15 @@
         attributes: true, attributeFilter: ['data-md-color-scheme'],
       });
     }
+    document.querySelectorAll('[data-hz-version]').forEach(link => {
+      // The header's repository widget (Material, from the GitHub API) knows the latest release; show it here too.
+      const show = () => {
+        const fact = document.querySelector('.md-source__fact--version');
+        if (fact && fact.textContent.trim()) link.textContent = `Latest release ${fact.textContent.trim()}`;
+        return Boolean(fact);
+      };
+      if (!show()) new MutationObserver((_, observer) => show() && observer.disconnect()).observe(document.body, { childList: true, subtree: true });
+    });
     document.querySelectorAll('[data-copy]').forEach(button => {
       if (button.dataset.ready) return;
       button.dataset.ready = 'true';

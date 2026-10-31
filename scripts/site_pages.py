@@ -913,12 +913,6 @@ def on_env(env: Any, **_: Any) -> Any:  # noqa: ANN401 - MkDocs owns the Jinja e
     return env
 
 
-def on_page_context(context: Any, *, config: Any, **_: Any) -> Any:  # noqa: ANN401 - MkDocs owns event objects
-    """Give the footer the released version, its page and the install command from the catalog snapshot."""
-    context["hz_footer"] = config.extra.get("hz_release")
-    return context
-
-
 def on_page_markdown(markdown: str, *, page: Any, config: Any, **_: Any) -> str:  # noqa: ANN401 - MkDocs owns event objects
     """Fill presentation markers and place the page's characters, keeping the authored Markdown useful on GitHub."""
     path = page.file.src_uri
