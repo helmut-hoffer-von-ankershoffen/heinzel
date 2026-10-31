@@ -143,6 +143,15 @@ def _time(value: datetime | None) -> str | None:
     return value.isoformat() if value is not None else None
 
 
+def _remove_doc(cache: _Cache, seq: int) -> None:
+    """Drop a document the host itself expired; older SQLite can then report a mismatch, so rebuild from docs."""
+    cache.db.execute("DELETE FROM docs WHERE seq = ?", (seq,))
+    try:
+        cache.db.execute("INSERT INTO terms(terms, rank) VALUES('integrity-check', 1)")
+    except sqlite3.DatabaseError:
+        cache.db.execute("INSERT INTO terms(terms) VALUES('rebuild')")
+
+
 def _verified(cache: _Cache) -> None:
     if cache.db.total_changes == cache.verified_changes:
         return
@@ -151,7 +160,12 @@ def _verified(cache: _Cache) -> None:
         msg = "Conversation search index needs rebuilding"
         raise HeinzelError(msg)
     try:
-        cache.db.execute("INSERT INTO terms(terms, rank) VALUES('integrity-check', 1)")
+        try:
+            cache.db.execute("INSERT INTO terms(terms, rank) VALUES('integrity-check', 1)")
+        except sqlite3.DatabaseError:
+            # Older SQLite can report a mismatch after a secure delete; the terms are derived from docs, so rebuild.
+            cache.db.execute("INSERT INTO terms(terms) VALUES('rebuild')")
+            cache.db.execute("INSERT INTO terms(terms, rank) VALUES('integrity-check', 1)")
         cache.verified_changes = cache.db.total_changes
     except sqlite3.DatabaseError:
         msg = "Conversation search index needs rebuilding"
@@ -221,7 +235,7 @@ def _reconcile(cache: _Cache, service: SessionCrud, session: str) -> set[int]:
                 "SELECT seq, body_id, size FROM docs WHERE source = ?", (source,)
             ).fetchall():
                 if body_id not in available:
-                    cache.db.execute("DELETE FROM docs WHERE seq = ?", (seq,))
+                    _remove_doc(cache, seq)
                     cache.count -= 1
                     cache.bytes -= size
                     removed.add(seq)
@@ -249,7 +263,7 @@ def _query(
             raise HeinzelError(msg)
         message = service.read_message(request.session_id, page.events[0])
         if message.status == "expired":
-            cache.db.execute("DELETE FROM docs WHERE seq = ?", (seq,))
+            _remove_doc(cache, seq)
             cache.count -= 1
             cache.bytes -= len(indexed_text.encode("utf-8"))
         elif matches_history(message, request):
