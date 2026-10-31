@@ -21,11 +21,11 @@ or exhaust memory. Retained message bodies can expire and search indexes can be 
 
 ## Decision Outcome
 
-.
-
 Owner-authenticated operations return bounded result pages for one conversation or traverse the owner's conversation
 catalog using continuation hints. Owner-wide search advances in bounded event steps; building a single-conversation
-index may scan its entire journal before returning. The verified journals and immutable bodies remain authoritative. A process-local
+index may scan its entire journal before returning. The verified journals and immutable bodies remain authoritative.
+
+A process-local
 SQLite full-text index accelerates suitable text searches; short or time-only searches use bounded scans. The index
 limits retained indexed text and the number of cached sessions, requires SQLite secure deletion and can be discarded and rebuilt. Missing,
 expired or damaged data and index state mean results cannot promise completeness. A query does not grant access or
