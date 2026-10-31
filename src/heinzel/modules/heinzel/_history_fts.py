@@ -144,12 +144,9 @@ def _time(value: datetime | None) -> str | None:
 
 
 def _remove_doc(cache: _Cache, seq: int) -> None:
-    """Drop a document the host itself expired; older SQLite can then report a mismatch, so rebuild from docs."""
+    """Drop a document the host itself expired; older SQLite can then fail an integrity check it needs no run of."""
     cache.db.execute("DELETE FROM docs WHERE seq = ?", (seq,))
-    try:
-        cache.db.execute("INSERT INTO terms(terms, rank) VALUES('integrity-check', 1)")
-    except sqlite3.DatabaseError:
-        cache.db.execute("INSERT INTO terms(terms) VALUES('rebuild')")
+    cache.verified_changes = cache.db.total_changes
 
 
 def _verified(cache: _Cache) -> None:
@@ -160,12 +157,7 @@ def _verified(cache: _Cache) -> None:
         msg = "Conversation search index needs rebuilding"
         raise HeinzelError(msg)
     try:
-        try:
-            cache.db.execute("INSERT INTO terms(terms, rank) VALUES('integrity-check', 1)")
-        except sqlite3.DatabaseError:
-            # Older SQLite can report a mismatch after a secure delete; the terms are derived from docs, so rebuild.
-            cache.db.execute("INSERT INTO terms(terms) VALUES('rebuild')")
-            cache.db.execute("INSERT INTO terms(terms, rank) VALUES('integrity-check', 1)")
+        cache.db.execute("INSERT INTO terms(terms, rank) VALUES('integrity-check', 1)")
         cache.verified_changes = cache.db.total_changes
     except sqlite3.DatabaseError:
         msg = "Conversation search index needs rebuilding"
