@@ -35,6 +35,7 @@ CONTEXT = ("INTENT.md", "docs/CODING_STANDARDS.md")  # read at the base commit, 
 MAX_PAYLOAD = 3_000_000
 MAX_OUTPUT = 1_000_000
 MAX_FILES = 100
+MAX_GENERATED = 32_000_000
 MAX_CLI_SIZE = 300_000_000
 MODEL_TIMEOUT = 240
 MAX_BUDGET_USD = "3"
@@ -87,6 +88,13 @@ SCHEMA = {
         },
     },
 }
+GENERATED_PAIR = ("web/openapi.json", "web/src/api/schema.d.ts")
+"""Generated from the source together; too large to review, and proven by regeneration instead of by reading."""
+REGENERATION_CHECK = "Lint, contracts and types"
+"""CI job on the exact head whose `web-client --check` regenerates the pair and fails on any difference."""
+GENERATED_SCOPE = (
+    " The generated API pair is omitted, with its digests: CI regenerated it from the supplied source and it matched."
+)
 SCOPE = (
     "The changed files before and after the change, the complete diff and the named context files, each with its "
     "SHA-256. The repository as a whole is not supplied."
@@ -395,8 +403,26 @@ def changed_paths(config: Config) -> list[str]:
     return names
 
 
-def read_source(config: Config, rev: str, path: str, taken: int) -> dict[str, str] | None:
-    """One exact blob at a revision, or None when the path is absent there.
+def generated_pair_proven(config: Config, names: list[str]) -> bool:
+    """Whether this change holds the generated pair and CI's regeneration check passed on this exact head.
+
+    Anything short of that keeps the pair in the payload, where the size bound then applies and fails closed.
+    """
+    if not any(path in names for path in GENERATED_PAIR):
+        return False
+    answer = gh_json(config, f"commits/{config.head}/check-runs?per_page=100")
+    runs = [
+        run
+        for run in answer.get("check_runs", [])
+        if run.get("name") == REGENERATION_CHECK
+        and run.get("head_sha") == config.head
+        and (run.get("app") or {}).get("slug") == "github-actions"
+    ]
+    return bool(runs) and all(run.get("status") == "completed" and run.get("conclusion") == "success" for run in runs)
+
+
+def read_source(config: Config, rev: str, path: str, taken: int, *, digest_only: bool = False) -> dict[str, str] | None:
+    """One exact blob at a revision, or None when the path is absent there; `digest_only` omits its text.
 
     Raises:
         ReviewError: If the entry is not a plain text blob or the payload bound would be exceeded.
@@ -421,14 +447,15 @@ def read_source(config: Config, rev: str, path: str, taken: int) -> dict[str, st
         msg = "Unsupported source object"
         raise ReviewError(msg)
     size = git(config, "cat-file", "-s", parts[2], limit=64).strip()
-    if not size.isdigit() or taken + int(size) > MAX_PAYLOAD:
+    if not size.isdigit() or (not digest_only and taken + int(size) > MAX_PAYLOAD) or int(size) > MAX_GENERATED:
         msg = "Source exceeds bound"
         raise ReviewError(msg)
     data = git(config, "cat-file", "blob", parts[2], limit=int(size) + 1)
     if len(data) != int(size) or b"\0" in data:
         msg = "Source is binary or unreadable"
         raise ReviewError(msg)
-    return {"sha256": hashlib.sha256(data).hexdigest(), "text": data.decode("utf-8", "strict")}
+    digest = hashlib.sha256(data).hexdigest()
+    return {"sha256": digest, "omitted": "generated"} if digest_only else {"sha256": digest, "text": data.decode()}
 
 
 def build_payload(config: Config) -> tuple[bytes, dict[str, Any], list[str]]:
@@ -438,17 +465,20 @@ def build_payload(config: Config) -> tuple[bytes, dict[str, Any], list[str]]:
         ReviewError: If the selection or the payload is unsafe or too large.
     """
     names = changed_paths(config)
+    proven = generated_pair_proven(config, names)
     sources: dict[str, dict[str, str] | None] = {}
     taken = 0
     for rev in (config.base, config.head):
         for path in sorted({*names, *CONTEXT}):
-            sources[f"{rev}:{path}"] = record = read_source(config, rev, path, taken)
-            taken += len(record["text"].encode()) if record else 0
+            omit = proven and path in GENERATED_PAIR
+            sources[f"{rev}:{path}"] = record = read_source(config, rev, path, taken, digest_only=omit)
+            taken += len(record["text"].encode()) if record and not omit else 0
     if any(sources[f"{config.base}:{name}"] is None and sources[f"{config.head}:{name}"] is None for name in names):
         msg = "Changed file absent in both trees"
         raise ReviewError(msg)
     diff = git(
         config, "diff", "--no-ext-diff", "--no-textconv", "--no-renames", "--full-index", config.base, config.head,
+        *(["--", ".", *(f":(exclude){path}" for path in GENERATED_PAIR)] if proven else []),
         limit=MAX_PAYLOAD,
     ).decode("utf-8", "strict")  # fmt: skip
     data = {
@@ -459,7 +489,7 @@ def build_payload(config: Config) -> tuple[bytes, dict[str, Any], list[str]]:
         "changed_files": names,
         "diff": diff,
         "sources": sources,
-        "scope": SCOPE,
+        "scope": SCOPE + (GENERATED_SCOPE if proven else ""),
     }
     payload = json.dumps(data, ensure_ascii=True, separators=(",", ":")).encode()
     if len(payload) > MAX_PAYLOAD:
@@ -474,6 +504,7 @@ def build_payload(config: Config) -> tuple[bytes, dict[str, Any], list[str]]:
         "payload_bytes": len(payload),
         "diff_sha256": hashlib.sha256(diff.encode()).hexdigest(),
         "changed_files": names,
+        "generated_pair_omitted": proven,
     }
     return payload, manifest, names
 

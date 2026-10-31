@@ -465,3 +465,73 @@ def test_review_command_dispatches_the_exact_inputs_for_a_risky_change(tmp_path)
         "-f tier=full",
     ):
         assert fragment in dispatched
+
+
+def regeneration(monkeypatch, runs):
+    monkeypatch.setattr(source_review, "gh_json", lambda *_args, **_kwargs: {"check_runs": runs})
+
+
+def passing(head, **changes):
+    run = {
+        "name": source_review.REGENERATION_CHECK,
+        "head_sha": head,
+        "status": "completed",
+        "conclusion": "success",
+        "app": {"slug": "github-actions"},
+    }
+    return {**run, **changes}
+
+
+@pytest.fixture
+def repo_with_pair(repo):
+    root, base, _ = repo
+    for path in source_review.GENERATED_PAIR:
+        (root / path).parent.mkdir(parents=True, exist_ok=True)
+        (root / path).write_text("generated\n" * 100)
+    git_in(root, "add", ".")
+    git_in(root, "commit", "-qm", "pair")
+    return root, base, git_in(root, "rev-parse", "HEAD")
+
+
+def test_a_regenerated_pair_is_omitted_with_its_digests(repo_with_pair, monkeypatch):
+    root, base, head = repo_with_pair
+    regeneration(monkeypatch, [passing(head)])
+    payload, manifest, names = source_review.build_payload(repo_config(root, base, head))
+    data = json.loads(payload)
+    assert manifest["generated_pair_omitted"] is True
+    assert set(source_review.GENERATED_PAIR) <= set(names)
+    record = data["sources"][f"{head}:web/openapi.json"]
+    assert record["omitted"] == "generated"
+    assert "text" not in record
+    assert "generated\\n" not in data["diff"]
+    assert "regenerated" in data["scope"]
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"conclusion": "failure"},
+        {"status": "in_progress", "conclusion": None},
+        {"head_sha": "0" * 40},
+        {"name": "Something else"},
+        {"app": {"slug": "someone-else"}},
+    ],
+)
+def test_without_proof_on_this_head_the_pair_stays_in_the_payload(repo_with_pair, monkeypatch, changes):
+    root, base, head = repo_with_pair
+    regeneration(monkeypatch, [passing(head, **changes)])
+    payload, manifest, _ = source_review.build_payload(repo_config(root, base, head))
+    assert manifest["generated_pair_omitted"] is False
+    assert "text" in json.loads(payload)["sources"][f"{head}:web/openapi.json"]
+
+
+def test_one_failed_attempt_is_no_proof(repo_with_pair, monkeypatch):
+    root, base, head = repo_with_pair
+    regeneration(monkeypatch, [passing(head), passing(head, conclusion="failure")])
+    assert source_review.build_payload(repo_config(root, base, head))[1]["generated_pair_omitted"] is False
+
+
+def test_a_change_without_the_pair_asks_github_nothing(repo, monkeypatch):
+    root, base, head = repo
+    monkeypatch.setattr(source_review, "gh_json", lambda *_a, **_k: pytest.fail("no read is needed"))
+    assert source_review.build_payload(repo_config(root, base, head))[1]["generated_pair_omitted"] is False
