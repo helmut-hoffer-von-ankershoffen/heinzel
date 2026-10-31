@@ -5,6 +5,7 @@ date: 2026-10-24
 decision-makers: maintainer
 supersedes: 0033, 0034
 related: 0015, 0017, 0027, 0028, 0029, 0030, 0032, 0033, 0034
+implemented-by: 40, 49
 ---
 
 # 0035: Integrations go through the vendor's CLI as an ordinary employee
@@ -18,8 +19,8 @@ and [ADR 0034](0034-atlassian-cloud-rest-apis-over-urllib.md) record how); the G
 OAuth client, which in a company only an administrator may register, and a Zoom adapter an app registration with its
 own review. Every such step is a form, a ticket or an approval before hz drafts anything, and every token is a secret
 hz must store, redact and rotate. Meanwhile the vendors ship command-line tools an ordinary employee may install and
-log in to with their own account: `gh` for GitHub, `acli` for Atlassian, `gws` for Google Workspace. The maintainer
-decided (2026-10-24): "Integrations use only what an ordinary employee may do. No admin-registered apps; vendor CLIs
+log in to with their own account: `gh` for GitHub, `acli` for Atlassian, `gws` for Google Workspace. The decision:
+"Integrations use only what an ordinary employee may do. No admin-registered apps; vendor CLIs
 (gh, acli, gws) are the transport and own authentication. Meetings come in as Zoom summary emails." How do adapters
 reach a service, and who holds the credential?
 
@@ -142,15 +143,15 @@ app; `Credentials` stays for services without such a CLI.** Checkable statements
 
 ### Confirmation
 
-Implemented for GitHub (`gh`, pull request #49) and Atlassian (`acli`, pull request #40): each CLI adapter's command
+Implemented for GitHub (`gh`) and Atlassian (`acli`): each CLI adapter's command
 lines, JSON parsing, paging and error mapping against recorded outputs
-(`plugins/heinzel-github/tests/unit/gh_test.py`, `plugins/heinzel-atlassian/tests/unit/acli_test.py`) and against a
-fake CLI (`plugins/heinzel-github/tests/integration/gh_test.py`, `plugins/heinzel-atlassian/tests/integration/acli_test.py`).
+(in heinzel-plugins: `plugins/heinzel-github/tests/unit/gh_test.py`, `plugins/heinzel-atlassian/tests/unit/acli_test.py`) and against a
+fake CLI (in heinzel-plugins: `plugins/heinzel-github/tests/integration/gh_test.py`, `plugins/heinzel-atlassian/tests/integration/acli_test.py`).
 Still to come with the shared helper and the Google Workspace adapter: the bounded subprocess helper's argument lists, timeouts, process group, output
 caps and environment allowlist with real processes (`tests/integration/runner_process_test.py`, extended), and that an
-adapter subprocess never sees `HZ_CREDENTIAL_*` or the inherited environment (`tests/unit/kernel/process_test.py`);
+adapter subprocess never sees `HZ_CREDENTIAL_*` or the inherited environment;
 each CLI adapter's command lines, JSON parsing, paging, error mapping and version refusal against recorded outputs
-(`plugins/heinzel-<name>/tests/unit/*_test.py`) and against a fake CLI (`plugins/heinzel-<name>/tests/integration`);
+(in heinzel-plugins: `plugins/heinzel-<name>/tests/unit/*_test.py`) and against a fake CLI (`plugins/heinzel-<name>/tests/integration`);
 `hz system doctor` with the CLI missing, too old and present, without network (`tests/integration/capability_test.py`);
 a repository test that no first-party adapter declares a `CredentialLet` for a service that has a CLI adapter, and
 that no first-party plugin imports an HTTP client for such a service (`tests/unit/repository_test.py`); the
@@ -158,9 +159,8 @@ import-linter contract "The core imports no vendor client or agent SDK" (`pyproj
 
 ## More Information
 
-- Decided by the maintainer, 2026-10-24: "Integrations use only what an ordinary employee may do; vendor CLIs (gh,
-  acli, gws) are the transport and own authentication"; meetings as summary e-mails. Technical shape by the architect.
-  Accepted 2026-10-24, with both first-party adapters on their CLIs (Atlassian via `acli`, #40; GitHub via `gh`, #49).
+- Integrations use only what an ordinary employee may do; vendor CLIs (gh, acli, gws) are the transport and own
+  authentication; meetings come in as summary e-mails.
 - Builds on [ADR 0028](0028-integrations-are-capability-adapters.md) (adapters over any transport, `hosts`,
   `clean_text`, the window rule), [ADR 0029](0029-agent-runners-are-capability-adapters.md) (the bounded subprocess the
   runners already have: process groups, timeouts, caps, environment allowlist), [ADR 0030](0030-credentials-live-in-the-os-keychain.md)
@@ -169,7 +169,7 @@ import-linter contract "The core imports no vendor client or agent SDK" (`pyproj
   [ADR 0017](0017-first-party-plugins-in-the-core-repository.md) (the adapters are first-party plugins). It does not
   change ADR 0028's text; the mail capability is being added to ADR 0028 separately and is referenced, not decided,
   here.
-- The onboarding record (pull request #32) relies on this one: `hz join` discovers who the person is from the CLIs'
+- The onboarding record relies on this one: `hz join` discovers who the person is from the CLIs'
   own logins. The record "layers and playbooks are plugins" says where a company's own providers live: in the layers
   of its private plugin repository; the public reference company binds the first-party CLI adapters.
 - The validation slice (INTENT.md, "Thin slice first"): the weekly report draft reads merged pull requests through

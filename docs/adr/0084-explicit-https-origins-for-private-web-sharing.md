@@ -4,6 +4,7 @@ amended-by: 0090
 date: 2026-10-25
 amends: 0035, 0039, 0046, 0048, 0056
 related: 0019, 0027, 0030, 0035, 0072
+implemented-by: 188
 ---
 
 # 0084: Private web sharing admits exact HTTPS origins and keeps device authentication

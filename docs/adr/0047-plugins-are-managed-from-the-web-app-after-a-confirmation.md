@@ -4,7 +4,10 @@ amended-by: 0078, 0083, 0091
 date: 2026-10-24
 decision-makers: maintainer
 amends: 0006, 0039
+amends-0006: add shows first and installs on --confirm, from PyPI or https git only
+amends-0039: plugin changes are web endpoints, not REST ones; POST /api/restart
 related: 0017, 0019, 0025, 0027, 0033, 0035, 0040
+implemented-by: 74
 ---
 
 # 0047: Plugins are managed from the web app, and adding one shows what it installs before it is confirmed
@@ -51,7 +54,7 @@ changes exposed, what does `add` accept, and how does the running web app pick a
 
 Chosen option: **one `add` that shows first and installs on `confirm`, a narrow set of sources, changes only behind a
 person or the session token, and an in-place restart of `hz ui`**, because it keeps one operation per action in every
-head and makes the dangerous step explicit and checkable. Proposed for the maintainer, 2026-10-24.
+head and makes the dangerous step explicit and checkable.
 
 1. **Which heads.** `hz system plugin add`, `remove`, `enable`, `disable` and `history` declare
    `heads={"cli", "mcp-stdio", "web"}`; `list` and `search` stay on every head; `develop` and `new` are CLI only. This
@@ -123,7 +126,7 @@ enabling write the user file, and a restart hands the port and token to the proc
 
 ## More Information
 
-- Asked for by the maintainer, 2026-10-24 ("install, list, enable/disable and remove plugins from within the web UI").
+- Requirement ("install, list, enable/disable and remove plugins from within the web UI").
   The React screens are built separately on these endpoints.
 - Open: whether `hz system serve mcp` should restart itself the same way (stdio clients restart servers themselves);
   whether a source allowlist per company (only its private repository and first-party plugins) should be a setting.

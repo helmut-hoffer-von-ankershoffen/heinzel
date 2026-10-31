@@ -89,6 +89,7 @@ SHARED = [".claude", ".github/workflows", "scripts"]
 CORE_ONLY = {  # path: why plugins don't get it
     "scripts/site_characters.mjs": "draws product-site guides from core artwork; standalone plugins own their art",
     "scripts/site_catalog.py": "public product website aggregation, never a standalone plugin build (ADR 0098)",
+    "scripts/adr_index.py": "renders the core ADR index and pages; plugins have no ADRs",
     "scripts/site_pages.py": "renders the product's public ecosystem catalog, not plugin-owned docs (ADR 0098)",
     "scripts/site_check.py": "accepts the core product website with its locked web axe tooling (ADR 0098)",
     ".github/workflows/pypi.yml": "publishes only the registered core project with its trusted publisher (ADR 0079)",
@@ -107,6 +108,8 @@ CORE_ONLY = {  # path: why plugins don't get it
     "scripts/sync_template.py": "generates the template from Heinzelmännchen's files",
     "scripts/template-test.sh": "renders and checks the template",
     "scripts/starter-test.py": "core SDK compatibility job exercises fresh standalone and collection authors",
+    "scripts/ship.py": "the golden path for small changes in Heinzelmännchen's own worktrees (docs/SHIP_SMALL.md)",
+    ".claude/skills/ship-small/SKILL.md": "drives scripts/ship.py, which plugins don't get",
     "scripts/scoped_checks.py": "routes Core-root checks; owning and governed plugins already check their own project",
     "scripts/template_pyproject_head.toml.tmpl": "input of sync_template.py",
     "scripts/web.py": "the web head's typed client and dev server (web/, ADR 0039); plugins bring no UI",
