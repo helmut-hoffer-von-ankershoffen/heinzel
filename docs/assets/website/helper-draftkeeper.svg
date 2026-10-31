@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 860" role="img" aria-label="Heinzelmännchen">
+  <!-- Heinzelmännchen, an original drawing made by web/src/components/heinzel.ts (`make icons`); never an emoji
+       font's artwork. The favicon, the app icons, the theme's logo and the notifier's icon are made from it. -->
+  <path d="M183 680 H250 V804 H189 Z" fill="#6D4C41"/>
+  <path d="M329 680 H262 V804 H323 Z" fill="#6D4C41"/>
+  <path d="M161 846 Q161 800 199 800 H250 V846 Z" fill="#3E2723"/>
+  <path d="M351 846 Q351 800 313 800 H262 V846 Z" fill="#3E2723"/>
+  <path d="M164 500 C164 472 210 462 256 462 C302 462 348 472 348 500 C356 560 356 640 360 690 Q256 708 152 690 C156 640 156 560 164 500 Z" fill="#64748B"/>
+  <path d="M200 466 C216 506 296 506 312 466 C290 476 222 476 200 466 Z" fill="#8B97A8"/>
+  <path d="M162 622 H350 V648 H162 Z" fill="#5D3A1A"/>
+  <path d="M238 618 H274 V652 H238 Z M248 628 V642 H264 V628 Z" fill="#F2B233"/>
+  <path d="M180 486 C144 520 130 590 126 640 L162 640 C154 590 194 540 204 500 Z" fill="#5C6B80"/>
+  <circle cx="144" cy="648" r="24" fill="#FFD45E"/>
+  <path d="M332 486 C368 520 320 402 324 452 L288 452 C296 402 318 540 308 500 Z" fill="#5C6B80"/>
+  <circle cx="306" cy="460" r="24" fill="#FFD45E"/>
+  <g transform="matrix(0.6975 0 0 0.75 77.44 173)">
+    <path d="M112 226 C82 222 54 230 46 248 C40 264 58 280 86 286 C98 288 108 288 114 286 Z" fill="#FFD45E"/>
+    <path d="M400 226 C430 222 458 230 466 248 C472 264 454 280 426 286 C414 288 404 288 398 286 Z" fill="#FFD45E"/>
+    <path d="M108 240 C88 238 70 244 66 254 C64 264 76 272 94 274 C100 275 106 275 110 274 Z" fill="#F2B547"/>
+    <path d="M404 240 C424 238 442 244 446 254 C448 264 436 272 418 274 C412 275 406 275 402 274 Z" fill="#F2B547"/>
+    <circle cx="256" cy="236" r="158" fill="#FFD45E"/>
+    <path d="M96 246 C84 120 168 48 256 48 C344 48 428 120 416 246 C406 210 386 186 362 174 Q342 218 302 182 Q256 226 210 182 Q170 218 150 174 C126 186 106 210 96 246 Z" fill="#ECEAE3"/>
+    <path d="M90 242 C80 400.4 164.7 512 256 530 C347.3 512 432 400.4 422 242 C392 300 352 318 256 318 C160 318 120 300 90 242 Z" fill="#ECEAE3"/>
+    <path d="M94 178 C94 84 168 38 256 38 C344 38 418 84 418 178 Z" fill="#8E5BD8"/>
+    <path d="M100 172 C110 -2.5999999999999943 180 -157.8 270 -216 C306 -230 344 -218 362 -184 C336 -194 312 -186 304 -166 C342 -41.400000000000006 398 75 412 172 Z" fill="#8E5BD8"/>
+    <path d="M304 -166 C342 -41.400000000000006 398 75 412 172 L370 172 C360 55.60000000000001 330 -22 292 -146 Z" fill="#794DB8"/>
+    <path d="M88 176 C150 136 362 136 424 176 C428 196 414 206 398 200 C340 176 172 176 114 200 C98 206 84 196 88 176 Z" fill="#8052C2"/>
+    <circle cx="160" cy="318" r="24" fill="#FFAE7F"/>
+    <circle cx="352" cy="318" r="24" fill="#FFAE7F"/>
+    <path d="M178 232 Q202 216 226 230" fill="none" stroke="#B5AE9E" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M286 230 Q310 216 334 232" fill="none" stroke="#B5AE9E" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="202" cy="266" r="20" fill="#3D2A16"/>
+    <circle cx="310" cy="266" r="20" fill="#3D2A16"/>
+    <circle cx="209" cy="256" r="7" fill="#FFFFFF"/>
+    <circle cx="317" cy="256" r="7" fill="#FFFFFF"/>
+    <path d="M222 336 C230 368 282 368 290 336 Z" fill="#8B3A2A"/>
+    <path d="M256 308 C236 298 202 302 192 322 C212 336 240 328 256 316 C272 328 300 336 320 322 C310 302 276 298 256 308 Z" fill="#FFFFFF"/>
+  </g>
+  <g transform="translate(0 0) scale(1)">
+    <circle cx="440" cy="84" r="56" fill="#8E5BD8"/>
+    <circle cx="414" cy="86" r="9" fill="#FFFFFF"/>
+    <circle cx="440" cy="86" r="9" fill="#FFFFFF"/>
+    <circle cx="466" cy="86" r="9" fill="#FFFFFF"/>
+  </g>
+</svg>
