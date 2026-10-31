@@ -4,6 +4,7 @@ date: 2026-10-25
 amends: 0008
 related: 0013, 0017, 0043
 implemented-by: 188
+amended-by: 0114
 ---
 
 # 0079: Core PyPI trusted publishing is isolated from builds
