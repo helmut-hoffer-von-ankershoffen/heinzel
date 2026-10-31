@@ -149,6 +149,8 @@ def ci_workflow() -> str:
         "",
     )
     text = re.sub(r"\n      - run: make managed-backend-[^\n]*", "", text)
+    # The docs style check reads the core's documents and i18n strings; plugins have their own docs tooling.
+    text = re.sub(r"\n      - name: Check the style of hand-written docs and user-visible copy\n[^\n]*", "", text)
     # Only the core daemon uses the host's user service manager; plugins ship no such probe.
     text = re.sub(
         r"\n      - name: Inspect the Linux user manager without starting services\n.*?(?=\n      - )",
