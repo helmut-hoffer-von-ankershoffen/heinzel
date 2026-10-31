@@ -82,6 +82,13 @@ export const useAsk = () =>
   });
 
 /** `hz system config set|unset` in the user's configuration; the settings dialog refreshes from the answer. */
+/** A setting's current value from `hz system config show`, as text; "" when unset. */
+export function useSetting(section: string, key: string): string {
+  const config = useConfig();
+  const value = config.data?.settings.find((setting) => setting.section === section && setting.key === key)?.value;
+  return typeof value === "string" ? value : "";
+}
+
 export const useSetSetting = () => {
   const client = useQueryClient();
   return useMutation({

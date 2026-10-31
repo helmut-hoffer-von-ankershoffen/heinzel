@@ -12,6 +12,7 @@ import posixpath
 import re
 import shlex
 import unicodedata
+import urllib.request
 from pathlib import Path
 from typing import Any
 
@@ -679,6 +680,23 @@ not a runtime screenshot.
 """
 
 
+LATEST_RELEASE_API = "https://api.github.com/repos/helmut-hoffer-von-ankershoffen/heinzel/releases/latest"
+RELEASE_TAG = re.compile(r"v[0-9]+\.[0-9]+\.[0-9]+")
+
+
+def latest_release_tag() -> str | None:
+    """The latest published release tag from the GitHub API, or None: a failed lookup must not fail or age the build."""
+    request = urllib.request.Request(LATEST_RELEASE_API, headers={"Accept": "application/vnd.github+json"})
+    if token := os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN"):
+        request.add_header("Authorization", f"Bearer {token}")
+    try:
+        with urllib.request.urlopen(request, timeout=5) as response:  # noqa: S310 - fixed https URL
+            tag = str(json.load(response).get("tag_name", ""))
+    except (OSError, ValueError):
+        return None
+    return tag if RELEASE_TAG.fullmatch(tag) else None
+
+
 def on_files(files: Any, config: Any) -> Any:  # noqa: ANN401 - MkDocs owns the event objects
     """Generate public catalog pages and inert palette artwork from an explicit snapshot."""
     from mkdocs.structure.files import File  # noqa: PLC0415 - docs-only dependency; unit rendering needs no MkDocs
@@ -695,6 +713,7 @@ def on_files(files: Any, config: Any) -> Any:  # noqa: ANN401 - MkDocs owns the 
                 )
     files.append(File.generated(config, "catalog.json", content=json.dumps(snapshot, ensure_ascii=False)))
     config.extra["hz_release"] = snapshot["release"]
+    config.extra["hz_latest_release"] = latest_release_tag()
     config.extra["hz_plugin_pages"] = {f"catalog/{item['id']}/index.md": item for item in snapshot["plugins"]}
     return files
 
