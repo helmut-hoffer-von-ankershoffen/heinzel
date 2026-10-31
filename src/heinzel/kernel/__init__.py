@@ -23,6 +23,14 @@ from heinzel.kernel._bounded_process import ProcessExecute, ProcessOutcome, run_
 from heinzel.kernel._capabilities import CAPABILITIES, MODES, NO_ADAPTER, Capability, Mode, Requirement
 from heinzel.kernel._capability_schema import capability_read_schema
 from heinzel.kernel._captured_source import captured_source_active
+from heinzel.kernel._channels import (
+    ApprovalChannel,
+    ChannelApprovalReply,
+    ChannelApprovalRequest,
+    ChannelNotice,
+    ChannelReceipt,
+    NotificationChannel,
+)
 from heinzel.kernel._chat import ActionGate, ProposedCall
 from heinzel.kernel._chat_services import (
     CheckInChatContext,
@@ -335,6 +343,7 @@ __all__ = [
     "AgentResult",
     "AgentRunner",
     "AiAccess",
+    "ApprovalChannel",
     "AssetType",
     "Authentication",
     "Avatar",
@@ -348,6 +357,10 @@ __all__ = [
     "CapabilityView",
     "CardWidget",
     "CatchUp",
+    "ChannelApprovalReply",
+    "ChannelApprovalRequest",
+    "ChannelNotice",
+    "ChannelReceipt",
     "Chat",
     "ChatDraftTemplate",
     "Check",
@@ -459,6 +472,7 @@ __all__ = [
     "Notice",
     "NoticeHelper",
     "NoticeKind",
+    "NotificationChannel",
     "Notifications",
     "OpenUrl",
     "OperationCall",

@@ -1117,7 +1117,7 @@ describe("personal conversation links", () => {
       },
     });
     renderAt(`/heinzel?chat=${sessionId}`);
-    expect(await screen.findByText("Daemon:")).toBeInTheDocument();
+    expect(await screen.findByText("Woke on schedule.")).toBeInTheDocument();
     expect(screen.queryByText("user:")).not.toBeInTheDocument();
   });
 

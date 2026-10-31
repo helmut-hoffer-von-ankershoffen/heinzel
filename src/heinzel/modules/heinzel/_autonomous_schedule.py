@@ -26,13 +26,15 @@ from heinzel.kernel._approval import (
 from heinzel.modules.heinzel._connected_grants import ConnectedGrant
 from heinzel.modules.heinzel._contract_review import ContractReview
 from heinzel.modules.heinzel._interactive_turn import interactive_turn_id
-from heinzel.modules.heinzel._scheduled_notifications import ScheduledNotificationPolicy
+from heinzel.modules.heinzel._quiet_hours import QuietHours
+from heinzel.modules.heinzel._scheduled_notifications import ScheduledNotificationInventory, ScheduledNotificationPolicy
 from heinzel.modules.heinzel._session_bodies import immutable_body
 from heinzel.modules.heinzel._session_crud import SessionCrud
 from heinzel.modules.heinzel._session_models import MessageRequest, RequestId, SessionId
 from heinzel.modules.heinzel._user_chat import MAX_TURN_SECONDS, UserChatService
 
 _MAX_PAGE = 100
+QUIET = "Quiet hours: this slot started no turn."
 
 
 class ScheduleBinding(BaseModel):
@@ -68,6 +70,11 @@ class ScheduleBinding(BaseModel):
     )
     connected_grant: ConnectedGrant | None = Field(
         default=None, description="Exact separately approved connected read, or null for no external read."
+    )
+    quiet_hours: QuietHours | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+        description="Reviewed daily window in which a due slot starts no turn; absent means no quiet hours.",
     )
 
     @field_validator("cadence_seconds")
@@ -190,6 +197,7 @@ class AutonomousSchedules:
         timeout_seconds: int,
         connected_request_id: str | None = None,
         notification_policy: ScheduledNotificationPolicy | None = None,
+        quiet_hours: QuietHours | None = None,
     ) -> ScheduleBinding:
         """Persist an inert proposal; no user decision or wake is created.
 
@@ -229,6 +237,7 @@ class AutonomousSchedules:
             access_fingerprint=_fingerprint(self.chat),
             connected_grant=connected_grant,
             notification_policy=notification_policy,
+            quiet_hours=quiet_hours,
         )
         if timeout_seconds > proposal.timeout_seconds:
             msg = "Schedule timeout exceeds the reviewed contract"
@@ -507,6 +516,11 @@ class AutonomousSchedules:
 
     def _ensure_no_prior_pending(self, session: str, occurrence: str) -> None:
         events = self.crud.repository.control_read(session).events
+        recovery = ScheduledNotificationInventory(self.crud)
+        for view in recovery.validated_inventory(session, events):
+            if view.status == "unresolved":
+                msg = "An earlier notification outcome requires owner review before a scheduled turn"
+                raise HeinzelError(msg)
         for event in events:
             if event.kind != "message.accepted" or event.data.get("message_id") == occurrence:
                 continue
@@ -519,16 +533,19 @@ class AutonomousSchedules:
                 msg = "An earlier message must finish or be resolved before a scheduled turn"
                 raise HeinzelError(msg)
 
+    def _require_daemon(self) -> None:
+        context = self.chat.current.context()
+        if context.authentication != "daemon" or context.principal != self.chat.current.owner():
+            msg = "Only the owner-bound daemon may dispatch this schedule"
+            raise HeinzelError(msg)
+
     async def tick(self, session: str, request: str, when: datetime) -> str:
         """Run one due generic turn under the trusted local daemon identity, never a model-supplied identity.
 
         Raises:
             HeinzelError: If schedule, owner, access, or occurrence authority is unavailable.
         """
-        context = self.chat.current.context()
-        if context.authentication != "daemon" or context.principal != self.chat.current.owner():
-            msg = "Only the owner-bound daemon may dispatch this schedule"
-            raise HeinzelError(msg)
+        self._require_daemon()
         if when.tzinfo is None or when.utcoffset() is None or when > datetime.now(UTC) + timedelta(seconds=1):
             msg = "The schedule occurrence time is invalid"
             raise HeinzelError(msg)
@@ -537,6 +554,8 @@ class AutonomousSchedules:
         if slot != int(datetime.now(UTC).timestamp()) // binding.cadence_seconds:
             msg = "Only the current schedule occurrence can run"
             raise HeinzelError(msg)
+        if binding.quiet_hours is not None and binding.quiet_hours.covers(when):
+            return QUIET
         occurrence = "scheduled-" + hashlib.sha256(f"{session}\0{request}\0{slot}".encode()).hexdigest()
         contract = ContractReview(self.crud).current(session, binding.contract_request_id)
 

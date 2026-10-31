@@ -275,6 +275,14 @@ class Kernel:
             self._factory_instances[kind] = instance
         return cast("T", self._instances[kind])
 
+    def implementations[T](self, base: type[T]) -> list[T]:
+        """Every registered service that subclasses `base`, built once, in a stable order (ADR 0112)."""
+        kinds = sorted(
+            (kind for kind in self._factories if issubclass(kind, base)),
+            key=lambda kind: (kind.__module__, kind.__qualname__),
+        )
+        return [self.resolve(kind) for kind in kinds]
+
     def resolve_builtin_service[T](self, kind: type[T], owner: str) -> T:
         """Resolve a service only from its named built-in module and its exact registered class.
 

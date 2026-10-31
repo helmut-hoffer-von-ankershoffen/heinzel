@@ -204,12 +204,23 @@ class NotifyService(Notifications):
         helper: NoticeHelper | None = None,
     ) -> bool:
         """Persist a notice and replay key together, independent of repeat policy and display retention."""
+        return self._emit_once(kind, title, body, route=route, command=command, key=key, timed=False)
+
+    def emit_once_now(  # noqa: PLR0913 - the notice fields match emit
+        self, kind: NoticeKind, title: str, body: str, *, route: str, command: str, key: str
+    ) -> bool:
+        """`emit_once` for a notice timed by a reviewed schedule; quiet mode and the rate limit still hold it."""
+        return self._emit_once(kind, title, body, route=route, command=command, key=key, timed=True)
+
+    def _emit_once(  # noqa: PLR0913 - the notice fields match emit
+        self, kind: NoticeKind, title: str, body: str, *, route: str, command: str, key: str, timed: bool
+    ) -> bool:
         if not self.settings.wants(kind):
             return False
         now = self._clock()
 
         def record(notices: list[Notice]) -> None:
-            decision = policy.decide(self.settings, self.hours, now, urgent=False, recent=notices)
+            decision = policy.decide(self.settings, self.hours, now, urgent=timed, recent=notices)
             notices.append(
                 Notice(
                     id=f"{now.astimezone(UTC):%Y%m%dT%H%M%S%fZ}-{secrets.token_hex(3)}",

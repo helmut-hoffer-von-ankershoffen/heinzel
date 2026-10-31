@@ -3,7 +3,10 @@
 The public API for module and plugin authors is re-exported here, so `from heinzel import Module` is all a plugin needs.
 """
 
+import os
 from importlib.metadata import PackageNotFoundError, version
+
+os.environ.setdefault("PYDANTIC_AI_NO_BANNER", "1")  # stdout and stderr belong to the heads
 
 try:
     __version__ = version("heinzel")
@@ -20,6 +23,7 @@ from heinzel.kernel import (
     AgentResult,
     AgentRunner,
     AiAccess,
+    ApprovalChannel,
     AssetType,
     Avatar,
     Budget,
@@ -27,6 +31,10 @@ from heinzel.kernel import (
     CallIdentity,
     CardWidget,
     CatchUp,
+    ChannelApprovalReply,
+    ChannelApprovalRequest,
+    ChannelNotice,
+    ChannelReceipt,
     Chat,
     ChatDraftTemplate,
     Check,
@@ -105,6 +113,7 @@ from heinzel.kernel import (
     Notice,
     NoticeHelper,
     NoticeKind,
+    NotificationChannel,
     Notifications,
     OpenUrl,
     OperationLet,
@@ -204,6 +213,7 @@ __all__ = [
     "AgentResult",
     "AgentRunner",
     "AiAccess",
+    "ApprovalChannel",
     "AssetType",
     "Avatar",
     "Budget",
@@ -211,6 +221,10 @@ __all__ = [
     "CallIdentity",
     "CardWidget",
     "CatchUp",
+    "ChannelApprovalReply",
+    "ChannelApprovalRequest",
+    "ChannelNotice",
+    "ChannelReceipt",
     "Chat",
     "ChatDraftTemplate",
     "Check",
@@ -289,6 +303,7 @@ __all__ = [
     "Notice",
     "NoticeHelper",
     "NoticeKind",
+    "NotificationChannel",
     "Notifications",
     "OpenUrl",
     "OperationLet",

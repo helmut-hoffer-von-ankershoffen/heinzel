@@ -14,6 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator
 
 from heinzel import HeinzelError, SessionWriter
 from heinzel.kernel._approval import arguments_hash
+from heinzel.modules.heinzel._quiet_hours import QuietHours
 from heinzel.modules.heinzel._session_bodies import immutable_body
 from heinzel.modules.heinzel._session_crud import SessionCrud
 from heinzel.modules.heinzel._session_models import RequestId, SessionId
@@ -98,6 +99,18 @@ class SuggestedInterval(BaseModel):
         return value
 
 
+class SuggestedNotices(BaseModel):
+    """Suggested local notice limits for scheduled turns; the owner reviews them, and they grant nothing alone."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+    max_per_24h: int = Field(ge=1, le=24, description="At most this many notices in any 24 hours.")
+    deduplicate_by: Literal["item", "revision"] | None = Field(
+        default=None,
+        description="With an approved source: one notice per observed item, or per item revision so a moved item "
+        "can notify again. Null when the notice is not about a source item.",
+    )
+
+
 class ScheduleSuggestionRequest(BaseModel):
     """Exact chat-suggested terms; this has no activation or access authority."""
 
@@ -106,6 +119,12 @@ class ScheduleSuggestionRequest(BaseModel):
     trigger: SuggestedTrigger | SuggestedInterval = Field(description="Suggested schedule; no activation is performed.")
     suggested_reads: list[SuggestedRead] = Field(
         max_length=16, description="Unverified suggested capabilities, not granted access."
+    )
+    notices: SuggestedNotices | None = Field(
+        default=None, description="Suggested local notice limits, when this helper should notify its owner."
+    )
+    quiet_hours: QuietHours | None = Field(
+        default=None, description="A daily window in which no scheduled turn runs, when the person asked for one."
     )
 
 
@@ -121,6 +140,16 @@ class ScheduleSuggestion(BaseModel):
         description="Suggested schedule, not yet approved or activated."
     )
     suggested_reads: list[SuggestedRead] = Field(max_length=16, description="Unverified suggested read capabilities.")
+    notices: SuggestedNotices | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+        description="Suggested local notice limits, not yet approved.",
+    )
+    quiet_hours: QuietHours | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+        description="Suggested quiet hours, not yet approved.",
+    )
     status: Literal["suggested"] = Field(default="suggested", description="Inert suggestion, without authority.")
 
 
@@ -224,6 +253,8 @@ class ScheduleSuggestionTools:
                         based_on_revision=draft.expected_revision,
                         trigger=draft.trigger,
                         suggested_reads=draft.suggested_reads,
+                        notices=draft.notices,
+                        quiet_hours=draft.quiet_hours,
                     )
                     if arguments_hash(previous.model_dump(mode="json")) != arguments_hash(
                         expected.model_dump(mode="json")
@@ -242,6 +273,8 @@ class ScheduleSuggestionTools:
                         based_on_revision=revision,
                         trigger=draft.trigger,
                         suggested_reads=draft.suggested_reads,
+                        notices=draft.notices,
+                        quiet_hours=draft.quiet_hours,
                     )
                     body = immutable_body(writer, "schedule-suggestion", result.model_dump(mode="json"), control=True)
                     writer.append(
