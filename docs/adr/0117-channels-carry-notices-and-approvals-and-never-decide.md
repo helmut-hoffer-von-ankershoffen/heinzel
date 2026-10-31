@@ -5,7 +5,7 @@ decision-makers: maintainer
 related: 0028, 0043, 0094
 ---
 
-# 0112: Channels carry notices and approvals and never decide
+# 0117: Channels carry notices and approvals and never decide
 
 ## Context and Problem Statement
 
