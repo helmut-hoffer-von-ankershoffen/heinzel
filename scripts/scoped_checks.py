@@ -5,11 +5,11 @@
 """Keep Core-root PR and agent checks within the owning projects for plugin-only changes.
 
 `push` is the pre-push hook: the fast checks scoped to what the branch changes against main. Only Markdown, site
-templates and the site's own tooling (`scripts/site_*.py`, `check_docs.py`, `sync_template.py` and their unit tests)
-run the documentation checks and the tests that read documents and the site; only `web/` runs the web checks; changes
-that touch neither `web/` nor `desktop/` nor the root build files run `make check-fast` without the web app's tests
-and the managed backend's check; anything else runs `make check-fast` in full. CI always runs the full gate, so
-nothing goes unchecked, only later.
+templates, assets and `mkdocs.yml`, and the site's own tooling (`scripts/site_*.py`, `check_docs.py`,
+`sync_template.py` and their unit tests) run the documentation checks and the tests that read documents and the site;
+only `web/` runs the web checks; changes that touch neither `web/` nor `desktop/` nor the root build files run
+`make check-fast` without the web app's tests and the managed backend's check; anything else runs `make check-fast` in
+full. CI always runs the full gate, so nothing goes unchecked, only later.
 """
 
 import argparse
@@ -69,8 +69,13 @@ WEB_STEPS = [  # WEB_LINT, WEB_TYPES and WEB_TESTS of the Makefile
 
 
 def is_document(path: str) -> bool:
-    """Markdown and the site's page templates: text that no program runs."""
-    return path.endswith(".md") or (path.startswith("docs/overrides/") and path.endswith(".html"))
+    """Markdown, the site's page templates, assets and configuration: nothing the product or its tests run."""
+    return (
+        path.endswith(".md")
+        or (path.startswith("docs/overrides/") and path.endswith(".html"))
+        or path.startswith("docs/assets/website/")
+        or path == "mkdocs.yml"
+    )
 
 
 TOOLING = re.compile(r"scripts/(?:site_[a-z_]+|check_docs|sync_template)\.py")
