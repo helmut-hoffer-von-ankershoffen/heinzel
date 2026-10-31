@@ -232,7 +232,7 @@ without exposing the interface as a user input or making unrelated heads unusabl
 The web head sizes dialogs and positions footer popovers against the visual viewport, including keyboard and zoom
 changes. Floating controls respect device safe areas; touch form fields use at least 16px text to avoid focus zoom.
 `web/e2e/mobile-responsive.mjs` checks phone portrait/landscape layouts, dialog and footer bounds, navigation,
-keyboard-sized heights and zoom. The collapsed sidebar keeps direct play/pause; see [ADR 0088](adr/0088-collapsed-sidebar-keeps-sound-controls.md).
+keyboard-sized heights and zoom. The collapsed sidebar keeps direct play/pause, and the sound picker stays open while a soundscape is picked, which plays at once (ADR 0058); see [ADR 0088](adr/0088-collapsed-sidebar-keeps-sound-controls.md).
 
 The workspace uses descriptor-driven tabs for Chat, Terminal and World Clock on desktop and phone. Hidden contents
 stay mounted. On phones, the World Clock, Chat and Terminal header actions scroll to their panels, and Page scrolls
