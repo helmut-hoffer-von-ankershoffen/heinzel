@@ -7,7 +7,8 @@ Heinzelmännchen (`hz`): a kernel plus modules, each operation exposed as a CLI 
 ## Rules
 
 - A change serves INTENT.md and the accepted ADRs in [docs/adr/](docs/adr/). A new kind of let, a new head, a new
-  dependency or a change that contradicts an ADR gets a new ADR first (skill `write-adr`).
+  dependency or a change that contradicts an ADR gets a new ADR first (skill `write-adr`). When a pull request builds an ADR, add its number to the ADR's `implemented-by` front matter
+  and run `make docs`; the index table is generated, never hand-edited.
 - Every test file sets exactly one level, `pytestmark = pytest.mark.unit` (or `integration`, `e2e`); the suite
   refuses anything else. Definitions: [CODING_STANDARDS.md#tests](docs/CODING_STANDARDS.md#tests).
 - Pull requests only: branch from `origin/main`, never stack pull requests, open with `make pr`. Conventional commits
@@ -34,7 +35,7 @@ Heinzelmännchen (`hz`): a kernel plus modules, each operation exposed as a CLI 
 | What CI checks, before pushing (`PREFLIGHT=full` adds e2e, audit) | `make preflight` |
 | Tests by level | `make test-unit` / `make test-integration` / `make test-e2e` |
 | Render, test and audit the plugin template (`AUDIT=0`: offline, no audit) | `make template-test` |
-| Open the pull request: preflight, push, PR to `main`, auto-merge (`DRAFT=1`: a draft, no auto-merge; `BODY="..."` or `BODY_FILE=path`: a new one's description) | `make pr TITLE="feat(scope): ..."` |
+| Open the pull request: preflight, push, PR to `main` for review (`DRAFT=1`: a draft; `BODY="..."` or `BODY_FILE=path`: a new one's description) | `make pr TITLE="feat(scope): ..."` |
 | What failed in CI (waits for the running build) | `make ci-logs` |
 | A small copy, docs or web UI fix, start to validated pull request, safe for a small model ([docs/SHIP_SMALL.md](docs/SHIP_SMALL.md), skill `ship-small`) | `uv run --script scripts/ship.py start SLUG` |
 | Rebase onto the latest `main` | `make sync` |
