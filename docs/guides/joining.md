@@ -4,7 +4,7 @@ For the engineer or product manager whose manager posted a line in chat. Ten min
 asks, see your team's first draft. Nothing is published, sent or scheduled unless you say so; what hz keeps about you
 is listed below.
 
-Examples use a made-up company, Acme (`acme-example` on GitHub) and its Checkout team. What is not in this release is
+Examples use a made-up company, ACME (`acme-example` on GitHub) and its Checkout team. What is not in this release is
 marked **coming in the next release**, with what to do meanwhile.
 
 ## The one line from your manager

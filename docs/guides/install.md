@@ -1,6 +1,6 @@
 ---
-title: Install Heinzel
-description: Install the standard Heinzel app, start the web workspace, and verify your first session.
+title: Install Heinzelmännchen
+description: Install the standard Heinzelmännchen app, start the web workspace, and verify your first session.
 ---
 
 # Your first Heinzelmännchen.

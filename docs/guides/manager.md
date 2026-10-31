@@ -4,7 +4,7 @@ For the manager who sets Heinzelmännchen up for a team: install `hz`, sign in t
 the team repository, get the first draft out every Friday, then invite the team with one line. Every step says what
 you should see. Nothing is published, sent or scheduled unless you say so.
 
-Examples use a made-up company, Acme (GitHub organisation `acme-example`) and its Checkout team. What is not in this
+Examples use a made-up company, ACME (GitHub organisation `acme-example`) and its Checkout team. What is not in this
 release is marked **coming in the next release**, with what to do meanwhile.
 
 ## The 10-minute path
@@ -267,7 +267,7 @@ hz system daemon tick --job workflow:me-weekly-report   # run it once as the dae
 ```
 
 What you should see: `status` says whether the daemon is installed and loaded and when it last ticked;
-`hz system daemon jobs` lists the job with its next run. The daemon runs unattended with your rights
+`hz system daemon jobs` lists the job with its next run. The daemon runs your jobs on a schedule with your rights
 ([SECURITY](../../SECURITY.md)); `hz system daemon pause` stops every job until you resume.
 
 ## 8. Drafts, approval and the success measure

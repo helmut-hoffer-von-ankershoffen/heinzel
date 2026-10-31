@@ -34,5 +34,5 @@ uses a scripted local runner: no model is called.
 ![Real contextual chat and approval flow, with a scripted local demonstration runner; no model call.](../assets/tour/chat-proposal.png)
 <!-- /hz:tour-story -->
 
-Characters speak in an imagined voice; the screens are real. [Install Heinzel](install.md) to try them with your own
+Characters speak in an imagined voice; the screens are real. [Install Heinzelmännchen](install.md) to try them with your own
 tools, or read [what your Heinzelmännchen does](../HEINZELMAENNCHEN.md).

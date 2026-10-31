@@ -1,6 +1,6 @@
 ---
 title: Heinzelmännchen — helpers for good work
-description: An open-source, local-first foundation for product teams and their AI helpers. Install Heinzel, explore plugins, or build your own.
+description: Heinzelmännchen is an open-source crew of AI helpers that drafts your team's busywork and asks before anything leaves your machine.
 template: home.html
 hide:
   - navigation
@@ -16,7 +16,7 @@ hide:
 <p class="hz-lead">Meet Heinzelmännchen: little helpers for product teams, with a serious foundation. Connect your tools, put repeatable work into workflows, and keep people in control.</p>
 
 <div class="hz-actions" markdown>
-[Install Heinzel ↗](guides/install.md){ .hz-button }
+[Install Heinzelmännchen ↗](guides/install.md){ .hz-button }
 [Explore plugins](CATALOG.md){ .hz-button .hz-button-quiet }
 </div>
 <p class="hz-caption">MIT licensed · macOS and Linux · CLI, MCP, REST and a web workspace</p>
@@ -88,7 +88,7 @@ Imagined helpers. Real product screens with fictional demonstration data. Select
 
 <!-- hz:home-gallery -->
 
-[Try Heinzel →](guides/install.md){ .hz-button }
+[Try Heinzelmännchen →](guides/install.md){ .hz-button }
 [Take the product tour](guides/tour.md){ .hz-button .hz-button-quiet }
 </section>
 
@@ -109,7 +109,7 @@ Discover capabilities without editing core. Every catalog entry shows its source
 
 ## Let helpers do the drafting.<br>Let people make the decisions.
 
-The vision is an open-source AI operating system for product teams: model agnostic, composable and accountable. Today’s release supplies the kernel, heads, workflows and extension foundation. End-to-end team automation is a journey we are building in the open.
+The vision is an open-source crew of AI helpers for product teams: model agnostic, composable and accountable. Today’s release supplies the kernel, heads, workflows and extension foundation. End-to-end team automation is a journey we are building in the open.
 
 [Read the vision →](VISION.md) · [Inspect the decisions →](adr/README.md)
 </section>
@@ -153,10 +153,11 @@ they are out of date, so they can't drift.
 | **Build durable turns**: typed outcomes, checkpoints and offline engine tests | [DURABLE_TURNS](DURABLE_TURNS.md) |
 | **Build the desktop lifecycle foundation** | [Shared runtime authority](DESKTOP_RUNTIME_AUTHORITY.md) · [Production gates still open](DESKTOP_PRODUCTION_GATES.md) |
 | **Understand** why it exists and how it is built | [INTENT](../INTENT.md) · [ARCHITECTURE](ARCHITECTURE.md) · [decisions (ADRs)](adr/README.md) · research: [daemon head](research/daemon-head.md) · [workflow contracts](research/workflow-contracts.md) · [embedded workflows](research/embedded-workflows.md) · [inventory](research/inventory.md) · [people and org](research/people-and-org.md) · [onboarding](research/onboarding.md) · [plugin extraction opportunities](research/plugin-extraction-opportunities.md) |
-| **Pick a plugin**: the gallery, one page per plugin with what it brings in every head, its settings, themes and recordings | [Public plugin catalog](CATALOG.md), with immutable source revisions and theme previews · `hz system plugin search` discovers available plugins automatically |
+| **Pick a plugin**: the gallery, one page per plugin with what it brings in every head, its settings, themes and recordings | [Public plugin catalog](CATALOG.md), with immutable source revisions and theme previews · `hz system plugin search` discovers available plugins |
 | **Extend** it with modules and plugins | [Plugin extension guide](PLUGINS.md) · [README: Extend](../README.md#extend) · [ARCHITECTURE: Plugins](ARCHITECTURE.md#plugins) · [writing a playbook](PLAYBOOKS.md#writing-a-playbook) · [themes, and how to make a weather theme](THEMES.md) · [settings that need no explaining](SETTINGS_UX.md) · [screenshot playbook](SCREENSHOT_PLAYBOOK.md) · the template's AGENTS.md (`hz system plugin new`) |
 | **Publish and verify a release** | [Publishing acceptance](PUBLISHING.md) |
 | **Contribute** to the core | [CONTRIBUTING](../CONTRIBUTING.md) · [CODING_STANDARDS](CODING_STANDARDS.md) · [Sonar security lessons](SONAR_SECURITY.md) · [durable session storage](SESSIONS.md) · [shipping small changes with a small model](SHIP_SMALL.md) · [CHANGELOG](../CHANGELOG.md) *(generated at release)* |
+| Check the **names, taglines and claims** | [BRANDING](BRANDING.md) |
 | Work on it **as a coding agent** | [AGENTS](../AGENTS.md) and the scoped AGENTS.md files it lists |
 | Report a **vulnerability** | [SECURITY](../SECURITY.md) |
 

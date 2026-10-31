@@ -1,7 +1,7 @@
 {
   "name": "heinzel",
   "owner": { "name": "Helmut Hoffer von Ankershoffen", "email": "helmuthva@gmail.com" },
-  "description": "Heinzelmännchen: an open-source, AI-driven operating system for product development teams.",
+  "description": "Heinzelmännchen is an open-source crew of AI helpers that drafts your team's busywork and asks before anything leaves your machine.",
   "plugins": [
     {
       "name": "heinzel",

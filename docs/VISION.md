@@ -1,6 +1,6 @@
 ---
 title: Helpers for good work
-description: Heinzel's vision, current foundation, and the principles behind an open-source AI operating system for product teams.
+description: The vision for Heinzelmännchen, the current foundation, and the principles behind helpers that draft a product team's busywork for approval.
 ---
 
 <p class="hz-eyebrow">The direction is human</p>
@@ -17,7 +17,7 @@ for a person where a person's judgment belongs.
 
 ## The foundation is available
 
-Today's Heinzel supplies a kernel and typed operations; CLI, MCP, REST and web heads; configuration and health
+Today's Heinzelmännchen release supplies a kernel and typed operations; CLI, MCP, REST and web heads; configuration and health
 checks; workflow and team foundations; and plugins with independent build, test and release cycles. The standard
 app includes everyday utilities and a theme. Optional connectors and source examples broaden the surface.
 
@@ -25,7 +25,7 @@ app includes everyday utilities and a theme. Optional connectors and source exam
 
 ## The direction we are building toward
 
-An open-source AI operating system for product teams: helpers that maintain context, prepare updates, draft
+An open-source crew of AI helpers for product teams: helpers that maintain context, prepare updates, draft
 agendas and reports, and make repeatable team workflows easier to inspect and approve. Rich end-to-end team
 automation is still evolving. A connector's presence in the catalog does not mean every envisioned workflow
 is production ready.

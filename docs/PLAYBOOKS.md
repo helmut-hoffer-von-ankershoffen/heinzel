@@ -126,10 +126,10 @@ module.playbook(
 ## Layers: company, org, site, team
 
 A company's playbooks come in layers ([ADR 0040](adr/0040-layers-and-playbooks-are-plugins.md)): one plugin per
-company, org, site and team, each declaring where it sits. The made-up Acme:
+company, org, site and team, each declaring where it sits. The made-up company ACME:
 
 ```python
-module = Module("acme-payments-checkout", "The Checkout team of Acme Payments.")
+module = Module("acme-payments-checkout", "The Checkout team of ACME Payments.")
 module.layer(parent="acme-payments", site="acme-lisbon", roles=["checkout-captain"])
 module.playbook("How Checkout tracks its work.", defaults={"capabilities.tracker": "acme-payments-checkout"})
 ```

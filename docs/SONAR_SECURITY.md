@@ -1,7 +1,7 @@
 # Sonar security remediation: lessons from the plugin repositories
 
 Use this checklist when working on the core's Sonar findings. It records the investigation in
-[Acme PR #13](https://github.com/helmut-hoffer-von-ankershoffen/heinzel-acme/pull/13), not a claim that core is secure.
+[ACME PR #13](https://github.com/helmut-hoffer-von-ankershoffen/heinzel-acme/pull/13), not a claim that core is secure.
 Verify current findings and dependency advisories again before applying a change.
 
 ## Establish the actual target
@@ -30,7 +30,7 @@ original finding as incorrect.
 
 - Use frozen locks and `--no-build` for ordinary dependency installation, including direct helper invocations.
   Keep reviewed local workspace builds and deliberate release builds explicit.
-- A pinned Git tag still executes a source build. Acme kept SDK version 0.7.2 and replaced its Git dependency with
+- A pinned Git tag still executes a source build. ACME kept SDK version 0.7.2 and replaced its Git dependency with
   the official release wheel, locked its SHA-256, verified its GitHub attestation against the original tag commit,
   and compared its source files. Do not upgrade the SDK merely to clear the warning.
 - `actionlint-py` required a source build. The existing native-tool installer can instead install the same
@@ -44,7 +44,7 @@ original finding as incorrect.
 
 ## Keep compatibility exceptions narrow
 
-PyYAML 6.0.3 had no Python 3.15 wheel. Acme's matrix skips only that package during its frozen wheel-only sync,
+PyYAML 6.0.3 had no Python 3.15 wheel. ACME's matrix skips only that package during its frozen wheel-only sync,
 then performs an explicit pure-Python build in a disposable environment. Its source archive and backend wheels
 are SHA-256 pinned; source verification happens before backend execution. The test job has no release credentials.
 The resulting local wheel is installed without dependencies. Other matrix entries keep ordinary wheel-only sync.
@@ -57,7 +57,7 @@ review enforced, audit new backend pins, and test the exact exceptional interpre
 
 ## Distinguish intentional local interfaces from remote input
 
-Review the complete caller and trust boundary. Examples from Acme:
+Review the complete caller and trust boundary. Examples from ACME:
 
 - `tools.pin` reads manifest content but writes to the fixed manifest path. A flow from file *content* to the
   data argument of `write_text` does not control the destination path.
@@ -80,4 +80,4 @@ PRs, while measurement still runs. Include that measurement job in the aggregate
 minimal permissions, and checkout with `persist-credentials: false`.
 
 References: [Sonar metric definitions](https://docs.sonarsource.com/sonarqube-cloud/managing-your-projects/metric-definitions),
-[Acme's implementation and trust-boundary review](https://github.com/helmut-hoffer-von-ankershoffen/heinzel-acme/blob/284a4b6afed536d5368ab332b07fcc5e5a508528/docs/SECURITY_REVIEW.md).
+[ACME's implementation and trust-boundary review](https://github.com/helmut-hoffer-von-ankershoffen/heinzel-acme/blob/284a4b6afed536d5368ab332b07fcc5e5a508528/docs/SECURITY_REVIEW.md).
