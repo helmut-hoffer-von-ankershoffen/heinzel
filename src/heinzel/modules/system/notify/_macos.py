@@ -333,7 +333,7 @@ class NotifierApp:
     def _launch(self, arguments: list[str], timeout: float = TIMEOUT) -> str:
         # A test in a temporary home would start an app from a path macOS has never seen, and macOS would list it in
         # System Settings > Notifications for good: hundreds of "Heinzel Notifier" entries. Fakes are not refused.
-        if self._runner is run and os.environ.get("PYTEST_CURRENT_TEST") and not os.environ.get(REAL_ENV):
+        if self._runner is run and os.environ.get("PYTEST_CURRENT_TEST") and not os.environ.get("HZ_REAL_NOTIFIER"):
             return f"open failed: {TESTS_REFUSED}"
         with tempfile.TemporaryDirectory(prefix="hz-notifier-") as directory:
             out = Path(directory) / "out"
