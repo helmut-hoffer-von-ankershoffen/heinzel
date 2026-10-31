@@ -1,4 +1,4 @@
-/* Product site over Material's accessible navigation and search. All assets are local. */
+/* Product site over Material's accessible navigation and search. */
 :root { --hz-ink:#263b32; --hz-paper:#faf8f3; --hz-panel:#fffdf8; --hz-muted:#56675e; --hz-line:#d8ddd3; --hz-brand:#a64028; --hz-tint:#eee8db; --hz-radius:18px; }
 [data-md-color-scheme="slate"] { --hz-ink:#e9ede5; --hz-paper:#18231e; --hz-panel:#213128; --hz-muted:#b4c3b5; --hz-line:#405347; --hz-brand:#ffb398; --hz-tint:#2b3b31; --md-default-bg-color:var(--hz-paper); --md-default-fg-color:var(--hz-ink); --md-default-fg-color--light:var(--hz-muted); --md-code-bg-color:#17251c; }
 [data-md-color-scheme="default"] { --md-default-bg-color:var(--hz-paper); --md-default-fg-color:var(--hz-ink); --md-default-fg-color--light:var(--hz-muted); --md-code-bg-color:var(--hz-panel); }
