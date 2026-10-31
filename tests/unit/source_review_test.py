@@ -22,8 +22,8 @@ with (
         os.environ,
         {
             "GITHUB_WORKSPACE": str(ROOT),
-            "REVIEW_HEAD": "e51a824d0feb3fda52034eabe6b01910f2f8fcff",
-            "REVIEW_BASE": "3e719e8abfdd207c7103f486af05fd2c578b2508",
+            "REVIEW_HEAD": "c7da3140d8c7b550c22f8639fd05b897c9bb395a",
+            "REVIEW_BASE": "3190096a8765fc25e44dd800ee2d8d13de3a3e66",
             "RUNNER_TEMP": "/private/tmp",
         },
     ),
@@ -338,10 +338,10 @@ def test_current_pr_accepts_only_exact_open_main_and_both_repository_identities(
     ("mode", "ref", "actor", "expected"),
     [
         ("bogus", "refs/heads/main", "owner", False),
-        ("release", "refs/heads/private/independent-source-review-310", "owner", False),
-        ("source_review", "refs/heads/private/independent-source-review-310", "other", False),
+        ("release", "refs/heads/private/independent-source-review-310-r2", "owner", False),
+        ("source_review", "refs/heads/private/independent-source-review-310-r2", "other", False),
         ("release", "refs/heads/main", "owner", True),
-        ("diagnostic_unit315", "refs/heads/private/independent-source-review-310", "owner", True),
+        ("diagnostic_unit315", "refs/heads/private/independent-source-review-310-r2", "owner", True),
     ],
 )
 def test_dispatch_validation_fails_closed(mode, ref, actor, expected):
@@ -373,7 +373,7 @@ def test_wrong_exact_target_refuses_before_github(field, monkeypatch):
 
 def test_source_review_fetches_only_310_after_authority_checks(tmp_path, monkeypatch):
     trusted = "a" * 40
-    monkeypatch.setenv("GITHUB_REF", "refs/heads/private/independent-source-review-310")
+    monkeypatch.setenv("GITHUB_REF", "refs/heads/private/independent-source-review-310-r2")
     monkeypatch.setenv("GITHUB_ACTOR", "owner")
     monkeypatch.setenv("GITHUB_REPOSITORY_OWNER", "owner")
     monkeypatch.setenv("GITHUB_SHA", trusted)
@@ -393,7 +393,7 @@ def test_source_review_fetches_only_310_after_authority_checks(tmp_path, monkeyp
 
 
 def test_source_review_rejects_wrong_owner_before_network(tmp_path, monkeypatch):
-    monkeypatch.setenv("GITHUB_REF", "refs/heads/private/independent-source-review-310")
+    monkeypatch.setenv("GITHUB_REF", "refs/heads/private/independent-source-review-310-r2")
     monkeypatch.setenv("GITHUB_ACTOR", "other")
     monkeypatch.setenv("GITHUB_REPOSITORY_OWNER", "owner")
     monkeypatch.setattr(review, "current_pr", lambda: pytest.fail("must not access network"))
@@ -414,7 +414,7 @@ def test_old_helper_refs_are_not_r2_review_authority(ref, tmp_path, monkeypatch)
 
 
 def test_source_review_rejects_changed_trusted_commit_before_network(tmp_path, monkeypatch):
-    monkeypatch.setenv("GITHUB_REF", "refs/heads/private/independent-source-review-310")
+    monkeypatch.setenv("GITHUB_REF", "refs/heads/private/independent-source-review-310-r2")
     monkeypatch.setenv("GITHUB_ACTOR", "owner")
     monkeypatch.setenv("GITHUB_REPOSITORY_OWNER", "owner")
     monkeypatch.setenv("GITHUB_SHA", "a" * 40)

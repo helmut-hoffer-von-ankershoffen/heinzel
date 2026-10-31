@@ -23,6 +23,16 @@ HEAD = os.environ["REVIEW_HEAD"]
 BASE = os.environ["REVIEW_BASE"]
 CLI = Path(os.environ["RUNNER_TEMP"]) / "claude-2.1.312"
 CONTEXT = (
+    "AGENTS.md",
+    "docs/SONAR_SECURITY.md",
+    "web/src/layout/Shell.tsx",
+    "web/src/layout/WorkspacePanels.tsx",
+    "web/src/layout/ChatPanel.tsx",
+    "web/src/heinzel/PersonalHeinzels.tsx",
+    "web/src/layout/Panel.test.tsx",
+    "web/src/test/render.tsx",
+    "web/e2e/durable-five-minute.mjs",
+    "tests/e2e/durable_five_minute_journey_test.py",
     "src/heinzel/modules/system/daemon/_units.py",
     "src/heinzel/kernel/_daemon_attestation.py",
     "src/heinzel/heads/_tool_install.py",
@@ -689,7 +699,7 @@ def current_pr() -> None:
     Raises:
         RuntimeError: If its identity is no longer current.
     """
-    if HEAD != "e51a824d0feb3fda52034eabe6b01910f2f8fcff" or BASE != "3e719e8abfdd207c7103f486af05fd2c578b2508":
+    if HEAD != "c7da3140d8c7b550c22f8639fd05b897c9bb395a" or BASE != "3190096a8765fc25e44dd800ee2d8d13de3a3e66":
         msg = "PR identity changed"
         raise RuntimeError(msg)
     repo = os.environ["GITHUB_REPOSITORY"]
@@ -724,7 +734,7 @@ def github_review(root: Path) -> None:
     Raises:
         RuntimeError: If authority, source, or CLI verification fails.
     """
-    if os.environ.get("GITHUB_REF") != "refs/heads/private/independent-source-review-310" or os.environ.get(
+    if os.environ.get("GITHUB_REF") != "refs/heads/private/independent-source-review-310-r2" or os.environ.get(
         "GITHUB_ACTOR"
     ) != os.environ.get("GITHUB_REPOSITORY_OWNER"):
         msg = "Unapproved dispatch authority"
