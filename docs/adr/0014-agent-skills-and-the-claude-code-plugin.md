@@ -30,7 +30,7 @@ Heinzelmännchen is installed and are tested end to end.
   Heinzelmännchen installed.
 - The skills are packaged into the wheel; `hz system agent install` / `uninstall` copy them into each directory in
   `[system.agent] skill_dirs` (default `~/.claude/skills`), for agents without plugin support.
-- Skills run scripts that ship with them (`scripts/install.sh`, `scripts/uninstall.sh`) rather than free-form
+- Skills run scripts that ship with them (`agent-skills/skills/hz-init/scripts/install.sh`, `agent-skills/skills/hz-uninstall/scripts/uninstall.sh`) rather than free-form
   instructions, so the end-to-end tests run exactly what an agent runs.
 - Contributor-facing skills, agents and hooks stay in `.claude/` and are not part of the plugin.
 
