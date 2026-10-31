@@ -44,6 +44,9 @@ options are in [docs/CLI_REFERENCE.md](docs/CLI_REFERENCE.md).
 
 ## Picking up work
 
+- For Sonar security remediation, read [docs/SONAR_SECURITY.md](docs/SONAR_SECURITY.md) first: it records the plugin
+  investigations, verified installation boundaries, compatibility pitfalls and how to verify the live main badge.
+
 - Work in a clone or worktree of your own, one writer per set of files; `make setup` first. Read the pull request
   (`gh pr view N`) and its CI (`gh pr checks N`) before touching a branch someone else started.
 - Bring a pushed branch up to date with `git merge origin/main`, not a rebase: pull requests squash-merge, so merge

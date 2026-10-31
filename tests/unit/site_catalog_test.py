@@ -473,3 +473,184 @@ def test_theme_artwork_and_palette_are_both_showcased():
         assert "Original Harbor artwork" in rendered
         assert "-light.svg" in rendered
         assert "-dark.svg" in rendered
+
+
+@pytest.mark.parametrize("surface", ["ui", "cli"])
+@pytest.mark.parametrize("themed", [False, True])
+def test_runtime_screenshots_have_labeled_full_size_links_for_every_plugin_kind(surface, themed):
+    data = copy.deepcopy(PROJECT)
+    data["tool"]["heinzel"]["catalog"]["screenshots"] = [
+        {"path": "docs/assets/runtime.png", "surface": surface, "caption": "Harbor <live> & ready"}
+    ]
+    project = record(data, path="plugins/harbor/pyproject.toml")
+    if themed:
+        project["themes"] = [{"name": "harbor-tide", "title": "Harbor Tide", "palette": {}}]
+    pages.validate_presentation(project)
+    rendered = pages.detail(project)
+    assert "## Screenshots" in rendered
+    assert ("User interface" if surface == "ui" else "Command line") in rendered
+    assert 'aria-roledescription="carousel"' in rendered
+    assert 'aria-roledescription="slide"' in rendered
+    assert "Harbor &lt;live&gt; &amp; ready" in rendered
+    assert "/plugins/harbor/docs/assets/runtime.png" in rendered
+    assert "Open full-size" in rendered
+    if surface == "ui":
+        assert project["screenshots"][0]["url"] in pages.cards({"plugins": [project]}, "CATALOG/")
+
+
+@pytest.mark.parametrize("mutation", ["surface", "path", "svg", "limit"])
+def test_invalid_runtime_capture_declarations_are_rejected(mutation):
+    data = copy.deepcopy(PROJECT)
+    shots = [{"path": "docs/runtime.png", "surface": "ui"}]
+    if mutation == "surface":
+        shots[0]["surface"] = "script"
+    elif mutation == "path":
+        shots[0]["path"] = "../other-project/runtime.png"
+    elif mutation == "svg":
+        shots[0]["path"] = "docs/runtime.svg"
+    else:
+        shots *= 9
+    data["tool"]["heinzel"]["catalog"]["screenshots"] = shots
+    with pytest.raises(ValueError, match=r"Screenshots|paths"):
+        record(data)
+
+
+def test_packaged_youtube_soundscapes_are_discovered_without_execution():
+    project = record()
+    project["soundscape_paths"] = []
+    path = "src/heinzel_harbor/soundscapes/tide.toml"
+
+    class Inert:
+        def blob(self, repo, entry):
+            return b'name="tide"\ntitle="Harbor Tide"\nkind="stream"\n[stream]\nprovider="youtube"\nvideo="abcdefghijk"'
+
+    project["soundscapes"] = catalog.project_soundscapes(Inert(), project, {}, {path: {}})
+    pages.validate_presentation(project)
+    rendered = pages.detail(project)
+    assert "Harbor Tide" in rendered
+    assert "https://www.youtube.com/watch?v=abcdefghijk" in rendered
+    assert 'data-soundscape="abcdefghijk"' in rendered
+    assert "<iframe" not in rendered
+    assert "youtube-nocookie.com" not in rendered
+
+
+@pytest.mark.parametrize("video", ["javascript:alert(1)", "https://evil.invalid/embed", 'abcd" onload="x', "short"])
+def test_soundscape_identity_is_validated_on_refresh_and_offline_render(video):
+    assert (
+        catalog.soundscape_data("sound.toml", {"kind": "stream", "stream": {"provider": "youtube", "video": video}})
+        is None
+    )
+    project = record()
+    project["soundscapes"] = [{"title": "Tide", "video": video}]
+    with pytest.raises(ValueError, match="YouTube"):
+        pages.validate_presentation(project)
+
+
+def test_offline_screenshot_cannot_claim_another_collection_project():
+    project = record(path="plugins/harbor/pyproject.toml")
+    project["screenshots"] = [
+        {
+            "url": f"https://raw.githubusercontent.com/{SOURCE['repository']}/{SOURCE['revision']}/plugins/other/cli.png",
+            "surface": "cli",
+            "caption": "Not ours",
+        }
+    ]
+    with pytest.raises(ValueError, match="owning project"):
+        pages.validate_presentation(project)
+
+
+@pytest.mark.parametrize("layout", ["default", "custom", "declared"])
+def test_repository_discovery_carries_soundscape_toml_into_public_records(layout):
+    path = "src/heinzel_harbor/soundscapes/tide.toml"
+    configuration = ""
+    if layout == "custom":
+        path = "src/harbor_content/soundscapes/tide.toml"
+        configuration = '\n[tool.hatch.build.targets.wheel]\npackages=["src/harbor_content"]\n'
+    elif layout == "declared":
+        path = "content/tide.toml"
+        configuration = '\n[tool.heinzel.catalog]\nsoundscapes=["content/tide.toml"]\n'
+    declaration = (
+        '[project]\nname="heinzel-harbor"\n'
+        '[project.entry-points."heinzel.modules"]\nharbor="never_imported"\n' + configuration
+    ).encode()
+
+    class Public:
+        def get(self, endpoint):
+            if "/commits/" in endpoint:
+                return {"sha": SOURCE["revision"]}
+            if "/git/trees/" in endpoint:
+                return {"tree": [{"path": "pyproject.toml"}, {"path": path}]}
+            return {"visibility": "public", "private": False, "default_branch": "main"}
+
+        def blob(self, repo, entry):
+            if entry["path"] == "pyproject.toml":
+                return declaration
+            return b'name="tide"\ntitle="Harbor Tide"\nkind="stream"\n[stream]\nprovider="youtube"\nvideo="abcdefghijk"'
+
+    _, projects = catalog.repository_records(Public(), SOURCE["repository"])
+    assert len(projects) == 1
+    assert projects[0]["soundscapes"] == [
+        {
+            "name": "tide",
+            "title": "Harbor Tide",
+            "video": "abcdefghijk",
+            "pairs_with": [],
+            "path": path,
+        }
+    ]
+    assert "never_imported" not in sys.modules
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "README.md",
+        "guides/install.md",
+        "CLI_REFERENCE.md",
+        "adr/0001-record.md",
+        "ARCHITECTURE.md",
+        "some-future-page.md",
+    ],
+)
+def test_every_page_gets_a_small_contextual_character_group(path):
+    helpers = pages.page_helpers(path, "reference/")
+    assert 1 <= len(helpers) <= 5
+    assert all(helper["quote"] and helper["detail"] and helper["link"] for helper in helpers)
+
+
+def test_future_plugin_pages_get_feature_specific_explainers_without_registration():
+    plugin = record()
+    plugin["highlights"] = ["A fictional harbor's next useful action"]
+    helpers = pages.page_helpers("catalog/new-plugin/index.md", "catalog/new-plugin/", plugin)
+    assert len(helpers) == 2
+    assert helpers[0]["detail"] == plugin["highlights"][0]
+    assert helpers[0]["link"] == "#screenshots"
+    assert "before installing" in helpers[1]["detail"]
+
+
+def test_swipe_gallery_preserves_every_owner_scene_in_order_with_accessible_controls():
+    project = record()
+    project["screenshots"] = [
+        {"url": "https://example.com/overview.png", "surface": "ui", "caption": "Overview"},
+        {"url": "https://example.com/detail.png", "surface": "ui", "caption": "Expanded detail"},
+        {"url": "https://example.com/command.png", "surface": "cli", "caption": "Actual command"},
+    ]
+    rendered = pages.screenshot_gallery(project)
+    assert rendered.index("overview.png") < rendered.index("detail.png") < rendered.index("command.png")
+    assert rendered.count('aria-roledescription="slide"') == 3
+    assert 'aria-label="3 of 3"' in rendered
+    assert 'aria-label="Previous screenshot"' in rendered
+    assert 'aria-label="Next screenshot"' in rendered
+    assert "data-gallery-controls hidden" in rendered
+    assert 'tabindex="0"' in rendered
+    assert "User interface" in rendered
+    assert "Command line" in rendered
+    assert "Open full-size" in rendered
+
+
+def test_gallery_empty_state_does_not_offer_nonfunctional_carousel_controls():
+    project = record()
+    project["screenshots"] = []
+    rendered = pages.screenshot_gallery(project)
+    assert "No screenshots published yet" in rendered
+    assert "data-gallery-track" not in rendered

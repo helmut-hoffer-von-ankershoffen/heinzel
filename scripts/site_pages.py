@@ -22,6 +22,7 @@ from site_catalog import (
     REVISION,
     SNAPSHOT,
     VERSION,
+    VIDEO,
     Object,
     relative,
     text,
@@ -126,14 +127,45 @@ def validate_assets(project: Object) -> None:
         raise ValueError(msg)
     for theme in project["themes"]:
         text(theme["title"], 100)
-    for artwork in project.get("artwork", []):
+    validate_media(project)
+    screenshots = project.get("screenshots", [])
+    for artwork in [*project.get("artwork", []), *screenshots]:
         prefix = f"https://raw.githubusercontent.com/{source['repository']}/{source['revision']}/"
         if not artwork["url"].startswith(prefix):
             msg = "Artwork must come from its immutable public source"
             raise ValueError(msg)
         asset = relative(artwork["url"].removeprefix(prefix))
+        if project["directory"] != "." and not asset.startswith(project["directory"] + "/"):
+            msg = "Artwork must stay inside its owning project"
+            raise ValueError(msg)
         if Path(asset).suffix not in {".png", ".jpg", ".webp"}:
             msg = "Supplier artwork must be raster images, never executable documents"
+            raise ValueError(msg)
+
+
+def validate_media(project: Object) -> None:
+    """Validate bounded runtime capture labels and YouTube identities.
+
+    Raises:
+        ValueError: If supplied media metadata is unsafe.
+    """
+    screenshots = project.get("screenshots", [])
+    soundscapes = project.get("soundscapes", [])
+    if not isinstance(screenshots, list) or len(screenshots) > MAX_IMAGES:
+        msg = "Screenshots must be bounded"
+        raise ValueError(msg)
+    for shot in screenshots:
+        if shot.get("surface") not in {"ui", "cli"}:
+            msg = "Screenshots need a UI/CLI surface"
+            raise ValueError(msg)
+        text(shot["caption"], 180)
+    if not isinstance(soundscapes, list) or len(soundscapes) > MAX_DECLARATIONS:
+        msg = "Soundscapes must be bounded"
+        raise ValueError(msg)
+    for sound in soundscapes:
+        text(sound["title"], 100)
+        if not isinstance(sound.get("video"), str) or not VIDEO.fullmatch(sound["video"]):
+            msg = "Soundscapes require a YouTube video identity"
             raise ValueError(msg)
 
 
@@ -222,10 +254,11 @@ def cards(data: Object, page_url: str, *, featured: bool = False) -> str:
         target = href(f"catalog/{project['id']}/", page_url)
         category = project.get("category", "utilities")
         badge = "Included in the app" if project["included_version"] else "Source plugin"
-        if project.get("artwork"):
-            art = project["artwork"][0]
+        captures = [shot for shot in project.get("screenshots", []) if shot["surface"] == "ui"]
+        if captures or project.get("artwork"):
+            art = (captures or project["artwork"])[0]
             visual = (
-                f'<img src="{escape(art["url"])}" alt="{escape(art["alt"])}" '
+                f'<img src="{escape(art["url"])}" alt="{escape(art.get("caption", art.get("alt", "Plugin preview")))}" '
                 'loading="lazy" referrerpolicy="no-referrer">'
             )
         elif project["themes"]:
@@ -280,6 +313,67 @@ def owner_art(project: Object) -> str:
     return f'<div class="hz-owner-art">{images}</div>' if images else ""
 
 
+def screenshot_gallery(project: Object) -> str:
+    """A native swipeable UI/CLI gallery, enhanced with explicit keyboard/button navigation."""
+    shots = project.get("screenshots", [])
+    if not shots:
+        return "## Screenshots\n\n<p>No screenshots published yet.</p>"
+    identity = escape(project["id"] + "-screenshots")
+    count = len(shots)
+    figures = []
+    for index, shot in enumerate(shots, 1):
+        label = "User interface" if shot["surface"] == "ui" else "Command line"
+        caption = escape(shot["caption"] or label + " screenshot")
+        figures.append(
+            f'<figure role="group" aria-roledescription="slide" aria-label="{index} of {count}">'
+            f'<a href="{escape(shot["url"])}" aria-label="Open full-size {caption}">'
+            f'<img src="{escape(shot["url"])}" alt="{caption}" '
+            'loading="lazy" referrerpolicy="no-referrer"></a>'
+            f'<figcaption><span class="hz-gallery-surface">{label}</span>{caption}</figcaption></figure>'
+        )
+    hint = (
+        f'<p class="hz-gallery-hint" id="{identity}-hint">Swipe or scroll sideways to explore. '
+        "Arrow keys work too; select an image to open it full size.</p>"
+        if count > 1
+        else f'<p class="hz-gallery-hint" id="{identity}-hint">Select the image to open it full size.</p>'
+    )
+    return (
+        "## Screenshots\n\n"
+        f'<section class="hz-gallery" data-gallery role="region" aria-roledescription="carousel" '
+        f'aria-label="{escape(project["title"])} screenshots">'
+        '<div class="hz-gallery-controls" data-gallery-controls hidden>'
+        f'<button type="button" data-gallery-previous aria-label="Previous screenshot" aria-controls="{identity}">'
+        '← Previous</button><span data-gallery-count role="status" aria-live="polite" aria-atomic="true">'
+        f"1 of {count}</span>"
+        f'<button type="button" data-gallery-next aria-label="Next screenshot" aria-controls="{identity}">'
+        f"Next →</button></div>{hint}"
+        f'<div class="hz-screenshots" id="{identity}" data-gallery-track tabindex="0" '
+        f'role="group" aria-label="Screenshot slides" aria-describedby="{identity}-hint">'
+        + "".join(figures)
+        + "</div></section>"
+    )
+
+
+def soundscape_gallery(project: Object) -> str:
+    """Offer deliberate YouTube playback and a no-JavaScript watch link."""
+    cards = []
+    for sound in project.get("soundscapes", []):
+        title, video = escape(sound["title"]), escape(sound["video"])
+        cards.append(
+            f'<article class="hz-soundscape"><h3>{title}</h3>'
+            f'<div data-soundscape="{video}" data-title="{title}">'
+            f'<button type="button" data-play-soundscape hidden>Play {title}</button></div>'
+            f'<p><a href="https://www.youtube.com/watch?v={video}">Listen on YouTube ↗</a></p></article>'
+        )
+    if not cards:
+        return ""
+    return (
+        "## Soundscapes\n\n<p>YouTube loads only when you press Play. "
+        "Playback may depend on video availability and embedding permissions.</p>"
+        '<div class="hz-soundscapes">' + "".join(cards) + "</div>"
+    )
+
+
 def theme_gallery(data: Object, page_url: str) -> str:
     """Show every declared theme in light and dark with truthful palette-preview captions."""
     result = []
@@ -329,7 +423,11 @@ description: {json.dumps(escape(project["summary"]), ensure_ascii=False)}
 <p>{status}</p>
 </div>
 
+{screenshot_gallery(project)}
+
 {owner_art(project)}
+
+{soundscape_gallery(project)}
 
 ## What it brings
 
@@ -385,7 +483,83 @@ def on_files(files: Any, config: Any) -> Any:  # noqa: ANN401 - MkDocs owns the 
                 )
     files.append(File.generated(config, "catalog.json", content=json.dumps(snapshot, ensure_ascii=False)))
     config.extra["hz_release"] = snapshot["release"]
+    config.extra["hz_plugin_pages"] = {f"catalog/{item['id']}/index.md": item for item in snapshot["plugins"]}
     return files
+
+
+def page_helpers(path: str, page_url: str, project: Object | None = None) -> list[Object]:
+    """Give every documentation/plugin page one or two contextual fictional character explainers."""
+    reviewer = {
+        "art": "reviewer",
+        "name": "Otto, your review partner",
+        "quote": "Take a look first. You decide what belongs in your workspace.",
+        "detail": "Check the screenshots, source and declared compatibility before installing a plugin.",
+        "link": href("CATALOG/", page_url),
+        "action": "Explore the plugin catalog",
+    }
+    if project is not None:
+        themes = project.get("themes", [])
+        guide = {
+            "art": "timekeeper" if not themes else "draftkeeper",
+            "name": "Pip, your feature guide" if not themes else "Ada, your workspace guide",
+            "quote": "Let me show you what this plugin brings."
+            if not themes
+            else "Make this workspace feel like yours.",
+            "detail": project["highlights"][0] if project.get("highlights") else project["summary"],
+            "link": "#screenshots",
+            "action": "See the UI and CLI",
+        }
+        return [guide, reviewer]
+    guide = {
+        "art": "draftkeeper",
+        "name": "Ada, the draftkeeper",
+        "quote": "Give each helper a clear job, and keep its work easy to inspect.",
+        "detail": "A contract names the inputs, limits and expected draft. People remain in control.",
+        "link": href("WORKFLOWS/", page_url),
+        "action": "Explore contracts",
+    }
+    if path.startswith(("guides/install", "guides/first-steps")):
+        guide.update(
+            art="timekeeper",
+            name="Pip, your getting-started guide",
+            quote="Let's get you to your first useful screen.",
+            detail="Install Heinzel, open the workspace, then explore a plugin that helps with your day.",
+            link=href("guides/first-steps/", page_url),
+            action="Take your first steps",
+        )
+    elif "ARCHITECTURE" in path or "architecture" in path or path.startswith("adr/"):
+        guide.update(
+            quote="Small pieces can do useful work together.",
+            detail=(
+                "The kernel discovers modules; heads expose typed operations; plugins bring specific tools and views."
+            ),
+            link=href("PLUGINS/", page_url),
+            action="Explore extension contracts",
+        )
+    elif path in {"CLI_REFERENCE.md", "CONFIGURATION.md", "MODULES.md"}:
+        guide.update(
+            art="reviewer",
+            name="Otto, your reference guide",
+            quote="Need the exact command or setting? You're in the right place.",
+            detail="Typed operation definitions supply the CLI, tool schemas and reference documentation.",
+            link=href("CLI_REFERENCE/", page_url),
+            action="Open the command reference",
+        )
+    return [guide]
+
+
+def on_page_context(
+    context: Object,
+    *,
+    page: Any,  # noqa: ANN401 - MkDocs owns event objects
+    config: Any,  # noqa: ANN401 - MkDocs owns event objects
+    **_: Any,  # noqa: ANN401 - MkDocs owns event objects
+) -> Object:
+    """Attach explainers in the shared layout, including automatically discovered future plugin pages."""
+    path = page.file.src_uri
+    project = config.extra.get("hz_plugin_pages", {}).get(path)
+    context["hz_helpers"] = page_helpers(path, page.url, project)
+    return context
 
 
 def on_page_markdown(markdown: str, *, page: Any, config: Any, **_: Any) -> str:  # noqa: ANN401 - MkDocs owns event objects

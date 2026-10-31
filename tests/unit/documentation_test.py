@@ -100,6 +100,11 @@ def test_only_core_advertises_the_pypi_release_channel():
     block = badge_block(REPO / "README.md")
     assert "[![PyPI](https://img.shields.io/pypi/v/heinzel)](https://pypi.org/project/heinzel/)" in block
     assert "[![Release]" not in block
+    for metric in ("alert_status", "security_rating"):
+        assert (
+            f"https://sonarcloud.io/api/project_badges/measure?project=helmut-hoffer-von-ankershoffen_heinzel&metric={metric}"
+            in block
+        )
 
 
 def test_python_badge_lists_the_versions_pyproject_declares():
@@ -115,12 +120,13 @@ def test_plugins_show_the_same_badges_for_their_own_repository(page):
     ours = "".join(
         line
         for line in badge_block(REPO / "README.md").splitlines(keepends=True)
-        if "bestpractices.dev" not in line and "img.shields.io/pypi/" not in line
+        if "bestpractices.dev" not in line and "img.shields.io/pypi/" not in line and "sonarcloud.io" not in line
     ).replace("helmut-hoffer-von-ankershoffen/heinzel", "OWNER/REPO")
     theirs = badge_block(REPO / "template" / page).replace("[[ github_owner ]]/[[ project_name ]]", "OWNER/REPO")
     release = "[![Release](https://img.shields.io/github/v/release/OWNER/REPO?sort=semver)](https://github.com/OWNER/REPO/releases)\n"
     assert release in theirs
     assert "pypi.org/project/" not in theirs
+    assert "sonarcloud.io" not in theirs
     assert theirs.replace(release, "") == ours
 
 
