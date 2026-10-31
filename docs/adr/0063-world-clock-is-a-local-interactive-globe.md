@@ -4,6 +4,7 @@ status: proposed
 date: 2026-10-25
 decision-makers: maintainer
 related: 0039, 0056
+implemented-by: 162
 ---
 
 # 0063: World Clock is a local interactive globe in the right panel

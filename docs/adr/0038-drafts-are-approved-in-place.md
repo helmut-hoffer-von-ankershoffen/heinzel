@@ -3,6 +3,8 @@ status: proposed
 date: 2026-10-24
 decision-makers: maintainer
 amends: 0010, 0020
+amends-0010: approval in place instead of an approval queue; hz inbox is a view
+amends-0020: approval in place instead of an approval queue; hz inbox is a view
 related: 0021, 0022, 0024, 0027, 0028, 0030, 0035, 0037
 amended-by: 0049, 0051, 0052, 0059
 ---

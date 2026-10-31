@@ -14,6 +14,10 @@ Front matter, flat `key: value` only:
   superseded-by     set on the old ADR when a new one replaces it; also set its status to superseded
   amends            optional; NNNN of an ADR this one changes in part (that ADR gets `amended-by: NNNN`)
   amended-by        set on the amended ADR; its status stays as it was
+  amends-NNNN       one per amended ADR: what this ADR changes in it (a few words; shown in the index and on both pages)
+  supersedes-NNNN   likewise for a superseded ADR, optional
+  implemented-by    pull request numbers, comma separated, of the PRs that built it (not the one that only wrote the record);
+                    leave it out until one exists
   related           optional; NNNN of ADRs this one builds on or refines without changing them (one-way)
 Several numbers are separated by commas. Once accepted, only the front matter may change; a new ADR changes the rest.
 Delete this comment.

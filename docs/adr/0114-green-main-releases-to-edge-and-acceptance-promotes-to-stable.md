@@ -3,6 +3,9 @@ status: proposed
 date: 2026-10-31
 decision-makers: maintainer
 amends: 0013, 0079, 0110
+amends-0013: release pull requests can merge without a person
+amends-0079: reviewed workflow code can dispatch the upload
+amends-0110: discovery stays stable, and edge is opt-in
 related: 0008, 0031, 0085, 0094, 0096
 ---
 
@@ -52,6 +55,9 @@ failed jobs only, by reviewed workflow code. No deadline or assertion changes.
 
 **Edge, on every releasable merge.**
 
+- The workflow runs from the default branch's tip, and only when that tip is the commit that just went green. A commit
+  that `main` has already passed is released with the next one. A dispatch on `main` publishes one edge release, to
+  prove the channel before it is activated.
 - A merge is releasable unless every changed path is non-shipping: `docs/`, `tests/`, `.github/`, `.claude/`, Markdown
   at the root, `mkdocs.yml`. Unknown paths count as releasable. GitHub Pages stays independent of both channels.
 - The version is `<next>.dev<N>`, where `<next>` comes from the existing conventional-commit calculation and `<N>` is

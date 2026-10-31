@@ -3,6 +3,7 @@ status: accepted
 date: 2026-10-24
 decision-makers: maintainer
 related: 0018, 0020, 0027
+implemented-by: 8, 21
 ---
 
 # 0031: The CLI checks for a newer release hourly, anonymously and in the background, and says so on stderr
