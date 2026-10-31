@@ -583,6 +583,7 @@ class DaemonService:
         self._notifier_installed = notifier_installed
         self._quiescence_probe = quiescence_probe or _quiescence_command
         self._quiescence_installation = quiescence_installation
+        self._quiescence_problem = "The installation or service-manager evidence could not be verified."
         self._linux_manager_identity = linux_manager_identity or _linux_user_manager_identity
         self._continuity_fingerprint = continuity_fingerprint
         self._boot_identity = boot_identity or (lambda: _platform_boot_identity(self._platform, self._runner))
@@ -852,12 +853,18 @@ class DaemonService:
                 or minutes <= 0
             ):
                 return False
-            self._quiescence_installation.verify_tool_destination(self._quiescence_installation.prefix.parent, binary)
+            # On macOS uv uninstall removes the tool environment and shims, retaining an owned stopped unit.
+            # The enclosing snapshot still requires a trusted empty destination and actual manager absence.
+            if self._platform != "darwin" or not _safely_absent(self._quiescence_installation.prefix):
+                self._quiescence_installation.verify_tool_destination(
+                    self._quiescence_installation.prefix.parent, binary
+                )
             return all(path.read_text() == content for path, content in self._unit_files(executable, minutes).items())
         except (OSError, UnicodeError, HeinzelError):
             return False
 
     def _quiescent_snapshot(self, binary: Path, token: str | None = None) -> bool:
+        self._quiescence_problem = "The selected installation destination could not be verified."
         if self._platform not in {"darwin", "linux"} or not self._quiescence_target(binary):
             return False
         paths = [
@@ -870,12 +877,25 @@ class DaemonService:
                 return _safely_absent(self.state_dir / "standard-install-pending.json")
             return self._mutation_token_matches(token, "standard-install-pending.json")
 
-        if not (
-            pending_valid() and all(_safely_absent(path) for path in paths) and self._quiescence_unit_state(binary)
-        ):
+        self._quiescence_problem = "A previous daemon or installation transaction requires recovery."
+        if not (pending_valid() and all(_safely_absent(path) for path in paths)):
+            return False
+        self._quiescence_problem = "The retained daemon unit or install receipt could not be verified."
+        if not self._quiescence_unit_state(binary):
             return False
         if self._platform == "linux":
             return self._linux_quiescent_snapshot(binary, pending_valid, paths)
+        if not self._mac_manager_absent():
+            return False
+        self._quiescence_problem = "The installation or daemon evidence changed during verification."
+        return (
+            pending_valid()
+            and all(_safely_absent(path) for path in paths)
+            and self._quiescence_unit_state(binary)
+            and self._quiescence_target(binary)
+        )
+
+    def _mac_manager_absent(self) -> bool:
         commands = [
             ["/bin/launchctl", "managername"],
             ["/bin/launchctl", "manageruid"],
@@ -883,20 +903,21 @@ class DaemonService:
             ["/bin/launchctl", "managername"],
             ["/bin/launchctl", "manageruid"],
         ]
+        self._quiescence_problem = "macOS service-manager inspection failed or returned incomplete evidence."
         try:
             results = [self._quiescence_probe(command) for command in commands]
             if any(result.returncode != 0 or result.truncated for result in results):
                 return False
             name1, uid1, listing, name2, uid2 = [result.stdout for result in results]
-            return (
-                name1.strip() == name2.strip() == "Aqua"
-                and uid1.strip() == uid2.strip() == str(self._uid())
-                and _launchctl_quiescent_output(listing)
-                and pending_valid()
-                and all(_safely_absent(path) for path in paths)
-                and self._quiescence_unit_state(binary)
-                and self._quiescence_target(binary)
+            if not (name1.strip() == name2.strip() == "Aqua" and uid1.strip() == uid2.strip() == str(self._uid())):
+                self._quiescence_problem = (
+                    "The current process is not in a verified macOS desktop session for this user."
+                )
+                return False
+            self._quiescence_problem = (
+                "macOS did not confirm daemon absence; the service is loaded or its list is invalid."
             )
+            return _launchctl_quiescent_output(listing)
         except (OSError, ValueError, HeinzelError):
             return False
 
@@ -974,9 +995,11 @@ class DaemonService:
                             "service and timer are stopped before retrying."
                         )
                     elif self._platform == "darwin":
+                        problem = self._quiescence_problem if tick else "The daemon tick lock is busy."
                         msg = (
-                            "The daemon is not proven quiescent. Open your macOS Aqua desktop session and inspect "
-                            "`hz system daemon status`; ensure the daemon is unloaded before retrying."
+                            f"The daemon is not proven quiescent. {problem} "
+                            "Inspect `uvx --from heinzel hz system daemon status` before retrying. "
+                            "This inspection command also works when hz is not installed."
                         )
                     else:
                         msg = "The daemon is not proven quiescent on this platform; inspect it before installing."
