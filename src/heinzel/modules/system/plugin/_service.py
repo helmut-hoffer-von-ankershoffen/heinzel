@@ -61,9 +61,11 @@ from heinzel.modules.system.plugin._models import (
     PluginOperation,
     PluginSearch,
     PluginSettings,
+    PluginShowcase,
     Source,
 )
 from heinzel.modules.system.plugin._receipts import PluginReceipts
+from heinzel.modules.system.plugin._showcase import public_showcase
 from heinzel.modules.system.plugin._sources import (
     PREFIX,
     JsonGetter,
@@ -167,6 +169,30 @@ class PluginService:
         self._catalog_warnings: list[str] = []
         self.distributions: Mapping[str, Distribution] | None = None
         """Installed plugin distributions by canonical name; read from the entry points when None (tests set it)."""
+
+    def showcase(self, spec: str) -> PluginShowcase:
+        """Read a public plugin's immutable screenshots before installation.
+
+        Raises:
+            HeinzelError: If the specification or public media is unsafe.
+            OSError: If public source metadata cannot be read.
+            ValueError: If public metadata is malformed.
+        """
+        spec = spec.strip()
+        resolved = spec
+        if spec.replace("-", "").isalnum():
+            wanted = canonicalize_name(spec if spec.startswith(PREFIX) else PREFIX + spec)
+            matches = [entry for entry in self.search(spec.removeprefix(PREFIX)).plugins if entry.name == wanted]
+            if len(matches) > 1:
+                message = "Several plugins have that name; preview an exact catalog specification"
+                raise HeinzelError(message)
+            if matches:
+                resolved = matches[0].install_spec
+        try:
+            return public_showcase(parse(resolved), self.github_api)
+        except (OSError, ValueError, KeyError, TypeError) as error:
+            message = "The plugin's public previews could not be read. Try again or open its owning repository."
+            raise HeinzelError(message) from error
 
     # Listing.
 

@@ -88,7 +88,8 @@ SPLASH_SCRIPT = "'sha256-pN9jYRjUn1PxYq7efc0qmdmmc/sy6sTVaGnaajkcymU='"
 """The one inline script allowed, by its hash: the splash's in `web/index.html`, which paints the last theme before the
 app loads (ADR 0046). A test recomputes it from the file, so a changed script fails until this changes with it."""
 CSP = (
-    f"default-src 'none'; script-src 'self' {SPLASH_SCRIPT}; style-src 'self' 'unsafe-inline'; img-src 'self' data:; "
+    f"default-src 'none'; script-src 'self' {SPLASH_SCRIPT}; style-src 'self' 'unsafe-inline'; "
+    "img-src 'self' data: https://raw.githubusercontent.com; "
     "font-src 'self'; connect-src 'self'; manifest-src 'self'; worker-src 'self'; base-uri 'none'; "
     "form-action 'none'; frame-ancestors 'none'"
 )

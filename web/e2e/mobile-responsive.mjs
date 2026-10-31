@@ -7,6 +7,7 @@ import { chromium, webkit } from "playwright-core";
 import ts from "typescript";
 import { contributePanel } from "./contributed-panel.mjs";
 import { reportMediaFailure, watchMedia } from "./media-diagnostics.mjs";
+import { contributeGallery, exercisePluginGallery } from "./plugin-gallery.mjs";
 
 const [url, shots] = process.argv.slice(2);
 mkdirSync(shots, { recursive: true });
@@ -236,6 +237,7 @@ try {
     });
     const page = await context.newPage();
     await contributePanel(page);
+    const galleryRequests = await contributeGallery(page);
     // Platform-specific CLI paths and provider names must wrap rather than widen their settings pane.
     await page.route("**/api/ai/access/list", async (route) => {
       const response = await route.fetch();
@@ -420,6 +422,7 @@ try {
           .getByRole("button", { name: settingsPage.title, exact: true })
           .click();
       await assertContained(page, settingsDialog, `${spec.name}: settings ${settingsPage.id}`);
+      if (settingsPage.id === "plugins") await exercisePluginGallery(page, galleryRequests, shots, spec.name);
       if (settingsPage.id === "credentials") {
         await settingsDialog
           .locator("option")

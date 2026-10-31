@@ -139,6 +139,35 @@ class AvailablePlugin(BaseModel):
     installed: bool = Field(description="Whether a plugin of this name is installed.")
 
 
+class PluginScreenshot(BaseModel):
+    """An owning public project's immutable raster screenshot."""
+
+    url: str = Field(description="A checked immutable public GitHub raster asset URL.")
+    surface: Literal["ui", "cli"] = Field(description="Whether the image shows the interface or command line.")
+    caption: str = Field(max_length=180, description="The owner's description of the actual capture.")
+
+
+class PluginSoundscape(BaseModel):
+    """A public plugin's declared YouTube soundscape."""
+
+    title: str = Field(max_length=100, description="The soundscape's declared title.")
+    url: str = Field(description="A YouTube watch link constructed from a checked video identity.")
+
+
+class PluginShowcase(BaseModel):
+    """Media preview of one public source, read without installing its implementation."""
+
+    title: str = Field(description="The owning project's display title.")
+    revision: str | None = Field(default=None, description="The immutable public source revision, when available.")
+    screenshots: list[PluginScreenshot] = Field(
+        default_factory=list[PluginScreenshot], description="UI and CLI previews before installation."
+    )
+    soundscapes: list[PluginSoundscape] = Field(
+        default_factory=list[PluginSoundscape], description="Explicit links; nothing plays automatically."
+    )
+    notice: str = Field(default="", description="Why previews are unavailable or how to interpret declared media.")
+
+
 class PluginSearch(BaseModel):
     """Plugins one can install, and what kept the search from being complete."""
 
