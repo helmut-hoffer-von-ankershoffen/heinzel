@@ -2,12 +2,20 @@
 # requires-python = ">=3.12"
 # dependencies = []
 # ///
-"""Keep Core-root PR and agent checks within the owning projects for plugin-only changes."""
+"""Keep Core-root PR and agent checks within the owning projects for plugin-only changes.
+
+`push` is the pre-push hook: the fast checks scoped to what the branch changes against main. Only Markdown and site
+templates run the documentation checks and the tests that read documents; only `web/` runs the web checks; changes
+that touch neither `web/` nor `desktop/` nor the root build files run `make check-fast` without the web app's tests
+and the managed backend's check; anything else runs `make check-fast` in full. CI always runs the full gate, so
+nothing goes unchecked, only later.
+"""
 
 import argparse
 import json
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 TOOLKIT = (
@@ -19,7 +27,7 @@ TOOLKIT = (
 
 def changed_paths(mode: str, base: str) -> list[str]:
     """Include deleted, moved and untracked paths without parsing Git's quoted display format."""
-    revision = [f"{base}...HEAD"] if mode == "preflight" else ["HEAD"]
+    revision = [f"{base}...HEAD"] if mode in ("preflight", "push") else ["HEAD"]
     result = subprocess.check_output(  # noqa: S603 - fixed git argument lists, no shell
         ["git", "diff", "--name-only", "--no-renames", "-z", *revision],  # noqa: S607 - git from PATH
         text=True,
@@ -34,13 +42,77 @@ def changed_paths(mode: str, base: str) -> list[str]:
     return [path for path in result.split("\0") if path]
 
 
+MARKDOWN_TESTS = [
+    "tests/unit/documentation_test.py",
+    "tests/unit/standards_test.py",
+    "tests/unit/repository_test.py",
+    "tests/unit/pypi_description_test.py",
+    "tests/unit/readme_diagnostics_test.py",
+]
+DOCS_STEPS = [  # the documentation steps of `make check-fast` and the tests that read Markdown
+    "template=uv run --script scripts/sync_template.py --check",
+    "&docs=env -u HZ_SYSTEM_AGENT__SKILL_DIRS uv run python scripts/generate_docs.py --check",
+    "&demo=uv run --script scripts/demo_tape.py --check",
+    "&typos=uv run typos",
+    f"tests=uv run pytest {' '.join(MARKDOWN_TESTS)} -n 2 -x -q --session-timeout=120",
+]
+WEB = "uv run --quiet --script scripts/web_build.py"
+WEB_STEPS = [  # WEB_LINT, WEB_TYPES and WEB_TESTS of the Makefile
+    f"web-lint={WEB} exec biome ci .",
+    "&web-client=env -u HZ_SYSTEM_AGENT__SKILL_DIRS uv run --quiet python scripts/web.py client --check",
+    f"&web-types={WEB} exec node node_modules/@typescript/native/bin/tsc --noEmit -p .",
+    f"&web-tests={WEB} exec vitest run",
+]
+
+
+def is_document(path: str) -> bool:
+    """Markdown and the site's page templates: text that no program runs."""
+    return path.endswith(".md") or (path.startswith("docs/overrides/") and path.endswith(".html"))
+
+
+def scoped_steps(changed: list[str]) -> list[str] | None:
+    """Steps for a branch of documents and web files only, or None when `make check-fast` must run in full."""
+    web = [path for path in changed if path.startswith("web/") and not is_document(path)]
+    documents = [path for path in changed if is_document(path)]
+    if not changed or len(web) + len(documents) != len(changed):
+        return None
+    steps: list[str] = []
+    if documents:
+        steps += DOCS_STEPS
+    if web:
+        steps += [f"web-prepare={WEB} prepare", *WEB_STEPS]
+    return steps
+
+
+WEB_INPUTS = ("web/", "desktop/")
+WEB_ROOT_FILES = {"pyproject.toml", "uv.lock", "Makefile", "mkdocs.yml"}
+
+
+def touches_web(changed: list[str]) -> bool:
+    """Whether a change can break the web app's tests or the managed backend check: files they read."""
+    return any(path.startswith(WEB_INPUTS) or path in WEB_ROOT_FILES for path in changed)
+
+
 def main() -> None:
     """Preserve core checks and common policies while selecting independent owning plugin work."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("mode", choices=["fast", "preflight"])
+    parser.add_argument("mode", choices=["fast", "preflight", "push"])
     parser.add_argument("--base", default="origin/main")
     args = parser.parse_args()
     changed = changed_paths(args.mode, args.base)
+    if args.mode == "push":
+        changed = sorted({*changed, *changed_paths("fast", args.base)})
+        steps = scoped_steps(changed)
+        if steps:
+            command = ["uv", "run", "--quiet", "--script", "scripts/steps.py", *steps]
+            done = subprocess.run(command, check=False, timeout=600)  # noqa: S603 - fixed steps, no shell
+            sys.exit(done.returncode)
+        if changed and not touches_web(changed) and not all(path.startswith("plugins/") for path in changed):
+            # Python, scripts, tests and documents: everything of the fast gate but the web app's tests and the managed
+            # backend's check, which read nothing of it (the generated client is still checked by web-lint).
+            command = ["make", "check-fast", "WEB_TESTS=", "MANAGED_CHECK=", f"BASE={args.base}"]
+            sys.exit(subprocess.run(command, check=False, timeout=1800).returncode)  # noqa: S603 - fixed arguments
+        args.mode = "fast"  # everything else is the full fast gate
     if not changed or not all(path.startswith("plugins/") for path in changed):
         subprocess.run(  # noqa: S603 - explicit owning commands, no shell
             ["make", "preflight" if args.mode == "preflight" else "check-fast", f"BASE={args.base}"],  # noqa: S607 - make from PATH
