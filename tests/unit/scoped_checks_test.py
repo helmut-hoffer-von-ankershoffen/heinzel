@@ -74,3 +74,35 @@ def test_the_document_tests_exist():
 )
 def test_only_changes_that_touch_the_web_app_run_its_tests(changed, web):
     assert scoped.touches_web(changed) is web
+
+
+def test_docs_tooling_and_its_tests_run_the_documentation_checks_not_the_full_gate():
+    changed = ["docs/TEAMS.md", "scripts/site_pages.py", "scripts/sync_template.py", "tests/unit/site_catalog_test.py"]
+    steps = scoped.scoped_steps(changed)
+    assert names(steps) == ["format", "ruff", "template", "docs", "demo", "typos", "tests"]
+    tests = steps[-1]
+    assert "tests/unit/site_catalog_test.py" in tests
+    assert "tests/unit/documentation_test.py" in tests
+    assert "tests/unit/ci_test.py" in tests
+    assert "scripts/site_pages.py" in steps[0]
+    assert "--check" in steps[0]
+
+
+def test_docs_tooling_alone_is_enough_for_the_scope():
+    assert scoped.scoped_steps(["scripts/check_docs.py"]) is not None
+    assert scoped.scoped_steps(["tests/unit/sync_template_test.py"]) is not None
+
+
+@pytest.mark.parametrize(
+    "changed",
+    [
+        ["docs/TEAMS.md", "Makefile"],
+        ["scripts/site_pages.py", "scripts/pr.sh"],
+        ["scripts/site_pages.py", "scripts/steps.py"],
+        ["scripts/site_pages.py", "src/heinzel/kernel/_kernel.py"],
+        ["scripts/sitemap.py"],
+        ["tests/unit/site_catalog_test.py", "tests/unit/ship_test.py"],
+    ],
+)
+def test_anything_beyond_docs_and_their_tooling_runs_the_full_gate(changed):
+    assert scoped.scoped_steps(changed) is None
