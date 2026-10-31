@@ -47,7 +47,7 @@ jobs:
           echo "tier=$tier" >> "$GITHUB_OUTPUT"
           echo "Review tier: $tier"
       - if: steps.tier.outputs.tier == 'light'
-        uses: anthropics/claude-code-action@ae68417a745a5df4b2124873632bd73a2255e6f6 # v1.0.259
+        uses: anthropics/claude-code-action@925afb53776cf1a2b738c6bdbed37b4d4000ef13 # v1.0.262
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           claude_code_oauth_token: ${{ secrets.ANTHROPIC_API_KEY == '' && secrets.CLAUDE_CODE_OAUTH_TOKEN || '' }}
@@ -58,7 +58,7 @@ jobs:
             origin/${{ github.base_ref }}) and post its findings and verdict as one pull request comment.
             The comment is public: never quote a confidential term, refer to it by file and line.
       - if: steps.tier.outputs.tier == 'full'
-        uses: anthropics/claude-code-action@ae68417a745a5df4b2124873632bd73a2255e6f6 # v1.0.259
+        uses: anthropics/claude-code-action@925afb53776cf1a2b738c6bdbed37b4d4000ef13 # v1.0.262
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           claude_code_oauth_token: ${{ secrets.ANTHROPIC_API_KEY == '' && secrets.CLAUDE_CODE_OAUTH_TOKEN || '' }}
