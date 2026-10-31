@@ -11430,7 +11430,7 @@ export interface components {
         };
         /**
          * SuggestedNotices
-         * @description Suggested local notice limits for scheduled turns; the owner reviews them, and they grant nothing by themselves.
+         * @description Suggested local notice limits for scheduled turns; the owner reviews them, and they grant nothing alone.
          */
         SuggestedNotices: {
             /**

@@ -13866,7 +13866,7 @@
       },
       "SuggestedNotices": {
         "additionalProperties": false,
-        "description": "Suggested local notice limits for scheduled turns; the owner reviews them, and they grant nothing by themselves.",
+        "description": "Suggested local notice limits for scheduled turns; the owner reviews them, and they grant nothing alone.",
         "properties": {
           "deduplicate_by": {
             "anyOf": [
