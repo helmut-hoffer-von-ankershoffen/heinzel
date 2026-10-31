@@ -4,6 +4,7 @@ date: 2026-10-25
 decision-makers: maintainer
 amends: 0064
 related: 0044, 0060
+implemented-by: 175
 ---
 
 # 0073: Themes supply safe SVG layers for personal avatars
