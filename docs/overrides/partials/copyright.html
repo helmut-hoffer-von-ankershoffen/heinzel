@@ -1,0 +1,21 @@
+{#- Material's partials/copyright.html plus the legal links every page carries (DDG § 5: easy to recognise, directly
+    reachable). German first, the English page beside it: the German texts prevail. -#}
+<div class="md-copyright">
+  <nav class="hz-legal" aria-label="Legal / Rechtliches">
+    <a href="{{ 'impressum/' | url }}">Impressum</a> ·
+    <a href="{{ 'imprint/' | url }}">Imprint</a> ·
+    <a href="{{ 'datenschutz/' | url }}">Datenschutz</a> ·
+    <a href="{{ 'privacy/' | url }}">Privacy</a>
+  </nav>
+  {% if config.copyright %}
+    <div class="md-copyright__highlight">
+      {{ config.copyright }}
+    </div>
+  {% endif %}
+  {% if not config.extra.generator == false %}
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  {% endif %}
+</div>

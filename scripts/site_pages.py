@@ -425,21 +425,20 @@ def screenshot_gallery(project: Object) -> str:
 
 
 def soundscape_gallery(project: Object) -> str:
-    """Offer deliberate YouTube playback and a no-JavaScript watch link."""
+    """Offer each soundscape as a plain link to YouTube; nothing from YouTube loads on this site (privacy.md)."""
     cards = []
     for sound in project.get("soundscapes", []):
         title, video = escape(sound["title"]), escape(sound["video"])
         cards.append(
             f'<article class="hz-soundscape"><h3>{title}</h3>'
-            f'<div data-soundscape="{video}" data-title="{title}">'
-            f'<button type="button" data-play-soundscape hidden>Play {title}</button></div>'
-            f'<p><a href="https://www.youtube.com/watch?v={video}">Listen on YouTube ↗</a></p></article>'
+            f'<p><a href="https://www.youtube.com/watch?v={video}" rel="noopener noreferrer">'
+            "Listen on YouTube ↗</a></p></article>"
         )
     if not cards:
         return ""
     return (
-        "## Soundscapes\n\n<p>YouTube loads only when you press Play. "
-        "Playback may depend on video availability and embedding permissions.</p>"
+        "## Soundscapes\n\n<p>These open on YouTube in a new page when you follow the link; this site loads nothing "
+        "from YouTube itself. Playback depends on video availability and the video owner.</p>"
         '<div class="hz-soundscapes">' + "".join(cards) + "</div>"
     )
 

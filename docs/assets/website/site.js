@@ -270,7 +270,8 @@
         event.preventDefault();
         go(targets[event.key]);
       });
-      const resize = new ResizeObserver(update);
+      // update() resizes the track: do it in the next frame, or the browser reports an undelivered ResizeObserver loop.
+      const resize = new ResizeObserver(() => requestAnimationFrame(update));
       slides.forEach(slide => {
         resize.observe(slide);
         slide.querySelector('img').addEventListener('load', update);
@@ -285,23 +286,6 @@
         if (!HTMLDialogElement.prototype.showModal) return;
         event.preventDefault();
         openImage(link.querySelector('img'), link.href);
-      });
-    });
-    document.querySelectorAll('[data-play-soundscape]').forEach(button => {
-      if (button.dataset.ready) return;
-      button.dataset.ready = 'true';
-      button.hidden = false;
-      button.addEventListener('click', () => {
-        const host = button.parentElement;
-        const video = host.dataset.soundscape;
-        if (!/^[A-Za-z0-9_-]{11}$/.test(video)) return;
-        const player = document.createElement('iframe');
-        player.src = `https://www.youtube-nocookie.com/embed/${video}?autoplay=1`;
-        player.title = host.dataset.title;
-        player.allow = 'autoplay; encrypted-media; picture-in-picture; fullscreen';
-        player.referrerPolicy = 'strict-origin-when-cross-origin';
-        player.allowFullscreen = true;
-        host.replaceChildren(player);
       });
     });
     const catalog = document.querySelector('[data-catalog]');

@@ -96,9 +96,9 @@ soundscapes = ["src/heinzel_harbor/soundscapes/tide.toml"]
 ```
 
 It displays soundscapes declaring `kind = "stream"`, `[stream] provider = "youtube"` and an eleven-character
-`video` identity. This works for theme and regular plugins. A **Listen on YouTube** link works without JavaScript;
-**Play** loads the privacy-enhanced YouTube player only after a click. No video, thumbnail or player is requested
-before that click. Availability and embedding permissions are controlled by YouTube and the video owner.
+`video` identity. This works for theme and regular plugins. The page shows a **Listen on YouTube** link, nothing
+more: no video, thumbnail or player is requested from YouTube, and the visitor reaches YouTube only by following the
+link. Availability is controlled by YouTube and the video owner.
 The catalog reads these declarations without executing a provider or checking playback during builds.
 
 ## Build and verify the website

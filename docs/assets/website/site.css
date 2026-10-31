@@ -106,6 +106,8 @@ body { font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFon
 .md-footer-meta { background:#15251e; color:#d8e2d8; }
 .md-copyright { color:#d8e2d8; }
 .md-copyright a { color:#ffffff !important; }
+.hz-legal { margin-bottom:.35rem; }
+.hz-legal a { text-decoration:underline; }
 
 :root,[data-md-color-scheme] { --md-primary-fg-color:var(--hz-brand); --md-accent-fg-color:var(--hz-brand); }
 
@@ -135,8 +137,6 @@ body { font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFon
 .hz-screenshots img { display:block; width:auto; height:auto; max-width:100%; max-height:min(68svh, 680px); object-fit:contain; }
 .hz-screenshots figcaption { color:var(--hz-muted); font-size:.75rem; margin:.7rem 0 0; text-align:left; }
 .hz-soundscape { min-width:0; padding:1rem; border:1px solid var(--hz-line); border-radius:8px; }
-.hz-soundscape iframe { display:block; width:100%; aspect-ratio:16/9; border:0; }
-.hz-soundscape button { cursor:pointer; min-height:44px; padding:.6rem 1rem; border:1px solid currentColor; border-radius:6px; }
 
 /* Character explainers use the same original artwork as the app. */
 .hz-helpers { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:1.5rem; margin-top:2rem; }

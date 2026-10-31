@@ -159,6 +159,7 @@ they are out of date, so they can't drift.
 | **Contribute** to the core | [CONTRIBUTING](../CONTRIBUTING.md) · [CODING_STANDARDS](CODING_STANDARDS.md) · [Sonar security lessons](SONAR_SECURITY.md) · [durable session storage](SESSIONS.md) · [shipping small changes with a small model](SHIP_SMALL.md) · [CHANGELOG](../CHANGELOG.md) *(generated at release)* |
 | Work on it **as a coding agent** | [AGENTS](../AGENTS.md) and the scoped AGENTS.md files it lists |
 | Report a **vulnerability** | [SECURITY](../SECURITY.md) |
+| Read the **legal notices** of the website (German texts prevail) | [Impressum](impressum.md) · [Imprint](imprint.md) · [Datenschutzerklärung](datenschutz.md) · [Privacy notice](privacy.md) |
 
 How drift is prevented:
 
