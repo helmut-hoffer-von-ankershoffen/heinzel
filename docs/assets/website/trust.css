@@ -1,0 +1,8 @@
+/* A compact evidence row next to the homepage's first installation decision. */
+.hz-trust { padding:1.3rem 0; border-top:1px solid var(--hz-line); }
+.md-typeset .hz-trust h2 { margin:0 0 .4rem; font-size:1.1rem; }
+.hz-trust > p { margin:.3rem 0; font-size:.73rem; color:var(--hz-muted); }
+.hz-trust-links { display:flex; flex-wrap:wrap; align-items:center; gap:.2rem 1rem; margin:.5rem 0; }
+.hz-trust-links a { display:inline-flex; align-items:center; min-height:44px; max-width:100%; }
+.hz-trust-links img { display:block; max-width:100%; height:20px; }
+.md-typeset .hz-trust-note { font-size:.65rem; }
