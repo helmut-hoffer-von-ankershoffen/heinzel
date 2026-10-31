@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { openChatJourney, revealChat } from "./chat-ready.mjs";
+import { openChatJourney, revokeAfterReload, startChatJourney } from "./chat-ready.mjs";
 
 const { axe, browser, context, page, token, url } = await openChatJourney();
 let reviewRequests = 0;
@@ -7,15 +7,7 @@ page.on("request", (request) => {
   if (new URL(request.url()).pathname === "/api/heinzel/prepare-suggested-source") reviewRequests++;
 });
 try {
-  await page.goto(url.href);
-  await page.locator("#splash").waitFor({ state: "hidden", timeout: 30000 });
-  const setup = page.getByRole("dialog");
-  await setup.waitFor({ state: "visible", timeout: 5000 }).catch(() => {});
-  if (await setup.isVisible().catch(() => false)) await setup.getByRole("button", { name: "Close setup" }).click();
-  if (!(await page.getByLabel("Your message").isVisible()))
-    await page.getByRole("tab", { name: "Chat", exact: true }).click();
-  await page.getByLabel("Your message").fill("Read my selected source.");
-  await page.getByRole("button", { name: "Create Heinzel and take this message" }).click();
+  await startChatJourney(page, url);
   const panel = page.getByRole("region", { name: "Connected read review" });
   await page.getByRole("button", { name: "Queue message" }).click();
   await page.getByText("Suggestion recorded.").waitFor({ timeout: 30000 });
@@ -35,12 +27,7 @@ try {
   await page.getByRole("button", { name: "Queue message" }).click();
   await page.getByText("Source read finished.").waitFor({ timeout: 30000 });
   await page.getByText("Approved read: first recorded result.").waitFor();
-  await page.reload();
-  await revealChat(page);
-  await panel.getByText(/Recorded state: approved/).waitFor();
-  await panel.getByRole("button", { name: "Revoke this grant" }).click();
-  await panel.getByText(/Recorded state: revoked/).waitFor();
-  assert.equal(await panel.evaluate((node) => node.scrollWidth > node.clientWidth), false);
+  await revokeAfterReload(page, panel);
   console.log(JSON.stringify({ accepted: true }));
 } catch (error) {
   const message = error instanceof Error ? (error.stack ?? error.message) : String(error);

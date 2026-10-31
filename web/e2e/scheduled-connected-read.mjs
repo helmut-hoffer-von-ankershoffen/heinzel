@@ -1,8 +1,6 @@
 import assert from "node:assert/strict";
-import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { publishJson } from "./atomic-json.mjs";
-import { openChatJourney, revealChat } from "./chat-ready.mjs";
+import { openChatJourney, revealChat, runDaemonTurn } from "./chat-ready.mjs";
 
 const { axe, browser, context, page, token, url } = await openChatJourney();
 try {
@@ -75,15 +73,7 @@ try {
   await schedule.getByText(/approved; the daemon must be running/i).waitFor();
   const session = new URLSearchParams(page.url().split("?")[1]).get("chat");
   assert.ok(session);
-  const directory = process.argv[4];
-  publishJson(join(directory, "daemon-start.json"), { session });
-  for (let i = 0; i < 600 && !existsSync(join(directory, "daemon-finished.json")); i++)
-    await new Promise((resolve) => setTimeout(resolve, 50));
-  const finished = JSON.parse(readFileSync(join(directory, "daemon-finished.json"), "utf8"));
-  assert.equal(finished.ok, true, `daemon failed: ${finished.failure}`);
-  assert.equal(finished.deduplicated, true);
-  await page.reload();
-  await revealChat(page);
+  await runDaemonTurn(page, process.argv[4], session);
   await page
     .getByText(/Tool activity for this reply/)
     .nth(2)

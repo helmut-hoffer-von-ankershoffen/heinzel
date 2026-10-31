@@ -1,20 +1,9 @@
 import assert from "node:assert/strict";
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
-import { publishJson } from "./atomic-json.mjs";
-import { openChatJourney, revealChat } from "./chat-ready.mjs";
+import { openChatJourney, runDaemonTurn, startChatJourney } from "./chat-ready.mjs";
 
 const { axe, browser, context, page, token, url } = await openChatJourney();
 try {
-  await page.goto(url.href);
-  await page.locator("#splash").waitFor({ state: "hidden", timeout: 30000 });
-  const setup = page.getByRole("dialog");
-  await setup.waitFor({ state: "visible", timeout: 5000 }).catch(() => {});
-  if (await setup.isVisible().catch(() => false)) await setup.getByRole("button", { name: "Close setup" }).click();
-  if (!(await page.getByLabel("Your message").isVisible()))
-    await page.getByRole("tab", { name: "Chat", exact: true }).click();
-  await page.getByLabel("Your message").fill("Read my selected source.");
-  await page.getByRole("button", { name: "Create Heinzel and take this message" }).click();
+  await startChatJourney(page, url);
   await page.getByRole("button", { name: "Queue message" }).click();
   await page.getByText("Read complete.").waitFor({ timeout: 30000 });
   const terms = page.getByRole("region", { name: "Proposed agent terms" });
@@ -62,15 +51,7 @@ try {
   await schedule.getByText(/approved; the daemon must be running/i).waitFor();
   const session = new URLSearchParams(page.url().split("?")[1]).get("chat");
   assert.ok(session);
-  const directory = process.argv[4];
-  publishJson(join(directory, "daemon-start.json"), { session });
-  for (let i = 0; i < 600 && !existsSync(join(directory, "daemon-finished.json")); i++)
-    await new Promise((resolve) => setTimeout(resolve, 50));
-  const finished = JSON.parse(readFileSync(join(directory, "daemon-finished.json"), "utf8"));
-  assert.equal(finished.ok, true, `daemon failed: ${finished.failure}`);
-  assert.equal(finished.deduplicated, true);
-  await page.reload();
-  await revealChat(page);
+  await runDaemonTurn(page, process.argv[4], session);
   const activity = page.getByRole("region", { name: "Scheduled notification activity" });
   await activity.getByText("Fictional title").waitFor({ timeout: 30000 });
   assert.match((await activity.textContent()) ?? "", /model-chosen/);
