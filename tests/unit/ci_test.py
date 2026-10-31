@@ -3,6 +3,7 @@
 import hashlib
 import importlib.util
 import io
+import json
 import os
 import re
 import stat
@@ -53,6 +54,19 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
         "tar -czf notifier.tar.gz": "packs the app the macOS job built, with its executable bit, for the build job",
         "tar -xzf notifier.tar.gz": "unpacks Heinzel Notifier into the package before the wheel is built",
         "unzip -l ": "asserts that the released wheel ships Heinzel Notifier",
+    },
+    "edge.yml": {
+        'commit="$(git rev-parse HEAD)"': "plans the edge release from the commit and the releases so far",
+        "tar -czf notifier.tar.gz": "preserves the notifier executable bits and signature across runners",
+        "tar -xzf notifier.tar.gz": "restores the notifier built without publishing credentials",
+        "uv run --no-build --frozen --script scripts/check_confidentiality.py": "scans the tree with the term list",
+        "uv run --no-build --frozen --script scripts/release_channel.py": "stamps and describes the edge release",
+        "uv build --package heinzel": "builds only the core project",
+        'test -f "dist/heinzel-': "asserts the wheel's version and payload",
+        "uv export ": "exports the release's CycloneDX bill of materials",
+        'cliff="$(sed': "writes the release notes and the channel pointer with the locked git-cliff",
+        'cp "$BUNDLE"': "attaches the provenance attestation and creates the pre-release",
+        "gh release view edge-channel": "moves the pointer the opt-in path reads",
     },
     "pypi.yml": {
         '[[ "$TAG" =~': "binds publishing to the exact tag and main ancestry before build tooling",
@@ -849,11 +863,30 @@ def test_plugin_ci_has_no_core_only_jobs_and_every_need_exists():
     assert "if" not in jobs["build"]
 
 
-def test_pull_requests_run_one_macos_python_and_ci_ok_waits_for_changes():
+def test_macos_cells_shard_by_level_and_ci_ok_waits_for_changes():
     jobs = yaml.safe_load((REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))["jobs"]
     include = jobs["test"]["strategy"]["matrix"]["include"]
-    assert "pull_request" in include
-    assert '[{"os":"macos-latest","python":"3.15"}]' in include
+    pull_request, schedule, otherwise = (
+        json.loads(cells)
+        for cells in re.fullmatch(
+            r"\$\{\{ fromJSON\(github\.event_name == 'pull_request' && '(.*)' "
+            r"\|\| github\.event_name == 'schedule' && '(.*)' \|\| '(.*)'\) \}\}",
+            include.strip(),
+        ).groups()
+    )
+    for cells, pythons in (
+        (pull_request, ["3.15"]),
+        (schedule, ["3.12", "3.13", "3.14", "3.15"]),
+        (otherwise, ["3.12", "3.15"]),
+    ):
+        assert cells == [
+            {"os": "macos-latest", "python": python, "levels": level}
+            for python in pythons
+            for level in ("unit", "integration")
+        ]
+    recipe = (REPO / "Makefile").read_text(encoding="utf-8").split("\ntest-parallel:", 1)[1].split("\n\n", 1)[0]
+    assert "-m '($(TEST_LEVELS)) and not perf'" in recipe
+    assert "--session-timeout=420" in recipe  # each shard has the cap the whole suite had
     assert {"changes", "notifier", "build"} <= set(jobs["ci-ok"]["needs"])
 
 
@@ -894,7 +927,7 @@ def test_e2e_prepares_core_build_before_suite_and_removes_owned_temp(tmp_path, f
                 'test "$FAIL_PREP" != 1\n'
             ),
         ),
-        (steps, '#!/bin/sh\nprintf "suite:%s\\n" "$*" >> "$TRACE"\n'),
+        (steps, '#!/bin/sh\nprintf "suite:%s\\n" "$@" >> "$TRACE"\n'),
     ):
         assert not path.exists()
         assert not path.is_symlink()
@@ -926,11 +959,11 @@ def test_e2e_prepares_core_build_before_suite_and_removes_owned_temp(tmp_path, f
     assert directory.is_relative_to(tmp_path)
     assert not directory.exists()
     assert (result.returncode == 0) is not fail
-    assert any(line.startswith("suite:e2e=uv run pytest ") for line in lines) is not fail
+    assert any(line.startswith("suite:e2e-readme=uv run pytest ") for line in lines) is not fail
     if not fail:
-        [suite] = [line for line in lines if line.startswith("suite:e2e=")]
+        [first] = [line for line in lines if line.startswith("suite:e2e-readme=")]
+        [second] = [line for line in lines if line.startswith("suite:e2e=")]
         node = "tests/e2e/docs_test.py::test_readme_instructions"
-        first, second = suite.split(" && ")
         assert first.endswith(f"-x {node}")
         assert second.endswith(f"-x --deselect={node}")
         assert first.count("-n 3") == second.count("-n 3") == 1
@@ -942,7 +975,7 @@ def test_e2e_prepares_core_build_before_suite_and_removes_owned_temp(tmp_path, f
 
 @pytest.mark.parametrize("first_fails", [False, True])
 def test_e2e_sequence_stops_after_readme_failure(tmp_path, first_fails):
-    """The shared step runs the remaining nodes only after the isolated README succeeds."""
+    """Each has its own step, so its own time limit; the remaining nodes run only after the README succeeds."""
     tool_dir = tmp_path / "bin"
     tool_dir.mkdir()
     trace = tmp_path / "trace"
@@ -958,7 +991,7 @@ def test_e2e_sequence_stops_after_readme_failure(tmp_path, first_fails):
                 '*docs_test.py::test_readme_instructions*) test "$FIRST_FAIL" != 1;; esac\n'
             ),
         ),
-        (steps, '#!/bin/sh\ncommand=${1#e2e=}\nexec /bin/sh -c "$command"\n'),
+        (steps, '#!/bin/sh\nfor step; do /bin/sh -c "${step#*=}" || exit; done\n'),
     ):
         assert not path.exists()
         assert not path.is_symlink()
@@ -1021,3 +1054,39 @@ def test_only_a_prose_push_to_main_skips_the_core_jobs(tmp_path, event, changed,
         timeout=4,
     )
     assert f"core={core}" in output.read_text().splitlines()
+
+
+@pytest.mark.parametrize(
+    ("event", "changed", "electron"),
+    [
+        ("push", "src/heinzel/__init__.py\n", "false"),
+        ("push", "desktop/src/main.js\n", "true"),
+        ("push", "Makefile\n", "true"),
+        ("push", "scripts/sync_template.py\n", "true"),
+        ("push", ".github/workflows/ci.yml\n", "true"),
+        ("push", "", "true"),  # a diff git could not compute
+        ("pull_request", "src/heinzel/__init__.py\n", "false"),
+        ("pull_request", "desktop/src/main.js\n", "true"),
+        ("schedule", "src/heinzel/__init__.py\n", "true"),
+        ("workflow_dispatch", "src/heinzel/__init__.py\n", "true"),
+    ],
+)
+def test_electron_runs_for_its_paths_on_a_push_and_always_on_schedule_and_dispatch(tmp_path, event, changed, electron):
+    jobs = yaml.safe_load((REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))["jobs"]
+    script = next(step["run"] for step in jobs["changes"]["steps"] if step.get("id") == "paths")
+    stubs = tmp_path / "bin"
+    stubs.mkdir()
+    git = stubs / "git"
+    git.write_text(f"#!/bin/sh\nprintf '{changed}'\n")
+    git.chmod(0o700)
+    (tmp_path / "desktop").mkdir()
+    (tmp_path / "desktop" / "package.json").write_text("{}")
+    output = tmp_path / "output"
+    subprocess.run(
+        ["bash", "-c", script],
+        env={"PATH": f"{stubs}:/usr/bin:/bin", "EVENT": event, "BASE": "base", "GITHUB_OUTPUT": str(output)},
+        cwd=tmp_path,
+        check=True,
+        timeout=4,
+    )
+    assert f"electron={electron}" in output.read_text().splitlines()

@@ -80,7 +80,9 @@ jobs:
           else
             echo "contracts=false" >> "$GITHUB_OUTPUT"
           fi
-          if [ "$core_work" = true ] && [ -f desktop/package.json ] && { [ "$EVENT" != pull_request ] \
+          # A push to main needs Electron only for the paths a pull request needs it for; an unknown diff runs it.
+          if [ "$core_work" = true ] && [ -f desktop/package.json ] && { [ "$EVENT" = schedule ] \
+            || [ "$EVENT" = workflow_dispatch ] || [ -z "$changed" ] \
             || grep -qE '^(desktop/|Makefile$|scripts/sync_template\.py$|\.github/workflows/ci\.yml$)' <<< "$changed"; }; then
             echo "electron=true" >> "$GITHUB_OUTPUT"
           else
@@ -207,7 +209,7 @@ jobs:
   test:
     needs: changes
     if: needs.changes.outputs.core == 'true'
-    name: Test (${{ matrix.os }}, Python ${{ matrix.python }})
+    name: Test (${{ matrix.os }}, Python ${{ matrix.python }}${{ matrix.levels && format(', {0}', matrix.levels) || '' }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10
     strategy:
@@ -215,8 +217,10 @@ jobs:
       matrix:
         os: [ubuntu-latest]
         python: ["3.12", "3.13", "3.14", "3.15"]
-        include: # macOS: the newest Python on a pull request, all of them elsewhere
-          ${{ fromJSON(github.event_name == 'pull_request' && '[{"os":"macos-latest","python":"3.15"}]' || '[{"os":"macos-latest","python":"3.12"},{"os":"macos-latest","python":"3.13"},{"os":"macos-latest","python":"3.14"},{"os":"macos-latest","python":"3.15"}]') }}
+        # macOS has 3 vCPU and runs the suite at the edge of the 420 s cap, so each cell is split into one shard per level
+        # under that same cap. Newest Python on a pull request, oldest and newest on main and dispatches, all on schedule.
+        include:
+          ${{ fromJSON(github.event_name == 'pull_request' && '[{"os":"macos-latest","python":"3.15","levels":"unit"},{"os":"macos-latest","python":"3.15","levels":"integration"}]' || github.event_name == 'schedule' && '[{"os":"macos-latest","python":"3.12","levels":"unit"},{"os":"macos-latest","python":"3.12","levels":"integration"},{"os":"macos-latest","python":"3.13","levels":"unit"},{"os":"macos-latest","python":"3.13","levels":"integration"},{"os":"macos-latest","python":"3.14","levels":"unit"},{"os":"macos-latest","python":"3.14","levels":"integration"},{"os":"macos-latest","python":"3.15","levels":"unit"},{"os":"macos-latest","python":"3.15","levels":"integration"}]' || '[{"os":"macos-latest","python":"3.12","levels":"unit"},{"os":"macos-latest","python":"3.12","levels":"integration"},{"os":"macos-latest","python":"3.15","levels":"unit"},{"os":"macos-latest","python":"3.15","levels":"integration"}]') }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -238,6 +242,7 @@ jobs:
       - name: Unit and integration tests (unit first, 4 workers, stop at the first failure)
         env:
           UV_NO_SYNC: "1" # use the test group just installed
+          TEST_LEVELS: ${{ matrix.levels || 'unit or integration' }}
         run: make test-parallel
 
   coverage:
