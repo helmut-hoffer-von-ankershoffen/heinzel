@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Open (or update) the pull request for this branch: preflight, push, PR to main, squash auto-merge.
+# Open (or update) the pull request for this branch: preflight, push, PR to main for review.
 # Usage: bash scripts/pr.sh "feat(scope): title"   BODY="..." or BODY_FILE=path sets the description of a new pull
 # request (default: the commit subjects); NO_PREFLIGHT=1 skips make preflight;
-# DRAFT=1 opens a draft pull request and leaves auto-merge off, for proposals a maintainer decides on.
+# DRAFT=1 opens a draft pull request for proposals a maintainer decides on.
 # Pull requests always target main: stacked pull requests merge into their base branch, not into main.
 # From a fork (a remote named `upstream` next to your `origin`), the branch goes to your fork and the pull request
-# to upstream's main; a maintainer turns on auto-merge after review.
+# to upstream's main. A maintainer reviews checks and merges after review.
 # Exit 2: nothing was pushed, and the message says what to do.
 set -euo pipefail
 
@@ -25,8 +25,17 @@ command -v gh >/dev/null || { echo "make pr needs gh; run make install (make doc
 # owner/name: the last two path parts of a remote URL, whatever the host or alias (https, ssh, a mirror).
 slug() { git remote get-url "$1" | sed -E 's#/+$##; s#\.git$##; s#^.*[:/]([^/:]+/[^/:]+)$#\1#'; }
 base=origin
-owner="$(slug origin | cut -d/ -f1)"
-repo="$(slug origin)"
+origin_slug="$(slug origin)"
+if ! origin_repo="$(gh repo view "$origin_slug" --json nameWithOwner --jq '.nameWithOwner // empty')"; then
+  echo "Cannot verify the origin repository; nothing was pushed." >&2
+  exit 2
+fi
+if ! [[ "$origin_repo" =~ ^[A-Za-z0-9_-]+/[A-Za-z0-9_.-]+$ ]]; then
+  echo "Cannot safely identify the origin repository; nothing was pushed." >&2
+  exit 2
+fi
+owner="${origin_repo%%/*}"
+repo="$origin_repo"
 if git remote | grep -qx upstream; then
   base=upstream
   repo="$(slug upstream)"
@@ -69,7 +78,13 @@ if git fetch --quiet origin "$branch" 2>/dev/null; then
     exit 2
   fi
 fi
+# Preserve remote and local merge history; preflight the resulting commit before pushing.
+if [ -n "$remote_branch" ] && ! git merge-base --is-ancestor "$remote_branch" HEAD; then
+  git merge --quiet --no-edit "$remote_branch"
+fi
+tested_head=""
 if [ -z "${NO_PREFLIGHT:-}" ]; then
+  tested_head="$(git rev-parse HEAD)"
   if [ -f scripts/scoped_checks.py ]; then
     uv run --no-project --script scripts/scoped_checks.py preflight --base "$base/main"
   else
@@ -81,12 +96,24 @@ if [ -n "${BODY_FILE:-}" ]; then body="$(cat "$BODY_FILE")"; else body="${BODY:-
 [ -n "$body" ] || body="$(git log --reverse --format='- %s' "$base/main..HEAD")"
 uv run --quiet --script scripts/check_confidentiality.py --text "$body"
 
-if [ -n "$remote_branch" ] && ! git merge-base --is-ancestor "$remote_branch" HEAD; then
-  git rebase --quiet "$remote_branch"
+# Existing automatic merges must be turned off by a maintainer before updating the PR.
+url="$(gh pr list --repo "$repo" --base main --head "$branch" --state open --limit 101 --json url,headRepository \
+  --jq "if length > 100 then error(\"Too many matching pull requests\") elif any(.[]; (.headRepository.nameWithOwner | if type == \"string\" then (length > 201 or (test(\"^[A-Za-z0-9_-]+/[A-Za-z0-9_.-]+$\") | not)) else true end)) then error(\"Invalid head repository\") else map(select((.headRepository.nameWithOwner | ascii_downcase) == \"$(printf "%s" "$origin_repo" | tr "[:upper:]" "[:lower:]")\")) | if length == 0 then \"\" elif length == 1 then .[0].url | if type == \"string\" and length > 0 then . else error(\"Missing pull request URL\") end else error(\"Ambiguous pull requests\") end end")"
+if [[ -n "$url" ]]; then
+  if ! auto_merge="$(gh pr view "$url" --json autoMergeRequest --jq 'if has("autoMergeRequest") then if .autoMergeRequest == null then "disabled" else "enabled" end else "unknown" end')"; then
+    echo "Cannot verify the pull request's auto-merge state; nothing was pushed." >&2
+    exit 2
+  fi
+  if [[ "$auto_merge" != disabled ]]; then
+    echo "Auto-merge is enabled or unknown; disable it before updating this pull request." >&2
+    exit 2
+  fi
+fi
+if [[ -n "$tested_head" ]] && { [[ "$(git rev-parse HEAD)" != "$tested_head" ]] || [[ -n "$(git status --porcelain)" ]]; }; then
+  echo "The working tree changed after preflight; review the changes and run make pr again." >&2
+  exit 2
 fi
 git push --quiet --set-upstream origin HEAD
-url="$(gh pr list --repo "$repo" --head "$branch" --state open --json url,headRepositoryOwner \
-  --jq "map(select(.headRepositoryOwner.login == \"$owner\"))[0].url // empty")"
 if [ -z "$url" ]; then
   url="$(gh pr create --repo "$repo" --base main --head "$owner:$branch" --title "$title" --body "$body" ${DRAFT:+--draft})"
 else
@@ -96,6 +123,4 @@ else
   fi
 fi
 if [ -n "${DRAFT:-}" ]; then echo "✓ $url (draft, auto-merge off)"; exit 0; fi
-if [ "$base" = upstream ]; then echo "✓ $url (from your fork; a maintainer reviews it and merges)"; exit 0; fi
-gh pr merge "$url" --squash --auto >/dev/null
-echo "✓ $url (squash auto-merge on)"
+echo "✓ $url (review and checks required before merging)"
