@@ -51,8 +51,8 @@ LSREGISTER = "/System/Library/Frameworks/CoreServices.framework/Frameworks/Launc
 REGISTRATION_TIMEOUT = 60
 """Seconds `lsregister -dump` may take; it prints a few hundred thousand lines."""
 _BLOCK = re.compile(r"^-{20,}$", re.MULTILINE)
-_PATH = re.compile(r"^path:\s+(?P<path>.+?) \(0x[0-9a-f]+\)\s*$", re.MULTILINE)
-_IDENTIFIER = re.compile(rf"^identifier:\s+{re.escape(IDENTIFIER)}\s*$", re.MULTILINE)
+_PATH = re.compile(r"^path: +(?P<path>[^\n]+) \(0x[0-9a-f]+\) *$", re.MULTILINE)
+_IDENTIFIER = re.compile(rf"^identifier: +{re.escape(IDENTIFIER)} *$", re.MULTILINE)
 REAL_ENV = "HZ_REAL_NOTIFIER"
 """A test that must start the real app sets this; any other test that would is refused (see `_launch`)."""
 TESTS_REFUSED = "tests don't launch the real Heinzel Notifier: each copy macOS meets stays registered under its name"
@@ -145,7 +145,7 @@ class Install:
 class NotifierApp:
     """The bundled app and its installed copy; every command goes through `runner`, so tests run none."""
 
-    def __init__(  # noqa: PLR0913 - the seams tests replace, all defaulted
+    def __init__(  # noqa: PLR0913 - the seams tests replace; all defaulted
         self,
         home: Path | None = None,
         *,
