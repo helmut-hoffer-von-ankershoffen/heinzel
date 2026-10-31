@@ -4,6 +4,7 @@ amended-by: 0065, 0072, 0084, 0094
 date: 2026-10-24
 decision-makers: maintainer
 related: 0002, 0003, 0018, 0026, 0027, 0028, 0039, 0041, 0044, 0045, 0047
+implemented-by: 140, 147
 ---
 
 # 0056: Modules contribute status items, header actions and Today widgets as data, viewed from their own operations
