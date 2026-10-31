@@ -3,8 +3,17 @@ status: proposed
 date: 2026-10-24
 decision-makers: maintainer (product), architect (technical shape)
 amends: 0010, 0020, 0021, 0028, 0029, 0038, 0045, 0052
+amends-0010: a turn of a continuous session instead of a session per render
+amends-0020: the tick wakes Heinzelmännchen by key; team state on hz/state with leases
+amends-0021: one contract per Heinzelmännchen, in versions; records become turn bodies
+amends-0029: the runner no longer owns the session
+amends-0038: lessons; hz drafts and hz approve
+amends-0045: the sidebar chat with a Heinzelmännchen is its session
+amends-0028: in the durable-turns amendment, fingerprints per facet
+amends-0052: in the durable-turns amendment, downstream wakes only when the approved output moved
 amended-by: 0052, 0081
 related: 0012, 0022, 0024, 0027, 0030, 0035, 0037, 0040, 0043, 0046, 0050, 0051
+implemented-by: 165, 167, 263
 ---
 
 # 0049: Heinzelmännchen are durable agents: one session each, owned by hz

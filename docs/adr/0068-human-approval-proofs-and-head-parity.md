@@ -4,6 +4,7 @@ date: 2026-10-25
 decision-makers: maintainer (direction), architect and security reviewer (protocol)
 amends: 0045, 0039
 related: 0003, 0019, 0026, 0046, 0047, 0049, 0050
+implemented-by: 168
 ---
 
 # 0068: Human approval is a scoped proof carriable by every authorized head

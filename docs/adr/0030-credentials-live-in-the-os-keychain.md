@@ -3,6 +3,7 @@ status: accepted
 date: 2026-10-24
 decision-makers: maintainer (delegated)
 related: 0005, 0012, 0015, 0018, 0020, 0027, 0028
+implemented-by: 6
 ---
 
 # 0030: Credentials live in the OS keychain behind a credentials service

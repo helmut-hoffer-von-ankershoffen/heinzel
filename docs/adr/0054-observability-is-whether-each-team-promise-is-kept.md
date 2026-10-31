@@ -3,8 +3,11 @@ status: proposed
 date: 2026-10-24
 decision-makers: maintainer (the decisions), architect (shape)
 amends: 0037, 0052
+amends-0037: the core graph module ships the graph keeper playbook
+amends-0052: telemetry logs in the team repository before the spine; hz report
 amended-by: 0081
 related: 0021, 0024, 0028, 0039, 0040, 0045, 0049
+implemented-by: 80
 ---
 
 # 0054: Observability is whether each team promise is kept: telemetry in, a graph out

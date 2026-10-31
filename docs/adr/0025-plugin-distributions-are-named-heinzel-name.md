@@ -3,6 +3,7 @@ status: accepted
 date: 2026-10-23
 decision-makers: maintainer
 amends: 0016
+amends-0016: plugin naming
 related: 0007, 0017
 ---
 

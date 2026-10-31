@@ -3,7 +3,9 @@ status: accepted
 date: 2026-10-24
 decision-makers: maintainer
 amends: 0028
+amends-0028: a sole installed adapter serves its capability automatically
 related: 0015, 0030, 0032, 0035, 0039, 0048
+implemented-by: 84, 91
 ---
 
 # 0055: Connectors show their sign-in, test live on demand, and bind themselves when they are alone

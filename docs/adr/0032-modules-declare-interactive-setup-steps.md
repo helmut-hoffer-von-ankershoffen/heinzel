@@ -3,7 +3,9 @@ status: proposed
 date: 2026-10-24
 decision-makers: maintainer
 amends: 0018
+amends-0018: adds hz setup
 related: 0003, 0005, 0012, 0015, 0024, 0026, 0030
+implemented-by: 26
 ---
 
 # 0032: Modules declare interactive setup steps; `hz setup` runs them all
