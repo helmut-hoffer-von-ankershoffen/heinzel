@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { type MessageKey, t } from "@/i18n";
 import { Branding } from "@/layout/Branding";
 import { useDark, useSelectedTheme } from "@/layout/ThemeTokens";
+import { installState } from "@/pwa/install";
 import {
   fadeMs,
   GIVE_UP_MS,
@@ -87,11 +88,82 @@ function Command({ command }: { command: string }) {
 /** What starts the server this page talks to: `hz ui`, or `make web-dev` while developing the app. */
 export const START = import.meta.env.DEV ? "make web-dev" : "hz ui";
 
+/**
+ * The link `hz ui` printed, pasted: an installed app has no address bar to open it in. Only this page's own address
+ * signs in (the token goes nowhere else); the page then reloads with it, as a `#token=…` link would.
+ */
+export function signInFromLink(
+  value: string,
+  here: Location = window.location,
+): { ok: true; hash: string } | { ok: false; reason: "invalid" | "elsewhere" } {
+  let link: URL;
+  try {
+    link = new URL(value.trim());
+  } catch {
+    return { ok: false, reason: "invalid" };
+  }
+  const token = new URLSearchParams(link.hash.replace(/^#/, "")).get("token");
+  if (!token) return { ok: false, reason: "invalid" };
+  if (link.origin !== here.origin) return { ok: false, reason: "elsewhere" };
+  return { ok: true, hash: `#token=${encodeURIComponent(token)}` };
+}
+
+function PasteLink() {
+  const [value, setValue] = useState("");
+  const [reason, setReason] = useState<"invalid" | "elsewhere" | null>(null);
+  return (
+    <form
+      className="flex w-full flex-col gap-2 text-left"
+      onSubmit={(event) => {
+        event.preventDefault();
+        const result = signInFromLink(value);
+        if (result.ok) {
+          // The app's own hashchange handler adopts the token and reloads.
+          window.location.hash = result.hash;
+          return;
+        }
+        setReason(result.reason);
+      }}
+    >
+      <label htmlFor="splash-paste" className="text-xs text-muted-foreground">
+        {t("splash.pasteLabel")}
+      </label>
+      <div className="flex gap-2">
+        <input
+          id="splash-paste"
+          value={value}
+          onChange={(event) => setValue(event.target.value)}
+          placeholder="http://127.0.0.1:…/#token=…"
+          autoComplete="off"
+          spellCheck={false}
+          aria-describedby={reason ? "splash-paste-problem" : undefined}
+          className="h-8 min-w-0 flex-1 rounded-lg border border-border bg-input px-2.5 font-mono text-xs outline-none focus:border-muted-foreground/50"
+        />
+        <Button type="submit" size="sm" disabled={!value.trim()}>
+          {t("splash.pasteSubmit")}
+        </Button>
+      </div>
+      {reason && (
+        <p id="splash-paste-problem" role="alert" className="text-xs text-bad">
+          {t(reason === "invalid" ? "splash.pasteInvalid" : "splash.pasteElsewhere", {
+            address: window.location.origin,
+          })}
+        </p>
+      )}
+    </form>
+  );
+}
+
 /** The fix for a problem: what happened, what to do, and the command that does it. */
 function Fix({ problem }: { problem: Problem }) {
+  const installed = installState() === "installed";
   const [title, text, lead] =
     problem === "token"
-      ? (["splash.tokenTitle", "splash.token", "splash.tokenCommand"] as const)
+      ? ([
+          "splash.tokenTitle",
+          installed ? "splash.tokenApp" : "splash.token",
+          installed ? "splash.tokenAppCommand" : "splash.tokenCommand",
+        ] as const)
       : (["splash.unreachableTitle", "splash.unreachable", "splash.unreachableCommand"] as const);
   return (
     <div role="alert" className="flex max-w-md flex-col items-center gap-3 text-sm">
@@ -100,6 +172,7 @@ function Fix({ problem }: { problem: Problem }) {
       <p className="text-muted-foreground">{t(text, { command: START })}</p>
       <p className="text-muted-foreground">{t(lead, { command: START })}</p>
       <Command command={START} />
+      {problem === "token" && <PasteLink />}
       {problem === "unreachable" && <p className="text-xs text-muted-foreground">{t("splash.retrying")}</p>}
     </div>
   );
