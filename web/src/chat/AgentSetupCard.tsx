@@ -33,6 +33,16 @@ export function cadenceWords(seconds: number): string {
   return `Every ${minutes} minutes`;
 }
 
+/** Promise only the deduplication the source can back: a source reporting no identities or revisions gets less. */
+function noticeMode(
+  asked: "item" | "revision" | null | undefined,
+  source: { review: { item_identity?: { revision_field?: string | null } | null } } | null,
+): "topic" | "item" | "revision" {
+  const identity = source?.review.item_identity;
+  if (!asked || !identity) return "topic";
+  return asked === "revision" && !identity.revision_field ? "item" : asked;
+}
+
 function windowWords(seconds: number): string {
   if (seconds >= 7200) return `${Math.round(seconds / 3600)} hours`;
   if (seconds === 3600) return "an hour";
@@ -316,7 +326,11 @@ export function AgentSetupCard({ snapshot }: { snapshot: Snapshot }) {
               timeout_seconds: Math.min(terms.timeout_seconds, MAX_TIMEOUT),
               connected_request_id: sourceReview?.request_id ?? undefined,
               notification_policy: schedule.notices
-                ? notificationPolicy(schedule.notices.max_per_24h, 60, schedule.notices.deduplicate_by ?? "topic")
+                ? notificationPolicy(
+                    schedule.notices.max_per_24h,
+                    60,
+                    noticeMode(schedule.notices.deduplicate_by, sourceReview),
+                  )
                 : undefined,
               quiet_hours: schedule.quiet_hours ?? undefined,
               wake_on_new_items: schedule.wake_on_new_items ?? undefined,

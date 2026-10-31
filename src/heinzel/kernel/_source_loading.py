@@ -3,6 +3,7 @@
 import ast
 import builtins
 import hashlib
+import importlib
 import importlib.abc
 import importlib.util
 import io
@@ -159,6 +160,17 @@ def _check_dependencies(snapshot: SourceSnapshot, package: str, approved: frozen
                 raise HeinzelError(msg)
 
 
+def _load_true_stdlib(name: str) -> None:
+    """Import an unloaded standard library module only if it resolves to the real one; a shadow stays out."""
+    if name in sys.modules or name.split(".", maxsplit=1)[0] not in sys.stdlib_module_names:
+        return
+    spec = importlib.util.find_spec(name.split(".", maxsplit=1)[0])
+    origin = spec.origin if spec is not None else None
+    root = Path(sysconfig.get_paths()["stdlib"]).resolve()
+    if origin in {"built-in", "frozen"} or (origin is not None and Path(origin).resolve().is_relative_to(root)):
+        importlib.import_module(name)
+
+
 class SealedRuntime:
     """Already-loaded host runtime objects available to a captured plugin's static imports.
 
@@ -192,6 +204,7 @@ class SealedRuntime:
         self._scan(snapshot)
 
     def _seal(self, name: str) -> ModuleType:
+        _load_true_stdlib(name)
         module = sys.modules.get(name)
         if not isinstance(module, ModuleType):
             msg = f"A declared host runtime module is not already loaded: {name}"
@@ -270,7 +283,7 @@ class SealedRuntime:
                 for name in names:
                     self._seal_import(name, attrs)
 
-    def _seal_import(self, name: str, attrs: list[str]) -> None:
+    def _seal_import(self, name: str, attrs: list[str]) -> None:  # noqa: C901 - one check per import form
         top = name.split(".", maxsplit=1)[0]
         if top == self.package:
             return
@@ -289,6 +302,10 @@ class SealedRuntime:
                 self.attributes[(parent_name, child)] = self.modules[".".join(parts[:end])]
         module = self.modules[name]
         for attr in attrs:
+            if top in sys.stdlib_module_names and attr != "*" and attr not in vars(module):
+                getattr(
+                    module, attr, None
+                )  # a standard library module may define it lazily, such as concurrent.futures
             if attr == "*" or attr not in vars(module):
                 msg = f"A declared host runtime attribute is not already loaded: {name}.{attr}"
                 raise HeinzelError(msg)
