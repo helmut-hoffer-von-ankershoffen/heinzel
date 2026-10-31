@@ -160,6 +160,38 @@ def test_titles_follow_commitizen():
     assert ship.title_problem("docs(unknown): x") is not None
 
 
+def test_a_rejected_title_lists_the_scopes_and_the_docs_scope():
+    message = ship.title_problem("docs(teams): x")
+    assert "docs, adr" in message
+    assert "docs(docs)" in message
+
+
+def test_web_checks_run_biome_first_then_types_and_related_tests_together():
+    changes = {
+        "web/src/components/A.tsx": ship.Change("web/src/components/A.tsx", "M"),
+        "docs/TEAMS.md": ship.Change("docs/TEAMS.md", "M"),
+    }
+    steps = ship.web_steps(changes)
+    assert [step.split("=", 1)[0] for step in steps] == ["biome", "types", "&tests"]
+    assert "src/components/A.tsx" in steps[0]
+    assert "docs/TEAMS.md" not in " ".join(steps)
+    assert ship.web_steps({"docs/TEAMS.md": ship.Change("docs/TEAMS.md", "M")}) == []
+
+
+def test_markdown_gets_the_tests_that_read_documents_and_a_failing_one_stops_the_change(tmp_path, monkeypatch, capsys):
+    steps = ship.steps_for({"docs/TEAMS.md": ship.Change("docs/TEAMS.md", "M")})
+    assert [name for name, _ in steps] == ["confidential", "typos", "generated", "doc-tests"]
+    monkeypatch.setattr(ship, "state_file", lambda: tmp_path / "ship.json")
+    monkeypatch.setattr(ship, "branch", lambda: "docs/x")
+    monkeypatch.setattr(ship, "root", lambda: tmp_path)
+    with pytest.raises(SystemExit) as stopped:
+        ship.fail_step(
+            "doc-tests", "E   AssertionError: the old sentence\nFAILED tests/unit/pypi_description_test.py::t"
+        )
+    assert stopped.value.code == 3
+    assert "asserts the text you changed" in json.loads(capsys.readouterr().out.splitlines()[0])["msg"]
+
+
 def test_the_second_failure_stops_the_change(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(ship, "state_file", lambda: tmp_path / "ship.json")
     monkeypatch.setattr(ship, "branch", lambda: "docs/x")

@@ -12,8 +12,8 @@ is the golden path for that: one command per stage, one JSON line of output, the
 | `start SLUG` | A worktree `../heinzel-SLUG` on branch `docs/SLUG` from `origin/main` (`--kind fix\|feat\|chore`), dependencies installed |
 | `classify --files PATH...` | Before editing: may this file be a small change? |
 | `classify` | Reads the real diff: lane `low`, or STOP |
-| `check` | Scoped checks for the changed files only, then remembers the content it vouched for |
-| `pr "TITLE" --body WHY` | Commit, `hz-gate make pr` (draft, so auto-merge never arms), label `risk: low`, ready, auto-merge verified off |
+| `check` | Scoped checks for the changed files only: confidential terms, typos, links, generated files, the tests that read Markdown, and for web files biome, types and related tests in one `hz-gate` slot; then remembers the content it vouched for. A test that asserts the changed text stops the change (it needs a bigger edit) |
+| `pr "TITLE" --body WHY` | Bring the branch up to date with `main` (rebase before the first push, merge after), commit, `hz-gate make pr` (draft, so auto-merge never arms), label `risk: low`, ready, auto-merge verified off. A rejected title lists the allowed scopes |
 | `wait` | Waits for `CI OK` at the head; merges `main` in when behind; reruns a known flaky job once |
 | `verify` | After the merge: the Docs run of the merge commit is green and the published page shows the new text |
 | `merge PR` | Orchestrator only (`SHIP_ORCHESTRATOR=1`): re-classifies the PR from GitHub's data, then `hz-merge-train` |
@@ -44,7 +44,9 @@ the top of the script and are tested in `tests/unit/ship_test.py`; loosen them w
 
 A failed stage prints what went wrong and the literal next step. The second failure of a change, or any classification
 as not small, writes `stopped` into the worktree's git directory: every later stage refuses with exit 3 and prints a
-report (directory, branch, PR, failures) for the orchestrator. `SHIP_ORCHESTRATOR=1 ... reset` clears it.
+report (directory, branch, PR, failures) for the orchestrator. `SHIP_ORCHESTRATOR=1 ... reset` clears it. Pending calls name the `hz-gate` holder they queue behind: on a busy host the push, not the model, is the slow part.
+
+The pre-push hook is scoped too (`scripts/scoped_checks.py push`): Markdown and site templates alone run the documentation checks and the tests that read documents (seconds), `web/` alone the web checks, everything else `make check-fast`; CI always runs the full gate.
 
 ## Relation to the rest of the pipeline
 

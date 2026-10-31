@@ -202,7 +202,7 @@ def branch() -> str:
 
 
 def report(state: dict[str, Any]) -> dict[str, Any]:
-    """What the orchestrator needs to pick a stopped change up."""
+    """What the orchestrator needs to pick a stopped change up: failures with their last lines of output."""
     return {
         "dir": str(root()),
         "branch": branch(),
@@ -230,7 +230,7 @@ def stop(stage: str, msg: str, state: dict[str, Any]) -> NoReturn:
 def fail(stage: str, msg: str, nxt: str, detail: object = None) -> NoReturn:
     """A failed stage. The second failure of a change stops it: a small model should not flail."""
     state = load()
-    state["failures"].append({"stage": stage, "msg": msg[:200]})
+    state["failures"].append({"stage": stage, "msg": msg[:200], "detail": detail if isinstance(detail, list) else None})
     if len(state["failures"]) >= MAX_FAILURES:
         stop(
             stage,
@@ -497,9 +497,9 @@ def cmd_classify(args: argparse.Namespace) -> None:
             sys.exit(3)
         ok(
             "classify",
-            "These paths may be small changes.",
+            "These paths are allowed. Edit them now.",
             f"Edit them, then run: {RUN} classify (it reads the real diff)",
-            lane="maybe",
+            lane="allowed",
         )
         return
     refuse_if_stopped("classify")
@@ -541,40 +541,54 @@ def relative_links(top: Path, name: str) -> list[str]:
     return broken
 
 
-def steps_for(changes: dict[str, Change]) -> list[tuple[str, list[str], bool]]:
-    """Scoped checks: (name, command, heavy) for exactly the changed files."""
+def steps_for(changes: dict[str, Change]) -> list[tuple[str, list[str]]]:
+    """Light scoped checks, (name, command), for exactly the changed files."""
     names = sorted(n for n in changes if changes[n].status != "D")
-    web = [n[4:] for n in names if n.startswith("web/")]
     steps = [
-        ("confidential", ["uv", "run", "--quiet", "--script", "scripts/check_confidentiality.py", *names], False),
-        ("typos", ["uv", "run", "--quiet", "typos", *names], False),
+        ("confidential", ["uv", "run", "--quiet", "--script", "scripts/check_confidentiality.py", *names]),
+        ("typos", ["uv", "run", "--quiet", "typos", *names]),
     ]
     if any(n.endswith(".md") for n in names):
-        steps.append(
-            (
-                "generated",
-                [
-                    "env",
-                    "-u",
-                    "HZ_SYSTEM_AGENT__SKILL_DIRS",
-                    "uv",
-                    "run",
-                    "--quiet",
-                    "python",
-                    "scripts/generate_docs.py",
-                    "--check",
-                ],
-                False,
-            )
-        )
-    if web:
-        web_run = ["uv", "run", "--quiet", "--script", "scripts/web_build.py", "exec"]
-        steps += [
-            ("biome", [*web_run, "biome", "check", "--write", *web], True),
-            ("types", [*web_run, "node", "node_modules/@typescript/native/bin/tsc", "--noEmit", "-p", "."], True),
-            ("tests", [*web_run, "vitest", "related", "--run", "--passWithNoTests", *web], True),
-        ]
+        unset = ["env", "-u", "HZ_SYSTEM_AGENT__SKILL_DIRS", "uv", "run", "--quiet", "python"]
+        steps.append(("generated", [*unset, "scripts/generate_docs.py", "--check"]))
+    if any(n.endswith(".md") or n.startswith("docs/overrides/") for n in names):
+        tests = ["tests/unit/documentation_test.py", "tests/unit/standards_test.py", "tests/unit/repository_test.py"]
+        tests += ["tests/unit/pypi_description_test.py", "tests/unit/readme_diagnostics_test.py"]
+        steps.append(("doc-tests", ["uv", "run", "--quiet", "pytest", *tests, "-n", "2", "-q", "--tb=short"]))
     return steps
+
+
+def web_steps(changes: dict[str, Change]) -> list[str]:
+    """The web checks as `steps.py` arguments: format the changed files, then types and related tests together."""
+    web = [n[4:] for n in sorted(changes) if n.startswith("web/") and changes[n].status != "D"]
+    if not web:
+        return []
+    run_web = "uv run --quiet --script scripts/web_build.py exec"
+    files = shlex.join(web)
+    return [
+        f"biome={run_web} biome check --write {files}",
+        f"types={run_web} node node_modules/@typescript/native/bin/tsc --noEmit -p .",
+        f"&tests={run_web} vitest related --run --passWithNoTests {files}",
+    ]
+
+
+def fail_step(name: str, out: str) -> NoReturn:
+    """A check that failed: escalate when the cause is outside this change, else a failure with the output's tail."""
+    lines = [ln for ln in out.splitlines() if ln.strip()][-12:]
+    if name == "generated":
+        stop("check", "A generated file is out of date after your edit.", load())
+    if name == "doc-tests":
+        what = [ln.strip() for ln in out.splitlines() if ln.startswith(("E ", "FAILED"))][:3]
+        stop(
+            "check",
+            "A test asserts the text you changed, so this is not a docs-only change: " + " | ".join(what),
+            load(),
+        )
+    nxt = {
+        "confidential": "Reword the text at the reported location, never quote the term. Run check again",
+        "typos": "Fix the spelling at each reported file:line. Then run check again",
+    }.get(name, "Fix only what the lines in detail name. Then run check again")
+    fail("check", f"{name} failed.", nxt, lines)
 
 
 def stage_check() -> None:
@@ -588,40 +602,35 @@ def stage_check() -> None:
     normalize(top, sorted(changes))
     changes = collect()
     broken = [
-        problem
-        for n in sorted(changes)
-        if n.endswith(".md") and changes[n].status != "D"
-        for problem in relative_links(top, n)
+        p for n in sorted(changes) if n.endswith(".md") and changes[n].status != "D" for p in relative_links(top, n)
     ]
     if broken:
-        fail(
-            "check",
-            "Broken relative link.",
-            "Fix the link target in the file named in detail (the path is relative to that file), then run check again",
-            broken[:5],
+        where = (
+            "Fix the link target in the file named in detail (the path is relative to that file), then run check again"
         )
+        fail("check", "Broken relative link.", where, broken[:5])
     done = []
-    for name, command, heavy in steps_for(changes):
-        code, out = run(gate(command) if heavy else command, cwd=top, timeout=900)
+    for name, command in steps_for(changes):
+        code, out = run(command, cwd=top, timeout=900)
         if code != 0:
-            lines = [ln for ln in out.splitlines() if ln.strip()][-12:]
-            nxt = {
-                "confidential": "Reword the text at the reported location, never quote the term. Run check again",
-                "typos": "Fix the spelling at each reported file:line. Then run check again",
-                "generated": "A generated file is out of date. Do not edit it. Escalate",
-            }.get(name, "Fix only what the lines in detail name. Then run check again")
-            if name == "generated":
-                stop("check", "A generated file is out of date after your edit.", load())
-            fail("check", f"{name} failed.", nxt, lines)
+            fail_step(name, out)
         done.append(name)
+    heavy = web_steps(changes)
+    if heavy:  # one place in the hz-gate queue for all of them
+        code, out = run(gate(["uv", "run", "--quiet", "--script", "scripts/steps.py", *heavy]), cwd=top, timeout=3000)
+        if code != 0:
+            failed = next((ln.split()[1] for ln in out.splitlines() if ln.startswith("✗")), "web")
+            fail_step(failed, out)
+        done += ["biome", "types", "tests"]
     changes = collect()  # biome --write may have formatted files
     state = load()
     state["checked"] = signature(changes)
     save(state)
+    example = suggest(changes)
     ok(
         "check",
         f"Passed: {', '.join(done)}.",
-        f'{RUN} pr "<type>(<scope>): <summary>"  (example: {suggest(changes)})',
+        f'{RUN} pr "<type>(<scope>): <summary>"  (example: {example})',
         checked=state["checked"],
     )
 
@@ -635,12 +644,18 @@ def suggest(changes: dict[str, Change]) -> str:
 
 
 def title_problem(title: str) -> str | None:
-    """Why a pull request title fails commitizen, or None."""
+    """Why a pull request title fails commitizen, or None; the message lists what is allowed."""
     config = tomllib.loads((root() / "pyproject.toml").read_text("utf-8"))["tool"]["commitizen"]["customize"]
-    if re.match(config["schema_pattern"], title):
+    pattern = config["schema_pattern"]
+    if re.match(pattern, title):
         return None
-    types = "feat fix perf refactor docs test build ci chore style revert"
-    return f"Title must be `type(scope): summary` in 72 characters, one of {types}; scope optional."
+    scopes = re.search(r"\\\(\((?P<scopes>[a-z|]+)\)\\\)", pattern)
+    allowed = scopes["scopes"].replace("|", ", ") if scopes else "see pyproject.toml"
+    return (
+        "Title must be `type(scope): summary`, at most 72 characters. Types: feat, fix, perf, refactor, docs, test, "
+        f"build, ci, chore, style, revert. The scope is one of: {allowed}. For a docs page use `docs(docs)`, for the "
+        "web app `fix(web)`."
+    )
 
 
 def slug_repo() -> str:
@@ -666,6 +681,21 @@ def commit_all(title: str, body: str) -> list[str]:
         if code == 0:
             return []
     return out.splitlines()[-10:]
+
+
+def sync_with_main() -> str:
+    """Bring the branch up to date with origin/main (rebase before the first push, merge after). Empty, or why not."""
+    top = root()
+    run(["git", "fetch", "--quiet", "origin", "main"], cwd=top, timeout=120)
+    if run(["git", "merge-base", "--is-ancestor", "origin/main", "HEAD"], cwd=top, timeout=60)[0] == 0:
+        return ""
+    pushed = bool(git("ls-remote", "--heads", "origin", branch(), cwd=top))
+    command = ["git", "merge", "--no-edit", "origin/main"] if pushed else ["git", "rebase", "origin/main"]
+    code, out = run(command, cwd=top, timeout=300)
+    if code != 0:
+        run(["git", "merge" if pushed else "rebase", "--abort"], cwd=top, timeout=60)
+        return out.splitlines()[-1] if out else "git could not combine them."
+    return ""
 
 
 def write_body(text: str) -> Path:
@@ -724,6 +754,9 @@ def stage_pr(args: argparse.Namespace) -> None:
             "Fix only what detail names, then run check, then pr again",
             refused,
         )
+    synced = sync_with_main()
+    if synced:
+        stop("pr", f"Your branch conflicts with main: {synced}", state)
     path = write_body(args.body or args.title)
     command = ["make", "--no-print-directory", "pr", f"TITLE={args.title}", f"BODY_FILE={path}"]
     code, out = run(gate(command), cwd=root(), timeout=2400, env={"NO_PREFLIGHT": "1", "DRAFT": "1"})
@@ -1083,11 +1116,13 @@ def relay(name: str, argv: list[str], budget: int) -> None:
     while not result.exists() and time.monotonic() < deadline:
         time.sleep(1)
     if not result.exists():
+        holder = Path.home().joinpath(".cache", "hz-gate.lock")
+        queue = holder.read_text("utf-8").strip()[:100] if holder.exists() else ""
         emit(
             ok=True,
             stage=name,
             pending=True,
-            msg=f"{name} is still running.",
+            msg=f"{name} is still running." + (f" Queued behind hz-gate: {queue}" if queue else ""),
             next=f"Run the same command again: {RUN} {shlex.join(sys.argv[1:])}",
         )
         sys.exit(4)

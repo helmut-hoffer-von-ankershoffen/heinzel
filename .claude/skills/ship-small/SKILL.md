@@ -12,7 +12,7 @@ JSON line; do what its `next` field says, literally. `S` below is the `uv run --
 | Stage | Command | Does |
 | --- | --- | --- |
 | 1 | `S start SLUG` | New worktree and branch (`SLUG`: 3-41 chars, lowercase, digits, dashes) |
-| 2 | `S classify --files PATH...` | Before editing: is this file allowed? Exit 3 = not allowed |
+| 2 | `S classify --files PATH...` | Before editing: is this file allowed? Exit 0 = edit it, exit 3 = not allowed |
 | 3 | edit the files | Smallest edit that does the job. No new or deleted files |
 | 4 | `S classify` | Reads your real diff: lane `low` or STOP |
 | 5 | `S check` | Checks for exactly your files; fixes whitespace and formatting itself |
@@ -21,7 +21,7 @@ JSON line; do what its `next` field says, literally. `S` below is the `uv run --
 | 8 | `S verify` | After the orchestrator merged: Docs run green and the live page shows your text |
 
 Exit codes: **0** go on with `next`. **1** this stage failed: fix exactly what `detail` names, then repeat the stage.
-**3** STOP: send the JSON line to whoever started you and run nothing else. **4** still running: run the same command
+**3** STOP: this is a correct outcome, not an error. Send the JSON line to whoever started you and run nothing else. **4** still running: run the same command
 again. **2** you used the command wrongly: read `msg`.
 
 Rules that no command can enforce:
