@@ -4,6 +4,7 @@ date: 2026-10-30
 decision-makers: maintainer
 amends: 0094
 related: 0097, 0098
+amended-by: 0114
 ---
 
 # 0110: One versionless launcher installs and opens the standard app
