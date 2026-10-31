@@ -225,3 +225,9 @@ def test_only_the_named_edge_core_counts_and_public_runs_name_none(monkeypatch):
 def test_the_harness_fetches_only_from_official_release_hosts(url):
     with pytest.raises(BaseException, match="official release hosts"):
         harness.fetch(url)
+
+
+def test_a_result_holding_an_object_still_writes(tmp_path):
+    path = tmp_path / "result.json"
+    harness.write_result(path, {"cases": {"8": {"session": object()}}}, [])
+    assert "object object" in path.read_text()

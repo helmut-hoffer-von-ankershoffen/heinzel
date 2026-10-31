@@ -2064,7 +2064,7 @@ def exit_code(label):
 
 
 def write_result(path, result, secrets):
-    text = json.dumps(result, indent=2, sort_keys=False) + "\n"
+    text = json.dumps(result, indent=2, sort_keys=False, default=repr) + "\n"  # a browser session is evidence too
     for secret in secrets:
         if secret in text:
             text = text.replace(secret, "<redacted>")
