@@ -45,7 +45,8 @@ uv run --quiet cz check --message "$title" >/dev/null
 uv run --quiet --script scripts/check_confidentiality.py --text "$title"
 uv run --quiet --script scripts/check_confidentiality.py --branch
 git fetch --quiet "$base" main
-git merge-base --is-ancestor "$base/main" HEAD || { echo "Behind $base/main; run make sync first." >&2; exit 2; }
+# Being behind main is fine: main's own CI gates a release (ADR 0114). Only a real conflict has to be resolved first.
+git merge-tree --write-tree HEAD "$base/main" >/dev/null 2>&1 || { echo "Conflicts with $base/main; run make sync first." >&2; exit 2; }
 
 # The update-prs workflow may have merged main into the remote branch; the push below builds on top of that instead
 # of being rejected. But a branch rebased onto main here (or squashed, amended, reordered) diverges from its remote
