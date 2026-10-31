@@ -45,6 +45,8 @@ from typing import Any, NoReturn
 SELF = Path(__file__).resolve()
 RUN = f"uv run --script {SELF}"
 LABEL = "risk: low"
+MAIN = "origin/main"
+NOT_SMALL = "Not a small change: "
 MAX_FILES, MAX_LINES = 8, 80
 MAX_FAILURES = 2
 BUDGET = 100  # seconds one call may take: a model's shell tool gives up at 120
@@ -101,6 +103,7 @@ ALLOWED_PATHS = [
     r"^docs/overrides/[^/]+\.html$",
     r"^web/src/(components|pages|layout|splash)/.+\.(tsx?|css)$",
     r"^web/src/index\.css$",
+    r"^web/src/i18n\.ts$",  # the app's words; only plain string entries may change (I18N_ENTRY)
 ]
 DERIVED = {"README.md": ["template/README.md.jinja"]}  # generated from the key by `generate_docs.py`
 CODE = re.compile(r"\.(tsx?|css|html)$")
@@ -110,11 +113,13 @@ DANGEROUS = re.compile(
     r"|<script|javascript:|<iframe|\bon[a-z]+=\"|https?://",
     re.IGNORECASE,
 )
-IMPORT = re.compile(r"^\s*(import\b|export .* from\b|.*\brequire\()")
+# One i18n line, stripped: `"key": "text",`, `"key":` or a continued `"text",`. Every part is anchored and the string's
+# alternatives are disjoint, so matching is linear.
+I18N_ENTRY = re.compile(r'(?:"[\w.-]+":)? ?(?:"(?:[^"\\]|\\.)*",?)?')
+IMPORT = re.compile(r"(?:^\s*(?:import\b|export\b[^\n]{0,200}\bfrom\b))|(?:\brequire\()")
 FENCE = re.compile(r"^\s*(```|~~~)")
 SPAN = re.compile(r"(`[^`\n]+`)|\]\((https?://[^)\s]+)\)|(?<![\w/])(https?://[^\s)>\]]+)")
 LINK = re.compile(r"\]\(([^)\s#]+)(#[^)\s]*)?\)")
-SITE = "https://heinzel.team/"  # mkdocs.yml site_url
 
 
 # --- output, state and the failure budget -----------------------------------------------------------------------------
@@ -179,9 +184,17 @@ def gate(argv: list[str]) -> list[str]:
     return ["hz-gate", *argv] if shutil.which("hz-gate") else argv
 
 
+def state_dir() -> Path:
+    """This tree's state folder: a per-user cache folder named by a digest of its git directory."""
+    digest = hashlib.sha256(git("rev-parse", "--absolute-git-dir", cwd=root()).encode()).hexdigest()[:20]
+    folder = Path.home() / ".cache" / "hz-ship" / digest
+    folder.mkdir(parents=True, exist_ok=True)
+    return folder
+
+
 def state_file() -> Path:
     """The per-worktree state file: failures, stop flag, last check, pull request."""
-    return Path(git("rev-parse", "--absolute-git-dir", cwd=root())) / "ship.json"
+    return state_dir() / "ship.json"
 
 
 def load() -> dict[str, Any]:
@@ -212,11 +225,22 @@ def report(state: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def stop(stage: str, msg: str, state: dict[str, Any]) -> NoReturn:
-    """STOP: remember it, so every later stage refuses, and print what the orchestrator needs."""
+def stop(stage: str, msg: str, state: dict[str, Any], *, not_small: bool = False) -> NoReturn:
+    """STOP: remember it, so every later stage refuses, and print what the orchestrator needs.
+
+    A stop for a change that is not small remembers the diff it judged: it clears itself when the diff changes into
+    one that is small (see `refuse_if_stopped`). Every other stop waits for the orchestrator.
+    """
     state["stopped"] = True
     state["why"] = msg
+    state["kind"] = "not-small" if not_small else "failure"
+    state["stopped_at"] = signature(collect()) if not_small else None
     save(state)
+    show_stop(stage, msg, state)
+
+
+def show_stop(stage: str, msg: str, state: dict[str, Any]) -> NoReturn:
+    """Print the stop report and leave with exit code 3."""
     emit(
         ok=False,
         stage=stage,
@@ -252,10 +276,17 @@ def ok(stage: str, msg: str, nxt: str, **extra: object) -> None:
 
 
 def refuse_if_stopped(stage: str) -> None:
-    """A stopped change runs no further stage."""
+    """A stopped change runs no further stage, unless it was stopped for not being small and no longer is."""
     state = load()
-    if state.get("stopped"):
-        stop(stage, state.get("why") or "This change was stopped.", state)
+    if not state.get("stopped"):
+        return
+    if state.get("kind") == "not-small":
+        changes = collect()
+        if changes and signature(changes) != state.get("stopped_at") and not classify_changes(changes):
+            state.update(stopped=False, why=None, kind=None, stopped_at=None)
+            save(state)
+            return
+    show_stop(stage, state.get("why") or "This change was stopped.", state)
 
 
 # --- what changed -----------------------------------------------------------------------------------------------------
@@ -315,7 +346,7 @@ def parse_diff(text: str) -> dict[str, Change]:
 def collect(head: str | None = None) -> dict[str, Change]:
     """Every change against the merge base with origin/main: the working tree, or the commit `head`."""
     top = root()
-    base = git("merge-base", "origin/main", head or "HEAD", cwd=top) or "origin/main"
+    base = git("merge-base", MAIN, head or "HEAD", cwd=top) or MAIN
     target = [head] if head else []
     changes = parse_diff(
         git("diff", "-U0", "--no-color", "--no-renames", "--no-ext-diff", base, *target, "--", cwd=top)
@@ -387,7 +418,9 @@ def diff_reasons(change: Change) -> list[str]:
             reasons.append("changes inline code, a command or an external link")
     else:
         for number, line in change.added:
-            if DANGEROUS.search(line):
+            if change.path == "web/src/i18n.ts" and not I18N_ENTRY.fullmatch(line.strip()):
+                reasons.append(f"line {number}: not a plain string entry")
+            elif DANGEROUS.search(line):
                 reasons.append(f"line {number}: security-sensitive or network code")
             elif IMPORT.search(line):
                 reasons.append(f"line {number}: new import")
@@ -507,7 +540,7 @@ def cmd_classify(args: argparse.Namespace) -> None:
     reasons = classify_changes(changes)
     state = load()
     if reasons:
-        stop("classify", "Not a small change: " + "; ".join(reasons[:4]) + ".", state)
+        stop("classify", NOT_SMALL + "; ".join(reasons[:4]) + ".", state, not_small=True)
     state["lane"] = "low"
     save(state)
     total = sum(c.lines for c in changes.values())
@@ -598,7 +631,7 @@ def stage_check() -> None:
     changes = require_changes("check")
     reasons = classify_changes(changes)
     if reasons:
-        stop("check", "Not a small change: " + "; ".join(reasons[:3]) + ".", load())
+        stop("check", NOT_SMALL + "; ".join(reasons[:3]) + ".", load(), not_small=True)
     normalize(top, sorted(changes))
     changes = collect()
     broken = [
@@ -612,6 +645,8 @@ def stage_check() -> None:
     done = []
     for name, command in steps_for(changes):
         code, out = run(command, cwd=top, timeout=900)
+        if code != 0 and "Timeout (>" in out:  # a test's own time limit on a loaded host says nothing about the text
+            code, out = run(command, cwd=top, timeout=900)
         if code != 0:
             fail_step(name, out)
         done.append(name)
@@ -687,10 +722,10 @@ def sync_with_main() -> str:
     """Bring the branch up to date with origin/main (rebase before the first push, merge after). Empty, or why not."""
     top = root()
     run(["git", "fetch", "--quiet", "origin", "main"], cwd=top, timeout=120)
-    if run(["git", "merge-base", "--is-ancestor", "origin/main", "HEAD"], cwd=top, timeout=60)[0] == 0:
+    if run(["git", "merge-base", "--is-ancestor", MAIN, "HEAD"], cwd=top, timeout=60)[0] == 0:
         return ""
     pushed = bool(git("ls-remote", "--heads", "origin", branch(), cwd=top))
-    command = ["git", "merge", "--no-edit", "origin/main"] if pushed else ["git", "rebase", "origin/main"]
+    command = ["git", "merge", "--no-edit", MAIN] if pushed else ["git", "rebase", MAIN]
     code, out = run(command, cwd=top, timeout=300)
     if code != 0:
         run(["git", "merge" if pushed else "rebase", "--abort"], cwd=top, timeout=60)
@@ -701,7 +736,7 @@ def sync_with_main() -> str:
 def write_body(text: str) -> Path:
     """The pull request description: why, the lane and its rules, the files."""
     names = "\n".join(f"- `{name}`" for name in sorted(collect()))
-    path = Path(git("rev-parse", "--absolute-git-dir", cwd=root())) / "ship-pr-body.md"
+    path = state_dir() / "pr-body.md"
     path.write_text(
         f"## What and why\n\n{text}\n\n## Risk\n\nLane `low`, classified by `scripts/ship.py` from the file paths and "
         "the diff: only docs, site templates or small web UI; no code block, command, external link, import or "
@@ -740,7 +775,7 @@ def stage_pr(args: argparse.Namespace) -> None:
     changes = require_changes("pr")
     reasons = classify_changes(changes)
     if reasons:
-        stop("pr", "Not a small change: " + "; ".join(reasons[:3]) + ".", state)
+        stop("pr", NOT_SMALL + "; ".join(reasons[:3]) + ".", state, not_small=True)
     if state.get("checked") != signature(changes):
         emit(ok=False, stage="pr", msg="Files changed since the last check.", next=f"{RUN} check")
         sys.exit(2)
@@ -857,7 +892,7 @@ def stage_wait(args: argparse.Namespace) -> None:
                 if blocked
                 else ""
             )
-            ready = "Stop. Tell the orchestrator the PR URL and that it is ready to merge; after it merges, run verify"
+            ready = f"{RUN} merge {number}"
             ok("wait", f"All checks green at {head}.{note}", ready, url=data["url"], head=head)
             return
         if time.monotonic() > deadline:
@@ -873,11 +908,17 @@ def stage_wait(args: argparse.Namespace) -> None:
         time.sleep(20)
 
 
+def site_url() -> str:
+    """The published site's address, from mkdocs.yml (it has moved before)."""
+    found = re.search(r"(?m)^site_url:\s*(\S+)", (root() / "mkdocs.yml").read_text("utf-8"))
+    return found[1].rstrip("/") + "/" if found else ""
+
+
 def page_url(path: str) -> str | None:
     """Where the site shows docs/<path>.md."""
     if path.startswith("docs/") and path.endswith(".md"):
         page = path[5:-3].removesuffix("README").removesuffix("/")  # README.md is a directory's index page
-        return SITE + (page + "/" if page else "")
+        return site_url() + (page + "/" if page else "")
     return None
 
 
@@ -995,62 +1036,89 @@ def stage_verify(args: argparse.Namespace) -> None:
     )
 
 
+def read_pull(repo: str, number: int) -> dict[str, Any]:
+    """The pull request's state, labels, head and checks as GitHub reports them now."""
+    fields = "labels,state,isDraft,headRefOid,mergeStateStatus,mergeable,statusCheckRollup"
+    code, out = gh("pr", "view", str(number), "-R", repo, "--json", fields)
+    return json.loads(out) if code == 0 else {}
+
+
+def merge_blocker(data: dict[str, Any]) -> str:
+    """Why a low-lane pull request cannot merge yet, or "" when every check is green at its head and it is clean."""
+    pending, bad, green = checks_of(data)
+    if pending:
+        return "checks are still running: " + ", ".join(pending[:3])
+    if bad:
+        return "checks failed: " + ", ".join(b["name"] for b in bad[:3])
+    if not green:
+        return "CI OK has not passed"
+    if data["mergeStateStatus"] != "CLEAN":
+        return f"the pull request is {data['mergeStateStatus']}, not CLEAN (behind main, or a review blocks it)"
+    return ""
+
+
+def train_merge(repo: str, number: int) -> None:
+    """Orchestrator: hand a pull request that is not ready yet to the merge train, which waits and updates it."""
+    train = shutil.which("hz-merge-train") or str(Path.home() / ".local/bin/hz-merge-train")
+    _, out = run([train, repo, str(number)], timeout=3000)
+    merged = "merged at" in out
+    last = out.splitlines()[-1] if out else "hz-merge-train printed nothing."
+    nxt = f"{RUN} verify --pr {number}" if merged else "Read the message; the train never forces a merge."
+    emit(ok=merged, stage="merge", msg=last, next=nxt)
+    sys.exit(0 if merged else 1)
+
+
 def stage_merge(args: argparse.Namespace) -> None:
-    """Orchestrator only: re-classify the pull request from GitHub's own data, then hand it to the merge train."""
-    if not ORCHESTRATOR:
-        emit(
-            ok=False,
-            stage="merge",
-            stop=True,
-            msg="STOP. Merging is the orchestrator's job (SHIP_ORCHESTRATOR=1). Report the PR URL.",
-            next="stop",
-        )
-        sys.exit(3)
+    """Merge a low-lane pull request, without the orchestrator, once it is green at its exact head.
+
+    The labelled pull request is re-classified from GitHub's own data at that head, so the label alone never merges
+    anything. Anything not low, or not ready, is not merged here: the orchestrator uses `hz-merge-train`.
+    """
     repo, number = slug_repo(), args.pr
-    code, out = gh("pr", "view", str(number), "-R", repo, "--json", "labels,state,isDraft,headRefOid")
-    data = json.loads(out) if code == 0 else {}
-    if (
-        data.get("state") != "OPEN"
-        or data.get("isDraft")
-        or LABEL not in [label["name"] for label in data.get("labels", [])]
-    ):
+    data = read_pull(repo, number)
+    labels = [label["name"] for label in data.get("labels", [])]
+    if data.get("state") != "OPEN" or data.get("isDraft") or LABEL not in labels:
+        msg = f"#{number} must be open, ready and labelled `{LABEL}`."
+        emit(ok=False, stage="merge", msg=msg, next="Not a low-lane pull request: the orchestrator merges it.")
+        sys.exit(2)
+    head = data["headRefOid"]
+    run(["git", "fetch", "--quiet", "origin", f"pull/{number}/head"], timeout=120)
+    if git("rev-parse", "FETCH_HEAD", cwd=root()) != head:
         emit(
-            ok=False,
-            stage="merge",
-            msg=f"#{number} must be open, ready and labelled `{LABEL}`.",
-            next="Use hz-merge-train directly for other pull requests.",
+            ok=False, stage="merge", msg="The pull request head moved while it was read.", next=f"{RUN} merge {number}"
         )
         sys.exit(2)
-    run(["git", "fetch", "--quiet", "origin", f"pull/{number}/head"], timeout=120)
-    changes = collect("FETCH_HEAD")
-    reasons = classify_changes(changes)
+    reasons = classify_changes(collect(head))
     if reasons:
-        emit(
-            ok=False,
-            stage="merge",
-            lane="escalate",
-            reasons=reasons,
-            msg="The label says low but the diff is not. Review it by hand.",
-            next="Review the pull request; do not use the low lane.",
-        )
+        msg = "The label says low but the diff is not. The orchestrator reviews and merges it by hand."
+        emit(ok=False, stage="merge", stop=True, lane="escalate", reasons=reasons, msg=msg, next="stop")
         sys.exit(3)
-    train = shutil.which("hz-merge-train") or str(Path.home() / ".local/bin/hz-merge-train")
-    code, out = run([train, repo, str(number)], timeout=3000)
-    merged = "merged at" in out
-    emit(
-        ok=merged,
-        stage="merge",
-        msg=out.splitlines()[-1] if out else "hz-merge-train printed nothing.",
-        next=f"{RUN} verify --pr {number}" if merged else "Read the message; the train never forces a merge.",
-    )
-    sys.exit(0 if merged else 1)
+    blocker = merge_blocker(data)
+    if blocker and ORCHESTRATOR:
+        train_merge(repo, number)
+    if blocker:
+        emit(ok=True, stage="merge", pending=True, msg=f"Not ready: {blocker}.", next=f"{RUN} wait --pr {number}")
+        sys.exit(4)
+    code, out = gh("pr", "merge", str(number), "-R", repo, "--squash", "--match-head-commit", head)
+    if code != 0:
+        fail(
+            "merge",
+            "GitHub refused the merge.",
+            f"Read detail. Stop and report it; do not retry more than once: {RUN} merge {number}",
+            out.splitlines()[-4:],
+        )
+    ok("merge", f"Merged #{number} at {head[:8]}.", f"{RUN} verify --pr {number}", pr=number, head=head[:8])
 
 
 def cmd_status(_: argparse.Namespace) -> None:
     """Where the change stands and what to run next."""
     state = load()
     changes = collect()
-    lane = "stopped" if state.get("stopped") else ("low" if changes and not classify_changes(changes) else "n/a")
+    lane = "n/a"
+    if changes and not classify_changes(changes):
+        lane = "low"
+    if state.get("stopped"):
+        lane = "stopped"
     if state.get("stopped"):
         nxt = "stop"
     elif state.get("pr"):
@@ -1090,16 +1158,18 @@ def cmd_reset(_: argparse.Namespace) -> None:
             next="stop",
         )
         sys.exit(3)
-    save({"failures": [], "stopped": False})
+    state = load()
+    state.update(failures=[], stopped=False, why=None, kind=None, stopped_at=None)
+    save(state)
     ok("reset", "Failures cleared.", f"{RUN} status")
 
 
 # --- long stages run detached, so a shell timeout cannot kill them ---
 
 
-def relay(name: str, argv: list[str], budget: int) -> None:
+def relay(name: str, argv: list[str], budget: int, *, gated: bool = True) -> None:
     """Run a long stage as a detached job and wait up to `budget` seconds; call again to keep waiting."""
-    folder = Path(git("rev-parse", "--absolute-git-dir", cwd=root())) / "ship-jobs"
+    folder = state_dir() / "jobs"
     folder.mkdir(exist_ok=True)
     result, pid, log = folder / f"{name}.json", folder / f"{name}.pid", folder / f"{name}.log"
     key = hashlib.sha256(" ".join([*argv, signature(collect())]).encode()).hexdigest()
@@ -1109,9 +1179,10 @@ def relay(name: str, argv: list[str], budget: int) -> None:
             stale.unlink(missing_ok=True)
     if not result.exists() and not pid.exists():
         meta.write_text(key)
+        (folder / f"{name}.spec").write_text(json.dumps(argv))  # the child reads its arguments here, not from argv
         with log.open("w") as sink:
             child = subprocess.Popen(  # noqa: S603
-                [sys.executable, str(SELF), "_job", name, str(result), *argv],
+                [sys.executable, str(SELF), "_job", name],
                 cwd=root(),
                 stdout=sink,
                 stderr=subprocess.STDOUT,
@@ -1123,7 +1194,7 @@ def relay(name: str, argv: list[str], budget: int) -> None:
         time.sleep(1)
     if not result.exists():
         holder = Path.home().joinpath(".cache", "hz-gate.lock")
-        queue = holder.read_text("utf-8").strip()[:100] if holder.exists() else ""
+        queue = holder.read_text("utf-8").strip()[:100] if gated and holder.exists() else ""
         emit(
             ok=True,
             stage=name,
@@ -1140,52 +1211,98 @@ def relay(name: str, argv: list[str], budget: int) -> None:
 
 
 def cmd_job(args: argparse.Namespace) -> None:
-    """Internal: run one stage in the background and store its output and exit code."""
-    code = 0
+    """Internal: run one stage in the background and store its output and exit code.
+
+    Raises:
+        SystemExit: with the stage's exit code, once it is stored.
+    """
+    folder = state_dir() / "jobs"
+    argv = [str(item) for item in json.loads((folder / f"{args.name}.spec").read_text())]
+    result = folder / f"{args.name}.json"
     try:
-        dispatch(args.argv)
+        dispatch(argv)
     except SystemExit as stopped:
-        code = int(stopped.code or 0)
-    Path(args.result).write_text(json.dumps({"code": code, "out": OUT}))
+        result.write_text(json.dumps({"code": int(stopped.code or 0), "out": OUT}))
+        raise
+    result.write_text(json.dumps({"code": 0, "out": OUT}))
 
 
 # --- entry ------------------------------------------------------------------------------------------------------------
 
 
+EXITS = "Exit codes: 0 go on with `next`; 1 failed, fix what detail names; 2 wrong usage; 3 STOP; 4 run it again."
+STAGES = {
+    "start": ("New worktree and branch from origin/main.", "start fix-install-typo"),
+    "classify": (
+        "Is the change small? With --files: may these files be edited? Without: reads your real diff.",
+        "classify",
+    ),
+    "check": ("Scoped checks for exactly the files you changed. Fixes whitespace and formatting itself.", "check"),
+    "pr": (
+        "Commit, push through hz-gate and open the pull request (risk: low, auto-merge off).",
+        'pr "docs(docs): fix a typo" --body "why"',
+    ),
+    "wait": ("Wait for the pull request's checks; merges main in when behind.", "wait"),
+    "verify": ("After the orchestrator merged: the Docs run is green and the live page shows your text.", "verify"),
+    "merge": (
+        "Orchestrator only (SHIP_ORCHESTRATOR=1): re-classify the pull request, then hz-merge-train.",
+        "merge 123",
+    ),
+    "status": ("Where this change is, and the next command.", "status"),
+    "reset": ("Orchestrator only (SHIP_ORCHESTRATOR=1): clear a stopped change.", "reset"),
+    "escalate": ("Stop and hand over, with one sentence why.", 'escalate "the change needs a test edit"'),
+}
+
+
 def parser() -> argparse.ArgumentParser:
-    """The command line."""
-    cli = argparse.ArgumentParser(prog="ship", description="Golden path for small changes.")
-    sub = cli.add_subparsers(dest="command", required=True)
-    start = sub.add_parser("start")
-    start.add_argument("slug")
-    start.add_argument("--kind", default="docs", choices=["docs", "fix", "feat", "chore"])
-    start.add_argument("--base", default="origin/main")
-    classify = sub.add_parser("classify")
-    classify.add_argument("--files", nargs="+")
-    for name in ("check",):
-        sub.add_parser(name).add_argument("--budget", type=int, default=BUDGET)
-    pr = sub.add_parser("pr")
-    pr.add_argument("title")
-    pr.add_argument("--body", default="")
-    pr.add_argument("--budget", type=int, default=BUDGET)
+    """The command line; every stage has its own --help."""
+    cli = argparse.ArgumentParser(
+        prog="ship",
+        description="Golden path for small changes: one command per stage, one JSON line of output.",
+        epilog=f"Run a stage with --help for its usage. {EXITS}",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    sub = cli.add_subparsers(dest="command", required=True, metavar="STAGE")
+
+    def stage_parser(name: str) -> argparse.ArgumentParser:
+        """A stage's sub-parser whose --help says what it does, an example, and the exit codes."""
+        summary, example = STAGES[name]
+        return sub.add_parser(
+            name,
+            help=summary,
+            description=summary,
+            epilog=f"Example: {RUN} {example}\n{EXITS}",
+            formatter_class=argparse.RawDescriptionHelpFormatter,
+        )
+
+    stage_parser("start").add_argument("slug", help="3 to 41 characters: lowercase letters, digits, dashes")
+    start = sub.choices["start"]
+    start.add_argument("--kind", default="docs", choices=["docs", "fix", "feat", "chore"], help="branch prefix")
+    start.add_argument("--base", default=MAIN, help="what the branch starts from")
+    stage_parser("classify").add_argument("--files", nargs="+", help="paths you are about to edit")
+    stage_parser("check").add_argument("--budget", type=int, default=BUDGET, help="seconds to wait per call")
+    pr = stage_parser("pr")
+    pr.add_argument("title", help='conventional commit title, for example "docs(docs): fix a typo"')
+    pr.add_argument("--body", default="", help="why, in a sentence or two")
+    pr.add_argument("--budget", type=int, default=BUDGET, help="seconds to wait per call")
     for name in ("wait", "verify"):
-        waiter = sub.add_parser(name)
-        waiter.add_argument("--pr", type=int)
-        waiter.add_argument("--budget", type=int, default=BUDGET)
-    sub.add_parser("merge").add_argument("pr", type=int)
-    sub.add_parser("status")
-    sub.add_parser("reset")
-    sub.add_parser("escalate").add_argument("why")
+        waiter = stage_parser(name)
+        waiter.add_argument("--pr", type=int, help="pull request number (default: the one this change opened)")
+        waiter.add_argument("--budget", type=int, default=BUDGET, help="seconds to wait per call")
+    stage_parser("merge").add_argument("pr", type=int, help="number of a pull request labelled risk: low")
+    stage_parser("status")
+    stage_parser("reset")
+    stage_parser("escalate").add_argument("why", help="one sentence")
     job = sub.add_parser("_job")
-    job.add_argument("name")
-    job.add_argument("result")
-    job.add_argument("argv", nargs=argparse.REMAINDER)
+    job.add_argument("name", choices=["check", "pr"])
     return cli
 
 
 def cmd_check(args: argparse.Namespace) -> None:
     """`check` as the model runs it: a detached job; inside the job, the stage itself."""
-    stage_check() if os.environ.get("SHIP_IN_JOB") else relay("check", ["check"], args.budget)
+    stage_check() if os.environ.get("SHIP_IN_JOB") else relay(
+        "check", ["check"], args.budget, gated=bool(web_steps(collect()))
+    )
 
 
 def cmd_pr(args: argparse.Namespace) -> None:

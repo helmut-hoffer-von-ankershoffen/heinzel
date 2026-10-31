@@ -11,9 +11,11 @@ import hashlib
 import json
 import logging
 import os
+import plistlib
 import re
 import secrets
 import selectors
+import shlex
 import shutil
 import stat
 import subprocess
@@ -92,9 +94,11 @@ from heinzel.modules.system.daemon._units import (
     LOGIN_ITEM_HINT,
     NOTIFIER_APP,
     SYSTEMD_NAME,
+    TICK,
     check_interval,
     launchd_plist,
     plist_path,
+    released_launchd_minutes,
     systemd_paths,
     systemd_service,
     systemd_timer,
@@ -297,13 +301,19 @@ def _safely_absent(path: Path) -> bool:
 
 
 def _launchctl_quiescent_output(output: str) -> bool:
-    """Parse the documented legacy list format; any unexpected record fails closed."""
+    """Whether the documented legacy list format holds no daemon record."""
+    labels = _launchctl_records(output)
+    return labels is not None and LABEL not in labels
+
+
+def _launchctl_records(output: str) -> dict[str, str] | None:
+    """Each label's PID column from the documented legacy list format; any unexpected record fails closed."""
     if len(output.encode("utf-8")) > MAX_SERVICE_MANAGER_OUTPUT:
-        return False
+        return None
     lines = output.splitlines()
     if not lines or lines[0].split() != ["PID", "Status", "Label"]:
-        return False
-    labels: set[str] = set()
+        return None
+    labels: dict[str, str] = {}
     expected_columns = 3
     for line in lines[1:]:
         parts = line.split()
@@ -313,9 +323,9 @@ def _launchctl_quiescent_output(output: str) -> bool:
             or not re.fullmatch(r"-?[0-9]+", parts[1])
             or parts[2] in labels
         ):
-            return False
-        labels.add(parts[2])
-    return LABEL not in labels
+            return None
+        labels[parts[2]] = parts[0]
+    return labels
 
 
 def _manager_environment(command: list[str]) -> dict[str, str]:
@@ -585,6 +595,7 @@ class DaemonService:
         self._quiescence_probe = quiescence_probe or _quiescence_command
         self._quiescence_installation = quiescence_installation
         self._quiescence_problem = "The installation or service-manager evidence could not be verified."
+        self._quiescence_advice: str | None = None
         self._linux_manager_identity = linux_manager_identity or _linux_user_manager_identity
         self._continuity_fingerprint = continuity_fingerprint
         self._boot_identity = boot_identity or (lambda: _platform_boot_identity(self._platform, self._runner))
@@ -861,8 +872,136 @@ class DaemonService:
                     self._quiescence_installation.prefix.parent, binary
                 )
             return all(path.read_text() == content for path, content in self._unit_files(executable, minutes).items())
-        except (OSError, UnicodeError, HeinzelError):
+        except (OSError, ValueError, HeinzelError):  # UnicodeError and a marker's impossible interval are ValueErrors
             return False
+
+    def _released_unit_minutes(self, plist: Path, executable: Path) -> int | None:
+        """The retained plist's interval if a release wrote exactly these bytes for `executable`, safely read."""
+        try:
+            with _open_verified_handover_file(plist) as handle:
+                info = os.fstat(handle.fileno())
+                if (
+                    not stat.S_ISREG(info.st_mode)
+                    or info.st_uid != os.getuid()
+                    or info.st_mode & 0o022
+                    or info.st_size > MAX_HANDOVER_FILE_BYTES
+                ):
+                    return None
+                content = handle.read(MAX_HANDOVER_FILE_BYTES + 1)
+        except (OSError, HeinzelError):
+            return None
+        return released_launchd_minutes(content, executable, self.log_path.parent)
+
+    def _retained_marker_agrees(self, executable: Path, minutes: int) -> bool:
+        """No marker (a failed load never wrote one), or one naming this executable and interval."""
+        marker = self.state_dir / "install.json"
+        if _safely_absent(marker):
+            return True
+        recorded = self._read_state("install.json")
+        return (
+            recorded.get("executable") == str(executable)
+            and recorded.get("platform") == self._platform
+            and recorded.get("interval_minutes") == minutes
+        )
+
+    def _no_tick_process(self, executable: Path) -> bool:
+        pattern = re.escape(f"{executable} {' '.join(TICK)}")
+        result = self._quiescence_probe(["/usr/bin/pgrep", "-f", pattern])
+        return result.returncode == 1 and not result.truncated and not result.stdout.strip()
+
+    def _boot_out_dead_daemon(self, executable: Path, binary: Path) -> bool:
+        """Unload a registered daemon that holds no process and cannot start one; anything else stays untouched."""
+        installation = self._quiescence_installation
+        if (
+            installation is None
+            or not _safely_absent(installation.prefix)
+            or not all(_safely_absent(binary / name) for name in ("hz", "heinzel", "hz-install"))
+            or not self._no_tick_process(executable)
+            or (self._mac_records() or {}).get(LABEL) != "-"  # read again immediately before acting
+        ):
+            return False
+        self._quiescence_probe(["/bin/launchctl", "bootout", f"gui/{self._uid()}/{LABEL}"])
+        records = self._mac_records()
+        return records is not None and LABEL not in records
+
+    def _mac_records(self) -> dict[str, str] | None:
+        result = self._quiescence_probe(["/bin/launchctl", "list"])
+        return None if result.returncode != 0 or result.truncated else _launchctl_records(result.stdout)
+
+    def _retire_retained_unit(self, plist: Path) -> None:
+        """Move, never delete: the files stay readable and can be moved back."""
+        stamp = self._clock().strftime("%Y%m%dT%H%M%S")
+        directory = self.state_dir / "retired-units" / f"{stamp}-{secrets.token_hex(4)}"
+        private_dir(directory)
+        marker = self.state_dir / "install.json"
+        if not _safely_absent(marker):
+            marker.replace(directory / marker.name)
+        plist.replace(directory / plist.name)
+        logger.warning(
+            "Moved a stopped daemon unit left by an older installation to %s. "
+            "Run `hz system daemon install` to run the daemon again.",
+            directory,
+        )
+
+    def _recover_retained_unit(self, binary: Path) -> None:
+        """Move aside a unit a release wrote when launchd holds no live service for it.
+
+        Only exact released bytes for this user's own executable qualify, so no foreign or edited unit is ever
+        unloaded or moved. A unit that matches the current install record and is not registered stays where it is.
+        """
+        self._quiescence_advice = None
+        plist = plist_path(self.unit_dir)
+        marker = self.state_dir / "install.json"
+        retire = "mkdir -p ~/hz-retired && mv"
+        if _safely_absent(plist):
+            if not _safely_absent(marker):
+                self._quiescence_advice = (
+                    f"Next, if no daemon is wanted: `{retire} {shlex.quote(str(marker))} ~/hz-retired/`, "
+                    "then run the installer again."
+                )
+            return
+        executable = binary / "hz"
+        minutes = self._released_unit_minutes(plist, executable)
+        if minutes is None or not self._retained_marker_agrees(executable, minutes):
+            self._quiescence_advice = (
+                f"No release wrote {plist} for {executable} with this install record, so it was left alone. "
+                f"Read it: `plutil -p {shlex.quote(str(plist))}`. If you do not need it, run "
+                f"`launchctl bootout gui/{self._uid()}/{LABEL}; {retire} {shlex.quote(str(plist))} ~/hz-retired/`, "
+                "then run the installer again."
+            )
+            return
+        self._settle_released_unit(plist, binary, retire)
+
+    def _settle_released_unit(self, plist: Path, binary: Path, retire: str) -> None:
+        """Decide from launchd's evidence what happens to a unit a release wrote."""
+        registered = (
+            "An earlier Heinzelmännchen background service is still registered with your Mac and may be running. "
+            "Remove it: `uvx --from heinzel hz system daemon uninstall`, then run the installer again."
+        )
+        pending = ("handover-pending.json", "handover-request.json", "mutation-pending.json")
+        if not self._quiescence_target(binary) or not all(
+            _safely_absent(self.state_dir / name) for name in (*pending, "standard-install-pending.json")
+        ):
+            return  # the snapshot refuses these before any manager query
+        records = self._mac_records() if self._mac_session_verified() else None
+        if records is None:
+            return
+        pid = records.get(LABEL)
+        if pid not in {None, "-"}:
+            self._quiescence_advice = registered
+            return
+        if pid is None and self._quiescence_unit_state(binary):
+            return  # the trusted retained unit: reinstalling keeps it
+        if pid == "-" and not self._boot_out_dead_daemon(binary / "hz", binary):
+            self._quiescence_advice = registered
+            return
+        try:
+            self._retire_retained_unit(plist)
+        except OSError:
+            self._quiescence_advice = (
+                f"Moving the stopped unit failed. Next: `{retire} {shlex.quote(str(plist))} ~/hz-retired/`, "
+                "then run the installer again."
+            )
 
     def _quiescent_snapshot(self, binary: Path, token: str | None = None) -> bool:
         self._quiescence_problem = "The selected installation destination could not be verified."
@@ -894,6 +1033,21 @@ class DaemonService:
             and all(_safely_absent(path) for path in paths)
             and self._quiescence_unit_state(binary)
             and self._quiescence_target(binary)
+        )
+
+    def _mac_session_verified(self) -> bool:
+        try:
+            results = [
+                self._quiescence_probe(command)
+                for command in (["/bin/launchctl", "managername"], ["/bin/launchctl", "manageruid"])
+            ]
+        except (OSError, ValueError, HeinzelError):
+            return False
+        name, uid = results
+        return (
+            name.returncode == uid.returncode == 0
+            and name.stdout.strip() == "Aqua"
+            and uid.stdout.strip() == str(self._uid())
         )
 
     def _mac_manager_absent(self) -> bool:
@@ -988,6 +1142,9 @@ class DaemonService:
                         "inspect `hz system daemon status` if needed."
                     )
                     raise HeinzelError(msg)
+                if tick and self._platform == "darwin" and self._quiescence_installation is not None:
+                    with suppress(OSError, ValueError, HeinzelError):  # the snapshot below still decides
+                        self._recover_retained_unit(binary)
                 if not tick or not self._quiescent_snapshot(binary):
                     if self._platform == "linux":
                         msg = (
@@ -999,6 +1156,7 @@ class DaemonService:
                         problem = self._quiescence_problem if tick else "The daemon tick lock is busy."
                         msg = (
                             f"The daemon is not proven quiescent. {problem} "
+                            f"{self._quiescence_advice + ' ' if self._quiescence_advice else ''}"
                             "Inspect `uvx --from heinzel hz system daemon status` before retrying. "
                             "This inspection command also works when hz is not installed."
                         )
@@ -1363,6 +1521,15 @@ class DaemonService:
                     fix="Run `hz system daemon install` again",
                 )
             ]
+        elif self._registered_program_missing():
+            checks = [
+                Check(
+                    name="daemon",
+                    status=Status.DEGRADED,
+                    detail="an earlier background service is still registered, but the program it starts is gone",
+                    fix="Run `uvx --from heinzel hz system daemon uninstall`",
+                )
+            ]
         else:
             checks = [Check(name="daemon", status=Status.UP, detail=f"loaded, every {status.interval_minutes} minutes")]
             checks.append(self._freshness(status))
@@ -1390,6 +1557,16 @@ class DaemonService:
                 )
             )
         return checks
+
+    def _registered_program_missing(self) -> bool:
+        """Whether the installed LaunchAgent names a program that is gone; parsed only to explain, never to trust."""
+        if self._platform != "darwin":
+            return False
+        try:
+            arguments = plistlib.loads(plist_path(self.unit_dir).read_bytes()).get("ProgramArguments")
+            return bool(arguments) and not Path(arguments[0]).exists()
+        except (OSError, ValueError, TypeError, AttributeError, plistlib.InvalidFileException):
+            return False
 
     def jobs(self) -> list[JobInfo]:
         """Every job the kernel knows, with its schedule, next slot and last run; a damaged ledger is a problem."""

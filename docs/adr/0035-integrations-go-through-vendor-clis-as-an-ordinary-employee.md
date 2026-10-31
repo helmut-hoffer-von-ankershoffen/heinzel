@@ -5,6 +5,7 @@ date: 2026-10-24
 decision-makers: maintainer
 supersedes: 0033, 0034
 related: 0015, 0017, 0027, 0028, 0029, 0030, 0032, 0033, 0034
+implemented-by: 40, 49
 ---
 
 # 0035: Integrations go through the vendor's CLI as an ordinary employee
