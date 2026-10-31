@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { chromium, webkit } from "playwright-core";
+import { revealChat } from "./chat-ready.mjs";
 
 const require = createRequire(import.meta.url);
 const axe = readFileSync(require.resolve("axe-core/axe.min.js"), "utf8");
@@ -40,7 +41,7 @@ try {
   await page.getByText(/Tool activity for this reply/).click();
   await page.getByText("connected_read · completed").waitFor();
   await page.reload();
-  await page.getByRole("tab", { name: "Chat", exact: true }).click();
+  await revealChat(page);
   await panel.getByText(/Recorded state: approved/).waitFor();
   await panel.getByRole("button", { name: "Revoke this grant" }).click();
   await panel.getByText(/Recorded state: revoked/).waitFor();

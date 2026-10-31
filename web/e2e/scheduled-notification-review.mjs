@@ -4,6 +4,7 @@ import { createRequire } from "node:module";
 import { join } from "node:path";
 import { chromium, webkit } from "playwright-core";
 import { publishJson } from "./atomic-json.mjs";
+import { revealChat } from "./chat-ready.mjs";
 
 const require = createRequire(import.meta.url);
 const axe = readFileSync(require.resolve("axe-core/axe.min.js"), "utf8");
@@ -78,7 +79,7 @@ try {
   assert.equal(finished.ok, true, `daemon failed: ${finished.failure}`);
   assert.equal(finished.deduplicated, true);
   await page.reload();
-  await page.getByRole("tab", { name: "Chat", exact: true }).click();
+  await revealChat(page);
   const activity = page.getByRole("region", { name: "Scheduled notification activity" });
   await activity.getByText("Fictional title").waitFor({ timeout: 30000 });
   assert.match((await activity.textContent()) ?? "", /model-chosen/);

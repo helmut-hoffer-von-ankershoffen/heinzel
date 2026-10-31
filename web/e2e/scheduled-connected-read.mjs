@@ -4,6 +4,7 @@ import { createRequire } from "node:module";
 import { join } from "node:path";
 import { chromium, webkit } from "playwright-core";
 import { publishJson } from "./atomic-json.mjs";
+import { revealChat } from "./chat-ready.mjs";
 
 const require = createRequire(import.meta.url);
 const axe = readFileSync(require.resolve("axe-core/axe.min.js"), "utf8");
@@ -13,25 +14,13 @@ url.pathname = "/doctor";
 const browser = await (process.argv[3] === "webkit" ? webkit : chromium).launch({ headless: true });
 const context = await browser.newContext({ serviceWorkers: "block", viewport: { width: 390, height: 844 } });
 const page = await context.newPage();
-/** A reload can render tabs before startup releases the app's inert interaction guard. */
-async function revealChat() {
-  await page.locator("#splash").waitFor({ state: "hidden" });
-  await page.waitForFunction(() => {
-    const root = document.getElementById("root");
-    return root !== null && !root.hasAttribute("inert");
-  });
-  await page.getByRole("tab", { name: "Chat", exact: true }).click();
-  await page.getByRole("tab", { name: "Chat", exact: true, selected: true }).waitFor();
-  await page.getByRole("tabpanel", { name: "Chat", exact: true }).waitFor();
-}
-
 try {
   await page.goto(url.href);
   await page.locator("#splash").waitFor({ state: "hidden", timeout: 30000 });
   const setup = page.getByRole("dialog");
   await setup.waitFor({ state: "visible", timeout: 5000 }).catch(() => {});
   if (await setup.isVisible().catch(() => false)) await setup.getByRole("button", { name: "Close setup" }).click();
-  if (!(await page.getByLabel("Your message").isVisible())) await revealChat();
+  if (!(await page.getByLabel("Your message").isVisible())) await revealChat(page);
   await page.getByLabel("Your message").fill("Read my selected source.");
   await page.getByRole("button", { name: "Create Heinzel and take this message" }).click();
   await page.getByRole("button", { name: "Queue message" }).click();
@@ -103,7 +92,7 @@ try {
   assert.equal(finished.ok, true, `daemon failed: ${finished.failure}`);
   assert.equal(finished.deduplicated, true);
   await page.reload();
-  await revealChat();
+  await revealChat(page);
   await page
     .getByText(/Tool activity for this reply/)
     .nth(2)
@@ -118,7 +107,7 @@ try {
   await panel.getByRole("button", { name: "Revoke this grant" }).click();
   await panel.getByText(/Recorded state: revoked/).waitFor();
   await page.reload();
-  await revealChat();
+  await revealChat(page);
   await schedule.getByText("Recurring agent turns", { exact: true }).click();
   await schedule.getByText(/stale · contract revision/).waitFor();
   assert.equal(await panel.evaluate((node) => node.scrollWidth > node.clientWidth), false);
