@@ -10,7 +10,7 @@ for scaffolding, dependencies, tests, builds and publishing. This page covers it
 
 ## Automatic public discovery
 
-The public site reads the core, contribution and plugin collection source locations, plus public GitHub repositories
+The public site reads the core and plugin collection source locations, plus public GitHub repositories
 with the `heinzel-plugin` topic. It recognizes a project at the repository root or `plugins/<folder>/pyproject.toml`
 by its `project.entry-points."heinzel.modules"` declaration. It reads metadata at an immutable commit; it never
 imports, installs or executes the plugin to build the website.
@@ -59,6 +59,47 @@ its own inert illustration; it labels it a palette preview rather than presentin
 The "included" badge is derived from the official standard profile and owning metadata. Declaring yourself
 standard in another repository does not grant that badge. Source versions and compatibility declarations are
 shown as metadata, not as a certification against the newest SDK.
+
+## Publish UI and CLI screenshots
+
+Every plugin detail page has a screenshot gallery with separate **User interface** and **Command line** groups.
+This includes plugins that supply themes. Capture the running plugin and its CLI in an isolated demonstration
+profile, commit the raster images to its owning public project, and declare them alongside its other metadata:
+
+```toml
+[[tool.heinzel.catalog.screenshots]]
+path = "docs/assets/ui-light.webp"
+surface = "ui"
+caption = "Harbor in the app, light appearance"
+
+[[tool.heinzel.catalog.screenshots]]
+path = "docs/assets/cli.webp"
+surface = "cli"
+caption = "hz harbor status in the terminal"
+```
+
+Use at most eight PNG, JPEG or WebP screenshots, each no larger than 2 MiB. Paths are relative to the plugin,
+including collection projects. Images open at full size and captions also serve as alternative text. Include
+light and dark captures for themes. Screenshots show actual runtime behavior; theme palette illustrations and
+character artwork remain separately labeled. Missing captures are shown explicitly rather than replaced by
+illustrations. Keep examples free of personal data and credentials. Update captures when the interface changes.
+
+## Showcase YouTube soundscapes
+
+The catalog reads inert `*.toml` files under a declared Hatch wheel package's `soundscapes/` directory. With Hatch's
+default layout it also recognizes `src/<distribution_with_underscores>/soundscapes/`. For a custom layout, declare
+paths explicitly:
+
+```toml
+[tool.heinzel.catalog]
+soundscapes = ["src/heinzel_harbor/soundscapes/tide.toml"]
+```
+
+It displays soundscapes declaring `kind = "stream"`, `[stream] provider = "youtube"` and an eleven-character
+`video` identity. This works for theme and regular plugins. A **Listen on YouTube** link works without JavaScript;
+**Play** loads the privacy-enhanced YouTube player only after a click. No video, thumbnail or player is requested
+before that click. Availability and embedding permissions are controlled by YouTube and the video owner.
+The catalog reads these declarations without executing a provider or checking playback during builds.
 
 ## Build and verify the website
 

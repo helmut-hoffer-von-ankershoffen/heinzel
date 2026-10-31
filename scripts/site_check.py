@@ -12,7 +12,7 @@ import threading
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from playwright.sync_api import expect, sync_playwright
 
@@ -132,8 +132,42 @@ def catalog_flow(page: "Page", total: int) -> None:
     copy_command(page, "plugin-install")
 
 
-def sweep(browser: "Browser", engine: str, base: str, axe: Path, total: int) -> None:
+def media_flow(page: "Page", base: str, snapshot: dict[str, Any]) -> None:
+    """Check gallery images and explicit playback without contacting YouTube."""
+    for project in snapshot["plugins"]:
+        if not project.get("screenshots") and not project.get("soundscapes"):
+            continue
+        media = page.context.new_page()
+        try:
+            requests = []
+            media.route("https://*.youtube-nocookie.com/**", lambda route: route.abort())
+            media.on("request", lambda request, found=requests: found.append(request.url))
+            media.goto(base + f"catalog/{project['id']}/")
+            require(
+                media.evaluate("document.documentElement.scrollWidth <= innerWidth + 1"),
+                "Plugin media must fit desktop and phone layouts",
+            )
+            images = media.locator(".hz-screenshots img")
+            require(images.count() == len(project.get("screenshots", [])), "Every declared capture must be visible")
+            for image in images.all():
+                image.scroll_into_view_if_needed()
+                image.evaluate("image => image.decode()")
+            require(not any("youtube" in url for url in requests), "YouTube must not load before Play")
+            sounds = project.get("soundscapes", [])
+            if sounds:
+                media.get_by_role("button", name=f"Play {sounds[0]['title']}", exact=True).click()
+                player = media.locator(".hz-soundscape iframe")
+                expect(player).to_have_attribute(
+                    "src", f"https://www.youtube-nocookie.com/embed/{sounds[0]['video']}?autoplay=1"
+                )
+                expect(player).to_have_attribute("title", sounds[0]["title"])
+        finally:
+            media.close()
+
+
+def sweep(browser: "Browser", engine: str, base: str, axe: Path, snapshot: dict[str, Any]) -> None:
     """Exercise desktop/phone and light/dark combinations with real rendered artifacts."""
+    total = len(snapshot["plugins"])
     for width in (1440, 390):
         for mode in ("light", "dark"):
             context = browser.new_context(viewport={"width": width, "height": 960}, color_scheme=mode)
@@ -179,6 +213,7 @@ def sweep(browser: "Browser", engine: str, base: str, axe: Path, total: int) -> 
                     audit(page, axe, identity + "-detail")
                 if name == "install":
                     copy_command(page, "app-install")
+            media_flow(page, base, snapshot)
             require(not errors, f"Uncaught browser errors: {errors}")
             context.close()
     context = browser.new_context(java_script_enabled=False, viewport={"width": 390, "height": 844})
@@ -187,6 +222,12 @@ def sweep(browser: "Browser", engine: str, base: str, axe: Path, total: int) -> 
     require(page.locator("[data-plugin]:visible").count() == total, "Every plugin must be reachable without JS")
     page.locator("[data-plugin] h3 a").first.click()
     require(page.locator("#plugin-install").is_visible(), "Static plugin detail must work without JS")
+    for project in snapshot["plugins"]:
+        for _sound in project.get("soundscapes", []):
+            page.goto(base + f"catalog/{project['id']}/")
+            expect(page.get_by_role("link", name="Listen on YouTube ↗").first).to_be_visible()
+            require(page.locator("iframe").count() == 0, "No-JS media must retain links without loading players")
+            break
     context.close()
 
 
@@ -209,7 +250,7 @@ def main() -> None:
                         engine,
                         f"http://127.0.0.1:{server.server_port}/heinzel/",
                         candidates[0],
-                        len(snapshot["plugins"]),
+                        snapshot,
                     )
                 finally:
                     browser.close()

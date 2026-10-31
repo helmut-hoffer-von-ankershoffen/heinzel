@@ -32,6 +32,23 @@
         }
       });
     });
+    document.querySelectorAll('[data-play-soundscape]').forEach(button => {
+      if (button.dataset.ready) return;
+      button.dataset.ready = 'true';
+      button.hidden = false;
+      button.addEventListener('click', () => {
+        const host = button.parentElement;
+        const video = host.dataset.soundscape;
+        if (!/^[A-Za-z0-9_-]{11}$/.test(video)) return;
+        const player = document.createElement('iframe');
+        player.src = `https://www.youtube-nocookie.com/embed/${video}?autoplay=1`;
+        player.title = host.dataset.title;
+        player.allow = 'autoplay; encrypted-media; picture-in-picture; fullscreen';
+        player.referrerPolicy = 'strict-origin-when-cross-origin';
+        player.allowFullscreen = true;
+        host.replaceChildren(player);
+      });
+    });
     const catalog = document.querySelector('[data-catalog]');
     if (!catalog || catalog.dataset.ready) return;
     catalog.dataset.ready = 'true';
