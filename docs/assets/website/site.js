@@ -207,6 +207,7 @@
     document.querySelectorAll('[data-copy]').forEach(button => {
       if (button.dataset.ready) return;
       button.dataset.ready = 'true';
+      button.hidden = false;
       button.addEventListener('click', async () => {
         const code = document.getElementById(button.dataset.copy);
         try {
