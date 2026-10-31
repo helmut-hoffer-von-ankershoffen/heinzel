@@ -154,6 +154,18 @@ def test_snippet_shows_the_words_around_the_change():
     assert "outputs" in ship.snippet(change)
 
 
+def test_no_snippet_for_a_badge_only_change():
+    badge = '<a href="https://example.test/x"><img src="https://example.test/y.svg" alt="b"></a>'
+    assert ship.snippet(ship.Change("docs/a.md", "M", added=[(1, badge)], removed=[(1, "old")])) == ""
+
+
+def test_pages_of_documents_on_the_site():
+    assert ship.page_url("docs/guides/install.md") == ship.SITE + "guides/install/"
+    assert ship.page_url("docs/README.md") == ship.SITE
+    assert ship.page_url("docs/guides/README.md") == ship.SITE + "guides/"
+    assert ship.page_url("web/src/index.css") is None
+
+
 def test_titles_follow_commitizen():
     assert ship.title_problem("docs(docs): fix a typo in the install guide") is None
     assert ship.title_problem("Fixed a typo") is not None

@@ -877,19 +877,23 @@ def stage_wait(args: argparse.Namespace) -> None:
 def page_url(path: str) -> str | None:
     """Where the site shows docs/<path>.md."""
     if path.startswith("docs/") and path.endswith(".md"):
-        return SITE + path[5:-3] + "/"
+        page = path[5:-3].removesuffix("README").removesuffix("/")  # README.md is a directory's index page
+        return SITE + (page + "/" if page else "")
     return None
 
 
 def plain(line: str) -> list[str]:
-    """The words of a Markdown line as the published page shows them."""
-    return re.sub(r"[`*_>#\[\]()|]|^\s*[-+\d.]+\s", "", line).split()
+    """The words of a Markdown line as the published page shows them: no tags, URLs, link targets or markup."""
+    text = re.sub(r"<[^>]+>|\]\([^)]*\)|https?://\S+|!\[", " ", line)
+    return re.sub(r"[`*_>#\[\]()|]|^\s*[-+\d.]+\s", "", text).split()
 
 
 def snippet(change: Change) -> str:
-    """A few words around what changed in the longest added line, to look for on the published page."""
-    added = max(change.added, key=lambda item: len(item[1]), default=(0, ""))[1]
-    words = plain(added)
+    """A few words around what changed in the longest readable added line, or "" when no added line has prose."""
+    readable = [(len(words), words) for _, line in change.added if len(words := plain(line)) >= 3]  # noqa: PLR2004
+    if not readable:
+        return ""
+    words = max(readable)[1]
     old = [w for _, line in change.removed for w in plain(line)]
     matcher = difflib.SequenceMatcher(a=old, b=words, autojunk=False)
     spots = [op for op in matcher.get_opcodes() if op[0] != "equal" and op[4] > op[3]]
@@ -911,21 +915,23 @@ def fetch(url: str) -> str:
 
 
 def wait_docs_run(repo: str, sha: str, budget: int) -> None:
-    """Return when every Docs run of the merge commit succeeded; fail when one did not; exit 4 when still running."""
+    """Return when the Docs runs of the merge commit are over; fail when one failed; exit 4 while they run."""
     deadline = time.monotonic() + budget
     while True:
         listed = ("run", "list", "-R", repo, "--workflow", "docs.yml", "--commit", sha)
         code, out = gh(*listed, "--json", "status,conclusion,databaseId", "--limit", "5")
         runs = json.loads(out) if code == 0 and out else []
         done = [r for r in runs if r["status"] == "completed"]
-        if done and len(done) == len(runs) and all(r["conclusion"] in ("success", "skipped") for r in done):
-            return
-        if any(r["conclusion"] not in ("success", "skipped") for r in done):
+        if any(r["conclusion"] in ("failure", "timed_out") for r in done):
             fail(
                 "verify",
                 "The Docs run failed.",
                 f"Stop and report: gh run view {done[0]['databaseId']} -R {repo} --log-failed",
             )
+        if runs and len(done) == len(
+            runs
+        ):  # success, or superseded by a later push (cancelled): the page itself is the proof
+            return
         if time.monotonic() > deadline:
             next_ = f"{RUN} verify --budget 540  (set the shell timeout to 600000)"
             emit(ok=True, stage="verify", pending=True, msg="The Docs run is not done yet.", next=next_)
@@ -938,12 +944,13 @@ def pages_missing(pages: list[tuple[str, str]]) -> list[str]:
     missing = []
     for url, text in pages:
         for _ in range(6):
-            page = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", fetch(url)))
+            body = fetch(url)
+            page = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", body))
             if text and text.lower() in page.lower():
                 break
             time.sleep(10)
         else:
-            missing.append(f"{url} does not show: {text}")
+            missing.append(f"{url} does not show: {text}" if body else f"{url} could not be loaded")
     return missing
 
 
@@ -966,7 +973,7 @@ def stage_verify(args: argparse.Namespace) -> None:
     sha = data["mergeCommit"]["oid"]
     git("fetch", "--quiet", "origin", "main", cwd=root())
     changes = parse_diff(git("diff", "-U0", "--no-color", "--no-renames", f"{sha}^", sha, cwd=root()))
-    pages = [(url, snippet(c)) for n, c in changes.items() if (url := page_url(n)) and c.added]
+    pages = [(url, text) for n, c in changes.items() if (url := page_url(n)) and (text := snippet(c))]
     if not pages:
         ok("verify", "Merged; no published page shows these files.", "Done. Report the PR URL as shipped.", sha=sha[:8])
         return
