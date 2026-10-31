@@ -10,6 +10,7 @@ import importlib.util
 import json
 import os
 import re
+import signal
 import subprocess
 import sys
 import textwrap
@@ -233,6 +234,100 @@ def test_hz_ui_opens_the_app_and_it_shows_the_doctor_report(environment, tmp_pat
     }
 
 
+def _free_port() -> int:
+    import socket
+
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        return int(probe.getsockname()[1])
+
+
+def _start_ui(env: dict[str, str], port: int) -> tuple[subprocess.Popen[str], str]:
+    ui = subprocess.Popen(
+        [sys.executable, "-m", "heinzel", "ui", "--port", str(port), "--no-browser"],
+        cwd=REPO,
+        env=env,
+        stderr=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        text=True,
+    )
+    assert ui.stdout is not None
+    url = ui.stdout.readline().strip()
+    assert url.startswith(f"http://127.0.0.1:{port}/#token="), url
+    return ui, url
+
+
+def _stop_ui(ui: subprocess.Popen[str]) -> None:
+    ui.send_signal(signal.SIGINT)  # Ctrl-C, as in a terminal
+    try:
+        ui.wait(30)
+    except subprocess.TimeoutExpired:
+        ui.kill()
+        ui.wait(30)
+    for stream in (ui.stdout, ui.stderr):
+        if stream is not None:
+            stream.close()
+
+
+@pytest.mark.timeout(900)
+@pytest.mark.parametrize("engine", ["chromium", "webkit"])
+@pytest.mark.parametrize("mode", ["tab", "stale"])
+def test_a_paired_browser_reopens_signed_in_without_a_link_after_hz_ui_restarts(environment, tmp_path, engine, mode):
+    """Pair once with the printed link; Ctrl-C and a new `hz ui` with a new session token keep it signed in."""
+    env, _ = environment
+    web_build.ensure_built()
+    run = [sys.executable, str(REPO / "scripts" / "web_build.py")]
+    subprocess.run(
+        [*run, "exec", "playwright-core", "install", engine], cwd=REPO, check=True, timeout=900, capture_output=True
+    )
+    profile = tmp_path / "browser-profile"
+    port = _free_port()
+
+    def drive(step: str, url: str) -> dict[str, object]:
+        driven = subprocess.run(
+            [*run, "exec", "node", "e2e/device-reopen.mjs", engine, str(profile), step, url, mode],
+            cwd=REPO,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=120,
+        )
+        assert driven.returncode == 0, driven.stderr + driven.stdout
+        return json.loads(driven.stdout.strip().splitlines()[-1])
+
+    ui, link = _start_ui(env, port)
+    origin = f"http://127.0.0.1:{port}/"
+    try:
+        first = drive("pair", link)
+        assert first["signedIn"] is True, first
+        assert first["device"] is True, first
+        # The app window is closed and reopened from the same profile while `hz ui` still runs: no token in the URL.
+        again = drive("open", origin)
+        assert again["signedIn"] is True, again
+    finally:
+        _stop_ui(ui)
+    ui, new_link = _start_ui(env, port)  # a new session token, the same fixed port and so the same origin
+    try:
+        assert new_link != link
+        reopened = drive("open", origin)
+        assert reopened["signedIn"] is True, reopened
+        # An unpaired device is refused, and says so.
+        revoked = subprocess.run(
+            [sys.executable, "-m", "heinzel", "ui", "--revoke", "all"],
+            cwd=REPO,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=60,
+        )
+        assert revoked.returncode == 0, revoked.stderr
+        refused = drive("open", origin)
+        assert refused["signedIn"] is False, refused
+    finally:
+        _stop_ui(ui)
+
+
 @pytest.mark.timeout(600)
 def test_a_refused_sign_in_offers_a_paste_field_that_signs_in_with_the_printed_link(environment, tmp_path):
     """An installed app has no address bar: the sign-in page takes the printed link and rejects another address."""
@@ -444,10 +539,8 @@ def test_mobile_touch_viewports_keep_navigation_settings_and_chat_reachable(envi
     check_mobile_result(section, result)
 
 
-@pytest.mark.timeout(600)
-def test_docked_media_stays_below_every_overlay_in_mounted_chromium(environment, tmp_path):
-    """A focused real-browser hit test of media against menus, status popovers and Settings."""
-    env, _recorded = environment
+def drive_ui_script(env, tmp_path, script):
+    """Run one Playwright script of web/e2e against a real `hz ui` and return its last line of JSON."""
     web_build.ensure_built()
     run = [sys.executable, str(REPO / "scripts" / "web_build.py")]
     subprocess.run(
@@ -472,7 +565,7 @@ def test_docked_media_stays_below_every_overlay_in_mounted_chromium(environment,
         assert "#token=" in url
         verify_stream_fixture(url)
         driven = subprocess.run(
-            [*run, "exec", "node", "e2e/media-layers.mjs", url, str(shots)],
+            [*run, "exec", "node", f"e2e/{script}", url, str(shots)],
             cwd=REPO,
             capture_output=True,
             text=True,
@@ -480,12 +573,19 @@ def test_docked_media_stays_below_every_overlay_in_mounted_chromium(environment,
             timeout=180,
         )
         assert driven.returncode == 0, driven.stderr
-        result = json.loads(driven.stdout.strip().splitlines()[-1])
+        return json.loads(driven.stdout.strip().splitlines()[-1])
     finally:
         ui.terminate()
         ui.wait(30)
         if ui.stderr is not None:
             ui.stderr.close()
+
+
+@pytest.mark.timeout(600)
+def test_docked_media_stays_below_every_overlay_in_mounted_chromium(environment, tmp_path):
+    """A focused real-browser hit test of media against menus, status popovers and Settings."""
+    env, _recorded = environment
+    result = drive_ui_script(env, tmp_path, "media-layers.mjs")
 
     assert len(result["panes"]) == 12
     assert {
@@ -501,3 +601,12 @@ def test_docked_media_stays_below_every_overlay_in_mounted_chromium(environment,
         {"width": 768, "bounded": True},
         {"width": 390, "bounded": True},
     ]
+
+
+@pytest.mark.timeout(600)
+def test_sound_picker_stays_open_and_plays_the_pick_in_mounted_chromium(environment, tmp_path):
+    """Open the picker, pick a soundscape: it plays at once and the picker stays; the old flow closed it silent."""
+    env, _recorded = environment
+    result = drive_ui_script(env, tmp_path, "sound-picker.mjs")
+
+    assert result == {"stayedOpen": True, "played": True, "switched": True, "closes": ["Escape", "outside"]}
