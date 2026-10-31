@@ -22,7 +22,7 @@ artifacts, so one person's approved output becomes another's input. Nobody desig
 from the promises people made.
 
 Humans stay in control. Nothing is sent, published or spent without approval. Approving a kind of action
-automatically is opt-in, scoped, revocable and earned on a record.
+in advance is opt-in, scoped, revocable and earned on a record.
 
 ## What exists today
 
@@ -33,7 +33,7 @@ schedule; named helpers with their own chat; team repositories; and plugins with
 
 ## What does not exist yet
 
-- No autonomous job has run end to end with a live provider.
+- No scheduled job has run end to end with a live provider.
 - No helper writes into a shared artifact, and no two helpers have worked together.
 - Learning from your edits is a plan.
 
