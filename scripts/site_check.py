@@ -28,6 +28,7 @@ MAX_HELPERS = 5
 HOME_STORIES = 3
 TOUR_STORIES = 3
 TOUR_SLIDES = 3
+PHONE_WIDTH = 390
 FITS_VIEWPORT = "document.documentElement.scrollWidth <= innerWidth + 1"
 
 
@@ -516,13 +517,37 @@ def helper_fallbacks(browser: "Browser", base: str, snapshot: dict[str, Any]) ->
     calm.close()
 
 
+def drawer_flow(page: "Page", identity: str) -> None:
+    """On a phone, the burger must open a navigation drawer that is visible, on screen and on top, and close again."""
+    if page.viewport_size["width"] > PHONE_WIDTH:  # desktop shows the navigation inline, without a burger
+        return
+    toggle = page.locator("#__drawer")
+    page.locator("label.md-header__button[for=__drawer]").click()
+    require(toggle.is_checked(), f"The burger must open the drawer: {identity}")
+    page.wait_for_function(
+        """() => {
+            const box = document.querySelector('.md-sidebar--primary').getBoundingClientRect();
+            const hit = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
+            return box.width > 100 && box.x >= 0 && box.right <= innerWidth && !!hit?.closest('.md-sidebar--primary');
+        }""",
+        timeout=3_000,
+    )
+    drawer = page.locator(".md-sidebar--primary")
+    require(
+        drawer.get_by_text("Plugin catalog", exact=True).first.is_visible(),
+        f"The drawer must list its pages: {identity}",
+    )
+    page.locator("label.md-overlay").click(position={"x": PHONE_WIDTH - 10, "y": 400})  # tap the dimmed page
+    require(not toggle.is_checked(), f"Tapping outside must close the drawer: {identity}")
+
+
 def sweep(browser: "Browser", engine: str, base: str, axe: Path, snapshot: dict[str, Any]) -> None:
     """Exercise desktop/phone and light/dark combinations with real rendered artifacts."""
     total = len(snapshot["plugins"])
     helper_layout(browser, base, snapshot, axe)
     helper_hash(browser, base, snapshot)
     helper_fallbacks(browser, base, snapshot)
-    for width in (1440, 390):
+    for width in (1440, PHONE_WIDTH):
         for mode in ("light", "dark"):
             context = browser.new_context(viewport={"width": width, "height": 960}, color_scheme=mode)
             context.add_init_script("""(() => {
@@ -576,6 +601,7 @@ def sweep(browser: "Browser", engine: str, base: str, axe: Path, snapshot: dict[
                     manual_theme_flow(page, mode, axe, identity)
                     zoom_flow(page, axe, identity, ".hz-product-story figure a")
                 page.screenshot(path=str(REPORTS / f"{identity}.png"), full_page=True)
+                drawer_flow(page, identity)
                 if name == "catalog":
                     catalog_flow(page, total)
                     audit(page, axe, identity + "-detail")

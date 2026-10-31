@@ -100,7 +100,8 @@ body { font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFon
 .md-typeset .hz-button,.md-typeset .hz-plugin-art,.md-typeset .hz-plugin h3 a { text-decoration:none; }
 .md-typeset .highlight .nb { color:#5845b3; }
 [data-md-color-scheme="slate"] .md-typeset .highlight .nb { color:#cfc3ff; }
-[hidden] { display:none !important; }
+/* Material hides a page's navigation with `hidden` on desktop but still shows it as the phone drawer; leave that to Material. */
+[hidden]:not(.md-sidebar) { display:none !important; }
 
 .md-footer-meta { background:#15251e; color:#d8e2d8; }
 .md-copyright { color:#d8e2d8; }
