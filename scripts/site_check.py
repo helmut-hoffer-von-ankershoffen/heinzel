@@ -4,11 +4,14 @@
 # ///
 """Exercise the built product site under its GitHub Pages prefix, including non-JavaScript navigation."""
 
+import itertools
 import json
 import re
+import struct
 import subprocess
 import sys
 import threading
+import zlib
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -22,6 +25,9 @@ if TYPE_CHECKING:
 ROOT = Path(__file__).resolve().parents[1]
 REPORTS = ROOT / "reports" / "site"
 MAX_HELPERS = 5
+HOME_STORIES = 3
+TOUR_STORIES = 3
+TOUR_SLIDES = 3
 FITS_VIEWPORT = "document.documentElement.scrollWidth <= innerWidth + 1"
 
 
@@ -40,7 +46,7 @@ def require(condition: bool, message: str) -> None:
 
 
 class Handler(SimpleHTTPRequestHandler):
-    """Serve only built artifacts under the production project's path prefix."""
+    """Serve the built artifacts from the root, as the production domain does."""
 
     def handle(self) -> None:
         """Treat a browser closing its keepalive connection as normal teardown."""
@@ -50,11 +56,7 @@ class Handler(SimpleHTTPRequestHandler):
             return
 
     def do_GET(self) -> None:
-        """Map the deployed project prefix to the build root."""
-        if not self.path.startswith("/heinzel/"):
-            self.send_error(404)
-            return
-        self.path = self.path.removeprefix("/heinzel")
+        """Serve the build root; the production site lives at the root of its own domain."""
         super().do_GET()
 
     def log_message(self, format: str, *args: object) -> None:  # noqa: A002 - standard library callback
@@ -164,13 +166,124 @@ def gallery_flow(page: "Page", count: int) -> None:
     page.mouse.move(box["x"] + box["width"] / 2, box["y"] + min(80, box["height"] / 2))
     page.mouse.wheel(1500, 0)
     page.wait_for_function("document.querySelector('[data-gallery-track]').scrollLeft > 0")
+    page.evaluate("""() => new Promise(resolve => {
+        const track = document.querySelector('[data-gallery-track]');
+        let last = track.scrollLeft;
+        let stable = 0;
+        function settled() {
+            const position = track.scrollLeft;
+            stable = Math.abs(position - last) < .5 ? stable + 1 : 0;
+            last = position;
+            if (stable >= 4) resolve();
+            else requestAnimationFrame(settled);
+        }
+        requestAnimationFrame(settled);
+    })""")
     require(
         page.evaluate(FITS_VIEWPORT),
         "The gallery scrolls internally, never the whole page",
     )
 
 
-def media_flow(page: "Page", base: str, snapshot: dict[str, Any]) -> None:
+def zoom_flow(page: "Page", axe: Path, identity: str, selector: str = ".hz-screenshots figure a") -> None:
+    """Inspect an actual image, zoom to native pixels, pan, fit and return focus."""
+    link = page.locator(selector).first
+    source = link.locator("img")
+    link.scroll_into_view_if_needed()
+    page.wait_for_function(
+        "image => image.complete && image.naturalWidth > 0", arg=source.element_handle(), timeout=15000
+    )
+    source.evaluate("image => image.decode()")
+    link.click()
+    viewer = page.locator("dialog.hz-image-viewer")
+    expect(viewer).to_be_visible()
+    image = viewer.locator("img")
+    image.evaluate("image => image.decode()")
+    page.get_by_role("button", name="Actual size", exact=True).click()
+    require(image.evaluate("image => Math.abs(image.width - image.naturalWidth) <= 1"), "Actual pixels")
+    page.get_by_role("button", name="Zoom in", exact=True).click()
+    require(image.evaluate("image => image.width > image.naturalWidth"), "Zoom must enlarge the screenshot")
+    viewport = viewer.locator(".hz-image-viewport")
+    viewport.evaluate("element => element.scrollTo(element.scrollWidth, element.scrollHeight)")
+    require(
+        viewport.evaluate(
+            "element => (element.scrollWidth <= element.clientWidth && "
+            "element.scrollHeight <= element.clientHeight) || "
+            "element.scrollLeft > 0 || element.scrollTop > 0"
+        ),
+        "An oversized screenshot must pan inside its viewport",
+    )
+    page.get_by_role("button", name="Fit", exact=True).click()
+    require(
+        image.evaluate(
+            "image => image.width <= image.parentElement.clientWidth + 1 && "
+            "image.height <= image.parentElement.clientHeight + 1"
+        ),
+        "Fit must reveal the whole screenshot",
+    )
+    expect(viewer.get_by_role("link", name="Open original")).to_have_attribute(
+        "href", link.evaluate("link => link.href")
+    )
+    audit(page, axe, identity + "-zoom")
+    page.keyboard.press("Escape")
+    expect(viewer).to_have_count(0)
+    require(link.evaluate("link => link === document.activeElement"), "Closing zoom must return focus")
+
+
+def tour_flow(page: "Page", axe: Path, identity: str) -> None:
+    """Each tour story keeps one guide and an independent, keyboard-navigable lead-plus-zoom gallery."""
+    stories = page.locator(".hz-tour-story")
+    require(stories.count() == TOUR_STORIES, "The product tour must show three stories")
+    for index in range(TOUR_STORIES):
+        story = stories.nth(index)
+        story.scroll_into_view_if_needed()
+        slides = story.locator(".hz-screenshots figure")
+        require(slides.count() == TOUR_SLIDES, "Each story needs a lead, a zoomed detail and a dark view")
+        counter = story.locator("[data-gallery-count]")
+        expect(counter).to_have_text(f"1 of {TOUR_SLIDES}")
+        story.get_by_role("button", name=re.compile("^Next .* screenshot$")).click()
+        expect(counter).to_have_text(f"2 of {TOUR_SLIDES}")
+    require(
+        page.locator(".hz-tour-story[data-heinzel-helper]").count() == TOUR_STORIES,
+        "Every story carries exactly one character guide",
+    )
+    zoom_flow(page, axe, identity, ".hz-tour-story .hz-screenshots figure a")
+    require(page.evaluate(FITS_VIEWPORT), "The tour must not overflow the viewport")
+
+
+def gallery_shape_flow(page: "Page") -> None:
+    """Square and portrait fixtures retain natural proportions instead of a landscape letterbox."""
+    track = page.locator("[data-gallery-track]")
+    track.focus()
+    track.press("Home")
+    image = track.locator("img").first
+    for width, height in ((384, 382), (390, 844)):
+        image.evaluate(
+            """async (image, size) => {
+                const [width, height] = size;
+                image.src = 'data:image/svg+xml,' + encodeURIComponent(
+                    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">`
+                    + '<rect width="100%" height="100%" fill="gray"/></svg>');
+                await image.decode();
+            }""",
+            [width, height],
+        )
+        require(
+            image.evaluate(
+                "image => Math.abs(image.width / image.height - image.naturalWidth / image.naturalHeight) < .01"
+            ),
+            "Square and portrait images must keep their natural proportions",
+        )
+        page.wait_for_function(
+            """() => {
+                const track = document.querySelector('[data-gallery-track]');
+                return track.clientHeight >= track.firstElementChild.getBoundingClientRect().height + 15;
+            }"""
+        )
+        require(page.evaluate(FITS_VIEWPORT), "Portrait captures must never widen the page")
+
+
+def media_flow(page: "Page", base: str, snapshot: dict[str, Any], axe: Path, identity: str) -> None:
     """Check gallery images and explicit playback without contacting YouTube."""
     for project in snapshot["plugins"]:
         if not project.get("screenshots") and not project.get("soundscapes"):
@@ -195,6 +308,9 @@ def media_flow(page: "Page", base: str, snapshot: dict[str, Any]) -> None:
             for image in images.all():
                 image.scroll_into_view_if_needed()
                 image.evaluate("image => image.decode()")
+            if images.count():
+                zoom_flow(media, axe, identity + "-" + project["id"])
+                gallery_shape_flow(media)
             require(not any("youtube" in url for url in requests), "YouTube must not load before Play")
             sounds = project.get("soundscapes", [])
             if sounds:
@@ -208,9 +324,200 @@ def media_flow(page: "Page", base: str, snapshot: dict[str, Any]) -> None:
             media.close()
 
 
+HELPERS = """() => [...document.querySelectorAll('[data-heinzel-helper]')].map(el => {
+    const r = el.getBoundingClientRect();
+    const style = getComputedStyle(el);
+    return {waypoint: el.classList.contains('hz-page-helper'), gutter: el.hasAttribute('data-gutter'),
+        fixed: style.position === 'fixed',
+        hidden: style.visibility === 'hidden', lane: el.dataset.lane || '', top: r.top + scrollY, height: r.height,
+        rect: {left: r.left, right: r.right, top: r.top, bottom: r.bottom}};
+})"""
+OBSTACLES = """() => [...document.querySelectorAll(
+    '.md-content,.md-sidebar__inner > .md-nav,.md-header,.md-tabs,.md-footer')]
+    .map(el => el.getBoundingClientRect()).filter(r => r.width && r.height)
+    .map(r => ({left: r.left, right: r.right, top: r.top, bottom: r.bottom}))"""
+GUTTER_WIDTH = 1100
+CHARACTER_WIDTHS = (1024, 1280, 1440, 1920, 390)
+SETTLE = """async position => {
+    document.querySelectorAll('.md-sidebar__inner > .md-nav').forEach(nav => {
+        if (position === 'navigation') nav.style.minHeight = '500px';
+        else nav.style.removeProperty('min-height');
+    });
+    const y = ['top', 'navigation'].includes(position) ? 0 : position === 'middle'
+        ? document.body.scrollHeight / 2 : document.body.scrollHeight;
+    window.scrollTo(0, y);
+    await document.fonts.ready;
+    await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+}"""
+
+
+def artwork() -> bytes:
+    """A fixed 1200x800 picture, so page height never depends on the network."""
+    width, height = 1200, 800
+    rows = b"".join(b"\x00" + b"\xee\xe8\xdb" * width for _ in range(height))
+
+    def chunk(kind: bytes, data: bytes) -> bytes:
+        return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data))
+
+    header = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
+    return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", header) + chunk(b"IDAT", zlib.compress(rows)) + chunk(b"IEND", b"")
+
+
+def offline(page: "Page", base: str) -> None:
+    """Serve only the built site; remote screenshots become a fixed picture and everything else is refused."""
+    picture = artwork()
+
+    def handle(route: Any) -> None:  # noqa: ANN401 - Playwright's route object
+        url = route.request.url
+        if url.startswith(base):
+            route.continue_()
+        elif route.request.resource_type == "image":
+            route.fulfill(status=200, content_type="image/png", body=picture)
+        else:
+            route.abort()
+
+    page.route("**/*", handle)
+
+
+def settled(page: "Page") -> None:
+    """Wait (bounded) for lifted guides' artwork, which loads eagerly because it is in view."""
+    page.wait_for_function(
+        "[...document.querySelectorAll('[data-gutter] img')].every(image => image.complete && image.naturalWidth > 0)",
+        timeout=10_000,
+    )
+    page.evaluate("async () => { await document.fonts.ready; await new Promise(r => setTimeout(r, 150)); }")
+
+
+def check_characters(page: "Page", where: str, *, expect_both: bool = False) -> list[dict[str, Any]]:
+    """Characters stay within budget and out of the way at the page's current width and scroll position."""
+    width = page.evaluate("innerWidth")
+    helpers = page.evaluate(HELPERS)
+    require(1 <= len(helpers) <= MAX_HELPERS, f"One to five characters per page: {where}")
+    require(page.evaluate(FITS_VIEWPORT), f"Character layout overflows: {where}")
+    lifted = [item for item in helpers if item["gutter"]]
+    require(len(lifted) <= 2, f"At most two gutter guides: {where}")  # noqa: PLR2004
+    require(
+        all(item["gutter"] == item["fixed"] for item in helpers),
+        f"Only gutter guides may be fixed (never overlay inline characters): {where}",
+    )
+    if width < GUTTER_WIDTH:
+        require(not lifted, f"Tablet and phone widths keep characters inline: {where}")
+    if expect_both:
+        candidates = [item for item in helpers if item["lane"]]
+        require(len(lifted) == len(candidates) > 0, f"Free desktop gutters must show every lane guide: {where}")
+        require(not any(item["hidden"] for item in lifted), f"Lifted guides must be visible: {where}")
+    obstacles = page.evaluate(OBSTACLES)
+    for item in lifted:
+        r = item["rect"]
+        inside = r["left"] >= 0 and r["right"] <= width and r["bottom"] <= page.evaluate("innerHeight")
+        require(inside, f"Gutter guide leaves the viewport: {where}")
+        if item["hidden"]:
+            continue  # pushed beneath the header by the footer: unseen, never overlapping
+        require(r["top"] >= 0, f"Gutter guide above the viewport: {where}")
+        for box in obstacles:
+            overlap = r["left"] < box["right"] and r["right"] > box["left"]
+            overlap = overlap and r["top"] < box["bottom"] and r["bottom"] > box["top"]
+            require(not overlap, f"Gutter guide overlaps the article, navigation, header or footer: {where}")
+    return helpers
+
+
+def one_per_phone_screen(page: "Page", helpers: list[dict[str, Any]], route: str) -> None:
+    """No phone screen holds two waypoints: they are at least a screen apart, less the first one's own height."""
+    tops = sorted((item["top"], item["height"]) for item in helpers if item["waypoint"])
+    for (first, height), (second, _) in itertools.pairwise(tops):
+        require(
+            second - first >= page.evaluate("innerHeight") - height,
+            f"At most one character per phone screen: {route or 'home'}",
+        )
+
+
+def scroll_positions(page: "Page", width: int, errors: list[str]) -> None:
+    """Scroll the open page top, middle, tall navigation and bottom, then back to the top, checking each."""
+    for number, position in enumerate(("top", "middle", "navigation", "bottom", "top")):
+        page.evaluate(SETTLE, position)
+        page.wait_for_timeout(150)
+        both = width in (1440, 1920) and position == "top"
+        check_characters(page, f"{width}/{position}{number}", expect_both=both)
+        require(not errors, f"Character layout script errors at {width}/{position}: {errors}")
+        page.screenshot(path=str(REPORTS / f"helpers-{width}-{position}.png"))
+
+
+def helper_layout(browser: "Browser", base: str, snapshot: dict[str, Any], axe: Path) -> None:
+    """Keep characters clear of the article, navigation and footer at every supported width, on every plugin page."""
+    resource = next(
+        (item for item in snapshot["plugins"] if item["name"] == "heinzel-resource"), snapshot["plugins"][0]
+    )
+    page = browser.new_page()
+    offline(page, base)
+    errors: list[str] = []
+    # Browsers report "ResizeObserver loop" when any observer's callback changes layout (the gallery's does);
+    # the specification calls it benign, so only real script errors count here.
+    page.on(
+        "pageerror",
+        lambda error: errors.append(f"{page.url}: {error}") if "ResizeObserver loop" not in str(error) else None,
+    )
+    try:
+        for width in CHARACTER_WIDTHS:
+            page.set_viewport_size({"width": width, "height": 844 if width < GUTTER_WIDTH else 960})
+            for route in ["", *(f"catalog/{item['id']}/" for item in snapshot["plugins"]), "guides/install/"]:
+                page.goto(base + route)
+                settled(page)
+                helpers = check_characters(page, f"{width}/{route or 'home'}")
+                if width == 390:  # noqa: PLR2004
+                    one_per_phone_screen(page, helpers, route)
+            page.goto(base + f"catalog/{resource['id']}/")
+            settled(page)
+            scroll_positions(page, width, errors)
+            if width in (1440, 390):
+                audit(page, axe, f"helpers-{width}")
+    finally:
+        page.close()
+
+
+def helper_hash(browser: "Browser", base: str, snapshot: dict[str, Any]) -> None:
+    """Opening a page at a section keeps that section in view when the guides lift around it."""
+    route = f"catalog/{snapshot['plugins'][0]['id']}/#install-and-try"
+    for width in (1440, 1920):
+        page = browser.new_page(viewport={"width": width, "height": 960})
+        offline(page, base)
+        page.goto(base + route)
+        page.wait_for_timeout(600)
+        top = page.evaluate("document.getElementById('install-and-try').getBoundingClientRect().top")
+        require(0 <= top < 600, f"Lifting guides must not move the section being read ({width}: {top})")  # noqa: PLR2004
+        page.close()
+
+
+def helper_fallbacks(browser: "Browser", base: str, snapshot: dict[str, Any]) -> None:
+    """Without JavaScript every waypoint is on the page; with reduced motion nothing moves."""
+    route = f"catalog/{snapshot['plugins'][0]['id']}/"
+    plain = browser.new_context(java_script_enabled=False, viewport={"width": 1920, "height": 960})
+    page = plain.new_page()
+    page.goto(base + route)
+    helpers = page.evaluate(HELPERS)
+    require(len(helpers) >= 2, "Waypoints are server-rendered without JavaScript")  # noqa: PLR2004
+    require(not any(item["fixed"] or item["gutter"] for item in helpers), "No gutter without JavaScript")
+    require(page.locator(".hz-page-helper a:visible").count() == len(helpers), "Every waypoint link must show")
+    plain.close()
+    calm = browser.new_context(reduced_motion="reduce", viewport={"width": 1920, "height": 960})
+    page = calm.new_page()
+    page.goto(base + route)
+    settled(page)
+    still = page.evaluate(
+        """() => [...document.querySelectorAll('[data-heinzel-helper], [data-heinzel-helper] *')].every(el => {
+        const style = getComputedStyle(el);
+        return style.animationName === 'none' && parseFloat(style.transitionDuration) === 0;
+    }) && !document.querySelector('[data-heinzel-helper] [aria-live]')"""
+    )
+    require(still, "Characters add no motion or live regions")
+    calm.close()
+
+
 def sweep(browser: "Browser", engine: str, base: str, axe: Path, snapshot: dict[str, Any]) -> None:
     """Exercise desktop/phone and light/dark combinations with real rendered artifacts."""
     total = len(snapshot["plugins"])
+    helper_layout(browser, base, snapshot, axe)
+    helper_hash(browser, base, snapshot)
+    helper_fallbacks(browser, base, snapshot)
     for width in (1440, 390):
         for mode in ("light", "dark"):
             context = browser.new_context(viewport={"width": width, "height": 960}, color_scheme=mode)
@@ -228,6 +535,7 @@ def sweep(browser: "Browser", engine: str, base: str, axe: Path, snapshot: dict[
                 ("", "home"),
                 ("CATALOG/", "catalog"),
                 ("guides/install/", "install"),
+                ("guides/tour/", "tour"),
                 ("guides/architecture/", "architecture"),
                 ("guides/contribute/", "contribute"),
                 ("PLUGIN_AUTHORING/", "authoring"),
@@ -242,10 +550,10 @@ def sweep(browser: "Browser", engine: str, base: str, axe: Path, snapshot: dict[
                     page.evaluate(FITS_VIEWPORT),
                     f"Horizontal overflow: {engine}/{width}/{mode}/{name}",
                 )
-                require(
-                    page.locator("img").evaluate_all("els => els.every(e => !e.complete || e.naturalWidth > 0)"),
-                    f"Broken image: {name}",
+                broken = page.evaluate(
+                    "() => [...document.images].filter(e => e.complete && e.naturalWidth === 0).map(e => e.currentSrc)"
                 )
+                require(not broken, f"Broken image: {engine}/{width}/{mode}/{name}: {broken}")
                 require(
                     1 <= page.locator("[data-heinzel-helper]").count() <= MAX_HELPERS,
                     f"Every page needs one to five character explainers: {name}",
@@ -253,14 +561,27 @@ def sweep(browser: "Browser", engine: str, base: str, axe: Path, snapshot: dict[
                 identity = f"{engine}-{width}-{mode}-{name}"
                 audit(page, axe, identity)
                 if name == "home":
+                    stories = page.locator(".hz-product-stories > .hz-product-story")
+                    require(
+                        stories.count() == HOME_STORIES
+                        and stories.evaluate_all(
+                            "stories => stories.every(story => story.querySelectorAll(':scope > figure').length === 1)"
+                        ),
+                        "The product tour must retain three direct stories with one full-width image each",
+                    )
                     manual_theme_flow(page, mode, axe, identity)
+                    zoom_flow(page, axe, identity, ".hz-product-story figure a")
                 page.screenshot(path=str(REPORTS / f"{identity}.png"), full_page=True)
                 if name == "catalog":
                     catalog_flow(page, total)
                     audit(page, axe, identity + "-detail")
-                if name == "install":
-                    copy_command(page, "app-install")
-            media_flow(page, base, snapshot)
+                follow_up = {
+                    "install": partial(copy_command, page, "app-install"),
+                    "tour": partial(tour_flow, page, axe, identity),
+                }.get(name)
+                if follow_up:
+                    follow_up()
+            media_flow(page, base, snapshot, axe, f"{engine}-{width}-{mode}")
             require(not errors, f"Uncaught browser errors: {errors}")
             context.close()
     context = browser.new_context(java_script_enabled=False, viewport={"width": 390, "height": 844})
@@ -292,19 +613,22 @@ def main() -> None:
             for engine in ("chromium", "webkit"):
                 browser = getattr(playwright, engine).launch()
                 try:
-                    sweep(
-                        browser,
-                        engine,
-                        f"http://127.0.0.1:{server.server_port}/heinzel/",
-                        candidates[0],
-                        snapshot,
-                    )
+                    base = f"http://127.0.0.1:{server.server_port}/"
+                    if "--characters" in sys.argv:  # the character guides alone: quick while iterating on them
+                        helper_layout(browser, base, snapshot, candidates[0])
+                        helper_hash(browser, base, snapshot)
+                        helper_fallbacks(browser, base, snapshot)
+                    else:
+                        sweep(browser, engine, base, candidates[0], snapshot)
                 finally:
                     browser.close()
     finally:
         server.shutdown()
         server.server_close()
         thread.join(timeout=5)
+    if "--characters" in sys.argv:
+        print("Characters accepted: Chromium + WebKit, 390/1024/1280/1440/1920, gutters, no-JS, reduced motion, axe")
+        return
     print("Site accepted: Chromium + WebKit, desktop + phone, light + dark, filters, keyboard, no-JS and axe")
 
 

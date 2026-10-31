@@ -3,6 +3,7 @@
 import json
 import os
 import select
+import shutil
 import stat
 import subprocess
 import sys
@@ -1848,8 +1849,19 @@ def test_quiescent_denies_ambiguous_or_present_manager_state(make, bin_dir, tmp_
         )
 
     service._quiescence_probe = probe
-    with pytest.raises(HeinzelError, match="not proven quiescent"), service.quiescence_guard(selected_bin):
+    with pytest.raises(HeinzelError, match="not proven quiescent") as refused, service.quiescence_guard(selected_bin):
         pytest.fail("ambiguous manager state must deny")
+    expected = {
+        "background": "desktop session",
+        "wrong_uid": "desktop session",
+        "changed_context": "desktop session",
+        "loaded": "did not confirm daemon absence",
+        "malformed": "did not confirm daemon absence",
+        "truncated": "inspection failed",
+        "error": "inspection failed",
+    }
+    assert expected[failure] in str(refused.value)
+    assert "uvx --from heinzel hz system daemon status" in str(refused.value)
 
 
 @pytest.mark.parametrize("kind", ["unit", "marker", "request", "pending", "symlink"])
@@ -1867,8 +1879,13 @@ def test_quiescent_refuses_any_existing_daemon_artifact(make, bin_dir, tmp_path,
         path.symlink_to(tmp_path / "missing")
     else:
         path.write_text("uncertain")
-    with pytest.raises(HeinzelError), service.quiescence_guard(selected_bin):
+    with pytest.raises(HeinzelError) as refused, service.quiescence_guard(selected_bin):
         pytest.fail("existing or uncertain daemon artifacts must deny")
+    expected = {
+        "request": "previous daemon or installation transaction",
+        "pending": "daemon lifecycle is changing",
+    }.get(kind, "retained daemon unit")
+    assert expected in str(refused.value)
 
 
 def test_quiescent_refuses_writable_unit_parent_before_manager_query(make, bin_dir, tmp_path):
@@ -1904,28 +1921,46 @@ def test_quiescence_reader_bounds_an_owned_child_output():
     assert result.returncode is None
 
 
-@pytest.mark.parametrize("paused", [False, True])
-def test_quiescence_preserves_owned_stopped_unit_and_pause_state(make, bin_dir, tmp_path, paused):
+def _record_quiescent_tool(prefix, bin_dir):
     from heinzel import Progress
-    from heinzel.kernel import Installation, ProcessOutcome
+    from heinzel.kernel import Installation
 
-    prefix = tmp_path / "tools" / "heinzel"
     (prefix / "bin").mkdir(parents=True)
     (prefix / "bin/hz").write_text("fixture")
-    (bin_dir / "hz").unlink()
+    (bin_dir / "hz").unlink(missing_ok=True)
     (bin_dir / "hz").symlink_to(prefix / "bin/hz")
     (prefix / "uv-receipt.toml").write_text(
         f'[tool]\nrequirements=[{{name="heinzel"}}]\nentrypoints=[{{name="hz",install-path={str(bin_dir / "hz")!r}}}]\n'
     )
     installation = Installation(Progress(), prefix=prefix, uv="uv")
     installation.record_startup_state(expected=installation.startup_fingerprint())
-    service = make(runner=Runner(bin_dir))
-    service._quiescence_installation = installation
+    return installation
+
+
+@pytest.fixture
+def stopped_tool_daemon(make, bin_dir, tmp_path, request):
+    service = make(runner=Runner(bin_dir), platform=getattr(request, "param", "darwin"))
+    service._quiescence_installation = _record_quiescent_tool(tmp_path / "tools" / "heinzel", bin_dir)
     service.install(timedelta(minutes=5))
+    return service
+
+
+@pytest.mark.parametrize("paused", [False, True])
+@pytest.mark.parametrize("removed", [False, True])
+def test_quiescence_preserves_owned_stopped_unit_and_pause_state(stopped_tool_daemon, bin_dir, paused, removed):
+    from heinzel.kernel import ProcessOutcome
+
+    service = stopped_tool_daemon
+    prefix = service._quiescence_installation.prefix
     if paused:
         service.pause()
     unit = service._unit_paths()[0]
     before = unit.read_bytes()
+    marker = service.state_dir / "install.json"
+    marker_before = marker.read_bytes()
+    if removed:
+        shutil.rmtree(prefix)
+        (bin_dir / "hz").unlink()
 
     def probe(command):
         output = {"managername": "Aqua\n", "manageruid": "501\n", "list": "PID\tStatus\tLabel\n"}
@@ -1934,11 +1969,129 @@ def test_quiescence_preserves_owned_stopped_unit_and_pause_state(make, bin_dir, 
     service._quiescence_probe = probe
     with service.quiescence_guard(bin_dir):
         assert unit.read_bytes() == before
+        assert marker.read_bytes() == marker_before
+        if removed:
+            _record_quiescent_tool(prefix, bin_dir)
         if paused:
             with pytest.raises(HeinzelError, match="lifecycle is changing"):
                 service.resume()
     assert service.paused == paused
     assert unit.read_bytes() == before
+    assert marker.read_bytes() == marker_before
+
+
+@pytest.mark.parametrize(
+    "artifact", ["prefix_link", "prefix_writable", "partial_prefix", "receipt", "unit", "unit_mode", "marker"]
+)
+def test_removed_tool_retained_unit_rejects_invalid_artifacts(stopped_tool_daemon, bin_dir, tmp_path, artifact):
+    service = stopped_tool_daemon
+    prefix = service._quiescence_installation.prefix
+    shutil.rmtree(prefix)
+    (bin_dir / "hz").unlink()
+    unit = service._unit_paths()[0]
+    marker = service.state_dir / "install.json"
+    if artifact == "prefix_link":
+        other = tmp_path / "other"
+        other.mkdir()
+        prefix.symlink_to(other, target_is_directory=True)
+    elif artifact in {"prefix_writable", "partial_prefix"}:
+        prefix.mkdir()
+        if artifact == "prefix_writable":
+            prefix.chmod(0o777)
+    elif artifact == "receipt":
+        _record_quiescent_tool(prefix, bin_dir)
+        (prefix / "uv-receipt.toml").write_text('[tool]\nrequirements=[{name="other"}]\n')
+    elif artifact == "unit":
+        unit.write_text(unit.read_text() + "modified")
+    elif artifact == "unit_mode":
+        unit.chmod(0o666)
+    else:
+        data = json.loads(marker.read_text())
+        data["executable"] = str(tmp_path / "other-hz")
+        marker.write_text(json.dumps(data))
+    service._quiescence_probe = lambda _command: pytest.fail("invalid artifacts must deny before manager queries")
+    with pytest.raises(HeinzelError, match="not proven quiescent"), service.quiescence_guard(bin_dir):
+        pytest.fail("invalid retained daemon artifacts must deny")
+
+
+@pytest.mark.parametrize("shim", ["hz", "heinzel", "hz-install"])
+def test_removed_tool_rejects_leftover_shims(stopped_tool_daemon, bin_dir, shim):
+    service = stopped_tool_daemon
+    prefix = service._quiescence_installation.prefix
+    shutil.rmtree(prefix)
+    (bin_dir / "hz").unlink()
+    (bin_dir / shim).symlink_to(prefix / "bin" / shim)
+    service._quiescence_probe = lambda _command: pytest.fail("leftover shims must deny before manager queries")
+    with pytest.raises(HeinzelError, match="not proven quiescent"), service.quiescence_guard(bin_dir):
+        pytest.fail("even a broken leftover shim must deny")
+
+
+@pytest.mark.parametrize("stopped_tool_daemon", ["linux"], indirect=True)
+def test_removed_tool_does_not_change_linux_retained_unit_policy(stopped_tool_daemon, bin_dir):
+    service = stopped_tool_daemon
+    assert service._quiescence_unit_state(bin_dir)
+    shutil.rmtree(service._quiescence_installation.prefix)
+    (bin_dir / "hz").unlink()
+    assert not service._quiescence_unit_state(bin_dir)
+
+
+@pytest.mark.parametrize("manager", ["loaded", "unknown", "malformed"])
+def test_removed_tool_retained_unit_still_requires_actual_manager_absence(stopped_tool_daemon, bin_dir, manager):
+    from heinzel.kernel import ProcessOutcome
+
+    service = stopped_tool_daemon
+    shutil.rmtree(service._quiescence_installation.prefix)
+    (bin_dir / "hz").unlink()
+    outputs = {"managername": "Aqua\n", "manageruid": "501\n", "list": "PID Status Label\n"}
+    if manager != "unknown":
+        outputs["list"] += f"- 0 {LABEL}\n" if manager == "loaded" else "invalid\n"
+    service._quiescence_probe = lambda command: ProcessOutcome(
+        1 if manager == "unknown" else 0, outputs[command[1]], ""
+    )
+    with pytest.raises(HeinzelError, match="not proven quiescent"), service.quiescence_guard(bin_dir):
+        pytest.fail("retained files cannot substitute for manager absence")
+
+
+@pytest.mark.parametrize(
+    "pending",
+    ["handover-pending.json", "handover-request.json", "mutation-pending.json", "standard-install-pending.json"],
+)
+def test_removed_tool_retained_unit_denies_pending_lifecycle_state(stopped_tool_daemon, bin_dir, pending):
+    service = stopped_tool_daemon
+    shutil.rmtree(service._quiescence_installation.prefix)
+    (bin_dir / "hz").unlink()
+    (service.state_dir / pending).write_text("{}")
+    service._quiescence_probe = lambda _command: pytest.fail("pending lifecycle state must deny before manager queries")
+    with pytest.raises(HeinzelError), service.quiescence_guard(bin_dir):
+        pytest.fail("retained files must not bypass pending lifecycle state")
+
+
+@pytest.mark.parametrize("replacement", ["missing", "incomplete"])
+def test_retained_unit_reinstall_cannot_complete_without_verified_replacement(
+    stopped_tool_daemon, bin_dir, replacement
+):
+    from heinzel.kernel import ProcessOutcome
+
+    service = stopped_tool_daemon
+    prefix = service._quiescence_installation.prefix
+    shutil.rmtree(prefix)
+    (bin_dir / "hz").unlink()
+    unchanged = {path: path.read_bytes() for path in [*service._unit_paths(), service.state_dir / "install.json"]}
+    outputs = {"managername": "Aqua\n", "manageruid": "501\n", "list": "PID Status Label\n"}
+    service._quiescence_probe = lambda command: ProcessOutcome(0, outputs[command[1]], "")
+    admitted = []
+
+    def attempt():
+        with service.quiescence_guard(bin_dir):
+            admitted.append(True)
+            if replacement == "incomplete":
+                prefix.mkdir()
+
+    with pytest.raises(HeinzelError, match="Cannot verify the running uv tool"):
+        attempt()
+    assert admitted == [True]
+    assert (service.state_dir / "standard-install-pending.json").is_file()
+    assert all(path.read_bytes() == payload for path, payload in unchanged.items())
 
 
 def test_quiescence_refuses_symlinked_selected_prefix(make, tmp_path):

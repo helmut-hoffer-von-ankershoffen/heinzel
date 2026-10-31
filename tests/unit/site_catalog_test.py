@@ -601,31 +601,146 @@ def test_repository_discovery_carries_soundscape_toml_into_public_records(layout
     assert "never_imported" not in sys.modules
 
 
-@pytest.mark.parametrize(
-    "path",
-    [
-        "README.md",
-        "guides/install.md",
-        "CLI_REFERENCE.md",
-        "adr/0001-record.md",
-        "ARCHITECTURE.md",
-        "some-future-page.md",
-    ],
-)
+SHOT = {"url": "https://example.com/a.png", "surface": "ui", "caption": "A"}
+
+
+def shown(plugin):
+    plugin["screenshots"] = [SHOT]
+    return plugin
+
+
+DOC_PAGES = [
+    "README.md",
+    "guides/install.md",
+    "guides/first-steps.md",
+    "CLI_REFERENCE.md",
+    "adr/0001-record.md",
+    "ARCHITECTURE.md",
+    "some-future-page.md",
+]
+FORBIDDEN_CUE_WORDS = ("autonomous", "automatically", "while you sleep", "sends", "publishes", "delivers")
+
+
+@pytest.mark.parametrize("path", DOC_PAGES)
 def test_every_page_gets_a_small_contextual_character_group(path):
     helpers = pages.page_helpers(path, "reference/")
     assert 1 <= len(helpers) <= 5
-    assert all(helper["quote"] and helper["detail"] and helper["link"] for helper in helpers)
+    assert all(helper["quote"] and helper["link"] and helper["src"].endswith(".svg") for helper in helpers)
+    assert all(helper["name"] in {"Pip", "Ada", "Otto"} for helper in helpers)
+    assert all(len(helper["quote"].split()) <= 10 and "detail" not in helper for helper in helpers)
+    assert all(word not in helper["quote"].lower() for helper in helpers for word in FORBIDDEN_CUE_WORDS)
+    assert sum(1 for helper in helpers if helper["lane"]) <= 2
 
 
-def test_future_plugin_pages_get_feature_specific_explainers_without_registration():
-    plugin = record()
+def test_home_guides_sit_at_headings_the_home_page_really_has():
+    headings = {
+        pages.slug(line.lstrip("# "))
+        for line in (ROOT / "docs/README.md").read_text().splitlines()
+        if line.startswith("## ")
+    }
+    guides = pages.page_helpers("README.md", "")
+    assert [(guide["name"], guide["lane"]) for guide in guides] == [("Pip", "left"), ("Otto", "right")]
+    assert {guide["section"] for guide in guides} <= headings
+    assert guides[0]["link"] == "guides/install/"
+    assert "one command" in guides[0]["quote"]
+
+
+def test_plugin_pages_get_a_feature_cue_and_a_constant_install_cue_without_registration():
+    plugin = shown(record())
     plugin["highlights"] = ["A fictional harbor's next useful action"]
     helpers = pages.page_helpers("catalog/new-plugin/index.md", "catalog/new-plugin/", plugin)
-    assert len(helpers) == 2
-    assert helpers[0]["detail"] == plugin["highlights"][0]
+    assert [(h["name"], h["section"], h["lane"]) for h in helpers] == [
+        ("Pip", "screenshots", "left"),
+        ("Otto", "install-and-try", "right"),
+    ]
+    assert helpers[0]["quote"] == plugin["highlights"][0]
     assert helpers[0]["link"] == "#screenshots"
-    assert "before installing" in helpers[1]["detail"]
+    assert helpers[1]["quote"] == "Check source and fit before inviting it in."
+    assert helpers[1]["link"] == "#install-and-try"
+
+
+@pytest.mark.parametrize(
+    "claim", ["Automatically publishes weekly reports", "Sends a digest to customers", "Works while you sleep"]
+)
+def test_plugin_metadata_cannot_make_a_character_promise_delivery(claim):
+    plugin = record()
+    plugin["highlights"] = [claim]
+    assert pages.page_helpers("catalog/x/index.md", "catalog/x/", plugin)[0]["quote"] == pages.HELPER_FALLBACK
+
+
+def test_a_plugin_without_screenshots_gets_no_link_to_an_empty_gallery():
+    plugin = record()
+    plugin["screenshots"] = []
+    pip = pages.page_helpers("catalog/x/index.md", "catalog/x/", plugin)[0]
+    assert (pip["section"], pip["link"]) == ("what-it-brings", "#install-and-try")
+    plugin["screenshots"] = [{"url": "https://example.com/a.png", "surface": "ui", "caption": "A"}]
+    assert pages.page_helpers("catalog/x/index.md", "catalog/x/", plugin)[0]["link"] == "#screenshots"
+
+
+def test_heading_slugs_match_the_table_of_contents_extension():
+    toc = pytest.importorskip("markdown.extensions.toc")
+    for heading in ("Install and try", "What 0.2 does not do yet", "A small core. A growing world.", "Café & Tea"):
+        assert pages.slug(heading) == toc.slugify(heading, "-")
+
+
+def test_headings_with_ids_and_closing_hashes_get_their_waypoint():
+    assert pages.slug("Install and try {#try}") == "install-and-try"
+    found = pages.headings_of(["#nospace", "## Closed ##", "####### seven", "```", "## Fenced", "```", "Text"])
+    assert [(line, level, name) for line, level, name in found] == [(1, 2, "closed")]
+
+
+def test_themes_are_guided_by_ada_and_sound_adds_a_third_inline_guide_only_when_present():
+    plugin = shown(record())
+    plugin["themes"] = [{"title": "Harbor", "palette": {}}]
+    assert pages.page_helpers("catalog/x/index.md", "catalog/x/", plugin)[0]["name"] == "Ada"
+    plugin["soundscapes"] = [{"title": "Rain", "video": "abcdefghijk"}]
+    helpers = pages.page_helpers("catalog/x/index.md", "catalog/x/", plugin)
+    assert [h["section"] for h in helpers] == ["screenshots", "soundscapes", "install-and-try"]
+    assert helpers[1]["quote"] == "Sound starts only when you choose."
+    assert helpers[1]["lane"] is None
+
+
+def test_waypoint_is_a_labelled_server_rendered_aside_with_one_link():
+    guide = pages.helper("reviewer", "Otto", 'Mind the "gap" <b>', "#here", "Go <now>", "x/", section="s", lane="right")
+    rendered = pages.waypoint(guide)
+    assert rendered.startswith(
+        '<aside class="hz-page-helper" data-heinzel-helper data-search-exclude data-section="s" data-lane="right"'
+    )
+    assert 'aria-label="Otto: Go &lt;now&gt;"' in rendered
+    assert "&lt;b&gt;" in rendered
+    assert "<b>" not in rendered
+    assert rendered.count("<a ") == 1
+    assert "\n\n" not in rendered
+    assert 'alt="" width="140" height="232"' in rendered
+
+
+def test_waypoints_follow_their_headings_not_code_and_fall_back_to_the_first_h2_or_the_end():
+    doc = "# Title\n\nIntro\n\n```\n## Fake\n```\n\n## Real\n\nBody\n\n## Install and try\n\nMore\n"
+    first = pages.helper("timekeeper", "Pip", "Cue", "#a", "Go", "", lane="any")
+    named = pages.helper("reviewer", "Otto", "Cue", "#b", "Go", "", section="install-and-try")
+    placed = pages.place_waypoints(doc, [first, named])
+    lines = placed.split("\n")
+    assert lines.index("## Real") + 2 == next(i for i, line in enumerate(lines) if "data-lane" in line)
+    assert lines.index("## Install and try") + 2 == next(
+        i for i, line in enumerate(lines) if 'data-section="install-and-try"' in line
+    )
+    assert placed.count("<aside") == 2
+    assert placed.index("## Fake") < placed.index("## Real") < placed.index("<aside")
+    flat = pages.place_waypoints("Just text\n", [first])
+    assert flat.startswith("Just text")
+    assert flat.rstrip().endswith("</aside>")
+    missing = pages.place_waypoints("# T\n\n## Other\n", [named])
+    assert missing.rstrip().endswith("</aside>")
+
+
+def test_every_plugin_page_places_all_its_guides_within_the_budget():
+    plugin = shown(record())
+    plugin["soundscapes"] = [{"title": "Rain", "video": "abcdefghijk"}]
+    page = pages.place_waypoints(pages.detail(plugin), pages.page_helpers("catalog/x/index.md", "catalog/x/", plugin))
+    assert page.count("data-heinzel-helper") == 3
+    for heading in ("## Screenshots", "## Soundscapes", "## Install and try"):
+        after = page.split(heading, 1)[1].lstrip()
+        assert after.startswith("<aside"), heading
 
 
 def test_swipe_gallery_preserves_every_owner_scene_in_order_with_accessible_controls():
@@ -654,3 +769,143 @@ def test_gallery_empty_state_does_not_offer_nonfunctional_carousel_controls():
     rendered = pages.screenshot_gallery(project)
     assert "No screenshots published yet" in rendered
     assert "data-gallery-track" not in rendered
+
+
+def test_future_plugin_helper_bounds_metadata_without_inventing_features():
+    plugin = record()
+    plugin["highlights"] = [" ".join(["Useful"] * 40)]
+    guide = pages.page_helpers("catalog/new/index.md", "catalog/new/", plugin)[0]
+    assert len(guide["quote"].split()) <= 10
+    assert len(guide["quote"]) <= 80
+    assert guide["quote"].startswith("Useful Useful")
+    assert "detail" not in guide
+
+
+def test_homepage_product_tour_uses_three_real_owners_with_escaped_captions():
+    plugins = []
+    for name, scene in (
+        ("heinzel-clock", "world-clock"),
+        ("heinzel-acme", "company-workflow"),
+        ("heinzel-acme-payments-checkout", "draft-in-terminal"),
+    ):
+        data = copy.deepcopy(PROJECT)
+        data["project"]["name"] = name
+        project = record(data)
+        project["screenshots"] = [
+            {"url": f"https://example.com/{scene}.png", "surface": "ui", "caption": 'Demo <team> & "review"'}
+        ]
+        plugins.append(project)
+    rendered = pages.home_gallery({"plugins": plugins}, "")
+    assert rendered.count("data-heinzel-helper") == 3
+    assert rendered.count("<figure>") == 3
+    assert "&lt;team&gt; &amp; &quot;review&quot;" in rendered
+    assert all(f"/{name}.png" in rendered for name in ("world-clock", "company-workflow", "draft-in-terminal"))
+    assert "<h3>" not in rendered
+    assert all(label in rendered for label in ("World Clock →", "Workflows →", "Review drafts →"))
+    assert 'referrerpolicy="no-referrer"' in rendered
+    assert "aspect-ratio" not in rendered
+
+
+def test_homepage_does_not_substitute_settings_for_a_missing_feature_scene():
+    project = record()
+    project["name"] = "heinzel-clock"
+    project["screenshots"] = [{"url": "https://example.com/settings.png", "surface": "ui", "caption": "Settings"}]
+    assert "settings.png" not in pages.home_gallery({"plugins": [project]}, "")
+
+
+def test_homepage_product_tour_survives_markdown_section_rendering():
+    from html.parser import HTMLParser
+
+    import markdown
+
+    plugins = []
+    for name, scene in (
+        ("heinzel-clock", "world-clock"),
+        ("heinzel-acme", "company-workflow"),
+        ("heinzel-acme-payments-checkout", "draft-in-terminal"),
+    ):
+        project = record()
+        project["name"] = name
+        project["screenshots"] = [
+            {"url": f"https://example.com/{scene}.png", "surface": "ui", "caption": "Fictional demonstration"}
+        ]
+        plugins.append(project)
+    content = pages.home_gallery({"plugins": plugins}, "")
+    rendered = markdown.markdown(f'<section markdown="1">\n\n{content}\n\n</section>', extensions=["md_in_html"])
+
+    class Stories(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.stack = []
+            self.articles = []
+            self.figures = []
+
+        def handle_starttag(self, tag, attrs):
+            classes = dict(attrs).get("class", "")
+            if tag == "article" and classes == "hz-product-story":
+                self.articles.append(self.stack[-1])
+            if tag == "figure":
+                self.figures.append(self.stack[-1])
+            if tag not in {"img", "br", "hr", "input", "source"}:
+                self.stack.append((tag, classes))
+
+        def handle_endtag(self, tag):
+            for index in range(len(self.stack) - 1, -1, -1):
+                if self.stack[index][0] == tag:
+                    del self.stack[index:]
+                    break
+
+    parser = Stories()
+    parser.feed(rendered)
+    assert parser.articles == [("div", "hz-product-stories")] * 3
+    assert parser.figures == [("article", "hz-product-story")] * 3
+
+
+def test_product_tour_stories_are_short_labelled_and_backed_by_files():
+    banned = ("autonomous", "automatically", "while you sleep", "sends", "publishes", "delivers")
+    assert [story["id"] for story in pages.TOUR_STORIES] == ["graph", "terminal", "chat"]
+    for story in pages.TOUR_STORIES:
+        assert len(story["cue"].split()) <= 10
+        assert story["name"] in {"Pip", "Ada", "Otto"}
+        assert not any(word in story["cue"].lower() for word in banned)
+        assert (pages.ROOT / "docs/assets/website" / f"helper-{story['art']}.svg").is_file()
+        assert len(story["images"]) >= 2
+        for name, label, caption in story["images"]:
+            assert (pages.TOUR_ASSETS / f"{name}.png").is_file()
+            assert label
+            assert caption
+            assert not any(word in caption.lower() for word in banned)
+
+
+def test_product_tour_images_match_their_recorded_provenance():
+    import hashlib
+
+    recorded = json.loads((pages.TOUR_ASSETS / "provenance.json").read_text())["images"]
+    published = {path.name: path for path in pages.TOUR_ASSETS.glob("*.png")}
+    used = {f"{name}.png" for story in pages.TOUR_STORIES for name, _, _ in story["images"]}
+    assert set(recorded) == set(published) == used
+    for name, path in published.items():
+        assert hashlib.sha256(path.read_bytes()).hexdigest() == recorded[name]["sha256"]
+        assert path.stat().st_size < 600_000
+
+
+def test_product_tour_story_renders_one_guide_and_a_gallery_with_reserved_space():
+    rendered = pages.tour_story(pages.TOUR_STORIES[0], "guides/tour/")
+    assert rendered.count("data-heinzel-helper") == 1
+    assert rendered.count("<figure ") == 3
+    assert "../../assets/tour/graph-overview.png" in rendered
+    assert 'width="2160" height="1350"' in rendered
+    assert 'referrerpolicy="no-referrer"' in rendered
+    assert "Previous workflow graph screenshot" in rendered
+    assert "data-gallery-track" in rendered
+
+
+def test_product_tour_markers_replace_their_github_fallback_and_reject_unknown_stories():
+    source = "a\n<!-- hz:tour-story chat -->\n![fallback](x.png)\n<!-- /hz:tour-story -->\nb"
+    rendered = pages.TOUR_FALLBACK.sub(lambda found: pages.tour_markup(found.group(1), "guides/tour/"), source)
+    assert "fallback" not in rendered
+    assert "hz-tour-story" in rendered
+    assert rendered.startswith("a\n")
+    assert rendered.endswith("\nb")
+    with pytest.raises(ValueError, match="Unknown tour story"):
+        pages.tour_markup("nothing", "guides/tour/")

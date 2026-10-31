@@ -9,9 +9,11 @@ Needs network the first time: Playwright downloads Chromium, and the app is buil
 import importlib.util
 import json
 import os
+import re
 import subprocess
 import sys
 import textwrap
+import time
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 from urllib.request import Request, urlopen
@@ -280,9 +282,52 @@ def test_theme_image_viewports_preserve_the_cap_hinge_in_actual_chromium(tmp_pat
     assert result == {"comparisons": 27, "reduced": True, "errors": []}
 
 
+# The sections of web/e2e/mobile-responsive.mjs: each viewport sweep, and the phone flows (scroll, sound, notification).
+# Each runs in its own driver child against its own `hz ui` and isolated directories, so the cases are independent.
+MOBILE_VIEWPORTS = (
+    "narrow-portrait",
+    "wide-portrait",
+    "short-portrait",
+    "narrow-landscape",
+    "wide-landscape",
+    "short-landscape",
+)
+MOBILE_SECTIONS = (*MOBILE_VIEWPORTS, "phone")
+# The driver child's deadline per section. One section is a seventh or less of what the single 300 s child covered
+# (all of it took 205 s on Ubuntu and 294 s on macOS; a section ran in 15-45 s locally), so this leaves a section 2.5x
+# its expected time, and a hung one fails in two minutes instead of five.
+MOBILE_CHILD_SECONDS = 120
+
+
+def test_mobile_sections_cover_every_viewport_of_the_driver():
+    """A viewport added to the driver must also be a test case, or it would silently stop running."""
+    driver = (REPO / "web" / "e2e" / "mobile-responsive.mjs").read_text(encoding="utf-8")
+    declared = re.findall(r'^  \{ name: "([a-z-]+)", width: \d+, height: \d+ \},$', driver, flags=re.MULTILINE)
+    assert tuple(declared) == MOBILE_VIEWPORTS
+
+
+def check_mobile_result(section, result):
+    """A viewport section proves exactly its own case; the phone section, the docked player and iPhone controls."""
+    assert result["evidence"] == "mobile/touch emulation; not physical iPhone Safari"
+    if section == "phone":
+        assert result["cases"] == []
+        assert result["dockedPlayer"]["popOutUsable"] is True
+        assert result["iphoneControls"] == {"deviceVolume": True, "notificationTest": True, "serverActionsHidden": True}
+    else:
+        assert [case["name"] for case in result["cases"]] == [section]
+        assert "dockedPlayer" not in result
+
+
+def report_mobile_time(capfd, section, begun):
+    """Say how much of its deadline a section used; visible from xdist workers too, for tuning the deadline."""
+    with capfd.disabled():
+        sys.stderr.write(f"Mobile section {section}: {time.monotonic() - begun:.1f} s of {MOBILE_CHILD_SECONDS} s\n")
+
+
 @pytest.mark.timeout(600)
 @pytest.mark.e2e_early
-def test_mobile_touch_viewports_keep_navigation_settings_and_chat_reachable(environment, tmp_path):
+@pytest.mark.parametrize("section", MOBILE_SECTIONS)
+def test_mobile_touch_viewports_keep_navigation_settings_and_chat_reachable(environment, tmp_path, capfd, section):
     """Chromium mobile emulation checks responsive reachability; it is not a physical iPhone Safari test."""
     env, _recorded = environment
     web_build.ensure_built()
@@ -294,7 +339,8 @@ def test_mobile_touch_viewports_keep_navigation_settings_and_chat_reachable(envi
         timeout=600,
         capture_output=True,
     )
-    shots = Path(os.environ.get("HZ_SCREENSHOTS", tmp_path / "screenshots"))
+    # One directory per section: workers running other sections in parallel must not overwrite each other's files.
+    shots = Path(os.environ.get("HZ_SCREENSHOTS", tmp_path / "screenshots")) / section
     ui = subprocess.Popen(
         [sys.executable, "-m", "heinzel", "ui", "--port", "0"], cwd=REPO, env=env, stderr=subprocess.PIPE
     )
@@ -306,20 +352,22 @@ def test_mobile_touch_viewports_keep_navigation_settings_and_chat_reachable(envi
         assert "#token=" in url
         token = parse_qs(urlsplit(url).fragment).get("token", [""])[0]
         verify_stream_fixture(url)
+        begun = time.monotonic()
         try:
             driven = subprocess.run(
-                [*run, "exec", "node", "e2e/mobile-responsive.mjs", url, str(shots)],
+                [*run, "exec", "node", "e2e/mobile-responsive.mjs", url, str(shots), section],
                 cwd=REPO,
                 capture_output=True,
                 text=True,
                 check=False,
-                timeout=300,
+                timeout=MOBILE_CHILD_SECONDS,
             )
         except subprocess.TimeoutExpired as error:
             sanitize_timeout(error)
-            raise
+            raise error.with_traceback(None) from None
         check_driver(driven.returncode, redact(driven.stderr, token))
         result = json.loads(driven.stdout.strip().splitlines()[-1])
+        report_mobile_time(capfd, section, begun)
     except BaseException:
         sys.stderr.write(f"Mobile server pre-cleanup exit: {ui.poll()}\n")
         sys.stderr.write(f"Mobile server stderr tail:\n{capture.diagnostic(token)}\n")
@@ -344,17 +392,7 @@ def test_mobile_touch_viewports_keep_navigation_settings_and_chat_reachable(envi
                 raise
             original.add_note("Mobile test server cleanup was uncertain; inspect the owned process state.")
 
-    assert result["evidence"] == "mobile/touch emulation; not physical iPhone Safari"
-    assert len(result["cases"]) == 6
-    assert {case["name"] for case in result["cases"]} == {
-        "narrow-portrait",
-        "wide-portrait",
-        "short-portrait",
-        "narrow-landscape",
-        "wide-landscape",
-        "short-landscape",
-    }
-    assert result["dockedPlayer"]["popOutUsable"] is True
+    check_mobile_result(section, result)
 
 
 @pytest.mark.timeout(600)

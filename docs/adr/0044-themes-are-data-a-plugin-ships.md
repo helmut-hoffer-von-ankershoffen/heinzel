@@ -127,14 +127,12 @@ declaration, and the choice is an ordinary setting every head reads.
 
 ## More Information
 
-- Requested by the maintainer, 2026-10-24: themes in plugins with light and dark colours, fonts, border radius and
-  width; switching between those available; the reference company's theme as the proof.
 - The reference company `heinzel-acme` ships `themes/acme.toml` from its company layer plugin.
 - Open with ADR 0040: the org-site precedence; when it is decided, themes follow the same rule as settings.
 - Extension, not decided: a theme a layer recommends; a per-mode font stack if a theme needs one. (Bundled font
   files, listed here first, are decided in the amendment below.)
 
-**Amendment 2026-10-24: type scale, density, icon colours and bundled fonts.** Requested by the maintainer the same day: a theme sets the app's type scale, density and icon look, and ships its own
+**Type scale, density, icon colours and bundled fonts.** A theme sets the app's type scale, density and icon look, and ships its own
 font files. Additive: every new field has a default, so a theme written before this stays valid (the token-contract
 consequence above, met by defaults rather than new required fields).
 
@@ -176,8 +174,8 @@ consequence above, met by defaults rather than new required fields).
   with its type and cache headers and without the token, refused for an unknown index, theme or file name, for the
   theme a more specific layer hides, and for another Host, Origin or site).
 
-**Amendment 2026-10-24: logos and a main tint.** Requested by the maintainer the same day: a theme brings its logo,
-and the main content area can take a tint of its own. Additive like the amendment above: both are optional, so every
+**Logos and a main tint.** A theme brings its logo,
+and the main content area can take a tint of its own. Additive like the type scale above: both are optional, so every
 theme written before stays valid.
 
 - **A logo.** A theme file may declare `[logo]` (`ThemeLogo`): `light` (the logo on a light background), `dark`

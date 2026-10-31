@@ -60,7 +60,6 @@ promise to users.
 
 - [SECURITY.md](../../SECURITY.md) "What Heinzelmännchen does on your machine": "`hz` sends nothing anywhere on its own".
 - Receipts and local logs: [ADR 0020](0020-daemon-head.md); health checks: [ADR 0015](0015-health-checks-as-lets.md).
-- Decided by the maintainer on 2026-10-23.
 - Open question: whether plugins also declare outbound data in `hz system info`. How the update notifier checks
-  for new versions within this rule is answered by [ADR 0031](0031-update-check.md) (amended 2026-10-24 by the
-  maintainer: automatic, hourly, anonymous, with an opt-out).
+  for new versions within this rule is answered by [ADR 0031](0031-update-check.md) (automatic, hourly, anonymous, with an
+  opt-out).

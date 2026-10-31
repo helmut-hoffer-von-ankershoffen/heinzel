@@ -1,6 +1,6 @@
 [project]
 name = "heinzel"
-version = "0.9.8"
+version = "0.9.9"
 description = "Heinzelmännchen: an open-source, AI-driven operating system for product development teams."
 readme = "PYPI.md"
 authors = [{ name = "Helmut Hoffer von Ankershoffen", email = "helmuthva@gmail.com" }]
@@ -38,15 +38,15 @@ heinzel = "_heinzel_launcher:main" # Isolate imports before entering the managed
 heinzel = "heinzel.testing"
 
 [project.urls]
-Homepage = "https://helmut.hoffer-von-ankershoffen.me/heinzel/"
-Documentation = "https://helmut.hoffer-von-ankershoffen.me/heinzel/guides/install/"
+Homepage = "https://heinzel.team/"
+Documentation = "https://heinzel.team/guides/install/"
 Source = "https://github.com/helmut-hoffer-von-ankershoffen/heinzel"
 Changelog = "https://github.com/helmut-hoffer-von-ankershoffen/heinzel/blob/main/CHANGELOG.md"
 Issues = "https://github.com/helmut-hoffer-von-ankershoffen/heinzel/issues"
 
 [dependency-groups]
 # What the unit, integration and e2e tests need, and no more: CI installs only this group for the test matrix.
-test = ["coverage>=7.12", "httpx>=0.28", "hypothesis>=6.140", "jsonschema>=4.26", "pydantic-ai-slim[openai]==2.61.0", "prek>=0.2", "pytest>=9.0.3,<10", "pytest-timeout>=2.4.0,<3", "pytest-xdist>=3.8", "types-psutil>=7.2.2.20260906"]
+test = ["coverage>=7.12", "httpx>=0.28", "hypothesis>=6.140", "jsonschema>=4.26", "markdown>=3.10", "pydantic-ai-slim[openai]==2.61.0", "prek>=0.2", "pytest>=9.0.3,<10", "pytest-timeout>=2.4.0,<3", "pytest-xdist>=3.8", "types-psutil>=7.2.2.20260906"]
 # Fuzzing the contract parser (`make fuzz`, weekly in CI); atheris has wheels for x86_64 Linux, Python 3.12 to 3.14.
 fuzz = ["atheris>=3.1; sys_platform == 'linux' and platform_machine == 'x86_64' and python_version < '3.15'"]
 dev = [
@@ -233,7 +233,7 @@ example = "fix(cli): exit with code 1 when an operation fails"
 info = "Conventional commits with the types and scopes in docs/CODING_STANDARDS.md."
 
 [tool.bumpversion]
-current_version = "0.9.8"
+current_version = "0.9.9"
 parse = "(?P<major>\\d+)\\.(?P<minor>\\d+)\\.(?P<patch>\\d+)"
 serialize = ["{major}.{minor}.{patch}"]
 commit = false

@@ -1,5 +1,7 @@
 // Focused mobile/touch viewport proof for the app served by `hz ui` (tests/e2e/web_ui_test.py).
-// This is Chromium emulation, not physical iPhone Safari. Usage: node e2e/mobile-responsive.mjs URL SCREENSHOT_DIR.
+// This is Chromium emulation, not physical iPhone Safari.
+// Usage: node e2e/mobile-responsive.mjs URL SCREENSHOT_DIR [SECTION]. SECTION is one viewport name or "phone" (the
+// scroll, sound and notification flows); without it every section runs in one browser.
 import assert from "node:assert/strict";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -8,12 +10,18 @@ import ts from "typescript";
 import { contributePanel } from "./contributed-panel.mjs";
 import { reportMediaFailure, watchMedia } from "./media-diagnostics.mjs";
 
+// Fixed, credential-free checkpoints for timeout diagnosis; do not interpolate page or URL data.
+function stage(name) {
+  console.error(`MOBILE_STAGE:${name}`);
+}
+stage("launch");
 const [url, shots] = process.argv.slice(2);
 mkdirSync(shots, { recursive: true });
 const useWebKit = process.env.PLAYWRIGHT_BROWSER === "webkit";
 const browser = useWebKit
   ? await webkit.launch()
   : await chromium.launch().catch(() => chromium.launch({ channel: "chrome" }));
+stage("launched");
 const cases = [
   { name: "narrow-portrait", width: 360, height: 780 },
   { name: "wide-portrait", width: 430, height: 932 },
@@ -22,6 +30,14 @@ const cases = [
   { name: "wide-landscape", width: 932, height: 430 },
   { name: "short-landscape", width: 844, height: 320 },
 ];
+const section = process.argv[4] ?? "all";
+assert.ok(
+  section === "all" || section === "phone" || cases.some((spec) => spec.name === section),
+  `Unknown mobile section "${section}"`,
+);
+// A viewport section keeps just its own case; "phone" keeps none, and runs the phone flows instead.
+if (section !== "all") cases.splice(0, cases.length, ...cases.filter((spec) => spec.name === section));
+const runPhone = section === "all" || section === "phone";
 // Discover route literals from the real router so new screens join the mobile sweep automatically.
 const routeSource = ts.createSourceFile(
   "App.tsx",
@@ -223,6 +239,7 @@ async function footerPane(page, id, label) {
 
 try {
   for (const spec of cases) {
+    stage(`viewport-${spec.name}-start`);
     const context = await browser.newContext({
       viewport: { width: spec.width, height: spec.height },
       screen: { width: spec.width, height: spec.height },
@@ -298,6 +315,7 @@ try {
     await page.getByRole("heading", { name: "Today" }).waitFor();
     await page.locator("#splash").waitFor({ state: "hidden", timeout: 15_000 });
     await page.waitForFunction(() => !document.getElementById("root")?.hasAttribute("inert"), null, { timeout: 5000 });
+    stage(`viewport-${spec.name}-loaded`);
     const facts = await viewportFacts(page, spec.name);
     if (facts.shellClientHeight !== undefined) {
       assert.ok(facts.shellClientHeight <= facts.height, `${spec.name}: shell exceeds the viewport height`);
@@ -354,6 +372,7 @@ try {
       .getByRole("link")
       .evaluateAll((links) => links.map((link) => link.getAttribute("href")));
     const visitedRoutes = new Set([...destinations, ...routePaths]);
+    stage(`viewport-${spec.name}-routes`);
     for (const destination of visitedRoutes) {
       await page.goto(`${new URL(destination, url).href}${new URL(url).hash}`);
       await page.locator("#splash").waitFor({ state: "hidden", timeout: 15_000 });
@@ -411,6 +430,7 @@ try {
       .locator("option")
       .evaluateAll((options) => options.map((option) => ({ id: option.value, title: option.textContent.trim() })));
     assert.ok(settingsPages.length > 5, `${spec.name}: the complete settings registry must be exercised`);
+    stage(`viewport-${spec.name}-settings`);
     for (const settingsPage of settingsPages) {
       if (spec.width < 640)
         await settingsDialog.getByLabel("Settings page", { exact: true }).selectOption(settingsPage.id);
@@ -464,6 +484,7 @@ try {
     updateAvailable = true;
     await page.goto(url);
     await page.getByRole("heading", { name: "Today" }).waitFor();
+    await page.locator("#splash").waitFor({ state: "hidden", timeout: 15_000 });
     const availablePane = await footerPane(page, "@updates", "Update available");
     await assertContained(page, availablePane, `${spec.name}: available update pane`);
     await availablePane.getByText(/^Last installed:/).waitFor();
@@ -478,6 +499,7 @@ try {
     updateAvailable = false;
     await page.goto(url);
     await page.getByRole("heading", { name: "Today" }).waitFor();
+    await page.locator("#splash").waitFor({ state: "hidden", timeout: 15_000 });
     await page.getByRole("button", { name: /^Notifications/ }).click();
     const notifications = page.getByRole("region", { name: "Notifications", exact: true });
     await assertContained(page, notifications, `${spec.name}: notifications`);
@@ -489,6 +511,7 @@ try {
     // The home chat opens automatically. Check the composer is inside the screen and can be focused by touch.
     await page.goto(url);
     await page.getByRole("heading", { name: "Today" }).waitFor();
+    await page.locator("#splash").waitFor({ state: "hidden", timeout: 15_000 });
     // Both sides of the workspace: full navigation, top menu, chat switcher and terminal menus/full screen.
     await page.getByRole("button", { name: "Expand navigation" }).click();
     await assertContained(
@@ -752,403 +775,413 @@ try {
       await session.send("Emulation.setPageScaleFactor", { pageScaleFactor: 1 });
       await session.detach();
     }
+    stage(`viewport-${spec.name}-cleanup`);
     await page.unrouteAll({ behavior: "wait" });
     await context.close();
+    stage(`viewport-${spec.name}-done`);
   }
-  // Header actions navigate within the shared phone scroller, without requiring a manual swipe.
-  const scrollPage = await browser.newPage({
-    viewport: { width: 390, height: 844 },
-    isMobile: true,
-    hasTouch: true,
-    serviceWorkers: "block",
-  });
-  await scrollPage.addInitScript(() => {
-    localStorage.setItem("hz.onboarding", JSON.stringify({ step: "you", visited: [], closed: true }));
-    const scroll = Element.prototype.scrollTo;
-    window.workspaceScrollCalls = [];
-    window.workspaceTimers = { started: [], cleared: [] };
-    const startTimer = window.setTimeout.bind(window);
-    const clearTimer = window.clearTimeout.bind(window);
-    window.setTimeout = (callback, delay, ...args) => {
-      const id = startTimer(callback, delay, ...args);
-      if (delay === 1200) window.workspaceTimers.started.push(id);
-      return id;
-    };
-    window.clearTimeout = (id) => {
-      window.workspaceTimers.cleared.push(id);
-      return clearTimer(id);
-    };
-    Element.prototype.scrollTo = function (...args) {
-      if (this.classList.contains("workspace-scroll")) window.workspaceScrollCalls.push(args[0]);
-      return scroll.apply(this, args);
-    };
-  });
-  await contributePanel(scrollPage, { delay: 350 });
-  await scrollPage.goto(url);
-  await scrollPage.getByRole("heading", { name: "Today" }).waitFor();
-  const workspaceScroll = scrollPage.locator(".workspace-scroll");
-  const atPanel = async (id) => {
-    await scrollPage.waitForFunction(
-      (id) => {
-        const box = document.querySelector(".workspace-scroll");
-        const panel = document.querySelector('[data-placement="below"]');
-        return (
-          panel?.getAttribute("data-active") === id &&
-          box &&
-          Math.abs(box.scrollTop - Math.min(panel.offsetTop, box.scrollHeight - box.clientHeight)) < 2
-        );
-      },
-      id,
-      { timeout: 5000 },
-    );
-  };
-  const atPage = async () => {
-    await scrollPage.waitForFunction(
-      () => {
-        const box = document.querySelector(".workspace-scroll");
-        return box && box.scrollTop < 2 && document.querySelector('[data-active="page"]');
-      },
-      null,
-      { timeout: 5000 },
-    );
-  };
-  const lastScroll = async () => scrollPage.evaluate(() => window.workspaceScrollCalls.at(-1));
-  await scrollPage.getByRole("button", { name: "Specimen", exact: true }).tap();
-  await scrollPage.getByRole("heading", { name: "Specimen", exact: true }).waitFor();
-  await atPanel("specimen:inspector");
-  assert.equal((await lastScroll()).behavior, "smooth", "contributed header scrolls smoothly");
-  await workspaceScroll.evaluate((element) => {
-    element.scrollTop = 0;
-  });
-  await scrollPage.getByRole("button", { name: "Specimen", exact: true }).tap();
-  await atPanel("specimen:inspector");
-  assert.equal((await lastScroll()).behavior, "smooth", "repeated panel selection scrolls again");
-  const startTop = await workspaceScroll.evaluate((element) => element.scrollTop);
-  await scrollPage.getByRole("tab", { name: "Specimen", exact: true }).focus();
-  await scrollPage.keyboard.press("Home");
-  const pageTab = scrollPage.getByRole("tab", { name: "Page", exact: true });
-  await pageTab.waitFor({ state: "visible" });
-  await scrollPage.waitForFunction(
-    () => document.querySelector('[role="tab"][aria-selected="true"]')?.textContent === "Page",
-    null,
-    { timeout: 1000 },
-  );
-  assert.ok(await pageTab.evaluate((element) => element === document.activeElement), "Page tab keeps keyboard focus");
-  await scrollPage.waitForFunction(
-    (start) => {
-      const top = document.querySelector(".workspace-scroll").scrollTop;
-      return top > 2 && top < start - 2;
-    },
-    startTop,
-    { timeout: 5000 },
-  );
-  await atPage();
-  assert.equal((await lastScroll()).behavior, "smooth", "Page scrolls smoothly to the top");
-  await scrollPage.getByRole("button", { name: "Chat with your Heinzelmännchen" }).tap();
-  await atPanel("chat");
-  assert.equal((await lastScroll()).behavior, "smooth", "chat header scrolls smoothly");
-  await workspaceScroll.evaluate((element) => {
-    element.scrollTop = 0;
-  });
-  await scrollPage.getByRole("button", { name: "Show chat" }).tap();
-  await atPanel("chat");
-  await scrollPage.getByRole("tab", { name: "Page", exact: true }).tap();
-  await atPage();
-  await scrollPage.getByRole("button", { name: "Open a terminal" }).tap();
-  await atPanel("terminal");
-  assert.equal((await lastScroll()).behavior, "smooth", "terminal header scrolls smoothly");
-  await workspaceScroll.evaluate((element) => {
-    element.scrollTop = 0;
-  });
-  await scrollPage.getByRole("button", { name: "Show terminal" }).tap();
-  await atPanel("terminal");
-  // A later selection cancels the pending Page transition, even after its fallback timer.
-  await scrollPage.evaluate(() => {
-    window.workspaceTimers = { started: [], cleared: [] };
-  });
-  await scrollPage.getByRole("tab", { name: "Page", exact: true }).tap();
-  await scrollPage.waitForFunction(() => window.workspaceTimers.started.length > 0);
-  await scrollPage.getByRole("button", { name: "Chat with your Heinzelmännchen" }).tap();
-  await atPanel("chat");
-  const timers = await scrollPage.evaluate(() => window.workspaceTimers);
-  assert.ok(
-    timers.started.length > 0 && timers.cleared.includes(timers.started.at(-1)),
-    "superseded Page timer is cancelled",
-  );
-  assert.equal(await scrollPage.locator('[data-placement="below"]').getAttribute("data-active"), "chat");
-  await scrollPage.emulateMedia({ reducedMotion: "reduce" });
-  await scrollPage.getByRole("tab", { name: "Page", exact: true }).tap();
-  await atPage();
-  assert.equal((await lastScroll()).behavior, "auto", "reduced motion avoids animation");
-  await scrollPage.getByRole("button", { name: "Open a terminal" }).tap();
-  await atPanel("terminal");
-  assert.equal((await lastScroll()).behavior, "auto", "reduced motion also applies to panel navigation");
-  await scrollPage.emulateMedia({ reducedMotion: "no-preference" });
-  await scrollPage.evaluate(() => {
-    window.workspaceTimers = { started: [], cleared: [] };
-  });
-  await scrollPage.getByRole("tab", { name: "Page", exact: true }).tap();
-  await scrollPage.waitForFunction(() => window.workspaceTimers.started.length > 0);
-  await scrollPage.getByRole("link", { name: "Heinzelmännchen", exact: true }).tap();
-  await scrollPage.waitForURL("**/heinzel");
-  await scrollPage.waitForFunction(() =>
-    window.workspaceTimers.cleared.includes(window.workspaceTimers.started.at(-1)),
-  );
-  const routeTimers = await scrollPage.evaluate(() => window.workspaceTimers);
-  assert.ok(routeTimers.cleared.includes(routeTimers.started.at(-1)), "route changes cancel the Page timer");
-  await scrollPage.getByRole("button", { name: "Specimen", exact: true }).tap();
-  await atPanel("specimen:inspector");
-  await scrollPage.evaluate(() => {
-    window.workspaceTimers = { started: [], cleared: [] };
-  });
-  await scrollPage.getByRole("tab", { name: "Page", exact: true }).tap();
-  await scrollPage.waitForFunction(() => window.workspaceTimers.started.length > 0);
-  await scrollPage.setViewportSize({ width: 1400, height: 900 });
-  await scrollPage.waitForFunction(() => document.querySelector('[data-placement="beside"]'));
-  await scrollPage.waitForFunction(() =>
-    window.workspaceTimers.cleared.includes(window.workspaceTimers.started.at(-1)),
-  );
-  const resizeTimers = await scrollPage.evaluate(() => window.workspaceTimers);
-  assert.ok(resizeTimers.cleared.includes(resizeTimers.started.at(-1)), "wide layout cancels the Page timer");
-  await scrollPage.setViewportSize({ width: 390, height: 844 });
-  await scrollPage.goto(url);
-  await scrollPage.getByRole("heading", { name: "Today" }).waitFor();
-  await scrollPage.getByRole("button", { name: "Open a terminal" }).tap();
-  await atPanel("terminal");
-  await scrollPage.setViewportSize({ width: 844, height: 320 });
-  await scrollPage.getByRole("button", { name: "Show terminal" }).tap();
-  await atPanel("terminal");
-  await scrollPage.getByRole("tab", { name: "Page", exact: true }).tap();
-  await atPage();
-  assert.equal((await lastScroll()).behavior, "smooth", "short landscape Page scrolls smoothly");
-  await scrollPage.setViewportSize({ width: 390, height: 844 });
-  await scrollPage.goto(`${new URL("/doctor?view=probe", url).href}${new URL(url).hash}`);
-  await scrollPage.locator("main table").waitFor();
-  await scrollPage.getByRole("button", { name: "Specimen", exact: true }).tap();
-  await atPanel("specimen:inspector");
-  assert.equal(new URL(scrollPage.url()).pathname, "/doctor", "panel keeps the current page");
-  assert.equal(new URL(scrollPage.url()).searchParams.get("view"), "probe");
-  await scrollPage.getByRole("tab", { name: "Page", exact: true }).tap();
-  await atPage();
-  assert.equal(new URL(scrollPage.url()).pathname, "/doctor", "Page returns to the original route");
-  await scrollPage.screenshot({ path: join(shots, "mobile-workspace-navigation.png") });
-  await scrollPage.unrouteAll({ behavior: "wait" });
-  await scrollPage.close();
-
-  // The full sidebar retains its dock slot at a phone-sized width. Check the player itself and its controls fit and
-  // remain actionable after a touch gesture; this says nothing about physical iOS Safari behavior.
-  const soundPage = await browser.newPage({
-    userAgent:
-      "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Version/18.0 Mobile/15E148 Safari/604.1",
-    viewport: { width: 430, height: 932 },
-    screen: { width: 430, height: 932 },
-    isMobile: true,
-    hasTouch: true,
-    deviceScaleFactor: 2,
-  });
-  await soundPage
-    .context()
-    .addCookies([
-      { name: "hz_test", value: "signed", url: "https://www.youtube.com/", secure: true, sameSite: "None" },
-    ]);
-  await soundPage
-    .context()
-    .route("https://www.youtube.com/watch**", (route) =>
-      route.fulfill({ contentType: "text/html", body: "<!doctype html><title>Watch fixture</title>" }),
-    );
-  await soundPage.route("https://www.youtube.com/embed/**", (route) =>
-    route.fulfill({ contentType: "text/html", body: "<!doctype html><title>Account player fixture</title>" }),
-  );
-  const sound = {
-    name: "mobile-dock-probe",
-    title: "Mobile dock probe",
-    kind: "stream",
-    stream: {
-      provider: "youtube",
-      video: "tRsQsTMvPNg",
-      frame_origin: "https://www.youtube-nocookie.com",
-      embed_url: "https://www.youtube-nocookie.com/embed/tRsQsTMvPNg",
-      watch_url: "https://www.youtube.com/watch?v=tRsQsTMvPNg",
-    },
-    module: null,
-    plugin: null,
-    selected: true,
-    effective: true,
-    fade_seconds: 0,
-  };
-  await soundPage.route("**/api/system/sound/list", (route) =>
-    route.fulfill({
-      json: {
-        selected: sound.name,
-        effective: sound.name,
-        soundscapes: [sound],
-        signals: {},
-        volume: 50,
-        follow_theme: false,
-        mute_in_meetings: false,
-        duck_while_typing: false,
-      },
-    }),
-  );
-  await soundPage.route("https://www.youtube-nocookie.com/embed/**", (route) =>
-    route.fulfill({
-      contentType: "text/html",
-      body: `<!doctype html><html><body style="margin:0"><video muted autoplay playsinline></video><script>const c=document.createElement('canvas');c.width=320;c.height=180;const x=c.getContext('2d');setInterval(()=>{x.fillStyle='#308090';x.fillRect(0,0,320,180)},40);const v=document.querySelector('video');v.srcObject=c.captureStream(25);v.play();</script></body></html>`,
-    }),
-  );
-  await watchMedia(soundPage);
-  await soundPage.goto(url);
-  await soundPage.getByRole("heading", { name: "Today" }).waitFor();
-  await soundPage.locator("#splash").waitFor({ state: "hidden", timeout: 15_000 });
-  await soundPage.getByRole("button", { name: "Expand navigation" }).click();
-  await soundPage.getByRole("button", { name: "Collapse navigation" }).waitFor();
-  await soundPage.getByRole("button", { name: "Choose a soundscape", exact: true }).click();
-  const soundDialog = soundPage.getByRole("dialog", { name: "Sound" });
-  await soundDialog.getByText("Use your iPhone or iPad volume buttons to adjust YouTube audio.").waitFor();
-  assert.equal(await soundDialog.getByRole("slider", { name: "Volume" }).count(), 0);
-  assert.equal(await soundDialog.getByRole("switch", { name: "Softer while I type" }).count(), 0);
-  await assertContained(soundPage, soundDialog, "iPhone sound controls");
-  await soundPage.screenshot({ path: join(shots, "mobile-iphone-sound-controls.png") });
-  await soundPage
-    .getByRole("dialog", { name: "Sound" })
-    .getByRole("button", { name: "Play Mobile dock probe", exact: true })
-    .click();
-  await soundPage.keyboard.press("Escape");
-  const player = soundPage.getByRole("region", { name: "Mobile dock probe player" });
-  await player.waitFor();
-  const privateFrame = await (await player.locator("iframe").elementHandle()).contentFrame();
-  try {
-    await privateFrame.waitForURL(/youtube-nocookie\.com\/embed\//);
-  } catch (error) {
-    await reportMediaFailure(soundPage, "mobile private frame");
-    throw error;
-  }
-  assert.equal(await privateFrame.evaluate(() => document.cookie.includes("hz_test=signed")), false);
-  const playerFrameBox = await player.locator("iframe").boundingBox();
-  assert.ok(playerFrameBox.width >= 200 && playerFrameBox.height >= 200, "YouTube's minimum player size");
-  assert.equal(
-    await player.getAttribute("data-dock"),
-    "docked",
-    "wide-portrait: stream player should be docked in the sidebar",
-  );
-  const playerBox = await player.boundingBox();
-  const popOut = soundPage.getByRole("button", { name: "Pop the player out of the sidebar" });
-  const popOutBox = await assertTouchTarget(popOut, "docked player pop-out control", "wide-portrait");
-  assert.ok(
-    playerBox &&
-      playerBox.x >= 0 &&
-      playerBox.y >= 0 &&
-      playerBox.x + playerBox.width <= 430 + 1 &&
-      playerBox.y + playerBox.height <= 932 + 1,
-    `wide-portrait: docked player must fit viewport: ${JSON.stringify(playerBox)}`,
-  );
-  await soundPage.getByRole("button", { name: "Collapse navigation" }).click();
-  await soundPage.getByRole("button", { name: "Pause Mobile dock probe", exact: true }).tap();
-  await soundPage.getByRole("button", { name: "Play Mobile dock probe", exact: true }).tap();
-  assert.equal(await player.isVisible(), false, "collapsed dock must not cover the workspace");
-  await soundPage.screenshot({ path: join(shots, "mobile-compact-sound.png") });
-  await soundPage.getByRole("button", { name: "Expand navigation" }).click();
-  await player.waitFor();
-  await popOut.tap();
-  await soundPage.waitForFunction(() => document.querySelector('[data-dock="floating"]'));
-  await soundPage.setViewportSize({ width: 360, height: 400 });
-  await assertContained(soundPage, player, "rotated floating player");
-  await player.getByText("YouTube asking you to sign in?").tap();
-  await assertContained(soundPage, player, "expanded playback recovery");
-  const accountChoice = player.getByRole("button", { name: "Use YouTube sign-in" });
-  await assertTouchTarget(accountChoice, "YouTube account player choice", "short-landscape");
-  await accountChoice.tap();
-  assert.ok(
-    (await player.locator("iframe").getAttribute("src")).startsWith("https://www.youtube.com/embed/"),
-    "explicit sign-in choice must switch to the regular YouTube origin",
-  );
-  const accountContent = await (await player.locator("iframe").elementHandle()).contentFrame();
-  await accountContent.waitForURL(/youtube\.com\/embed\//);
-  if (!useWebKit) {
-    assert.equal(
-      await accountContent.evaluate(() => document.cookie.includes("hz_test=signed")),
-      true,
-      "the regular player can receive the browser's YouTube session when third-party cookies are allowed",
-    );
-  }
-  await player.getByText("YouTube asking you to sign in?").tap();
-  const accountFrame = await player.locator("iframe").elementHandle();
-  await player.getByRole("button", { name: "Retry player" }).tap();
-  assert.equal(await accountFrame.evaluate((frame) => frame.isConnected), false, "retry must replace the frame");
-  await player.getByText("YouTube asking you to sign in?").tap();
-  await player.getByRole("button", { name: "Use private player" }).tap();
-  assert.ok(
-    (await player.locator("iframe").getAttribute("src")).startsWith("https://www.youtube-nocookie.com/embed/"),
-    "private player choice must restore the privacy-enhanced origin",
-  );
-  await player.getByText("YouTube asking you to sign in?").tap();
-  const [youtubePage] = await Promise.all([
-    soundPage.waitForEvent("popup"),
-    player.getByRole("link", { name: "Play on YouTube" }).tap(),
-  ]);
-  await youtubePage.waitForURL("https://www.youtube.com/watch**");
-  assert.equal(new URL(youtubePage.url()).searchParams.get("v"), sound.stream.video);
-  await player.waitFor({ state: "detached" });
-  await youtubePage.close();
-  result.dockedPlayer = {
-    viewport: { width: 430, height: 932 },
-    dockedBox: playerBox,
-    popOutTarget: popOutBox,
-    popOutUsable: true,
-  };
-  // A phone tests this device, even when a Mac backend reports its own notification failures.
-  await soundPage.setViewportSize({ width: 390, height: 844 });
-  const collapseNavigation = soundPage.getByRole("button", { name: "Collapse navigation" });
-  if (await collapseNavigation.isVisible()) await collapseNavigation.tap();
-  const testNotice = {
-    id: "20261028T190000Z-iphone",
-    kind: "test",
-    title: "Notifications work",
-    body: "A test on this device.",
-    route: "/notifications",
-    command: "hz system notify list",
-    key: "test:iphone",
-    urgent: true,
-    at: "2026-10-28T19:00:00Z",
-    due: "2026-10-28T19:00:00Z",
-    popup: true,
-    held: null,
-    delivered_by: null,
-    delivered_at: null,
-  };
-  await soundPage.route("**/api/system/notify/list**", (route) =>
-    route.fulfill({ json: { notices: [testNotice], waiting: 1, native: "through Heinzel Notifier on macOS" } }),
-  );
-  await soundPage.route("**/api/system/notify/test**", (route) => {
-    assert.equal(new URL(route.request().url()).searchParams.get("native"), "false");
-    return route.fulfill({
-      status: 503,
-      json: {
-        notice: testNotice,
-        native: "macOS doesn't allow Heinzel Notifier",
-        channels: [
-          { name: "web", state: "closed", detail: "no web app is open" },
-          { name: "native", state: "blocked", detail: "macOS doesn't allow Heinzel Notifier", fix: "open-settings" },
-        ],
-        pops_up: false,
-      },
+  if (runPhone) {
+    stage("phone-scroll");
+    // Header actions navigate within the shared phone scroller, without requiring a manual swipe.
+    const scrollPage = await browser.newPage({
+      viewport: { width: 390, height: 844 },
+      isMobile: true,
+      hasTouch: true,
+      serviceWorkers: "block",
     });
-  });
-  await soundPage.getByRole("button", { name: /^Notifications(,|$)/ }).tap();
-  const notifications = soundPage.getByRole("region", { name: "Notifications", exact: true });
-  await notifications.getByRole("button", { name: "Send a test notification" }).tap();
-  const report = notifications.getByRole("region", { name: "How the test went" });
-  await report.getByText("The test was added to Notifications in this app.").waitFor();
-  await report.getByText(/Add to Home Screen/).waitFor();
-  await notifications.getByText("Saved in Notifications").waitFor();
-  assert.doesNotMatch((await notifications.textContent()) ?? "", /macOS|Native pop-ups|no web app is open/);
-  await assertContained(soundPage, notifications, "iPhone notification panel");
-  await report.scrollIntoViewIfNeeded();
-  await assertContained(soundPage, report, "iPhone notification test result");
-  await soundPage.screenshot({ path: join(shots, "mobile-iphone-notification-test.png") });
-  result.iphoneControls = { deviceVolume: true, notificationTest: true, serverActionsHidden: true };
-  await soundPage.close();
+    await scrollPage.addInitScript(() => {
+      localStorage.setItem("hz.onboarding", JSON.stringify({ step: "you", visited: [], closed: true }));
+      const scroll = Element.prototype.scrollTo;
+      window.workspaceScrollCalls = [];
+      window.workspaceTimers = { started: [], cleared: [] };
+      const startTimer = window.setTimeout.bind(window);
+      const clearTimer = window.clearTimeout.bind(window);
+      window.setTimeout = (callback, delay, ...args) => {
+        const id = startTimer(callback, delay, ...args);
+        if (delay === 1200) window.workspaceTimers.started.push(id);
+        return id;
+      };
+      window.clearTimeout = (id) => {
+        window.workspaceTimers.cleared.push(id);
+        return clearTimer(id);
+      };
+      Element.prototype.scrollTo = function (...args) {
+        if (this.classList.contains("workspace-scroll")) window.workspaceScrollCalls.push(args[0]);
+        return scroll.apply(this, args);
+      };
+    });
+    await contributePanel(scrollPage, { delay: 350 });
+    await scrollPage.goto(url);
+    await scrollPage.getByRole("heading", { name: "Today" }).waitFor();
+    await scrollPage.locator("#splash").waitFor({ state: "hidden", timeout: 15_000 });
+    const workspaceScroll = scrollPage.locator(".workspace-scroll");
+    const atPanel = async (id) => {
+      await scrollPage.waitForFunction(
+        (id) => {
+          const box = document.querySelector(".workspace-scroll");
+          const panel = document.querySelector('[data-placement="below"]');
+          return (
+            panel?.getAttribute("data-active") === id &&
+            box &&
+            Math.abs(box.scrollTop - Math.min(panel.offsetTop, box.scrollHeight - box.clientHeight)) < 2
+          );
+        },
+        id,
+        { timeout: 5000 },
+      );
+    };
+    const atPage = async () => {
+      await scrollPage.waitForFunction(
+        () => {
+          const box = document.querySelector(".workspace-scroll");
+          return box && box.scrollTop < 2 && document.querySelector('[data-active="page"]');
+        },
+        null,
+        { timeout: 5000 },
+      );
+    };
+    const lastScroll = async () => scrollPage.evaluate(() => window.workspaceScrollCalls.at(-1));
+    await scrollPage.getByRole("button", { name: "Specimen", exact: true }).tap();
+    await scrollPage.getByRole("heading", { name: "Specimen", exact: true }).waitFor();
+    await atPanel("specimen:inspector");
+    assert.equal((await lastScroll()).behavior, "smooth", "contributed header scrolls smoothly");
+    await workspaceScroll.evaluate((element) => {
+      element.scrollTop = 0;
+    });
+    await scrollPage.getByRole("button", { name: "Specimen", exact: true }).tap();
+    await atPanel("specimen:inspector");
+    assert.equal((await lastScroll()).behavior, "smooth", "repeated panel selection scrolls again");
+    const startTop = await workspaceScroll.evaluate((element) => element.scrollTop);
+    await scrollPage.getByRole("tab", { name: "Specimen", exact: true }).focus();
+    await scrollPage.keyboard.press("Home");
+    const pageTab = scrollPage.getByRole("tab", { name: "Page", exact: true });
+    await pageTab.waitFor({ state: "visible" });
+    await scrollPage.waitForFunction(
+      () => document.querySelector('[role="tab"][aria-selected="true"]')?.textContent === "Page",
+      null,
+      { timeout: 1000 },
+    );
+    assert.ok(await pageTab.evaluate((element) => element === document.activeElement), "Page tab keeps keyboard focus");
+    await scrollPage.waitForFunction(
+      (start) => {
+        const top = document.querySelector(".workspace-scroll").scrollTop;
+        return top > 2 && top < start - 2;
+      },
+      startTop,
+      { timeout: 5000 },
+    );
+    await atPage();
+    assert.equal((await lastScroll()).behavior, "smooth", "Page scrolls smoothly to the top");
+    await scrollPage.getByRole("button", { name: "Chat with your Heinzelmännchen" }).tap();
+    await atPanel("chat");
+    assert.equal((await lastScroll()).behavior, "smooth", "chat header scrolls smoothly");
+    await workspaceScroll.evaluate((element) => {
+      element.scrollTop = 0;
+    });
+    await scrollPage.getByRole("button", { name: "Show chat" }).tap();
+    await atPanel("chat");
+    await scrollPage.getByRole("tab", { name: "Page", exact: true }).tap();
+    await atPage();
+    await scrollPage.getByRole("button", { name: "Open a terminal" }).tap();
+    await atPanel("terminal");
+    assert.equal((await lastScroll()).behavior, "smooth", "terminal header scrolls smoothly");
+    await workspaceScroll.evaluate((element) => {
+      element.scrollTop = 0;
+    });
+    await scrollPage.getByRole("button", { name: "Show terminal" }).tap();
+    await atPanel("terminal");
+    // A later selection cancels the pending Page transition, even after its fallback timer.
+    await scrollPage.evaluate(() => {
+      window.workspaceTimers = { started: [], cleared: [] };
+    });
+    await scrollPage.getByRole("tab", { name: "Page", exact: true }).tap();
+    await scrollPage.waitForFunction(() => window.workspaceTimers.started.length > 0);
+    await scrollPage.getByRole("button", { name: "Chat with your Heinzelmännchen" }).tap();
+    await atPanel("chat");
+    const timers = await scrollPage.evaluate(() => window.workspaceTimers);
+    assert.ok(
+      timers.started.length > 0 && timers.cleared.includes(timers.started.at(-1)),
+      "superseded Page timer is cancelled",
+    );
+    assert.equal(await scrollPage.locator('[data-placement="below"]').getAttribute("data-active"), "chat");
+    await scrollPage.emulateMedia({ reducedMotion: "reduce" });
+    await scrollPage.getByRole("tab", { name: "Page", exact: true }).tap();
+    await atPage();
+    assert.equal((await lastScroll()).behavior, "auto", "reduced motion avoids animation");
+    await scrollPage.getByRole("button", { name: "Open a terminal" }).tap();
+    await atPanel("terminal");
+    assert.equal((await lastScroll()).behavior, "auto", "reduced motion also applies to panel navigation");
+    await scrollPage.emulateMedia({ reducedMotion: "no-preference" });
+    await scrollPage.evaluate(() => {
+      window.workspaceTimers = { started: [], cleared: [] };
+    });
+    await scrollPage.getByRole("tab", { name: "Page", exact: true }).tap();
+    await scrollPage.waitForFunction(() => window.workspaceTimers.started.length > 0);
+    await scrollPage.getByRole("link", { name: "Heinzelmännchen", exact: true }).tap();
+    await scrollPage.waitForURL("**/heinzel");
+    await scrollPage.waitForFunction(() =>
+      window.workspaceTimers.cleared.includes(window.workspaceTimers.started.at(-1)),
+    );
+    const routeTimers = await scrollPage.evaluate(() => window.workspaceTimers);
+    assert.ok(routeTimers.cleared.includes(routeTimers.started.at(-1)), "route changes cancel the Page timer");
+    await scrollPage.getByRole("button", { name: "Specimen", exact: true }).tap();
+    await atPanel("specimen:inspector");
+    await scrollPage.evaluate(() => {
+      window.workspaceTimers = { started: [], cleared: [] };
+    });
+    await scrollPage.getByRole("tab", { name: "Page", exact: true }).tap();
+    await scrollPage.waitForFunction(() => window.workspaceTimers.started.length > 0);
+    await scrollPage.setViewportSize({ width: 1400, height: 900 });
+    await scrollPage.waitForFunction(() => document.querySelector('[data-placement="beside"]'));
+    await scrollPage.waitForFunction(() =>
+      window.workspaceTimers.cleared.includes(window.workspaceTimers.started.at(-1)),
+    );
+    const resizeTimers = await scrollPage.evaluate(() => window.workspaceTimers);
+    assert.ok(resizeTimers.cleared.includes(resizeTimers.started.at(-1)), "wide layout cancels the Page timer");
+    await scrollPage.setViewportSize({ width: 390, height: 844 });
+    await scrollPage.goto(url);
+    await scrollPage.getByRole("heading", { name: "Today" }).waitFor();
+    await scrollPage.locator("#splash").waitFor({ state: "hidden", timeout: 15_000 });
+    await scrollPage.getByRole("button", { name: "Open a terminal" }).tap();
+    await atPanel("terminal");
+    await scrollPage.setViewportSize({ width: 844, height: 320 });
+    await scrollPage.getByRole("button", { name: "Show terminal" }).tap();
+    await atPanel("terminal");
+    await scrollPage.getByRole("tab", { name: "Page", exact: true }).tap();
+    await atPage();
+    assert.equal((await lastScroll()).behavior, "smooth", "short landscape Page scrolls smoothly");
+    await scrollPage.setViewportSize({ width: 390, height: 844 });
+    await scrollPage.goto(`${new URL("/doctor?view=probe", url).href}${new URL(url).hash}`);
+    await scrollPage.locator("main table").waitFor();
+    await scrollPage.getByRole("button", { name: "Specimen", exact: true }).tap();
+    await atPanel("specimen:inspector");
+    assert.equal(new URL(scrollPage.url()).pathname, "/doctor", "panel keeps the current page");
+    assert.equal(new URL(scrollPage.url()).searchParams.get("view"), "probe");
+    await scrollPage.getByRole("tab", { name: "Page", exact: true }).tap();
+    await atPage();
+    assert.equal(new URL(scrollPage.url()).pathname, "/doctor", "Page returns to the original route");
+    await scrollPage.screenshot({ path: join(shots, "mobile-workspace-navigation.png") });
+    await scrollPage.unrouteAll({ behavior: "wait" });
+    await scrollPage.close();
+
+    // The full sidebar retains its dock slot at a phone-sized width. Check the player itself and its controls fit and
+    // remain actionable after a touch gesture; this says nothing about physical iOS Safari behavior.
+    const soundPage = await browser.newPage({
+      userAgent:
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Version/18.0 Mobile/15E148 Safari/604.1",
+      viewport: { width: 430, height: 932 },
+      screen: { width: 430, height: 932 },
+      isMobile: true,
+      hasTouch: true,
+      deviceScaleFactor: 2,
+    });
+    stage("phone-sound");
+    await soundPage
+      .context()
+      .addCookies([
+        { name: "hz_test", value: "signed", url: "https://www.youtube.com/", secure: true, sameSite: "None" },
+      ]);
+    await soundPage
+      .context()
+      .route("https://www.youtube.com/watch**", (route) =>
+        route.fulfill({ contentType: "text/html", body: "<!doctype html><title>Watch fixture</title>" }),
+      );
+    await soundPage.route("https://www.youtube.com/embed/**", (route) =>
+      route.fulfill({ contentType: "text/html", body: "<!doctype html><title>Account player fixture</title>" }),
+    );
+    const sound = {
+      name: "mobile-dock-probe",
+      title: "Mobile dock probe",
+      kind: "stream",
+      stream: {
+        provider: "youtube",
+        video: "tRsQsTMvPNg",
+        frame_origin: "https://www.youtube-nocookie.com",
+        embed_url: "https://www.youtube-nocookie.com/embed/tRsQsTMvPNg",
+        watch_url: "https://www.youtube.com/watch?v=tRsQsTMvPNg",
+      },
+      module: null,
+      plugin: null,
+      selected: true,
+      effective: true,
+      fade_seconds: 0,
+    };
+    await soundPage.route("**/api/system/sound/list", (route) =>
+      route.fulfill({
+        json: {
+          selected: sound.name,
+          effective: sound.name,
+          soundscapes: [sound],
+          signals: {},
+          volume: 50,
+          follow_theme: false,
+          mute_in_meetings: false,
+          duck_while_typing: false,
+        },
+      }),
+    );
+    await soundPage.route("https://www.youtube-nocookie.com/embed/**", (route) =>
+      route.fulfill({
+        contentType: "text/html",
+        body: `<!doctype html><html><body style="margin:0"><video muted autoplay playsinline></video><script>const c=document.createElement('canvas');c.width=320;c.height=180;const x=c.getContext('2d');setInterval(()=>{x.fillStyle='#308090';x.fillRect(0,0,320,180)},40);const v=document.querySelector('video');v.srcObject=c.captureStream(25);v.play();</script></body></html>`,
+      }),
+    );
+    await watchMedia(soundPage);
+    await soundPage.goto(url);
+    await soundPage.getByRole("heading", { name: "Today" }).waitFor();
+    await soundPage.locator("#splash").waitFor({ state: "hidden", timeout: 15_000 });
+    await soundPage.getByRole("button", { name: "Expand navigation" }).click();
+    await soundPage.getByRole("button", { name: "Collapse navigation" }).waitFor();
+    await soundPage.getByRole("button", { name: "Choose a soundscape", exact: true }).click();
+    const soundDialog = soundPage.getByRole("dialog", { name: "Sound" });
+    await soundDialog.getByText("Use your iPhone or iPad volume buttons to adjust YouTube audio.").waitFor();
+    assert.equal(await soundDialog.getByRole("slider", { name: "Volume" }).count(), 0);
+    assert.equal(await soundDialog.getByRole("switch", { name: "Softer while I type" }).count(), 0);
+    await assertContained(soundPage, soundDialog, "iPhone sound controls");
+    await soundPage.screenshot({ path: join(shots, "mobile-iphone-sound-controls.png") });
+    await soundPage
+      .getByRole("dialog", { name: "Sound" })
+      .getByRole("button", { name: "Play Mobile dock probe", exact: true })
+      .click();
+    await soundPage.keyboard.press("Escape");
+    const player = soundPage.getByRole("region", { name: "Mobile dock probe player" });
+    await player.waitFor();
+    const privateFrame = await (await player.locator("iframe").elementHandle()).contentFrame();
+    try {
+      await privateFrame.waitForURL(/youtube-nocookie\.com\/embed\//);
+    } catch (error) {
+      await reportMediaFailure(soundPage, "mobile private frame");
+      throw error;
+    }
+    assert.equal(await privateFrame.evaluate(() => document.cookie.includes("hz_test=signed")), false);
+    const playerFrameBox = await player.locator("iframe").boundingBox();
+    assert.ok(playerFrameBox.width >= 200 && playerFrameBox.height >= 200, "YouTube's minimum player size");
+    assert.equal(
+      await player.getAttribute("data-dock"),
+      "docked",
+      "wide-portrait: stream player should be docked in the sidebar",
+    );
+    const playerBox = await player.boundingBox();
+    const popOut = soundPage.getByRole("button", { name: "Pop the player out of the sidebar" });
+    const popOutBox = await assertTouchTarget(popOut, "docked player pop-out control", "wide-portrait");
+    assert.ok(
+      playerBox &&
+        playerBox.x >= 0 &&
+        playerBox.y >= 0 &&
+        playerBox.x + playerBox.width <= 430 + 1 &&
+        playerBox.y + playerBox.height <= 932 + 1,
+      `wide-portrait: docked player must fit viewport: ${JSON.stringify(playerBox)}`,
+    );
+    await soundPage.getByRole("button", { name: "Collapse navigation" }).click();
+    await soundPage.getByRole("button", { name: "Pause Mobile dock probe", exact: true }).tap();
+    await soundPage.getByRole("button", { name: "Play Mobile dock probe", exact: true }).tap();
+    assert.equal(await player.isVisible(), false, "collapsed dock must not cover the workspace");
+    await soundPage.screenshot({ path: join(shots, "mobile-compact-sound.png") });
+    await soundPage.getByRole("button", { name: "Expand navigation" }).click();
+    await player.waitFor();
+    await popOut.tap();
+    await soundPage.waitForFunction(() => document.querySelector('[data-dock="floating"]'));
+    await soundPage.setViewportSize({ width: 360, height: 400 });
+    await assertContained(soundPage, player, "rotated floating player");
+    await player.getByText("YouTube asking you to sign in?").tap();
+    await assertContained(soundPage, player, "expanded playback recovery");
+    const accountChoice = player.getByRole("button", { name: "Use YouTube sign-in" });
+    await assertTouchTarget(accountChoice, "YouTube account player choice", "short-landscape");
+    await accountChoice.tap();
+    assert.ok(
+      (await player.locator("iframe").getAttribute("src")).startsWith("https://www.youtube.com/embed/"),
+      "explicit sign-in choice must switch to the regular YouTube origin",
+    );
+    const accountContent = await (await player.locator("iframe").elementHandle()).contentFrame();
+    await accountContent.waitForURL(/youtube\.com\/embed\//);
+    if (!useWebKit) {
+      assert.equal(
+        await accountContent.evaluate(() => document.cookie.includes("hz_test=signed")),
+        true,
+        "the regular player can receive the browser's YouTube session when third-party cookies are allowed",
+      );
+    }
+    await player.getByText("YouTube asking you to sign in?").tap();
+    const accountFrame = await player.locator("iframe").elementHandle();
+    await player.getByRole("button", { name: "Retry player" }).tap();
+    assert.equal(await accountFrame.evaluate((frame) => frame.isConnected), false, "retry must replace the frame");
+    await player.getByText("YouTube asking you to sign in?").tap();
+    await player.getByRole("button", { name: "Use private player" }).tap();
+    assert.ok(
+      (await player.locator("iframe").getAttribute("src")).startsWith("https://www.youtube-nocookie.com/embed/"),
+      "private player choice must restore the privacy-enhanced origin",
+    );
+    await player.getByText("YouTube asking you to sign in?").tap();
+    const [youtubePage] = await Promise.all([
+      soundPage.waitForEvent("popup"),
+      player.getByRole("link", { name: "Play on YouTube" }).tap(),
+    ]);
+    await youtubePage.waitForURL("https://www.youtube.com/watch**");
+    assert.equal(new URL(youtubePage.url()).searchParams.get("v"), sound.stream.video);
+    await player.waitFor({ state: "detached" });
+    await youtubePage.close();
+    result.dockedPlayer = {
+      viewport: { width: 430, height: 932 },
+      dockedBox: playerBox,
+      popOutTarget: popOutBox,
+      popOutUsable: true,
+    };
+    stage("phone-notifications");
+    // A phone tests this device, even when a Mac backend reports its own notification failures.
+    await soundPage.setViewportSize({ width: 390, height: 844 });
+    const collapseNavigation = soundPage.getByRole("button", { name: "Collapse navigation" });
+    if (await collapseNavigation.isVisible()) await collapseNavigation.tap();
+    const testNotice = {
+      id: "20261028T190000Z-iphone",
+      kind: "test",
+      title: "Notifications work",
+      body: "A test on this device.",
+      route: "/notifications",
+      command: "hz system notify list",
+      key: "test:iphone",
+      urgent: true,
+      at: "2026-10-28T19:00:00Z",
+      due: "2026-10-28T19:00:00Z",
+      popup: true,
+      held: null,
+      delivered_by: null,
+      delivered_at: null,
+    };
+    await soundPage.route("**/api/system/notify/list**", (route) =>
+      route.fulfill({ json: { notices: [testNotice], waiting: 1, native: "through Heinzel Notifier on macOS" } }),
+    );
+    await soundPage.route("**/api/system/notify/test**", (route) => {
+      assert.equal(new URL(route.request().url()).searchParams.get("native"), "false");
+      return route.fulfill({
+        status: 503,
+        json: {
+          notice: testNotice,
+          native: "macOS doesn't allow Heinzel Notifier",
+          channels: [
+            { name: "web", state: "closed", detail: "no web app is open" },
+            { name: "native", state: "blocked", detail: "macOS doesn't allow Heinzel Notifier", fix: "open-settings" },
+          ],
+          pops_up: false,
+        },
+      });
+    });
+    await soundPage.getByRole("button", { name: /^Notifications(,|$)/ }).tap();
+    const notifications = soundPage.getByRole("region", { name: "Notifications", exact: true });
+    await notifications.getByRole("button", { name: "Send a test notification" }).tap();
+    const report = notifications.getByRole("region", { name: "How the test went" });
+    await report.getByText("The test was added to Notifications in this app.").waitFor();
+    await report.getByText(/Add to Home Screen/).waitFor();
+    await notifications.getByText("Saved in Notifications").waitFor();
+    assert.doesNotMatch((await notifications.textContent()) ?? "", /macOS|Native pop-ups|no web app is open/);
+    await assertContained(soundPage, notifications, "iPhone notification panel");
+    await report.scrollIntoViewIfNeeded();
+    await assertContained(soundPage, report, "iPhone notification test result");
+    await soundPage.screenshot({ path: join(shots, "mobile-iphone-notification-test.png") });
+    result.iphoneControls = { deviceVolume: true, notificationTest: true, serverActionsHidden: true };
+    await soundPage.close();
+  }
 } catch (error) {
+  stage("failure-diagnostics");
   for (const context of browser.contexts())
     for (const page of context.pages()) {
       await page.screenshot({ path: join(shots, "mobile-failure.png") }).catch(() => {});
@@ -1164,9 +1197,11 @@ try {
     }
   throw error;
 } finally {
+  stage("browser-cleanup");
   for (const context of browser.contexts())
     for (const page of context.pages()) await page.unrouteAll({ behavior: "ignoreErrors" }).catch(() => {});
   await browser.close();
 }
+stage("complete");
 writeFileSync(join(shots, "mobile-responsive.json"), `${JSON.stringify(result, null, 2)}\n`);
 console.log(JSON.stringify(result));

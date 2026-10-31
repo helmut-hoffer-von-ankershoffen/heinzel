@@ -1,20 +1,20 @@
 {
   "format": 1,
-  "refreshed_at": "2026-10-31T07:31:41.991882+00:00",
+  "refreshed_at": "2026-10-31T09:49:22.703948+00:00",
   "sources": [
     {
       "repository": "helmut-hoffer-von-ankershoffen/heinzel",
-      "revision": "a9acf69bb64d495764f89d18aa913ebcd8dcc36d",
+      "revision": "3190096a8765fc25e44dd800ee2d8d13de3a3e66",
       "visibility": "public"
     },
     {
       "repository": "helmut-hoffer-von-ankershoffen/heinzel-plugins",
-      "revision": "4c6c1168bb3fdb920d071cdf1d8c4d151065102e",
+      "revision": "980b129cc28d1ca31e1e22ffbd2e4dd54d60de91",
       "visibility": "public"
     },
     {
       "repository": "helmut-hoffer-von-ankershoffen/heinzel-acme",
-      "revision": "4e00d6a0a1784f360c98705e050505bf2a2691d0",
+      "revision": "e1c7df84b952be35167b869aec0b724e7b1ca7fd",
       "visibility": "public"
     }
   ],
@@ -65,9 +65,9 @@
   "plugins": [
     {
       "name": "heinzel-acme",
-      "title": "Acme",
+      "title": "ACME",
       "id": "heinzel-acme-aa9ce1cf07",
-      "summary": "Acme, a made-up company: the root layer of the reference company.",
+      "summary": "ACME, a made-up company: the root layer of the reference company.",
       "category": "themes",
       "highlights": [],
       "version": "0.1.2",
@@ -78,12 +78,12 @@
       "requires": [],
       "source": {
         "repository": "helmut-hoffer-von-ankershoffen/heinzel-acme",
-        "revision": "4e00d6a0a1784f360c98705e050505bf2a2691d0",
+        "revision": "e1c7df84b952be35167b869aec0b724e7b1ca7fd",
         "visibility": "public"
       },
       "directory": ".",
-      "url": "https://github.com/helmut-hoffer-von-ankershoffen/heinzel-acme/tree/4e00d6a0a1784f360c98705e050505bf2a2691d0/.",
-      "install": "hz system plugin add git+https://github.com/helmut-hoffer-von-ankershoffen/heinzel-acme.git@4e00d6a0a1784f360c98705e050505bf2a2691d0",
+      "url": "https://github.com/helmut-hoffer-von-ankershoffen/heinzel-acme/tree/e1c7df84b952be35167b869aec0b724e7b1ca7fd/.",
+      "install": "hz system plugin add git+https://github.com/helmut-hoffer-von-ankershoffen/heinzel-acme.git@e1c7df84b952be35167b869aec0b724e7b1ca7fd",
       "themes": [
         {
           "name": "acme",
@@ -132,25 +132,30 @@
       ],
       "screenshots": [
         {
-          "url": "https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-acme/4e00d6a0a1784f360c98705e050505bf2a2691d0/docs/assets/cli.png",
+          "url": "https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-acme/e1c7df84b952be35167b869aec0b724e7b1ca7fd/docs/assets/screenshots/company-workflow.png",
+          "surface": "ui",
+          "caption": "ACME theme and weekly-report workflow with fictional local demonstration data"
+        },
+        {
+          "url": "https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-acme/e1c7df84b952be35167b869aec0b724e7b1ca7fd/docs/assets/screenshots/theme-light.png",
+          "surface": "ui",
+          "caption": "The applied ACME theme in light mode; fictional weekly-report demonstration"
+        },
+        {
+          "url": "https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-acme/e1c7df84b952be35167b869aec0b724e7b1ca7fd/docs/assets/screenshots/theme-dark.png",
+          "surface": "ui",
+          "caption": "The same ACME workflow in dark mode; fictional local demonstration"
+        },
+        {
+          "url": "https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-acme/e1c7df84b952be35167b869aec0b724e7b1ca7fd/docs/assets/screenshots/cli-stack.png",
           "surface": "cli",
-          "caption": "hz acme layers — isolated demonstration profile"
-        },
-        {
-          "url": "https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-acme/4e00d6a0a1784f360c98705e050505bf2a2691d0/docs/assets/ui.png",
-          "surface": "ui",
-          "caption": "Installed ACME theme in the app"
-        },
-        {
-          "url": "https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-acme/4e00d6a0a1784f360c98705e050505bf2a2691d0/docs/assets/ui-dark.png",
-          "surface": "ui",
-          "caption": "Installed ACME theme in the app — dark appearance"
+          "caption": "The real company, org, site and team stack with clearly named offline-demo adapters"
         }
       ],
       "soundscapes": [
         {
           "name": "acme",
-          "title": "Acme",
+          "title": "ACME",
           "video": "t9PF00M2yDY",
           "pairs_with": [
             "acme"
@@ -163,9 +168,9 @@
     },
     {
       "name": "heinzel-acme-lisbon",
-      "title": "Acme Lisbon",
+      "title": "ACME Lisbon",
       "id": "heinzel-acme-lisbon-f5f1f19a1e",
-      "summary": "Acme Lisbon, a made-up site of the reference company: time zone, working hours, meeting rhythm.",
+      "summary": "ACME Lisbon, a made-up site of the reference company: time zone, working hours, meeting rhythm.",
       "category": "utilities",
       "highlights": [],
       "version": "0.1.2",
@@ -176,23 +181,33 @@
       "requires": [],
       "source": {
         "repository": "helmut-hoffer-von-ankershoffen/heinzel-acme",
-        "revision": "4e00d6a0a1784f360c98705e050505bf2a2691d0",
+        "revision": "e1c7df84b952be35167b869aec0b724e7b1ca7fd",
         "visibility": "public"
       },
       "directory": "plugins/heinzel-acme-lisbon",
-      "url": "https://github.com/helmut-hoffer-von-ankershoffen/heinzel-acme/tree/4e00d6a0a1784f360c98705e050505bf2a2691d0/plugins/heinzel-acme-lisbon",
-      "install": "hz system plugin add 'git+https://github.com/helmut-hoffer-von-ankershoffen/heinzel-acme.git@4e00d6a0a1784f360c98705e050505bf2a2691d0#subdirectory=plugins/heinzel-acme-lisbon'",
+      "url": "https://github.com/helmut-hoffer-von-ankershoffen/heinzel-acme/tree/e1c7df84b952be35167b869aec0b724e7b1ca7fd/plugins/heinzel-acme-lisbon",
+      "install": "hz system plugin add 'git+https://github.com/helmut-hoffer-von-ankershoffen/heinzel-acme.git@e1c7df84b952be35167b869aec0b724e7b1ca7fd#subdirectory=plugins/heinzel-acme-lisbon'",
       "themes": [],
       "screenshots": [
         {
-          "url": "https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-acme/4e00d6a0a1784f360c98705e050505bf2a2691d0/plugins/heinzel-acme-lisbon/docs/assets/cli.png",
-          "surface": "cli",
-          "caption": "hz acme-lisbon calendar — isolated demonstration profile"
+          "url": "https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-acme/e1c7df84b952be35167b869aec0b724e7b1ca7fd/plugins/heinzel-acme-lisbon/docs/assets/screenshots/site-calendar.png",
+          "surface": "ui",
+          "caption": "Fictional ACME Lisbon demo: Friday stand-up, demo, and 17:00 report deadline in site and computer time."
         },
         {
-          "url": "https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-acme/4e00d6a0a1784f360c98705e050505bf2a2691d0/plugins/heinzel-acme-lisbon/docs/assets/ui.png",
+          "url": "https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-acme/e1c7df84b952be35167b869aec0b724e7b1ca7fd/plugins/heinzel-acme-lisbon/docs/assets/screenshots/site-week-ahead.png",
           "surface": "ui",
-          "caption": "Lisbon site time-zone settings"
+          "caption": "Fictional ACME Lisbon demo: a four-day window crosses the weekend to Monday's stand-up, planning, and OKR review."
+        },
+        {
+          "url": "https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-acme/e1c7df84b952be35167b869aec0b724e7b1ca7fd/plugins/heinzel-acme-lisbon/docs/assets/screenshots/site-report-deadline.png",
+          "surface": "ui",
+          "caption": "Fictional Checkout demo: the locally seeded weekly-report contract and its inputs give context to Lisbon's report rhythm."
+        },
+        {
+          "url": "https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-acme/e1c7df84b952be35167b869aec0b724e7b1ca7fd/plugins/heinzel-acme-lisbon/docs/assets/screenshots/cli-calendar.png",
+          "surface": "cli",
+          "caption": "Fictional ACME Lisbon demo: working hours, weekly rhythm, and Friday's upcoming events in site and computer time."
         }
       ],
       "soundscapes": [],
@@ -201,9 +216,9 @@
     },
     {
       "name": "heinzel-acme-payments",
-      "title": "Acme Payments",
+      "title": "ACME Payments",
       "id": "heinzel-acme-payments-f39fc70bf6",
-      "summary": "Acme Payments, a made-up org of the reference company: how it plans, by quarterly OKRs.",
+      "summary": "ACME Payments, a made-up org of the reference company: how it plans, by quarterly OKRs.",
       "category": "utilities",
       "highlights": [],
       "version": "0.1.2",
@@ -214,23 +229,28 @@
       "requires": [],
       "source": {
         "repository": "helmut-hoffer-von-ankershoffen/heinzel-acme",
-        "revision": "4e00d6a0a1784f360c98705e050505bf2a2691d0",
+        "revision": "e1c7df84b952be35167b869aec0b724e7b1ca7fd",
         "visibility": "public"
       },
       "directory": "plugins/heinzel-acme-payments",
-      "url": "https://github.com/helmut-hoffer-von-ankershoffen/heinzel-acme/tree/4e00d6a0a1784f360c98705e050505bf2a2691d0/plugins/heinzel-acme-payments",
-      "install": "hz system plugin add 'git+https://github.com/helmut-hoffer-von-ankershoffen/heinzel-acme.git@4e00d6a0a1784f360c98705e050505bf2a2691d0#subdirectory=plugins/heinzel-acme-payments'",
+      "url": "https://github.com/helmut-hoffer-von-ankershoffen/heinzel-acme/tree/e1c7df84b952be35167b869aec0b724e7b1ca7fd/plugins/heinzel-acme-payments",
+      "install": "hz system plugin add 'git+https://github.com/helmut-hoffer-von-ankershoffen/heinzel-acme.git@e1c7df84b952be35167b869aec0b724e7b1ca7fd#subdirectory=plugins/heinzel-acme-payments'",
       "themes": [],
       "screenshots": [
         {
-          "url": "https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-acme/4e00d6a0a1784f360c98705e050505bf2a2691d0/plugins/heinzel-acme-payments/docs/assets/cli.png",
-          "surface": "cli",
-          "caption": "hz acme-payments info — isolated demonstration profile"
+          "url": "https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-acme/e1c7df84b952be35167b869aec0b724e7b1ca7fd/plugins/heinzel-acme-payments/docs/assets/screenshots/okr-type.png",
+          "surface": "ui",
+          "caption": "ACME Payments supplies the quarterly OKR asset type; fictional demonstration"
         },
         {
-          "url": "https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-acme/4e00d6a0a1784f360c98705e050505bf2a2691d0/plugins/heinzel-acme-payments/docs/assets/ui.png",
+          "url": "https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-acme/e1c7df84b952be35167b869aec0b724e7b1ca7fd/plugins/heinzel-acme-payments/docs/assets/screenshots/okr-discovery.png",
           "surface": "ui",
-          "caption": "Installed reference layer and its playbook in the plugin manager"
+          "caption": "Discover the fictional Payments OKRs, weekly report and engineering tracker through a local demo adapter"
+        },
+        {
+          "url": "https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-acme/e1c7df84b952be35167b869aec0b724e7b1ca7fd/plugins/heinzel-acme-payments/docs/assets/screenshots/cli-assets.png",
+          "surface": "cli",
+          "caption": "Actual asset discovery using fictional ACME documents served by the offline demo adapter"
         }
       ],
       "soundscapes": [],
@@ -239,9 +259,9 @@
     },
     {
       "name": "heinzel-acme-payments-checkout",
-      "title": "Acme Payments Checkout",
+      "title": "ACME Payments Checkout",
       "id": "heinzel-acme-payments-checkout-8a7d294621",
-      "summary": "Acme Payments Checkout, a made-up team of the reference company: its weekly report playbook.",
+      "summary": "ACME Payments Checkout, a made-up team of the reference company: its weekly report playbook.",
       "category": "utilities",
       "highlights": [],
       "version": "0.1.2",
@@ -252,23 +272,33 @@
       "requires": [],
       "source": {
         "repository": "helmut-hoffer-von-ankershoffen/heinzel-acme",
-        "revision": "4e00d6a0a1784f360c98705e050505bf2a2691d0",
+        "revision": "e1c7df84b952be35167b869aec0b724e7b1ca7fd",
         "visibility": "public"
       },
       "directory": "plugins/heinzel-acme-payments-checkout",
-      "url": "https://github.com/helmut-hoffer-von-ankershoffen/heinzel-acme/tree/4e00d6a0a1784f360c98705e050505bf2a2691d0/plugins/heinzel-acme-payments-checkout",
-      "install": "hz system plugin add 'git+https://github.com/helmut-hoffer-von-ankershoffen/heinzel-acme.git@4e00d6a0a1784f360c98705e050505bf2a2691d0#subdirectory=plugins/heinzel-acme-payments-checkout'",
+      "url": "https://github.com/helmut-hoffer-von-ankershoffen/heinzel-acme/tree/e1c7df84b952be35167b869aec0b724e7b1ca7fd/plugins/heinzel-acme-payments-checkout",
+      "install": "hz system plugin add 'git+https://github.com/helmut-hoffer-von-ankershoffen/heinzel-acme.git@e1c7df84b952be35167b869aec0b724e7b1ca7fd#subdirectory=plugins/heinzel-acme-payments-checkout'",
       "themes": [],
       "screenshots": [
         {
-          "url": "https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-acme/4e00d6a0a1784f360c98705e050505bf2a2691d0/plugins/heinzel-acme-payments-checkout/docs/assets/cli.png",
-          "surface": "cli",
-          "caption": "hz acme-payments-checkout info — isolated demonstration profile"
+          "url": "https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-acme/e1c7df84b952be35167b869aec0b724e7b1ca7fd/plugins/heinzel-acme-payments-checkout/docs/assets/screenshots/report-workflow.png",
+          "surface": "ui",
+          "caption": "Checkout's report connects code, tracker and documents; fictional local demonstration"
         },
         {
-          "url": "https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-acme/4e00d6a0a1784f360c98705e050505bf2a2691d0/plugins/heinzel-acme-payments-checkout/docs/assets/ui.png",
+          "url": "https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-acme/e1c7df84b952be35167b869aec0b724e7b1ca7fd/plugins/heinzel-acme-payments-checkout/docs/assets/screenshots/report-inputs.png",
           "surface": "ui",
-          "caption": "Installed reference layer and its playbook in the plugin manager"
+          "caption": "A real compiled weekly-report contract with its inputs and local draft; fictional ACME demonstration"
+        },
+        {
+          "url": "https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-acme/e1c7df84b952be35167b869aec0b724e7b1ca7fd/plugins/heinzel-acme-payments-checkout/docs/assets/screenshots/draft-in-terminal.png",
+          "surface": "ui",
+          "caption": "Review an actual locally saved draft in the app terminal; fictional report from a deterministic demo runner"
+        },
+        {
+          "url": "https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-acme/e1c7df84b952be35167b869aec0b724e7b1ca7fd/plugins/heinzel-acme-payments-checkout/docs/assets/screenshots/cli-draft.png",
+          "surface": "cli",
+          "caption": "The same locally saved fictional report, ready to review and edit; deterministic demo runner"
         }
       ],
       "soundscapes": [],
@@ -299,23 +329,38 @@
       ],
       "source": {
         "repository": "helmut-hoffer-von-ankershoffen/heinzel-plugins",
-        "revision": "4c6c1168bb3fdb920d071cdf1d8c4d151065102e",
+        "revision": "980b129cc28d1ca31e1e22ffbd2e4dd54d60de91",
         "visibility": "public"
       },
       "directory": "plugins/heinzel-atlassian",
-      "url": "https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/tree/4c6c1168bb3fdb920d071cdf1d8c4d151065102e/plugins/heinzel-atlassian",
-      "install": "hz system plugin add 'git+https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins.git@4c6c1168bb3fdb920d071cdf1d8c4d151065102e#subdirectory=plugins/heinzel-atlassian'",
+      "url": "https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/tree/980b129cc28d1ca31e1e22ffbd2e4dd54d60de91/plugins/heinzel-atlassian",
+      "install": "hz system plugin add 'git+https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins.git@980b129cc28d1ca31e1e22ffbd2e4dd54d60de91#subdirectory=plugins/heinzel-atlassian'",
       "themes": [],
       "screenshots": [
         {
-          "url": "https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/4c6c1168bb3fdb920d071cdf1d8c4d151065102e/plugins/heinzel-atlassian/docs/assets/cli.png",
-          "surface": "cli",
-          "caption": "hz atlassian --help — isolated demonstration profile"
+          "url": "https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/980b129cc28d1ca31e1e22ffbd2e4dd54d60de91/plugins/heinzel-atlassian/docs/assets/screenshots/jira-issues.png",
+          "surface": "ui",
+          "caption": "Demo data: fictional Jira changes, owners and states in the app terminal, using the real adapter and a fixture-only requester."
         },
         {
-          "url": "https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/4c6c1168bb3fdb920d071cdf1d8c4d151065102e/plugins/heinzel-atlassian/docs/assets/ui.png",
+          "url": "https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/980b129cc28d1ca31e1e22ffbd2e4dd54d60de91/plugins/heinzel-atlassian/docs/assets/screenshots/confluence-plan.png",
           "surface": "ui",
-          "caption": "Plugin settings in the app; no external account connected"
+          "caption": "Demo data: read the fictional Widget launch plan with its source and revision, using the real adapter and a fixture-only requester."
+        },
+        {
+          "url": "https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/980b129cc28d1ca31e1e22ffbd2e4dd54d60de91/plugins/heinzel-atlassian/docs/assets/screenshots/issues-json.png",
+          "surface": "cli",
+          "caption": "Demo data: structured fictional Jira changes through the real adapter, using a fixture-only requester and local vendor replies."
+        },
+        {
+          "url": "https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/980b129cc28d1ca31e1e22ffbd2e4dd54d60de91/plugins/heinzel-atlassian/docs/assets/screenshots/confluence-cli.png",
+          "surface": "cli",
+          "caption": "Demo data: the fictional Confluence plan, source and revision in the shell, using a fixture-only requester and local vendor replies."
+        },
+        {
+          "url": "https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/980b129cc28d1ca31e1e22ffbd2e4dd54d60de91/plugins/heinzel-atlassian/docs/assets/screenshots/workflow-context.png",
+          "surface": "ui",
+          "caption": "Weekly work review combines the declared source inputs — local demonstration, no report generated"
         }
       ],
       "soundscapes": [],
@@ -343,23 +388,38 @@
       ],
       "source": {
         "repository": "helmut-hoffer-von-ankershoffen/heinzel-plugins",
-        "revision": "4c6c1168bb3fdb920d071cdf1d8c4d151065102e",
+        "revision": "980b129cc28d1ca31e1e22ffbd2e4dd54d60de91",
         "visibility": "public"
       },
       "directory": "plugins/heinzel-clock",
-      "url": "https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/tree/4c6c1168bb3fdb920d071cdf1d8c4d151065102e/plugins/heinzel-clock",
-      "install": "hz system plugin add 'git+https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins.git@4c6c1168bb3fdb920d071cdf1d8c4d151065102e#subdirectory=plugins/heinzel-clock'",
+      "url": "https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/tree/980b129cc28d1ca31e1e22ffbd2e4dd54d60de91/plugins/heinzel-clock",
+      "install": "hz system plugin add 'git+https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins.git@980b129cc28d1ca31e1e22ffbd2e4dd54d60de91#subdirectory=plugins/heinzel-clock'",
       "themes": [],
       "screenshots": [
         {
-          "url": "https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/4c6c1168bb3fdb920d071cdf1d8c4d151065102e/plugins/heinzel-clock/docs/assets/cli.png",
-          "surface": "cli",
-          "caption": "hz clock — isolated demonstration profile"
+          "url": "https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/980b129cc28d1ca31e1e22ffbd2e4dd54d60de91/plugins/heinzel-clock/docs/assets/screenshots/world-clock.png",
+          "surface": "ui",
+          "caption": "Find overlap across Berlin, New York and Los Angeles while staying on Today — demonstration time"
         },
         {
-          "url": "https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/4c6c1168bb3fdb920d071cdf1d8c4d151065102e/plugins/heinzel-clock/docs/assets/ui.png",
+          "url": "https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/980b129cc28d1ca31e1e22ffbd2e4dd54d60de91/plugins/heinzel-clock/docs/assets/screenshots/team-overview.png",
           "surface": "ui",
-          "caption": "World Clock panel with the plugin-owned globe"
+          "caption": "Team working hours at a glance: Today, sidebar ticker and primary footer clock — demonstration time"
+        },
+        {
+          "url": "https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/980b129cc28d1ca31e1e22ffbd2e4dd54d60de91/plugins/heinzel-clock/docs/assets/screenshots/footer-detail.png",
+          "surface": "ui",
+          "caption": "Inspect every configured time zone from the primary footer clock — demonstration time"
+        },
+        {
+          "url": "https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/980b129cc28d1ca31e1e22ffbd2e4dd54d60de91/plugins/heinzel-clock/docs/assets/screenshots/phone-world-clock.png",
+          "surface": "ui",
+          "caption": "Team local times in the phone workspace — demonstration time"
+        },
+        {
+          "url": "https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/980b129cc28d1ca31e1e22ffbd2e4dd54d60de91/plugins/heinzel-clock/docs/assets/screenshots/cli-times.png",
+          "surface": "cli",
+          "caption": "The same team zones and working hours in the CLI — fixed fictional demonstration time"
         }
       ],
       "soundscapes": [],
@@ -387,23 +447,43 @@
       ],
       "source": {
         "repository": "helmut-hoffer-von-ankershoffen/heinzel-plugins",
-        "revision": "4c6c1168bb3fdb920d071cdf1d8c4d151065102e",
+        "revision": "980b129cc28d1ca31e1e22ffbd2e4dd54d60de91",
         "visibility": "public"
       },
       "directory": "plugins/heinzel-example",
-      "url": "https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/tree/4c6c1168bb3fdb920d071cdf1d8c4d151065102e/plugins/heinzel-example",
-      "install": "hz system plugin add 'git+https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins.git@4c6c1168bb3fdb920d071cdf1d8c4d151065102e#subdirectory=plugins/heinzel-example'",
+      "url": "https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/tree/980b129cc28d1ca31e1e22ffbd2e4dd54d60de91/plugins/heinzel-example",
+      "install": "hz system plugin add 'git+https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins.git@980b129cc28d1ca31e1e22ffbd2e4dd54d60de91#subdirectory=plugins/heinzel-example'",
       "themes": [],
       "screenshots": [
         {
-          "url": "https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/4c6c1168bb3fdb920d071cdf1d8c4d151065102e/plugins/heinzel-example/docs/assets/cli.png",
-          "surface": "cli",
-          "caption": "hz example --help — isolated demonstration profile"
+          "url": "https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/980b129cc28d1ca31e1e22ffbd2e4dd54d60de91/plugins/heinzel-example/docs/assets/screenshots/widget-and-status.png",
+          "surface": "ui",
+          "caption": "One tiny plugin contributes a Today widget and sidebar status from the same value"
         },
         {
-          "url": "https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/4c6c1168bb3fdb920d071cdf1d8c4d151065102e/plugins/heinzel-example/docs/assets/ui.png",
+          "url": "https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/980b129cc28d1ca31e1e22ffbd2e4dd54d60de91/plugins/heinzel-example/docs/assets/screenshots/inspector.png",
           "surface": "ui",
-          "caption": "Example plugin inspector panel in the app"
+          "caption": "Open the plugin-owned inspector and read the same value 42"
+        },
+        {
+          "url": "https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/980b129cc28d1ca31e1e22ffbd2e4dd54d60de91/plugins/heinzel-example/docs/assets/screenshots/greeting-terminal.png",
+          "surface": "ui",
+          "caption": "The same typed greeting as structured output in the real app terminal"
+        },
+        {
+          "url": "https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/980b129cc28d1ca31e1e22ffbd2e4dd54d60de91/plugins/heinzel-example/docs/assets/screenshots/plugin-notice.png",
+          "surface": "ui",
+          "caption": "A plugin notice in the shared in-app notification panel — isolated demonstration"
+        },
+        {
+          "url": "https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/980b129cc28d1ca31e1e22ffbd2e4dd54d60de91/plugins/heinzel-example/docs/assets/screenshots/greeting-cli.png",
+          "surface": "cli",
+          "caption": "A typed plugin operation greets Mira from the CLI"
+        },
+        {
+          "url": "https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/980b129cc28d1ca31e1e22ffbd2e4dd54d60de91/plugins/heinzel-example/docs/assets/screenshots/sample-json.png",
+          "surface": "cli",
+          "caption": "The typed value behind the widget, status and inspector"
         }
       ],
       "soundscapes": [],
@@ -434,23 +514,38 @@
       ],
       "source": {
         "repository": "helmut-hoffer-von-ankershoffen/heinzel-plugins",
-        "revision": "4c6c1168bb3fdb920d071cdf1d8c4d151065102e",
+        "revision": "980b129cc28d1ca31e1e22ffbd2e4dd54d60de91",
         "visibility": "public"
       },
       "directory": "plugins/heinzel-github",
-      "url": "https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/tree/4c6c1168bb3fdb920d071cdf1d8c4d151065102e/plugins/heinzel-github",
-      "install": "hz system plugin add 'git+https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins.git@4c6c1168bb3fdb920d071cdf1d8c4d151065102e#subdirectory=plugins/heinzel-github'",
+      "url": "https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/tree/980b129cc28d1ca31e1e22ffbd2e4dd54d60de91/plugins/heinzel-github",
+      "install": "hz system plugin add 'git+https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins.git@980b129cc28d1ca31e1e22ffbd2e4dd54d60de91#subdirectory=plugins/heinzel-github'",
       "themes": [],
       "screenshots": [
         {
-          "url": "https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/4c6c1168bb3fdb920d071cdf1d8c4d151065102e/plugins/heinzel-github/docs/assets/cli.png",
-          "surface": "cli",
-          "caption": "hz github --help — isolated demonstration profile"
+          "url": "https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/980b129cc28d1ca31e1e22ffbd2e4dd54d60de91/plugins/heinzel-github/docs/assets/screenshots/merged-work.png",
+          "surface": "ui",
+          "caption": "Merged pull requests in the app terminal — fixture-only requester, real GitHub adapter"
         },
         {
-          "url": "https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/4c6c1168bb3fdb920d071cdf1d8c4d151065102e/plugins/heinzel-github/docs/assets/ui.png",
+          "url": "https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/980b129cc28d1ca31e1e22ffbd2e4dd54d60de91/plugins/heinzel-github/docs/assets/screenshots/issue-changes.png",
           "surface": "ui",
-          "caption": "Plugin settings in the app; no external account connected"
+          "caption": "Issue changes, owners and states in the app terminal — fictional GitHub repository"
+        },
+        {
+          "url": "https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/980b129cc28d1ca31e1e22ffbd2e4dd54d60de91/plugins/heinzel-github/docs/assets/screenshots/merged-cli.png",
+          "surface": "cli",
+          "caption": "Read merged work in the shell — fixture-only requester, real GitHub adapter"
+        },
+        {
+          "url": "https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/980b129cc28d1ca31e1e22ffbd2e4dd54d60de91/plugins/heinzel-github/docs/assets/screenshots/issues-json.png",
+          "surface": "cli",
+          "caption": "Typed issue results for scripts and agents — fixture-only requester, fictional GitHub data"
+        },
+        {
+          "url": "https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/980b129cc28d1ca31e1e22ffbd2e4dd54d60de91/plugins/heinzel-github/docs/assets/screenshots/workflow-context.png",
+          "surface": "ui",
+          "caption": "Weekly code review combines the declared source inputs — local demonstration, no report generated"
         }
       ],
       "soundscapes": [],
@@ -482,23 +577,48 @@
       ],
       "source": {
         "repository": "helmut-hoffer-von-ankershoffen/heinzel-plugins",
-        "revision": "4c6c1168bb3fdb920d071cdf1d8c4d151065102e",
+        "revision": "980b129cc28d1ca31e1e22ffbd2e4dd54d60de91",
         "visibility": "public"
       },
       "directory": "plugins/heinzel-google",
-      "url": "https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/tree/4c6c1168bb3fdb920d071cdf1d8c4d151065102e/plugins/heinzel-google",
-      "install": "hz system plugin add 'git+https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins.git@4c6c1168bb3fdb920d071cdf1d8c4d151065102e#subdirectory=plugins/heinzel-google'",
+      "url": "https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/tree/980b129cc28d1ca31e1e22ffbd2e4dd54d60de91/plugins/heinzel-google",
+      "install": "hz system plugin add 'git+https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins.git@980b129cc28d1ca31e1e22ffbd2e4dd54d60de91#subdirectory=plugins/heinzel-google'",
       "themes": [],
       "screenshots": [
         {
-          "url": "https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/4c6c1168bb3fdb920d071cdf1d8c4d151065102e/plugins/heinzel-google/docs/assets/cli.png",
-          "surface": "cli",
-          "caption": "hz google --help — isolated demonstration profile"
+          "url": "https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/980b129cc28d1ca31e1e22ffbd2e4dd54d60de91/plugins/heinzel-google/docs/assets/screenshots/launch-files.png",
+          "surface": "ui",
+          "caption": "Recently changed launch files in the app terminal — fictional Workspace replies, real Google operation"
         },
         {
-          "url": "https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/4c6c1168bb3fdb920d071cdf1d8c4d151065102e/plugins/heinzel-google/docs/assets/ui.png",
+          "url": "https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/980b129cc28d1ca31e1e22ffbd2e4dd54d60de91/plugins/heinzel-google/docs/assets/screenshots/launch-plan.png",
           "surface": "ui",
-          "caption": "Google connector capabilities in the plugin manager; no account connected"
+          "caption": "Read a Google Doc as workflow-ready text — fixture-only requester and fictional plan"
+        },
+        {
+          "url": "https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/980b129cc28d1ca31e1e22ffbd2e4dd54d60de91/plugins/heinzel-google/docs/assets/screenshots/launch-week.png",
+          "surface": "ui",
+          "caption": "The launch week and its meeting owners — fixture-only requester, real Google Calendar adapter"
+        },
+        {
+          "url": "https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/980b129cc28d1ca31e1e22ffbd2e4dd54d60de91/plugins/heinzel-google/docs/assets/screenshots/launch-inbox.png",
+          "surface": "ui",
+          "caption": "A focused launch-mail query — fixture-only requester, real Gmail adapter over fictional messages"
+        },
+        {
+          "url": "https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/980b129cc28d1ca31e1e22ffbd2e4dd54d60de91/plugins/heinzel-google/docs/assets/screenshots/launch-files-json.png",
+          "surface": "cli",
+          "caption": "Changed Docs and Sheets as structured data — real Google operation, fictional files"
+        },
+        {
+          "url": "https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/980b129cc28d1ca31e1e22ffbd2e4dd54d60de91/plugins/heinzel-google/docs/assets/screenshots/launch-metrics.png",
+          "surface": "cli",
+          "caption": "A Sheet becomes a readable table — fixture-only requester, real documents adapter and local replies"
+        },
+        {
+          "url": "https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/980b129cc28d1ca31e1e22ffbd2e4dd54d60de91/plugins/heinzel-google/docs/assets/screenshots/mail-content.png",
+          "surface": "cli",
+          "caption": "Read the next actions in a launch message — fixture-only requester, real Gmail adapter and local replies"
         }
       ],
       "soundscapes": [],
@@ -516,7 +636,7 @@
         "Resource visualizer and Today widget",
         "Independently installed and tested utility"
       ],
-      "version": "0.1.0",
+      "version": "0.1.1",
       "core": "<0.10,>=0.9.1",
       "declares_standard": true,
       "included_version": "0.1.0",
@@ -526,23 +646,33 @@
       ],
       "source": {
         "repository": "helmut-hoffer-von-ankershoffen/heinzel-plugins",
-        "revision": "4c6c1168bb3fdb920d071cdf1d8c4d151065102e",
+        "revision": "980b129cc28d1ca31e1e22ffbd2e4dd54d60de91",
         "visibility": "public"
       },
       "directory": "plugins/heinzel-resource",
-      "url": "https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/tree/4c6c1168bb3fdb920d071cdf1d8c4d151065102e/plugins/heinzel-resource",
-      "install": "hz system plugin add 'git+https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins.git@4c6c1168bb3fdb920d071cdf1d8c4d151065102e#subdirectory=plugins/heinzel-resource'",
+      "url": "https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/tree/980b129cc28d1ca31e1e22ffbd2e4dd54d60de91/plugins/heinzel-resource",
+      "install": "hz system plugin add 'git+https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins.git@980b129cc28d1ca31e1e22ffbd2e4dd54d60de91#subdirectory=plugins/heinzel-resource'",
       "themes": [],
       "screenshots": [
         {
-          "url": "https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/4c6c1168bb3fdb920d071cdf1d8c4d151065102e/plugins/heinzel-resource/docs/assets/cli.png",
-          "surface": "cli",
-          "caption": "hz resource --json | jq 'del(.hostname)' — isolated demonstration profile"
+          "url": "https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/980b129cc28d1ca31e1e22ffbd2e4dd54d60de91/plugins/heinzel-resource/docs/assets/screenshots/resources-pane.png",
+          "surface": "ui",
+          "caption": "CPU, memory and scaled load in the expanded monitor — fictional demo workstation"
         },
         {
-          "url": "https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/4c6c1168bb3fdb920d071cdf1d8c4d151065102e/plugins/heinzel-resource/docs/assets/ui.png",
+          "url": "https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/980b129cc28d1ca31e1e22ffbd2e4dd54d60de91/plugins/heinzel-resource/docs/assets/screenshots/today-resources.png",
           "surface": "ui",
-          "caption": "Live computer resource widget in Today"
+          "caption": "A quick CPU summary on Today, with three compact footer meters — demonstration values"
+        },
+        {
+          "url": "https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/980b129cc28d1ca31e1e22ffbd2e4dd54d60de91/plugins/heinzel-resource/docs/assets/screenshots/phone-resources.png",
+          "surface": "ui",
+          "caption": "Read CPU, memory and queued load on a phone — fictional demo workstation"
+        },
+        {
+          "url": "https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/980b129cc28d1ca31e1e22ffbd2e4dd54d60de91/plugins/heinzel-resource/docs/assets/screenshots/cli-resources.png",
+          "surface": "cli",
+          "caption": "The same fictional CPU, memory and raw load measurements in the CLI"
         }
       ],
       "soundscapes": [],
@@ -570,23 +700,38 @@
       ],
       "source": {
         "repository": "helmut-hoffer-von-ankershoffen/heinzel-plugins",
-        "revision": "4c6c1168bb3fdb920d071cdf1d8c4d151065102e",
+        "revision": "980b129cc28d1ca31e1e22ffbd2e4dd54d60de91",
         "visibility": "public"
       },
       "directory": "plugins/heinzel-tailscale",
-      "url": "https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/tree/4c6c1168bb3fdb920d071cdf1d8c4d151065102e/plugins/heinzel-tailscale",
-      "install": "hz system plugin add 'git+https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins.git@4c6c1168bb3fdb920d071cdf1d8c4d151065102e#subdirectory=plugins/heinzel-tailscale'",
+      "url": "https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/tree/980b129cc28d1ca31e1e22ffbd2e4dd54d60de91/plugins/heinzel-tailscale",
+      "install": "hz system plugin add 'git+https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins.git@980b129cc28d1ca31e1e22ffbd2e4dd54d60de91#subdirectory=plugins/heinzel-tailscale'",
       "themes": [],
       "screenshots": [
         {
-          "url": "https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/4c6c1168bb3fdb920d071cdf1d8c4d151065102e/plugins/heinzel-tailscale/docs/assets/cli.png",
-          "surface": "cli",
-          "caption": "hz tailscale --help — isolated demonstration profile"
+          "url": "https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/980b129cc28d1ca31e1e22ffbd2e4dd54d60de91/plugins/heinzel-tailscale/docs/assets/screenshots/sharing-ready.png",
+          "surface": "ui",
+          "caption": "Share the app privately with an explicit ready state — local Tailscale fixture; session hidden"
         },
         {
-          "url": "https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/4c6c1168bb3fdb920d071cdf1d8c4d151065102e/plugins/heinzel-tailscale/docs/assets/ui.png",
+          "url": "https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/980b129cc28d1ca31e1e22ffbd2e4dd54d60de91/plugins/heinzel-tailscale/docs/assets/screenshots/phone-sharing-ready.png",
           "surface": "ui",
-          "caption": "Plugin settings in the app; no external account connected"
+          "caption": "Inspect and copy the private link on a phone — local Tailscale fixture; session hidden"
+        },
+        {
+          "url": "https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/980b129cc28d1ca31e1e22ffbd2e4dd54d60de91/plugins/heinzel-tailscale/docs/assets/screenshots/sharing-request-cli.png",
+          "surface": "cli",
+          "caption": "Inspect the saved sharing request from a separate CLI process — local fictional network"
+        },
+        {
+          "url": "https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/980b129cc28d1ca31e1e22ffbd2e4dd54d60de91/plugins/heinzel-tailscale/docs/assets/screenshots/sharing-off.png",
+          "surface": "ui",
+          "caption": "Turn private sharing off explicitly — local Tailscale fixture"
+        },
+        {
+          "url": "https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/980b129cc28d1ca31e1e22ffbd2e4dd54d60de91/plugins/heinzel-tailscale/docs/assets/screenshots/sharing-off-cli.png",
+          "surface": "cli",
+          "caption": "Verify private sharing is off from the shell — local fictional network"
         }
       ],
       "soundscapes": [],
@@ -614,12 +759,12 @@
       ],
       "source": {
         "repository": "helmut-hoffer-von-ankershoffen/heinzel-plugins",
-        "revision": "4c6c1168bb3fdb920d071cdf1d8c4d151065102e",
+        "revision": "980b129cc28d1ca31e1e22ffbd2e4dd54d60de91",
         "visibility": "public"
       },
       "directory": "plugins/heinzel-theme",
-      "url": "https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/tree/4c6c1168bb3fdb920d071cdf1d8c4d151065102e/plugins/heinzel-theme",
-      "install": "hz system plugin add 'git+https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins.git@4c6c1168bb3fdb920d071cdf1d8c4d151065102e#subdirectory=plugins/heinzel-theme'",
+      "url": "https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/tree/980b129cc28d1ca31e1e22ffbd2e4dd54d60de91/plugins/heinzel-theme",
+      "install": "hz system plugin add 'git+https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins.git@980b129cc28d1ca31e1e22ffbd2e4dd54d60de91#subdirectory=plugins/heinzel-theme'",
       "themes": [
         {
           "name": "heinzelmaennchen",
@@ -672,19 +817,29 @@
       ],
       "screenshots": [
         {
-          "url": "https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/4c6c1168bb3fdb920d071cdf1d8c4d151065102e/plugins/heinzel-theme/docs/assets/cli.png",
+          "url": "https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/980b129cc28d1ca31e1e22ffbd2e4dd54d60de91/plugins/heinzel-theme/docs/assets/screenshots/theme-light.png",
+          "surface": "ui",
+          "caption": "The installed Heinzelmännchen theme on a representative local contract — light appearance"
+        },
+        {
+          "url": "https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/980b129cc28d1ca31e1e22ffbd2e4dd54d60de91/plugins/heinzel-theme/docs/assets/screenshots/theme-dark.png",
+          "surface": "ui",
+          "caption": "The installed Heinzelmännchen theme on a representative local contract — dark appearance"
+        },
+        {
+          "url": "https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/980b129cc28d1ca31e1e22ffbd2e4dd54d60de91/plugins/heinzel-theme/docs/assets/screenshots/theme-soundscapes.png",
+          "surface": "ui",
+          "caption": "The theme supplies three optional YouTube soundscapes; playback starts only after Play"
+        },
+        {
+          "url": "https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/980b129cc28d1ca31e1e22ffbd2e4dd54d60de91/plugins/heinzel-theme/docs/assets/screenshots/theme-cli.png",
           "surface": "cli",
-          "caption": "hz system theme list — isolated demonstration profile"
+          "caption": "Inspect the owning theme and its light/dark palette from the CLI"
         },
         {
-          "url": "https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/4c6c1168bb3fdb920d071cdf1d8c4d151065102e/plugins/heinzel-theme/docs/assets/ui.png",
-          "surface": "ui",
-          "caption": "Installed Heinzelmännchen theme in the app"
-        },
-        {
-          "url": "https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/4c6c1168bb3fdb920d071cdf1d8c4d151065102e/plugins/heinzel-theme/docs/assets/ui-dark.png",
-          "surface": "ui",
-          "caption": "Installed Heinzelmännchen theme in the app — dark appearance"
+          "url": "https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/980b129cc28d1ca31e1e22ffbd2e4dd54d60de91/plugins/heinzel-theme/docs/assets/screenshots/soundscapes-cli.png",
+          "surface": "cli",
+          "caption": "List the three theme-owned soundscapes without starting playback"
         }
       ],
       "soundscapes": [
@@ -739,23 +894,38 @@
       ],
       "source": {
         "repository": "helmut-hoffer-von-ankershoffen/heinzel-plugins",
-        "revision": "4c6c1168bb3fdb920d071cdf1d8c4d151065102e",
+        "revision": "980b129cc28d1ca31e1e22ffbd2e4dd54d60de91",
         "visibility": "public"
       },
       "directory": "plugins/heinzel-weather",
-      "url": "https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/tree/4c6c1168bb3fdb920d071cdf1d8c4d151065102e/plugins/heinzel-weather",
-      "install": "hz system plugin add 'git+https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins.git@4c6c1168bb3fdb920d071cdf1d8c4d151065102e#subdirectory=plugins/heinzel-weather'",
+      "url": "https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/tree/980b129cc28d1ca31e1e22ffbd2e4dd54d60de91/plugins/heinzel-weather",
+      "install": "hz system plugin add 'git+https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins.git@980b129cc28d1ca31e1e22ffbd2e4dd54d60de91#subdirectory=plugins/heinzel-weather'",
       "themes": [],
       "screenshots": [
         {
-          "url": "https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/4c6c1168bb3fdb920d071cdf1d8c4d151065102e/plugins/heinzel-weather/docs/assets/cli.png",
-          "surface": "cli",
-          "caption": "hz weather --help — isolated demonstration profile"
+          "url": "https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/980b129cc28d1ca31e1e22ffbd2e4dd54d60de91/plugins/heinzel-weather/docs/assets/screenshots/today-weather.png",
+          "surface": "ui",
+          "caption": "Current weather and the coming days on Today — fictional Berlin forecast"
         },
         {
-          "url": "https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/4c6c1168bb3fdb920d071cdf1d8c4d151065102e/plugins/heinzel-weather/docs/assets/ui.png",
+          "url": "https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/980b129cc28d1ca31e1e22ffbd2e4dd54d60de91/plugins/heinzel-weather/docs/assets/screenshots/weather-detail.png",
           "surface": "ui",
-          "caption": "Plugin settings in the app; no external account connected"
+          "caption": "Inspect conditions, feels-like temperature and rain chance — fictional local forecast"
+        },
+        {
+          "url": "https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/980b129cc28d1ca31e1e22ffbd2e4dd54d60de91/plugins/heinzel-weather/docs/assets/screenshots/phone-weather.png",
+          "surface": "ui",
+          "caption": "Weather and near forecast in the phone-sized Today view — fictional local forecast"
+        },
+        {
+          "url": "https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/980b129cc28d1ca31e1e22ffbd2e4dd54d60de91/plugins/heinzel-weather/docs/assets/screenshots/cli-weather.png",
+          "surface": "cli",
+          "caption": "Hourly conditions and approaching rain through the real CLI — local fictional forecast"
+        },
+        {
+          "url": "https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/980b129cc28d1ca31e1e22ffbd2e4dd54d60de91/plugins/heinzel-weather/docs/assets/screenshots/cli-forecast.png",
+          "surface": "cli",
+          "caption": "A concise three-day outlook through the real CLI — local fictional forecast"
         }
       ],
       "soundscapes": [],
@@ -786,23 +956,38 @@
       ],
       "source": {
         "repository": "helmut-hoffer-von-ankershoffen/heinzel-plugins",
-        "revision": "4c6c1168bb3fdb920d071cdf1d8c4d151065102e",
+        "revision": "980b129cc28d1ca31e1e22ffbd2e4dd54d60de91",
         "visibility": "public"
       },
       "directory": "plugins/heinzel-zoom",
-      "url": "https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/tree/4c6c1168bb3fdb920d071cdf1d8c4d151065102e/plugins/heinzel-zoom",
-      "install": "hz system plugin add 'git+https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins.git@4c6c1168bb3fdb920d071cdf1d8c4d151065102e#subdirectory=plugins/heinzel-zoom'",
+      "url": "https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/tree/980b129cc28d1ca31e1e22ffbd2e4dd54d60de91/plugins/heinzel-zoom",
+      "install": "hz system plugin add 'git+https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins.git@980b129cc28d1ca31e1e22ffbd2e4dd54d60de91#subdirectory=plugins/heinzel-zoom'",
       "themes": [],
       "screenshots": [
         {
-          "url": "https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/4c6c1168bb3fdb920d071cdf1d8c4d151065102e/plugins/heinzel-zoom/docs/assets/cli.png",
-          "surface": "cli",
-          "caption": "hz zoom --help — isolated demonstration profile"
+          "url": "https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/980b129cc28d1ca31e1e22ffbd2e4dd54d60de91/plugins/heinzel-zoom/docs/assets/screenshots/meeting-decisions.png",
+          "surface": "ui",
+          "caption": "Decisions and next steps from a summary email — fixture-only requester, real Zoom parser"
         },
         {
-          "url": "https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/4c6c1168bb3fdb920d071cdf1d8c4d151065102e/plugins/heinzel-zoom/docs/assets/ui.png",
+          "url": "https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/980b129cc28d1ca31e1e22ffbd2e4dd54d60de91/plugins/heinzel-zoom/docs/assets/screenshots/recent-meetings.png",
           "surface": "ui",
-          "caption": "Plugin settings in the app; no external account connected"
+          "caption": "Find the recent summarized meetings — fixture-only requester and fictional mailbox"
+        },
+        {
+          "url": "https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/980b129cc28d1ca31e1e22ffbd2e4dd54d60de91/plugins/heinzel-zoom/docs/assets/screenshots/summary-cli.png",
+          "surface": "cli",
+          "caption": "Read a meeting summary in the shell — fixture-only requester, real Zoom parser and fictional mailbox"
+        },
+        {
+          "url": "https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/980b129cc28d1ca31e1e22ffbd2e4dd54d60de91/plugins/heinzel-zoom/docs/assets/screenshots/meeting-list-json.png",
+          "surface": "cli",
+          "caption": "Structured summarized-meeting results for workflows — fixture-only requester, no verbatim transcription"
+        },
+        {
+          "url": "https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/980b129cc28d1ca31e1e22ffbd2e4dd54d60de91/plugins/heinzel-zoom/docs/assets/screenshots/workflow-context.png",
+          "surface": "ui",
+          "caption": "Meeting notes combines the declared source inputs — local demonstration, no report generated"
         }
       ],
       "soundscapes": [],
