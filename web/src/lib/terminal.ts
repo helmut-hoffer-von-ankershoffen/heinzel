@@ -1,7 +1,7 @@
 // Commands the app hands to the terminal panel: a command chip's "Run" opens the panel and types the command there.
 // The panel registers a sender once its shell is connected; until then commands wait here.
 
-import { DAEMON_INSTALL, DAEMON_UNINSTALL } from "./operationCalls";
+import { appCallFor } from "./operationCalls";
 import { requestOperation } from "./operationRun";
 
 type Sender = (text: string) => void;
@@ -22,15 +22,9 @@ export function runsAsIs(command: string): boolean {
 // biome-ignore lint/suspicious/noControlCharactersInRegex: control characters are what it replaces
 const withoutControls = (text: string) => text.replace(/[\u0000-\u001f\u007f-\u009f]/g, " ");
 
-/** Commands the app runs itself, with a confirmation and the real steps shown, instead of typing them (U3). */
-const IN_APP = new Map([
-  ["hz system daemon install", DAEMON_INSTALL],
-  ["hz system daemon uninstall", DAEMON_UNINSTALL],
-]);
-
-/** Ask to run `command` in the app when it is one the app runs itself; false when it is not. */
+/** Ask to run `command` in the app when the web head has that operation; false when it does not. */
 function inApp(command: string): boolean {
-  const call = IN_APP.get(command.trim());
+  const call = appCallFor(command);
   if (call) requestOperation(call);
   return call !== undefined;
 }

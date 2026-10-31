@@ -2,7 +2,9 @@
 // for status items). A button that needs one of these asks `requestOperation`; it never types a command (U3).
 import type { SchemaOperationCall } from "@/api/client";
 
-const daemon = (action: "install" | "uninstall", summary: string): SchemaOperationCall => ({
+type DaemonAction = "install" | "uninstall" | "pause" | "resume" | "restart";
+
+const daemon = (action: DaemonAction, summary: string): SchemaOperationCall => ({
   method: "POST",
   path: `/system/daemon/${action}`,
   query: {},
@@ -17,3 +19,13 @@ export const DAEMON_INSTALL = daemon(
   "Install and load the launchd agent or systemd timer that ticks every few minutes.",
 );
 export const DAEMON_UNINSTALL = daemon("uninstall", "Unload and remove the daemon's unit; receipts and logs stay.");
+export const DAEMON_PAUSE = daemon("pause", "Pause the daemon: ticks run no job until resumed.");
+export const DAEMON_RESUME = daemon("resume", "Resume a paused daemon.");
+export const DAEMON_RESTART = daemon("restart", "Restart the daemon so it runs with the installed hz.");
+
+const IN_APP = new Map(
+  [DAEMON_INSTALL, DAEMON_UNINSTALL, DAEMON_PAUSE, DAEMON_RESUME, DAEMON_RESTART].map((call) => [call.command, call]),
+);
+
+/** The call that does what `command` says inside the app, if the web head has that operation; else undefined. */
+export const appCallFor = (command: string): SchemaOperationCall | undefined => IN_APP.get(command.trim());

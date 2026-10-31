@@ -10,6 +10,7 @@ import { type KeyboardEvent, type ReactNode, useEffect, useId, useRef, useState 
 import { Link, useSearchParams } from "react-router";
 import { api, type SchemaProfile, unwrap } from "@/api/client";
 import { keys, useConfig, usePlaybooks, useProfile, useSetSetting } from "@/api/queries";
+import { runCommand } from "@/components/CommandActions";
 import { Gnome } from "@/components/Gnome";
 import { OperationDialog } from "@/components/OperationDialog";
 import { Button } from "@/components/ui/button";
@@ -19,7 +20,6 @@ import { TimeZonePicker } from "@/layout/TimeZonePicker";
 import { isLocalServer } from "@/lib/browser";
 import { DAEMON_INSTALL } from "@/lib/operationCalls";
 import { requestOperation } from "@/lib/operationRun";
-import { runInTerminal } from "@/lib/terminal";
 import { cn } from "@/lib/utils";
 import { setDesktop, useDesktopState } from "@/notifications/desktop";
 import { NotificationTest } from "@/notifications/NotificationTest";
@@ -353,7 +353,7 @@ function Confirmed({
   const trigger = useRef<HTMLButtonElement>(null);
   const done = (run: boolean) => {
     if (run && asking) {
-      runInTerminal(asking);
+      runCommand(asking);
       onRun?.();
     }
     setSent(run);

@@ -5,13 +5,13 @@ import { useState } from "react";
 import { useNavigate } from "react-router";
 import { api, type SchemaChannel } from "@/api/client";
 import { useOpenNotificationSettings, useTestNotice } from "@/api/queries";
+import { runCommand } from "@/components/CommandActions";
 import { OperationDialog } from "@/components/OperationDialog";
 import { Button } from "@/components/ui/button";
 import { type MessageKey, t } from "@/i18n";
 import { isLocalServer } from "@/lib/browser";
-import { DAEMON_INSTALL } from "@/lib/operationCalls";
+import { appCallFor } from "@/lib/operationCalls";
 import { requestOperation } from "@/lib/operationRun";
-import { runInTerminal } from "@/lib/terminal";
 import { cn } from "@/lib/utils";
 import { type DesktopState, setDesktop, useDesktopState } from "./desktop";
 import { popUp } from "./useNoticeStream";
@@ -76,10 +76,11 @@ export function NotificationTest({
         </Button>
       );
     }
-    if (channel.fix === "install-daemon") {
+    const here = channel.command ? appCallFor(channel.command) : undefined;
+    if (here) {
       return (
-        <Button size="sm" variant="outline" onClick={fix(() => requestOperation(DAEMON_INSTALL))}>
-          {t("notify.fix.installDaemon")}
+        <Button size="sm" variant="outline" onClick={fix(() => requestOperation(here))}>
+          {t(channel.fix === "install-daemon" ? "notify.fix.installDaemon" : "notify.fix.turnOn")}
         </Button>
       );
     }
@@ -170,7 +171,7 @@ export function NotificationTest({
             <Button
               size="sm"
               onClick={() => {
-                runInTerminal(confirm);
+                runCommand(confirm);
                 setConfirm(null);
                 setFixed(true);
                 onTerminal?.();
