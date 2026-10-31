@@ -1,7 +1,7 @@
 """`hz system serve daemon`: the foreground loop, through the CLI head, with a test-only job module."""
 
 import json
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from typer.testing import CliRunner
@@ -36,7 +36,18 @@ def kernel(make_kernel, settings, calls):
 
 def test_serve_daemon_prints_each_tick_as_a_json_line(kernel, monkeypatch, calls):
     import heinzel.heads.daemon as head
+    from heinzel.modules.system.daemon import _service as daemon_service
 
+    fixed = datetime(2026, 1, 5, 12, 0, 30, tzinfo=UTC)
+
+    class FixedClock(datetime):
+        """Both ticks in one minute: on the wall clock, a second tick after xx:xx:59 has a new slot to run."""
+
+        @classmethod
+        def now(cls, tz=None):
+            return fixed.astimezone(tz)
+
+    monkeypatch.setattr(daemon_service, "datetime", FixedClock)
     real = head.serve
 
     def twice(kernel_, interval, report):
