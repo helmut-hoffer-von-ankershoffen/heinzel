@@ -9,6 +9,8 @@ amended-by: 0049, 0054
 
 # 0052: The graph emerges from recorded reads and writes
 
+*Since 0051 the module is `heinzel`: read `hz workflow` as `hz heinzel` and `[workflow]` as `[heinzel]`.*
+
 ## Context and Problem Statement
 
 Today the graph of a team's work is drawn from declarations only: `hz workflow graph` takes its edges from explicit
@@ -17,8 +19,7 @@ Today the graph of a team's work is drawn from declarations only: `hz workflow g
 `InventoryLet`, a lock file and a single-writer rule, before any of it exists. Heinzelmännchen
 ([ADR 0049](0049-heinzelmaennchen-are-durable-agents-one-session-each-owned-by-hz.md)) read trackers, draft sections,
 post messages and send mail as their user through vendor CLIs ([ADR 0035](0035-integrations-go-through-vendor-clis-as-an-ordinary-employee.md)),
-which hz cannot observe from outside, and they read each other's artifacts without declaring it. The maintainer decided
-(2026-10-24): the graph emerges from recorded reads and writes. First step: each Heinzelmännchen logs the actions it
+which hz cannot observe from outside, and they read each other's artifacts without declaring it. The decision: the graph emerges from recorded reads and writes. First step: each Heinzelmännchen logs the actions it
 wants to appear in the graph to an append-only action log, with a few fixed fields and a free-text description, and
 decides itself what is worth logging; a graph agent reads all the logs and builds the graph; no upfront artifact schema,
 and structured telemetry (OTel-like traces per turn, canonical artifact ids with versions) only once we see what the
@@ -85,7 +86,7 @@ daemon publishes to the team repository.** Checkable statements:
    | --- | --- | --- |
    | `read` | `version` (as the source reports it: a revision, a hash, an `as_of`), `needed_by` (from the reader's contract: its next deadline) | hz, for every input a turn gathers; the Heinzelmännchen, for reads through tools or a handoff |
    | `drafted` | `where` (the place the draft was put), `contract_version`, `draft` (hash) | hz, from `draft.placed` |
-   | `approved` | `by` (handle), `at`, `share_changed`, `output_fp` (the approved text's material fingerprint, amended 2026-10-24, 7); `rejected` likewise | hz, from `approval.observed` |
+   | `approved` | `by` (handle), `at`, `share_changed`, `output_fp` (the approved text's material fingerprint, 7); `rejected` likewise | hz, from `approval.observed` |
    | `published` | `where` (the document, the address, the channel) | hz, from a publish operation; the Heinzelmännchen, when a handoff sent something through a vendor CLI |
    | `fell_back` | `input`, `used` (the stale version), `deadline` | hz, from the flow rule (7) |
    | `heartbeat` | none | the daemon, once per tick per Heinzelmännchen that is not `retired`, coalesced to one entry per day in the spine (the index keeps the last) |
@@ -139,9 +140,9 @@ daemon publishes to the team repository.** Checkable statements:
 7. **Downstream wakes.** When an upstream draft is approved (`approved` entry), every Heinzelmännchen whose log has a
    `read` of that target wakes with cause `source-changed` on its next tick (ADR 0049 §4): the approval is the input
    that moved. Declared readers and observed readers both count.
-   - Amended 2026-10-24 ([ADR 0049](0049-heinzelmaennchen-are-durable-agents-one-session-each-owned-by-hz.md)
-     statement 20, OpenProse Reactor's early cutoff,
-     [spec](https://github.com/openprose/reactor/blob/main/spec/02-ReactorHarness.md)): readers wake only when the
+   - Per [ADR 0049](0049-heinzelmaennchen-are-durable-agents-one-session-each-owned-by-hz.md)
+     statement 20 (OpenProse Reactor's early cutoff,
+     [spec](https://github.com/openprose/reactor/blob/main/spec/02-ReactorHarness.md)), readers wake only when the
      approved text's **material fingerprint** moved: `approval.observed` and the `approved` entry (1) record
      `output_fp` (the canonical fingerprint of the approved text, per facet when the output has facets, ADR 0021 §8),
      and an approval whose `output_fp` equals the previous approval's wakes nobody, so a re-approval of identical text
@@ -154,7 +155,7 @@ daemon publishes to the team repository.** Checkable statements:
      `turn.skipped` for a slot where nothing moved, ADR 0049 statement 15), so a postcondition that wasn't met leaves
      the previous truth standing and wakes nobody.
 
-**To confirm: unapproved drafts block the flow** (the maintainer's open design, 2026-10-24; proposed here, decided
+**To confirm: unapproved drafts block the flow** (an open design; proposed here, decided
 when the first team runs it):
 
 - **Deadlines flow upstream.** A contract's deadline (its `schedule`, or an explicit `by`) gives every `read` entry its
@@ -198,26 +199,22 @@ when the first team runs it):
 
 Not yet: proposed. When implemented:
 
-- `tests/unit/modules/heinzel_actions_test.py`: hz writes `read`, `drafted`, `approved`, `published`, `fell_back` and
+- Actions: hz writes `read`, `drafted`, `approved`, `published`, `fell_back` and
   the daily `heartbeat` from the turn steps; `report` entries through the tool and the operation, attributed to the turn,
   `via: handoff` from a handoff; the lint refuses text, addresses and counts.
-- `tests/unit/modules/graph_test.py`: nodes and edges from a fixture of logs and contracts; declared and observed
+- Graph: nodes and edges from a fixture of logs and contracts; declared and observed
   shown apart; many writers to one artifact; `conflicting` on two pending drafts; aliases applied and a rejected one
   ignored; every filter and `--json` stable (golden file).
 - `tests/integration/graph_test.py`: `hz graph` on the CLI and MCP with filters; the web endpoint behind the token;
   nothing on the unauthenticated REST head.
-- `tests/unit/modules/heinzel_flow_test.py` (once the open design is decided): `needed_by` from the reader's deadline,
+- Flow (once the open design is decided): `needed_by` from the reader's deadline,
   the nudge schedule, the fallback at the deadline with `fell_back` logged and the draft marked stale, escalation only
   when declared and skipped when away, no per-person aggregation (`tests/unit/repository_test.py`).
-- `tests/e2e/priya_test.py` (ADR 0049) gains Theo's `my-row` Heinzelmännchen upstream of `weekly-report`: the graph
+- The end-to-end test of ADR 0049 gains Theo's `my-row` Heinzelmännchen upstream of `weekly-report`: the graph
   shows the edge, the Friday-noon `needed_by`, and the fallback when Theo doesn't approve.
 
 ## More Information
 
-- Decided by the maintainer, 2026-10-24: the action log as the first step, its minimum fields, the graph agent, two
-  node and two edge kinds, declared and observed edges, no single-keeper rule, downstream wakes on approval, `hz graph`
-  with filters and JSON, a team graph from published metadata without a server, the report tool; the flow design is the
-  maintainer's proposal to confirm.
 - **Amends** [ADR 0021](0021-workflow-contracts.md) §7 (edges come from explicit inputs *and* from observed reads and
   writes); [ADR 0023](0023-inventory.md) (no declared entity schema, lock file or `InventoryLet` for now; its single
   writer per artifact rule is dropped; its vocabulary of declared and observed origins stays; `hz inventory` as a

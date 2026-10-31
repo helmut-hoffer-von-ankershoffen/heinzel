@@ -1,16 +1,16 @@
 # Heinzelmännchen
 
 <!-- badges:start -->
-[![CI](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/actions/workflows/ci.yml/badge.svg)](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/actions/workflows/ci.yml)
-[![Coverage](https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel/python-coverage-comment-action-data/badge.svg)](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/tree/python-coverage-comment-action-data)
-[![CodeQL](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/actions/workflows/codeql.yml/badge.svg)](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/actions/workflows/codeql.yml)
-[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/helmut-hoffer-von-ankershoffen/heinzel/badge)](https://scorecard.dev/viewer/?uri=github.com/helmut-hoffer-von-ankershoffen/heinzel)
-[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/15863/badge)](https://www.bestpractices.dev/en/projects/15863/passing)
+[![CI](https://img.shields.io/github/actions/workflow/status/helmut-hoffer-von-ankershoffen/heinzel/ci.yml?branch=main&label=CI)](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/actions/workflows/ci.yml)
+[![Coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel/python-coverage-comment-action-data/endpoint.json)](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/tree/python-coverage-comment-action-data)
+[![CodeQL](https://img.shields.io/github/actions/workflow/status/helmut-hoffer-von-ankershoffen/heinzel/codeql.yml?branch=main&label=CodeQL)](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/actions/workflows/codeql.yml)
+[![OpenSSF Scorecard](https://img.shields.io/ossf-scorecard/github.com/helmut-hoffer-von-ankershoffen/heinzel?label=OpenSSF%20Scorecard)](https://scorecard.dev/viewer/?uri=github.com/helmut-hoffer-von-ankershoffen/heinzel)
+[![OpenSSF Best Practices](https://img.shields.io/cii/level/15863?label=OpenSSF%20Best%20Practices)](https://www.bestpractices.dev/en/projects/15863/passing)
 [![PyPI](https://img.shields.io/pypi/v/heinzel)](https://pypi.org/project/heinzel/)
 [![Python](https://img.shields.io/badge/python-3.12%20%7C%203.13%20%7C%203.14%20%7C%203.15-blue)](pyproject.toml)
-[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=helmut-hoffer-von-ankershoffen_heinzel&metric=alert_status)](https://sonarcloud.io/summary/overall?id=helmut-hoffer-von-ankershoffen_heinzel)
+[![Quality Gate Status](https://img.shields.io/sonar/quality_gate/helmut-hoffer-von-ankershoffen_heinzel?server=https://sonarcloud.io&label=Quality%20Gate%20Status)](https://sonarcloud.io/summary/overall?id=helmut-hoffer-von-ankershoffen_heinzel)
 [![Security Rating](https://sonarcloud.io/api/project_badges/measure?project=helmut-hoffer-von-ankershoffen_heinzel&metric=security_rating)](https://sonarcloud.io/summary/overall?id=helmut-hoffer-von-ankershoffen_heinzel)
-[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/license-MIT-brightgreen)](LICENSE)
 <!-- badges:end -->
 
 [**Install & explore →**](https://helmut.hoffer-von-ankershoffen.me/heinzel/) · [Plugin catalog](https://helmut.hoffer-von-ankershoffen.me/heinzel/CATALOG/) · [Build a plugin](docs/PLUGIN_AUTHORING.md)
@@ -22,11 +22,50 @@
   </picture>
 </p>
 
-**Heinzelmännchen are helpers accelerating product teams.** They draft the busywork of
-running a team — status, tracker updates, agendas, reports — in the background, and people approve it. Like the
+**An open-source crew of AI helpers that does your team's busywork and asks before anything leaves your machine.**
+Each Heinzelmännchen keeps one promise: the Friday report, the tracker update, the meeting brief. It reads your tools
+with *your* logins, drafts the work, and waits for your yes. Nothing is published, sent or spent without it. Like the
 [Heinzelmännchen of Cologne](https://en.wikipedia.org/wiki/Heinzelm%C3%A4nnchen), who finished the town's work at
-night. Why it exists and where it is going: [INTENT.md](INTENT.md). It is built on open source, and we are
-grateful: [thank you](#standing-on-the-shoulders-of-giants) to everyone in [ATTRIBUTIONS.md](ATTRIBUTIONS.md).
+night, they work in the background; unlike them, they ask first. Why it exists and where it is going: [INTENT.md](INTENT.md). It stands on open
+source, and we are grateful: [thank you](#standing-on-the-shoulders-of-giants) to everyone in
+[ATTRIBUTIONS.md](ATTRIBUTIONS.md).
+
+**Try it:** run `uvx heinzel@latest` on macOS or Linux; [other ways to install](#install).
+
+**Where it stands, honestly.** The foundation is released: the kernel, five heads (CLI, web app, MCP, REST and a
+background daemon), contracts that draft locally on request or on a schedule, a team repository, a graph of who keeps
+which promise, and plugins. A helper does not yet write into a shared document, no run has been proven unattended with a
+live provider, and helpers do not yet work with each other. Drafts are saved on your machine for you to edit
+([roadmap](INTENT.md#where-we-are)).
+
+<picture>
+  <source srcset="docs/assets/demo.png" media="(prefers-reduced-motion: reduce)" />
+  <img src="docs/assets/demo.gif" alt="hz in the terminal and web app: first commands, Today, a contract and the team graph in light and dark mode" width="100%" />
+</picture>
+
+[Video](docs/assets/demo.mp4) · [Still](docs/assets/demo.png)
+
+## See it working
+
+Real screens of the web app, captured from the installed plugins with a fictional team and demonstration data.
+Every image was inspected for private data before it was published.
+
+<a href="https://helmut.hoffer-von-ankershoffen.me/heinzel/catalog/heinzel-acme-aa9ce1cf07/">
+  <img src="https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-acme/7b8c4c1d114d37342d1229ba97aa972ec08de8c3/docs/assets/screenshots/company-workflow.png" alt="The workflow view of the web app: connected systems, the assets a playbook keeps, and the weekly-report contract they feed, drawn as a graph" width="100%">
+</a>
+
+**The team's real process, drawn from what is connected.** Systems, assets and contracts appear as a graph, so you
+can see what feeds the Friday report. [Explore the ACME team stack →](https://helmut.hoffer-von-ankershoffen.me/heinzel/catalog/heinzel-acme-aa9ce1cf07/)
+
+<a href="https://helmut.hoffer-von-ankershoffen.me/heinzel/catalog/heinzel-acme-payments-checkout-8a7d294621/"><img src="https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-acme/7b8c4c1d114d37342d1229ba97aa972ec08de8c3/plugins/heinzel-acme-payments-checkout/docs/assets/screenshots/draft-in-terminal.png" alt="A locally saved weekly-report draft, listed with hz heinzel drafts in the web app's terminal, ending: fictional local demonstration, review before sharing" width="100%"></a>
+
+**A first draft you can edit.** Saved locally by a deterministic demo runner, ready to review.
+
+<a href="https://helmut.hoffer-von-ankershoffen.me/heinzel/catalog/heinzel-clock-a8638667a9/"><img src="https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/57a26d579b1989febfc9b642d3e6f23097baa8fb/plugins/heinzel-clock/docs/assets/screenshots/world-clock.png" alt="Today and the World Clock: a globe with Berlin, New York and Los Angeles, and who is at work now" width="100%"></a>
+
+**A time that works for everyone.** The Clock plugin shows who is at work, in demonstration time.
+
+[See every screen in the plugin catalog →](https://helmut.hoffer-von-ankershoffen.me/heinzel/CATALOG/) · [Install it yourself](#install)
 
 <img src="docs/assets/meet.svg" alt="Seven Heinzelmännchen, each showing a state: at rest, working, thinking, waiting for you, asleep, blocked and done" width="100%">
 
@@ -35,16 +74,6 @@ over, **waiting for you** to approve, **asleep** when there is nothing to do, **
 **done** with a happy smile. In `hz` a small one greets you, walks along during long work and marks a finished line.
 They are garnish, never a replacement for words: `hz system config set hz.playful false` (or Settings → General) turns
 them all off, and they stay away from JSON, pipes, CI and `NO_COLOR` anyway.
-
-This release is the foundation — kernel, heads, plugins and release automation; the first team workflows arrive in
-0.x ([roadmap](INTENT.md#where-we-are)).
-
-<picture>
-  <source srcset="docs/assets/demo.png" media="(prefers-reduced-motion: reduce)" />
-  <img src="docs/assets/demo.gif" alt="hz in the terminal and web app: first commands, Today, a contract and the team graph in light and dark mode" width="100%" />
-</picture>
-
-[Video](docs/assets/demo.mp4) · [Still](docs/assets/demo.png)
 
 **What you can do today:**
 
@@ -90,8 +119,12 @@ It reuses uv when available, otherwise runs [Astral's official installer](https:
 It then runs the same app launcher. No administrator access or separate Python installation is needed.
 You can [inspect the script](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/blob/main/docs/install.sh) first.
 
-The first run installs the verified standard app with all default plugins and opens the workspace.
-Later runs open the installed app. Ctrl-C stops the foreground session; background operation stays optional.
+The first run installs the verified standard app with its default plugins and opens the workspace. Later runs open
+the installed app. Ctrl-C stops the foreground session; background operation stays optional.
+
+<details>
+<summary>Install details, updates and recovery</summary>
+
 The fresh standard-app installation requires a uv-managed Python: it overrides uv's configured Python preference
 and ignores `UV_PYTHON` for that installation step. Remove system-only `UV_NO_MANAGED_PYTHON` or
 `UV_PYTHON_PREFERENCE` environment settings before installing. If Python downloads are disabled, first install a
@@ -106,7 +139,10 @@ it says which `--source` moves it. Updates and plugin changes verify the current
 before selecting the tool and executable directories. If entrypoints are copied, missing or cannot be verified, use
 uv directly with the intended tool and executable directories explicitly selected. An unresolved symlink in the
 executable directory stops these changes until it is repaired; recovery may reuse an unchanged link verified for the
-original tool. This preflight cannot prevent another process from changing the directory between the check and uv's write. Shell completion: `hz --install-completion`.
+original tool. This preflight cannot prevent another process from changing the directory between the check and uv's write.
+Shell completion: `hz --install-completion`.
+
+</details>
 
 **From Claude Code**, add the plugin and let `/hz-init` do everything — install, plugins, configuration, agent
 skills:
@@ -264,8 +300,8 @@ Slack adapters are planned as first-party plugins too.
 
 ### Community plugins
 
-Weather and the Example reference plugin have moved from heinzel-contrib to heinzel-plugins. Each is independently
-tested against a built core artifact:
+Weather and the Example reference plugin live in heinzel-plugins too. Each is independently tested against a built
+core artifact:
 
 | Plugin | What it does | Install |
 | --- | --- | --- |

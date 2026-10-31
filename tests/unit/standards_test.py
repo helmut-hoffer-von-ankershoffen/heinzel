@@ -107,6 +107,8 @@ CORE_ONLY = {  # path: why plugins don't get it
     "scripts/sync_template.py": "generates the template from Heinzelmännchen's files",
     "scripts/template-test.sh": "renders and checks the template",
     "scripts/starter-test.py": "core SDK compatibility job exercises fresh standalone and collection authors",
+    "scripts/ship.py": "the golden path for small changes in Heinzelmännchen's own worktrees (docs/SHIP_SMALL.md)",
+    ".claude/skills/ship-small/SKILL.md": "drives scripts/ship.py, which plugins don't get",
     "scripts/scoped_checks.py": "routes Core-root checks; owning and governed plugins already check their own project",
     "scripts/template_pyproject_head.toml.tmpl": "input of sync_template.py",
     "scripts/web.py": "the web head's typed client and dev server (web/, ADR 0039); plugins bring no UI",

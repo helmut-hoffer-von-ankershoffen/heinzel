@@ -6,6 +6,7 @@ configured). The token, if any, never leaves api.github.com: redirects elsewhere
 
 import http.client
 import json
+import urllib.error
 import urllib.request
 from typing import Any, override
 
@@ -38,6 +39,68 @@ class _GitHubApiRedirects(urllib.request.HTTPRedirectHandler):
         if not newurl.startswith(f"{GITHUB_API}/"):
             return None
         return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+class _NoRedirects(urllib.request.HTTPRedirectHandler):
+    """Never follows a redirect: the answer is the redirect itself."""
+
+    @override
+    def redirect_request(
+        self,
+        req: urllib.request.Request,
+        fp: Any,
+        code: int,
+        msg: str,
+        headers: Any,
+        newurl: str,
+    ) -> urllib.request.Request | None:
+        return None
+
+
+REDIRECTS = frozenset({301, 302, 307, 308})
+
+
+def _head(url: str, timeout: float) -> tuple[int, str]:
+    """HEAD `url` without following redirects: its status and `Location`; the seam tests fake.
+
+    Raises:
+        OSError: If github.com cannot be reached or answers with an error other than a redirect.
+    """
+    request = urllib.request.Request(  # noqa: S310 - https, checked by the caller
+        url, method="HEAD", headers={"User-Agent": f"heinzel/{__version__}"}
+    )
+    try:
+        with urllib.request.build_opener(_NoRedirects).open(request, timeout=timeout) as response:
+            return response.status, ""
+    except urllib.error.HTTPError as error:
+        location = str(error.headers.get("Location", "")) if error.headers else ""
+        error.close()
+        if error.code in REDIRECTS:
+            return error.code, location
+        raise OSError(error) from error
+    except http.client.HTTPException as exc:
+        raise OSError(exc) from exc
+
+
+def latest_release_url(repository: str, timeout: float) -> str:
+    """The page of the repository's latest published release, from github.com's own redirect.
+
+    `github.com/<repository>/releases/latest` redirects to the tag's page; asking it spends none of the anonymous REST
+    API's 60 requests an hour per address, which a shared network or a busy day exhausts (the release check then
+    never learns that a newer release exists). It sends only the `heinzel/<version>` User-Agent, no token.
+
+    Raises:
+        OSError: If github.com cannot be reached or answers with an error.
+        ValueError: If the answer is no redirect to a tag page of this repository.
+    """
+    prefix = f"https://github.com/{repository}/releases/tag/"
+    status, location = _head(f"https://github.com/{repository}/releases/latest", timeout)
+    tag = location[len(prefix) :]
+    tag_page = location.lower().startswith(prefix.lower()) and tag != "" and not set(tag) & set("/?#")
+    if status not in REDIRECTS or not tag_page:
+        msg = "the latest release did not redirect to a tag page of the repository"
+        raise ValueError(msg)
+    return location
 
 
 def _open(request: urllib.request.Request, timeout: float) -> bytes:
