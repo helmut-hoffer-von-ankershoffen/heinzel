@@ -39,13 +39,14 @@ _MAX_PAGE = 100
 QUIET = "Quiet hours: this slot started no turn."
 NOTHING_NEW = "Nothing new at the source: this slot started no turn."
 _MAX_SEEN = 2000
-_LATE_GRACE_SECONDS = 120
+_LATE_GRACE_SECONDS = 30
 
 
-def _is_current(slot: int, cadence: int) -> bool:
-    """Whether this slot is running or just ended: a daemon on a busy machine may start a tick a little late."""
+def _is_current(slot: int, cadence: int, timeout: int) -> bool:
+    """Whether this slot is still running; a short cadence still leaves one bounded turn the time to finish."""
     now = int(datetime.now(UTC).timestamp())
-    return slot * cadence <= now < (slot + 1) * cadence + _LATE_GRACE_SECONDS
+    start = slot * cadence
+    return start <= now < start + max(cadence, timeout + _LATE_GRACE_SECONDS)
 
 
 class ScheduleBinding(BaseModel):
@@ -581,7 +582,7 @@ class AutonomousSchedules:
             raise HeinzelError(msg)
         binding = self.approved(session, request)
         slot = int(when.timestamp()) // binding.cadence_seconds
-        if not _is_current(slot, binding.cadence_seconds):
+        if not _is_current(slot, binding.cadence_seconds, binding.timeout_seconds):
             msg = "Only the current schedule occurrence can run"
             raise HeinzelError(msg)
         return binding, slot
@@ -614,7 +615,7 @@ class AutonomousSchedules:
             if current.authentication != "daemon" or current.principal.id != binding.owner:
                 msg = "The scheduled owner identity changed"
                 raise HeinzelError(msg)
-            if not _is_current(slot, binding.cadence_seconds):
+            if not _is_current(slot, binding.cadence_seconds, binding.timeout_seconds):
                 msg = "The schedule occurrence expired before launch"
                 raise HeinzelError(msg)
             if not _same_binding(self.approved(session, request), binding):
