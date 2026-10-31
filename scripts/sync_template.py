@@ -245,6 +245,12 @@ def pyproject() -> str:
     # git and would fetch this Heinzelmännchen then.
     dev = dev.replace("test = [", 'test = ["heinzel==[[ heinzel_version ]]", ', 1)
     tools = source[source.index("[tool.ruff]") :]
+    # This scheduling hint is implemented by the core test controller, not the plugin template.
+    tools = tools.replace(
+        '    "e2e_early: Hint to start a long E2E case in an early xdist worker batch; '
+        'no deadline or selection change.",\n',
+        "",
+    )
     tools = re.sub(r'\nextend-exclude = \["template", "plugins"\][^\n]*', "", tools)
     tools = tools.replace(
         'extend-exclude = ["ATTRIBUTIONS.md", "site", "plugins"]', 'extend-exclude = ["ATTRIBUTIONS.md", "site"]'

@@ -281,6 +281,7 @@ def test_theme_image_viewports_preserve_the_cap_hinge_in_actual_chromium(tmp_pat
 
 
 @pytest.mark.timeout(600)
+@pytest.mark.e2e_early
 def test_mobile_touch_viewports_keep_navigation_settings_and_chat_reachable(environment, tmp_path):
     """Chromium mobile emulation checks responsive reachability; it is not a physical iPhone Safari test."""
     env, _recorded = environment

@@ -812,6 +812,14 @@ def _generated_plugin_ci() -> dict:
     return yaml.safe_load(text.replace("[[ package_name ]]", "x"))
 
 
+def test_plugin_template_does_not_advertise_core_only_e2e_scheduling_hint():
+    generated = _template_sync_module().pyproject()
+    checked_in = (REPO / "template" / "pyproject.toml.jinja").read_text(encoding="utf-8")
+    assert generated == checked_in
+    assert "e2e_early:" not in generated
+    assert "e2e_early:" in (REPO / "pyproject.toml").read_text(encoding="utf-8")
+
+
 def test_plugin_template_makefile_excludes_all_electron_only_targets():
     """Electron's install, sandbox and native-smoke targets stay out of generated plugin Makefiles."""
     generated = _template_sync_module().makefile()
