@@ -5,8 +5,8 @@
     let lifted = false;
     const reset = () => {
       helpers.forEach(helper => {
-        helper.removeAttribute('data-gutter');
-        ['width', 'left', 'top', 'visibility'].forEach(name => helper.style.removeProperty(name));
+        delete helper.dataset.gutter;
+        ['--hz-lane-width', 'left', 'top', 'visibility'].forEach(name => helper.style.removeProperty(name));
       });
       lifted = false;
     };
@@ -50,7 +50,7 @@
           : wanted;
         const lane = available[side];
         if (!lane) { reset(); return false; }
-        helper.style.width = `${lane.width}px`;
+        helper.style.setProperty('--hz-lane-width', `${lane.width}px`);
         const y = used[side] ?? lane.y;
         const height = helper.getBoundingClientRect().height;
         if (y + height > innerHeight - 24) { reset(); return false; }
@@ -79,15 +79,19 @@
     let refused = '';
     const relayout = () => {
       const now = geometry();
-      if (innerWidth < 1100) { if (lifted) reset(); return; }
+      if (innerWidth < 1100) {
+        if (lifted) reset();
+        return;
+      }
       if (!lifted) {
         if (now === refused || (needsLength && document.documentElement.scrollHeight < innerHeight * 2)) return;
         helpers.forEach(helper => {
           const style = getComputedStyle(helper);
-          helper.dataset.slot = String(helper.offsetHeight + parseFloat(style.marginTop) + parseFloat(style.marginBottom));
-          helper.setAttribute('data-gutter', 'true');
+          helper.dataset.slot = String(helper.offsetHeight + Number.parseFloat(style.marginTop) + Number.parseFloat(style.marginBottom));
+          helper.dataset.gutter = 'true';
           // A guide in view must not wait for lazy loading, which some engines skip for fixed boxes.
-          helper.querySelector('img')?.setAttribute('loading', 'eager');
+          const art = helper.querySelector('img');
+          if (art) art.loading = 'eager';
         });
         lifted = true;
         if (!follow()) { reset(); refused = now; }
@@ -110,7 +114,7 @@
     const observer = new ResizeObserver(() => later(layout));
     document.querySelectorAll('.md-content, .md-sidebar__inner > .md-nav, .md-header, .md-tabs, .md-footer')
       .forEach(element => observer.observe(element));
-    document.fonts.ready.then(() => later(layout));
+    void document.fonts.ready.then(() => later(layout));
     helpers.forEach(helper => helper.querySelector('img')?.addEventListener('load', () => later(layout), { once: true }));
     layout();
   }

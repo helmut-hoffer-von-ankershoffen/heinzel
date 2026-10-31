@@ -683,6 +683,12 @@ def test_heading_slugs_match_the_table_of_contents_extension():
         assert pages.slug(heading) == toc.slugify(heading, "-")
 
 
+def test_headings_with_ids_and_closing_hashes_get_their_waypoint():
+    assert pages.slug("Install and try {#try}") == "install-and-try"
+    found = pages.headings_of(["#nospace", "## Closed ##", "####### seven", "```", "## Fenced", "```", "Text"])
+    assert [(line, level, name) for line, level, name in found] == [(1, 2, "closed")]
+
+
 def test_themes_are_guided_by_ada_and_sound_adds_a_third_inline_guide_only_when_present():
     plugin = shown(record())
     plugin["themes"] = [{"title": "Harbor", "palette": {}}]

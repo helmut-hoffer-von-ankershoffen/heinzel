@@ -91,6 +91,7 @@ def checked_source(source: Object) -> Object:
 MAX_DECLARATIONS = 24
 MAX_IMAGES = 8
 HELPER_WORDS = 9
+HEADING_LEVELS = 6
 HELPER_CHARACTERS = 80
 HELPER_FALLBACK = "See this helper working in the real UI."
 # A character never promises what an owner's metadata merely mentions: no autonomy, delivery or endorsement.
@@ -555,7 +556,7 @@ def on_files(files: Any, config: Any) -> Any:  # noqa: ANN401 - MkDocs owns the 
     return files
 
 
-def helper(  # noqa: PLR0913, PLR0917 - one flat, explicit record per character cue
+def helper(  # noqa: PLR0913,PLR0917 - one flat explicit record per character cue
     art: str,
     name: str,
     quote: str,
@@ -717,22 +718,31 @@ def waypoint(guide: Object, *, standalone: bool = False) -> str:
 
 def slug(heading: str) -> str:
     """The anchor MkDocs' table-of-contents extension gives a heading (ASCII words joined by hyphens)."""
-    heading = re.sub(r"\s*\{[^}]*\}\s*$", "", re.sub(r"<[^>]+>", "", heading))
+    heading = re.sub(r"<[^>]+>", "", heading).rstrip()
+    if heading.endswith("}") and "{" in heading:  # an attr_list suffix such as {#id}
+        heading = heading[: heading.rindex("{")]
     ascii_text = unicodedata.normalize("NFKD", heading).encode("ascii", "ignore").decode("ascii")
     return re.sub(r"[-\s]+", "-", re.sub(r"[^\w\s-]", "", ascii_text).strip().lower())
+
+
+def headings_of(lines: list[str]) -> list[tuple[int, int, str]]:
+    """(line, level, anchor) of every ATX heading outside fenced code."""
+    found: list[tuple[int, int, str]] = []
+    fence = ""
+    for index, line in enumerate(lines):
+        marker = line.lstrip()[:3]
+        level = len(line) - len(line.lstrip("#"))
+        if marker in {"```", "~~~"}:
+            fence = "" if fence == marker else fence or marker
+        elif not fence and 1 <= level <= HEADING_LEVELS and line[level : level + 1] in {" ", "\t"}:
+            found.append((index, level, slug(line[level:].strip().rstrip("#").strip())))
+    return found
 
 
 def place_waypoints(markdown: str, guides: list[Object]) -> str:
     """Put each waypoint after its section heading, else the page's first H2, else at the end of the page."""
     lines = markdown.split("\n")
-    headings: list[tuple[int, int, str]] = []
-    fence = ""
-    for index, line in enumerate(lines):
-        marker = line.lstrip()[:3]
-        if marker in {"```", "~~~"}:
-            fence = "" if fence == marker else fence or marker
-        elif not fence and (found := re.match(r"(#{1,6})[ \t]+(.+?)[ \t]*#*[ \t]*$", line)):
-            headings.append((index, len(found.group(1)), slug(found.group(2))))
+    headings = headings_of(lines)
     inserts: dict[int, list[str]] = {}
     tail = []
     for guide in guides:
@@ -754,7 +764,7 @@ def on_post_page(output: str, **_: Any) -> str:  # noqa: ANN401 - MkDocs owns th
 
 def on_env(env: Any, **_: Any) -> Any:  # noqa: ANN401 - MkDocs owns the Jinja environment
     """Let templates such as the 404 page render the same waypoint markup."""
-    from markupsafe import Markup  # noqa: PLC0415 - Jinja's own dependency, present only in the docs environment
+    from markupsafe import Markup  # noqa: PLC0415 - Jinja is installed only in the docs environment
 
     env.globals["hz_waypoints"] = lambda guides: Markup("\n".join(waypoint(guide, standalone=True) for guide in guides))  # noqa: S704 - escaped in waypoint()
     return env

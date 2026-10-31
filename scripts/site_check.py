@@ -306,7 +306,8 @@ def media_flow(page: "Page", base: str, snapshot: dict[str, Any], axe: Path, ide
 HELPERS = """() => [...document.querySelectorAll('[data-heinzel-helper]')].map(el => {
     const r = el.getBoundingClientRect();
     const style = getComputedStyle(el);
-    return {gutter: el.hasAttribute('data-gutter'), fixed: style.position === 'fixed',
+    return {waypoint: el.classList.contains('hz-page-helper'), gutter: el.hasAttribute('data-gutter'),
+        fixed: style.position === 'fixed',
         hidden: style.visibility === 'hidden', lane: el.dataset.lane || '', top: r.top + scrollY, height: r.height,
         rect: {left: r.left, right: r.right, top: r.top, bottom: r.bottom}};
 })"""
@@ -399,6 +400,27 @@ def check_characters(page: "Page", where: str, *, expect_both: bool = False) -> 
     return helpers
 
 
+def one_per_phone_screen(page: "Page", helpers: list[dict[str, Any]], route: str) -> None:
+    """No phone screen holds two waypoints: they are at least a screen apart, less the first one's own height."""
+    tops = sorted((item["top"], item["height"]) for item in helpers if item["waypoint"])
+    for (first, height), (second, _) in itertools.pairwise(tops):
+        require(
+            second - first >= page.evaluate("innerHeight") - height,
+            f"At most one character per phone screen: {route or 'home'}",
+        )
+
+
+def scroll_positions(page: "Page", width: int, errors: list[str]) -> None:
+    """Scroll the open page top, middle, tall navigation and bottom, then back to the top, checking each."""
+    for number, position in enumerate(("top", "middle", "navigation", "bottom", "top")):
+        page.evaluate(SETTLE, position)
+        page.wait_for_timeout(150)
+        both = width in (1440, 1920) and position == "top"
+        check_characters(page, f"{width}/{position}{number}", expect_both=both)
+        require(not errors, f"Character layout script errors at {width}/{position}: {errors}")
+        page.screenshot(path=str(REPORTS / f"helpers-{width}-{position}.png"))
+
+
 def helper_layout(browser: "Browser", base: str, snapshot: dict[str, Any], axe: Path) -> None:
     """Keep characters clear of the article, navigation and footer at every supported width, on every plugin page."""
     resource = next(
@@ -407,7 +429,12 @@ def helper_layout(browser: "Browser", base: str, snapshot: dict[str, Any], axe: 
     page = browser.new_page()
     offline(page, base)
     errors: list[str] = []
-    page.on("pageerror", lambda error: errors.append(str(error)))
+    # Browsers report "ResizeObserver loop" when any observer's callback changes layout (the gallery's does);
+    # the specification calls it benign, so only real script errors count here.
+    page.on(
+        "pageerror",
+        lambda error: errors.append(f"{page.url}: {error}") if "ResizeObserver loop" not in str(error) else None,
+    )
     try:
         for width in CHARACTER_WIDTHS:
             page.set_viewport_size({"width": width, "height": 844 if width < GUTTER_WIDTH else 960})
@@ -416,21 +443,10 @@ def helper_layout(browser: "Browser", base: str, snapshot: dict[str, Any], axe: 
                 settled(page)
                 helpers = check_characters(page, f"{width}/{route or 'home'}")
                 if width == 390:  # noqa: PLR2004
-                    tops = sorted((item["top"], item["height"]) for item in helpers)
-                    for (first, height), (second, _) in itertools.pairwise(tops):
-                        require(
-                            second - first >= page.evaluate("innerHeight") - height,
-                            f"At most one character per phone screen: {route or 'home'}",
-                        )
+                    one_per_phone_screen(page, helpers, route)
             page.goto(base + f"catalog/{resource['id']}/")
             settled(page)
-            for number, position in enumerate(("top", "middle", "navigation", "bottom", "top")):
-                page.evaluate(SETTLE, position)
-                page.wait_for_timeout(150)
-                both = width in (1440, 1920) and position == "top"
-                check_characters(page, f"{width}/{position}{number}", expect_both=both)
-                require(not errors, f"Character layout script errors at {width}/{position}")
-                page.screenshot(path=str(REPORTS / f"helpers-{width}-{position}.png"))
+            scroll_positions(page, width, errors)
             if width in (1440, 390):
                 audit(page, axe, f"helpers-{width}")
     finally:
