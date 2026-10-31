@@ -32,7 +32,6 @@ GENERATED = (
     "docs/CLI_REFERENCE.md",
     "docs/MODULES.md",
     "docs/CONFIGURATION.md",
-    "docs/plugins/*",
     "docs/catalog/*",
     "docs/_data/*",
     "docs/research/*",

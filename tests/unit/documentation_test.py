@@ -322,3 +322,8 @@ def test_operation_summaries_are_one_short_sentence_and_module_names_singular(ma
         if r.module.name.endswith("s") and r.module.name not in PLURAL_MODULE_NAMES
     ]
     assert not problems
+
+
+def test_the_core_hosts_no_generated_plugin_pages():
+    """Plugins document themselves in their own repositories; the catalog is the only plugin index (ADR 0094)."""
+    assert not (Path(__file__).resolve().parents[2] / "docs" / "plugins").exists()

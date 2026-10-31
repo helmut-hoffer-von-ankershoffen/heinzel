@@ -9,6 +9,8 @@ implemented-by: 135
 
 # 0082: Plugin documentation is generated from the kernel and recorded by the tooling every plugin shares
 
+*Since 0094 first-party plugins live in heinzel-plugins; the core site shows the catalog, not generated plugin pages.*
+
 ## Context and Problem Statement
 
 A plugin brings modules, and with them operations, settings, credentials, capabilities, themes, playbooks, jobs and,
