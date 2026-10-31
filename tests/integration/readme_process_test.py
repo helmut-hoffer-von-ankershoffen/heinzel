@@ -133,9 +133,13 @@ def test_guardian_kills_interrupt_ignoring_command_after_timeout(tmp_path, monke
     code = "import signal,time; signal.signal(signal.SIGINT,signal.SIG_IGN); print('READY',flush=True); time.sleep(60)"
     command = docs_test.GuardedCommand([sys.executable, "-I", "-c", code], env=None, cwd=tmp_path)
     try:
+        # The child's start-up is not what this measures, and on a loaded runner it takes longer than the wait below.
+        deadline = time.monotonic() + 10
+        while "READY" not in command.capture.text("stdout") and time.monotonic() < deadline:
+            command.capture.pump(0.05)
+        assert "READY" in command.capture.text("stdout")
         with pytest.raises(subprocess.TimeoutExpired):
             command.wait(0.4)
-        assert "READY" in command.capture.text("stdout")
     finally:
         original = command.wait
         monkeypatch.setattr(command, "wait", lambda seconds: original(min(seconds, 0.2)))
