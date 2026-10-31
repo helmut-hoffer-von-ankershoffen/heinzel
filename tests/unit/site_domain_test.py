@@ -15,8 +15,8 @@ OLD_DOMAIN = "hoffer-von-ankershoffen" + ".me"
 
 
 def _tracked_text_files() -> list[Path]:
-    listed = subprocess.run(  # noqa: S603 - fixed argv, no shell
-        ["git", "ls-files", "-z"],  # noqa: S607 - git from PATH
+    listed = subprocess.run(
+        ["git", "ls-files", "-z"],
         cwd=REPO,
         check=True,
         capture_output=True,
