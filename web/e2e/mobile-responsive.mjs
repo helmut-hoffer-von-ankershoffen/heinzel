@@ -1079,6 +1079,8 @@ try {
     await soundPage.screenshot({ path: join(shots, "mobile-compact-sound.png") });
     await soundPage.getByRole("button", { name: "Expand navigation" }).click();
     await player.waitFor();
+    // The player moves with the navigation's width transition: a tap during it can land beside the button.
+    await soundPage.waitForFunction(() => !document.getAnimations().some((run) => run instanceof CSSTransition));
     await popOut.tap();
     await soundPage.waitForFunction(() => document.querySelector('[data-dock="floating"]'));
     await soundPage.setViewportSize({ width: 360, height: 400 });
