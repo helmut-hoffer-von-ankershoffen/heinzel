@@ -26,7 +26,7 @@ you, which the team's owners merge. If the roster lists you without a login, cla
 
 Your team's plugin, the one `hz.yaml` names, is your layer: `hz system layer show` shows it stacked on your
 company's, org's and site's plugins ([Playbooks: layers](PLAYBOOKS.md#layers-company-org-site-team)). Install it with
-`hz system plugin add <plugin>`; another layer is yours with `hz system config set team.layer <layer>`.
+`hz system plugin add <plugin>`; another layer is yours with `hz system config set team.layer <layer>`. The step-by-step guide to joining is in [Joining a team](guides/joining.md).
 
 ## Create a team
 
