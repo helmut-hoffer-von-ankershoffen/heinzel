@@ -23,6 +23,11 @@ export function sessionToken(): string | null {
   return sessionStorage.getItem(KEY);
 }
 
+/** Forget this tab's session token, e.g. once `hz ui` started again and no longer knows it. */
+export function dropSessionToken(): void {
+  sessionStorage.removeItem(KEY);
+}
+
 /** This browser's device token, if it is paired. */
 export function deviceToken(): string | null {
   try {
