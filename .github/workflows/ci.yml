@@ -306,6 +306,13 @@ jobs:
           enable-cache: true
           cache-dependency-glob: uv.lock
           save-cache: ${{ github.ref == 'refs/heads/main' }} # pull requests reuse main's cache
+      - name: Reuse the browsers this lockfile's Playwright installs
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/ms-playwright
+            ~/Library/Caches/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('web/pnpm-lock.yaml') }}
       - name: Install browser runtimes and host dependencies
         run: make test-browser-deps
       # Keep the full pytest traceback in CI logs when a browser interaction flakes; the step wrapper's default tail
