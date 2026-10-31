@@ -62,6 +62,7 @@ ANNOUNCE = re.compile(r"(http://[^\s/]+)/#token=([A-Za-z0-9_-]+)")
 SYSTEMD_UNITS = ("hz-daemon.service", "hz-daemon.timer")
 FINAL_VERSION = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+")
 FETCH_HOSTS = {"github.com", "heinzel.team", "astral.sh", "pypi.org", "files.pythonhosted.org", "api.github.com"}
+UPGRADES_PLUGINS_ON_ADD = {"0.9.8", "0.9.9"}
 RELEASE_WHEEL_URL = re.compile(
     r"https://github\.com/helmut-hoffer-von-ankershoffen/heinzel/releases/download/"
     r"(?:v(?=[0-9.]+/)|edge-v(?=[0-9.]+\.dev))(?P<version>[0-9]+\.[0-9]+\.[0-9]+(?:\.dev[0-9]+)?)"
@@ -1264,7 +1265,9 @@ class Browser:
         active = self.profile / "DevToolsActivePort"
         while time.monotonic() < deadline and not active.is_file():
             self.process.pump(0.2)
-            check(self.process.status is None, "Chrome exited before it opened its DevTools endpoint")
+            if self.process.status is not None:
+                said = bytes(self.process.out["stderr"]).decode("utf-8", "replace")
+                fail(f"Chrome exited before it opened its DevTools endpoint: {tail(said)}")
         check(active.is_file(), "Chrome did not open its DevTools endpoint")
         port, path = active.read_text().split()[:2]
         check(int(port) != LIVE_PORT, "Chrome's debugging port collided with the live app's port")
@@ -1497,6 +1500,14 @@ def case_update(case):
 
     def prepare():
         hz(case, "system", "plugin", "add", "heinzel-example", "--confirm", label="user-plugin-add")
+        if old["version"] in UPGRADES_PLUGINS_ON_ADD:
+            # These releases upgrade the other plugins when one is added, so the starting state can be ahead of the
+            # app profile. Record that as a finding; from the fixed release on, the exact versions are required.
+            drift = {p: v["version"] for p, v in plugin_map(case, "versions-after-add").items()}
+            case.notes["known_plugin_drift_on_add"] = drift
+            expect_plugins(case)
+            for entry in case.plugins_expected.values():
+                entry["version"] = None
         hz(case, "system", "plugin", "disable", "heinzel-resource", label="user-disable")
         hz(case, "system", "config", "set", "clock.zones", '["Europe/Berlin","Asia/Tokyo"]', label="user-config")
         expect_plugins(case, heinzel_example={"enabled": True}, heinzel_resource={"enabled": False})
@@ -1652,7 +1663,36 @@ def ui_apply(browser, what):
     browser.click("button", "Restart and apply Plugins")
 
 
-def ui_add(browser, spec, shot, expect_detail):
+def ui_settle(browser, case):
+    """Wait out a restart, then be back on Settings -> Plugins, as a person would be.
+
+    A finished change's panel stays until the restarted server has taken over, and its reload closes Settings. The reload
+    can land just after Settings was opened again, so look a few times, until the list holds still.
+    """
+    browser.wait(
+        "!document.body.innerText.includes('Waiting for the replacement server')",
+        "the previous change's restart to finish",
+        180,
+    )
+    listed = "document.body.innerText.includes('Installed on this machine')"
+    problem = None
+    for _ in range(4):
+        try:
+            if not browser.evaluate(listed):
+                ui_open_plugins(browser, case)
+            time.sleep(5)
+            if browser.evaluate(listed):
+                return
+        except StepFailed as error:
+            problem = error
+            browser.shot("settle-settings-failed")
+            browser.press("Escape", "Escape", 27)
+            time.sleep(5)
+    fail(f"Settings -> Plugins did not stay open after the restart: {problem}")
+
+
+def ui_add(browser, case, spec, shot, expect_detail):
+    ui_settle(browser, case)
     if not browser.evaluate("!!document.querySelector(\"input[placeholder*='git+https']\")"):
         browser.click("button", "Add")
     browser.type_into("input[placeholder*='git+https']", spec)
@@ -1660,7 +1700,7 @@ def ui_add(browser, spec, shot, expect_detail):
     browser.wait("document.body.innerText.includes('Install this plugin?')", f"the preview of {spec}", 90)
     text = browser.evaluate("document.body.innerText")
     for fragment in expect_detail:
-        check(fragment in text, f"The preview of {spec} lacks {fragment!r}")
+        check(fragment in text, f"The preview of {spec} lacks {fragment!r}; the page says: {redact(text)[-500:]!r}")
     browser.shot(shot)
     return text
 
@@ -1717,7 +1757,7 @@ def case_plugin_ui(case):
 
     def install():
         browser = holder["browser"]
-        text = ui_add(browser, "heinzel-example", "02-install-preview", ["heinzel-example", "0.4.0"])
+        text = ui_add(browser, case, "heinzel-example", "02-install-preview", ["heinzel-example", "0.4.0"])
         ui_apply(browser, "the install")
         browser.wait(row_has("heinzel-example", "0.4.0"), "the new plugin's row at v0.4.0", 360)
         expect_plugins(case, heinzel_example={"enabled": True, "version": "0.4.0"})
@@ -1733,7 +1773,7 @@ def case_plugin_ui(case):
         browser = holder["browser"]
         results = {}
         for spec, expected, shot in (("heinzel-clock==0.9.2", "0.9.2", "04"), ("heinzel-clock", "0.9.3", "05")):
-            text = ui_add(browser, spec, f"{shot}-preview", ["heinzel-clock", expected])
+            text = ui_add(browser, case, spec, f"{shot}-preview", ["heinzel-clock", expected])
             check("Replaces" in text, f"The preview of {spec} does not say it replaces a version")
             ui_apply(browser, f"the {spec} change")
             browser.wait(row_has("heinzel-clock", expected), f"Clock at v{expected}", 360)
@@ -1744,6 +1784,7 @@ def case_plugin_ui(case):
 
     def remove():
         browser = holder["browser"]
+        ui_settle(browser, case)
         browser.click("button", "Remove heinzel-example")
         browser.wait("document.body.innerText.includes('Remove heinzel-example?')", "the removal question", 30)
         browser.shot("06-remove-ask")
