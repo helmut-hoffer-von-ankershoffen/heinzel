@@ -3,6 +3,7 @@
 import hashlib
 import importlib.util
 import io
+import json
 import os
 import re
 import stat
@@ -849,11 +850,30 @@ def test_plugin_ci_has_no_core_only_jobs_and_every_need_exists():
     assert "if" not in jobs["build"]
 
 
-def test_pull_requests_run_one_macos_python_and_ci_ok_waits_for_changes():
+def test_macos_cells_shard_by_level_and_ci_ok_waits_for_changes():
     jobs = yaml.safe_load((REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))["jobs"]
     include = jobs["test"]["strategy"]["matrix"]["include"]
-    assert "pull_request" in include
-    assert '[{"os":"macos-latest","python":"3.15"}]' in include
+    pull_request, schedule, otherwise = (
+        json.loads(cells)
+        for cells in re.fullmatch(
+            r"\$\{\{ fromJSON\(github\.event_name == 'pull_request' && '(.*)' "
+            r"\|\| github\.event_name == 'schedule' && '(.*)' \|\| '(.*)'\) \}\}",
+            include.strip(),
+        ).groups()
+    )
+    for cells, pythons in (
+        (pull_request, ["3.15"]),
+        (schedule, ["3.12", "3.13", "3.14", "3.15"]),
+        (otherwise, ["3.12", "3.15"]),
+    ):
+        assert cells == [
+            {"os": "macos-latest", "python": python, "levels": level}
+            for python in pythons
+            for level in ("unit", "integration")
+        ]
+    recipe = (REPO / "Makefile").read_text(encoding="utf-8").split("\ntest-parallel:", 1)[1].split("\n\n", 1)[0]
+    assert "-m '($(TEST_LEVELS)) and not perf'" in recipe
+    assert "--session-timeout=420" in recipe  # each shard has the cap the whole suite had
     assert {"changes", "notifier", "build"} <= set(jobs["ci-ok"]["needs"])
 
 
