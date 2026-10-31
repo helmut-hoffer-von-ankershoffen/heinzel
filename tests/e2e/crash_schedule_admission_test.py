@@ -21,7 +21,7 @@ from tests.integration.scheduled_connected_read_test import (
     _fixture,
 )
 
-pytestmark = pytest.mark.integration
+pytestmark = pytest.mark.e2e
 ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -72,7 +72,7 @@ def test_approved_schedule_survives_process_exit_and_revocation(make_kernel, tmp
         return subprocess.Popen(
             [
                 sys.executable,
-                str(ROOT / "tests/integration/crash_schedule_worker.py"),
+                str(ROOT / "tests/e2e/crash_schedule_worker.py"),
                 str(tmp_path),
                 session,
                 at.isoformat(),

@@ -428,3 +428,21 @@ def test_an_expired_body_blocks_but_its_owner_can_still_set_it_aside(tmp_path, m
         resolved = recovery.resolve(session, view.proposal.request_id, acknowledge_uncertain=True)
         assert resolved.status == "abandoned"
         assert recovery.unresolved_attempts(repo.control_read(session).events) == []
+
+
+def test_a_failed_scheduled_turn_appears_once_in_the_chat_until_something_settles(tmp_path):
+    current = CurrentUser(tmp_path / "identity")
+    with current.local("cli"):
+        crud = SessionCrud(
+            PersonalSessionRepository(current), lambda: SessionCosts(session_max_usd=2, message_max_usd=0.2)
+        )
+        session = crud.new_chat("new").session_id
+        schedules = AutonomousSchedules.__new__(AutonomousSchedules)
+        schedules.crud = crud
+        schedules._report_failed_turn(session, "An earlier outcome requires review")
+        schedules._report_failed_turn(session, "An earlier outcome requires review")
+        messages = crud.snapshot(session).messages
+        assert [(m.role, m.status, m.origin) for m in messages] == [("system", "failed", "daemon")]
+        assert messages[0].text == "A scheduled turn did not run: An earlier outcome requires review"
+        schedules._report_failed_turn(session, "Another reason")
+        assert len(crud.snapshot(session).messages) == 2
