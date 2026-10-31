@@ -129,9 +129,9 @@ body { font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFon
 .md-header .md-source,.md-header .md-source__facts,.md-header .md-source__fact { opacity:1; transition:none; animation:none; }
 .md-header .md-source__facts { color:var(--hz-muted); }
 
-.hz-screenshots, .hz-soundscapes { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr)); gap:1rem; }
-.hz-screenshots figure { min-width:0; margin:0; }
-.hz-screenshots img { width:100%; border-radius:8px; }
+.hz-soundscapes { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr)); gap:1rem; }
+.hz-screenshots figure { min-width:0; margin:0; scroll-snap-align:start; }
+.hz-screenshots img { display:block; width:100%; height:100%; object-fit:contain; }
 .hz-screenshots figcaption { color:var(--hz-muted); font-size:.75rem; }
 .hz-soundscape { min-width:0; padding:1rem; border:1px solid var(--hz-line); border-radius:8px; }
 .hz-soundscape iframe { display:block; width:100%; aspect-ratio:16/9; border:0; }
@@ -160,3 +160,22 @@ body { font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFon
 .md-typeset .hz-page-helper .hz-helper-name { color:var(--hz-muted); font-weight:650; font-size:.64rem; }
 .md-typeset .hz-page-helper .hz-helper-quote { font-size:.85rem; line-height:1.45; font-weight:550; }
 .hz-page-helper a { display:inline-flex; align-items:center; min-height:44px; font-size:.7rem; }
+
+
+/* Native touch/trackpad scrolling works without JavaScript; controls progressively enhance it. */
+.hz-gallery { min-width:0; margin:1rem 0 2rem; }
+.hz-screenshots { display:grid; grid-auto-flow:column; grid-auto-columns:calc(100% - 2.5rem); gap:1rem; overflow-x:auto; overscroll-behavior-x:contain; scroll-snap-type:x mandatory; scrollbar-width:thin; scrollbar-color:var(--hz-brand) var(--hz-tint); padding:.25rem .25rem 1rem; }
+.hz-screenshots:focus-visible { outline:3px solid var(--hz-brand); outline-offset:3px; border-radius:8px; }
+.hz-screenshots figure > a { display:block; aspect-ratio:16/10; overflow:hidden; border:1px solid var(--hz-line); border-radius:10px; background:var(--hz-tint); }
+.hz-screenshots figure > a:focus-visible { outline-offset:-4px; }
+.hz-screenshots figcaption { margin:.7rem 0 0; text-align:left; }
+.hz-gallery-surface { display:block; margin-bottom:.2rem; color:var(--hz-ink); font-size:.63rem; font-weight:700; }
+.hz-gallery-controls { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:.5rem; }
+.hz-gallery-controls button { min-height:44px; min-width:44px; padding:.4rem .8rem; border:1px solid var(--hz-line); border-radius:8px; background:var(--hz-panel); color:var(--hz-brand); font:inherit; font-size:.7rem; cursor:pointer; }
+.hz-gallery-controls button:disabled { color:var(--hz-muted); cursor:default; }
+.hz-gallery-controls button:not(:disabled):hover { background:var(--hz-tint); }
+.hz-gallery-controls [role="status"] { color:var(--hz-muted); font-size:.7rem; font-variant-numeric:tabular-nums; }
+.md-typeset .hz-gallery-hint { margin:.6rem 0; color:var(--hz-muted); font-size:.68rem; }
+@media(max-width:700px) { .hz-screenshots { grid-auto-columns:calc(100% - 1.5rem); gap:.6rem; } }
+
+.hz-screenshots:has(figure:only-child) { grid-auto-columns:100%; }

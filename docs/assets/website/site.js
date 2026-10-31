@@ -32,6 +32,46 @@
         }
       });
     });
+    document.querySelectorAll('[data-gallery]').forEach(gallery => {
+      if (gallery.dataset.ready) return;
+      gallery.dataset.ready = 'true';
+      const track = gallery.querySelector('[data-gallery-track]');
+      const slides = [...track.children];
+      const previous = gallery.querySelector('[data-gallery-previous]');
+      const next = gallery.querySelector('[data-gallery-next]');
+      const counter = gallery.querySelector('[data-gallery-count]');
+      gallery.querySelector('[data-gallery-controls]').hidden = slides.length < 2;
+      const position = slide => slide.offsetLeft - slides[0].offsetLeft;
+      let current = 0;
+      function update() {
+        current = slides.reduce((best, slide, index) =>
+          Math.abs(position(slide) - track.scrollLeft) < Math.abs(position(slides[best]) - track.scrollLeft)
+            ? index : best, 0);
+        previous.disabled = current === 0;
+        next.disabled = current === slides.length - 1;
+        const label = `${current + 1} of ${slides.length}`;
+        if (counter.textContent !== label) counter.textContent = label;
+      }
+      function go(index) {
+        const target = Math.max(0, Math.min(slides.length - 1, index));
+        track.scrollTo({
+          left: position(slides[target]),
+          behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth',
+        });
+      }
+      previous.addEventListener('click', () => go(current - 1));
+      next.addEventListener('click', () => go(current + 1));
+      track.addEventListener('scroll', update, { passive: true });
+      track.addEventListener('keydown', event => {
+        if (event.target !== track) return;
+        const targets = { ArrowLeft: current - 1, ArrowRight: current + 1, Home: 0, End: slides.length - 1 };
+        if (!(event.key in targets)) return;
+        event.preventDefault();
+        go(targets[event.key]);
+      });
+      new ResizeObserver(update).observe(track);
+      update();
+    });
     document.querySelectorAll('[data-play-soundscape]').forEach(button => {
       if (button.dataset.ready) return;
       button.dataset.ready = 'true';

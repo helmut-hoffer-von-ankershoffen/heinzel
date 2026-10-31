@@ -133,6 +133,42 @@ def catalog_flow(page: "Page", total: int) -> None:
     copy_command(page, "plugin-install")
 
 
+def gallery_flow(page: "Page", count: int) -> None:
+    """Navigate a real gallery with buttons, keyboard and native horizontal scrolling.
+
+    Raises:
+        SiteError: If the gallery cannot be navigated or makes the page overflow.
+    """
+    if count <= 1:
+        return
+    track = page.locator("[data-gallery-track]")
+    counter = page.locator("[data-gallery-count]")
+    previous = page.get_by_role("button", name="Previous screenshot", exact=True)
+    following = page.get_by_role("button", name="Next screenshot", exact=True)
+    expect(counter).to_have_text(f"1 of {count}")
+    expect(previous).to_be_disabled()
+    following.click()
+    expect(counter).to_have_text(f"2 of {count}")
+    track.focus()
+    track.press("End")
+    expect(counter).to_have_text(f"{count} of {count}")
+    expect(following).to_be_disabled()
+    track.press("Home")
+    expect(counter).to_have_text(f"1 of {count}")
+    track.scroll_into_view_if_needed()
+    box = track.bounding_box()
+    if box is None:
+        msg = "Screenshot gallery must be visible for horizontal scrolling"
+        raise SiteError(msg)
+    page.mouse.move(box["x"] + box["width"] / 2, box["y"] + min(80, box["height"] / 2))
+    page.mouse.wheel(1500, 0)
+    page.wait_for_function("document.querySelector('[data-gallery-track]').scrollLeft > 0")
+    require(
+        page.evaluate("document.documentElement.scrollWidth <= innerWidth + 1"),
+        "The gallery scrolls internally, never the whole page",
+    )
+
+
 def media_flow(page: "Page", base: str, snapshot: dict[str, Any]) -> None:
     """Check gallery images and explicit playback without contacting YouTube."""
     for project in snapshot["plugins"]:
@@ -154,6 +190,7 @@ def media_flow(page: "Page", base: str, snapshot: dict[str, Any]) -> None:
             )
             images = media.locator(".hz-screenshots img")
             require(images.count() == len(project.get("screenshots", [])), "Every declared capture must be visible")
+            gallery_flow(media, images.count())
             for image in images.all():
                 image.scroll_into_view_if_needed()
                 image.evaluate("image => image.decode()")

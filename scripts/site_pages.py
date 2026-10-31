@@ -314,21 +314,44 @@ def owner_art(project: Object) -> str:
 
 
 def screenshot_gallery(project: Object) -> str:
-    """Show runtime captures with their UI/CLI labels and full-size links."""
-    groups = []
-    for surface, label in (("ui", "User interface"), ("cli", "Command line")):
-        images = "".join(
-            f'<figure><a href="{escape(shot["url"])}" '
-            f'aria-label="Open full-size {escape(shot["caption"] or label + " screenshot")}">'
-            f'<img src="{escape(shot["url"])}" alt="{escape(shot["caption"] or label + " screenshot")}" '
+    """A native swipeable UI/CLI gallery, enhanced with explicit keyboard/button navigation."""
+    shots = project.get("screenshots", [])
+    if not shots:
+        return "## Screenshots\n\n<p>No screenshots published yet.</p>"
+    identity = escape(project["id"] + "-screenshots")
+    count = len(shots)
+    figures = []
+    for index, shot in enumerate(shots, 1):
+        label = "User interface" if shot["surface"] == "ui" else "Command line"
+        caption = escape(shot["caption"] or label + " screenshot")
+        figures.append(
+            f'<figure role="group" aria-roledescription="slide" aria-label="{index} of {count}">'
+            f'<a href="{escape(shot["url"])}" aria-label="Open full-size {caption}">'
+            f'<img src="{escape(shot["url"])}" alt="{caption}" '
             'loading="lazy" referrerpolicy="no-referrer"></a>'
-            f"<figcaption>{escape(shot['caption'] or label + ' screenshot')}</figcaption></figure>"
-            for shot in project.get("screenshots", [])
-            if shot["surface"] == surface
+            f'<figcaption><span class="hz-gallery-surface">{label}</span>{caption}</figcaption></figure>'
         )
-        content = f'<div class="hz-screenshots">{images}</div>' if images else "<p>No screenshots published yet.</p>"
-        groups.append(f"<h3>{label}</h3>{content}")
-    return "## Screenshots\n\n" + "\n".join(groups)
+    hint = (
+        f'<p class="hz-gallery-hint" id="{identity}-hint">Swipe or scroll sideways to explore. '
+        "Arrow keys work too; select an image to open it full size.</p>"
+        if count > 1
+        else f'<p class="hz-gallery-hint" id="{identity}-hint">Select the image to open it full size.</p>'
+    )
+    return (
+        "## Screenshots\n\n"
+        f'<section class="hz-gallery" data-gallery role="region" aria-roledescription="carousel" '
+        f'aria-label="{escape(project["title"])} screenshots">'
+        '<div class="hz-gallery-controls" data-gallery-controls hidden>'
+        f'<button type="button" data-gallery-previous aria-label="Previous screenshot" aria-controls="{identity}">'
+        '← Previous</button><span data-gallery-count role="status" aria-live="polite" aria-atomic="true">'
+        f"1 of {count}</span>"
+        f'<button type="button" data-gallery-next aria-label="Next screenshot" aria-controls="{identity}">'
+        f"Next →</button></div>{hint}"
+        f'<div class="hz-screenshots" id="{identity}" data-gallery-track tabindex="0" '
+        f'role="group" aria-label="Screenshot slides" aria-describedby="{identity}-hint">'
+        + "".join(figures)
+        + "</div></section>"
+    )
 
 
 def soundscape_gallery(project: Object) -> str:
