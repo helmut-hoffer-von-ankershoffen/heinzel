@@ -300,23 +300,11 @@ class ScheduledNotificationPage(BaseModel):
     next_cursor: int | None = Field(description="Exclusive cursor for the next page, if present.")
 
 
-class ScheduledNotificationRecovery:
-    """Owner inspection and explicit acknowledgment without ever replaying a notice."""
+class ScheduledNotificationInventory:
+    """Validate owner-scoped notification attempts without invoking a notification provider."""
 
-    def __init__(self, crud: SessionCrud, current: CurrentUser, notifications: Notifications) -> None:
-        self.crud, self.current, self.notifications = crud, current, notifications
-
-    def _owner(self, *, write: bool) -> None:
-        context = self.current.context()
-        required = "private:write" if write else "private:read"
-        if (
-            context.principal != self.current.owner()
-            or context.principal.id != self.crud.repository.principal_id
-            or context.authentication not in {"cli", "api-bearer", "web-session", "web-device"}
-            or required not in context.permissions
-        ):
-            msg = "This notification history requires its authenticated owner"
-            raise HeinzelError(msg)
+    def __init__(self, crud: SessionCrud) -> None:
+        self.crud = crud
 
     def validated_view(
         self, session: str, event: SessionEvent, events: list[SessionEvent]
@@ -326,6 +314,17 @@ class ScheduledNotificationRecovery:
         Raises:
             HeinzelError: If the saved identity or outcome cannot be verified.
         """
+        outcomes = [
+            later
+            for later in events
+            if later.kind in {"scheduled-notification.recorded", "scheduled-notification.abandoned"}
+            and later.key == event.key
+        ]
+        return self._validated_view(session, event, outcomes)
+
+    def _validated_view(
+        self, session: str, event: SessionEvent, outcomes: list[SessionEvent]
+    ) -> ScheduledNotificationView:
         proposal = NotificationProposal.model_validate(self.crud.read_body(session, event))
         expected = hashlib.sha256(
             f"{self.crud.repository.principal_id}\0{session}\0{proposal.topic}".encode()
@@ -351,12 +350,6 @@ class ScheduledNotificationRecovery:
         ):
             msg = "The scheduled notification record is inconsistent"
             raise HeinzelError(msg)
-        outcomes = [
-            later
-            for later in events
-            if later.kind in {"scheduled-notification.recorded", "scheduled-notification.abandoned"}
-            and later.key == event.key
-        ]
         if len(outcomes) > 1 or (outcomes and outcomes[0].seq <= event.seq):
             msg = "The scheduled notification outcome is inconsistent"
             raise HeinzelError(msg)
@@ -376,6 +369,50 @@ class ScheduledNotificationRecovery:
             else:
                 status = "recorded"
         return ScheduledNotificationView(proposal=proposal, seq=event.seq, status=status)
+
+    def validated_inventory(self, session: str, events: list[SessionEvent]) -> list[ScheduledNotificationView]:
+        """Validate all attempts in one journal scan, reading each attempt body once.
+
+        Raises:
+            HeinzelError: If attempts or outcomes are duplicate, orphaned, or invalid.
+        """
+        attempts: dict[str, SessionEvent] = {}
+        outcomes: dict[str, list[SessionEvent]] = {}
+        for event in events:
+            if event.kind == "scheduled-notification.attempted":
+                if event.key is None or event.key in attempts:
+                    msg = "The scheduled notification attempts are inconsistent"
+                    raise HeinzelError(msg)
+                attempts[event.key] = event
+            elif event.kind in {"scheduled-notification.recorded", "scheduled-notification.abandoned"}:
+                if event.key is None:
+                    msg = "The scheduled notification outcome is inconsistent"
+                    raise HeinzelError(msg)
+                outcomes.setdefault(event.key, []).append(event)
+        if any(key not in attempts for key in outcomes):
+            msg = "The scheduled notification outcome is inconsistent"
+            raise HeinzelError(msg)
+        return [self._validated_view(session, event, outcomes.get(key, [])) for key, event in attempts.items()]
+
+
+class ScheduledNotificationRecovery(ScheduledNotificationInventory):
+    """Owner inspection and explicit acknowledgment without ever replaying a notice."""
+
+    def __init__(self, crud: SessionCrud, current: CurrentUser, notifications: Notifications) -> None:
+        super().__init__(crud)
+        self.current, self.notifications = current, notifications
+
+    def _owner(self, *, write: bool) -> None:
+        context = self.current.context()
+        required = "private:write" if write else "private:read"
+        if (
+            context.principal != self.current.owner()
+            or context.principal.id != self.crud.repository.principal_id
+            or context.authentication not in {"cli", "api-bearer", "web-session", "web-device"}
+            or required not in context.permissions
+        ):
+            msg = "This notification history requires its authenticated owner"
+            raise HeinzelError(msg)
 
     def list(self, session: str, *, cursor: int = 0, limit: int = 20) -> ScheduledNotificationPage:
         """Read owner-scoped attempts, never inferring whether a native banner appeared.

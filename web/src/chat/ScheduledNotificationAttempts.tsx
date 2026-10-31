@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { api, problem } from "@/api/client";
 import { Button } from "@/components/ui/button";
 
@@ -15,6 +15,7 @@ export function ScheduledNotificationAttempts({ sessionId }: { sessionId: string
   const [cursor, setCursor] = useState(0);
   const [ack, setAck] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const inFlight = useRef(false);
   const [error, setError] = useState(false);
   const page = useQuery({
     queryKey: ["heinzel", "scheduled-notification-attempts", sessionId, cursor],
@@ -43,7 +44,8 @@ export function ScheduledNotificationAttempts({ sessionId }: { sessionId: string
     retry: false,
   });
   const resolve = async (requestId: string) => {
-    if (busy || ack !== requestId) return;
+    if (inFlight.current || busy || ack !== requestId) return;
+    inFlight.current = true;
     setBusy(true);
     setError(false);
     try {
@@ -63,17 +65,32 @@ export function ScheduledNotificationAttempts({ sessionId }: { sessionId: string
       setError(true);
       setAck(null);
     } finally {
-      await client.invalidateQueries({ queryKey: ["heinzel", "scheduled-notification-attempts", sessionId] });
-      setBusy(false);
+      setCursor(0);
+      try {
+        await client.invalidateQueries({ queryKey: ["heinzel", "scheduled-notification-attempts", sessionId] });
+      } finally {
+        inFlight.current = false;
+        setBusy(false);
+      }
     }
   };
   return (
     <section aria-label="Scheduled notification activity" className="space-y-2 rounded border border-border p-2">
       <h3 className="font-medium">Scheduled notification activity</h3>
       <p>Queued means recorded under local policy, not confirmed shown. Topics are model-chosen.</p>
-      <Button type="button" size="sm" variant="outline" onClick={() => void page.refetch()}>
+      <Button
+        type="button"
+        size="sm"
+        variant="outline"
+        onClick={() => {
+          setAck(null);
+          if (cursor === 0) void page.refetch();
+          else setCursor(0);
+        }}
+      >
         Refresh activity
       </Button>
+      {page.isPending && <p>Loading notification activity…</p>}
       {page.isError && <p role="alert">Notification activity could not be verified.</p>}
       {error && (
         <p role="alert">The outcome could not be verified. Refresh before choosing again; nothing is resent.</p>
@@ -89,8 +106,9 @@ export function ScheduledNotificationAttempts({ sessionId }: { sessionId: string
           {status === "unresolved" && (
             <div className="space-y-1">
               <p>
-                The notice may already have been queued. Recovery will inspect its receipt or set aside uncertainty; it
-                will not resend or undo it.
+                Future scheduled turns are blocked until this outcome is reviewed. The notice may already have been
+                queued and may still be delivered. Abandoning a chat turn does not resolve this notification. Recovery
+                will inspect its receipt or set aside uncertainty; it will not resend or undo it.
               </p>
               <label className="block">
                 <input
@@ -116,12 +134,28 @@ export function ScheduledNotificationAttempts({ sessionId }: { sessionId: string
       ))}
       <div className="flex flex-wrap gap-2">
         {cursor > 0 && (
-          <Button type="button" size="sm" variant="outline" onClick={() => setCursor(0)}>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              setAck(null);
+              setCursor(0);
+            }}
+          >
             First attempts
           </Button>
         )}
         {page.data?.next_cursor != null && (
-          <Button type="button" size="sm" variant="outline" onClick={() => setCursor(page.data?.next_cursor ?? 0)}>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              setAck(null);
+              setCursor(page.data?.next_cursor ?? 0);
+            }}
+          >
             More attempts
           </Button>
         )}

@@ -26,7 +26,7 @@ from heinzel.kernel._approval import (
 from heinzel.modules.heinzel._connected_grants import ConnectedGrant
 from heinzel.modules.heinzel._contract_review import ContractReview
 from heinzel.modules.heinzel._interactive_turn import interactive_turn_id
-from heinzel.modules.heinzel._scheduled_notifications import ScheduledNotificationPolicy
+from heinzel.modules.heinzel._scheduled_notifications import ScheduledNotificationInventory, ScheduledNotificationPolicy
 from heinzel.modules.heinzel._session_bodies import immutable_body
 from heinzel.modules.heinzel._session_crud import SessionCrud
 from heinzel.modules.heinzel._session_models import MessageRequest, RequestId, SessionId
@@ -507,6 +507,11 @@ class AutonomousSchedules:
 
     def _ensure_no_prior_pending(self, session: str, occurrence: str) -> None:
         events = self.crud.repository.control_read(session).events
+        recovery = ScheduledNotificationInventory(self.crud)
+        for view in recovery.validated_inventory(session, events):
+            if view.status == "unresolved":
+                msg = "An earlier notification outcome requires owner review before a scheduled turn"
+                raise HeinzelError(msg)
         for event in events:
             if event.kind != "message.accepted" or event.data.get("message_id") == occurrence:
                 continue

@@ -314,3 +314,93 @@ def test_observed_item_policy_cannot_activate_without_separate_approved_source(t
         assert not any(
             event.kind == "agent.schedule-proposed" for event in crud.repository.control_read(session).events
         )
+
+
+def test_bulk_inventory_linear_validation_and_inconsistent_outcomes(tmp_path, monkeypatch):
+    import hashlib
+
+    current = CurrentUser(tmp_path / "identity")
+    with current.local("cli"):
+        repo = PersonalSessionRepository(current)
+        crud = SessionCrud(repo, lambda: SessionCosts(session_max_usd=2, message_max_usd=0.2))
+        session = crud.new_chat("bulk").session_id
+        notice = FakeNotifications()
+        runner = ScheduledNotifications(
+            crud,
+            current,
+            notice,
+            session=session,
+            turn="original",
+            contract_sha256="a" * 64,
+            schedule_request="schedule",
+            schedule_sha256="b" * 64,
+            policy=ScheduledNotificationPolicy(max_per_24h=2, topic_cooldown_seconds=300),
+            verify=lambda: None,
+        )
+        with current.local("daemon"), repo.main_writer(session) as writer:
+            runner.send({"topic": "bulk", "title": "Title", "body": "Private"}, writer)
+        events = repo.control_read(session).events
+        attempt = next(e for e in events if e.kind == "scheduled-notification.attempted")
+        recorded = next(e for e in events if e.kind == "scheduled-notification.recorded")
+        template = crud.read_body(session, attempt)
+        owner = repo.principal_id
+        bodies = {}
+        attempts = []
+        outcomes = []
+        for n in range(200):
+            turn = f"turn-{n}"
+            topic = f"topic-{n}"
+            digest = hashlib.sha256(f"{owner}\0{session}\0{topic}".encode()).hexdigest()
+            key = "notice-" + hashlib.sha256(f"{owner}\0{session}\0{turn}\0{digest}".encode()).hexdigest()
+            bodies[key] = {**template, "topic": topic, "request_id": key}
+            attempts.append(
+                attempt.model_copy(
+                    update={"key": key, "turn": turn, "seq": n + 1, "data": {**attempt.data, "topic_sha256": digest}}
+                )
+            )
+            outcomes.append(recorded.model_copy(update={"key": key, "turn": turn, "seq": n + 201}))
+
+        class CountedEvents(list):
+            scans = 0
+
+            def __iter__(self):
+                self.scans += 1
+                return super().__iter__()
+
+        reads = []
+
+        def read_body(_session, event):
+            reads.append(event.key)
+            return bodies[event.key]
+
+        monkeypatch.setattr(crud, "read_body", read_body)
+        recovery = ScheduledNotificationRecovery(crud, current, notice)
+        journal = CountedEvents(attempts + outcomes)
+        views = recovery.validated_inventory(session, journal)
+        assert len(views) == 200
+        assert all(view.status == "recorded" for view in views)
+        assert journal.scans == 1
+        assert len(reads) == 200
+        assert len(set(reads)) == 200
+        assert recovery.validated_inventory(session, attempts + outcomes[:-1])[-1].status == "unresolved"
+        with pytest.raises(HeinzelError, match="inconsistent"):
+            recovery.validated_inventory(session, attempts + outcomes + [outcomes[0]])
+        with pytest.raises(HeinzelError, match="inconsistent"):
+            recovery.validated_inventory(session, [*attempts, attempts[0], *outcomes])
+        with pytest.raises(HeinzelError, match="inconsistent"):
+            recovery.validated_inventory(
+                session, attempts + outcomes + [outcomes[0].model_copy(update={"key": "orphan"})]
+            )
+
+        with pytest.raises(HeinzelError, match="inconsistent"):
+            recovery.validated_inventory(session, [*attempts, outcomes[0].model_copy(update={"seq": 1})])
+        with pytest.raises(HeinzelError, match="invalid"):
+            recovery.validated_inventory(
+                session,
+                [
+                    *attempts,
+                    outcomes[0].model_copy(
+                        update={"kind": "scheduled-notification.abandoned", "data": {"acknowledged": True}}
+                    ),
+                ],
+            )
