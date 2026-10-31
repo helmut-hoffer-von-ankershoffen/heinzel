@@ -1002,3 +1002,35 @@ def test_e2e_sequence_stops_after_readme_failure(tmp_path, first_fails):
     if not first_fails:
         assert "--deselect=tests/e2e/docs_test.py::test_readme_instructions" in commands[2]
     assert (result.returncode != 0) is first_fails
+
+
+@pytest.mark.parametrize(
+    ("event", "changed", "core"),
+    [
+        ("push", "docs/guides/install.md\nREADME.md\n", "false"),
+        ("push", "docs/assets/shot.png\n", "false"),
+        ("push", "docs/guides/install.md\nCHANGELOG.md\n", "true"),
+        ("push", "docs/install.sh\n", "true"),
+        ("push", "docs/guides/install.md\nsrc/heinzel/__init__.py\n", "true"),
+        ("push", "", "true"),
+        ("pull_request", "docs/guides/install.md\n", "true"),
+        ("schedule", "docs/guides/install.md\n", "true"),
+    ],
+)
+def test_only_a_prose_push_to_main_skips_the_core_jobs(tmp_path, event, changed, core):
+    jobs = yaml.safe_load((REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))["jobs"]
+    script = next(step["run"] for step in jobs["changes"]["steps"] if step.get("id") == "paths")
+    stubs = tmp_path / "bin"
+    stubs.mkdir()
+    git = stubs / "git"
+    git.write_text(f"#!/bin/sh\nprintf '{changed}'\n")
+    git.chmod(0o700)
+    output = tmp_path / "output"
+    subprocess.run(
+        ["bash", "-c", script],
+        env={"PATH": f"{stubs}:/usr/bin:/bin", "EVENT": event, "BASE": "base", "GITHUB_OUTPUT": str(output)},
+        cwd=tmp_path,
+        check=True,
+        timeout=4,
+    )
+    assert f"core={core}" in output.read_text().splitlines()
