@@ -42,7 +42,7 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
         "tar -xzf notifier.tar.gz": "unpacks Heinzel Notifier into the package before the wheel is built",
     },
     "acceptance.yml": {
-        "uv run --no-project --python 3.13 python -I scripts/acceptance/": (
+        "uv run --no-build --no-project --python 3.13 python -I scripts/acceptance/": (
             "installs the published core with the public commands on a hosted runner and writes the receipt"
         ),
     },
