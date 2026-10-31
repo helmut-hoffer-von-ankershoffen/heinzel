@@ -36,12 +36,14 @@ SNAPSHOT = ROOT / "docs" / "_data" / "catalog.json"
 REPOSITORY = re.compile(r"[A-Za-z0-9-]+/[A-Za-z0-9_.-]+")
 REVISION = re.compile(r"[a-f0-9]{40}")
 NAME = re.compile(r"[a-z0-9]+(?:[-_][a-z0-9]+)*")
+VIDEO = re.compile(r"[A-Za-z0-9_-]{11}")
 COLOR = re.compile(r"#[a-fA-F0-9]{6}")
 VERSION = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+")
 CATEGORIES = ("utilities", "connectors", "themes", "reference")
 MAX_BLOB = 96 * 1024
 MAX_RESPONSE = 12 * 1024 * 1024
 MAX_TREE = 12000
+MAX_SCREENSHOTS = 8
 MAX_ARTWORK = 2 * 1024 * 1024
 MAX_REPOSITORIES = 50
 MAX_PROJECTS = 500
@@ -231,6 +233,51 @@ def raw_url(source: Object, path: str) -> str:
     return f"https://raw.githubusercontent.com/{source['repository']}/{source['revision']}/{relative(path)}"
 
 
+def screenshot_data(source: Object, prefix: str, values: object) -> list[Object]:
+    """Read labeled runtime screenshots from an owning project's catalog declaration.
+
+    Raises:
+        ValueError: If screenshots are malformed, oversized or lack a UI/CLI label.
+    """
+    if values is None:
+        return []
+    if not isinstance(values, list) or len(values) > MAX_SCREENSHOTS:
+        msg = "Screenshots must be a list of at most eight UI/CLI images"
+        raise ValueError(msg)
+    result = []
+    for value in values:
+        item = object_data(value)
+        path = relative(item.get("path"))
+        if item.get("surface") not in {"ui", "cli"} or PurePosixPath(path).suffix not in {".png", ".jpg", ".webp"}:
+            msg = "Screenshots need a UI/CLI surface and a raster image"
+            raise ValueError(msg)
+        result.append(
+            {
+                "url": raw_url(source, prefix + path),
+                "surface": item["surface"],
+                "caption": text(item.get("caption", ""), 180),
+            }
+        )
+    return result
+
+
+def soundscape_data(path: str, data: Object) -> Object | None:
+    """Read a YouTube soundscape without loading its plugin or contacting YouTube."""
+    stream = object_data(data.get("stream"))
+    video = stream.get("video", "")
+    if data.get("kind") != "stream" or stream.get("provider") != "youtube":
+        return None
+    if not isinstance(video, str) or not VIDEO.fullmatch(video):
+        return None
+    return {
+        "name": text(data.get("name", "soundscape"), 80),
+        "title": text(data.get("title", "Soundscape"), 100),
+        "video": video,
+        "pairs_with": strings(data.get("pairs_with"), 24),
+        "path": path,
+    }
+
+
 def project_record(source: Object, path: str, data: Object) -> Object | None:
     """Describe any declared plugin, including one the site has never seen before."""
     project = object_data(data.get("project"))
@@ -270,6 +317,9 @@ def project_record(source: Object, path: str, data: Object) -> Object | None:
         "url": f"https://github.com/{source['repository']}/tree/{source['revision']}/{folder}",
         "install": f"hz system plugin add {shlex.quote(spec)}",
         "themes": [],
+        "screenshots": screenshot_data(source, prefix, presentation.get("screenshots")),
+        "soundscapes": [],
+        "soundscape_paths": [prefix + relative(p) for p in strings(presentation.get("soundscapes"), 24)],
         "theme_paths": [prefix + relative(p) for p in strings(presentation.get("themes"))],
         "artwork": [
             {"url": raw_url(source, prefix + relative(p)), "alt": text(presentation.get("title", name), 100)}
@@ -307,12 +357,40 @@ def project_themes(api: SourceBlobs, record: Object, data: Object, entries: dict
         )
         if theme:
             result.append(theme)
-    for artwork in record["artwork"]:
+    for artwork in [*record["artwork"], *record["screenshots"]]:
         path = artwork["url"].split(f"/{record['source']['revision']}/", 1)[1]
         entry = entries.get(path, {})
         if entry.get("mode") not in {"100644", "100755"} or entry.get("size", MAX_ARTWORK + 1) > MAX_ARTWORK:
             msg = "Artwork must be a regular, bounded file in its owning public project"
             raise ValueError(msg)
+    return result
+
+
+def project_soundscapes(api: SourceBlobs, record: Object, data: Object, entries: dict[str, Object]) -> list[Object]:
+    """Read declared soundscapes or inert TOML in explicitly packaged soundscape directories.
+
+    Raises:
+        ValueError: If a declared soundscape file is missing or unsafe.
+    """
+    declared = record.pop("soundscape_paths")
+    targets = object_data(object_data(object_data(data.get("tool")).get("hatch")).get("build"))
+    packages = strings(object_data(object_data(targets.get("targets")).get("wheel")).get("packages"))
+    # Hatch's default package location is derived from the distribution name, not imported.
+    packages = packages or ["src/" + record["name"].replace("-", "_")]
+    prefix = "" if record["directory"] == "." else record["directory"] + "/"
+    candidates = declared or [
+        p
+        for p in sorted(entries)
+        if any(p.startswith(prefix + relative(pkg) + "/soundscapes/") for pkg in packages) and p.endswith(".toml")
+    ]
+    result = []
+    for path in candidates[:24]:
+        if path not in entries:
+            msg = "A declared soundscape path does not exist in its public revision"
+            raise ValueError(msg)
+        value = soundscape_data(path, tomllib.loads(api.blob(record["source"]["repository"], entries[path]).decode()))
+        if value:
+            result.append(value)
     return result
 
 
@@ -356,6 +434,7 @@ def repository_records(api: GitHub, repo: str) -> tuple[Object, list[Object]]:
         record = project_record(source, path, data)
         if record is not None:
             record["themes"] = project_themes(reader, record, data, entries)
+            record["soundscapes"] = project_soundscapes(reader, record, data, entries)
             if record["themes"]:
                 record["category"] = "themes"
             records.append(record)
