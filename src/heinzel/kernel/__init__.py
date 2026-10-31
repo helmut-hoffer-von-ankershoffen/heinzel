@@ -173,6 +173,19 @@ from heinzel.kernel._playbooks import (
     PlaybookLet,
     PlaybookSetup,
 )
+from heinzel.kernel._prerequisites import (
+    PREREQUISITE_CONTEXTS,
+    PREREQUISITE_READY,
+    Homebrew,
+    ManualInstall,
+    PrerequisiteCheck,
+    PrerequisiteContext,
+    PrerequisiteDefinition,
+    PrerequisiteLet,
+    PrerequisiteReport,
+    PrerequisiteService,
+    PrerequisiteStatus,
+)
 from heinzel.kernel._presence import Presence
 from heinzel.kernel._progress import Emit, Progress
 from heinzel.kernel._prompter import INTERRUPT, Prompter, ScriptedPrompter, ScriptExhausted
@@ -315,6 +328,8 @@ __all__ = [
     "MCP_STDIO",
     "MODES",
     "NO_ADAPTER",
+    "PREREQUISITE_CONTEXTS",
+    "PREREQUISITE_READY",
     "PRIVATE_WRITE",
     "PROCESS_MAX_OUTPUT",
     "PROJECT_FILENAME",
@@ -409,6 +424,7 @@ __all__ = [
     "GraphicWidget",
     "HealthLet",
     "HeinzelError",
+    "Homebrew",
     "How",
     "Icon",
     "InfoLet",
@@ -443,6 +459,7 @@ __all__ = [
     "MailMessage",
     "MailQuery",
     "MailThread",
+    "ManualInstall",
     "McpChatSessions",
     "McpServer",
     "Meeting",
@@ -469,6 +486,13 @@ __all__ = [
     "PlaybookLet",
     "PlaybookSetup",
     "PostedMessage",
+    "PrerequisiteCheck",
+    "PrerequisiteContext",
+    "PrerequisiteDefinition",
+    "PrerequisiteLet",
+    "PrerequisiteReport",
+    "PrerequisiteService",
+    "PrerequisiteStatus",
     "Presence",
     "Principal",
     "ProcessExecute",

@@ -24,6 +24,7 @@ from packaging.version import InvalidVersion, Version
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from heinzel import Config, HeinzelError, Progress, Settings
+from heinzel.heads._prerequisites import prepare as prepare_tools
 from heinzel.heads._tool_install import (
     resolve_target,
     run_tool,
@@ -451,6 +452,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--profile", default=os.environ.get("HZ_APP_PROFILE"), help="Use an explicit app profile")
     parser.add_argument("--python", help="Install into this existing Python environment instead of a uv tool")
     parser.add_argument("--dry-run", action="store_true", help="Show the selected immutable composition")
+    parser.add_argument(
+        "--no-tools",
+        action="store_true",
+        help="Only check Git and the GitHub CLI; never install them with Homebrew",
+    )
     parser.add_argument("--history", type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
     try:
@@ -464,6 +470,10 @@ def main(argv: list[str] | None = None) -> int:
             f"Heinzelmännchen {profile.core_version}: "
             + ", ".join(f"{item.name} {item.version}" for item in selected)
             + "\n"
+        )
+        # Installing into an explicitly chosen Python is tooling, not a person's machine: look, never install.
+        pending = prepare_tools(
+            settings, install=not (args.dry_run or args.no_tools or args.python), write=sys.stderr.write
         )
         if args.dry_run:
             return 0
@@ -493,6 +503,12 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 1
     else:
+        if pending and not status:
+            sys.stderr.write(
+                "Heinzelmännchen is installed. Still missing:\n"
+                + "".join(line + "\n" for line in pending)
+                + "`hz system prerequisite check` confirms them once they are installed.\n"
+            )
         return status
 
 

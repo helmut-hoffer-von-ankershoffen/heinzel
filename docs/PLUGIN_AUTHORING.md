@@ -85,6 +85,57 @@ The toolkit checks the artifact's identity and compatibility range. Local wheel 
 After the compatible core is published, the same commands work without `CORE`. Set `TOOLING=<toolkit-wheel>` only
 when testing a candidate developer toolkit; normal projects use their immutable version and digest pin.
 
+## Declare the programs your plugin needs
+
+If a feature runs an external command line (a VPN client, a vendor CLI), declare it in the module that owns the
+feature. `hz setup`, doctor and the generated plugin page then check it, install it where they may, and document it,
+without Core knowing your provider:
+
+```python
+from heinzel import Homebrew, ManualInstall, Module, ModuleSettings
+
+
+class SharingSettings(ModuleSettings):
+    """Whether to share the workspace."""
+
+    enabled: bool = False
+
+
+module = Module("sharing", "Share the workspace.")
+module.settings(SharingSettings)
+
+
+def wanted(settings: SharingSettings) -> bool:
+    return settings.enabled
+
+
+module.prerequisite(
+    "vpn-tool",
+    title="VPN tool",
+    purpose="Shares the workspace over your private network.",
+    when="feature",
+    needed=wanted,
+    condition="Sharing is turned on.",
+    macos=Homebrew("vpn-tool"),
+    linux=ManualInstall("Install the VPN tool from your distribution.", "https://example.org/vpn-tool/install"),
+)
+```
+
+`when` says how early the program is needed: `install` (every standard app), `setup` (the module's setup step) or
+`feature` (only when `needed`, a read-only predicate over settings, says the person's selection requires it).
+`condition` is the same condition in words; documentation shows it and never runs your predicate. The generic engine
+runs `vpn-tool --version` (`version_args` may start with `--version`, `-version`, `-V` or `version`), accepts the
+first copy that answers and meets `minimum_version`, and on macOS installs a missing `Homebrew` formula or cask after
+the person agreed. Linux, a missing Homebrew and a `ManualInstall` only show your steps. Text and links are one plain
+line each. Do not sign anyone in from a prerequisite: keep sign-in in
+your own setup step.
+
+A step that has prerequisites runs after they are ready; `hz setup` checks them first. Removing your plugin never
+removes the program. `hz system plugin docs build` writes a Prerequisites table from the same declaration, so the page
+cannot drift from what the code does. Test a declaration with `hz system prerequisite check --owner <module>`
+(`HZ_SHARING__ENABLED=1` selects the example above; `--context feature` asks for a `feature` program that has no
+predicate) and `hz system prerequisite list --json`, against the released SDK; no Core checkout is needed.
+
 ## Choose public or private hosting
 
 First commit the scaffold and your feature. Then create exactly one repository:

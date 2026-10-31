@@ -5879,6 +5879,25 @@
         "title": "HintView",
         "type": "object"
       },
+      "Homebrew": {
+        "description": "One named formula or cask; its dependencies are resolved by Homebrew, without a shell script.",
+        "properties": {
+          "cask": {
+            "default": false,
+            "title": "Cask",
+            "type": "boolean"
+          },
+          "package": {
+            "title": "Package",
+            "type": "string"
+          }
+        },
+        "required": [
+          "package"
+        ],
+        "title": "Homebrew",
+        "type": "object"
+      },
       "InputSnapshotPage": {
         "description": "Bounded recent snapshot observations; not a complete event history.",
         "properties": {
@@ -6901,6 +6920,25 @@
         "title": "Login",
         "type": "object"
       },
+      "ManualInstall": {
+        "description": "Owner-provided instructions and an optional HTTPS link; these are displayed, never executed.",
+        "properties": {
+          "instructions": {
+            "title": "Instructions",
+            "type": "string"
+          },
+          "url": {
+            "default": "",
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "instructions"
+        ],
+        "title": "ManualInstall",
+        "type": "object"
+      },
       "Measurements": {
         "description": "A contract's success test so far: its drafts, how long drafting took and how much was changed.",
         "properties": {
@@ -7314,6 +7352,14 @@
               "$ref": "#/components/schemas/OperationDoc"
             },
             "title": "Operations",
+            "type": "array"
+          },
+          "prerequisites": {
+            "description": "The external programs it needs.",
+            "items": {
+              "$ref": "#/components/schemas/PrerequisiteDoc"
+            },
+            "title": "Prerequisites",
             "type": "array"
           },
           "qualname": {
@@ -9576,6 +9622,260 @@
           "after"
         ],
         "title": "PluginUpdate",
+        "type": "object"
+      },
+      "PrerequisiteCheck": {
+        "description": "An observed tool state, separate from Python package installation and account authentication.",
+        "properties": {
+          "automatic": {
+            "default": false,
+            "description": "Whether `install` would run a package manager for this tool on this machine.",
+            "title": "Automatic",
+            "type": "boolean"
+          },
+          "detail": {
+            "default": "",
+            "description": "What was checked or what remains to do.",
+            "title": "Detail",
+            "type": "string"
+          },
+          "path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Resolved usable executable, when present.",
+            "title": "Path"
+          },
+          "requirement": {
+            "$ref": "#/components/schemas/PrerequisiteDefinition",
+            "description": "The selected module-owned declaration."
+          },
+          "status": {
+            "description": "Observed readiness or the outcome of an explicit action.",
+            "enum": [
+              "available",
+              "missing",
+              "incompatible",
+              "manual",
+              "installed",
+              "failed",
+              "skipped"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Locally observed version, when recognized.",
+            "title": "Version"
+          }
+        },
+        "required": [
+          "requirement",
+          "status"
+        ],
+        "title": "PrerequisiteCheck",
+        "type": "object"
+      },
+      "PrerequisiteDefinition": {
+        "description": "Portable metadata for people, setup and catalogs; it contains no executable condition callback.",
+        "properties": {
+          "condition": {
+            "default": "",
+            "description": "Human-readable condition, without executing provider code.",
+            "title": "Condition",
+            "type": "string"
+          },
+          "linux": {
+            "$ref": "#/components/schemas/ManualInstall",
+            "description": "Instructions Linux users carry out themselves."
+          },
+          "macos": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Homebrew"
+              },
+              {
+                "$ref": "#/components/schemas/ManualInstall"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "macOS package recipe or manual guidance.",
+            "title": "Macos"
+          },
+          "minimum_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Oldest compatible version, when declared.",
+            "title": "Minimum Version"
+          },
+          "module": {
+            "description": "The qualified module that owns this requirement.",
+            "title": "Module",
+            "type": "string"
+          },
+          "name": {
+            "description": "Executable name.",
+            "title": "Name",
+            "type": "string"
+          },
+          "plugin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Owning plugin distribution; none for Core.",
+            "title": "Plugin"
+          },
+          "purpose": {
+            "description": "Why the owner needs this tool.",
+            "title": "Purpose",
+            "type": "string"
+          },
+          "title": {
+            "description": "Human-readable tool name.",
+            "title": "Title",
+            "type": "string"
+          },
+          "when": {
+            "description": "Installation, setup or explicitly selected feature context.",
+            "enum": [
+              "install",
+              "setup",
+              "feature"
+            ],
+            "title": "When",
+            "type": "string"
+          }
+        },
+        "required": [
+          "module",
+          "name",
+          "title",
+          "purpose",
+          "when",
+          "macos",
+          "linux"
+        ],
+        "title": "PrerequisiteDefinition",
+        "type": "object"
+      },
+      "PrerequisiteDoc": {
+        "description": "An external program a module needs: what it is for, when, and how it gets onto the machine (ADR 0112).",
+        "properties": {
+          "check": {
+            "description": "How to see whether it is usable, e.g. `hz system prerequisite check --owner clock`.",
+            "title": "Check",
+            "type": "string"
+          },
+          "condition": {
+            "description": "When a selection makes it necessary; empty when it always is.",
+            "title": "Condition",
+            "type": "string"
+          },
+          "executable": {
+            "description": "The command name, e.g. `gh`.",
+            "title": "Executable",
+            "type": "string"
+          },
+          "linux": {
+            "description": "What to do by hand on Linux; hz installs nothing there.",
+            "title": "Linux",
+            "type": "string"
+          },
+          "macos": {
+            "description": "What hz does on macOS: the Homebrew command, or the owner's instructions.",
+            "title": "Macos",
+            "type": "string"
+          },
+          "minimum_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The oldest compatible version, when the module names one.",
+            "title": "Minimum Version"
+          },
+          "purpose": {
+            "description": "What the module uses it for.",
+            "title": "Purpose",
+            "type": "string"
+          },
+          "title": {
+            "description": "The tool's name for people, e.g. `GitHub CLI`.",
+            "title": "Title",
+            "type": "string"
+          },
+          "when": {
+            "description": "`install`, `setup` or `feature`: how early the module asks for it.",
+            "title": "When",
+            "type": "string"
+          }
+        },
+        "required": [
+          "executable",
+          "title",
+          "purpose",
+          "when",
+          "condition",
+          "minimum_version",
+          "macos",
+          "linux",
+          "check"
+        ],
+        "title": "PrerequisiteDoc",
+        "type": "object"
+      },
+      "PrerequisiteReport": {
+        "description": "One context's actual readiness; instructions and installer exit codes do not establish success.",
+        "properties": {
+          "checks": {
+            "description": "Per-owner results, including pending manual work.",
+            "items": {
+              "$ref": "#/components/schemas/PrerequisiteCheck"
+            },
+            "title": "Checks",
+            "type": "array"
+          },
+          "ready": {
+            "description": "Whether every selected requirement has a verified compatible executable.",
+            "title": "Ready",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ready",
+          "checks"
+        ],
+        "title": "PrerequisiteReport",
         "type": "object"
       },
       "Profile": {
@@ -23512,6 +23812,141 @@
           }
         },
         "summary": "Find plugins to install: first-party ones, and community ones by querying the GitHub API.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/prerequisite/check": {
+      "get": {
+        "description": "Check locally whether the declared tools are usable, without installing anything or signing in.",
+        "operationId": "system_prerequisite_check",
+        "parameters": [
+          {
+            "description": "Qualified module that declares the tool; every enabled module if left out.",
+            "in": "query",
+            "name": "owner",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Qualified module that declares the tool; every enabled module if left out.",
+              "title": "Owner"
+            }
+          },
+          {
+            "description": "`install`: the standard app; `setup`: also what setup needs; `feature`: also named features.",
+            "in": "query",
+            "name": "context",
+            "required": false,
+            "schema": {
+              "default": "setup",
+              "description": "`install`: the standard app; `setup`: also what setup needs; `feature`: also named features.",
+              "enum": [
+                "install",
+                "setup",
+                "feature"
+              ],
+              "title": "Context",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrerequisiteReport"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrerequisiteReport"
+                }
+              }
+            },
+            "description": "The result, when its exit code is non-zero."
+          }
+        },
+        "summary": "Check locally whether the declared tools are usable, without installing anything or signing in.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/prerequisite/list": {
+      "get": {
+        "description": "List the external tools modules declare and how each is installed, without checking this machine.",
+        "operationId": "system_prerequisite_list",
+        "parameters": [
+          {
+            "description": "Qualified module that declares the tool; every enabled module if left out.",
+            "in": "query",
+            "name": "owner",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Qualified module that declares the tool; every enabled module if left out.",
+              "title": "Owner"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PrerequisiteDefinition"
+                  },
+                  "title": "Response System Prerequisite List",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List the external tools modules declare and how each is installed, without checking this machine.",
         "tags": [
           "system"
         ]

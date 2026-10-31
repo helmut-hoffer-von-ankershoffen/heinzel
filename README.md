@@ -97,6 +97,8 @@ and ignores `UV_PYTHON` for that installation step. Remove system-only `UV_NO_MA
 `UV_PYTHON_PREFERENCE` environment settings before installing. If Python downloads are disabled, first install a
 compatible uv-managed Python. Refreshes keep the app's verified existing interpreter.
 On Linux, standard installation needs an accessible systemd user manager in your user session.
+When Git or the GitHub CLI is missing, the installer installs it with Homebrew on macOS if Homebrew is there, and
+explains the steps otherwise and on Linux; installing `gh` never signs you in (see [the install guide](docs/guides/install.md#tools-the-app-uses)).
 For a minimal core with no plugins use
 `uv tool install heinzel`. The installer selects the newest published standard app and verifies its artifacts;
 `hz system update` then moves core to the latest PyPI
@@ -228,6 +230,7 @@ rights; `hz system daemon pause` and `uninstall` stop them (see [SECURITY.md](SE
 - [`system.notify`](docs/MODULES.md#systemnotify) — Pop up what deserves your attention: in the web app while it is open, else natively.
 - [`system.plugin`](docs/MODULES.md#systemplugin) — Find, add, remove, enable, disable, list and scaffold plugins.
 - [`system.plugin.docs`](docs/MODULES.md#systemplugindocs) — Document installed plugins: what each brings, as a model and as Markdown pages.
+- [`system.prerequisite`](docs/MODULES.md#systemprerequisite) — Inspect and prepare the external tools modules need.
 - [`system.runner`](docs/MODULES.md#systemrunner) — Run bounded agent sessions with Claude Code or a configured command.
 - [`system.runner.chat`](docs/MODULES.md#systemrunnerchat) — Chat with the agent runner about where you are; it acts through hz once you confirm.
 - [`system.skill`](docs/MODULES.md#systemskill) — List the skills plugins ship for AI, and hand chosen ones to Claude Code.

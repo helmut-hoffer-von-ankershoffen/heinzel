@@ -14,6 +14,8 @@ import pytest
 from heinzel import Config, Kernel, Module, ModuleRecord, Settings
 from heinzel.kernel import Origin, discover
 from heinzel.modules.org import _discovery as discovery
+from heinzel.modules.system.prerequisite._host import ToolHost
+from tests._prerequisite_machine import ready_everywhere
 
 TEST_ORIGIN = Origin(distribution="heinzel-test", version="9.9.9", builtin=False)
 
@@ -23,6 +25,17 @@ def _no_machine_profile(monkeypatch: pytest.MonkeyPatch) -> None:
     """No test finds the developer's GitHub or Google login, time zone or Claude Code (or asks gh and gws)."""
     monkeypatch.setattr(discovery, "discover", discovery.Discovered)
     monkeypatch.setattr(discovery, "_run", lambda args: None)  # and no later caller reaches the real CLIs
+
+
+@pytest.fixture(autouse=True)
+def _no_real_homebrew(monkeypatch: pytest.MonkeyPatch) -> None:
+    """No test reaches the Homebrew or the tools of the machine it runs on (ADR 0112).
+
+    The machine the prerequisite engine looks at is a Linux host where every tool is present and prints a version, so
+    results do not depend on what the developer installed and nothing is ever installed. Tests about the engine, the
+    installer or setup describe their own machine (`tests/_prerequisite_machine.py`).
+    """
+    monkeypatch.setattr(ToolHost, "system", classmethod(lambda cls: ready_everywhere()))
 
 
 @pytest.fixture

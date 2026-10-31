@@ -2519,6 +2519,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/system/prerequisite/check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Check locally whether the declared tools are usable, without installing anything or signing in.
+         * @description Check locally whether the declared tools are usable, without installing anything or signing in.
+         */
+        get: operations["system_prerequisite_check"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/prerequisite/list": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the external tools modules declare and how each is installed, without checking this machine.
+         * @description List the external tools modules declare and how each is installed, without checking this machine.
+         */
+        get: operations["system_prerequisite_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/system/release": {
         parameters: {
             query?: never;
@@ -6672,6 +6712,19 @@ export interface components {
             window: string | null;
         };
         /**
+         * Homebrew
+         * @description One named formula or cask; its dependencies are resolved by Homebrew, without a shell script.
+         */
+        Homebrew: {
+            /**
+             * Cask
+             * @default false
+             */
+            cask: boolean;
+            /** Package */
+            package: string;
+        };
+        /**
          * InputSnapshotPage
          * @description Bounded recent snapshot observations; not a complete event history.
          */
@@ -7308,6 +7361,19 @@ export interface components {
             site: string;
         };
         /**
+         * ManualInstall
+         * @description Owner-provided instructions and an optional HTTPS link; these are displayed, never executed.
+         */
+        ManualInstall: {
+            /** Instructions */
+            instructions: string;
+            /**
+             * Url
+             * @default
+             */
+            url: string;
+        };
+        /**
          * Measurements
          * @description A contract's success test so far: its drafts, how long drafting took and how much was changed.
          */
@@ -7554,6 +7620,11 @@ export interface components {
              * @description Its operations, in declaration order.
              */
             operations: components["schemas"]["OperationDoc"][];
+            /**
+             * Prerequisites
+             * @description The external programs it needs.
+             */
+            prerequisites?: components["schemas"]["PrerequisiteDoc"][];
             /**
              * Qualname
              * @description The qualified name, e.g. `system.plugin`.
@@ -8826,6 +8897,164 @@ export interface components {
              * @enum {string}
              */
             status: "upgraded" | "unchanged" | "failed";
+        };
+        /**
+         * PrerequisiteCheck
+         * @description An observed tool state, separate from Python package installation and account authentication.
+         */
+        PrerequisiteCheck: {
+            /**
+             * Automatic
+             * @description Whether `install` would run a package manager for this tool on this machine.
+             * @default false
+             */
+            automatic: boolean;
+            /**
+             * Detail
+             * @description What was checked or what remains to do.
+             * @default
+             */
+            detail: string;
+            /**
+             * Path
+             * @description Resolved usable executable, when present.
+             */
+            path?: string | null;
+            /** @description The selected module-owned declaration. */
+            requirement: components["schemas"]["PrerequisiteDefinition"];
+            /**
+             * Status
+             * @description Observed readiness or the outcome of an explicit action.
+             * @enum {string}
+             */
+            status: "available" | "missing" | "incompatible" | "manual" | "installed" | "failed" | "skipped";
+            /**
+             * Version
+             * @description Locally observed version, when recognized.
+             */
+            version?: string | null;
+        };
+        /**
+         * PrerequisiteDefinition
+         * @description Portable metadata for people, setup and catalogs; it contains no executable condition callback.
+         */
+        PrerequisiteDefinition: {
+            /**
+             * Condition
+             * @description Human-readable condition, without executing provider code.
+             * @default
+             */
+            condition: string;
+            /** @description Instructions Linux users carry out themselves. */
+            linux: components["schemas"]["ManualInstall"];
+            /**
+             * Macos
+             * @description macOS package recipe or manual guidance.
+             */
+            macos: components["schemas"]["Homebrew"] | components["schemas"]["ManualInstall"] | null;
+            /**
+             * Minimum Version
+             * @description Oldest compatible version, when declared.
+             */
+            minimum_version?: string | null;
+            /**
+             * Module
+             * @description The qualified module that owns this requirement.
+             */
+            module: string;
+            /**
+             * Name
+             * @description Executable name.
+             */
+            name: string;
+            /**
+             * Plugin
+             * @description Owning plugin distribution; none for Core.
+             */
+            plugin?: string | null;
+            /**
+             * Purpose
+             * @description Why the owner needs this tool.
+             */
+            purpose: string;
+            /**
+             * Title
+             * @description Human-readable tool name.
+             */
+            title: string;
+            /**
+             * When
+             * @description Installation, setup or explicitly selected feature context.
+             * @enum {string}
+             */
+            when: "install" | "setup" | "feature";
+        };
+        /**
+         * PrerequisiteDoc
+         * @description An external program a module needs: what it is for, when, and how it gets onto the machine (ADR 0112).
+         */
+        PrerequisiteDoc: {
+            /**
+             * Check
+             * @description How to see whether it is usable, e.g. `hz system prerequisite check --owner clock`.
+             */
+            check: string;
+            /**
+             * Condition
+             * @description When a selection makes it necessary; empty when it always is.
+             */
+            condition: string;
+            /**
+             * Executable
+             * @description The command name, e.g. `gh`.
+             */
+            executable: string;
+            /**
+             * Linux
+             * @description What to do by hand on Linux; hz installs nothing there.
+             */
+            linux: string;
+            /**
+             * Macos
+             * @description What hz does on macOS: the Homebrew command, or the owner's instructions.
+             */
+            macos: string;
+            /**
+             * Minimum Version
+             * @description The oldest compatible version, when the module names one.
+             */
+            minimum_version: string | null;
+            /**
+             * Purpose
+             * @description What the module uses it for.
+             */
+            purpose: string;
+            /**
+             * Title
+             * @description The tool's name for people, e.g. `GitHub CLI`.
+             */
+            title: string;
+            /**
+             * When
+             * @description `install`, `setup` or `feature`: how early the module asks for it.
+             */
+            when: string;
+        };
+        /**
+         * PrerequisiteReport
+         * @description One context's actual readiness; instructions and installer exit codes do not establish success.
+         */
+        PrerequisiteReport: {
+            /**
+             * Checks
+             * @description Per-owner results, including pending manual work.
+             */
+            checks: components["schemas"]["PrerequisiteCheck"][];
+            /**
+             * Ready
+             * @description Whether every selected requirement has a verified compatible executable.
+             */
+            ready: boolean;
         };
         /**
          * Profile
@@ -13869,6 +14098,7 @@ export type SchemaHeinzelList = components['schemas']['HeinzelList'];
 export type SchemaHeinzelSummary = components['schemas']['HeinzelSummary'];
 export type SchemaHintProblem = components['schemas']['HintProblem'];
 export type SchemaHintView = components['schemas']['HintView'];
+export type SchemaHomebrew = components['schemas']['Homebrew'];
 export type SchemaInputSnapshotPage = components['schemas']['InputSnapshotPage'];
 export type SchemaInputSnapshotView = components['schemas']['InputSnapshotView'];
 export type SchemaInstalled = components['schemas']['Installed'];
@@ -13892,6 +14122,7 @@ export type SchemaLiveTime = components['schemas']['LiveTime'];
 export type SchemaLiveUntil = components['schemas']['LiveUntil'];
 export type SchemaLogLine = components['schemas']['LogLine'];
 export type SchemaLogin = components['schemas']['Login'];
+export type SchemaManualInstall = components['schemas']['ManualInstall'];
 export type SchemaMeasurements = components['schemas']['Measurements'];
 export type SchemaMemberView = components['schemas']['MemberView'];
 export type SchemaMessageAccepted = components['schemas']['MessageAccepted'];
@@ -13933,6 +14164,10 @@ export type SchemaPluginOperation = components['schemas']['PluginOperation'];
 export type SchemaPluginPage = components['schemas']['PluginPage'];
 export type SchemaPluginSearch = components['schemas']['PluginSearch'];
 export type SchemaPluginUpdate = components['schemas']['PluginUpdate'];
+export type SchemaPrerequisiteCheck = components['schemas']['PrerequisiteCheck'];
+export type SchemaPrerequisiteDefinition = components['schemas']['PrerequisiteDefinition'];
+export type SchemaPrerequisiteDoc = components['schemas']['PrerequisiteDoc'];
+export type SchemaPrerequisiteReport = components['schemas']['PrerequisiteReport'];
 export type SchemaProfile = components['schemas']['Profile'];
 export type SchemaProfileProposal = components['schemas']['ProfileProposal'];
 export type SchemaProgressWidget = components['schemas']['ProgressWidget'];
@@ -17733,6 +17968,81 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PluginSearch"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_prerequisite_check: {
+        parameters: {
+            query?: {
+                /** @description Qualified module that declares the tool; every enabled module if left out. */
+                owner?: string | null;
+                /** @description `install`: the standard app; `setup`: also what setup needs; `feature`: also named features. */
+                context?: "install" | "setup" | "feature";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PrerequisiteReport"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description The result, when its exit code is non-zero. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PrerequisiteReport"];
+                };
+            };
+        };
+    };
+    system_prerequisite_list: {
+        parameters: {
+            query?: {
+                /** @description Qualified module that declares the tool; every enabled module if left out. */
+                owner?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PrerequisiteDefinition"][];
                 };
             };
             /** @description Validation Error */

@@ -4,7 +4,7 @@ from typing import Annotated, Literal
 
 from pydantic import Field
 
-from heinzel import Kernel, Module
+from heinzel import Homebrew, Kernel, ManualInstall, Module
 from heinzel.kernel import CoreMetadataVerifier, DaemonInstallationLifecycle, Installation, ReleaseSource
 from heinzel.modules.system._metadata_identity import CoreMetadataIdentity
 from heinzel.modules.system._models import (
@@ -31,6 +31,31 @@ def _update_service(installation: Installation, releases: ReleaseSource, kernel:
 
 module.service(UpdateService, _update_service)
 module.service(ReleaseSource, github_releases)  # what the CLI's hourly update check asks (ADR 0031)
+
+# The baseline of the standard app (ADR 0112); installing them never signs anyone in.
+module.prerequisite(
+    "git",
+    title="Git",
+    purpose="Clones team repositories and plugin sources and keeps shared state in version control.",
+    when="install",
+    macos=Homebrew("git"),
+    linux=ManualInstall(
+        "Install Git with your distribution's package manager, e.g. `sudo apt install git` or `sudo dnf install git`.",
+        "https://git-scm.com/downloads/linux",
+    ),
+)
+module.prerequisite(
+    "gh",
+    title="GitHub CLI",
+    purpose="Reads team rosters and plugin sources on GitHub and opens pull requests as you; "
+    "sign in separately with `gh auth login`.",
+    when="install",
+    macos=Homebrew("gh"),
+    linux=ManualInstall(
+        "Install the GitHub CLI for your distribution (https://github.com/cli/cli/blob/trunk/docs/install_linux.md).",
+        "https://cli.github.com",
+    ),
+)
 
 
 @module.operation(render=render_info)

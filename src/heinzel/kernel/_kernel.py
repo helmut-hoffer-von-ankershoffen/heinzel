@@ -45,6 +45,7 @@ from heinzel.kernel._local_web import LocalWebRuntime
 from heinzel.kernel._module import Module
 from heinzel.kernel._org import OrgContext
 from heinzel.kernel._playbooks import PlaybookLet
+from heinzel.kernel._prerequisites import PrerequisiteLet
 from heinzel.kernel._progress import Progress
 from heinzel.kernel._prompter import Prompter
 from heinzel.kernel._services import ServiceContract
@@ -56,7 +57,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-ADAPTER_ONLY_LETS = (ProviderLet, RequirementLet, SettingsLet, CredentialLet, LayerLet)
+ADAPTER_ONLY_LETS = (ProviderLet, RequirementLet, SettingsLet, CredentialLet, LayerLet, PrerequisiteLet)
 """Lets that leave a module adapter-only: none of them runs code that could use the module's requirements, so its
 needs count only while one of its adapters serves someone. Any other let, including kinds added later, makes them
 count always."""

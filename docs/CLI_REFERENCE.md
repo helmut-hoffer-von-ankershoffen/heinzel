@@ -1591,7 +1591,7 @@ $ hz report sync [OPTIONS]
 
 ## `hz setup`
 
-Set up what is still missing, wizard style: every step not finished yet, in order; optional steps can be skipped, and a run continues where the last one stopped. With MODULE, set up only that module.
+Set up what is still missing, wizard style: every step not finished yet, in order; optional steps can be skipped, and a run continues where the last one stopped. A step&#x27;s missing tools are installed first, after you agree. With MODULE, set up only that module.
 
 **Usage**:
 
@@ -1642,6 +1642,7 @@ $ hz system [OPTIONS] COMMAND [ARGS]...
 * `modules`: (expert) List every module and the lets it...
 * `notify`: (expert) Pop up what deserves your...
 * `plugin`: (expert) Find, add, remove, enable,...
+* `prerequisite`: (expert) Inspect and prepare the external...
 * `release`: (expert) Ask where Heinzelmännchen was...
 * `runner`: Run bounded agent sessions with Claude...
 * `serve`: (expert) Serve every operation to coding...
@@ -2856,6 +2857,80 @@ $ hz system plugin search [OPTIONS]
 **Options**:
 
 * `--text <str>`: Words that name or describe the plugin, e.g. `calendar`; sent to GitHub&#x27;s search. All plugins if omitted.
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz system prerequisite`
+
+(expert) Inspect and prepare the external tools modules need.
+
+**Usage**:
+
+```console
+$ hz system prerequisite [OPTIONS] COMMAND [ARGS]...
+```
+
+**Options**:
+
+* `--help`: Show this message and exit.
+
+**Commands**:
+
+* `check`: (expert) Check locally whether the...
+* `install`: (expert) Install missing tools with...
+* `list`: (expert) List the external tools modules...
+
+#### `hz system prerequisite check`
+
+(expert) Check locally whether the declared tools are usable, without installing anything or signing in.
+
+**Usage**:
+
+```console
+$ hz system prerequisite check [OPTIONS]
+```
+
+**Options**:
+
+* `--owner <str>`: Qualified module that declares the tool; every enabled module if left out.
+* `--context <install|setup|feature>`: `install`: the standard app; `setup`: also what setup needs; `feature`: also named features.  [default: setup]
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system prerequisite install`
+
+(expert) Install missing tools with Homebrew on macOS, or show what to do by hand; nothing is signed in.
+
+**Usage**:
+
+```console
+$ hz system prerequisite install [OPTIONS]
+```
+
+**Options**:
+
+* `--owner <str>`: Qualified module that declares the tool; every enabled module if left out.
+* `--context <install|setup|feature>`: `install`: the standard app; `setup`: also what setup needs; `feature`: also named features.  [default: setup]
+* `--confirm / --no-confirm`: Agree to install the missing tools that Homebrew can install.  [default: no-confirm]
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system prerequisite list`
+
+(expert) List the external tools modules declare and how each is installed, without checking this machine.
+
+**Usage**:
+
+```console
+$ hz system prerequisite list [OPTIONS]
+```
+
+**Options**:
+
+* `--owner <str>`: Qualified module that declares the tool; every enabled module if left out.
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.

@@ -39,6 +39,19 @@ configure the integrations you intend to use before relying on them.
 
 [Continue to your first session →](first-steps.md)
 
+## Tools the app uses
+
+Git and the GitHub CLI (`gh`) are part of the standard app: they clone team repositories and plugin sources.
+On macOS the installer shows what is missing and installs it with [Homebrew](https://brew.sh); it does not install
+Homebrew itself: without it, the installer links to brew.sh and the app still installs. On Linux it prints the
+steps for your distribution and installs nothing. Add `--no-tools` to `hz-install` to only check. After you install
+a tool yourself, `hz system prerequisite check` tells you when everything is usable. Installing `gh` never signs you in:
+run `gh auth login` yourself.
+
+Features bring their own tools only when you choose them: the Claude Code or Codex command line for the agent runner
+you select, for example. `hz setup` shows what a step needs, asks before installing it on macOS, and leaves the
+program in place if you later remove a plugin. Each plugin's page lists its prerequisites.
+
 ## Building a plugin? Start with the SDK
 
 ```sh

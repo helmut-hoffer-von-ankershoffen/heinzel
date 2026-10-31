@@ -54,6 +54,10 @@ change like a library release: an ADR for a new concept, unit tests for every br
   specific first, and `ORG_SITE_PRECEDENCE`, the one, private seam for the open org-site question (`team_decides`,
   ADR 0040); consumed by
   `system.layer`, `workflow`'s playbook setup and the CLI's setup order.
+- `_prerequisites.py` — `PrerequisiteLet` (`module.prerequisite`), `Homebrew`, `ManualInstall`, the portable
+  `PrerequisiteDefinition`, `PrerequisiteCheck`, `PrerequisiteReport` and the `PrerequisiteService` contract: external
+  programs a module needs; implemented by `system.prerequisite`, consumed by the installer, `hz setup`, doctor and the
+  plugin pages (ADR 0112).
 - `_jobs.py` — `CompiledJobs`, a service, not a let: jobs compiled from data (workflow contracts, ADR 0021);
   `Kernel.compiled_jobs()` compiles them afresh on every call, and `system.daemon` runs them too.
 - `_discovery.py` — package walk + `heinzel.modules` entry points; plugin failures are collected, built-in ones raise.
