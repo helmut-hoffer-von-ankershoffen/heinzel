@@ -790,7 +790,7 @@ def test_the_template_audit_runs_in_template_test_ci_and_full_preflight():
     assert "make audit" in (REPO / "scripts" / "template-test.sh").read_text(encoding="utf-8")
     script = (REPO / "scripts" / "template-test.sh").read_text(encoding="utf-8")
     assert "\nuv lock --quiet\nmake setup\n" not in script, "a fresh render must run the documented make setup unlocked"
-    assert "test ! -e uv.lock" in script
+    assert "[[ ! -e uv.lock ]]" in script
     ci = "\n".join(commands(REPO / ".github" / "workflows" / "ci.yml"))
     assert "make template-test AUDIT=1" in ci
 

@@ -113,7 +113,8 @@ def _git(*args: str) -> str:
     if executable is None:
         msg = "Git is required to inspect repository content"
         raise RuntimeError(msg)
-    return subprocess.run([executable, *args], check=True, capture_output=True, text=True, timeout=60).stdout  # noqa: S603 - fixed Git operations with operand boundaries
+    # Fixed Git operations with operand boundaries
+    return subprocess.run([executable, *args], check=True, capture_output=True, text=True, timeout=60).stdout  # noqa: S603
 
 
 def _read(path: Path) -> str | None:

@@ -42,7 +42,8 @@ def candidate_wheel(spec: str, directory: Path) -> Path:
         ):
             msg = "Use a local candidate wheel or an HTTPS wheel URL with #sha256=<digest>"
             raise ValueError(msg)
-        with urllib.request.urlopen(urlunsplit(url._replace(fragment="")), timeout=60) as response:  # noqa: S310 - explicit developer HTTPS candidate, bytes verified before installation
+        # Explicit developer HTTPS candidate, bytes verified before installation
+        with urllib.request.urlopen(urlunsplit(url._replace(fragment="")), timeout=60) as response:  # noqa: S310
             content = response.read(128 * 1024 * 1024 + 1)
         if len(content) > 128 * 1024 * 1024 or hashlib.sha256(content).hexdigest() != expected:
             msg = "Candidate toolkit wheel failed its integrity check"
@@ -74,11 +75,13 @@ def run(program: str, arguments: list[str], requirements: Path = REQUIREMENTS, t
     with tempfile.TemporaryDirectory(prefix="hz-plugin-toolkit-") as temporary:
         environment = Path(temporary)
         interpreter = environment / "bin/python"
-        subprocess.run([uv, "venv", "--python", "3.14", str(environment)], check=True, timeout=120)  # noqa: S603 - resolved uv, disposable environment
+        # Resolved uv, disposable environment
+        subprocess.run([uv, "venv", "--python", "3.14", str(environment)], check=True, timeout=120)  # noqa: S603
         selection = ["--require-hashes", "--requirements", str(requirements)]
         if toolkit != TOOLKIT:
             selection = [str(candidate_wheel(toolkit, environment))]
-        subprocess.run(  # noqa: S603 - verified default closure or an explicitly selected developer wheel
+        # Verified default closure or an explicitly selected developer wheel
+        subprocess.run(  # noqa: S603
             [uv, "pip", "install", "--no-build", "--python", str(interpreter), *selection],
             check=True,
             timeout=300,
@@ -89,7 +92,8 @@ def run(program: str, arguments: list[str], requirements: Path = REQUIREMENTS, t
             "PATH": f"{environment / 'bin'}{os.pathsep}{os.environ.get('PATH', '')}",
             "VIRTUAL_ENV": str(environment),
         }
-        return subprocess.run(  # noqa: S603 - allowlisted executable in the verified environment, intentional local argv
+        # Allowlisted executable in the verified environment, intentional local argv
+        return subprocess.run(  # noqa: S603
             [str(environment / "bin" / program), *arguments],
             check=False,
             env=env,

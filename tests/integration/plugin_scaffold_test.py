@@ -131,7 +131,9 @@ def test_fresh_governed_setup_creates_its_lock_before_frozen_install(tmp_path):
     import json
     import tomllib
 
-    from copier import run_copy
+    # CI's test jobs install only the test group; the dev group's copier is there for `make check` and the template
+    # acceptance job, which runs this same fresh setup for real (scripts/template-test.sh).
+    run_copy = pytest.importorskip("copier").run_copy
 
     repository = Path(__file__).resolve().parents[2]
     source = tmp_path / "template-source"

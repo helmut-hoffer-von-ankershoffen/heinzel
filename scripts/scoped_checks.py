@@ -28,8 +28,10 @@ def resolve_base(base: str) -> str:
     if base.startswith("-"):
         msg = "The base must be a revision, not a Git option"
         raise ValueError(msg)
-    revision = subprocess.check_output(  # noqa: S603 - fixed Git operation, revision explicitly separated from options
-        ["git", "rev-parse", "--verify", "--end-of-options", f"{base}^{{commit}}"],  # noqa: S607 - repository Git from PATH
+    # Fixed Git operation, revision explicitly separated from options
+    revision = subprocess.check_output(  # noqa: S603
+        # Repository Git from PATH
+        ["git", "rev-parse", "--verify", "--end-of-options", f"{base}^{{commit}}"],  # noqa: S607
         text=True,
         timeout=30,
     ).strip()
@@ -43,7 +45,8 @@ def changed_paths(mode: str, base: str) -> list[str]:
     """Include deleted, moved and untracked paths without parsing Git's quoted display format."""
     revision = [f"{base}...HEAD"] if mode == "preflight" else ["HEAD"]
     result = subprocess.check_output(  # noqa: S603 - fixed git argument lists, no shell
-        ["git", "diff", "--name-only", "--no-renames", "-z", "--end-of-options", *revision, "--"],  # noqa: S607 - git from PATH
+        # Git from PATH
+        ["git", "diff", "--name-only", "--no-renames", "-z", "--end-of-options", *revision, "--"],  # noqa: S607
         text=True,
         timeout=30,
     )
@@ -70,7 +73,8 @@ def main() -> None:
     base_arguments = [f"BASE={base}"] if args.mode == "preflight" else []
     if not changed or not all(path.startswith("plugins/") for path in changed):
         subprocess.run(  # noqa: S603 - explicit owning commands, no shell
-            ["make", "preflight" if args.mode == "preflight" else "check-fast", *base_arguments],  # noqa: S607 - make from PATH
+            # Make from PATH
+            ["make", "preflight" if args.mode == "preflight" else "check-fast", *base_arguments],  # noqa: S607
             check=True,
             timeout=1800 if args.mode == "preflight" else 300,
         )
@@ -80,7 +84,8 @@ def main() -> None:
         subprocess.run([*toolkit, "check-changed", "--changed", *changed], check=True, timeout=300)  # noqa: S603 - pinned toolkit, literal paths
         return
     # These policies apply to plugin source too; no core build, native job or test suite runs.
-    subprocess.run(["make", "commits", "secrets", *base_arguments], check=True, timeout=120)  # noqa: S603, S607 - shared policy targets
+    # Shared policy targets
+    subprocess.run(["make", "commits", "secrets", *base_arguments], check=True, timeout=120)  # noqa: S603, S607
     subprocess.run(
         [sys.executable, "scripts/check_confidentiality.py"],
         check=True,
