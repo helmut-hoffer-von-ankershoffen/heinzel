@@ -200,7 +200,7 @@ def test_adr_index_and_links_match_the_records(directory):
 
 
 def _hooks():
-    spec = importlib.util.spec_from_file_location("mkdocs_hooks_adr", REPO / "scripts" / "mkdocs_hooks.py")
+    spec = importlib.util.spec_from_file_location("adr_index_docs", REPO / "scripts" / "adr_index.py")
     assert spec
     assert spec.loader
     module = importlib.util.module_from_spec(spec)

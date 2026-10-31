@@ -393,14 +393,14 @@ def model_schema(model: type[BaseModel], urn: str, title: str) -> str:
 
 
 def adr_index() -> str:
-    """The ADR index table of docs/adr/README.md, rendered from the records' front matter by the site's hooks.
+    """The ADR index table of docs/adr/README.md, rendered from the records' front matter by scripts/adr_index.py.
 
     Raises:
         RuntimeError: If the hooks script cannot be loaded.
     """
-    spec = importlib.util.spec_from_file_location("mkdocs_hooks", ROOT / "scripts" / "mkdocs_hooks.py")
+    spec = importlib.util.spec_from_file_location("adr_index", ROOT / "scripts" / "adr_index.py")
     if spec is None or spec.loader is None:
-        msg = "scripts/mkdocs_hooks.py cannot be loaded"
+        msg = "scripts/adr_index.py cannot be loaded"
         raise RuntimeError(msg)
     hooks = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(hooks)
