@@ -22,6 +22,7 @@ from site_catalog import (
     NAME,
     REPOSITORY,
     REVISION,
+    ROOT,
     SNAPSHOT,
     VERSION,
     VIDEO,
@@ -464,6 +465,148 @@ def theme_gallery(data: Object, page_url: str) -> str:
     return '<div class="hz-theme-gallery">' + "\n".join(result) + "</div>"
 
 
+TOUR_ASSETS = ROOT / "docs" / "assets" / "tour"
+TOUR_STORIES: tuple[Object, ...] = (
+    {
+        "id": "graph",
+        "label": "workflow graph",
+        "art": "draftkeeper",
+        "name": "Ada",
+        "cue": "Let me show you how these pieces connect.",
+        "link": "Read about contracts",
+        "target": "HEINZELMAENNCHEN/",
+        "images": (
+            (
+                "graph-overview",
+                "Overview",
+                "A real workflow graph, populated from fictional local sources and contract declarations.",
+            ),
+            (
+                "graph-contract-detail",
+                "Zoomed detail",
+                "Select the contract to see its connections and commands, here after zooming the graph.",
+            ),
+            ("graph-contract-detail-dark", "Dark mode", "The same contract details in dark mode."),
+        ),
+    },
+    {
+        "id": "terminal",
+        "label": "terminal",
+        "art": "reviewer",
+        "name": "Otto",
+        "cue": "Same work, another useful view.",
+        "link": "Take your first steps",
+        "target": "guides/first-steps/",
+        "images": (
+            (
+                "terminal-tabs",
+                "Overview",
+                "Two terminal tabs in the local demo: hz graph and hz drafts, beside the contract.",
+            ),
+            (
+                "terminal-draft-full",
+                "Zoomed detail",
+                "Full screen: a locally saved report from a demonstration runner, fictional data.",
+            ),
+            ("terminal-tabs-dark", "Dark mode", "The same two terminal tabs in dark mode."),
+        ),
+    },
+    {
+        "id": "chat",
+        "label": "contextual chat",
+        "art": "reviewer",
+        "name": "Otto",
+        "cue": "You can see exactly what I am asking to do.",
+        "link": "How approval works",
+        "target": "HEINZELMAENNCHEN/",
+        "images": (
+            (
+                "chat-proposal",
+                "Overview",
+                "Real contextual chat and approval flow, with a scripted local demonstration runner; no model call.",
+            ),
+            (
+                "chat-proposal-detail",
+                "Zoomed detail",
+                "The proposal shows the exact command and arguments. It runs only if you confirm.",
+            ),
+            ("chat-proposal-detail-dark", "Dark mode", "The same proposal in dark mode."),
+        ),
+    },
+)
+
+
+TOUR_FALLBACK = re.compile(r"<!-- hz:tour-story (\w+) -->.*?<!-- /hz:tour-story -->", re.DOTALL)
+
+
+def tour_markup(identity: str, page_url: str) -> str:
+    """The rendered story for a marker pair; the Markdown between the markers is the GitHub fallback.
+
+    Raises:
+        ValueError: If the marker names no tour story.
+    """
+    story = next((item for item in TOUR_STORIES if item["id"] == identity), None)
+    if story is None:
+        msg = f"Unknown tour story: {identity}"
+        raise ValueError(msg)
+    return tour_story(story, page_url).replace("><", ">\n<")
+
+
+def png_size(path: Path) -> tuple[int, int]:
+    """Read a PNG's pixel size from its header, so the page reserves space before the image loads.
+
+    Raises:
+        ValueError: If the file is not a PNG.
+    """
+    header = path.read_bytes()[:24]
+    if header[:8] != b"\x89PNG\r\n\x1a\n" or header[12:16] != b"IHDR":
+        msg = f"{path.name} is not a PNG"
+        raise ValueError(msg)
+    return int.from_bytes(header[16:20], "big"), int.from_bytes(header[20:24], "big")
+
+
+def tour_story(story: Object, page_url: str) -> str:
+    """One guide, one cue and one swipeable lead-plus-zoom gallery of real product screens."""
+    identity = f"tour-{story['id']}"
+    count = len(story["images"])
+    figures = []
+    for index, (name, label, caption) in enumerate(story["images"], 1):
+        width, height = png_size(TOUR_ASSETS / f"{name}.png")
+        url = escape(href(f"assets/tour/{name}.png", page_url))
+        alt = escape(caption)
+        figures.append(
+            f'<figure role="group" aria-roledescription="slide" aria-label="{index} of {count}">'
+            f'<a href="{url}" aria-label="Open full-size: {alt}">'
+            f'<img src="{url}" alt="{alt}" width="{width}" height="{height}" loading="lazy" '
+            'referrerpolicy="no-referrer"></a>'
+            f'<figcaption><span class="hz-gallery-surface">{escape(label)}</span>{alt}</figcaption></figure>'
+        )
+    art = href(f"assets/website/helper-{story['art']}.svg", page_url)
+    return (
+        f'<article class="hz-tour-story" id="{identity}" data-heinzel-helper>'
+        '<div class="hz-story-intro">'
+        f'<img src="{art}" alt="" width="140" height="230" loading="lazy">'
+        f'<div><p class="hz-story-name">{escape(story["name"])}</p>'
+        f'<p class="hz-story-quote">“{escape(story["cue"])}”</p>'
+        f'<a href="{href(story["target"], page_url)}">{escape(story["link"])} →</a></div></div>'
+        f'<section class="hz-gallery" data-gallery role="region" aria-roledescription="carousel" '
+        f'aria-label="{escape(story["label"].capitalize())} screenshots">'
+        '<div class="hz-gallery-controls" data-gallery-controls hidden>'
+        f'<button type="button" data-gallery-previous aria-label="Previous {escape(story["label"])} screenshot" '
+        f'aria-controls="{identity}-slides">← Previous</button>'
+        '<span data-gallery-count role="status" aria-live="polite" aria-atomic="true">'
+        f"1 of {count}</span>"
+        f'<button type="button" data-gallery-next aria-label="Next {escape(story["label"])} screenshot" '
+        f'aria-controls="{identity}-slides">Next →</button></div>'
+        f'<p class="hz-gallery-hint" id="{identity}-hint">'
+        "Swipe or scroll sideways. Select an image to zoom and inspect it.</p>"
+        f'<div class="hz-screenshots" id="{identity}-slides" data-gallery-track tabindex="0" role="group" '
+        f'aria-label="{escape(story["label"].capitalize())} slides" aria-describedby="{identity}-hint">'
+        + "".join(figures)
+        + "</div></section></article>"
+    )
+
+
 def detail(project: Object) -> str:
     """A searchable static detail page with immutable installation and source provenance."""
     source = project["source"]
@@ -780,6 +923,7 @@ def on_page_markdown(markdown: str, *, page: Any, config: Any, **_: Any) -> str:
     )
     if "<!-- hz:" not in markdown:
         return markdown
+    markdown = TOUR_FALLBACK.sub(lambda found: tour_markup(found.group(1), page.url), markdown)
     snapshot = load_snapshot(Path(os.environ.get("HZ_SITE_CATALOG", str(SNAPSHOT))))
     renderers = {
         "catalog": lambda: cards(snapshot, page.url),
