@@ -69,6 +69,7 @@ plugins:
 
 extra_css:
   - assets/website/site.css
+  - assets/website/trust.css
 extra_javascript:
   - assets/website/site.js
 
