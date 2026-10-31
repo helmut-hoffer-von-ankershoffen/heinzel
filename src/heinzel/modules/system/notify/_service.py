@@ -308,7 +308,7 @@ class NotifyService(Notifications):
             self.store.native_result(self._clock(), problem)
         return posted
 
-    def _end_leftover_instances(self) -> None:
+    def _end_leftover_instances(self, *, install: bool = True) -> None:
         """End Heinzel Notifier processes that outlived any notification: a build that couldn't end itself, or a hang.
 
         Every tick does it, so an installation heals itself the first tick after it is updated. Its failure is logged.
@@ -317,9 +317,13 @@ class NotifyService(Notifications):
         if notifier.name != HEINZEL or notifier.app is None:
             return
         try:
+            if install:  # missing or an older build: put the bundled one in place, no command to type
+                installed = notifier.app.ensure()
+                if installed.state in {"outdated", "missing"} and installed.detail:
+                    logger.warning("Heinzel Notifier is %s: %s", installed.state, installed.detail)
             ended = notifier.app.clean()
         except Exception:
-            logger.exception("looking for leftover Heinzel Notifier processes failed")
+            logger.exception("looking after Heinzel Notifier failed")
             return
         if ended:
             logger.warning("ended %d leftover Heinzel Notifier process(es)", ended)
@@ -433,7 +437,7 @@ class NotifyService(Notifications):
             HeinzelError: If Heinzel Notifier can't be copied into ~/Applications.
         """
         notifier = self.notifier
-        self._end_leftover_instances()
+        self._end_leftover_instances(install=False)  # install() reports what it replaced, so it must see the old state
         if notifier.name is None:
             fixes = [notifier.fix] if notifier.fix else []
             return Installed(notifier=None, shown=False, problem=notifier.detail, next=fixes)

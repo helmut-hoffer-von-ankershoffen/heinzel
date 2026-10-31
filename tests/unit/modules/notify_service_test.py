@@ -662,3 +662,11 @@ def test_the_tick_makes_macos_forget_stray_copies_once_a_day(settings, clock, tm
     clock.now += timedelta(days=1, minutes=1)
     service.post_native()
     assert forgotten == ["x", "x"]
+
+
+def test_the_tick_installs_a_missing_notifier_without_any_command(settings, clock, tmp_path):
+    service = leftover_service(settings, clock, tmp_path, [])
+    assert service.notifier.app is not None
+    assert not service.notifier.app.path.exists()
+    service.post_native()
+    assert service.notifier.app.path.is_dir()  # an update, or a daemon installed first, heals on its next tick
