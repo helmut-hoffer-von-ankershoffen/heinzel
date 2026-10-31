@@ -1,0 +1,38 @@
+# Legitimate exceptions to scripts/check_docs.py. Every entry names a rule, a path glob (`*` crosses directories),
+# optionally a `text` the finding must contain, and the `reason` it is legitimate.
+
+[[allow]]
+# The architecture decision records describe migrations of the code base; that is their subject.
+rule = "residue"
+path = "docs/adr/*"
+reason = "ADRs record decisions about migrations."
+
+[[allow]]
+# The index lists every record with its decision date.
+rule = "date"
+path = "docs/adr/README.md"
+reason = "The ADR index is a table of decision dates."
+
+[[allow]]
+# The rules page has to name the words it bans.
+rule = "filler"
+path = "docs/dev/DOCS_CHECK.md"
+reason = "Documents the banned words."
+
+[[allow]]
+# Same page, product-claim words.
+rule = "claims"
+path = "docs/dev/DOCS_CHECK.md"
+reason = "Documents the banned words."
+
+[[allow]]
+# Same page, process-residue words.
+rule = "residue"
+path = "docs/dev/DOCS_CHECK.md"
+reason = "Documents the banned words."
+
+[[allow]]
+# The page shows an install command shape without a real commit.
+rule = "command"
+path = "docs/dev/DOCS_CHECK.md"
+reason = "Documents the rule with example commands."
