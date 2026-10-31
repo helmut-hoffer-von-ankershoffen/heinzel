@@ -6,7 +6,6 @@ import re
 import sys
 import unicodedata
 import urllib.error
-import urllib.request
 from collections import defaultdict
 from datetime import date
 from typing import Any, cast, override
@@ -150,8 +149,7 @@ class GitHubReleases(ReleaseSource):
             TypeError: If the pointer is no JSON object.
             ValueError: If the pointer is too large, not JSON or names anything but an edge release.
         """
-        request = urllib.request.Request(EDGE_POINTER, headers={"User-Agent": f"heinzel/{__version__}"})
-        body = _github._open(request, timeout)  # noqa: SLF001 - the one seam that reads from GitHub
+        body = _github.read_asset(EDGE_POINTER, timeout)
         if len(body) > MAX_POINTER:
             msg = "the edge pointer is too large"
             raise ValueError(msg)

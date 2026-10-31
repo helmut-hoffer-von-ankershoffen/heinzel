@@ -8,6 +8,7 @@ import pytest
 
 from heinzel import HeinzelError, Progress
 from heinzel.kernel import CorePin, EdgeRelease, Installation, ReleaseSource, Settings
+from heinzel.modules.system._github import asset_host
 from heinzel.modules.system._service import _edge_release, _published_version
 from heinzel.modules.system._update import UpdateService, blocking_plugins
 
@@ -1545,3 +1546,17 @@ def test_a_wrong_edge_pointer_is_refused(pointer):
 
 def test_a_valid_edge_pointer_is_read():
     assert _edge_release({"version": "0.5.0.dev7", "wheel": EDGE_WHEEL, "sha256": "a" * 64}).wheel == EDGE_WHEEL
+
+
+@pytest.mark.parametrize(
+    ("url", "allowed"),
+    [
+        ("https://github.com/o/r/releases/download/t/a", True),
+        ("https://release-assets.githubusercontent.com/x", True),
+        ("http://github.com/o/r", False),
+        ("https://github.com.example.org/x", False),
+        ("https://example.org/x", False),
+    ],
+)
+def test_the_edge_pointer_is_read_only_from_github_over_https(url, allowed):
+    assert asset_host(url) is allowed
