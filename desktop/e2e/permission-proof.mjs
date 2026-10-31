@@ -30,7 +30,8 @@ try {
   child = instance.process();
   const page = await instance.firstWindow({ timeout: 10000 });
   for (const id of ['notification', 'microphone']) {
-    try { await page.click(`#${id}`, { timeout: 5000 }); }
+    // The window is hidden, so it may paint no frames and Playwright's "stable" check would wait for ever. The input is real.
+    try { await page.click(`#${id}`, { timeout: 5000, force: true }); }
     catch (error) { await diagnosePermissionClick(page, instance, id, error); }
     await page.waitForFunction(() => document.title !== '', null, {timeout: 10000});
     const events = await instance.evaluate(() => globalThis.permissionEvents);
