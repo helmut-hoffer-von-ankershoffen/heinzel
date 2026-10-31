@@ -153,18 +153,22 @@ body { font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFon
 @media(max-width:700px) { .md-typeset .hz-product-scene { grid-template-columns:1fr; gap:1rem; } }
 @media(max-width:400px) { .hz-helper { flex-direction:column; align-items:center; } }
 
-.hz-page-helpers { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr)); gap:1.5rem; margin-top:2.5rem; }
-.hz-page-helper { display:flex; align-items:center; gap:1rem; min-width:0; }
-.hz-page-helper > img { flex:0 0 140px; width:140px; height:232px; object-fit:contain; }
-.md-typeset .hz-page-helper p { margin:0 0 .35rem; font-size:.76rem; line-height:1.4; }
-.md-typeset .hz-page-helper .hz-helper-name { font-weight:700; }
+/* A waypoint: a character beside the section it explains. Name above, art left, cue and one link right. */
+.hz-page-helper { display:grid; grid-template:"name name" auto "art body" 1fr / auto minmax(0,1fr); column-gap:1rem; align-items:center; max-width:34rem; margin:1.5rem 0; }
+.hz-page-helper > img { grid-area:art; width:140px; height:232px; object-fit:contain; }
+.md-typeset .hz-page-helper p { margin:0; font-size:.76rem; line-height:1.4; }
+.md-typeset .hz-page-helper .hz-helper-name { grid-area:name; color:var(--hz-brand); font-weight:700; letter-spacing:.02em; }
+.hz-helper-body { grid-area:body; min-width:0; }
+.md-typeset .hz-page-helper .hz-helper-quote { font-size:.85rem; font-weight:550; color:var(--hz-ink); }
 .hz-page-helper a { display:inline-flex; align-items:center; min-height:44px; font-size:.72rem; }
-.hz-page-helper[data-gutter] { position:fixed; z-index:1; flex-direction:column; gap:.5rem; text-align:center; }
-.hz-page-helper[data-gutter] > img { flex:0 0 auto; width:160px; height:264px; max-width:100%; }
-.hz-page-helper[data-gutter] > div { background:var(--hz-paper); border-radius:12px; padding:.5rem; }
-@media(max-width:600px) { .hz-page-helper > img { flex-basis:96px; width:96px; height:160px; } }
+@media(max-width:1099px) { .hz-page-helper > img { width:120px; height:199px; } }
+@media(max-width:699px) { .hz-page-helper { column-gap:.75rem; } .hz-page-helper > img { width:96px; height:160px; } }
 
-
+/* A gutter guide: the same waypoint lifted into a free desktop lane (see site.js); sits under the header. */
+.hz-page-helper[data-gutter] { position:fixed; z-index:1; grid-template:"name" auto "art" auto "body" auto / 1fr; justify-items:center; row-gap:.25rem; margin:0; text-align:center; }
+.hz-page-helper[data-gutter] > img { width:160px; height:264px; max-width:100%; }
+/* Three lines of room, so a changing cue never moves the link beneath it. */
+.md-typeset .hz-page-helper[data-gutter] .hz-helper-quote { min-height:4.2em; min-height:3lh; }
 
 /* Native touch/trackpad scrolling works without JavaScript; controls progressively enhance it. */
 .hz-gallery { min-width:0; margin:1rem 0 2rem; }

@@ -601,33 +601,105 @@ def test_repository_discovery_carries_soundscape_toml_into_public_records(layout
     assert "never_imported" not in sys.modules
 
 
-@pytest.mark.parametrize(
-    "path",
-    [
-        "README.md",
-        "guides/install.md",
-        "CLI_REFERENCE.md",
-        "adr/0001-record.md",
-        "ARCHITECTURE.md",
-        "some-future-page.md",
-    ],
-)
+DOC_PAGES = [
+    "README.md",
+    "guides/install.md",
+    "guides/first-steps.md",
+    "CLI_REFERENCE.md",
+    "adr/0001-record.md",
+    "ARCHITECTURE.md",
+    "some-future-page.md",
+]
+FORBIDDEN_CUE_WORDS = ("autonomous", "automatically", "while you sleep", "sends", "publishes", "delivers")
+
+
+@pytest.mark.parametrize("path", DOC_PAGES)
 def test_every_page_gets_a_small_contextual_character_group(path):
     helpers = pages.page_helpers(path, "reference/")
     assert 1 <= len(helpers) <= 5
-    assert all(helper["quote"] and helper["link"] for helper in helpers)
+    assert all(helper["quote"] and helper["link"] and helper["src"].endswith(".svg") for helper in helpers)
     assert all(helper["name"] in {"Pip", "Ada", "Otto"} for helper in helpers)
     assert all(len(helper["quote"].split()) <= 10 and "detail" not in helper for helper in helpers)
+    assert all(word not in helper["quote"].lower() for helper in helpers for word in FORBIDDEN_CUE_WORDS)
+    assert sum(1 for helper in helpers if helper["lane"]) <= 2
 
 
-def test_future_plugin_pages_get_feature_specific_explainers_without_registration():
+def test_home_guides_sit_at_headings_the_home_page_really_has():
+    headings = {
+        pages.slug(line.lstrip("# "))
+        for line in (ROOT / "docs/README.md").read_text().splitlines()
+        if line.startswith("## ")
+    }
+    guides = pages.page_helpers("README.md", "")
+    assert [(guide["name"], guide["lane"]) for guide in guides] == [("Pip", "left"), ("Otto", "right")]
+    assert {guide["section"] for guide in guides} <= headings
+    assert guides[0]["link"] == "guides/install/"
+
+
+def test_plugin_pages_get_a_feature_cue_and_a_constant_install_cue_without_registration():
     plugin = record()
     plugin["highlights"] = ["A fictional harbor's next useful action"]
     helpers = pages.page_helpers("catalog/new-plugin/index.md", "catalog/new-plugin/", plugin)
-    assert len(helpers) == 2
+    assert [(h["name"], h["section"], h["lane"]) for h in helpers] == [
+        ("Pip", "screenshots", "left"),
+        ("Otto", "install-and-try", "right"),
+    ]
     assert helpers[0]["quote"] == plugin["highlights"][0]
     assert helpers[0]["link"] == "#screenshots"
-    assert helpers[1]["action"] == "Browse plugins"
+    assert helpers[1]["quote"] == "Check source and fit before inviting it in."
+    assert helpers[1]["link"] == "#install-and-try"
+
+
+def test_themes_are_guided_by_ada_and_sound_adds_a_third_inline_guide_only_when_present():
+    plugin = record()
+    plugin["themes"] = [{"title": "Harbor", "palette": {}}]
+    assert pages.page_helpers("catalog/x/index.md", "catalog/x/", plugin)[0]["name"] == "Ada"
+    plugin["soundscapes"] = [{"title": "Rain", "video": "abcdefghijk"}]
+    helpers = pages.page_helpers("catalog/x/index.md", "catalog/x/", plugin)
+    assert [h["section"] for h in helpers] == ["screenshots", "soundscapes", "install-and-try"]
+    assert helpers[1]["quote"] == "Sound starts only when you choose."
+    assert helpers[1]["lane"] is None
+
+
+def test_waypoint_is_a_labelled_server_rendered_aside_with_one_link():
+    guide = pages.helper("reviewer", "Otto", 'Mind the "gap" <b>', "#here", "Go <now>", "x/", section="s", lane="right")
+    rendered = pages.waypoint(guide)
+    assert rendered.startswith('<aside class="hz-page-helper" data-heinzel-helper data-section="s" data-lane="right"')
+    assert 'aria-label="Otto: Go &lt;now&gt;"' in rendered
+    assert "&lt;b&gt;" in rendered
+    assert "<b>" not in rendered
+    assert rendered.count("<a ") == 1
+    assert "\n\n" not in rendered
+    assert 'alt="" width="140" height="232"' in rendered
+
+
+def test_waypoints_follow_their_headings_not_code_and_fall_back_to_the_first_h2_or_the_end():
+    doc = "# Title\n\nIntro\n\n```\n## Fake\n```\n\n## Real\n\nBody\n\n## Install and try\n\nMore\n"
+    first = pages.helper("timekeeper", "Pip", "Cue", "#a", "Go", "", lane="any")
+    named = pages.helper("reviewer", "Otto", "Cue", "#b", "Go", "", section="install-and-try")
+    placed = pages.place_waypoints(doc, [first, named])
+    lines = placed.split("\n")
+    assert lines.index("## Real") + 2 == next(i for i, line in enumerate(lines) if "data-lane" in line)
+    assert lines.index("## Install and try") + 2 == next(
+        i for i, line in enumerate(lines) if 'data-section="install-and-try"' in line
+    )
+    assert placed.count("<aside") == 2
+    assert placed.index("## Fake") < placed.index("## Real") < placed.index("<aside")
+    flat = pages.place_waypoints("Just text\n", [first])
+    assert flat.startswith("Just text")
+    assert flat.rstrip().endswith("</aside>")
+    missing = pages.place_waypoints("# T\n\n## Other\n", [named])
+    assert missing.rstrip().endswith("</aside>")
+
+
+def test_every_plugin_page_places_all_its_guides_within_the_budget():
+    plugin = record()
+    plugin["soundscapes"] = [{"title": "Rain", "video": "abcdefghijk"}]
+    page = pages.place_waypoints(pages.detail(plugin), pages.page_helpers("catalog/x/index.md", "catalog/x/", plugin))
+    assert page.count("data-heinzel-helper") == 3
+    for heading in ("## Screenshots", "## Soundscapes", "## Install and try"):
+        after = page.split(heading, 1)[1].lstrip()
+        assert after.startswith("<aside"), heading
 
 
 def test_swipe_gallery_preserves_every_owner_scene_in_order_with_accessible_controls():

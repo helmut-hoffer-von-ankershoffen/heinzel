@@ -2,10 +2,8 @@
 {% block content %}
 <h1>That page has wandered off.</h1>
 <p>Try the search above, or let Otto help you find your way back.</p>
-{% set hz_helpers = [{
-  "art": "reviewer", "name": "Otto",
-  "quote": "Let's find your way back to something useful.",
+{{ hz_waypoints([{
+  "name": "Otto", "quote": "Let's find your way back to something useful.", "src": "assets/website/helper-reviewer.svg" | url,
   "link": config.site_url, "action": "Head home"
-}] %}
-{% include "partials/heinzel-helpers.html" %}
+}]) }}
 {% endblock %}

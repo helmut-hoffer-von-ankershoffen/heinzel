@@ -1,70 +1,113 @@
 /* Progressive enhancement: every catalog entry and command is useful without JavaScript. */
 (() => {
-  function placeHelpers(group) {
-    const helpers = [...group.querySelectorAll('[data-heinzel-helper]')];
-    const reset = () => helpers.forEach(helper => {
-      helper.removeAttribute('data-gutter');
-      helper.style.removeProperty('width');
-      helper.style.removeProperty('left');
-      helper.style.removeProperty('top');
-    });
-    reset();
-    const content = document.querySelector('.md-content');
-    if (!content || innerWidth < 1100 || group.getBoundingClientRect().top < innerHeight + 200) return;
-    const bounds = content.getBoundingClientRect();
-    const navigation = [...document.querySelectorAll('.md-sidebar__inner > .md-nav')]
-      .map(node => node.getBoundingClientRect()).filter(rect => rect.width && rect.height);
-    const header = [...document.querySelectorAll('.md-header, .md-tabs')]
-      .map(node => node.getBoundingClientRect()).filter(rect => rect.width && rect.height);
-    const footer = document.querySelector('.md-footer')?.getBoundingClientRect();
-    const top = Math.max(150, ...header.map(rect => rect.bottom + 24));
-    const bottom = Math.min(innerHeight - 24, footer ? footer.top - 24 : innerHeight - 24);
-    const bands = [[16, bounds.left - 24], [bounds.right + 24, innerWidth - 16]];
-    const lanes = bands.map(([left, right]) => {
-      // Prefer the outside of navigation; use its lower empty space only when needed.
-      const neighbors = navigation.filter(rect => rect.left < right && rect.right > left);
-      const outer = left < bounds.left ? [left, Math.min(right, ...neighbors.map(rect => rect.left - 16))]
-        : [Math.max(left, ...neighbors.map(rect => rect.right + 16)), right];
-      const band = outer[1] - outer[0] >= 150 ? outer : [left, right];
-      const width = Math.min(200, band[1] - band[0]);
-      const x = (band[0] + band[1] - width) / 2;
-      let y = top;
-      navigation.forEach(rect => {
-        if (rect.left < x + width && rect.right > x && rect.bottom > top) y = Math.max(y, rect.bottom + 24);
+  /* Lift up to two waypoints into free desktop lanes. All or nothing: any doubt leaves every one inline. */
+  function placeGuides(helpers) {
+    let lifted = false;
+    const reset = () => {
+      helpers.forEach(helper => {
+        helper.removeAttribute('data-gutter');
+        ['width', 'left', 'top', 'visibility'].forEach(name => helper.style.removeProperty(name));
       });
-      return { x, y, width };
-    }).filter(lane => lane.width >= 150);
-    for (const helper of helpers) {
-      const lane = lanes.sort((a, b) => a.y - b.y)[0];
-      if (!lane) { reset(); return; }
-      helper.dataset.gutter = 'true';
-      helper.style.width = `${lane.width}px`;
-      const height = helper.getBoundingClientRect().height;
-      if (lane.y + height > bottom) { reset(); return; }
-      helper.style.left = `${lane.x}px`;
-      helper.style.top = `${lane.y}px`;
-      lane.y += height + 24;
-    }
+      lifted = false;
+    };
+    const rects = selector => [...document.querySelectorAll(selector)]
+      .map(node => node.getBoundingClientRect()).filter(rect => rect.width && rect.height);
+    // Free lanes beside the real article, navigation, header and footer; null when no lane is wide enough.
+    const lanes = () => {
+      const bounds = document.querySelector('.md-content')?.getBoundingClientRect();
+      if (!bounds || innerWidth < 1100) return null;
+      const navigation = rects('.md-sidebar__inner > .md-nav');
+      const top = Math.max(150, ...rects('.md-header, .md-tabs').map(rect => rect.bottom + 24));
+      const found = {};
+      [['left', 16, bounds.left - 24], ['right', bounds.right + 24, innerWidth - 16]].forEach(([side, left, right]) => {
+        // Prefer the outside of navigation; use its lower empty space only when needed.
+        const neighbors = navigation.filter(rect => rect.left < right && rect.right > left);
+        const outer = side === 'left' ? [left, Math.min(right, ...neighbors.map(rect => rect.left - 16))]
+          : [Math.max(left, ...neighbors.map(rect => rect.right + 16)), right];
+        const band = outer[1] - outer[0] >= 150 ? outer : [left, right];
+        const width = Math.min(200, band[1] - band[0]);
+        if (width < 150) return;
+        const x = (band[0] + band[1] - width) / 2;
+        let y = top;
+        navigation.forEach(rect => {
+          if (rect.left < x + width && rect.right > x && rect.bottom > top) y = Math.max(y, rect.bottom + 24);
+        });
+        found[side] = { x, y, width };
+      });
+      return found;
+    };
+    const follow = () => {
+      // The footer pushes guides up; one that would meet the header or navigation waits unseen, never moves layout.
+      const footer = document.querySelector('.md-footer')?.getBoundingClientRect();
+      const available = lanes();
+      if (!available) { reset(); return false; }
+      const used = {};
+      for (const helper of helpers) {
+        const wanted = helper.dataset.lane;
+        const side = wanted === 'any'
+          ? ['left', 'right'].filter(name => available[name])
+              .sort((a, b) => (used[a] ?? available[a].y) - (used[b] ?? available[b].y))[0]
+          : wanted;
+        const lane = available[side];
+        if (!lane) { reset(); return false; }
+        helper.style.width = `${lane.width}px`;
+        const y = used[side] ?? lane.y;
+        const height = helper.getBoundingClientRect().height;
+        if (y + height > innerHeight - 24) { reset(); return false; }
+        const pushed = footer ? Math.min(y, footer.top - 24 - height) : y;
+        helper.style.left = `${lane.x}px`;
+        helper.style.top = `${pushed}px`;
+        helper.style.visibility = pushed < y ? 'hidden' : '';
+        used[side] = y + height + 24;
+      }
+      return true;
+    };
+    // Layout events decide whether guides are lifted; scrolling only follows the footer. Never reset on scroll:
+    // inline waypoints sit mid-page, so toggling them would move the text being read.
+    // A failed attempt is not repeated until the geometry that decided it changes (lifting resizes the article).
+    const geometry = () => JSON.stringify([innerWidth, innerHeight, ...rects(
+      '.md-content, .md-sidebar__inner > .md-nav, .md-header, .md-tabs').map(rect => [rect.left, rect.right, rect.height])]);
+    let refused = '';
+    const layout = () => {
+      const now = geometry();
+      if (!lifted) {
+        if (now === refused || document.documentElement.scrollHeight < innerHeight * 2) return;
+        helpers.forEach(helper => {
+          const style = getComputedStyle(helper);
+          helper.dataset.slot = String(helper.offsetHeight + parseFloat(style.marginTop) + parseFloat(style.marginBottom));
+          helper.setAttribute('data-gutter', 'true');
+          // A guide in view must not wait for lazy loading, which some engines skip for fixed boxes.
+          helper.querySelector('img')?.setAttribute('loading', 'eager');
+        });
+        lifted = true;
+        if (!follow()) { reset(); refused = now; }
+        return;
+      }
+      const slots = helpers.reduce((total, helper) => total + Number(helper.dataset.slot || 0), 0);
+      // Hysteresis: lift at two screens of text, release only below one and a half.
+      if (document.documentElement.scrollHeight + slots < innerHeight * 1.5 || !follow()) { reset(); refused = now; }
+    };
+    let scheduled = false;
+    const later = callback => {
+      if (scheduled) return;
+      scheduled = true;
+      requestAnimationFrame(() => { scheduled = false; callback(); });
+    };
+    addEventListener('resize', () => later(layout), { passive: true });
+    addEventListener('scroll', () => { if (lifted) later(follow); }, { passive: true });
+    const observer = new ResizeObserver(() => later(layout));
+    document.querySelectorAll('.md-content, .md-sidebar__inner > .md-nav, .md-header, .md-tabs, .md-footer')
+      .forEach(element => observer.observe(element));
+    document.fonts.ready.then(() => later(layout));
+    helpers.forEach(helper => helper.querySelector('img')?.addEventListener('load', () => later(layout), { once: true }));
+    layout();
   }
 
   function initialize() {
-    const helpers = document.querySelector('.hz-page-helpers');
-    if (helpers && !helpers.dataset.ready) {
-      helpers.dataset.ready = 'true';
-      let scheduled = false;
-      const update = () => {
-        if (scheduled) return;
-        scheduled = true;
-        requestAnimationFrame(() => { scheduled = false; placeHelpers(helpers); });
-      };
-      window.addEventListener('resize', update, { passive: true });
-      window.addEventListener('scroll', update, { passive: true });
-      const layoutObserver = new ResizeObserver(update);
-      document.querySelectorAll('.md-content, .md-sidebar__inner > .md-nav, .md-header, .md-tabs, .md-footer')
-        .forEach(element => layoutObserver.observe(element));
-      document.fonts.ready.then(update);
-      helpers.querySelectorAll('img').forEach(img => img.addEventListener('load', update, { once: true }));
-      update();
+    const guides = [...document.querySelectorAll('.hz-page-helper[data-lane]')].slice(0, 2);
+    if (guides.length && !guides[0].dataset.ready) {
+      guides[0].dataset.ready = 'true';
+      placeGuides(guides);
     }
     const hero = document.querySelector('.hz-hero-art picture source');
     if (hero && !hero.dataset.ready) {

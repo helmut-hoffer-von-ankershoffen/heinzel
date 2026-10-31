@@ -18,6 +18,26 @@ Use a few distinct scenes rather than many nearly identical images. Crop with th
 focus, keeping enough context to explain the detail. Choose proportions for readability; do not force phone views
 and terminal output into one aspect ratio. Never redraw a product screen or edit pixels to invent functionality.
 
+## Characters
+
+Pip (time and first steps), Ada (inputs, connections, drafts, appearance) and Otto (decisions, review, reference)
+are the only guides. Add no new mascots.
+
+- **Budget.** One to five per page, counted by `data-heinzel-helper`; a plugin page has Pip (Ada for themes) at
+  Screenshots, Otto at Install and try, and Ada at Soundscapes only when the plugin has sound.
+- **Shape.** A full-size original illustration, a name, one cue of at most ten words and one 44px link. No
+  paragraphs, cards or borders. The cue is a plugin's first declared highlight (nine words, 80 characters), or a
+  fixed line written in `scripts/site_pages.py`; never invent features.
+- **Placement.** A waypoint sits after the heading of the section it explains and works without JavaScript. At 1100
+  pixels and wider, up to two are lifted into free lanes beside the article, navigation and footer, and only when
+  every one fits; tablet and phone keep them inline, never fixed or overlaying, at most one per phone screen.
+- **Motion.** None yet. When a guide gains an entrance or a cue change, it must be static under
+  `prefers-reduced-motion`, never scroll-linked, and never announce itself through `aria-live`.
+- **Imagined jobs.** Anything a character says about a team's future job is labelled "Imagined", links to
+  [what 0.2 does not do yet](HEINZELMAENNCHEN.md#what-02-does-not-do-yet), and never claims autonomous or
+  automatic delivery. Banned in cues: autonomous, automatically, while you sleep, sends, publishes, delivers, and
+  any customer or endorsement phrasing.
+
 ## Capture the intended state
 
 - **Wait for the feature, not a timer.** Wait for its accessible region, populated content and required renderer.
@@ -65,8 +85,8 @@ Check the built page in Chromium and WebKit at desktop and phone sizes, in light
 - Images load at readable sizes; closeups reveal something useful. No horizontal page overflow or clipped captions.
 - Galleries swipe sideways while vertical gestures still scroll the page. Buttons, keyboard navigation, counters,
   zoom, Escape and focus return work. Native scrolling and original-image links remain useful without JavaScript.
-- Characters lead with the illustration, a name, one short line and a useful link. Desktop gutter placement must
-  clear navigation, article, table of contents and footer; phone layouts keep characters inline.
+- Characters follow the [Characters](#characters) rules. `uv run --script scripts/site_check.py --characters` checks
+  them alone in Chromium and WebKit at 390, 1024, 1280, 1440 and 1920 pixels on every catalog page after a site build.
 - Lazy images are scrolled into view before readiness checks. Wait with a deadline for `complete` and
   `naturalWidth > 0` before decoding. This avoids mistaking a WebKit lazy-source transition for a missing image.
 - Generated Markdown containing nested raw HTML is verified after Markdown conversion. Check the actual DOM and

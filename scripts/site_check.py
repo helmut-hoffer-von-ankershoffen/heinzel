@@ -4,6 +4,7 @@
 # ///
 """Exercise the built product site under its GitHub Pages prefix, including non-JavaScript navigation."""
 
+import itertools
 import json
 import re
 import subprocess
@@ -208,66 +209,137 @@ def media_flow(page: "Page", base: str, snapshot: dict[str, Any]) -> None:
             media.close()
 
 
-def helper_layout(browser: "Browser", base: str, snapshot: dict[str, Any]) -> None:
-    """Keep character margins clear of the article, navigation and footer at every supported width."""
-    project = next((item for item in snapshot["plugins"] if item["name"] == "heinzel-resource"), snapshot["plugins"][0])
+HELPERS = """() => [...document.querySelectorAll('[data-heinzel-helper]')].map(el => {
+    const r = el.getBoundingClientRect();
+    const style = getComputedStyle(el);
+    return {gutter: el.hasAttribute('data-gutter'), fixed: style.position === 'fixed',
+        hidden: style.visibility === 'hidden', lane: el.dataset.lane || '', top: r.top + scrollY, height: r.height,
+        rect: {left: r.left, right: r.right, top: r.top, bottom: r.bottom}};
+})"""
+OBSTACLES = """() => [...document.querySelectorAll(
+    '.md-content,.md-sidebar__inner > .md-nav,.md-header,.md-tabs,.md-footer')]
+    .map(el => el.getBoundingClientRect()).filter(r => r.width && r.height)
+    .map(r => ({left: r.left, right: r.right, top: r.top, bottom: r.bottom}))"""
+GUTTER_WIDTH = 1100
+CHARACTER_WIDTHS = (1024, 1280, 1440, 1920, 390)
+SETTLE = """async position => {
+    document.querySelectorAll('.md-sidebar__inner > .md-nav').forEach(nav => {
+        if (position === 'navigation') nav.style.minHeight = '500px';
+        else nav.style.removeProperty('min-height');
+    });
+    const y = ['top', 'navigation'].includes(position) ? 0 : position === 'middle'
+        ? document.body.scrollHeight / 2 : document.body.scrollHeight;
+    window.scrollTo(0, y);
+    await document.fonts.ready;
+    await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+}"""
+
+
+def settled(page: "Page") -> None:
+    """Wait (bounded) for lifted guides' artwork, which loads eagerly because it is in view."""
+    page.wait_for_function(
+        "[...document.querySelectorAll('[data-gutter] img')].every(image => image.complete && image.naturalWidth > 0)",
+        timeout=10_000,
+    )
+
+
+def check_characters(page: "Page", where: str, *, expect_both: bool = False) -> list[dict[str, Any]]:
+    """Characters stay within budget and out of the way at the page's current width and scroll position."""
+    width = page.evaluate("innerWidth")
+    helpers = page.evaluate(HELPERS)
+    require(1 <= len(helpers) <= MAX_HELPERS, f"One to five characters per page: {where}")
+    require(page.evaluate(FITS_VIEWPORT), f"Character layout overflows: {where}")
+    lifted = [item for item in helpers if item["gutter"]]
+    require(len(lifted) <= 2, f"At most two gutter guides: {where}")  # noqa: PLR2004
+    require(
+        all(item["gutter"] == item["fixed"] for item in helpers),
+        f"Only gutter guides may be fixed (never overlay inline characters): {where}",
+    )
+    if width < GUTTER_WIDTH:
+        require(not lifted, f"Tablet and phone widths keep characters inline: {where}")
+    if expect_both:
+        candidates = [item for item in helpers if item["lane"]]
+        require(len(lifted) == len(candidates) > 0, f"Free desktop gutters must show every lane guide: {where}")
+    obstacles = page.evaluate(OBSTACLES)
+    for item in lifted:
+        r = item["rect"]
+        inside = r["left"] >= 0 and r["right"] <= width and r["bottom"] <= page.evaluate("innerHeight")
+        require(inside, f"Gutter guide leaves the viewport: {where}")
+        if item["hidden"]:
+            continue  # pushed beneath the header by the footer: unseen, never overlapping
+        require(r["top"] >= 0, f"Gutter guide above the viewport: {where}")
+        for box in obstacles:
+            overlap = r["left"] < box["right"] and r["right"] > box["left"]
+            overlap = overlap and r["top"] < box["bottom"] and r["bottom"] > box["top"]
+            require(not overlap, f"Gutter guide overlaps the article, navigation, header or footer: {where}")
+    return helpers
+
+
+def helper_layout(browser: "Browser", base: str, snapshot: dict[str, Any], axe: Path) -> None:
+    """Keep characters clear of the article, navigation and footer at every supported width, on every plugin page."""
+    resource = next(
+        (item for item in snapshot["plugins"] if item["name"] == "heinzel-resource"), snapshot["plugins"][0]
+    )
     page = browser.new_page()
-    errors = []
+    errors: list[str] = []
     page.on("pageerror", lambda error: errors.append(str(error)))
     try:
-        for width in (1440, 1920, 390):
-            page.set_viewport_size({"width": width, "height": 960})
-            page.goto(base + f"catalog/{project['id']}/")
-            page.locator(".hz-page-helper img").first.evaluate("image => image.decode()")
+        for width in CHARACTER_WIDTHS:
+            page.set_viewport_size({"width": width, "height": 844 if width < GUTTER_WIDTH else 960})
+            for route in ["", *(f"catalog/{item['id']}/" for item in snapshot["plugins"]), "guides/install/"]:
+                page.goto(base + route)
+                settled(page)
+                helpers = check_characters(page, f"{width}/{route or 'home'}")
+                if width == 390:  # noqa: PLR2004
+                    tops = sorted((item["top"], item["height"]) for item in helpers)
+                    for (first, height), (second, _) in itertools.pairwise(tops):
+                        require(
+                            second - first >= page.evaluate("innerHeight") - height,
+                            f"At most one character per phone screen: {route or 'home'}",
+                        )
+            page.goto(base + f"catalog/{resource['id']}/")
+            settled(page)
             for position in ("top", "middle", "navigation", "bottom"):
-                page.evaluate(
-                    """async position => {
-                    document.querySelectorAll('.md-sidebar__inner > .md-nav').forEach(nav => {
-                        if (position === 'navigation') nav.style.minHeight = '500px';
-                        else nav.style.removeProperty('min-height');
-                    });
-                    const y = ['top', 'navigation'].includes(position) ? 0 : position === 'middle'
-                        ? document.body.scrollHeight / 2 : document.body.scrollHeight;
-                    window.scrollTo(0, y);
-                    await document.fonts.ready;
-                    await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
-                    }""",
-                    position,
-                )
-                require(page.evaluate(FITS_VIEWPORT), f"Character layout overflows at {width}/{position}")
-                if width in (1440, 1920) and position == "top" and project["name"] == "heinzel-resource":
-                    require(
-                        page.locator("[data-heinzel-helper][data-gutter]").count()
-                        == page.locator("[data-heinzel-helper]").count(),
-                        f"Available desktop gutters must show both characters at {width}",
-                    )
-                require(
-                    page.evaluate("""() => {
-                    const overlap = (a,b) => a.left < b.right && a.right > b.left
-                        && a.top < b.bottom && a.bottom > b.top;
-                    const obstacles = [...document.querySelectorAll(
-                        '.md-content,.md-sidebar__inner > .md-nav,.md-header,.md-tabs,.md-footer')]
-                        .map(el => el.getBoundingClientRect()).filter(r => r.width && r.height);
-                    return [...document.querySelectorAll('[data-heinzel-helper]')].every(el => {
-                        if (!el.hasAttribute('data-gutter')) return getComputedStyle(el).position !== 'fixed';
-                        if (innerWidth < 1100) return false;
-                        const r = el.getBoundingClientRect();
-                        return r.left >= 0 && r.right <= innerWidth && r.top >= 0 && r.bottom <= innerHeight
-                            && !obstacles.some(obstacle => overlap(r, obstacle));
-                    });
-                    }"""),
-                    f"Character overlaps page content at {width}/{position}",
-                )
+                page.evaluate(SETTLE, position)
+                check_characters(page, f"{width}/{position}", expect_both=width in (1440, 1920) and position == "top")
                 require(not errors, f"Character layout script errors at {width}/{position}")
                 page.screenshot(path=str(REPORTS / f"helpers-{width}-{position}.png"))
+            if width in (1440, 390):
+                audit(page, axe, f"helpers-{width}")
     finally:
         page.close()
+
+
+def helper_fallbacks(browser: "Browser", base: str, snapshot: dict[str, Any]) -> None:
+    """Without JavaScript every waypoint is on the page; with reduced motion nothing moves."""
+    route = f"catalog/{snapshot['plugins'][0]['id']}/"
+    plain = browser.new_context(java_script_enabled=False, viewport={"width": 1920, "height": 960})
+    page = plain.new_page()
+    page.goto(base + route)
+    helpers = page.evaluate(HELPERS)
+    require(len(helpers) >= 2, "Waypoints are server-rendered without JavaScript")  # noqa: PLR2004
+    require(not any(item["fixed"] or item["gutter"] for item in helpers), "No gutter without JavaScript")
+    require(page.locator(".hz-page-helper a:visible").count() == len(helpers), "Every waypoint link must show")
+    plain.close()
+    calm = browser.new_context(reduced_motion="reduce", viewport={"width": 1920, "height": 960})
+    page = calm.new_page()
+    page.goto(base + route)
+    settled(page)
+    still = page.evaluate(
+        """() => [...document.querySelectorAll('[data-heinzel-helper], [data-heinzel-helper] *')].every(el => {
+        const style = getComputedStyle(el);
+        return style.animationName === 'none' && parseFloat(style.transitionDuration) === 0;
+    }) && !document.querySelector('[data-heinzel-helper] [aria-live]')"""
+    )
+    require(still, "Characters add no motion or live regions")
+    calm.close()
 
 
 def sweep(browser: "Browser", engine: str, base: str, axe: Path, snapshot: dict[str, Any]) -> None:
     """Exercise desktop/phone and light/dark combinations with real rendered artifacts."""
     total = len(snapshot["plugins"])
-    helper_layout(browser, base, snapshot)
+    helper_layout(browser, base, snapshot, axe)
+    helper_fallbacks(browser, base, snapshot)
     for width in (1440, 390):
         for mode in ("light", "dark"):
             context = browser.new_context(viewport={"width": width, "height": 960}, color_scheme=mode)
@@ -349,19 +421,21 @@ def main() -> None:
             for engine in ("chromium", "webkit"):
                 browser = getattr(playwright, engine).launch()
                 try:
-                    sweep(
-                        browser,
-                        engine,
-                        f"http://127.0.0.1:{server.server_port}/heinzel/",
-                        candidates[0],
-                        snapshot,
-                    )
+                    base = f"http://127.0.0.1:{server.server_port}/heinzel/"
+                    if "--characters" in sys.argv:  # the character guides alone: quick while iterating on them
+                        helper_layout(browser, base, snapshot, candidates[0])
+                        helper_fallbacks(browser, base, snapshot)
+                    else:
+                        sweep(browser, engine, base, candidates[0], snapshot)
                 finally:
                     browser.close()
     finally:
         server.shutdown()
         server.server_close()
         thread.join(timeout=5)
+    if "--characters" in sys.argv:
+        print("Characters accepted: Chromium + WebKit, 390/1024/1280/1440/1920, gutters, no-JS, reduced motion, axe")
+        return
     print("Site accepted: Chromium + WebKit, desktop + phone, light + dark, filters, keyboard, no-JS and axe")
 
 

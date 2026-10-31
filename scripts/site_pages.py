@@ -9,7 +9,9 @@ import html
 import json
 import os
 import posixpath
+import re
 import shlex
+import unicodedata
 from pathlib import Path
 from typing import Any
 
@@ -489,80 +491,216 @@ def on_files(files: Any, config: Any) -> Any:  # noqa: ANN401 - MkDocs owns the 
     return files
 
 
-def page_helpers(path: str, page_url: str, project: Object | None = None) -> list[Object]:
-    """Give each page a brief contextual voice and a useful next step."""
-    reviewer = {
-        "art": "reviewer",
-        "name": "Otto",
-        "quote": "Look around before inviting a helper in.",
-        "link": href("CATALOG/", page_url),
-        "action": "Browse plugins",
-    }
-    if project is not None:
-        feature = project["highlights"][0] if project.get("highlights") else project["summary"]
-        words = str(feature).split()
-        brief = " ".join(words[:HELPER_WORDS])
-        if len(brief) > HELPER_CHARACTERS:
-            brief = brief[: HELPER_CHARACTERS - 1].rstrip() + "…"
-        elif len(words) > HELPER_WORDS:
-            brief += "…"
-        guide = {
-            "art": "draftkeeper" if project.get("themes") else "timekeeper",
-            "name": "Ada" if project.get("themes") else "Pip",
-            "quote": brief,
-            "link": "#screenshots",
-            "action": "See it working",
-        }
-        return [guide, reviewer]
-    guide = {
-        "art": "draftkeeper",
-        "name": "Ada",
-        "quote": "Give your helpers a clear, useful job.",
-        "link": href("WORKFLOWS/", page_url),
-        "action": "Explore contracts",
-    }
-    if path.startswith(("guides/install", "guides/first-steps")):
-        guide.update(
-            art="timekeeper",
-            name="Pip",
-            quote="Let's find your first useful screen together.",
-            link=href("guides/first-steps/", page_url),
-            action="First steps",
-        )
-    elif "ARCHITECTURE" in path or "architecture" in path or path.startswith("adr/"):
-        guide.update(
-            quote="Small pieces can do useful work together.", link=href("PLUGINS/", page_url), action="Explore plugins"
-        )
-    elif path in {"CLI_REFERENCE.md", "CONFIGURATION.md", "MODULES.md"}:
-        guide.update(
-            art="reviewer",
-            name="Otto",
-            quote="Find the command for your next step.",
-            link=href("CLI_REFERENCE/", page_url),
-            action="Command reference",
-        )
-    return [guide]
-
-
-def on_page_context(
-    context: Object,
+def helper(  # noqa: PLR0913, PLR0917 - one flat, explicit record per character cue
+    art: str,
+    name: str,
+    quote: str,
+    link: str,
+    action: str,
+    page_url: str,
     *,
-    page: Any,  # noqa: ANN401 - MkDocs owns event objects
-    config: Any,  # noqa: ANN401 - MkDocs owns event objects
-    **_: Any,  # noqa: ANN401 - MkDocs owns event objects
+    section: str | None = None,
+    lane: str | None = None,
 ) -> Object:
-    """Attach explainers in the shared layout, including automatically discovered future plugin pages."""
-    path = page.file.src_uri
-    project = config.extra.get("hz_plugin_pages", {}).get(path)
-    context["hz_helpers"] = page_helpers(path, page.url, project)
-    return context
+    """One character cue: who speaks, the cue, one link, the section it sits beside and its desktop lane."""
+    return {
+        "art": art,
+        "name": name,
+        "quote": quote,
+        "link": link,
+        "action": action,
+        "src": href(f"assets/website/helper-{art}.svg", page_url),
+        "section": section,
+        "lane": lane,
+    }
+
+
+def plugin_helpers(project: Object, page_url: str) -> list[Object]:
+    """Pip (Ada for themes) at the screenshots, Otto at the install, Ada at sound only when the plugin has any."""
+    feature = project["highlights"][0] if project.get("highlights") else project["summary"]
+    words = str(feature).split()
+    brief = " ".join(words[:HELPER_WORDS])
+    if len(brief) > HELPER_CHARACTERS:
+        brief = brief[: HELPER_CHARACTERS - 1].rstrip() + "…"
+    elif len(words) > HELPER_WORDS:
+        brief += "…"
+    themed = bool(project.get("themes"))
+    guides = [
+        helper(
+            "draftkeeper" if themed else "timekeeper",
+            "Ada" if themed else "Pip",
+            brief,
+            "#screenshots",
+            "See it working",
+            page_url,
+            section="screenshots",
+            lane="left",
+        )
+    ]
+    if project.get("soundscapes"):
+        guides.append(
+            helper(
+                "draftkeeper",
+                "Ada",
+                "Sound starts only when you choose.",
+                "#soundscapes",
+                "Sound options",
+                page_url,
+                section="soundscapes",
+            )
+        )
+    guides.append(
+        helper(
+            "reviewer",
+            "Otto",
+            "Check source and fit before inviting it in.",
+            "#install-and-try",
+            "Install and try",
+            page_url,
+            section="install-and-try",
+            lane="right",
+        )
+    )
+    return guides
+
+
+def page_helpers(path: str, page_url: str, project: Object | None = None) -> list[Object]:
+    """Give each page one to five brief contextual voices, each with a useful next step."""
+    if project is not None:
+        return plugin_helpers(project, page_url)
+    if path == "README.md":
+        return [
+            helper(
+                "timekeeper",
+                "Pip",
+                "Your first useful screen is three commands away.",
+                href("guides/install/", page_url),
+                "Install Heinzel",
+                page_url,
+                section="a-small-core-a-growing-world",
+                lane="left",
+            ),
+            helper(
+                "reviewer",
+                "Otto",
+                "Build a helper. Keep its work inspectable.",
+                href("PLUGIN_AUTHORING/", page_url),
+                "Build a plugin",
+                page_url,
+                section="your-first-contribution-can-be-a-plugin",
+                lane="right",
+            ),
+        ]
+    if path.startswith(("guides/install", "guides/first-steps")):
+        return [
+            helper(
+                "timekeeper",
+                "Pip",
+                "Let's find your first useful screen together.",
+                href("guides/first-steps/", page_url),
+                "First steps",
+                page_url,
+                lane="any",
+            )
+        ]
+    if path in {"CLI_REFERENCE.md", "CONFIGURATION.md", "MODULES.md"}:
+        return [
+            helper(
+                "reviewer",
+                "Otto",
+                "Find the command for your next step.",
+                href("CLI_REFERENCE/", page_url),
+                "Command reference",
+                page_url,
+                lane="any",
+            )
+        ]
+    if "ARCHITECTURE" in path or "architecture" in path or path.startswith("adr/"):
+        quote, link, action = "Small pieces can do useful work together.", href("PLUGINS/", page_url), "Explore plugins"
+    else:
+        quote, link, action = (
+            "Give your helpers a clear, useful job.",
+            href("WORKFLOWS/", page_url),
+            "Explore contracts",
+        )
+    return [helper("draftkeeper", "Ada", quote, link, action, page_url, lane="any")]
+
+
+def waypoint(guide: Object, *, standalone: bool = False) -> str:
+    """A character beside the section it explains. Server-rendered, so it works without JavaScript."""
+    section = f' data-section="{escape(guide["section"])}"' if guide.get("section") else ""
+    lane = f' data-lane="{escape(guide["lane"])}"' if guide.get("lane") else ""
+    raw = "" if standalone else ' markdown="0"'
+    return "\n".join(
+        (
+            (
+                f'<aside class="hz-page-helper" data-heinzel-helper{section}{lane} '
+                f'aria-label="{escape(guide["name"])}: {escape(guide["action"])}"{raw}>'
+            ),
+            f'<p class="hz-helper-name">{escape(guide["name"])}</p>',
+            f'<img src="{escape(guide["src"])}" alt="" width="140" height="232" loading="lazy">',
+            '<div class="hz-helper-body">',
+            f'<p class="hz-helper-quote">“{escape(guide["quote"])}”</p>',
+            f'<a href="{escape(guide["link"])}">{escape(guide["action"])} →</a>',
+            "</div>",
+            "</aside>",
+        )
+    )
+
+
+def slug(heading: str) -> str:
+    """The anchor MkDocs' table-of-contents extension gives a heading (ASCII words joined by hyphens)."""
+    heading = re.sub(r"\s*\{[^}]*\}\s*$", "", re.sub(r"<[^>]+>", "", heading))
+    ascii_text = unicodedata.normalize("NFKD", heading).encode("ascii", "ignore").decode("ascii")
+    return re.sub(r"[-\s]+", "-", re.sub(r"[^\w\s-]", "", ascii_text).strip().lower())
+
+
+def place_waypoints(markdown: str, guides: list[Object]) -> str:
+    """Put each waypoint after its section heading, else the page's first H2, else at the end of the page."""
+    lines = markdown.split("\n")
+    headings: list[tuple[int, int, str]] = []
+    fence = ""
+    for index, line in enumerate(lines):
+        marker = line.lstrip()[:3]
+        if marker in {"```", "~~~"}:
+            fence = "" if fence == marker else fence or marker
+        elif not fence and (found := re.match(r"(#{1,6})[ \t]+(.+?)[ \t]*#*[ \t]*$", line)):
+            headings.append((index, len(found.group(1)), slug(found.group(2))))
+    inserts: dict[int, list[str]] = {}
+    tail = []
+    for guide in guides:
+        wanted = guide.get("section")
+        target = next((i for i, level, name in headings if (name == wanted if wanted else level == 2)), None)  # noqa: PLR2004
+        if target is None:
+            tail.append(waypoint(guide))
+        else:
+            inserts.setdefault(target, []).append(waypoint(guide))
+    for index in sorted(inserts, reverse=True):
+        lines[index + 1 : index + 1] = ["", *inserts[index]]
+    return "\n".join(lines) + "".join(f"\n\n{html_block}\n" for html_block in tail)
+
+
+def on_post_page(output: str, **_: Any) -> str:  # noqa: ANN401 - MkDocs owns the event objects
+    """Drop the marker that kept Markdown out of a waypoint where no Markdown processor consumed it."""
+    return output.replace(' markdown="0"', "")
+
+
+def on_env(env: Any, **_: Any) -> Any:  # noqa: ANN401 - MkDocs owns the Jinja environment
+    """Let templates such as the 404 page render the same waypoint markup."""
+    from markupsafe import Markup  # noqa: PLC0415 - Jinja's own dependency, present only in the docs environment
+
+    env.globals["hz_waypoints"] = lambda guides: Markup("\n".join(waypoint(guide, standalone=True) for guide in guides))  # noqa: S704 - escaped in waypoint()
+    return env
 
 
 def on_page_markdown(markdown: str, *, page: Any, config: Any, **_: Any) -> str:  # noqa: ANN401 - MkDocs owns event objects
-    """Fill presentation markers while keeping the authored Markdown useful on GitHub."""
-    del config
-    if page.file.src_uri.startswith("plugins/"):
+    """Fill presentation markers and place the page's characters, keeping the authored Markdown useful on GitHub."""
+    path = page.file.src_uri
+    if path.startswith("plugins/"):
         page.meta["search"] = {"exclude": True}
+    markdown = place_waypoints(
+        markdown, page_helpers(path, page.url, config.extra.get("hz_plugin_pages", {}).get(path))
+    )
     if "<!-- hz:" not in markdown:
         return markdown
     snapshot = load_snapshot(Path(os.environ.get("HZ_SITE_CATALOG", str(SNAPSHOT))))
