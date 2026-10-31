@@ -22,6 +22,7 @@ if TYPE_CHECKING:
 ROOT = Path(__file__).resolve().parents[1]
 REPORTS = ROOT / "reports" / "site"
 MAX_HELPERS = 5
+HOME_STORIES = 3
 FITS_VIEWPORT = "document.documentElement.scrollWidth <= innerWidth + 1"
 
 
@@ -164,13 +165,101 @@ def gallery_flow(page: "Page", count: int) -> None:
     page.mouse.move(box["x"] + box["width"] / 2, box["y"] + min(80, box["height"] / 2))
     page.mouse.wheel(1500, 0)
     page.wait_for_function("document.querySelector('[data-gallery-track]').scrollLeft > 0")
+    page.evaluate("""() => new Promise(resolve => {
+        const track = document.querySelector('[data-gallery-track]');
+        let last = track.scrollLeft;
+        let stable = 0;
+        function settled() {
+            const position = track.scrollLeft;
+            stable = Math.abs(position - last) < .5 ? stable + 1 : 0;
+            last = position;
+            if (stable >= 4) resolve();
+            else requestAnimationFrame(settled);
+        }
+        requestAnimationFrame(settled);
+    })""")
     require(
         page.evaluate(FITS_VIEWPORT),
         "The gallery scrolls internally, never the whole page",
     )
 
 
-def media_flow(page: "Page", base: str, snapshot: dict[str, Any]) -> None:
+def zoom_flow(page: "Page", axe: Path, identity: str, selector: str = ".hz-screenshots figure a") -> None:
+    """Inspect an actual image, zoom to native pixels, pan, fit and return focus."""
+    link = page.locator(selector).first
+    source = link.locator("img")
+    link.scroll_into_view_if_needed()
+    page.wait_for_function(
+        "image => image.complete && image.naturalWidth > 0", arg=source.element_handle(), timeout=15000
+    )
+    source.evaluate("image => image.decode()")
+    link.click()
+    viewer = page.locator("dialog.hz-image-viewer")
+    expect(viewer).to_be_visible()
+    image = viewer.locator("img")
+    image.evaluate("image => image.decode()")
+    page.get_by_role("button", name="Actual size", exact=True).click()
+    require(image.evaluate("image => Math.abs(image.width - image.naturalWidth) <= 1"), "Actual pixels")
+    page.get_by_role("button", name="Zoom in", exact=True).click()
+    require(image.evaluate("image => image.width > image.naturalWidth"), "Zoom must enlarge the screenshot")
+    viewport = viewer.locator(".hz-image-viewport")
+    viewport.evaluate("element => element.scrollTo(element.scrollWidth, element.scrollHeight)")
+    require(
+        viewport.evaluate(
+            "element => (element.scrollWidth <= element.clientWidth && "
+            "element.scrollHeight <= element.clientHeight) || "
+            "element.scrollLeft > 0 || element.scrollTop > 0"
+        ),
+        "An oversized screenshot must pan inside its viewport",
+    )
+    page.get_by_role("button", name="Fit", exact=True).click()
+    require(
+        image.evaluate(
+            "image => image.width <= image.parentElement.clientWidth + 1 && "
+            "image.height <= image.parentElement.clientHeight + 1"
+        ),
+        "Fit must reveal the whole screenshot",
+    )
+    expect(viewer.get_by_role("link", name="Open original")).to_have_attribute("href", link.get_attribute("href"))
+    audit(page, axe, identity + "-zoom")
+    page.keyboard.press("Escape")
+    expect(viewer).to_have_count(0)
+    require(link.evaluate("link => link === document.activeElement"), "Closing zoom must return focus")
+
+
+def gallery_shape_flow(page: "Page") -> None:
+    """Square and portrait fixtures retain natural proportions instead of a landscape letterbox."""
+    track = page.locator("[data-gallery-track]")
+    track.focus()
+    track.press("Home")
+    image = track.locator("img").first
+    for width, height in ((384, 382), (390, 844)):
+        image.evaluate(
+            """async (image, size) => {
+                const [width, height] = size;
+                image.src = 'data:image/svg+xml,' + encodeURIComponent(
+                    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">`
+                    + '<rect width="100%" height="100%" fill="gray"/></svg>');
+                await image.decode();
+            }""",
+            [width, height],
+        )
+        require(
+            image.evaluate(
+                "image => Math.abs(image.width / image.height - image.naturalWidth / image.naturalHeight) < .01"
+            ),
+            "Square and portrait images must keep their natural proportions",
+        )
+        page.wait_for_function(
+            """() => {
+                const track = document.querySelector('[data-gallery-track]');
+                return track.clientHeight >= track.firstElementChild.getBoundingClientRect().height + 15;
+            }"""
+        )
+        require(page.evaluate(FITS_VIEWPORT), "Portrait captures must never widen the page")
+
+
+def media_flow(page: "Page", base: str, snapshot: dict[str, Any], axe: Path, identity: str) -> None:
     """Check gallery images and explicit playback without contacting YouTube."""
     for project in snapshot["plugins"]:
         if not project.get("screenshots") and not project.get("soundscapes"):
@@ -195,6 +284,9 @@ def media_flow(page: "Page", base: str, snapshot: dict[str, Any]) -> None:
             for image in images.all():
                 image.scroll_into_view_if_needed()
                 image.evaluate("image => image.decode()")
+            if images.count():
+                zoom_flow(media, axe, identity + "-" + project["id"])
+                gallery_shape_flow(media)
             require(not any("youtube" in url for url in requests), "YouTube must not load before Play")
             sounds = project.get("soundscapes", [])
             if sounds:
@@ -253,14 +345,23 @@ def sweep(browser: "Browser", engine: str, base: str, axe: Path, snapshot: dict[
                 identity = f"{engine}-{width}-{mode}-{name}"
                 audit(page, axe, identity)
                 if name == "home":
+                    stories = page.locator(".hz-product-stories > .hz-product-story")
+                    require(
+                        stories.count() == HOME_STORIES
+                        and stories.evaluate_all(
+                            "stories => stories.every(story => story.querySelectorAll(':scope > figure').length === 1)"
+                        ),
+                        "The product tour must retain three direct stories with one full-width image each",
+                    )
                     manual_theme_flow(page, mode, axe, identity)
+                    zoom_flow(page, axe, identity, ".hz-product-story figure a")
                 page.screenshot(path=str(REPORTS / f"{identity}.png"), full_page=True)
                 if name == "catalog":
                     catalog_flow(page, total)
                     audit(page, axe, identity + "-detail")
                 if name == "install":
                     copy_command(page, "app-install")
-            media_flow(page, base, snapshot)
+            media_flow(page, base, snapshot, axe, f"{engine}-{width}-{mode}")
             require(not errors, f"Uncaught browser errors: {errors}")
             context.close()
     context = browser.new_context(java_script_enabled=False, viewport={"width": 390, "height": 844})
