@@ -8,11 +8,13 @@ amended-by: 0054
 
 # 0037: Plugins bring playbooks: asset types with discovery hints, template contracts and recommended settings
 
+*Since 0051 the module is `heinzel`: read `hz workflow` as `hz heinzel` and `[workflow]` as `[heinzel]`.*
+
 ## Context and Problem Statement
 
 The first contract worth validating is a team's weekly report: drafted by Friday 17:00 from the week's pull requests,
-tracker items and the previous report, edited and sent by the person who owns it. The maintainer decided that the
-core knows nothing about weekly reports: "Playbooks as plugins. A plugin can bring adapters, a playbook (asset types
+tracker items and the previous report, edited and sent by the person who owns it. The core knows nothing about
+weekly reports, because: "Playbooks as plugins. A plugin can bring adapters, a playbook (asset types
 with discovery hints + template contracts) and config defaults. Setup proposes assets found by those hints and offers
 the template contracts." Layers and playbooks are plugins (an ADR on layers as plugins is being written alongside
 this one); this record decides only what a playbook is, how the core collects it, and who acts on it.
@@ -53,7 +55,7 @@ them without the core knowing what they are about.
   input's, and a mismatch is reported as the playbook's mistake.
 - **Asset types and hints.** An `AssetType` has a name, a description, `DiscoveryHint`s and optionally `kept_by`, the
   template whose output keeps it true. A hint is a contract input's shape (`read`, `args`, `window`, one window grammar
-  in the kernel: `30d`, `last 30d` or `next 14d`, at most 366 days, amended 2026-10-24) plus `match`, a
+  in the kernel: `30d`, `last 30d` or `next 14d`, at most 366 days) plus `match`, a
   pattern on each returned item's `title`; a matching item's `ref`, `key`, `id` or `url` is the candidate's reference.
 - **Templates.** A `ContractTemplate` is a contract's text with `{{asset:<type>}}` placeholders, which must sit in
   double-quoted strings in the frontmatter (refused anywhere else: unquoted they could add keys, in the body they
@@ -102,7 +104,7 @@ them without the core knowing what they are about.
 - `tests/unit/kernel/playbooks_test.py`: every check at declaration (an active schedule, placeholders outside
   double-quoted frontmatter strings, settings a playbook may not recommend), filling placeholders in one pass,
   reading template files, the setup step `module.playbook` declares and its clash with a module's own step.
-- `tests/unit/modules/workflow_playbooks_test.py`: discovery (matches, references, the candidate cap, a failing
+- `tests/unit/modules/heinzel_playbooks_test.py`: discovery (matches, references, the candidate cap, a failing
   adapter, arguments that don't fit, an unbound capability), template lookup, a template that fails its checks, the
   setup walk writing only what is accepted.
 - `tests/integration/playbook_test.py`: a test plugin with adapters, a weekly report playbook and defaults, end to end
@@ -111,7 +113,7 @@ them without the core knowing what they are about.
 
 ## More Information
 
-- Decided by the maintainer, 2026-10-24: playbooks as plugins; a validation slice of one contract (draft ready
+- Validation slice: one contract (draft ready
   Friday 17:00, real inputs through vendor CLIs, a local draft the person edits and sends, measured after three
   Fridays by time saved and how much was changed). The weekly report playbook itself lives in a reference plugin.
 - Planned next: approval in place. The draft is written where the asset lives (this week's section of the rolling
