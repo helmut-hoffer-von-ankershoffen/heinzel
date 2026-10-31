@@ -11,6 +11,7 @@ import hashlib
 import json
 import logging
 import os
+import plistlib
 import re
 import secrets
 import selectors
@@ -973,8 +974,8 @@ class DaemonService:
     def _settle_released_unit(self, plist: Path, binary: Path, retire: str) -> None:
         """Decide from launchd's evidence what happens to a unit a release wrote."""
         registered = (
-            "launchd has this daemon registered and it may be running or able to run. "
-            "Next: `uvx --from heinzel hz system daemon uninstall`, then run the installer again."
+            "An earlier Heinzelmännchen background service is still registered with your Mac and may be running. "
+            "Remove it: `uvx --from heinzel hz system daemon uninstall`, then run the installer again."
         )
         pending = ("handover-pending.json", "handover-request.json", "mutation-pending.json")
         if not self._quiescence_target(binary) or not all(
@@ -1519,6 +1520,15 @@ class DaemonService:
                     fix="Run `hz system daemon install` again",
                 )
             ]
+        elif self._registered_program_missing():
+            checks = [
+                Check(
+                    name="daemon",
+                    status=Status.DEGRADED,
+                    detail="an earlier background service is still registered, but the program it starts is gone",
+                    fix="Run `uvx --from heinzel hz system daemon uninstall`",
+                )
+            ]
         else:
             checks = [Check(name="daemon", status=Status.UP, detail=f"loaded, every {status.interval_minutes} minutes")]
             checks.append(self._freshness(status))
@@ -1546,6 +1556,16 @@ class DaemonService:
                 )
             )
         return checks
+
+    def _registered_program_missing(self) -> bool:
+        """Whether the installed LaunchAgent names a program that is gone; parsed only to explain, never to trust."""
+        if self._platform != "darwin":
+            return False
+        try:
+            arguments = plistlib.loads(plist_path(self.unit_dir).read_bytes()).get("ProgramArguments")
+            return bool(arguments) and not Path(arguments[0]).exists()
+        except (OSError, ValueError, TypeError, AttributeError, plistlib.InvalidFileException):
+            return False
 
     def jobs(self) -> list[JobInfo]:
         """Every job the kernel knows, with its schedule, next slot and last run; a damaged ledger is a problem."""

@@ -16,7 +16,7 @@ from heinzel.modules.heinzel._user_chat import UserChatService
 from heinzel.modules.system.runner._snapshot import RunnerSnapshotService
 from tests.unit.modules.user_chat_test import FixtureConfig, fake_claude
 
-pytestmark = pytest.mark.unit
+pytestmark = pytest.mark.integration
 
 
 def test_separate_consent_daemon_occurrence_dedup_and_pause(tmp_path, monkeypatch):  # noqa: PLR0915 - one authorization lifecycle
