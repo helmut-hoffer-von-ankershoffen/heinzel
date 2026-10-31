@@ -103,16 +103,17 @@ jobs:
             exit 0
           fi
           tag="v$VERSION"
-          base="https://github.com/$GH_REPO/releases/download"
           accept() {
             gh release download "$1" --pattern "heinzel-*-py3-none-any.whl" --dir "accept-$1"
             wheel="$(basename "accept-$1"/*.whl)"
             version="${wheel#heinzel-}"
-            gh workflow run acceptance.yml --ref main -f expected_version="${version%%-py3*}" \
-              -f candidate_wheel_url="$base/$1/$wheel" \
-              -f candidate_wheel_sha256="$(sha256sum "accept-$1/$wheel" | cut -d' ' -f1)" \
-              -f candidate_profile_url="https://github.com/$GH_REPO-plugins/releases/download/app-v${version%%-py3*}/standard.json" \
-              -f expected_app_version="${version%%-py3*}"
+            version="${version%%-py3*}"
+            wheel_url="$(gh release view "$1" --json assets --jq ".assets[] | select(.name == \"$wheel\") | .url")"
+            profile_url="$(gh release view "app-v$version" --repo "$GH_REPO-plugins" --json assets \
+              --jq '.assets[] | select(.name == "standard.json") | .url')"
+            gh workflow run acceptance.yml --ref main -f expected_version="$version" -f expected_app_version="$version" \
+              -f candidate_wheel_url="$wheel_url" -f candidate_profile_url="$profile_url" \
+              -f candidate_wheel_sha256="$(sha256sum "accept-$1/$wheel" | cut -d' ' -f1)"
           }
           case "$STEP" in
             accept_edge) accept "$EDGE" ;;
