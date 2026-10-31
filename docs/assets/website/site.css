@@ -193,6 +193,7 @@ body { font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFon
 @media(max-width:700px) { .hz-image-viewer { padding:.6rem; } }
 
 /* A readable product tour: native image proportions, with original character guides. */
+.hz-tour-story { min-width:0; margin:1.5rem 0 3rem; }
 .hz-product-stories { display:grid; gap:3rem; margin:2rem 0; }
 .hz-product-story { min-width:0; }
 .hz-story-intro { display:flex; align-items:center; gap:1rem; max-width:850px; margin:0 0 .75rem; }

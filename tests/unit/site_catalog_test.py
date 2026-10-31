@@ -734,3 +734,53 @@ def test_homepage_product_tour_survives_markdown_section_rendering():
     parser.feed(rendered)
     assert parser.articles == [("div", "hz-product-stories")] * 3
     assert parser.figures == [("article", "hz-product-story")] * 3
+
+
+def test_product_tour_stories_are_short_labelled_and_backed_by_files():
+    banned = ("autonomous", "automatically", "while you sleep", "sends", "publishes", "delivers")
+    assert [story["id"] for story in pages.TOUR_STORIES] == ["graph", "terminal", "chat"]
+    for story in pages.TOUR_STORIES:
+        assert len(story["cue"].split()) <= 10
+        assert story["name"] in {"Pip", "Ada", "Otto"}
+        assert not any(word in story["cue"].lower() for word in banned)
+        assert (pages.ROOT / "docs/assets/website" / f"helper-{story['art']}.svg").is_file()
+        assert len(story["images"]) >= 2
+        for name, label, caption in story["images"]:
+            assert (pages.TOUR_ASSETS / f"{name}.png").is_file()
+            assert label
+            assert caption
+            assert not any(word in caption.lower() for word in banned)
+
+
+def test_product_tour_images_match_their_recorded_provenance():
+    import hashlib
+
+    recorded = json.loads((pages.TOUR_ASSETS / "provenance.json").read_text())["images"]
+    published = {path.name: path for path in pages.TOUR_ASSETS.glob("*.png")}
+    used = {f"{name}.png" for story in pages.TOUR_STORIES for name, _, _ in story["images"]}
+    assert set(recorded) == set(published) == used
+    for name, path in published.items():
+        assert hashlib.sha256(path.read_bytes()).hexdigest() == recorded[name]["sha256"]
+        assert path.stat().st_size < 600_000
+
+
+def test_product_tour_story_renders_one_guide_and_a_gallery_with_reserved_space():
+    rendered = pages.tour_story(pages.TOUR_STORIES[0], "guides/tour/")
+    assert rendered.count("data-heinzel-helper") == 1
+    assert rendered.count("<figure ") == 3
+    assert "../../assets/tour/graph-overview.png" in rendered
+    assert 'width="2160" height="1350"' in rendered
+    assert 'referrerpolicy="no-referrer"' in rendered
+    assert "Previous workflow graph screenshot" in rendered
+    assert "data-gallery-track" in rendered
+
+
+def test_product_tour_markers_replace_their_github_fallback_and_reject_unknown_stories():
+    source = "a\n<!-- hz:tour-story chat -->\n![fallback](x.png)\n<!-- /hz:tour-story -->\nb"
+    rendered = pages.TOUR_FALLBACK.sub(lambda found: pages.tour_markup(found.group(1), "guides/tour/"), source)
+    assert "fallback" not in rendered
+    assert "hz-tour-story" in rendered
+    assert rendered.startswith("a\n")
+    assert rendered.endswith("\nb")
+    with pytest.raises(ValueError, match="Unknown tour story"):
+        pages.tour_markup("nothing", "guides/tour/")

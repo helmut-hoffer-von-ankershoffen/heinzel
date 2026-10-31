@@ -82,6 +82,7 @@ nav:
   - Start here:
       - Install Heinzel: guides/install.md
       - Your first session: guides/first-steps.md
+      - Product tour: guides/tour.md
       - Bootstrap a team: guides/manager.md
       - Join a team: guides/joining.md
   - Plugin catalog: CATALOG.md

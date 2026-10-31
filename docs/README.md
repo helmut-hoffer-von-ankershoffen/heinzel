@@ -88,6 +88,7 @@ Imagined helpers. Real product screens with fictional demonstration data. Select
 <!-- hz:home-gallery -->
 
 [Try Heinzel →](guides/install.md){ .hz-button }
+[Take the product tour](guides/tour.md){ .hz-button .hz-button-quiet }
 </section>
 
 <section class="hz-section" markdown>
@@ -172,7 +173,7 @@ How drift is prevented:
 - [Private HTTPS web sharing](PRIVATE_WEB_SHARING.md): exact proxy origins, pairing and terminal security.
 
 
-Site guides: [Install](guides/install.md) · [First steps](guides/first-steps.md) · [Contribute](guides/contribute.md) · [Architecture tour](guides/architecture.md) · [Catalog metadata and automation](guides/catalog.md) · [Vision](VISION.md) · [Catalog](CATALOG.md).
+Site guides: [Install](guides/install.md) · [First steps](guides/first-steps.md) · [Product tour](guides/tour.md) · [Contribute](guides/contribute.md) · [Architecture tour](guides/architecture.md) · [Catalog metadata and automation](guides/catalog.md) · [Vision](VISION.md) · [Catalog](CATALOG.md).
 
 Legacy generated recordings (historical; current sources are in the catalog): [Atlassian](plugins/heinzel-atlassian/index.md) · [Clock](plugins/heinzel-clock/index.md) · [GitHub](plugins/heinzel-github/index.md) · [Google](plugins/heinzel-google/index.md) · [Tailscale](plugins/heinzel-tailscale/index.md) · [Zoom](plugins/heinzel-zoom/index.md).
 
