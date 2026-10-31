@@ -117,6 +117,80 @@ def test_code_changes_flag_network_security_and_imports():
     assert lane(ok) == []
 
 
+def test_the_apps_words_may_change_but_not_its_code():
+    def words(line):
+        return ship.Change("web/src/i18n.ts", "M", added=[(5, line)], removed=[(5, '  "a.b": "old",')])
+
+    assert lane(words('  "plugins.firstParty": "First-party",')) == []
+    assert lane(words('    "Reporting lines are guessed from your calendar. Connect one in Settings.",')) == []
+    assert lane(words('  "nav.artifacts":')) == []
+    assert lane(words('  "a.b": fetch("/x"),'))
+    assert lane(words("  const x = 1;"))
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        '"plugins.firstParty": "First-party",',
+        '  "nav.team": "Team roster"',
+        '    "Reporting lines are guessed from your calendar. Connect one in Settings.",',
+        '  "say.quote": "She said \\"hi\\" twice",',
+        '  "nav.artifacts":',
+        "",
+    ],
+)
+def test_i18n_entries_that_are_plain_strings_match(line):
+    assert ship.I18N_ENTRY.fullmatch(line.strip())
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        '  "a.b": fetch("/x"),',
+        "const x = 1;",
+        '"a": "b" + c,',
+        '"a": "unterminated',
+        'import "a": "b"',
+        '"a": "b", "c": "d",',
+    ],
+)
+def test_i18n_lines_with_code_do_not_match(line):
+    assert not ship.I18N_ENTRY.fullmatch(line.strip())
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "import x from 'y';",
+        "  import type { A } from './a';",
+        "export { a } from './b';",
+        "export * as ns from './c';",
+        "const m = require('x');",
+        "import('lazy')",
+    ],
+)
+def test_import_lines_match(line):
+    assert ship.IMPORT.search(line)
+
+
+@pytest.mark.parametrize(
+    "line", ["<p>important</p>", "const exported = 1;", "// a required( field", "export const A = 1;"]
+)
+def test_ordinary_lines_are_not_imports(line):
+    assert not ship.IMPORT.search(line)
+
+
+def test_the_line_patterns_stay_fast_on_hostile_input():
+    import time
+
+    hostile = ['"' + "\\" * 20000, '"a": "' + "x" * 50000, "export" + " " * 50000, " " * 50000 + "x", "\\" * 50000]
+    start = time.monotonic()
+    for text in hostile:
+        ship.I18N_ENTRY.fullmatch(text.strip())
+        ship.IMPORT.search(text)
+    assert time.monotonic() - start < 1.0
+
+
 def test_size_limits():
     many = [ship.Change(f"docs/guides/g{i}.md", "M", added=[(1, "x")], removed=[(1, "y")]) for i in range(9)]
     assert any("files" in r for r in lane(*many))
@@ -160,9 +234,9 @@ def test_no_snippet_for_a_badge_only_change():
 
 
 def test_pages_of_documents_on_the_site():
-    assert ship.page_url("docs/guides/install.md") == ship.SITE + "guides/install/"
-    assert ship.page_url("docs/README.md") == ship.SITE
-    assert ship.page_url("docs/guides/README.md") == ship.SITE + "guides/"
+    assert ship.page_url("docs/guides/install.md") == ship.site_url() + "guides/install/"
+    assert ship.page_url("docs/README.md") == ship.site_url()
+    assert ship.page_url("docs/guides/README.md") == ship.site_url() + "guides/"
     assert ship.page_url("web/src/index.css") is None
 
 
@@ -221,3 +295,156 @@ def test_the_second_failure_stops_the_change(tmp_path, monkeypatch, capsys):
     with pytest.raises(SystemExit) as later:
         ship.refuse_if_stopped("pr")
     assert later.value.code == 3
+
+
+def not_small_state(tmp_path, monkeypatch, changes):
+    """A change stopped as not small; `changes` is what the working tree holds afterwards."""
+    monkeypatch.setattr(ship, "state_file", lambda: tmp_path / "ship.json")
+    monkeypatch.setattr(ship, "branch", lambda: "docs/x")
+    monkeypatch.setattr(ship, "root", lambda: tmp_path)
+    monkeypatch.setattr(ship, "collect", lambda head=None: changes)
+    ship.save(
+        {"failures": [], "stopped": True, "why": "Not a small change: x.", "kind": "not-small", "stopped_at": "old"}
+    )
+
+
+def test_a_not_small_stop_clears_when_the_diff_becomes_small(tmp_path, monkeypatch):
+    small = {"docs/guides/g.md": ship.Change("docs/guides/g.md", "M", added=[(1, "x y z")], removed=[(1, "a")])}
+    not_small_state(tmp_path, monkeypatch, small)
+    ship.refuse_if_stopped("classify")  # no exit: the diff changed and is small now
+    assert ship.load()["stopped"] is False
+
+
+def test_a_not_small_stop_stays_while_the_diff_is_unchanged_or_still_not_small(tmp_path, monkeypatch):
+    big = {"src/heinzel/a.py": ship.Change("src/heinzel/a.py", "M", added=[(1, "x")])}
+    not_small_state(tmp_path, monkeypatch, big)
+    with pytest.raises(SystemExit) as stopped:
+        ship.refuse_if_stopped("classify")
+    assert stopped.value.code == 3
+    assert ship.load()["stopped"] is True
+    same = {"docs/guides/g.md": ship.Change("docs/guides/g.md", "M", added=[(1, "x y z")], removed=[(1, "a")])}
+    not_small_state(tmp_path, monkeypatch, same)
+    ship.save({**ship.load(), "stopped_at": ship.signature(same)})
+    with pytest.raises(SystemExit):
+        ship.refuse_if_stopped("classify")
+
+
+def test_a_failure_stop_never_clears_itself(tmp_path, monkeypatch):
+    small = {"docs/guides/g.md": ship.Change("docs/guides/g.md", "M", added=[(1, "x y z")], removed=[(1, "a")])}
+    not_small_state(tmp_path, monkeypatch, small)
+    ship.save({**ship.load(), "kind": "failure"})
+    with pytest.raises(SystemExit) as stopped:
+        ship.refuse_if_stopped("classify")
+    assert stopped.value.code == 3
+
+
+@pytest.mark.parametrize("stage", sorted(ship.STAGES))
+def test_every_stage_prints_its_own_usage(stage, capsys):
+    with pytest.raises(SystemExit) as helped:
+        ship.parser().parse_args([stage, "--help"])
+    assert helped.value.code == 0
+    out = capsys.readouterr().out
+    assert ship.STAGES[stage][0] in out
+    assert "Example:" in out
+    assert "Exit codes:" in out
+
+
+def pull(**fields):
+    """A `gh pr view` answer for a ready, labelled, green, clean pull request, with fields replaced."""
+    data = {
+        "labels": [{"name": "risk: low"}],
+        "state": "OPEN",
+        "isDraft": False,
+        "headRefOid": "abc123def456",
+        "mergeStateStatus": "CLEAN",
+        "mergeable": "MERGEABLE",
+        "statusCheckRollup": [{"name": "CI OK", "status": "COMPLETED", "conclusion": "SUCCESS"}],
+    }
+    return {**data, **fields}
+
+
+def merger(monkeypatch, tmp_path, data, changes, orchestrator=False):
+    """Run `merge 7` against a fake GitHub; returns the commands sent to `gh pr merge`."""
+    sent = []
+
+    def fake_gh(*args):
+        if args[:2] == ("pr", "merge"):
+            sent.append(args)
+            return 0, "merged"
+        return 0, json.dumps(data)
+
+    monkeypatch.setattr(ship, "gh", fake_gh)
+    monkeypatch.setattr(ship, "slug_repo", lambda: "o/r")
+    monkeypatch.setattr(ship, "root", lambda: tmp_path)
+    monkeypatch.setattr(ship, "run", lambda *a, **k: (0, ""))
+    monkeypatch.setattr(ship, "git", lambda *a, **k: data["headRefOid"])
+    monkeypatch.setattr(ship, "collect", lambda head=None: changes)
+    monkeypatch.setattr(ship, "ORCHESTRATOR", orchestrator)
+    monkeypatch.setattr(ship, "state_file", lambda: tmp_path / "ship.json")
+    monkeypatch.setattr(ship, "branch", lambda: "docs/x")
+    return sent
+
+
+SMALL = {"docs/guides/g.md": ship.Change("docs/guides/g.md", "M", added=[(1, "x y z")], removed=[(1, "a")])}
+BIG = {"src/heinzel/a.py": ship.Change("src/heinzel/a.py", "M", added=[(1, "x")])}
+
+
+def merge(args=7):
+    return ship.stage_merge(ship.argparse.Namespace(pr=args))
+
+
+def test_a_green_low_pull_request_merges_without_the_orchestrator_at_its_exact_head(monkeypatch, tmp_path, capsys):
+    sent = merger(monkeypatch, tmp_path, pull(), SMALL)
+    merge()
+    assert sent == [("pr", "merge", "7", "-R", "o/r", "--squash", "--match-head-commit", "abc123def456")]
+    assert json.loads(capsys.readouterr().out.splitlines()[0])["ok"] is True
+
+
+@pytest.mark.parametrize(
+    ("data", "code"),
+    [
+        (pull(labels=[]), 2),
+        (pull(isDraft=True), 2),
+        (pull(state="MERGED"), 2),
+        (pull(mergeStateStatus="BEHIND"), 4),
+        (pull(mergeStateStatus="BLOCKED"), 4),
+        (pull(statusCheckRollup=[{"name": "CI OK", "status": "IN_PROGRESS", "conclusion": None}]), 4),
+        (pull(statusCheckRollup=[{"name": "CI OK", "status": "COMPLETED", "conclusion": "FAILURE"}]), 4),
+        (pull(statusCheckRollup=[]), 4),
+    ],
+)
+def test_a_pull_request_that_is_not_ready_is_not_merged(monkeypatch, tmp_path, data, code):
+    sent = merger(monkeypatch, tmp_path, data, SMALL)
+    with pytest.raises(SystemExit) as stopped:
+        merge()
+    assert stopped.value.code == code
+    assert sent == []
+
+
+def test_a_labelled_pull_request_whose_diff_is_not_small_is_never_merged_here(monkeypatch, tmp_path, capsys):
+    sent = merger(monkeypatch, tmp_path, pull(), BIG, orchestrator=True)
+    with pytest.raises(SystemExit) as stopped:
+        merge()
+    assert stopped.value.code == 3
+    assert sent == []
+    assert json.loads(capsys.readouterr().out.splitlines()[0])["lane"] == "escalate"
+
+
+def test_reset_keeps_the_pull_request_record(tmp_path, monkeypatch):
+    monkeypatch.setattr(ship, "state_file", lambda: tmp_path / "ship.json")
+    monkeypatch.setattr(ship, "branch", lambda: "docs/x")
+    monkeypatch.setattr(ship, "root", lambda: tmp_path)
+    monkeypatch.setattr(ship, "ORCHESTRATOR", True)
+    ship.save({"failures": [{"stage": "wait"}], "stopped": True, "pr": 12, "url": "u", "checked": "sig"})
+    ship.cmd_reset(ship.argparse.Namespace())
+    state = ship.load()
+    assert (state["pr"], state["url"], state["checked"]) == (12, "u", "sig")
+    assert state["failures"] == []
+    assert state["stopped"] is False
+
+
+@pytest.mark.parametrize("stage", sorted(ship.STAGES))
+def test_every_argument_of_every_stage_is_described(stage):
+    sub = next(a for a in ship.parser()._actions if a.dest == "command")
+    for action in sub.choices[stage]._actions:
+        assert action.help, f"{stage}: {action.dest} has no help text"

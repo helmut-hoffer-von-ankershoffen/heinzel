@@ -125,8 +125,8 @@ maintainer's own included:
   and end-to-end; `main`, the daily run and dispatch (the release pull request) run everything. Pull requests get a coverage comment.
 - A maintainer reviews. Answer review comments in the thread and push fixes to the same branch; `main` requires
   resolved review threads and an up-to-date branch (a workflow merges `main` into auto-merging pull requests).
-- Pull requests are squash-merged. Maintainers' own pull requests merge automatically once green (`make pr` turns
-  on auto-merge); from a fork, the maintainer merges.
+- Pull requests are squash-merged after review. `make pr` opens or updates the pull request without enabling
+  auto-merge; a maintainer verifies the current head's checks and reviews before merging.
 - Structural changes (a new kind of let, a new head, a new dependency, a changed public API, or a change that
   contradicts an [ADR](docs/adr/)) need an ADR first; open an issue to discuss before writing much code. With Claude
   Code, run the `review` skill before opening the pull request.
@@ -213,12 +213,13 @@ Be kind, assume good intent, critique code and ideas, not people ([CODE_OF_CONDU
 
 **Releases** are pull requests ([ADR 0013](docs/adr/0013-pull-request-based-development-and-releases.md)): `make release`
 (`BUMP=minor`; or Actions → **Prepare release** → Run workflow) dispatches a GitHub runner that derives the bump from
-the commits (`auto`, or force `patch`, `minor`, `major`), prepares the branch, dispatches CI on it and enables squash
-auto-merge, so nothing runs on your machine (`make release-local` is the same script locally). It opens `chore(release): vX.Y.Z` with the version and `CHANGELOG.md`
-updated. The optional **intro** (`make release INTRO="..."`) becomes the release's introduction under its heading in
-`CHANGELOG.md` and in the release notes; to change it, edit the pull request before CI turns green, or dispatch again with the intro. Introductions of earlier releases
-survive the regeneration; hand edits to their entries don't, because entries come from the commits. (If it ever doesn't tag, run **Release tag** by hand from `main`.) The pull request merges itself once
-`CI OK` is green; that tags the commit, and **Publish** builds wheel and sdist, attests their provenance and creates the GitHub
+the commits (`auto`, or force `patch`, `minor`, `major`), prepares the branch and dispatches CI on it, so nothing runs
+on your machine (`make release-local` is the same script locally). It opens `chore(release): vX.Y.Z` with the version
+and `CHANGELOG.md` updated. The required **intro** (`make release INTRO="..."`) becomes the release's introduction
+under its heading in `CHANGELOG.md` and in the release notes; edit the pull request to change it. Introductions of
+earlier releases survive regeneration; hand edits to their entries don't, because entries come from the commits.
+A maintainer reviews the release and verifies all checks on its current head before merging. The merge tags the
+commit, and **Publish** builds wheel and sdist, attests their provenance and creates the GitHub
 release with the changelog section as notes.
 
 **Pinned tools** live in [scripts/tools.toml](scripts/tools.toml); to bump one, change its version and run
@@ -229,7 +230,7 @@ release with the changelog section as notes.
 - A ruleset on `main`: pull requests only (squash), required status check `CI OK` on an up-to-date branch, linear
   history, resolved review threads, no force pushes or deletions. Version tags are created by the Release tag
   workflow; Publish refuses a tag that doesn't match the project version.
-- Merges: squash only, commit title = pull request title, delete branches after merge, auto-merge allowed.
+- Merges: squash only, commit title = pull request title, delete branches after merge; review and current-head checks precede merging.
 - Actions: workflow permissions read-only by default, "Allow GitHub Actions to create and approve pull requests" on.
 - Security: private vulnerability reporting, secret scanning with push protection, Dependabot alerts and updates.
 - Confidentiality: secret `CONFIDENTIAL_TERMS` for Actions and for Dependabot (its pull requests only see
