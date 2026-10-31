@@ -58,8 +58,26 @@ LOGIN_ITEM_HINT = "Install the notifier to show Heinzelmännchen with its icon i
 
 def launchd_plist(executable: Path, minutes: int, log_dir: Path) -> str:
     """The LaunchAgent: a tick at every `minutes`-minute slot, in the background, at low priority."""
+    return plistlib.dumps(_launchd_agent(executable, minutes, log_dir), sort_keys=True).decode()
+
+
+def released_launchd_minutes(content: bytes, executable: Path, log_dir: Path) -> int | None:
+    """The interval of a plist byte-identical to what a release wrote for this executable, else None.
+
+    Nothing is parsed: every format ever released is rendered and compared, so only these exact bytes are recognized.
+    Releases up to 0.4.0 had no `AssociatedBundleIdentifiers`; 0.5.0 onwards write the current format.
+    """
+    for minutes in INTERVALS:
+        agent = _launchd_agent(executable, minutes, log_dir)
+        without_notifier = {key: value for key, value in agent.items() if key != "AssociatedBundleIdentifiers"}
+        if content in {plistlib.dumps(item, sort_keys=True) for item in (agent, without_notifier)}:
+            return minutes
+    return None
+
+
+def _launchd_agent(executable: Path, minutes: int, log_dir: Path) -> dict[str, object]:
     check_interval(minutes)
-    agent = {
+    return {
         "Label": LABEL,
         # macOS 13+ attributes the Login Items entry to this app, so it shows its icon and name, not a bare "hz".
         "AssociatedBundleIdentifiers": [NOTIFIER_BUNDLE_ID],
@@ -75,7 +93,6 @@ def launchd_plist(executable: Path, minutes: int, log_dir: Path) -> str:
         "StandardErrorPath": str(log_dir / "launchd.err.log"),
         "EnvironmentVariables": {"PATH": f"{executable.parent}:{PATH}"},
     }
-    return plistlib.dumps(agent, sort_keys=True).decode()
 
 
 def on_calendar(minutes: int) -> str:
