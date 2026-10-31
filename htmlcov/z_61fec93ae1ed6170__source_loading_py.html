@@ -67,7 +67,7 @@
             <a id="nextFileLink" class="nav" href="z_61fec93ae1ed6170__telemetry_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.17.0">coverage.py v7.17.0</a>,
-            created at 2026-10-30 14:35 +0000
+            created at 2026-10-31 03:16 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -927,7 +927,7 @@
     <p class="pln"><span class="n"><a id="t843" href="#t843">843</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t844" href="#t844">844</a></span><span class="t">    <span class="key">def</span> <span class="nam">review</span><span class="op">(</span><span class="nam">self</span><span class="op">)</span> <span class="op">-&gt;</span> <span class="nam">ConnectedReadReview</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t845" href="#t845">845</a></span><span class="t">        <span class="nam">observed</span> <span class="op">=</span> <span class="nam">self</span><span class="op">.</span><span class="nam">_lease</span><span class="op">.</span><span class="nam">call</span><span class="op">(</span><span class="key">lambda</span> <span class="nam">lease</span><span class="op">:</span> <span class="nam">lease</span><span class="op">.</span><span class="nam">review</span><span class="op">(</span><span class="op">)</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t846" href="#t846">846</a></span><span class="t">        <span class="nam">review</span> <span class="op">=</span> <span class="nam">ConnectedReadReview</span><span class="op">.</span><span class="nam">model_validate</span><span class="op">(</span><span class="nam">observed</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t846" href="#t846">846</a></span><span class="t">        <span class="nam">review</span> <span class="op">=</span> <span class="nam">ConnectedReadReview</span><span class="op">.</span><span class="nam">validate_detached</span><span class="op">(</span><span class="nam">observed</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t847" href="#t847">847</a></span><span class="t">        <span class="nam">digest</span> <span class="op">=</span> <span class="nam">hashlib</span><span class="op">.</span><span class="nam">sha256</span><span class="op">(</span><span class="op">(</span><span class="nam">self</span><span class="op">.</span><span class="nam">_source</span> <span class="op">+</span> <span class="str">&quot;\0&quot;</span> <span class="op">+</span> <span class="nam">review</span><span class="op">.</span><span class="nam">source_revision</span><span class="op">)</span><span class="op">.</span><span class="nam">encode</span><span class="op">(</span><span class="op">)</span><span class="op">)</span><span class="op">.</span><span class="nam">hexdigest</span><span class="op">(</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t848" href="#t848">848</a></span><span class="t">        <span class="key">return</span> <span class="nam">review</span><span class="op">.</span><span class="nam">model_copy</span><span class="op">(</span><span class="nam">update</span><span class="op">=</span><span class="op">{</span><span class="str">&quot;source_revision&quot;</span><span class="op">:</span> <span class="str">&quot;host-source-v1:&quot;</span> <span class="op">+</span> <span class="nam">digest</span><span class="op">}</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t849" href="#t849">849</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
@@ -978,7 +978,7 @@
             <a class="nav" href="z_61fec93ae1ed6170__telemetry_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.17.0">coverage.py v7.17.0</a>,
-            created at 2026-10-30 14:35 +0000
+            created at 2026-10-31 03:16 +0000
         </p>
     </div>
 </footer>
