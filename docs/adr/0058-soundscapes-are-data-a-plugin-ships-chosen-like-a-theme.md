@@ -3,8 +3,12 @@ status: proposed
 date: 2026-10-24
 decision-makers: maintainer
 amends: 0027, 0039, 0046
+amends-0027: fixed allowlisted player origins while a stream is in effect; the player loads only after Play
+amends-0039: fixed allowlisted player origins while a stream is in effect; the player loads only after Play
+amends-0046: fixed allowlisted player origins while a stream is in effect; the player loads only after Play
 amended-by: 0088, 0092, 0095
 related: 0003, 0018, 0026, 0040, 0043, 0044
+implemented-by: 140
 ---
 
 # 0058: Soundscapes are data a plugin ships, chosen like a theme: `module.soundscape(...)`, `hz system sound use`
@@ -174,7 +178,7 @@ themes, and the only third party is one allowlisted host that the person starts 
     - Mute during meetings.
   - **Settings → General** has the full Sound picker, from the same data.
   - **A "now playing" footer item** is deferred: a status item of the status-item lets
-    proposed as ADR 0056 (pull request #83), off by default, once that lands.
+    proposed as ADR 0056, off by default, once that lands.
 - **Amendments.**
   - **ADR 0027.** The core's own contact with a third party gains one case: the stream soundscape in effect, from the
     person's Play onwards. Claude FM is offered, never on by default.
@@ -224,8 +228,6 @@ themes, and the only third party is one allowlisted host that the person starts 
   Core no longer lists or installs it; the historical release note below records when it was first added. Claude FM
   remains the built-in stream.
 
-- Requested by the maintainer, 2026-10-24: soundscapes chosen like a theme; layered and stream kinds; Claude FM as the
-  core's default stream; ducking and meeting mute; the control beside the light/dark toggle.
 - Deferred: the footer "now playing" status item (ADR 0056); real weather layers (a plugin's job, with
   plugin-published `weather`); a voice input that calls `duck("voice")`; playlists and other providers, each a new
   row of `STREAM_PROVIDERS` with its own review.

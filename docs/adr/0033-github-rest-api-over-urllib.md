@@ -4,6 +4,7 @@ date: 2026-10-24
 decision-makers: maintainer (delegated)
 related: 0017, 0028, 0030
 superseded-by: 0035
+implemented-by: 35
 ---
 
 # 0033: Read GitHub through its REST API with urllib; merged pull requests from the pulls list
@@ -60,11 +61,11 @@ Chosen option: **REST API over urllib; pulls list sorted by update**, because it
 
 ### Confirmation
 
-`plugins/heinzel-github/tests/unit/adapter_test.py` (the window, the early stop, no PRs among issues, the dedup, the page-cap advice),
+In heinzel-plugins: `plugins/heinzel-github/tests/unit/adapter_test.py` (the window, the early stop, no PRs among issues, the dedup, the page-cap advice),
 `plugins/heinzel-github/tests/unit/client_test.py` (rate limits, foreign next links and redirects, redaction, malformed tokens) and `plugins/heinzel-github/tests/unit/transport_test.py` (same-origin redirects).
 
 ## More Information
 
 - Decided as ADR 0002 of the separate `heinzel-github` repository, released there as v0.1.0; renumbered unchanged when
-  the adapter moved into `plugins/heinzel-github` as a first-party plugin (2026-10-24, see
+  the adapter moved into `plugins/heinzel-github` as a first-party plugin (see
   [ADR 0028](0028-integrations-are-capability-adapters.md) More Information).

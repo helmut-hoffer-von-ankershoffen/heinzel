@@ -12,6 +12,7 @@
       "Bash(git log:*)",
       "Bash(git show:*)",
       "Bash(uv run --quiet --script scripts/ci_logs.py:*)",
+      "Bash(uv run --script scripts/ship.py:*)",
       "Bash(gh run view:*)",
       "Bash(gh run list:*)",
       "Bash(gh pr view:*)",
