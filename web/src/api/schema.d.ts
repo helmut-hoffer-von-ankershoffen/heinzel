@@ -9080,6 +9080,27 @@ export interface components {
             turn_id: string;
         };
         /**
+         * QuietHours
+         * @description A daily local-time window; a window that ends earlier than it starts runs over midnight.
+         */
+        QuietHours: {
+            /**
+             * End
+             * @description Local time the quiet window ends, as HH:MM; exclusive.
+             */
+            end: string;
+            /**
+             * Start
+             * @description Local time the quiet window begins, as HH:MM; inclusive.
+             */
+            start: string;
+            /**
+             * Timezone
+             * @description IANA timezone of the window.
+             */
+            timezone: string;
+        };
+        /**
          * ReadSetEntry
          * @description An opaque host-issued selector and its proposed terms.
          */
@@ -9809,6 +9830,8 @@ export interface components {
              * @description Authenticated owner identity.
              */
             owner: string;
+            /** @description Reviewed daily window in which a due slot starts no turn; absent means no quiet hours. */
+            quiet_hours?: components["schemas"]["QuietHours"] | null;
             /**
              * Request Id
              * @description Stable schedule proposal request.
@@ -9877,6 +9900,10 @@ export interface components {
              * @description Revision the suggestion amended.
              */
             based_on_revision: number;
+            /** @description Suggested local notice limits, not yet approved. */
+            notices?: components["schemas"]["SuggestedNotices"] | null;
+            /** @description Suggested quiet hours, not yet approved. */
+            quiet_hours?: components["schemas"]["QuietHours"] | null;
             /**
              * Request Id
              * @description Stable host-derived suggestion identity.
@@ -11400,6 +11427,22 @@ export interface components {
              * @constant
              */
             kind: "interval";
+        };
+        /**
+         * SuggestedNotices
+         * @description Suggested local notice limits for scheduled turns; the owner reviews them, and they grant nothing by themselves.
+         */
+        SuggestedNotices: {
+            /**
+             * Deduplicate By
+             * @description With an approved source: one notice per observed item, or per item revision so a moved item can notify again. Null when the notice is not about a source item.
+             */
+            deduplicate_by?: ("item" | "revision") | null;
+            /**
+             * Max Per 24H
+             * @description At most this many notices in any 24 hours.
+             */
+            max_per_24h: number;
         };
         /**
          * SuggestedRead
@@ -13452,6 +13495,7 @@ export interface components {
             /** Max Requests */
             max_requests: number;
             notification_policy?: components["schemas"]["ScheduledNotificationPolicy"] | null;
+            quiet_hours?: components["schemas"]["QuietHours"] | null;
             /**
              * Request Id
              * @description A stable client request id; reuse it only for an exact retry.
@@ -13939,6 +13983,7 @@ export type SchemaProgressWidget = components['schemas']['ProgressWidget'];
 export type SchemaPublishStatus = components['schemas']['PublishStatus'];
 export type SchemaPushed = components['schemas']['Pushed'];
 export type SchemaQuestion = components['schemas']['Question'];
+export type SchemaQuietHours = components['schemas']['QuietHours'];
 export type SchemaReadSetEntry = components['schemas']['ReadSetEntry'];
 export type SchemaReadSetProposal = components['schemas']['ReadSetProposal'];
 export type SchemaReadSetReview = components['schemas']['ReadSetReview'];
@@ -14005,6 +14050,7 @@ export type SchemaStatusMeter = components['schemas']['StatusMeter'];
 export type SchemaStep = components['schemas']['Step'];
 export type SchemaStreamStatus = components['schemas']['StreamStatus'];
 export type SchemaSuggestedInterval = components['schemas']['SuggestedInterval'];
+export type SchemaSuggestedNotices = components['schemas']['SuggestedNotices'];
 export type SchemaSuggestedRead = components['schemas']['SuggestedRead'];
 export type SchemaSuggestedTrigger = components['schemas']['SuggestedTrigger'];
 export type SchemaSystemInfo = components['schemas']['SystemInfo'];

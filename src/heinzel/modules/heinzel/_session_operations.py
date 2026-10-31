@@ -50,6 +50,7 @@ from heinzel.modules.heinzel._notification_proposals import (
     NotificationProposalPage,
     NotificationProposals,
 )
+from heinzel.modules.heinzel._quiet_hours import QuietHours
 from heinzel.modules.heinzel._schedule_suggestions import ScheduleSuggestion, latest_schedule_suggestion
 from heinzel.modules.heinzel._scheduled_notifications import (
     ScheduledNotificationPage,
@@ -670,6 +671,7 @@ def _register_autonomous_schedule_operations(module: Module) -> None:
             ),
         ] = None,
         notification_policy: ScheduledNotificationPolicy | None = None,
+        quiet_hours: QuietHours | None = None,
     ) -> ScheduleBinding:
         """Propose autonomous turns; separate human confirmation is required to authorize them."""
         return service.propose(
@@ -681,6 +683,7 @@ def _register_autonomous_schedule_operations(module: Module) -> None:
             timeout_seconds,
             connected_request_id,
             notification_policy,
+            quiet_hours,
         )
 
     @module.operation(private=True, heads={"web", "api-private"}, audience="everyday")

@@ -34,6 +34,7 @@ from heinzel import (
     CatchUp,
     Check,
     Config,
+    CurrentUser,
     HeinzelError,
     JobInactive,
     JobLet,
@@ -1429,6 +1430,21 @@ class DaemonService:
     # Ticking ---------------------------------------------------------------------------------------------------------
 
     def tick(self, *, dry_run: bool = False, job: str | None = None) -> TickReport:
+        """Run the jobs that are due, or `job` now; launchd and systemd reach this through the CLI head.
+
+        A tick from the local CLI is the owner's daemon, the identity approved schedules run under. MCP stays itself.
+        """
+        user = self._kernel.resolve(CurrentUser) if self._kernel.provides(CurrentUser) else None
+        try:
+            local_cli = user is not None and user.context().authentication == "cli"
+        except HeinzelError:
+            local_cli = False
+        if user is None or not local_cli:
+            return self._tick(dry_run=dry_run, job=job)
+        with user.local("daemon"):
+            return self._tick(dry_run=dry_run, job=job)
+
+    def _tick(self, *, dry_run: bool = False, job: str | None = None) -> TickReport:
         """Run the jobs that are due, or `job` now, and write a receipt for each; `dry_run` only says what is due.
 
         One job's failure, a damaged receipt chain included, fails that job only; the others still run.

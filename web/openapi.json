@@ -9990,6 +9990,36 @@
         "title": "Question",
         "type": "object"
       },
+      "QuietHours": {
+        "additionalProperties": false,
+        "description": "A daily local-time window; a window that ends earlier than it starts runs over midnight.",
+        "properties": {
+          "end": {
+            "description": "Local time the quiet window ends, as HH:MM; exclusive.",
+            "title": "End",
+            "type": "string"
+          },
+          "start": {
+            "description": "Local time the quiet window begins, as HH:MM; inclusive.",
+            "title": "Start",
+            "type": "string"
+          },
+          "timezone": {
+            "description": "IANA timezone of the window.",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Timezone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "start",
+          "end",
+          "timezone"
+        ],
+        "title": "QuietHours",
+        "type": "object"
+      },
       "ReadSetEntry": {
         "additionalProperties": false,
         "description": "An opaque host-issued selector and its proposed terms.",
@@ -11129,6 +11159,17 @@
             "title": "Owner",
             "type": "string"
           },
+          "quiet_hours": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QuietHours"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Reviewed daily window in which a due slot starts no turn; absent means no quiet hours."
+          },
           "request_id": {
             "description": "Stable schedule proposal request.",
             "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
@@ -11245,6 +11286,28 @@
             "minimum": 0.0,
             "title": "Based On Revision",
             "type": "integer"
+          },
+          "notices": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SuggestedNotices"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Suggested local notice limits, not yet approved."
+          },
+          "quiet_hours": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QuietHours"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Suggested quiet hours, not yet approved."
           },
           "request_id": {
             "description": "Stable host-derived suggestion identity.",
@@ -13799,6 +13862,40 @@
           "cadence_seconds"
         ],
         "title": "SuggestedInterval",
+        "type": "object"
+      },
+      "SuggestedNotices": {
+        "additionalProperties": false,
+        "description": "Suggested local notice limits for scheduled turns; the owner reviews them, and they grant nothing by themselves.",
+        "properties": {
+          "deduplicate_by": {
+            "anyOf": [
+              {
+                "enum": [
+                  "item",
+                  "revision"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "With an approved source: one notice per observed item, or per item revision so a moved item can notify again. Null when the notice is not about a source item.",
+            "title": "Deduplicate By"
+          },
+          "max_per_24h": {
+            "description": "At most this many notices in any 24 hours.",
+            "maximum": 24.0,
+            "minimum": 1.0,
+            "title": "Max Per 24H",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "max_per_24h"
+        ],
+        "title": "SuggestedNotices",
         "type": "object"
       },
       "SuggestedRead": {
@@ -17482,6 +17579,16 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/ScheduledNotificationPolicy"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "quiet_hours": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QuietHours"
               },
               {
                 "type": "null"

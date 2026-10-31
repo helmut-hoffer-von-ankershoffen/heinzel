@@ -8,6 +8,7 @@ const token = /(?:^#|&)token=([^&]+)/.exec(url.hash)?.[1] ?? "";
 url.pathname = "/doctor";
 const browser = await chromium.launch({ headless: true });
 const context = await browser.newContext({ serviceWorkers: "block", viewport: { width: 1280, height: 900 } });
+await context.addInitScript(() => localStorage.setItem("hz.chat.more", "1"));
 const page = await context.newPage();
 const observed = [];
 page.on("response", (response) => {
@@ -31,7 +32,7 @@ try {
   assert.equal(await message.inputValue(), sentence);
   await page.getByRole("button", { name: "Queue message" }).click();
   const assistantReply = page.locator("p").filter({
-    has: page.locator("strong").filter({ hasText: /^assistant:$/ }),
+    has: page.locator('strong[data-speaker="assistant"]'),
     hasText: "Done",
   });
   await assistantReply.waitFor({ timeout: 30000 });
@@ -136,14 +137,14 @@ try {
       .catch(() => false),
     reply: await page
       .locator("p")
-      .filter({ has: page.locator("strong").filter({ hasText: /^assistant:$/ }), hasText: "Done" })
+      .filter({ has: page.locator('strong[data-speaker="assistant"]'), hasText: "Done" })
       .isVisible()
       .catch(() => false),
     assistantExcerpt: await page
       .locator("p")
       .evaluateAll((nodes) =>
         nodes
-          .filter((node) => node.querySelector("strong")?.textContent === "assistant:")
+          .filter((node) => node.querySelector("strong")?.dataset.speaker === "assistant")
           .slice(0, 3)
           .map((node) => (node.textContent ?? "").slice(0, 200)),
       )

@@ -221,7 +221,7 @@ class ScheduledNotifications:
             )
         key = "scheduled-notification:" + identity
         try:
-            recorded = self.notifications.emit_once(
+            recorded = self.notifications.emit_once_now(
                 NoticeKind.HEINZEL,
                 request.title,
                 request.body,

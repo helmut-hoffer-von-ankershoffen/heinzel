@@ -12,6 +12,7 @@ const token = url.hash.match(/(?:^#|&)token=([^&]+)/)?.[1] ?? "";
 url.pathname = "/doctor";
 const browser = await (process.argv[3] === "webkit" ? webkit : chromium).launch({ headless: true });
 const context = await browser.newContext({ serviceWorkers: "block", viewport: { width: 390, height: 844 } });
+await context.addInitScript(() => localStorage.setItem("hz.chat.more", "1"));
 const page = await context.newPage();
 /** A reload can render tabs before startup releases the app's inert interaction guard. */
 async function revealChat() {
