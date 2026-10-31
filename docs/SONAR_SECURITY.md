@@ -38,7 +38,8 @@ original finding as incorrect.
 - Validate using a fresh cache and all required dependency groups. A warm local environment can hide a missing
   wheel or an unintended source-build path.
 - **Do not rely on a URL hash fragment with `uv tool install`.** A disposable test accepted an intentionally wrong
-  `#sha256` fragment, although `uv pip install` rejected it. Download and verify the bytes before passing a local
+  `#sha256` fragment, although `uv pip install` rejected it. A later test found that `uv run --with` also accepted
+  an intentionally wrong fragment. Download and verify the bytes before passing a local
   wheel to `uv tool install`; test that tampering stops before any subprocess. Select the intended interpreter
   explicitly with `--python`, since a runner's unrelated newer Python can lack dependency wheels.
 
@@ -78,6 +79,27 @@ artifacts; label an unpublished package honestly. A collection has independent p
 show a fabricated aggregate PyPI version or coverage number. Coverage publication must skip fork and Dependabot
 PRs, while measurement still runs. Include that measurement job in the aggregate CI gate. Preserve pinned actions,
 minimal permissions, and checkout with `persist-credentials: false`.
+
+## Applying the established fixes to core
+
+Core's confidentiality scanner uses the same tested Git operand boundary. Its scope selector resolves a preflight
+base to a verified commit SHA before passing it to Git or Make: argv alone does not prevent Make from expanding a
+value such as `$(shell ...)`. Fast checks do not forward an unused base. Regression tests use real temporary
+repositories and exercise both option-shaped input and Make expressions.
+
+The released plugin toolkit remains version 0.2.1. `scripts/plugin_tooling.py` installs its complete three-package
+runtime closure from `scripts/plugin-tooling-requirements.txt` with `--require-hashes --no-build`, in a disposable
+environment. Core hooks, the scope selector, starter commands and protected publication use that launcher without
+building or testing core for plugin-only work. Explicit local developer candidate wheels remain supported; remote
+candidate URLs must carry a SHA-256 digest which the launcher checks before installation. Candidate dependencies
+are wheel-only, but are not promised to match the released toolkit's lock.
+
+CI's test dependency sync is frozen and wheel-only, with the same isolated, hash-verified Python 3.15 PyYAML build
+described above. Stdlib-only publication checks select Python explicitly and load no project dependencies.
+Native actionlint replaces the source-only wrapper at the same version, including generated governed templates.
+The policy is scoped to these installation paths: core's all-group developer setup still permits the locked
+watchdog source build required by macOS documentation tooling on Python 3.14. It does not have a global source-build
+ban. Recheck the actual main metrics after merging; these changes alone do not resolve unrelated runtime findings.
 
 References: [Sonar metric definitions](https://docs.sonarsource.com/sonarqube-cloud/managing-your-projects/metric-definitions),
 [Acme's implementation and trust-boundary review](https://github.com/helmut-hoffer-von-ankershoffen/heinzel-acme/blob/284a4b6afed536d5368ab332b07fcc5e5a508528/docs/SECURITY_REVIEW.md).

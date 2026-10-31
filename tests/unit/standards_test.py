@@ -487,6 +487,26 @@ def test_standalone_commands_workflows_and_journey_pin_one_immutable_toolkit():
     pins.append(hook["args"][0].rsplit(" ", 1)[-1])
     assert len(pins) == 7
     assert matching_toolkit_pins(pins)
+    bootstrap = _load(REPO / "scripts/plugin_tooling.py")
+    assert bootstrap.TOOLKIT.rsplit(" ", 1)[-1] == pins[0]
+    requirements = (REPO / "scripts/plugin-tooling-requirements.txt").read_text().splitlines()
+    entries = [line for line in requirements if line and not line.startswith("#")]
+    assert len(entries) == 3
+    toolkit_url, toolkit_digest = pins[0].split("#sha256=")
+    assert entries[0] == f"heinzel-plugin-tools @ {toolkit_url} --hash=sha256:{toolkit_digest}"
+    lock = tomllib.loads((REPO / "uv.lock").read_text())
+    packages = {package["name"]: package for package in lock["package"]}
+    assert {entry.split("==", 1)[0] for entry in entries[1:]} == {"packaging", "typos"}
+    for entry in entries[1:]:
+        requirement, *hashes = entry.split()
+        assert re.fullmatch(r"(?:packaging|typos)==[0-9.]+", requirement)
+        assert hashes
+        assert all(re.fullmatch(r"--hash=sha256:[a-f0-9]{64}", value) for value in hashes)
+        name, version = requirement.split("==")
+        assert packages[name]["version"] == version
+        assert {value.removeprefix("--hash=") for value in hashes} <= {
+            wheel["hash"] for wheel in packages[name]["wheels"]
+        }
 
 
 def test_plugin_only_pushes_and_commits_use_owning_checks_instead_of_core_checks():

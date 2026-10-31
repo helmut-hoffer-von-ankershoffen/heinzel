@@ -21,7 +21,7 @@ LINT := \
 		"&demo=uv run --script scripts/demo_tape.py --check" \
 		"&attributions=uv run --quiet --script scripts/attributions.py --check" \
 		"&zizmor=uv run zizmor --offline --quiet .github/workflows" \
-		"&actionlint=uv run actionlint" \
+		"&actionlint=$(TOOLS) run actionlint" \
 		"&typos=uv run typos" \
 		"&confidential=uv run --script scripts/check_confidentiality.py"
 TYPES := "&mypy=uv run mypy" "&pyright=uv run pyright"
@@ -51,7 +51,8 @@ help: ## Show this help
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
 
 install: ## Install what the build needs: Python with every dependency group (.venv) and the pinned tools (.tools)
-	@uv sync --all-groups --quiet && echo "✓ .venv: Python and every dependency group, as locked in uv.lock"
+	@test -f uv.lock || uv lock --quiet
+	@uv sync --frozen --all-groups --quiet && echo "✓ .venv: Python and every dependency group, as locked in uv.lock"
 	@$(TOOLS) install build web
 	@$(WEB) install
 	@$(MAKE) --no-print-directory managed-backend-setup

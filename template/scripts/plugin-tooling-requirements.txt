@@ -1,0 +1,1 @@
+../../scripts/plugin-tooling-requirements.txt

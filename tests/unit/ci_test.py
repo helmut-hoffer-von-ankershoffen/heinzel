@@ -32,7 +32,9 @@ WORKFLOWS = sorted((REPO / ".github" / "workflows").glob("*.yml"))
 NOT_MAKE = {  # workflow: {start of the step's command: why}
     "*": {"uv sync": "installs what the job needs"},
     "ci.yml": {
-        "uv run --script scripts/check_confidentiality.py --require": "the secret must be configured in this repo",
+        "uv run --no-project --no-build --python 3.14 python scripts/check_confidentiality.py --require": (
+            "the secret must be configured in this repo"
+        ),
         "unzip -l ": "asserts what the built wheel contains",
         'changed="$(git diff --name-only': "decides from the changed paths whether a pull request builds the macOS app",
         "if compgen -G ": "selects the built core candidate or an independently released artifact for source plugins",
@@ -42,13 +44,17 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
     },
     "docs.yml": {
         "sudo apt-get update": "fonts for the terminal recordings, from the runner's packages",
-        "uv run --quiet --group docs playwright install-deps": "Chromium's system libraries, from the runner",
+        "uv run --quiet --frozen --no-build --group docs playwright install-deps": (
+            "Chromium's system libraries, from the runner"
+        ),
     },
     "publish.yml": {
         'test "v$(uv version --short)" = "$TAG"': "refuses a tag that doesn't match the project version",
-        "uv run --script scripts/check_confidentiality.py": "scans the tagged tree with the term list from the secret",
+        "uv run --no-project --no-build --python 3.14 python scripts/check_confidentiality.py": (
+            "scans the tagged tree with the term list from the secret"
+        ),
         'name="$(uv version': "exports the release's CycloneDX bill of materials",
-        "uv run --script scripts/release_notes.py": "writes the release notes",
+        "uv run --no-project --no-build --python 3.14 python scripts/release_notes.py": "writes the release notes",
         'cp "$BUNDLE"': "attaches the provenance attestation and creates the GitHub release",
         "tar -czf notifier.tar.gz": "packs the app the macOS job built, with its executable bit, for the build job",
         "tar -xzf notifier.tar.gz": "unpacks Heinzel Notifier into the package before the wheel is built",
@@ -57,11 +63,15 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
     "pypi.yml": {
         '[[ "$TAG" =~': "binds publishing to the exact tag and main ancestry before build tooling",
         "gh api ": "verifies the published GitHub release and exports its exact source commit",
-        "uv run --script scripts/check_confidentiality.py --require": "requires the configured release term list",
+        "uv run --no-project --no-build --python 3.14 python scripts/check_confidentiality.py --require": (
+            "requires the configured release term list"
+        ),
         "tar -czf notifier.tar.gz": "preserves the notifier executable bits and signature across runners",
         "tar -xzf notifier.tar.gz": "restores the notifier from the same validated tag",
         "uv build --package heinzel": "builds only the registered core project, never unpublished workspace plugins",
-        "uv run --script scripts/pypi_release.py artifacts": "checks core metadata and complete packaged payloads",
+        "uv run --no-project --no-build --python 3.14 python scripts/pypi_release.py artifacts": (
+            "checks core metadata and complete packaged payloads"
+        ),
         "python3 - <<'PY'": "rechecks hashes without checking out or running project code in the OIDC job",
     },
     "release.yml": {
@@ -69,7 +79,8 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
         'test "$PUBLISH" != true || test "$REF" = refs/heads/main': (
             "runs the owning Make commands' same toolkit checks, build, audit and acceptance without core work"
         ),
-        'uv run --no-project --with "$TOOLING" python -m heinzel_plugin_tools.publishing': (
+        'uv run --no-project --no-build --python 3.14 python scripts/plugin_tooling.py --toolkit "$TOOLING" '
+        "python -m heinzel_plugin_tools.publishing": (
             "publishes the original verified plugin bytes through its protected generic host workflow"
         ),
     },
@@ -114,9 +125,15 @@ def not_through_make(workflow: Path) -> list[str]:
 
 def test_finds_commands_not_run_through_make(tmp_path):
     workflow = tmp_path / "publish.yml"
-    steps = [{"run": "make build"}, {"run": "uv sync"}, {"run": "bash scripts/check_licenses.sh"}]
+    unreviewed = "uv run --no-project --no-build --python 3.14 python scripts/unreviewed.py"
+    steps = [
+        {"run": "make build"},
+        {"run": "uv sync"},
+        {"run": "bash scripts/check_licenses.sh"},
+        {"run": unreviewed},
+    ]
     workflow.write_text(yaml.safe_dump({"jobs": {"publish": {"steps": [{"uses": "x"}, *steps]}}}), encoding="utf-8")
-    assert not_through_make(workflow) == ["bash scripts/check_licenses.sh"]
+    assert not_through_make(workflow) == ["bash scripts/check_licenses.sh", unreviewed]
 
 
 @pytest.mark.parametrize("workflow", WORKFLOWS, ids=lambda p: p.name)
@@ -728,9 +745,12 @@ def test_the_release_keeps_changelog_introductions():
         for marker in (
             'cp CHANGELOG.md "$work/previous.md"',
             "git-cliff --offline --tag",
-            'uv run --script scripts/changelog_intros.py "$work/previous.md" CHANGELOG.md --version "$next"',
+            (
+                "uv run --frozen --no-sync --no-build python scripts/changelog_intros.py "
+                '"$work/previous.md" CHANGELOG.md --version "$next"'
+            ),
             "git commit",
-            'uv run --script scripts/release_notes.py "$tag"',
+            'uv run --frozen --no-sync --no-build python scripts/release_notes.py "$tag"',
         )
     )
     assert save < regenerate < restore < commit < notes
