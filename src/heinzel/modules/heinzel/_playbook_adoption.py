@@ -10,7 +10,7 @@ from typing import cast
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
 from heinzel import HeinzelError, Kernel, SessionWriter
-from heinzel.kernel import ContractTemplate
+from heinzel.kernel import ChatDraftTemplate, ContractTemplate, PlaybookLet
 from heinzel.modules.heinzel._playbooks import playbooks
 from heinzel.modules.heinzel._session_crud import SessionCrud
 
@@ -18,6 +18,10 @@ _MAX_TEXT = 4000
 _MAX_TEMPLATES = 100
 _DIGEST = re.compile(r"[0-9a-f]{64}\Z")
 _CONTROL = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]")
+
+
+def _draft_candidates(playbook: PlaybookLet) -> tuple[ContractTemplate | ChatDraftTemplate, ...]:
+    return (*playbook.templates, *playbook.chat_drafts)
 
 
 @dataclass(frozen=True, slots=True)
@@ -42,7 +46,7 @@ def preview_playbook_draft(kernel: Kernel, qualified_name: str) -> PlaybookChatD
     matches = [
         template
         for name, playbook in playbooks(kernel)
-        for template in playbook.templates
+        for template in _draft_candidates(playbook)
         if f"{name}:{template.name}" == qualified_name
     ]
     if len(matches) != 1:
@@ -55,7 +59,11 @@ def preview_playbook_draft(kernel: Kernel, qualified_name: str) -> PlaybookChatD
         raise HeinzelError(msg)
     try:
         # Revalidate the exact snapshot, including the inactive-schedule rule.
-        checked = ContractTemplate(name=template.name, text=source)
+        checked = (
+            ChatDraftTemplate(name=template.name, text=source)
+            if isinstance(template, ChatDraftTemplate)
+            else ContractTemplate(name=template.name, text=source)
+        )
         encoded = checked.text.encode("utf-8")
     except (ValueError, UnicodeError) as exc:
         msg = "The selected playbook template is invalid."
@@ -67,7 +75,7 @@ def preview_playbook_draft(kernel: Kernel, qualified_name: str) -> PlaybookChatD
         template=qualified_name,
         sha256=hashlib.sha256(encoded).hexdigest(),
         text=checked.text,
-        placeholders=tuple(checked.placeholders()),
+        placeholders=tuple(checked.placeholders()) if isinstance(checked, ContractTemplate) else (),
     )
 
 
@@ -147,7 +155,9 @@ class PlaybookDraftTools:
         if name == "playbook:list":
             _Empty.model_validate(args)
             names = [
-                f"{module}:{template.name}" for module, book in playbooks(self.kernel) for template in book.templates
+                f"{module}:{template.name}"
+                for module, book in playbooks(self.kernel)
+                for template in _draft_candidates(book)
             ]
             if len(names) > _MAX_TEMPLATES:
                 msg = "Too many playbook templates to list safely"

@@ -8,6 +8,7 @@ import pytest
 
 from heinzel import (
     AssetType,
+    ChatDraftTemplate,
     Config,
     ContractTemplate,
     DiscoveryHint,
@@ -246,6 +247,18 @@ def test_setup_of_a_playbook_without_settings_or_templates_asks_nothing(make):
     prompter = ScriptedPrompter([])
     service.setup(the_playbook(service), prompter, Editor())
     assert not any("?" in line for line in prompter.transcript)
+
+
+def test_legacy_setup_does_not_offer_chat_only_draft(make, tmp_path):
+    module = Module("chatonly", "Chat only")
+    module.playbook("Chat only", chat_drafts=[ChatDraftTemplate(name="draft", text="Draft")])
+    service = make(module)
+    prompter = ScriptedPrompter([])
+    service.setup(the_playbook(service, "chatonly"), prompter, Editor())
+    assert not any("?" in line for line in prompter.transcript)
+    assert list(tmp_path.glob("*.prose.md")) == []
+    with pytest.raises(HeinzelError, match="No template"):
+        service.new("draft", template="chatonly:draft")
 
 
 def test_setup_refuses_a_playbook_no_enabled_module_contributes(make):

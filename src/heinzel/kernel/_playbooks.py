@@ -15,7 +15,7 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any
+from typing import Any, cast
 
 from heinzel.kernel._capabilities import CAPABILITIES
 from heinzel.kernel._config import ConfigEditor
@@ -113,6 +113,37 @@ class AssetType:
             msg = f"Asset type {self.name!r} needs a description; people choose candidates by it"
             raise ValueError(msg)
         object.__setattr__(self, "hints", tuple(self.hints))
+
+
+_MAX_CHAT_DRAFT = 4000
+
+
+@dataclass(frozen=True, kw_only=True, slots=True)
+class ChatDraftTemplate:
+    """Inert, untrusted draft material for chat, never a legacy workflow contract."""
+
+    name: str
+    text: str
+
+    def __post_init__(self) -> None:
+        """Validate a bounded text snapshot.
+
+        Raises:
+            ValueError: If the name or text is invalid.
+        """
+        _slug("Chat draft", self.name)
+        text = cast("object", self.text)
+        if not isinstance(text, str) or not text.strip() or len(text) > _MAX_CHAT_DRAFT:
+            msg = f"Chat draft {self.name!r} must contain at most 4000 characters"
+            raise ValueError(msg)
+        if re.search(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]", self.text):
+            msg = f"Chat draft {self.name!r} contains unsupported control characters"
+            raise ValueError(msg)
+        try:
+            self.text.encode("utf-8")
+        except UnicodeError as exc:
+            msg = f"Chat draft {self.name!r} is not valid UTF-8"
+            raise ValueError(msg) from exc
 
 
 @dataclass(frozen=True, kw_only=True, slots=True)
@@ -227,6 +258,7 @@ class PlaybookLet(Let):
     """What the playbook is for, in one sentence."""
     assets: tuple[AssetType, ...] = ()
     templates: tuple[ContractTemplate, ...] = ()
+    chat_drafts: tuple[ChatDraftTemplate, ...] = ()
     defaults: Mapping[str, Any] = field(default_factory=lambda: MappingProxyType({}))
     """Recommended settings by `<section>.<key>`, e.g. `{"capabilities.tracker": "github"}`; applied only on
     acceptance, through the same validation as `hz system config set`. Only capability bindings (never
@@ -256,6 +288,14 @@ class PlaybookLet(Let):
             )
             raise ValueError(msg)
         templates = {t.name for t in self.templates}
+        drafts = cast("tuple[object, ...]", tuple(self.chat_drafts))
+        if any(not isinstance(draft, ChatDraftTemplate) for draft in drafts):
+            msg = f"Playbook {self.name!r} has an invalid chat draft"
+            raise ValueError(msg)
+        draft_names = [t.name for t in cast("tuple[ChatDraftTemplate, ...]", drafts)]
+        if len(draft_names) != len(set(draft_names)) or templates.intersection(draft_names):
+            msg = f"Playbook {self.name!r} has duplicate template names"
+            raise ValueError(msg)
         if kept := [a for a in self.assets if a.kept_by is not None and a.kept_by not in templates]:
             msg = f"Asset type {kept[0].name!r} of playbook {self.name!r} is kept by an unknown template "
             msg += repr(kept[0].kept_by)
@@ -266,6 +306,7 @@ class PlaybookLet(Let):
                 raise ValueError(msg)
         object.__setattr__(self, "assets", tuple(self.assets))
         object.__setattr__(self, "templates", tuple(self.templates))
+        object.__setattr__(self, "chat_drafts", drafts)
         object.__setattr__(self, "defaults", MappingProxyType(dict(self.defaults)))
 
     def _may_recommend(self, key: str) -> bool:

@@ -55,7 +55,14 @@ from heinzel.kernel._lets import (
     SetupPhase,
     host_of,
 )
-from heinzel.kernel._playbooks import AssetType, ContractTemplate, PlaybookLet, PlaybookSetup, templates_in
+from heinzel.kernel._playbooks import (
+    AssetType,
+    ChatDraftTemplate,
+    ContractTemplate,
+    PlaybookLet,
+    PlaybookSetup,
+    templates_in,
+)
 from heinzel.kernel._prompter import Prompter
 from heinzel.kernel._skills import SkillLet, skills_in
 from heinzel.kernel._soundscapes import Soundscape, SoundscapeLet, sourced_soundscapes
@@ -504,12 +511,13 @@ class Module:
 
         return decorate(func) if func is not None else decorate
 
-    def playbook(
+    def playbook(  # noqa: PLR0913 - independent playbook declarations remain explicit
         self,
         summary: str,
         *,
         assets: Iterable[AssetType] = (),
         templates: Iterable[Path | ContractTemplate] = (),
+        chat_drafts: Iterable[ChatDraftTemplate] = (),
         defaults: Mapping[str, Any] | None = None,
         setup: bool = True,
     ) -> PlaybookLet:
@@ -526,6 +534,7 @@ class Module:
             assets: The asset types it knows, with discovery hints.
             templates: Template contracts: `ContractTemplate`s, `*.prose.md` files or directories of them, typically
                 `Path(__file__).parent / "templates"`; read now, at import.
+            chat_drafts: Bounded untrusted text for chat preview and proposals, never legacy workflow templates.
             defaults: Recommended settings by `<section>.<key>`, e.g. `{"capabilities.tracker": "github"}`.
             setup: Declare the module's setup step that walks through the playbook.
 
@@ -544,6 +553,7 @@ class Module:
             summary=summary,
             assets=tuple(assets),
             templates=templates_in(templates),
+            chat_drafts=tuple(chat_drafts),
             defaults=dict(defaults or {}),
         )
         self.add(let)

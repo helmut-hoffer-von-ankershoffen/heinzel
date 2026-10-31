@@ -1,7 +1,6 @@
 """Mounted scheduled notification consent through real private heads and fake local effects."""
 
 import json
-import subprocess
 import sys
 import threading
 from typing import ClassVar, override
@@ -12,6 +11,7 @@ import uvicorn
 
 from heinzel import Notifications
 from heinzel.heads import web
+from tests.e2e._browser_result import require_browser, run_browser
 from tests.e2e.durable_five_minute_journey_test import BROWSER_CACHE, REPO, web_build
 from tests.e2e.scheduled_connected_test import _setup_kernel
 
@@ -27,6 +27,11 @@ class FakeQueue(Notifications):
     def emit_once(self, _kind, title, body, *, route, command, key):
         self.calls.append((title, body, key))
         return self.queued
+
+    @override
+    def recent(self, limit=50):
+        """This fake exposes no stored notice records to the read-only stream."""
+        return []
 
     @override
     def has_once(self, _key):
@@ -108,23 +113,24 @@ print(json.dumps({{'type':'result','subtype':'success','is_error':False,'permiss
         assert ready.wait(15)
         token = parse_qs(urlsplit(urls[0]).fragment).get("token", [""])[0]
         assert token
-        run = subprocess.run(
-            [
-                sys.executable,
-                str(REPO / "scripts/web_build.py"),
-                "exec",
-                "node",
-                "e2e/scheduled-notification-review.mjs",
-                urls[0],
-                engine,
-                str(tmp_path),
-                "queued" if queued else "uncertain",
-            ],
-            cwd=REPO,
-            capture_output=True,
-            text=True,
-            timeout=240,
-            check=False,
+        run = require_browser(
+            run_browser(
+                [
+                    sys.executable,
+                    str(REPO / "scripts/web_build.py"),
+                    "exec",
+                    "node",
+                    "e2e/scheduled-notification-review.mjs",
+                    urls[0],
+                    engine,
+                    str(tmp_path),
+                    "queued" if queued else "uncertain",
+                ],
+                cwd=REPO,
+                capture_output=True,
+                text=True,
+                timeout=240,
+            )
         )
         if run.returncode:
             pytest.fail((run.stderr + "\n" + run.stdout).replace(token, "<redacted-session>"))

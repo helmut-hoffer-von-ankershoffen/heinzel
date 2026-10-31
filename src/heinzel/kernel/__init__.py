@@ -165,7 +165,14 @@ from heinzel.kernel._module import Module
 from heinzel.kernel._notifications import Delivery, Notice, NoticeKind, Notifications
 from heinzel.kernel._org import OrgContext, Recommendation, RecommendationKind, TeamPromise, TeamPromises
 from heinzel.kernel._paths import collapses, operation_path, owns_path, public_parameters
-from heinzel.kernel._playbooks import AssetType, ContractTemplate, DiscoveryHint, PlaybookLet, PlaybookSetup
+from heinzel.kernel._playbooks import (
+    AssetType,
+    ChatDraftTemplate,
+    ContractTemplate,
+    DiscoveryHint,
+    PlaybookLet,
+    PlaybookSetup,
+)
 from heinzel.kernel._presence import Presence
 from heinzel.kernel._progress import Emit, Progress
 from heinzel.kernel._prompter import INTERRUPT, Prompter, ScriptedPrompter, ScriptExhausted
@@ -342,6 +349,7 @@ __all__ = [
     "CardWidget",
     "CatchUp",
     "Chat",
+    "ChatDraftTemplate",
     "Check",
     "CheckInChatContext",
     "CheckInChatContextSource",
