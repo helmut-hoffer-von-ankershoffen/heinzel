@@ -126,15 +126,17 @@ export function ScheduledNotificationAttempts({ sessionId }: { sessionId: string
       {(page.isError || review.isError) && <p role="alert">Notification activity could not be verified.</p>}
       {(needsReview.length > 0 || review.data?.complete === false) && (
         <p role="alert">
-          This agent's scheduled turns are blocked until {needsReview.length === 1 ? "this outcome is" : "these outcomes are"}{" "}
-          reviewed.
+          This agent's scheduled turns are blocked until{" "}
+          {needsReview.length === 1 ? "this outcome is" : "these outcomes are"} reviewed.
           {review.data?.complete === false && " More outcomes may need review in later attempts."}
         </p>
       )}
       {error && (
         <p role="alert">The outcome could not be verified. Refresh before choosing again; nothing is resent.</p>
       )}
-      {page.data?.items.length === 0 && needsReview.length === 0 && <p>No scheduled notification attempts in this page.</p>}
+      {page.data?.items.length === 0 && needsReview.length === 0 && (
+        <p>No scheduled notification attempts in this page.</p>
+      )}
       {[...needsReview, ...history].map(({ proposal, seq, status }) => (
         <section key={proposal.request_id} className="space-y-1 rounded border border-border p-2">
           <p className="break-words font-medium">{proposal.title}</p>
