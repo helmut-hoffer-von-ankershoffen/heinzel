@@ -65,7 +65,7 @@ jobs:
           gh release view "app-v$version" --repo "$GH_REPO-plugins" >/dev/null 2>&1 && app_composed=true
           git diff --name-only "$latest_tag" HEAD > changed-paths.txt
           shipping=0
-          if [ "$(uv run --no-build --script scripts/release_channel.py releasable < changed-paths.txt)" = true ]; then
+          if [ "$(uv run --no-build --frozen --script scripts/release_channel.py releasable < changed-paths.txt)" = true ]; then
             shipping="$(git rev-list --count "$latest_tag..HEAD")"
           fi
           published="$(gh release view "$latest_tag" --json publishedAt --jq .publishedAt)"
@@ -84,7 +84,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
       - name: Decide
         id: decide
-        run: uv run --no-build --script scripts/release_promotion.py < facts.json | tee -a "$GITHUB_OUTPUT"
+        run: uv run --no-build --frozen --script scripts/release_promotion.py < facts.json | tee -a "$GITHUB_OUTPUT"
       - name: Take the step
         env:
           ACTIVE: ${{ vars.RELEASE_CHANNELS == 'stable' }}
@@ -103,10 +103,11 @@ jobs:
           accept() {
             gh release download "$1" --pattern "heinzel-*-py3-none-any.whl" --dir "accept-$1"
             wheel="$(basename "accept-$1"/*.whl)"
-            gh workflow run acceptance.yml --ref main -f expected_version="${wheel#heinzel-}" \
+            version="${wheel#heinzel-}"
+            gh workflow run acceptance.yml --ref main -f expected_version="${version%%-py3*}" \
               -f candidate_wheel_url="$base/$1/$wheel" \
               -f candidate_wheel_sha256="$(sha256sum "accept-$1/$wheel" | cut -d' ' -f1)" \
-              -f expected_app_version=""
+              -f expected_app_version=published
           }
           case "$STEP" in
             accept_edge) accept "$EDGE" ;;
