@@ -113,8 +113,10 @@ DANGEROUS = re.compile(
     r"|<script|javascript:|<iframe|\bon[a-z]+=\"|https?://",
     re.IGNORECASE,
 )
-I18N_ENTRY = re.compile(r'^\s*("[\w.-]+":\s*)?("(?:[^"\\]|\\.)*",?)?\s*$')  # key: "text", key:, or "text" continued
-IMPORT = re.compile(r"^\s*(import\b|export\b[^\n]{0,200}\bfrom\b)|\brequire\(")
+# One i18n line, stripped: `"key": "text",`, `"key":` or a continued `"text",`. Every part is anchored and the string's
+# alternatives are disjoint, so matching is linear.
+I18N_ENTRY = re.compile(r'(?:"[\w.-]+":)? ?(?:"(?:[^"\\]|\\.)*",?)?')
+IMPORT = re.compile(r"(?:^\s*(?:import\b|export\b[^\n]{0,200}\bfrom\b))|(?:\brequire\()")
 FENCE = re.compile(r"^\s*(```|~~~)")
 SPAN = re.compile(r"(`[^`\n]+`)|\]\((https?://[^)\s]+)\)|(?<![\w/])(https?://[^\s)>\]]+)")
 LINK = re.compile(r"\]\(([^)\s#]+)(#[^)\s]*)?\)")
@@ -398,7 +400,7 @@ def diff_reasons(change: Change) -> list[str]:
             reasons.append("changes inline code, a command or an external link")
     else:
         for number, line in change.added:
-            if change.path == "web/src/i18n.ts" and not I18N_ENTRY.match(line):
+            if change.path == "web/src/i18n.ts" and not I18N_ENTRY.fullmatch(line.strip()):
                 reasons.append(f"line {number}: not a plain string entry")
             elif DANGEROUS.search(line):
                 reasons.append(f"line {number}: security-sensitive or network code")

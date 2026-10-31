@@ -128,6 +128,69 @@ def test_the_apps_words_may_change_but_not_its_code():
     assert lane(words("  const x = 1;"))
 
 
+@pytest.mark.parametrize(
+    "line",
+    [
+        '"plugins.firstParty": "First-party",',
+        '  "nav.team": "Team roster"',
+        '    "Reporting lines are guessed from your calendar. Connect one in Settings.",',
+        '  "say.quote": "She said \\"hi\\" twice",',
+        '  "nav.artifacts":',
+        "",
+    ],
+)
+def test_i18n_entries_that_are_plain_strings_match(line):
+    assert ship.I18N_ENTRY.fullmatch(line.strip())
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        '  "a.b": fetch("/x"),',
+        "const x = 1;",
+        '"a": "b" + c,',
+        '"a": "unterminated',
+        'import "a": "b"',
+        '"a": "b", "c": "d",',
+    ],
+)
+def test_i18n_lines_with_code_do_not_match(line):
+    assert not ship.I18N_ENTRY.fullmatch(line.strip())
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "import x from 'y';",
+        "  import type { A } from './a';",
+        "export { a } from './b';",
+        "export * as ns from './c';",
+        "const m = require('x');",
+        "import('lazy')",
+    ],
+)
+def test_import_lines_match(line):
+    assert ship.IMPORT.search(line)
+
+
+@pytest.mark.parametrize(
+    "line", ["<p>important</p>", "const exported = 1;", "// a required( field", "export const A = 1;"]
+)
+def test_ordinary_lines_are_not_imports(line):
+    assert not ship.IMPORT.search(line)
+
+
+def test_the_line_patterns_stay_fast_on_hostile_input():
+    import time
+
+    hostile = ['"' + "\\" * 20000, '"a": "' + "x" * 50000, "export" + " " * 50000, " " * 50000 + "x", "\\" * 50000]
+    start = time.monotonic()
+    for text in hostile:
+        ship.I18N_ENTRY.fullmatch(text.strip())
+        ship.IMPORT.search(text)
+    assert time.monotonic() - start < 1.0
+
+
 def test_size_limits():
     many = [ship.Change(f"docs/guides/g{i}.md", "M", added=[(1, "x")], removed=[(1, "y")]) for i in range(9)]
     assert any("files" in r for r in lane(*many))
