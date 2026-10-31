@@ -33,6 +33,7 @@ else
         elif command -v wget >/dev/null 2>&1; then
             case "$(wget --help 2>&1 || true)" in
                 *--https-only*) downloader=wget ;;
+                *) ;;
             esac
         fi
         if [ -z "$downloader" ]; then
