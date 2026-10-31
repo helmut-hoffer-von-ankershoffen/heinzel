@@ -9677,6 +9677,18 @@
             "description": "Your name; on this machine only.",
             "title": "Name"
           },
+          "retired_role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A role you chose once that is no longer offered; choose a new one. None otherwise.",
+            "title": "Retired Role"
+          },
           "role": {
             "anyOf": [
               {
@@ -9715,6 +9727,7 @@
         "required": [
           "handle",
           "role",
+          "retired_role",
           "timezone",
           "working_hours",
           "working_hours_set",

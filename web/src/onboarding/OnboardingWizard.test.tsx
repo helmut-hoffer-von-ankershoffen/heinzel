@@ -2,7 +2,7 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { connectTerminal, runInTerminal } from "@/lib/terminal";
-import { doctor, noTeam, profile, shell } from "@/test/fixtures";
+import { config, doctor, noTeam, profile, shell } from "@/test/fixtures";
 import { eventStream, expectAccessible, mockApi, renderAt } from "@/test/render";
 import { contractName, loadProgress, setupIncomplete } from "./progress";
 
@@ -150,6 +150,32 @@ describe("Onboarding focus and answers", { timeout: 20_000 }, () => {
     expect(dialog).toContainElement(document.activeElement as HTMLElement);
   });
 
+  it("offers exactly four roles, in this order, labeled as the owner named them, and no others", async () => {
+    mockApi({ ...answers, "/api/org/show": newcomer });
+    renderAt("/doctor");
+    const dialog = await screen.findByRole("dialog", { name: "Set up hz" });
+    const role = within(dialog).getByLabelText("Role");
+    expect(
+      within(role)
+        .getAllByRole("option")
+        .map((option) => option.textContent),
+    ).toEqual([
+      "not set",
+      "IC - Engineer",
+      "EM - Engineering Manager",
+      "PM - Product Manager",
+      "TPM - Program Manager",
+    ]);
+  });
+
+  it("shows a saved role that is no longer offered as not set, with a prompt to choose one", async () => {
+    mockApi({ ...answers, "/api/org/show": { ...newcomer, retired_role: "principal" } });
+    renderAt("/doctor");
+    const dialog = await screen.findByRole("dialog", { name: "Set up hz" });
+    expect(within(dialog).getByLabelText("Role")).toHaveValue("");
+    expect(await within(dialog).findByText(/Your saved role "principal" is no longer offered/)).toBeInTheDocument();
+  });
+
   it("opens Settings in place of the wizard, and Escape in a question cancels only the question", async () => {
     mockApi({ ...answers, "/api/org/show": newcomer });
     const user = userEvent.setup();
@@ -165,6 +191,44 @@ describe("Onboarding focus and answers", { timeout: 20_000 }, () => {
     await user.click(within(dialog).getByRole("button", { name: /AI access/ }));
     await user.click(within(dialog).getByRole("link", { name: "Open AI settings" }));
     expect(screen.queryByRole("dialog", { name: "Set up hz" })).not.toBeInTheDocument();
+  });
+});
+
+describe("Onboarding team name", { timeout: 20_000 }, () => {
+  const named = (name: string) => ({
+    ...config,
+    settings: [
+      ...config.settings,
+      {
+        section: "team",
+        key: "name",
+        value: name,
+        default: null,
+        source: "user",
+        env: "HZ_TEAM__NAME",
+        description: "Team name.",
+      },
+    ],
+  });
+
+  it("saves the team name through hz when the field is left, and shows it again after a reload", async () => {
+    const { calls } = mockApi({ ...answers, "/api/org/show": newcomer });
+    const user = userEvent.setup();
+    const first = renderAt("/doctor");
+    const dialog = await screen.findByRole("dialog", { name: "Set up hz" });
+    await user.click(within(dialog).getByRole("button", { name: /Your team/ }));
+    await user.type(await within(dialog).findByLabelText("Team name"), "Payments{Enter}");
+    await waitFor(() => {
+      const set = calls.find((call) => call.url.includes("/api/system/config/set") && call.url.includes("team.name"));
+      expect(new URL(set?.url ?? "http://x").searchParams.get("value")).toBe("Payments");
+    });
+    first.unmount();
+    // A reload: hz now reports the saved name.
+    mockApi({ ...answers, "/api/org/show": newcomer, "/api/system/config/show": named("Payments") });
+    renderAt("/doctor");
+    const again = await screen.findByRole("dialog", { name: "Set up hz" });
+    await userEvent.setup().click(within(again).getByRole("button", { name: /Your team/ }));
+    expect(await within(again).findByLabelText("Team name")).toHaveValue("Payments");
   });
 });
 

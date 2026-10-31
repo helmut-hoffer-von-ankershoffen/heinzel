@@ -17,6 +17,7 @@ from heinzel.modules.org._discovery import Discovered
 from heinzel.modules.org._models import (
     CODING_AGENTS,
     DEFAULT_HOURS,
+    ROLE_LABELS,
     ROLE_MEANINGS,
     ROLES,
     CodingAgent,
@@ -94,8 +95,10 @@ def _ask(
         handle = prompter.text("Handle, e.g. mira", default=handle, validate=handle_problem, key="handle")
     role = settings.role
     if change or role is None or prompter.has_preset("role"):
+        if settings.retired_role:
+            prompter.say(f"Your saved role {settings.retired_role!r} is no longer offered; choose a new one.")
         for name, meaning in ROLE_MEANINGS.items():
-            prompter.say(f"  {name}: {meaning}")
+            prompter.say(f"  {ROLE_LABELS[name]} ({name}): {meaning}")
         role = prompter.choice("Your role", ROLES, default=role if role in ROLES else None, key="role")
     timezone = settings.timezone or found.timezone
     if change or timezone is None or prompter.has_preset("timezone"):
