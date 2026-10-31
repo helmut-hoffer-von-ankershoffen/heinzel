@@ -120,13 +120,13 @@ against this ADR.
 ## More Information
 
 - Answers the update-notifier question left open in [ADR 0027](0027-nothing-is-sent-home.md).
-- Amended on 2026-10-24: the maintainer decided the check is automatic, cached for an hour (failures included), with a
+- The check is automatic, cached for an hour (failures included), with a
   short timeout, shown always but never in JSON, and switched off by the `update_check` setting and in CI. The first
   version asked only on demand.
-- Amended on 2026-10-24: the maintainer decided "users should see what they get before installing a new release",
+- Users should see what they get before installing a new release,
   so `hz system changelog --newer` shows the notes of every newer release, and the notice and `hz system update` point
   to it.
-- Amended on 2026-10-24: `hz system changelog --newer` sends the user's GitHub token if one is set, to
+- `hz system changelog --newer` sends the user's GitHub token if one is set, to
   api.github.com only, because the shared runners of CI exhausted the unauthenticated rate limit and the README test
   of `--newer` failed; CI passes its read-only `GITHUB_TOKEN`. The hourly check and `hz system release` still never
   send a token.

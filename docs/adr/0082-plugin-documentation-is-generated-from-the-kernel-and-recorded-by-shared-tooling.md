@@ -191,7 +191,7 @@ from the code, no plugin writes tooling, and a private plugin gets the same page
 
 ## More Information
 
-- Requested by the maintainer on 2026-10-24: a page per plugin with animated CLI and UI, the plugin's type, its CLI
+- A page per plugin with animated CLI and UI, the plugin's type, its CLI
   reference, generated for first-party, community and private plugins with tooling and CI; the README's intro to
   show the UI too, automatically. The community weather plugin (`heinzel-contrib`) is the showcase.
 - UI contributions (footer items, Today widgets, sidebar pages) are being decided in a separate record; this one
