@@ -18,7 +18,8 @@ JSON line; do what its `next` field says, literally. `S` below is the `uv run --
 | 5 | `S check` | Checks for exactly your files; fixes whitespace and formatting itself |
 | 6 | `S pr "type(scope): summary" --body "why"` | Commits, pushes, opens the PR labelled `risk: low`, auto-merge off |
 | 7 | `S wait` | Waits for CI; add `--budget 540` and a 600000 ms shell timeout to wait longer |
-| 8 | `S verify` | After the orchestrator merged: Docs run green and the live page shows your text |
+| 8 | `S merge PR` | Merges your pull request once CI OK is green at its exact head; it re-checks the diff itself and refuses anything not small |
+| 9 | `S verify` | After the merge: Docs run green and the live page shows your text |
 
 `S <stage> --help` prints a stage's usage, an example and the exit codes. Exit codes: **0** go on with `next`. **1** this stage failed: fix exactly what `detail` names, then repeat the stage.
 **3** STOP: this is a correct outcome, not an error. Send the JSON line to whoever started you and run nothing else. **4** still running: run the same command
@@ -27,8 +28,8 @@ again. **2** you used the command wrongly: read `msg`.
 Rules that no command can enforce:
 
 - The second failure of any stage stops the change by itself (exit 3). Never retry a third time, never work around.
-- Never merge, never touch auto-merge, never run `git push`, `git commit` or `make pr` yourself, never use
-  `--no-verify`. `pr` does all of it. Merging belongs to the orchestrator.
+- Merge only with `S merge`, never touch auto-merge, never run `git push`, `git commit`, `gh pr merge` or `make pr`
+  yourself, never use `--no-verify`. The stages do all of it; a pull request that is not small is the orchestrator's.
 - Never write a name of a person, employer, customer or private repository into a file. If `check` reports a
   confidential term, reword the text and never repeat the term anywhere.
 - If the change turns out bigger than the job you were given, run `S escalate "one sentence why"` and stop.

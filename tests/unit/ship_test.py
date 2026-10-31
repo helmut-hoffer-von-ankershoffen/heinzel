@@ -347,3 +347,104 @@ def test_every_stage_prints_its_own_usage(stage, capsys):
     assert ship.STAGES[stage][0] in out
     assert "Example:" in out
     assert "Exit codes:" in out
+
+
+def pull(**fields):
+    """A `gh pr view` answer for a ready, labelled, green, clean pull request, with fields replaced."""
+    data = {
+        "labels": [{"name": "risk: low"}],
+        "state": "OPEN",
+        "isDraft": False,
+        "headRefOid": "abc123def456",
+        "mergeStateStatus": "CLEAN",
+        "mergeable": "MERGEABLE",
+        "statusCheckRollup": [{"name": "CI OK", "status": "COMPLETED", "conclusion": "SUCCESS"}],
+    }
+    return {**data, **fields}
+
+
+def merger(monkeypatch, tmp_path, data, changes, orchestrator=False):
+    """Run `merge 7` against a fake GitHub; returns the commands sent to `gh pr merge`."""
+    sent = []
+
+    def fake_gh(*args):
+        if args[:2] == ("pr", "merge"):
+            sent.append(args)
+            return 0, "merged"
+        return 0, json.dumps(data)
+
+    monkeypatch.setattr(ship, "gh", fake_gh)
+    monkeypatch.setattr(ship, "slug_repo", lambda: "o/r")
+    monkeypatch.setattr(ship, "root", lambda: tmp_path)
+    monkeypatch.setattr(ship, "run", lambda *a, **k: (0, ""))
+    monkeypatch.setattr(ship, "git", lambda *a, **k: data["headRefOid"])
+    monkeypatch.setattr(ship, "collect", lambda head=None: changes)
+    monkeypatch.setattr(ship, "ORCHESTRATOR", orchestrator)
+    monkeypatch.setattr(ship, "state_file", lambda: tmp_path / "ship.json")
+    monkeypatch.setattr(ship, "branch", lambda: "docs/x")
+    return sent
+
+
+SMALL = {"docs/guides/g.md": ship.Change("docs/guides/g.md", "M", added=[(1, "x y z")], removed=[(1, "a")])}
+BIG = {"src/heinzel/a.py": ship.Change("src/heinzel/a.py", "M", added=[(1, "x")])}
+
+
+def merge(args=7):
+    return ship.stage_merge(ship.argparse.Namespace(pr=args))
+
+
+def test_a_green_low_pull_request_merges_without_the_orchestrator_at_its_exact_head(monkeypatch, tmp_path, capsys):
+    sent = merger(monkeypatch, tmp_path, pull(), SMALL)
+    merge()
+    assert sent == [("pr", "merge", "7", "-R", "o/r", "--squash", "--match-head-commit", "abc123def456")]
+    assert json.loads(capsys.readouterr().out.splitlines()[0])["ok"] is True
+
+
+@pytest.mark.parametrize(
+    ("data", "code"),
+    [
+        (pull(labels=[]), 2),
+        (pull(isDraft=True), 2),
+        (pull(state="MERGED"), 2),
+        (pull(mergeStateStatus="BEHIND"), 4),
+        (pull(mergeStateStatus="BLOCKED"), 4),
+        (pull(statusCheckRollup=[{"name": "CI OK", "status": "IN_PROGRESS", "conclusion": None}]), 4),
+        (pull(statusCheckRollup=[{"name": "CI OK", "status": "COMPLETED", "conclusion": "FAILURE"}]), 4),
+        (pull(statusCheckRollup=[]), 4),
+    ],
+)
+def test_a_pull_request_that_is_not_ready_is_not_merged(monkeypatch, tmp_path, data, code):
+    sent = merger(monkeypatch, tmp_path, data, SMALL)
+    with pytest.raises(SystemExit) as stopped:
+        merge()
+    assert stopped.value.code == code
+    assert sent == []
+
+
+def test_a_labelled_pull_request_whose_diff_is_not_small_is_never_merged_here(monkeypatch, tmp_path, capsys):
+    sent = merger(monkeypatch, tmp_path, pull(), BIG, orchestrator=True)
+    with pytest.raises(SystemExit) as stopped:
+        merge()
+    assert stopped.value.code == 3
+    assert sent == []
+    assert json.loads(capsys.readouterr().out.splitlines()[0])["lane"] == "escalate"
+
+
+def test_reset_keeps_the_pull_request_record(tmp_path, monkeypatch):
+    monkeypatch.setattr(ship, "state_file", lambda: tmp_path / "ship.json")
+    monkeypatch.setattr(ship, "branch", lambda: "docs/x")
+    monkeypatch.setattr(ship, "root", lambda: tmp_path)
+    monkeypatch.setattr(ship, "ORCHESTRATOR", True)
+    ship.save({"failures": [{"stage": "wait"}], "stopped": True, "pr": 12, "url": "u", "checked": "sig"})
+    ship.cmd_reset(ship.argparse.Namespace())
+    state = ship.load()
+    assert (state["pr"], state["url"], state["checked"]) == (12, "u", "sig")
+    assert state["failures"] == []
+    assert state["stopped"] is False
+
+
+@pytest.mark.parametrize("stage", sorted(ship.STAGES))
+def test_every_argument_of_every_stage_is_described(stage):
+    sub = next(a for a in ship.parser()._actions if a.dest == "command")
+    for action in sub.choices[stage]._actions:
+        assert action.help, f"{stage}: {action.dest} has no help text"

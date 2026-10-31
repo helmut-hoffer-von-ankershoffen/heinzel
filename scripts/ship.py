@@ -892,7 +892,7 @@ def stage_wait(args: argparse.Namespace) -> None:
                 if blocked
                 else ""
             )
-            ready = "Stop. Tell the orchestrator the PR URL and that it is ready to merge; after it merges, run verify"
+            ready = f"{RUN} merge {number}"
             ok("wait", f"All checks green at {head}.{note}", ready, url=data["url"], head=head)
             return
         if time.monotonic() > deadline:
@@ -1036,55 +1036,78 @@ def stage_verify(args: argparse.Namespace) -> None:
     )
 
 
+def read_pull(repo: str, number: int) -> dict[str, Any]:
+    """The pull request's state, labels, head and checks as GitHub reports them now."""
+    fields = "labels,state,isDraft,headRefOid,mergeStateStatus,mergeable,statusCheckRollup"
+    code, out = gh("pr", "view", str(number), "-R", repo, "--json", fields)
+    return json.loads(out) if code == 0 else {}
+
+
+def merge_blocker(data: dict[str, Any]) -> str:
+    """Why a low-lane pull request cannot merge yet, or "" when every check is green at its head and it is clean."""
+    pending, bad, green = checks_of(data)
+    if pending:
+        return "checks are still running: " + ", ".join(pending[:3])
+    if bad:
+        return "checks failed: " + ", ".join(b["name"] for b in bad[:3])
+    if not green:
+        return "CI OK has not passed"
+    if data["mergeStateStatus"] != "CLEAN":
+        return f"the pull request is {data['mergeStateStatus']}, not CLEAN (behind main, or a review blocks it)"
+    return ""
+
+
+def train_merge(repo: str, number: int) -> None:
+    """Orchestrator: hand a pull request that is not ready yet to the merge train, which waits and updates it."""
+    train = shutil.which("hz-merge-train") or str(Path.home() / ".local/bin/hz-merge-train")
+    _, out = run([train, repo, str(number)], timeout=3000)
+    merged = "merged at" in out
+    last = out.splitlines()[-1] if out else "hz-merge-train printed nothing."
+    nxt = f"{RUN} verify --pr {number}" if merged else "Read the message; the train never forces a merge."
+    emit(ok=merged, stage="merge", msg=last, next=nxt)
+    sys.exit(0 if merged else 1)
+
+
 def stage_merge(args: argparse.Namespace) -> None:
-    """Orchestrator only: re-classify the pull request from GitHub's own data, then hand it to the merge train."""
-    if not ORCHESTRATOR:
-        emit(
-            ok=False,
-            stage="merge",
-            stop=True,
-            msg="STOP. Merging is the orchestrator's job (SHIP_ORCHESTRATOR=1). Report the PR URL.",
-            next="stop",
-        )
-        sys.exit(3)
+    """Merge a low-lane pull request, without the orchestrator, once it is green at its exact head.
+
+    The labelled pull request is re-classified from GitHub's own data at that head, so the label alone never merges
+    anything. Anything not low, or not ready, is not merged here: the orchestrator uses `hz-merge-train`.
+    """
     repo, number = slug_repo(), args.pr
-    code, out = gh("pr", "view", str(number), "-R", repo, "--json", "labels,state,isDraft,headRefOid")
-    data = json.loads(out) if code == 0 else {}
-    if (
-        data.get("state") != "OPEN"
-        or data.get("isDraft")
-        or LABEL not in [label["name"] for label in data.get("labels", [])]
-    ):
+    data = read_pull(repo, number)
+    labels = [label["name"] for label in data.get("labels", [])]
+    if data.get("state") != "OPEN" or data.get("isDraft") or LABEL not in labels:
+        msg = f"#{number} must be open, ready and labelled `{LABEL}`."
+        emit(ok=False, stage="merge", msg=msg, next="Not a low-lane pull request: the orchestrator merges it.")
+        sys.exit(2)
+    head = data["headRefOid"]
+    run(["git", "fetch", "--quiet", "origin", f"pull/{number}/head"], timeout=120)
+    if git("rev-parse", "FETCH_HEAD", cwd=root()) != head:
         emit(
-            ok=False,
-            stage="merge",
-            msg=f"#{number} must be open, ready and labelled `{LABEL}`.",
-            next="Use hz-merge-train directly for other pull requests.",
+            ok=False, stage="merge", msg="The pull request head moved while it was read.", next=f"{RUN} merge {number}"
         )
         sys.exit(2)
-    run(["git", "fetch", "--quiet", "origin", f"pull/{number}/head"], timeout=120)
-    changes = collect("FETCH_HEAD")
-    reasons = classify_changes(changes)
+    reasons = classify_changes(collect(head))
     if reasons:
-        emit(
-            ok=False,
-            stage="merge",
-            lane="escalate",
-            reasons=reasons,
-            msg="The label says low but the diff is not. Review it by hand.",
-            next="Review the pull request; do not use the low lane.",
-        )
+        msg = "The label says low but the diff is not. The orchestrator reviews and merges it by hand."
+        emit(ok=False, stage="merge", stop=True, lane="escalate", reasons=reasons, msg=msg, next="stop")
         sys.exit(3)
-    train = shutil.which("hz-merge-train") or str(Path.home() / ".local/bin/hz-merge-train")
-    code, out = run([train, repo, str(number)], timeout=3000)
-    merged = "merged at" in out
-    emit(
-        ok=merged,
-        stage="merge",
-        msg=out.splitlines()[-1] if out else "hz-merge-train printed nothing.",
-        next=f"{RUN} verify --pr {number}" if merged else "Read the message; the train never forces a merge.",
-    )
-    sys.exit(0 if merged else 1)
+    blocker = merge_blocker(data)
+    if blocker and ORCHESTRATOR:
+        train_merge(repo, number)
+    if blocker:
+        emit(ok=True, stage="merge", pending=True, msg=f"Not ready: {blocker}.", next=f"{RUN} wait --pr {number}")
+        sys.exit(4)
+    code, out = gh("pr", "merge", str(number), "-R", repo, "--squash", "--match-head-commit", head)
+    if code != 0:
+        fail(
+            "merge",
+            "GitHub refused the merge.",
+            f"Read detail. Stop and report it; do not retry more than once: {RUN} merge {number}",
+            out.splitlines()[-4:],
+        )
+    ok("merge", f"Merged #{number} at {head[:8]}.", f"{RUN} verify --pr {number}", pr=number, head=head[:8])
 
 
 def cmd_status(_: argparse.Namespace) -> None:
@@ -1266,7 +1289,7 @@ def parser() -> argparse.ArgumentParser:
         waiter = stage_parser(name)
         waiter.add_argument("--pr", type=int, help="pull request number (default: the one this change opened)")
         waiter.add_argument("--budget", type=int, default=BUDGET, help="seconds to wait per call")
-    stage_parser("merge").add_argument("pr", type=int, help="pull request number")
+    stage_parser("merge").add_argument("pr", type=int, help="number of a pull request labelled risk: low")
     stage_parser("status")
     stage_parser("reset")
     stage_parser("escalate").add_argument("why", help="one sentence")
