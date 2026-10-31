@@ -4,6 +4,7 @@ amended-by: 0065, 0072, 0084, 0094
 date: 2026-10-24
 decision-makers: maintainer
 related: 0002, 0003, 0018, 0026, 0027, 0028, 0039, 0041, 0044, 0045, 0047
+implemented-by: 140, 147
 ---
 
 # 0056: Modules contribute status items, header actions and Today widgets as data, viewed from their own operations
@@ -143,11 +144,11 @@ data.
 
 - `tests/unit/kernel/contributions_test.py`: links (protocol-relative, backslashes, `..`, user information, http),
   text cleaning and limits, zones, badges, widget shapes, refresh bounds and the caps per module.
-- `tests/unit/modules/system/ui_test.py` and `tests/integration/contributions_test.py`: a failing view becomes a
+- `tests/integration/contributions_test.py`: a failing view becomes a
   problem without the exception's text, a source that writes or leaves out the web head is refused and reported by
   doctor, server-built calls for read and write operations, `runs` only for read-only commands, an optional source
   that degrades, the lists through the CLI and the web head behind its token, and nothing on the REST head.
-- `plugins/heinzel-clock/tests` and `tests/integration/org_agenda_test.py`: the first users above.
+- In heinzel-plugins, `plugins/heinzel-clock/tests`, and `tests/integration/org_agenda_test.py`: the first users above.
 - `web/src/components/Contributions.test.tsx`: an isolated failing item, a live clock, the confirmation of a write.
 - `tests/unit/public_api_test.py`: the new names.
 
@@ -158,8 +159,6 @@ data.
   `Avatar` (a Heinzelmännchen dressed by a closed list of accessories: umbrella, sunglasses, scarf). Still data only.
   Any plugin may use it, for instance a commute time beside an icon.
 
-- Requested by the maintainer, 2026-10-24: status-bar items, then header buttons, then Today widgets, each "by
-  implementing some new let".
 - Extension, not decided: a `page` slot (a navigation entry with a screen composed of the same widget shapes),
   translations of contributed text, and the status bar drawing the clock and the agenda generically once the shapes
   carry what their panels show.

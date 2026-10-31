@@ -4,6 +4,7 @@ date: 2026-10-24
 decision-makers: maintainer (delegated)
 related: 0017, 0028, 0030
 superseded-by: 0035
+implemented-by: 35
 ---
 
 # 0034: Read Jira and Confluence Cloud through their REST APIs with urllib, Basic auth and epoch-millisecond JQL
@@ -109,7 +110,7 @@ the standard library.
 
 ### Confirmation
 
-`plugins/heinzel-atlassian/tests/unit/jira_test.py` (the exact JQL, whole-minute widening and the exact filter, duplicates across pages, time zones, token paging, repeated tokens, key
+In heinzel-plugins: `plugins/heinzel-atlassian/tests/unit/jira_test.py` (the exact JQL, whole-minute widening and the exact filter, duplicates across pages, time zones, token paging, repeated tokens, key
 validation), `plugins/heinzel-atlassian/tests/unit/confluence_test.py` (refs and foreign hosts), `plugins/heinzel-atlassian/tests/unit/storage_test.py`,
 `plugins/heinzel-atlassian/tests/unit/client_test.py` (statuses, redaction of all three secret forms), `plugins/heinzel-atlassian/tests/unit/transport_test.py`
 (same-origin redirects), `plugins/heinzel-atlassian/tests/integration/transport_test.py` (urllib against a local server: a redirect to another
@@ -119,11 +120,11 @@ configuration, a hostile project `hz.toml`, no secret in any output).
 ## More Information
 
 - Not verified against a live site: no credentials were available while building; every answer shape comes from
-  Atlassian's documentation and is reproduced in `plugins/heinzel-atlassian/tests/conftest.py`.
+  Atlassian's documentation and is reproduced in heinzel-plugins: `plugins/heinzel-atlassian/tests/conftest.py`.
 - Revisit for scoped tokens: discover the cloud id from `https://<site>.atlassian.net/_edge/tenant_info`, send
   requests to `https://api.atlassian.com/ex/jira/<cloudId>` and `/ex/confluence/<cloudId>` with the read scopes of
   the search and page endpoints (check Atlassian's scope list for each when building it), and add `api.atlassian.com` to the hosts.
 - Revisit when the core gains approvals: `Documents.replace_section` (write) through Confluence v2 `PUT /pages/{id}`.
 - Decided as ADR 0002 of the separate `heinzel-atlassian` repository, released there as v0.1.0; renumbered unchanged
-  when the adapter moved into `plugins/heinzel-atlassian` as a first-party plugin (2026-10-24, see
+  when the adapter moved into `plugins/heinzel-atlassian` as a first-party plugin (see
   [ADR 0028](0028-integrations-are-capability-adapters.md) More Information).

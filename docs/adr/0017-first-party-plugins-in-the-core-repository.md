@@ -2,9 +2,12 @@
 amended-by: 0094
 status: accepted
 date: 2026-10-23
+implemented-by: 35
 ---
 
 # 0017: First-party plugins live in the core repository as workspace packages
+
+*Amended by 0094: first-party plugins now live in the heinzel-plugins repository.*
 
 ## Context and Problem Statement
 
@@ -33,9 +36,8 @@ move in lockstep with the kernel while users only get the dependencies they need
 - External plugins live in their own repositories, scaffolded from `template/`. A proven external plugin can be
   promoted into `plugins/` unchanged, because it already has the same shape.
 - `plugins/` holds the first-party plugins and nothing else, to keep "plugin" unambiguous
-  (see [ADR 0018](0018-one-administrative-namespace.md) for `agent-skills/`). The maintainer named the directory
-  `plugins/` on 2026-10-24 ("it contains plugins"; [ADR 0028](0028-integrations-are-capability-adapters.md) More
-  Information); it had another name before.
+  (see [ADR 0018](0018-one-administrative-namespace.md) for `agent-skills/`). The directory is named
+  `plugins/` because it contains plugins.
 
 ### Consequences
 
