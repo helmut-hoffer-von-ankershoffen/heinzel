@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help install setup release-local doctor tools-verify check check-fast preflight fix lint format typecheck test test-parallel commits test-all-pythons test-unit test-integration test-perf test-e2e audit licenses secrets build pypi-clean-build-marker changelog ci-logs pr sync docs-plugins docs-record docs-site docs-publish-check design-check release clean update-template preview
+.PHONY: help install setup release-local doctor tools-verify check check-fast preflight fix lint format typecheck test test-parallel commits test-all-pythons test-unit test-integration test-perf test-e2e audit licenses secrets build pypi-clean-build-marker changelog ci-logs pr sync docs-plugins docs-record docs-site docs-publish-check release clean update-template preview
 
 # Quiet by default: one line per passing step, the tail of a failing one. VERBOSE=1 streams everything.
 # A step starting with & runs concurrently with the one before it; the first failure cancels the rest.
@@ -16,7 +16,6 @@ BASE ?= $(REMOTE)/main
 GATE := "lock=uv lock --check" "&format=uv run ruff format --check ." "&ruff=uv run ruff check --no-fix ."
 LINT := \
 		"&docs-plugins=uv run --quiet hz system plugin docs build --directory docs/plugins --check" \
-		"&design=uv run python scripts/design_tokens.py --check" \
 		"&zizmor=uv run zizmor --offline --quiet .github/workflows" \
 		"&actionlint=uv run actionlint" \
 		"&typos=uv run typos" \
@@ -55,7 +54,6 @@ check-fast: ## Seconds-fast feedback for the edit loop: format, lint, generated 
 		"format=uv run ruff format --check ." \
 		"&ruff=uv run ruff check --no-fix ." \
 		"&docs-plugins=uv run --quiet hz system plugin docs build --directory docs/plugins --check" \
-		"&design=uv run python scripts/design_tokens.py --check" \
 		"unit=uv run pytest -m 'unit and not perf' -n auto -x -q --session-timeout=120"
 
 preflight: ## What CI checks, before you push: check with coverage, build, commits (PREFLIGHT=full adds e2e, audit)
@@ -69,7 +67,6 @@ fix: ## Fix what tools can fix: lockfile, formatting, lint autofixes, generated 
 	$(STEPS) \
 		"lock=uv lock --quiet" \
 		"&docs-plugins=uv run --quiet hz system plugin docs build --directory docs/plugins" \
-		"&design=uv run python scripts/design_tokens.py" \
 		"format=uv run ruff format --quiet ." \
 		"ruff=uv run ruff check --fix --quiet --exit-zero ." \
 		"format-final=uv run ruff format --quiet ."
@@ -138,11 +135,6 @@ docs-record: ## Record every plugin page's scenes (CLI with VHS, UI with Playwri
 
 docs-site: ## Build the documentation site (MkDocs Material) into site/ from docs/; SERVE=1 serves it with reload instead
 	uv run --quiet --script scripts/site_build.py $(if $(SERVE),serve,build --strict)
-
-design-check: docs-site ## Check computed styles in a browser: the built site and the running app against design/tokens.json
-	$(WEB) install
-	uv run --quiet --script scripts/site_check.py --install
-	uv run --quiet --script scripts/design_check.py
 
 docs-publish-check: ## Validate publication with fresh public metadata, or build a standalone plugin's ordinary docs
 	@if [ -f docs/catalog-sources.toml ]; then \
