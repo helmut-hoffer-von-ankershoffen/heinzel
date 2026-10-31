@@ -63,6 +63,7 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
         "uv build --package heinzel": "builds only the core project",
         'test -f "dist/heinzel-': "asserts the wheel's version and payload",
         "uv export ": "exports the release's CycloneDX bill of materials",
+        'cliff="$(sed': "writes the release notes and the channel pointer with the locked git-cliff",
         'cp "$BUNDLE"': "attaches the provenance attestation and creates the pre-release",
         "gh release view edge-channel": "moves the pointer the opt-in path reads",
     },
