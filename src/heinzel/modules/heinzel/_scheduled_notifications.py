@@ -3,13 +3,23 @@
 import contextlib
 import hashlib
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from datetime import UTC, datetime, timedelta
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, model_validator
 
-from heinzel import CurrentUser, HeinzelError, NoticeHelper, NoticeKind, Notifications, SessionEvent, SessionWriter
+from heinzel import (
+    ChannelNotice,
+    CurrentUser,
+    HeinzelError,
+    NoticeHelper,
+    NoticeKind,
+    NotificationChannel,
+    Notifications,
+    SessionEvent,
+    SessionWriter,
+)
 from heinzel.kernel._approval import arguments_hash
 from heinzel.modules.heinzel._connected_grants import ConnectedReadGrants
 from heinzel.modules.heinzel._input_receipts import existing_input_receipt_key
@@ -50,6 +60,13 @@ class ScheduledNotificationPolicy(BaseModel):
         default=None,
         exclude_if=lambda value: value is None,
         description="Separately reviewed observed-item policy; absent retains model-chosen topics.",
+    )
+    channels: tuple[str, ...] = Field(
+        default=(),
+        max_length=8,
+        strict=False,
+        exclude_if=lambda value: not value,
+        description="Other channels, by name, that also carry each notice; the owner reviews this list.",
     )
     per_turn: Literal[1] = Field(default=1, description="At most one local queue attempt per scheduled turn.")
     delivery: Literal["local-notification"] = Field(
@@ -127,6 +144,7 @@ class ScheduledNotifications:
         policy: ScheduledNotificationPolicy,
         verify: Callable[[], None],
         connected: ConnectedReadGrants | None = None,
+        channels: Sequence[NotificationChannel] = (),
     ) -> None:
         self.crud, self.current, self.notifications = crud, current, notifications
         self.session, self.turn, self.contract_sha256, self.policy, self.verify = (
@@ -139,6 +157,35 @@ class ScheduledNotifications:
         self.schedule_request, self.schedule_sha256 = schedule_request, schedule_sha256
         self.owner = crud.repository.principal_id
         self.connected = connected
+        self.channels = channels
+
+    def _fan_out(self, request: ScheduledNotificationRequest, request_id: str) -> None:
+        """Offer the notice to each reviewed channel; a receipt says what it saw, and no failure undoes the notice."""
+        profile = self.crud.snapshot(self.session)
+        notice = ChannelNotice(
+            key=request_id[:128],
+            helper=profile.name,
+            title=request.title,
+            body=request.body,
+            route=f"/heinzel?chat={self.session}",
+            hat=profile.appearance.hat,
+            reason="reviewed scheduled notice",
+        )
+        for channel in self.channels:
+            if channel.name not in self.policy.channels:
+                continue
+            try:
+                receipt = channel.deliver(notice)
+                status, reference = receipt.status, receipt.reference
+            except Exception:  # noqa: BLE001 - provider diagnostics stay out of the journal
+                status, reference = "unknown", None
+            with contextlib.suppress(Exception), self.crud.repository.control_writer(self.session) as control:
+                control.append(
+                    "scheduled-notification.delivered",
+                    turn=self.turn,
+                    key=f"{request_id}-{channel.name}",
+                    data={"channel": channel.name, "status": status, "reference": reference},
+                )
 
     def schema(self) -> dict[str, JsonValue]:
         """Expose only the user's bounded local notification scope, not provider credentials or authority."""
@@ -240,6 +287,7 @@ class ScheduledNotifications:
                 return "uncertain", "The notification outcome is uncertain and will not be retried automatically."
             with contextlib.suppress(Exception):
                 self.notifications.forget_completed({key})
+            self._fan_out(request, request_id)
             return "recorded", "The local notification was queued; it may be held and is not confirmed shown."
         return "uncertain", "The notification outcome is uncertain and will not be retried automatically."
 
@@ -335,7 +383,10 @@ class ScheduledNotificationInventory:
     def _validated_view(
         self, session: str, event: SessionEvent, outcomes: list[SessionEvent]
     ) -> ScheduledNotificationView:
-        proposal = NotificationProposal.model_validate(self.crud.read_body(session, event))
+        try:
+            proposal = NotificationProposal.model_validate(self.crud.read_body(session, event))
+        except FileNotFoundError:
+            return self._view_without_body(session, event, outcomes)
         expected = hashlib.sha256(
             f"{self.crud.repository.principal_id}\0{session}\0{proposal.topic}".encode()
         ).hexdigest()
@@ -360,28 +411,56 @@ class ScheduledNotificationInventory:
         ):
             msg = "The scheduled notification record is inconsistent"
             raise HeinzelError(msg)
+        return ScheduledNotificationView(proposal=proposal, seq=event.seq, status=self._status(event, outcomes))
+
+    def _view_without_body(
+        self, session: str, event: SessionEvent, outcomes: list[SessionEvent]
+    ) -> ScheduledNotificationView:
+        """Keep an attempt whose private body expired visible, so its owner can still resolve it.
+
+        Raises:
+            HeinzelError: If the attempt's own identity is invalid.
+        """
+        if event.turn is None or not re.fullmatch(r"notice-[0-9a-f]{64}", event.key or ""):
+            msg = "The scheduled notification record is inconsistent"
+            raise HeinzelError(msg)
+        proposal = NotificationProposal(
+            session_id=session,
+            request_id=str(event.key),
+            topic="unavailable",
+            title="This notice's private content is no longer retained",
+            body="",
+        )
+        return ScheduledNotificationView(proposal=proposal, seq=event.seq, status=self._status(event, outcomes))
+
+    def _status(
+        self, event: SessionEvent, outcomes: list[SessionEvent]
+    ) -> Literal["recorded", "unresolved", "abandoned"]:
+        """Derive the recorded state of one attempt.
+
+        Raises:
+            HeinzelError: If its outcomes are duplicate, out of order or not the owner's.
+        """
         if len(outcomes) > 1 or (outcomes and outcomes[0].seq <= event.seq):
             msg = _INCONSISTENT_OUTCOME
             raise HeinzelError(msg)
-        status: Literal["recorded", "unresolved", "abandoned"] = "unresolved"
-        if outcomes:
-            outcome = outcomes[0]
-            if outcome.kind == "scheduled-notification.abandoned":
-                if (
-                    outcome.data.get("owner") != self.crud.repository.principal_id
-                    or outcome.data.get("origin") not in {"cli", "api-bearer", "web-session", "web-device"}
-                    or outcome.data.get("acknowledged") is not True
-                    or outcome.data.get("attempt_seq") != event.seq
-                ):
-                    msg = "The scheduled notification acknowledgment is invalid"
-                    raise HeinzelError(msg)
-                status = "abandoned"
-            else:
-                status = "recorded"
-        return ScheduledNotificationView(proposal=proposal, seq=event.seq, status=status)
+        if not outcomes:
+            return "unresolved"
+        outcome = outcomes[0]
+        if outcome.kind != "scheduled-notification.abandoned":
+            return "recorded"
+        if (
+            outcome.data.get("owner") != self.crud.repository.principal_id
+            or outcome.data.get("origin") not in {"cli", "api-bearer", "web-session", "web-device"}
+            or outcome.data.get("acknowledged") is not True
+            or outcome.data.get("attempt_seq") != event.seq
+        ):
+            msg = "The scheduled notification acknowledgment is invalid"
+            raise HeinzelError(msg)
+        return "abandoned"
 
-    def validated_inventory(self, session: str, events: list[SessionEvent]) -> list[ScheduledNotificationView]:
-        """Validate all attempts in one journal scan, reading each attempt body once.
+    def unresolved_attempts(self, events: list[SessionEvent]) -> list[SessionEvent]:
+        """Find attempts without an outcome in one journal scan, reading no private body.
 
         Raises:
             HeinzelError: If attempts or outcomes are duplicate, orphaned, or invalid.
@@ -402,7 +481,7 @@ class ScheduledNotificationInventory:
         if any(key not in attempts for key in outcomes):
             msg = _INCONSISTENT_OUTCOME
             raise HeinzelError(msg)
-        return [self._validated_view(session, event, outcomes.get(key, [])) for key, event in attempts.items()]
+        return [event for key, event in attempts.items() if self._status(event, outcomes.get(key, [])) == "unresolved"]
 
 
 class ScheduledNotificationRecovery(ScheduledNotificationInventory):

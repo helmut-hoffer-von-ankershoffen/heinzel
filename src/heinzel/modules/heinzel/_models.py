@@ -462,6 +462,13 @@ class HeinzelSettings(ModuleSettings):
 
     section_title: ClassVar[str | None] = "Contracts"  # the heading in Settings
 
+    approval_channels: list[str] = Field(
+        default_factory=list[str],
+        title="Approval channels",
+        description="Other channels, by name, where you also want to read and answer your helpers' drafts. "
+        "Only your own answer there counts.",
+    )
+
     user_dir: Path = Field(
         default_factory=lambda: user_config_dir() / "workflows",
         title="Your contracts",

@@ -290,6 +290,20 @@ def propose_agent_contract(
 
 
 @module.operation(read_only=False, heads=HEADS, audience="everyday")
+def propose_captured_write(
+    service: ChatService,
+    durable_session: Annotated[
+        str, Field(pattern=r"^hz-[0-9A-HJKMNP-TV-Z]{26}$", description="Owner-scoped personal conversation.")
+    ],
+    request_id: Annotated[
+        str, Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$", description="Identity of the captured write draft.")
+    ],
+) -> ChatSession:
+    """Stage exact owner-private captured write terms for separate human confirmation."""
+    return service.propose_captured_write(durable_session, request_id)
+
+
+@module.operation(read_only=False, heads=HEADS, audience="everyday")
 def propose_agent_notification(
     service: ChatService,
     durable_session: Annotated[
@@ -385,3 +399,9 @@ __all__ = [
     "Effort",
     "module",
 ]
+
+
+@module.job(schedule="* * * * *", name="channel-replies", timeout="2m")
+def channel_replies(service: ChatService) -> int:
+    """Act on the owner's verified answers from their other channels."""
+    return service.apply_channel_replies()

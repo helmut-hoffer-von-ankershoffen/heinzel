@@ -339,7 +339,7 @@ class ClaudeSubscriptionModel(Model):
                     input=None,
                     cwd=Path(directory),
                     env=environment,
-                    timeout=5,
+                    timeout=30,  # a busy machine must not read as a changed executable
                     limit=1024,
                 )
                 if version.returncode != 0 or version.truncated or version.stdout.strip() != f"{VERSION} (Claude Code)":

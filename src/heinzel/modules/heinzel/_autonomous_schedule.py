@@ -4,11 +4,13 @@ An occurrence reservation alone is never authority to start a process. A future 
 recheck the owner, schedule and access fences through launch; existing fixed-notice schedules are unrelated.
 """
 
+import contextlib
 import hashlib
 import json
 import secrets
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
-from typing import Literal
+from typing import Literal, cast
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator
 
@@ -35,6 +37,16 @@ from heinzel.modules.heinzel._user_chat import MAX_TURN_SECONDS, UserChatService
 
 _MAX_PAGE = 100
 QUIET = "Quiet hours: this slot started no turn."
+NOTHING_NEW = "Nothing new at the source: this slot started no turn."
+_MAX_SEEN = 2000
+_LATE_GRACE_SECONDS = 30
+
+
+def _is_current(slot: int, cadence: int, timeout: int) -> bool:
+    """Whether this slot is still running; a short cadence still leaves one bounded turn the time to finish."""
+    now = int(datetime.now(UTC).timestamp())
+    start = slot * cadence
+    return start <= now < start + max(cadence, timeout + _LATE_GRACE_SECONDS)
 
 
 class ScheduleBinding(BaseModel):
@@ -75,6 +87,11 @@ class ScheduleBinding(BaseModel):
         default=None,
         exclude_if=lambda value: value is None,
         description="Reviewed daily window in which a due slot starts no turn; absent means no quiet hours.",
+    )
+    wake_on_new_items: bool = Field(
+        default=False,
+        exclude_if=lambda value: value is False,
+        description="A due slot checks the approved source and takes a turn only for an item not seen before.",
     )
 
     @field_validator("cadence_seconds")
@@ -198,6 +215,7 @@ class AutonomousSchedules:
         connected_request_id: str | None = None,
         notification_policy: ScheduledNotificationPolicy | None = None,
         quiet_hours: QuietHours | None = None,
+        wake_on_new_items: bool = False,
     ) -> ScheduleBinding:
         """Persist an inert proposal; no user decision or wake is created.
 
@@ -238,7 +256,11 @@ class AutonomousSchedules:
             connected_grant=connected_grant,
             notification_policy=notification_policy,
             quiet_hours=quiet_hours,
+            wake_on_new_items=wake_on_new_items,
         )
+        if wake_on_new_items and (connected_grant is None or connected_grant.review.item_identity is None):
+            msg = "Waking on new items needs an approved source that reports item identities"
+            raise HeinzelError(msg)
         if timeout_seconds > proposal.timeout_seconds:
             msg = "Schedule timeout exceeds the reviewed contract"
             raise HeinzelError(msg)
@@ -361,7 +383,7 @@ class AutonomousSchedules:
                 writer, "approved-agent-schedule", binding.model_dump(mode="json"), control=True
             ).model_dump(mode="json")
 
-        with self.crud.repository.main_writer(session):
+        with self.crud.repository.main_writer(session, wait=True):
             consume_approval(
                 self.crud.repository,
                 session,
@@ -498,7 +520,7 @@ class AutonomousSchedules:
             HeinzelError: If the caller is not the owner through a human-facing head.
         """
         self._require_owner_write()
-        with self.crud.repository.main_writer(session):
+        with self.crud.repository.main_writer(session, wait=True):
             self.approved(session, request, validate_current=False, allow_paused=True)
             events = self.crud.repository.control_read(session).events
             if self._paused(session, request, events):
@@ -516,11 +538,9 @@ class AutonomousSchedules:
 
     def _ensure_no_prior_pending(self, session: str, occurrence: str) -> None:
         events = self.crud.repository.control_read(session).events
-        recovery = ScheduledNotificationInventory(self.crud)
-        for view in recovery.validated_inventory(session, events):
-            if view.status == "unresolved":
-                msg = "An earlier notification outcome requires owner review before a scheduled turn"
-                raise HeinzelError(msg)
+        if ScheduledNotificationInventory(self.crud).unresolved_attempts(events):
+            msg = "An earlier notification outcome requires owner review before a scheduled turn"
+            raise HeinzelError(msg)
         for event in events:
             if event.kind != "message.accepted" or event.data.get("message_id") == occurrence:
                 continue
@@ -529,9 +549,25 @@ class AutonomousSchedules:
                 msg = "An earlier message has an invalid identity"
                 raise HeinzelError(msg)
             turn = interactive_turn_id(previous)
-            if not any(e.key == turn and e.kind in {"message.replied", "interactive.abandoned"} for e in events):
+            if any(e.key == turn and e.kind in {"message.replied", "interactive.abandoned"} for e in events):
+                continue
+            if event.data.get("origin") != "daemon":
                 msg = "An earlier message must finish or be resolved before a scheduled turn"
                 raise HeinzelError(msg)
+            # This runs under the session's main writer, so that earlier scheduled turn is no longer running. Its
+            # notice attempts were checked above; a turn with none has nothing to reconcile, and is never replayed.
+            with self.crud.repository.control_writer(session) as writer:
+                writer.append(
+                    "interactive.abandoned",
+                    key=turn,
+                    turn=turn,
+                    data={
+                        "message_id": previous,
+                        "owner": self.crud.repository.principal_id,
+                        "origin": "daemon",
+                        "interrupted": True,
+                    },
+                )
 
     def _require_daemon(self) -> None:
         context = self.chat.current.context()
@@ -539,24 +575,39 @@ class AutonomousSchedules:
             msg = "Only the owner-bound daemon may dispatch this schedule"
             raise HeinzelError(msg)
 
-    async def tick(self, session: str, request: str, when: datetime) -> str:
-        """Run one due generic turn under the trusted local daemon identity, never a model-supplied identity.
-
-        Raises:
-            HeinzelError: If schedule, owner, access, or occurrence authority is unavailable.
-        """
+    def _admit(self, session: str, request: str, when: datetime) -> tuple[ScheduleBinding, int]:
         self._require_daemon()
         if when.tzinfo is None or when.utcoffset() is None or when > datetime.now(UTC) + timedelta(seconds=1):
             msg = "The schedule occurrence time is invalid"
             raise HeinzelError(msg)
         binding = self.approved(session, request)
         slot = int(when.timestamp()) // binding.cadence_seconds
-        if slot != int(datetime.now(UTC).timestamp()) // binding.cadence_seconds:
+        if not _is_current(slot, binding.cadence_seconds, binding.timeout_seconds):
             msg = "Only the current schedule occurrence can run"
             raise HeinzelError(msg)
+        return binding, slot
+
+    async def tick(self, session: str, request: str, when: datetime) -> str:  # noqa: C901 - one occurrence boundary
+        """Run one due generic turn under the trusted local daemon identity, never a model-supplied identity.
+
+        Raises:
+            HeinzelError: If schedule, owner, access, or occurrence authority is unavailable.
+        """
+        binding, slot = self._admit(session, request, when)
         if binding.quiet_hours is not None and binding.quiet_hours.covers(when):
             return QUIET
         occurrence = "scheduled-" + hashlib.sha256(f"{session}\0{request}\0{slot}".encode()).hexdigest()
+        fresh: dict[str, str] = {}
+        already = any(
+            e.kind == "message.accepted" and e.key == f"message-{occurrence}"
+            for e in self.crud.repository.control_read(session).events
+        )
+        if binding.wake_on_new_items and not already:
+            fresh = dict(
+                list(self._new_items(session, binding).items())[:1]
+            )  # one per wake; the next slot takes the rest
+            if not fresh:
+                return NOTHING_NEW
         contract = ContractReview(self.crud).current(session, binding.contract_request_id)
 
         def verify() -> None:
@@ -564,7 +615,7 @@ class AutonomousSchedules:
             if current.authentication != "daemon" or current.principal.id != binding.owner:
                 msg = "The scheduled owner identity changed"
                 raise HeinzelError(msg)
-            if int(datetime.now(UTC).timestamp()) // binding.cadence_seconds != slot:
+            if not _is_current(slot, binding.cadence_seconds, binding.timeout_seconds):
                 msg = "The schedule occurrence expired before launch"
                 raise HeinzelError(msg)
             if not _same_binding(self.approved(session, request), binding):
@@ -574,25 +625,102 @@ class AutonomousSchedules:
         def prepare() -> None:
             verify()
             self._ensure_no_prior_pending(session, occurrence)
-            self.crud.accept(session, MessageRequest(request_id=occurrence, text=contract.contract))
+            woke_for = "".join(f"\n\nThis wake is for the new item with id {identity}." for identity in fresh.values())
+            self.crud.accept(session, MessageRequest(request_id=occurrence, text=contract.contract + woke_for))
             events = self.crud.repository.control_read(session).events
             accepted = [e for e in events if e.kind == "message.accepted" and e.key == f"message-{occurrence}"]
             if len(accepted) != 1 or accepted[0].data.get("origin") != "daemon":
                 msg = "The scheduled occurrence has no trusted daemon origin"
                 raise HeinzelError(msg)
 
-        answer = await self.chat.dispatch(
-            session,
-            occurrence,
-            verify,
-            binding.max_requests,
-            binding.timeout_seconds,
-            user_proposals=False,
-            prepare=prepare,
-            connected_allowed=binding.connected_grant is not None,
-            notification_policy=binding.notification_policy,
-            notification_contract=binding.contract_sha256,
-            notification_schedule=binding.request_id,
-            notification_binding=arguments_hash(_binding_intent(binding)),
-        )
+        text = await self._dispatch(session, occurrence, binding, verify, prepare)
+        if fresh:
+            self._remember_items(session, set(fresh))  # only now: a turn that died sees these items again next slot
+        return text
+
+    async def _dispatch(
+        self,
+        session: str,
+        occurrence: str,
+        binding: ScheduleBinding,
+        verify: Callable[[], None],
+        prepare: Callable[[], None],
+    ) -> str:
+        try:
+            answer = await self.chat.dispatch(
+                session,
+                occurrence,
+                verify,
+                binding.max_requests,
+                binding.timeout_seconds,
+                user_proposals=False,
+                prepare=prepare,
+                connected_allowed=binding.connected_grant is not None,
+                notification_policy=binding.notification_policy,
+                notification_contract=binding.contract_sha256,
+                notification_schedule=binding.request_id,
+                notification_binding=arguments_hash(_binding_intent(binding)),
+            )
+        except HeinzelError as exc:
+            self._report_failed_turn(session, str(exc))
+            raise
         return answer.message.text
+
+    def _report_failed_turn(self, session: str, reason: str) -> None:
+        """Tell the owner in this agent's chat, once until something changes; the report must not mask the failure."""
+        settled = {
+            "message.replied",
+            "interactive.abandoned",
+            "scheduled-notification.recorded",
+            "scheduled-notification.abandoned",
+        }
+        text = reason[:500]
+        with contextlib.suppress(HeinzelError), self.crud.repository.control_writer(session) as writer:
+            events = self.crud.repository.control_read(session).events
+            for event in reversed(events):
+                if event.kind in settled:
+                    break
+                if event.kind == "agent.schedule-failed" and event.data.get("reason") == text:
+                    return
+            key = f"schedule-failed-{len(events) + 1}"
+            writer.append("agent.schedule-failed", key=key, data={"message_id": key, "reason": text})
+
+    def _seen_items(self, session: str) -> tuple[bool, set[str]]:
+        cursors = [e for e in self.crud.repository.control_read(session).events if e.kind == "source.cursor"]
+        return bool(cursors), {str(item) for e in cursors[-1:] for item in cast("list[object]", e.data.get("seen", []))}
+
+    def _remember_items(self, session: str, items: set[str]) -> None:
+        _started, seen = self._seen_items(session)
+        kept = sorted(seen | items)[-_MAX_SEEN:]
+        with self.crud.repository.control_writer(session) as writer:
+            writer.append("source.cursor", key=secrets.token_hex(8), data={"seen": cast("JsonValue", kept)})
+
+    def _new_items(self, session: str, binding: ScheduleBinding) -> dict[str, str]:
+        """Items of this read not seen before; the first read is the baseline, so old items never wake anyone.
+
+        Raises:
+            HeinzelError: If the source has no item identities or returned no item list.
+        """
+        grant = binding.connected_grant
+        spec = grant.review.item_identity if grant is not None else None
+        if spec is None:
+            msg = "Waking on new items needs a source that reports item identities"
+            raise HeinzelError(msg)
+        grants = self.chat.connected_grants()
+        with self.crud.repository.main_writer(session) as writer:
+            current: JsonValue = grants.read(session, writer)
+        for field in spec.collection:
+            current = current[field] if isinstance(current, dict) else None
+        if not isinstance(current, list):
+            msg = "The source returned no item list"
+            raise HeinzelError(msg)
+        ids = {
+            hashlib.sha256(str(item[spec.identity_field]).encode()).hexdigest(): str(item[spec.identity_field])
+            for item in current
+            if isinstance(item, dict) and spec.identity_field in item
+        }
+        started, seen = self._seen_items(session)
+        if not started:
+            self._remember_items(session, set(ids))
+            return {}
+        return {digest: identity for digest, identity in ids.items() if digest not in seen}

@@ -374,6 +374,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/heinzel/captured-write-activity-page": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Inspect recorded write attempts without contacting a provider or authorizing effects.
+         * @description Inspect recorded write attempts without contacting a provider or authorizing effects.
+         */
+        get: operations["heinzel_captured_write_activity_page"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/heinzel/captured-write-status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read the owner's recorded disposition without repeating a provider operation.
+         * @description Read the owner's recorded disposition without repeating a provider operation.
+         */
+        get: operations["heinzel_captured_write_status"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/heinzel/chat": {
         parameters: {
             query?: never;
@@ -574,6 +614,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/heinzel/discard-captured-write": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Set a draft aside without writing it.
+         * @description Set a draft aside without writing it.
+         */
+        post: operations["heinzel_discard_captured_write"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/heinzel/discover": {
         parameters: {
             query?: never;
@@ -594,6 +654,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/heinzel/execute-captured-write": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Execute one exact confirmed conditional write or leave its outcome uncertain.
+         * @description Execute one exact confirmed conditional write or leave its outcome uncertain.
+         */
+        post: operations["heinzel_execute_captured_write"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/heinzel/graph": {
         parameters: {
             query?: never;
@@ -608,6 +688,26 @@ export interface paths {
         get: operations["heinzel_graph"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/heinzel/indexed-conversation-search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Search a disposable private text index; its coverage is not a completeness guarantee.
+         * @description Search a disposable private text index; its coverage is not a completeness guarantee.
+         */
+        post: operations["heinzel_indexed_conversation_search"];
         delete?: never;
         options?: never;
         head?: never;
@@ -874,6 +974,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/heinzel/pending-captured-writes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Drafts waiting for your decision, with their exact terms; reading them writes nothing.
+         * @description Drafts waiting for your decision, with their exact terms; reading them writes nothing.
+         */
+        get: operations["heinzel_pending_captured_writes"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/heinzel/personal-artifacts": {
         parameters: {
             query?: never;
@@ -988,6 +1108,26 @@ export interface paths {
          * @description Propose autonomous turns; separate human confirmation is required to authorize them.
          */
         post: operations["heinzel_propose_agent_schedule"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/heinzel/propose-captured-write": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Persist a local draft without writing to a provider or granting authority.
+         * @description Persist a local draft without writing to a provider or granting authority.
+         */
+        post: operations["heinzel_propose_captured_write"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1291,6 +1431,46 @@ export interface paths {
         get: operations["heinzel_scheduled_notification_attempts"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/heinzel/search-agent-conversations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Search the current owner's conversations with explicit bounded progress.
+         * @description Search the current owner's conversations with explicit bounded progress.
+         */
+        post: operations["heinzel_search_agent_conversations"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/heinzel/search-conversation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Search privately by POST so terms do not appear in request URLs; this changes no state.
+         * @description Search privately by POST so terms do not appear in request URLs; this changes no state.
+         */
+        post: operations["heinzel_search_conversation"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2756,6 +2936,26 @@ export interface paths {
          * @description Stage the exact current agent schedule for human review; no schedule is approved yet.
          */
         post: operations["system_runner_chat_propose_agent_schedule_review"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/runner/chat/propose-captured-write": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Stage exact owner-private captured write terms for separate human confirmation.
+         * @description Stage exact owner-private captured write terms for separate human confirmation.
+         */
+        post: operations["system_runner_chat_propose_captured_write"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4321,6 +4521,164 @@ export interface components {
             requirement: string;
         };
         /**
+         * CapturedWriteActivityItem
+         * @description One saved write draft or verified provider acknowledgement, without replacement text.
+         */
+        CapturedWriteActivityItem: {
+            /**
+             * Account
+             * @description Account recorded in the reviewed draft.
+             */
+            account: string;
+            /**
+             * At
+             * Format: date-time
+             * @description Time of the latest recorded activity.
+             */
+            at: string;
+            /**
+             * Provider
+             * @description Host-selected provider recorded with the draft.
+             */
+            provider: string;
+            /**
+             * Reference
+             * @description Exact artifact reference recorded in the reviewed draft.
+             */
+            reference: string;
+            /**
+             * Request Id
+             * @description Owner-scoped draft identity.
+             */
+            request_id: string;
+            /**
+             * Revision
+             * @description Provider-reported acknowledgement revision, if any.
+             */
+            revision: string | null;
+            /**
+             * Seq
+             * @description Latest recorded activity position.
+             */
+            seq: number;
+            /**
+             * Source
+             * @description Source identity recorded in the reviewed draft.
+             */
+            source: string;
+            /**
+             * Status
+             * @description Verified local attempt disposition.
+             * @enum {string}
+             */
+            status: "draft" | "uncertain" | "acknowledged";
+        };
+        /**
+         * CapturedWriteActivityPage
+         * @description A bounded owner-private page of verified captured-write activity.
+         */
+        CapturedWriteActivityPage: {
+            /**
+             * Items
+             * @description Latest verified activity, newest first.
+             */
+            items: components["schemas"]["CapturedWriteActivityItem"][];
+            /**
+             * Next Before
+             * @description Exclusive activity sequence for the next page, if available.
+             */
+            next_before: number | null;
+            /**
+             * Session Id
+             * @description The owner-scoped conversation.
+             */
+            session_id: string;
+        };
+        /**
+         * CapturedWriteProposal
+         * @description Untrusted inert target terms; owner and provider binding are selected by the host.
+         */
+        CapturedWriteProposal: {
+            /** Account */
+            account: string;
+            /** Base Revision */
+            base_revision: string;
+            /**
+             * Content
+             * Format: password
+             */
+            content: string;
+            /** Operation */
+            operation: string;
+            /** Reference */
+            reference: string;
+            /** Request Id */
+            request_id: string;
+            /** Section */
+            section: string;
+            /** Session Id */
+            session_id: string;
+            /** Source */
+            source: string;
+            /** Write Scope */
+            write_scope: string;
+        };
+        /**
+         * CapturedWriteReceipt
+         * @description Host-recorded provider acknowledgement of one exact attempt; not a later read observation.
+         */
+        CapturedWriteReceipt: {
+            /**
+             * Account
+             * @description Account recorded in the reviewed draft.
+             */
+            account: string;
+            /**
+             * Base Revision
+             * @description Revision reviewed before the attempt.
+             */
+            base_revision: string;
+            /**
+             * Provider
+             * @description Host-selected provider recorded with the draft.
+             */
+            provider: string;
+            /**
+             * Reference
+             * @description Exact artifact reference recorded in the reviewed draft.
+             */
+            reference: string;
+            /**
+             * Request Id
+             * @description Owner-scoped identity of the confirmed write draft.
+             */
+            request_id: string;
+            /**
+             * Revision
+             * @description Revision returned by the provider acknowledgement, if any.
+             */
+            revision?: string | null;
+            /**
+             * Source
+             * @description Source identity recorded in the reviewed draft.
+             */
+            source: string;
+        };
+        /**
+         * CapturedWriteStatus
+         * @description Owner-private state without draft content or an invented success.
+         */
+        CapturedWriteStatus: {
+            /** @description Recorded provider acknowledgement, not a later artifact verification, if present. */
+            receipt?: components["schemas"]["CapturedWriteReceipt"] | null;
+            /**
+             * Status
+             * @description Local state; a draft does not grant a write.
+             * @enum {string}
+             */
+            status: "draft" | "uncertain" | "acknowledged";
+        };
+        /**
          * CardWidget
          * @description A card: a title, a short body and up to three buttons.
          */
@@ -5672,6 +6030,62 @@ export interface components {
             service: string;
         };
         /**
+         * CrossHistoryPage
+         * @description At most one agent's results or explicit bounded progress.
+         */
+        CrossHistoryPage: {
+            /**
+             * Completeness
+             * @description Search completeness cannot be established.
+             * @default unknown
+             * @constant
+             */
+            completeness: "unknown";
+            /**
+             * Items
+             * @description Matches from at most one conversation in this step.
+             */
+            items: components["schemas"]["SessionMessage"][];
+            /**
+             * Jump Cursors
+             * @description Owner and journal-bound message navigation hints.
+             */
+            jump_cursors?: string[];
+            /**
+             * Next Cursor
+             * @description Continuation for the same owner, query and catalog prefix, if available.
+             */
+            next_cursor: string | null;
+            /**
+             * Session Id
+             * @description Owner-scoped conversation for this step, if any.
+             */
+            session_id: string | null;
+            /**
+             * Status
+             * @description Bounded search progress for this step.
+             * @enum {string}
+             */
+            status: "indexing" | "results" | "next-agent" | "done" | "blocked";
+        };
+        /**
+         * CrossHistoryRequest
+         * @description One owner's query; continuation is a navigation hint, not authority.
+         */
+        CrossHistoryRequest: {
+            /** Cursor */
+            cursor?: string | null;
+            /**
+             * Query
+             * @default
+             */
+            query: string;
+            /** Since */
+            since?: string | null;
+            /** Until */
+            until?: string | null;
+        };
+        /**
          * DaemonStatus
          * @description Whether the daemon is installed, loaded and healthy.
          */
@@ -6670,6 +7084,93 @@ export interface components {
              * @description How far back it reads, for methods with a time window.
              */
             window: string | null;
+        };
+        /**
+         * HistorySearchPage
+         * @description One scan window and its continuation; an empty page can still have more.
+         */
+        HistorySearchPage: {
+            /**
+             * Items
+             * @description Matches in this bounded scan window.
+             */
+            items: components["schemas"]["SessionMessage"][];
+            /**
+             * Jump Cursors
+             * @description Owner and journal-bound message navigation hints.
+             */
+            jump_cursors?: string[];
+            /**
+             * Next Cursor
+             * @description Continuation for the same query and journal prefix, if available.
+             */
+            next_cursor: string | null;
+            /**
+             * Scanned
+             * @description Number of message bodies examined in this scan window.
+             */
+            scanned: number;
+            /**
+             * Session Id
+             * @description The owner-scoped conversation searched.
+             */
+            session_id: string;
+        };
+        /**
+         * HistorySearchRequest
+         * @description Exact text and time bounds for one owner-private conversation.
+         */
+        HistorySearchRequest: {
+            /** Cursor */
+            cursor?: string | null;
+            /**
+             * Query
+             * @default
+             */
+            query: string;
+            /** Session Id */
+            session_id: string;
+            /** Since */
+            since?: string | null;
+            /** Until */
+            until?: string | null;
+        };
+        /**
+         * IndexedHistoryPage
+         * @description Private matching messages; coverage is a checked cache, not a completeness proof.
+         */
+        IndexedHistoryPage: {
+            /**
+             * Completeness
+             * @description Whether the retained search can establish completeness.
+             * @default unknown
+             */
+            completeness: string;
+            /**
+             * Items
+             * @description Matches in this bounded results page.
+             */
+            items: components["schemas"]["SessionMessage"][];
+            /**
+             * Jump Cursors
+             * @description Owner and journal-bound message navigation hints.
+             */
+            jump_cursors?: string[];
+            /**
+             * Mode
+             * @description Search method used for this page.
+             */
+            mode: string;
+            /**
+             * Next Cursor
+             * @description Continuation for the same query and journal prefix, if available.
+             */
+            next_cursor: string | null;
+            /**
+             * Session Id
+             * @description The owner-scoped conversation searched.
+             */
+            session_id: string;
         };
         /**
          * InputSnapshotPage
@@ -9877,6 +10378,12 @@ export interface components {
              * @description Maximum turn duration in seconds.
              */
             timeout_seconds: number;
+            /**
+             * Wake On New Items
+             * @description A due slot checks the approved source and takes a turn only for an item not seen before.
+             * @default false
+             */
+            wake_on_new_items: boolean;
         };
         /**
          * ScheduleReviewPage
@@ -9959,6 +10466,12 @@ export interface components {
              * @description Suggested schedule, not yet approved or activated.
              */
             trigger: components["schemas"]["SuggestedTrigger"] | components["schemas"]["SuggestedInterval"];
+            /**
+             * Wake On New Items
+             * @description Take a turn only for items not seen before.
+             * @default false
+             */
+            wake_on_new_items: boolean;
         };
         /**
          * ScheduledAgentProposal
@@ -10044,6 +10557,12 @@ export interface components {
          * @description Explicit bounded notification scope; it grants no external messaging or data access.
          */
         ScheduledNotificationPolicy: {
+            /**
+             * Channels
+             * @description Other channels, by name, that also carry each notice; the owner reviews this list.
+             * @default []
+             */
+            channels: string[];
             /**
              * Delivery
              * @description Only the owner's local in-app or native notification policy.
@@ -11151,6 +11670,8 @@ export interface components {
              * @constant
              */
             status: "suggested";
+            /** @description Suggested window that follows each read, not yet approved. */
+            window?: components["schemas"]["SuggestedWindow"] | null;
         };
         /**
          * StackView
@@ -11457,6 +11978,11 @@ export interface components {
          */
         SuggestedNotices: {
             /**
+             * Channels
+             * @description Other channels, by name, when the person asked to be reached there too.
+             */
+            channels?: string[];
+            /**
              * Deduplicate By
              * @description With an approved source: one notice per observed item, or per item revision so a moved item can notify again. Null when the notice is not about a source item.
              */
@@ -11496,6 +12022,27 @@ export interface components {
             /**
              * Timezone
              * @description Explicit IANA timezone for the suggested expression.
+             */
+            timezone: string;
+        };
+        /**
+         * SuggestedWindow
+         * @description A time window that follows each read, for a source that changes: elapsed seconds around that moment.
+         */
+        SuggestedWindow: {
+            /**
+             * Lookahead Seconds
+             * @description Seconds after each read to include.
+             */
+            lookahead_seconds: number;
+            /**
+             * Lookback Seconds
+             * @description Seconds before each read to include.
+             */
+            lookback_seconds: number;
+            /**
+             * Timezone
+             * @description IANA timezone the person sees times in.
              */
             timezone: string;
         };
@@ -13404,6 +13951,30 @@ export interface components {
              */
             when_busy: "follow_up" | "steer";
         };
+        /** heinzel_discard_captured_write_Input */
+        heinzel_discard_captured_write_Input: {
+            /** Request Id */
+            request_id: string;
+            /** Session Id */
+            session_id: string;
+        };
+        /** heinzel_execute_captured_write_Input */
+        heinzel_execute_captured_write_Input: {
+            /** Approval Proof */
+            approval_proof: string;
+            /** Request Id */
+            request_id: string;
+            /** Review */
+            review: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            /** Session Id */
+            session_id: string;
+        };
+        /** heinzel_indexed_conversation_search_Input */
+        heinzel_indexed_conversation_search_Input: {
+            request: components["schemas"]["HistorySearchRequest"];
+        };
         /** heinzel_new_chat_Input */
         heinzel_new_chat_Input: {
             /** @description The complete personal appearance overrides; null leaves the current look unchanged. */
@@ -13531,6 +14102,12 @@ export interface components {
             session_id: string;
             /** Timeout Seconds */
             timeout_seconds: number;
+            /** Wake On New Items */
+            wake_on_new_items?: boolean | null;
+        };
+        /** heinzel_propose_captured_write_Input */
+        heinzel_propose_captured_write_Input: {
+            proposal: components["schemas"]["CapturedWriteProposal"];
         };
         /** heinzel_propose_check_in_Input */
         heinzel_propose_check_in_Input: {
@@ -13837,6 +14414,14 @@ export interface components {
              */
             session_id: string;
         };
+        /** heinzel_search_agent_conversations_Input */
+        heinzel_search_agent_conversations_Input: {
+            request: components["schemas"]["CrossHistoryRequest"];
+        };
+        /** heinzel_search_conversation_Input */
+        heinzel_search_conversation_Input: {
+            request: components["schemas"]["HistorySearchRequest"];
+        };
         /** system_state_push_Input */
         system_state_push_Input: Record<string, never>;
         /** system_state_reset_Input */
@@ -13872,6 +14457,11 @@ export type SchemaCapabilityChoice = components['schemas']['CapabilityChoice'];
 export type SchemaCapabilityInfo = components['schemas']['CapabilityInfo'];
 export type SchemaCapabilityReport = components['schemas']['CapabilityReport'];
 export type SchemaCapabilityUse = components['schemas']['CapabilityUse'];
+export type SchemaCapturedWriteActivityItem = components['schemas']['CapturedWriteActivityItem'];
+export type SchemaCapturedWriteActivityPage = components['schemas']['CapturedWriteActivityPage'];
+export type SchemaCapturedWriteProposal = components['schemas']['CapturedWriteProposal'];
+export type SchemaCapturedWriteReceipt = components['schemas']['CapturedWriteReceipt'];
+export type SchemaCapturedWriteStatus = components['schemas']['CapturedWriteStatus'];
 export type SchemaCardWidget = components['schemas']['CardWidget'];
 export type SchemaCatchUp = components['schemas']['CatchUp'];
 export type SchemaChannel = components['schemas']['Channel'];
@@ -13906,6 +14496,8 @@ export type SchemaContractVersion = components['schemas']['ContractVersion'];
 export type SchemaContributionInfo = components['schemas']['ContributionInfo'];
 export type SchemaCredentialDoc = components['schemas']['CredentialDoc'];
 export type SchemaCredentialInfo = components['schemas']['CredentialInfo'];
+export type SchemaCrossHistoryPage = components['schemas']['CrossHistoryPage'];
+export type SchemaCrossHistoryRequest = components['schemas']['CrossHistoryRequest'];
 export type SchemaDaemonStatus = components['schemas']['DaemonStatus'];
 export type SchemaDefaultView = components['schemas']['DefaultView'];
 export type SchemaDelivered = components['schemas']['Delivered'];
@@ -13936,6 +14528,9 @@ export type SchemaHeinzelList = components['schemas']['HeinzelList'];
 export type SchemaHeinzelSummary = components['schemas']['HeinzelSummary'];
 export type SchemaHintProblem = components['schemas']['HintProblem'];
 export type SchemaHintView = components['schemas']['HintView'];
+export type SchemaHistorySearchPage = components['schemas']['HistorySearchPage'];
+export type SchemaHistorySearchRequest = components['schemas']['HistorySearchRequest'];
+export type SchemaIndexedHistoryPage = components['schemas']['IndexedHistoryPage'];
 export type SchemaInputSnapshotPage = components['schemas']['InputSnapshotPage'];
 export type SchemaInputSnapshotView = components['schemas']['InputSnapshotView'];
 export type SchemaInstalled = components['schemas']['Installed'];
@@ -14077,6 +14672,7 @@ export type SchemaSuggestedInterval = components['schemas']['SuggestedInterval']
 export type SchemaSuggestedNotices = components['schemas']['SuggestedNotices'];
 export type SchemaSuggestedRead = components['schemas']['SuggestedRead'];
 export type SchemaSuggestedTrigger = components['schemas']['SuggestedTrigger'];
+export type SchemaSuggestedWindow = components['schemas']['SuggestedWindow'];
 export type SchemaSystemInfo = components['schemas']['SystemInfo'];
 export type SchemaTeamGraphDocument = components['schemas']['TeamGraphDocument'];
 export type SchemaTeamShow = components['schemas']['TeamShow'];
@@ -14130,12 +14726,16 @@ export type SchemaHeinzelApproveConnectedReadSetInput = components['schemas']['h
 export type SchemaHeinzelApproveModelGrantInput = components['schemas']['heinzel_approve_model_grant_Input'];
 export type SchemaHeinzelAssociateArtifactInput = components['schemas']['heinzel_associate_artifact_Input'];
 export type SchemaHeinzelChatInput = components['schemas']['heinzel_chat_Input'];
+export type SchemaHeinzelDiscardCapturedWriteInput = components['schemas']['heinzel_discard_captured_write_Input'];
+export type SchemaHeinzelExecuteCapturedWriteInput = components['schemas']['heinzel_execute_captured_write_Input'];
+export type SchemaHeinzelIndexedConversationSearchInput = components['schemas']['heinzel_indexed_conversation_search_Input'];
 export type SchemaHeinzelNewChatInput = components['schemas']['heinzel_new_chat_Input'];
 export type SchemaHeinzelPauseAgentScheduleInput = components['schemas']['heinzel_pause_agent_schedule_Input'];
 export type SchemaHeinzelPrepareConnectedReadSetReviewInput = components['schemas']['heinzel_prepare_connected_read_set_review_Input'];
 export type SchemaHeinzelPrepareSuggestedSourceInput = components['schemas']['heinzel_prepare_suggested_source_Input'];
 export type SchemaHeinzelProfileInput = components['schemas']['heinzel_profile_Input'];
 export type SchemaHeinzelProposeAgentScheduleInput = components['schemas']['heinzel_propose_agent_schedule_Input'];
+export type SchemaHeinzelProposeCapturedWriteInput = components['schemas']['heinzel_propose_captured_write_Input'];
 export type SchemaHeinzelProposeCheckInInput = components['schemas']['heinzel_propose_check_in_Input'];
 export type SchemaHeinzelProposeConnectedReadInput = components['schemas']['heinzel_propose_connected_read_Input'];
 export type SchemaHeinzelProposeConnectedReadSetInput = components['schemas']['heinzel_propose_connected_read_set_Input'];
@@ -14149,6 +14749,8 @@ export type SchemaHeinzelResolveScheduledNotificationInput = components['schemas
 export type SchemaHeinzelRevokeConnectedReadInput = components['schemas']['heinzel_revoke_connected_read_Input'];
 export type SchemaHeinzelRevokeConnectedReadSetInput = components['schemas']['heinzel_revoke_connected_read_set_Input'];
 export type SchemaHeinzelScheduleControlInput = components['schemas']['heinzel_schedule_control_Input'];
+export type SchemaHeinzelSearchAgentConversationsInput = components['schemas']['heinzel_search_agent_conversations_Input'];
+export type SchemaHeinzelSearchConversationInput = components['schemas']['heinzel_search_conversation_Input'];
 export type SchemaSystemStatePushInput = components['schemas']['system_state_push_Input'];
 export type SchemaSystemStateResetInput = components['schemas']['system_state_reset_Input'];
 export type $defs = Record<string, never>;
@@ -14723,6 +15325,73 @@ export interface operations {
             };
         };
     };
+    heinzel_captured_write_activity_page: {
+        parameters: {
+            query: {
+                session_id: string;
+                /** @description Exclusive activity sequence before this page. */
+                before?: number | null;
+                /** @description Maximum activities to return. */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CapturedWriteActivityPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    heinzel_captured_write_status: {
+        parameters: {
+            query: {
+                session_id: string;
+                request_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CapturedWriteStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     heinzel_chat: {
         parameters: {
             query?: never;
@@ -15050,6 +15719,39 @@ export interface operations {
             };
         };
     };
+    heinzel_discard_captured_write: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["heinzel_discard_captured_write_Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": boolean;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     heinzel_discover: {
         parameters: {
             query?: {
@@ -15082,6 +15784,39 @@ export interface operations {
             };
         };
     };
+    heinzel_execute_captured_write: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["heinzel_execute_captured_write_Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": string;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     heinzel_graph: {
         parameters: {
             query?: {
@@ -15101,6 +15836,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ContractGraph"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    heinzel_indexed_conversation_search: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["heinzel_indexed_conversation_search_Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IndexedHistoryPage"];
                 };
             };
             /** @description Validation Error */
@@ -15535,6 +16303,39 @@ export interface operations {
             };
         };
     };
+    heinzel_pending_captured_writes: {
+        parameters: {
+            query: {
+                session_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: components["schemas"]["JsonValue"];
+                    }[];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     heinzel_personal_artifacts: {
         parameters: {
             query: {
@@ -15638,7 +16439,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ConnectedGrantProposal"];
+                    "application/json": components["schemas"]["ConnectedGrantProposal"] | components["schemas"]["RollingConnectedGrantProposal"];
                 };
             };
             /** @description Validation Error */
@@ -15705,6 +16506,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ScheduleBinding"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    heinzel_propose_captured_write: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["heinzel_propose_captured_write_Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": string;
                 };
             };
             /** @description Validation Error */
@@ -16201,6 +17035,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ScheduledNotificationPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    heinzel_search_agent_conversations: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["heinzel_search_agent_conversations_Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CrossHistoryPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    heinzel_search_conversation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["heinzel_search_conversation_Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HistorySearchPage"];
                 };
             };
             /** @description Validation Error */
@@ -18136,6 +19036,40 @@ export interface operations {
                 /** @description The personal agent session. */
                 durable_session: string;
                 /** @description The schedule proposal request id. */
+                request_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatSession"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_runner_chat_propose_captured_write: {
+        parameters: {
+            query: {
+                /** @description Owner-scoped personal conversation. */
+                durable_session: string;
+                /** @description Identity of the captured write draft. */
                 request_id: string;
             };
             header?: never;

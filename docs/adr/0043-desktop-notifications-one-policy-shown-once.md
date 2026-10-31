@@ -200,3 +200,5 @@ The daemon hands each due notice to the native notifier as a `NativeChannel`, a 
 macOS lists the notification as held in Notification Center (never that a banner was seen), `queued` when the notifier
 accepted it and nothing more can be known, `refused` (macOS doesn't allow it, hasn't asked, or the app is missing: the
 notice stays due) and `unknown` (no answer in time: never retried, doctor says so).
+It is not registered for a schedule's review to select: every recorded notice already reaches the desktop through the
+daemon, so a second route would show it twice.

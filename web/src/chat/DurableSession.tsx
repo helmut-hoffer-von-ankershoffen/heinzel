@@ -5,17 +5,22 @@ import { Link, useSearchParams } from "react-router";
 import { chatKey, sendChat } from "@/api/chat";
 import { ApiError, api, problem, type SchemaChatSession, type SchemaSessionSnapshot } from "@/api/client";
 import { useDaemonStatus } from "@/api/daemon";
+import { token } from "@/api/token";
 import { AgentProposal } from "@/chat/AgentProposal";
 import { AgentProposalSummary } from "@/chat/AgentProposalSummary";
 import { AgentSchedules } from "@/chat/AgentSchedules";
-import { AgentSetupCard } from "@/chat/AgentSetupCard";
+import { AgentSetupCard, DocumentDrafts } from "@/chat/AgentSetupCard";
+import { CapturedWriteActivity } from "@/chat/CapturedWriteActivity";
+import { CapturedWriteReview } from "@/chat/CapturedWriteReview";
 import { ConnectedReadReview } from "@/chat/ConnectedReadReview";
 import { ConnectedReadSetReview } from "@/chat/ConnectedReadSetReview";
 import { ContractHistory } from "@/chat/ContractHistory";
 import { ActionCard } from "@/chat/Conversation";
+import { ConversationSearch } from "@/chat/ConversationSearch";
 import { useDurableDraft } from "@/chat/durableDraft";
 import { ModelPolicyReviewCard, supportedPolicy } from "@/chat/ModelPolicyReviewCard";
 import { NotificationPanel } from "@/chat/NotificationPanel";
+import { OwnerConversationSearch } from "@/chat/OwnerConversationSearch";
 import { SkillDraftPanel } from "@/chat/SkillDraftPanel";
 import { ToolEvents } from "@/chat/ToolEvents";
 import { UncertainTurnRecovery } from "@/chat/UncertainTurnRecovery";
@@ -88,8 +93,33 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
   const [scheduleErrorMessage, setScheduleErrorMessage] = useState<string | null>(null);
   const [intentNotice, setIntentNotice] = useState(false);
   const [activityLimit, setActivityLimit] = useState(20);
-  const [historyCursors, setHistoryCursors] = useState<Array<string | null>>([null]);
+  const [writeActivityVersion, setWriteActivityVersion] = useState(0);
+  const writeView = useRef({ sessionId, mounted: true });
+  writeView.current.sessionId = sessionId;
+  useEffect(() => {
+    writeView.current.mounted = true;
+    return () => {
+      writeView.current.mounted = false;
+    };
+  }, []);
+  const [historyCursors, setHistoryCursors] = useState<Array<string | null>>(() => {
+    const cursor = params.get("history");
+    return cursor ? [null, cursor] : [null];
+  });
   const historyCursor = historyCursors.at(-1) ?? null;
+  const [searchJump, setSearchJump] = useState(() => params.has("history"));
+  const searchTarget = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!params.has("history")) return;
+    setParams(
+      (current) => {
+        const next = new URLSearchParams(current);
+        next.delete("history");
+        return next;
+      },
+      { replace: true },
+    );
+  }, [params, setParams]);
   const clearScheduleError = () => {
     setScheduleError(false);
     setScheduleErrorMessage(null);
@@ -115,6 +145,11 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
     retry: false,
     placeholderData: (previous) => previous,
   });
+  useEffect(() => {
+    if (searchJump && query.data?.messages?.length && !query.isFetching && !query.isPlaceholderData && !query.isError)
+      searchTarget.current?.scrollIntoView?.({ block: "center" });
+  }, [searchJump, query.data, query.isFetching, query.isPlaceholderData, query.isError]);
+
   const profileProposal = useQuery({
     queryKey: ["heinzel", "profile-proposal", sessionId],
     queryFn: async () => {
@@ -245,6 +280,16 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
         action.arguments?.action === "resume") &&
       !Object.hasOwn(action.arguments ?? {}, "approval_proof"),
   );
+  // The sentence a helper was created from is sent once, so nobody has to say it twice.
+  const autoSent = useRef(false);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: send reads the current composer when this first runs
+  useEffect(() => {
+    const key = `hz.durable.autosend.${sessionId}`;
+    if (autoSent.current || !query.data || !text.trim() || sessionStorage.getItem(key) !== text) return;
+    autoSent.current = true;
+    sessionStorage.removeItem(key);
+    void send();
+  }, [query.data, sessionId, text]);
   const matchesCurrentSchedule = (action: (typeof approvalActions)[number]) => {
     const schedule = query.data?.schedule;
     const args = action.arguments;
@@ -709,6 +754,31 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
             />
           </details>
         )}
+        <ConversationSearch
+          key={`search:${sessionId}`}
+          sessionId={sessionId}
+          onJump={(cursor) => {
+            setSearchJump(true);
+            setHistoryCursors([null, cursor]);
+          }}
+        />
+        <OwnerConversationSearch
+          key={`owner-search:${sessionId}`}
+          onJump={(target, cursor) => {
+            if (target === sessionId) {
+              setSearchJump(true);
+              setHistoryCursors([null, cursor]);
+            } else
+              setParams((current) => {
+                const next = new URLSearchParams(current);
+                for (const key of ["agent-chat", "approval-chat", "approval-request", "agent-open-request"])
+                  next.delete(key);
+                next.set("chat", target);
+                next.set("history", cursor);
+                return next;
+              });
+          }}
+        />
         <MorePanel label="Terms, sources and skills">
           {query.data && (
             <details
@@ -722,7 +792,14 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
             </details>
           )}
           {query.data?.session_id === sessionId && (
-            <PersonalArtifactLinks key={`artifacts:${sessionId}`} sessionId={sessionId} compact />
+            <PersonalArtifactLinks
+              key={`artifacts:${sessionId}:${writeActivityVersion}`}
+              sessionId={sessionId}
+              compact
+            />
+          )}
+          {query.data?.session_id === sessionId && (
+            <CapturedWriteActivity key={`write-activity:${sessionId}:${writeActivityVersion}`} sessionId={sessionId} />
           )}
           {query.data?.session_id === sessionId && <AgentProposalSummary sessionId={sessionId} />}
           {query.data?.session_id === sessionId && (
@@ -769,7 +846,10 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
                   size="sm"
                   variant="outline"
                   disabled={query.isFetching || busy || profileLocked}
-                  onClick={() => setHistoryCursors((cursors) => cursors.slice(0, -1))}
+                  onClick={() => {
+                    setSearchJump(false);
+                    setHistoryCursors((cursors) => cursors.slice(0, -1));
+                  }}
                 >
                   Earlier messages
                 </Button>
@@ -784,8 +864,10 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
                   }
                   onClick={() => {
                     const next = query.data?.next_cursor;
-                    if (typeof next === "string" && next && !historyCursors.includes(next))
+                    if (typeof next === "string" && next && !historyCursors.includes(next)) {
+                      setSearchJump(false);
                       setHistoryCursors((cursors) => [...cursors, next]);
+                    }
                   }}
                 >
                   Newer messages
@@ -800,7 +882,20 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
               ? (activity.data?.items ?? []).filter((item) => item.turn_id === message.turn_id)
               : [];
           return (
-            <div key={`${message.seq}-${message.id}`} className="space-y-1 text-sm">
+            <div
+              key={`${message.seq}-${message.id}`}
+              ref={
+                searchJump && index === 0 && !query.isFetching && !query.isPlaceholderData ? searchTarget : undefined
+              }
+              className={
+                searchJump && index === 0 && !query.isFetching && !query.isPlaceholderData
+                  ? "space-y-1 rounded border border-primary p-2 text-sm"
+                  : "space-y-1 text-sm"
+              }
+            >
+              {searchJump && index === 0 && !query.isFetching && !query.isPlaceholderData && (
+                <span className="text-xs font-medium">Search result</span>
+              )}
               <p className="whitespace-pre-wrap break-words">
                 <strong data-speaker={message.role}>
                   {message.role === "tool"
@@ -849,7 +944,12 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
             </div>
           );
         })}
-        {query.data?.session_id === sessionId && <AgentSetupCard snapshot={query.data} />}
+        {query.data?.session_id === sessionId && (
+          <>
+            <DocumentDrafts snapshot={query.data} />
+            <AgentSetupCard snapshot={query.data} />
+          </>
+        )}
         {activity.isError && (
           <p role="status" className="text-sm">
             Recorded tool activity is unavailable.
@@ -881,7 +981,9 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
             );
           })()}
         {activity.data?.session_id === sessionId &&
-          activity.data.items.length > 0 &&
+          activity.data.items.some(
+            (item) => !(query.data?.messages ?? []).some((message) => message.turn_id === item.turn_id),
+          ) &&
           (() => {
             const visibleTurns = new Set(
               (query.data?.messages ?? [])
@@ -944,6 +1046,81 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
               </span>
             )}
           </p>
+        ))}
+        {agentChat?.actions?.map((action) => (
+          <CapturedWriteReview
+            key={`captured-write-${agentChat.id}-${action.id}`}
+            action={action}
+            sessionId={sessionId}
+            chatId={agentChat.id}
+            onConfirm={async () => {
+              let originalToken: string | null;
+              try {
+                originalToken = token();
+              } catch {
+                return;
+              }
+              const currentView = () => {
+                try {
+                  const currentToken = token();
+                  return (
+                    writeView.current.mounted &&
+                    writeView.current.sessionId === sessionId &&
+                    currentToken === originalToken
+                  );
+                } catch {
+                  return false;
+                }
+              };
+              if (!currentView()) return;
+              try {
+                const updated = requirePersonalChat(
+                  await result(
+                    api.POST("/system/runner/chat/confirm", {
+                      params: { query: { session: agentChat.id, action: action.id } },
+                    }),
+                  ),
+                  sessionId,
+                  agentChat.id,
+                );
+                if (!currentView()) return;
+                const found = updated.actions?.find((item) => item.id === action.id);
+                if (
+                  !found ||
+                  found.module !== action.module ||
+                  found.operation !== action.operation ||
+                  canonical(found.arguments) !== canonical(action.arguments) ||
+                  !["done", "uncertain", "failed"].includes(found.status)
+                )
+                  throw new Error("Uncertain write result");
+                rememberChat(updated, agentChat.id);
+              } catch {
+                if (!currentView()) return;
+                setError(true);
+                try {
+                  const current = await result(
+                    api.GET("/system/runner/chat/show", {
+                      params: { query: { session: agentChat.id } },
+                    }),
+                  );
+                  if (!currentView()) return;
+                  const found = current.actions?.find((item) => item.id === action.id);
+                  if (
+                    !found ||
+                    found.module !== action.module ||
+                    found.operation !== action.operation ||
+                    canonical(found.arguments) !== canonical(action.arguments)
+                  )
+                    throw new Error("Changed write review");
+                  rememberChat(current, agentChat.id);
+                } catch {
+                  /* Keep the persistent fence until the outcome can be inspected. */
+                }
+              } finally {
+                if (currentView()) setWriteActivityVersion((version) => version + 1);
+              }
+            }}
+          />
         ))}
         {[agentChat, approvalChat]
           .filter((chat, index, all) => chat && all.findIndex((item) => item?.id === chat.id) === index)

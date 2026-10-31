@@ -29,8 +29,6 @@ try {
   await page.getByRole("button", { name: "Create Heinzel and take this message" }).click();
   const message = page.getByLabel("Message your Heinzel");
   await message.waitFor();
-  assert.equal(await message.inputValue(), sentence);
-  await page.getByRole("button", { name: "Queue message" }).click();
   const assistantReply = page.locator("p").filter({
     has: page.locator('strong[data-speaker="assistant"]'),
     hasText: "Done",

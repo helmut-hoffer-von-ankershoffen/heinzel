@@ -24,6 +24,8 @@ from heinzel import (
     AgentResult,
     AgentRunner,
     Budget,
+    ChannelReplySource,
+    CurrentUser,
     HeinzelError,
     Kernel,
     McpServer,
@@ -418,6 +420,82 @@ class ChatService:
                     tool="heinzel_accept_agent_contract",
                     arguments=arguments,
                     command="Review agent contract",
+                )
+            )
+            return self._store.load(personal_chat.id)
+
+    def apply_channel_replies(self) -> int:
+        """Act on verified replies from the owner's other channels, as if they pressed the button in the app.
+
+        The channel's sign-in identified the owner and the digest named the exact draft; that is why this one job may
+        confirm under the owner's local identity. Each reply is settled first, so a crash can't act on it twice.
+        """
+        if not self._kernel.provides(ChannelReplySource) or not self._kernel.provides(CurrentUser):
+            return 0
+        source = self._kernel.resolve(ChannelReplySource)  # type: ignore[type-abstract]
+        acted = 0
+        with self._kernel.resolve(CurrentUser).local("cli"):
+            for reply in source.verified():
+                source.settled(reply, "approved" if reply.decision == "approve" else "declined")
+                if reply.decision == "approve":
+                    chat = self.propose_captured_write(reply.session, reply.request_id)
+                    action = next(
+                        item
+                        for item in chat.actions
+                        if item.operation == "execute-captured-write"
+                        and item.arguments.get("request_id") == reply.request_id
+                        and item.status == "pending"
+                    )
+                    self.confirm(chat.id, action.id)
+                acted += 1
+        return acted
+
+    def propose_captured_write(self, durable_session: str, request_id: str) -> ChatSession:
+        """Stage the exact owner-private captured write for a human decision, without granting it.
+
+        Raises:
+            HeinzelError: If the owner, current proposal or existing action cannot be verified.
+        """
+        if not self._kernel.provides(ApprovalIssuer):
+            msg = "Captured write review is unavailable"
+            raise HeinzelError(msg)
+        issuer = self._kernel.resolve(ApprovalIssuer)
+        base: dict[str, JsonValue] = {"session_id": durable_session, "request_id": request_id}
+        with self._store.proposal_request_lock():
+            prior = self._store.find_proposal("heinzel", "execute-captured-write", durable_session, request_id)
+            if prior is not None:
+                chat, found = prior
+                # Returning the original owner-bound action does not reissue or consume a proof. The issuer
+                # still rechecks current intent when a pending action is confirmed.
+                if (
+                    chat.personal_session_id != durable_session
+                    or set(found.arguments) != {"session_id", "request_id", "review"}
+                    or not isinstance(found.arguments.get("review"), dict)
+                ):
+                    msg = "This write review no longer matches its original action"
+                    raise HeinzelError(msg)
+                return chat
+            preview = issuer.review("heinzel", "execute-captured-write", base)
+            arguments: dict[str, JsonValue] = {**base, "review": preview}
+            personal_chat = self._store.find_personal_chat(durable_session)
+            if personal_chat is None:
+                personal_chat = self._store.create(
+                    ChatContext(
+                        kind="text",
+                        ref=durable_session,
+                        owner_id=self._store.personal_owner(),
+                        detail="Review captured write for this personal agent.",
+                    ),
+                    personal_session_id=durable_session,
+                )
+            self._store.propose(
+                ProposedCall(
+                    session=personal_chat.id,
+                    module="heinzel",
+                    operation="execute-captured-write",
+                    tool="heinzel_execute_captured_write",
+                    arguments=arguments,
+                    command="Current section text is not shown; review the full replacement and base revision.",
                 )
             )
             return self._store.load(personal_chat.id)
@@ -841,6 +919,7 @@ class ChatService:
             in {
                 "approve-model-grant",
                 "accept-agent-contract",
+                "execute-captured-write",
                 "approve-connected-read",
                 "approve-connected-read-set",
                 "approve-agent-schedule",
@@ -879,6 +958,8 @@ class ChatService:
                 and found.operation in {"approve-connected-read", "approve-connected-read-set"}
                 else "The agent schedule approval was recorded. No external access was granted."
                 if found.module == "heinzel" and found.operation == "approve-agent-schedule"
+                else "The captured write was acknowledged by the selected provider."
+                if found.module == "heinzel" and found.operation == "execute-captured-write"
                 else "The contract acceptance was recorded. No schedule or access was activated."
                 if found.module == "heinzel" and found.operation == "accept-agent-contract"
                 else redact_emails(dumps(to_jsonable_python(value, fallback=str)))
@@ -913,6 +994,7 @@ class ChatService:
             in {
                 "approve-model-grant",
                 "accept-agent-contract",
+                "execute-captured-write",
                 "approve-connected-read",
                 "approve-connected-read-set",
                 "approve-agent-schedule",
@@ -943,6 +1025,8 @@ class ChatService:
                 if found.operation in {"approve-connected-read", "approve-connected-read-set"}
                 else "The exact agent schedule approval is recorded. It was not run again."
                 if found.operation == "approve-agent-schedule"
+                else "The captured write acknowledgement is recorded. It was not run again."
+                if found.operation == "execute-captured-write"
                 else "The exact contract acceptance is recorded. It was not run again."
                 if found.operation == "accept-agent-contract"
                 else "The exact model policy approval is recorded. It was not run again."
@@ -990,6 +1074,8 @@ class ChatService:
                         if found.operation in {"approve-connected-read", "approve-connected-read-set"}
                         else "The exact agent schedule approval is recorded. It was not run again."
                         if found.operation == "approve-agent-schedule"
+                        else "The captured write acknowledgement is recorded. It was not run again."
+                        if found.operation == "execute-captured-write"
                         else "The exact contract acceptance is recorded. It was not run again."
                         if found.operation == "accept-agent-contract"
                         else "The exact model policy approval is recorded. It was not run again."
@@ -1046,6 +1132,7 @@ class ChatService:
                     in {
                         "approve-model-grant",
                         "accept-agent-contract",
+                        "execute-captured-write",
                         "approve-connected-read",
                         "approve-connected-read-set",
                         "approve-agent-schedule",

@@ -33,6 +33,22 @@ export function cadenceWords(seconds: number): string {
   return `Every ${minutes} minutes`;
 }
 
+/** Promise only the deduplication the source can back: a source reporting no identities or revisions gets less. */
+function noticeMode(
+  asked: "item" | "revision" | null | undefined,
+  source: { review: { item_identity?: { revision_field?: string | null } | null } } | null,
+): "topic" | "item" | "revision" {
+  const identity = source?.review.item_identity;
+  if (!asked || !identity) return "topic";
+  return asked === "revision" && !identity.revision_field ? "item" : asked;
+}
+
+function windowWords(seconds: number): string {
+  if (seconds >= 7200) return `${Math.round(seconds / 3600)} hours`;
+  if (seconds === 3600) return "an hour";
+  return `${Math.round(seconds / 60)} minutes`;
+}
+
 async function confirmStaged(
   chat: { id: string; actions?: { id: string; operation: string; status?: string }[] | null },
   operation: string,
@@ -42,7 +58,133 @@ async function confirmStaged(
   const updated = await result(
     api.POST("/system/runner/chat/confirm", { params: { query: { session: chat.id, action: action.id } } }),
   );
-  if (updated.actions?.find((item) => item.id === action.id)?.status !== "done") throw new Error("Not confirmed");
+  const decided = updated.actions?.find((item) => item.id === action.id);
+  if (decided?.status !== "done") throw new Error(decided?.result || "This was not confirmed.");
+}
+
+type PendingDraft = {
+  request_id: string;
+  reference: string;
+  section: string;
+  account: string;
+  content: string;
+};
+
+/** A proposed edit to a document, shown in the chat where it was made. Only "Write it" reaches the document. */
+function DraftReview({ sessionId, draft, onDone }: { sessionId: string; draft: PendingDraft; onDone: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState<string | null>(null);
+  const approve = async () => {
+    setBusy(true);
+    setFailed(null);
+    try {
+      const chat = await result(
+        api.POST("/system/runner/chat/propose-captured-write", {
+          params: { query: { durable_session: sessionId, request_id: draft.request_id } },
+        }),
+      );
+      await confirmStaged(chat, "execute-captured-write");
+    } catch (reason) {
+      setFailed(reason instanceof Error ? reason.message : "This could not be written.");
+    } finally {
+      setBusy(false);
+      onDone();
+    }
+  };
+  const discard = async () => {
+    setBusy(true);
+    try {
+      await result(
+        api.POST("/heinzel/discard-captured-write", { body: { session_id: sessionId, request_id: draft.request_id } }),
+      );
+    } catch (reason) {
+      setFailed(reason instanceof Error ? reason.message : "This could not be set aside.");
+    } finally {
+      setBusy(false);
+      onDone();
+    }
+  };
+  return (
+    <section aria-label="Review this edit" className="space-y-2 rounded-lg border border-border p-3 text-sm">
+      <h3 className="font-medium">Review this edit</h3>
+      {draft.reference.startsWith("new:") ? (
+        <p>
+          A new private {draft.reference.split(":")[1]} in your Drive, “{draft.section}”, as {draft.account}.
+        </p>
+      ) : (
+        <p>
+          Into{" "}
+          <a className="underline" href={draft.reference} target="_blank" rel="noreferrer">
+            this file
+          </a>
+          , {draft.section === "end" ? "at its end" : `after “${draft.section}”`}, as {draft.account}. If it changes
+          before you decide, nothing is written.
+        </p>
+      )}
+      <pre className="whitespace-pre-wrap break-words rounded bg-background p-2 text-xs">{draft.content}</pre>
+      {failed && (
+        <p role="alert" className="text-bad">
+          {failed}
+        </p>
+      )}
+      <div className="flex gap-2">
+        <Button type="button" size="sm" disabled={busy} onClick={() => void approve()}>
+          {busy ? "Writing…" : "Write it"}
+        </Button>
+        <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => void discard()}>
+          Set aside
+        </Button>
+      </div>
+    </section>
+  );
+}
+
+/** Edits this helper proposed and those it made; receipts come from the provider's reply, never a guess. */
+export function DocumentDrafts({ snapshot }: { snapshot: Snapshot }) {
+  const sessionId = snapshot.session_id;
+  const client = useQueryClient();
+  const key = ["heinzel", "document-drafts", sessionId, snapshot.messages?.length ?? 0] as const;
+  const drafts = useQuery({
+    queryKey: key,
+    queryFn: async () => {
+      const [pending, activity] = await Promise.all([
+        result(api.GET("/heinzel/pending-captured-writes", { params: { query: { session_id: sessionId } } })),
+        result(
+          api.GET("/heinzel/captured-write-activity-page", {
+            params: { query: { session_id: sessionId, limit: 20 } },
+          }),
+        ),
+      ]);
+      return { pending: pending as unknown as PendingDraft[], activity: activity.items };
+    },
+    retry: false,
+  });
+  const refresh = () => void client.invalidateQueries({ queryKey: ["heinzel", "document-drafts", sessionId] });
+  return (
+    <>
+      {drafts.data?.activity
+        .filter((item) => item.status !== "draft")
+        .map((item) => (
+          <p key={item.seq} role="status" className="rounded-lg border border-border p-3 text-sm">
+            {item.status === "acknowledged" ? "Written to " : "Outcome unknown for "}
+            <a
+              className="underline"
+              href={item.reference.startsWith("new:") ? (item.revision ?? undefined) : item.reference}
+              target="_blank"
+              rel="noreferrer"
+            >
+              {item.reference.startsWith("new:") ? "a new file" : "the file"}
+            </a>
+            {item.status === "acknowledged"
+              ? ` as ${item.account}. Google confirmed this.`
+              : ". Check it before asking again; this won't be repeated."}
+          </p>
+        ))}
+      {drafts.data?.pending.map((draft) => (
+        <DraftReview key={draft.request_id} sessionId={sessionId} draft={draft} onDone={refresh} />
+      ))}
+    </>
+  );
 }
 
 export function AgentSetupCard({ snapshot }: { snapshot: Snapshot }) {
@@ -55,14 +197,38 @@ export function AgentSetupCard({ snapshot }: { snapshot: Snapshot }) {
     queryKey: ["heinzel", "agent-setup", sessionId, turns],
     queryFn: async () => {
       const query = { params: { query: { session_id: sessionId } } };
-      const [terms, schedule, look, schedules] = await Promise.all([
+      const [terms, schedule, look, schedules, source, reads] = await Promise.all([
         result(api.GET("/heinzel/latest-scheduled-agent-proposal", query)),
         result(api.GET("/heinzel/latest-schedule-suggestion-view", query)),
         result(api.GET("/heinzel/latest-profile-proposal", query)),
         result(
           api.GET("/heinzel/agent-schedules", { params: { query: { session_id: sessionId, cursor: 0, limit: 100 } } }),
         ),
+        result(api.GET("/heinzel/latest-source-suggestion-view", query)),
+        result(api.GET("/heinzel/connected-read-state", query)),
       ]);
+      // Looking at the account a source would use reads no data and approves nothing; the card shows what it found.
+      let sourceReview = null;
+      let sourceProblem = null;
+      if (source) {
+        const request = `source-${source.request_id.slice(5, 69)}`;
+        if (reads.proposal?.request_id === request) sourceReview = reads.proposal;
+        else
+          try {
+            sourceReview = await result(
+              api.POST("/heinzel/prepare-suggested-source", {
+                body: {
+                  session_id: sessionId,
+                  request_id: request,
+                  suggestion_request: source.request_id,
+                  suggestion_revision: source.revision,
+                },
+              }),
+            );
+          } catch (reason) {
+            sourceProblem = reason instanceof Error ? reason.message : "This source could not be checked.";
+          }
+      }
       const review = terms
         ? await result(
             api.GET("/heinzel/agent-contract-review", {
@@ -70,7 +236,18 @@ export function AgentSetupCard({ snapshot }: { snapshot: Snapshot }) {
             }),
           )
         : null;
-      return { terms, schedule, look, schedules: schedules.items, accepted: review?.accepted ?? false };
+      return {
+        terms,
+        schedule,
+        look,
+        schedules: schedules.items,
+        accepted: review?.accepted ?? false,
+        source,
+        sourceReview,
+        sourceProblem,
+        sourceApproved:
+          !!sourceReview && reads.status === "approved" && reads.proposal?.request_id === sourceReview.request_id,
+      };
     },
     retry: false,
   });
@@ -82,20 +259,24 @@ export function AgentSetupCard({ snapshot }: { snapshot: Snapshot }) {
       </p>
     );
   if (!data) return null;
-  const { terms, schedule, look, schedules, accepted } = data;
+  const { terms, schedule, look, schedules, accepted, source, sourceReview, sourceProblem, sourceApproved } = data;
   const interval = schedule && "kind" in schedule.trigger ? schedule.trigger : null;
   const requestId = terms && schedule ? `setup-${schedule.request_id.slice(5, 37)}-${terms.revision}` : null;
   const active = schedules.find((item) => item.status === "approved");
   const running = !!active && active.binding.request_id === requestId;
   const lookPending = !!look && look.expected_revision === (snapshot.profile_revision ?? 0) && look.name !== undefined;
   const termsPending = !!terms && !accepted;
+  const sourcePending = !!source && !sourceApproved;
   const schedulePending = !!interval && !!terms && !running;
-  if (!termsPending && !schedulePending && !lookPending) {
+  if (!termsPending && !schedulePending && !lookPending && !sourcePending) {
     if (!active) return null;
     return (
       <section aria-label="Running" className="rounded-lg border border-border p-3 text-sm">
         <p>
-          <strong>{snapshot.name}</strong> is running. {cadenceWords(active.binding.cadence_seconds)}
+          <strong>{snapshot.name}</strong> is running.{" "}
+          {active.binding.wake_on_new_items
+            ? `Only when something new arrives, checked ${cadenceWords(active.binding.cadence_seconds).toLowerCase()}`
+            : cadenceWords(active.binding.cadence_seconds)}
           {active.binding.quiet_hours
             ? `, quiet ${active.binding.quiet_hours.start} to ${active.binding.quiet_hours.end}.`
             : "."}{" "}
@@ -130,6 +311,14 @@ export function AgentSetupCard({ snapshot }: { snapshot: Snapshot }) {
         );
         await confirmStaged(chat, "accept-agent-contract");
       }
+      if (sourcePending && sourceReview) {
+        const chat = await result(
+          api.POST("/system/runner/chat/propose-connected-read-review", {
+            params: { query: { durable_session: sessionId, request_id: sourceReview.request_id } },
+          }),
+        );
+        await confirmStaged(chat, "approve-connected-read");
+      }
       if (schedulePending && terms && schedule && interval && requestId) {
         if (active)
           await result(
@@ -146,10 +335,19 @@ export function AgentSetupCard({ snapshot }: { snapshot: Snapshot }) {
               cadence_seconds: interval.cadence_seconds,
               max_requests: MAX_REQUESTS,
               timeout_seconds: Math.min(terms.timeout_seconds, MAX_TIMEOUT),
+              connected_request_id: sourceReview?.request_id ?? undefined,
               notification_policy: schedule.notices
-                ? notificationPolicy(schedule.notices.max_per_24h, 60, schedule.notices.deduplicate_by ?? "topic")
+                ? {
+                    ...notificationPolicy(
+                      schedule.notices.max_per_24h,
+                      60,
+                      noticeMode(schedule.notices.deduplicate_by, sourceReview),
+                    ),
+                    channels: schedule.notices.channels ?? [],
+                  }
                 : undefined,
               quiet_hours: schedule.quiet_hours ?? undefined,
+              wake_on_new_items: schedule.wake_on_new_items ?? undefined,
             },
           }),
         );
@@ -199,18 +397,35 @@ export function AgentSetupCard({ snapshot }: { snapshot: Snapshot }) {
             <dd className="whitespace-pre-wrap break-words">{terms.contract}</dd>
           </>
         )}
+        {source && (
+          <>
+            <dt className="text-muted-foreground">Reads</dt>
+            <dd>
+              {source.capability}, read-only
+              {sourceReview?.review.account_display ? ` from ${sourceReview.review.account_display}` : ""}
+              {source.window
+                ? `, only ${windowWords(source.window.lookback_seconds)} back and ${windowWords(source.window.lookahead_seconds)} ahead of each check`
+                : ""}
+              . Text it reads is treated as data, never as instructions.
+            </dd>
+          </>
+        )}
         {schedulePending && interval && (
           <>
             <dt className="text-muted-foreground">When</dt>
             <dd>
-              {cadenceWords(interval.cadence_seconds)}
+              {schedule?.wake_on_new_items
+                ? `Only when something new arrives, checked ${cadenceWords(interval.cadence_seconds).toLowerCase()}`
+                : cadenceWords(interval.cadence_seconds)}
               {schedule?.quiet_hours &&
                 `, quiet ${schedule.quiet_hours.start} to ${schedule.quiet_hours.end} (${schedule.quiet_hours.timezone})`}
             </dd>
             <dt className="text-muted-foreground">May do</dt>
             <dd>
               {schedule?.notices
-                ? `Notify you on this device, at most ${schedule.notices.max_per_24h} a day. Nothing else.`
+                ? `Notify you on this device${
+                    schedule.notices.channels?.length ? ` and on ${schedule.notices.channels.join(", ")}` : ""
+                  }, at most ${schedule.notices.max_per_24h} a day. Nothing else.`
                 : "Write in this chat. Nothing else."}
             </dd>
             <dt className="text-muted-foreground">Cost</dt>
@@ -218,12 +433,17 @@ export function AgentSetupCard({ snapshot }: { snapshot: Snapshot }) {
           </>
         )}
       </dl>
+      {sourceProblem && (
+        <p role="alert" className="text-bad">
+          This source isn't ready: {sourceProblem}
+        </p>
+      )}
       {problemText && (
         <p role="alert" className="text-bad">
           {problemText}
         </p>
       )}
-      <Button type="button" size="sm" disabled={busy} onClick={() => void start()}>
+      <Button type="button" size="sm" disabled={busy || (sourcePending && !sourceReview)} onClick={() => void start()}>
         {busy ? "Starting…" : running || accepted ? "Apply" : "Start"}
       </Button>
       <p className="text-xs text-muted-foreground">Not quite right? Say what to change, and I will propose it again.</p>

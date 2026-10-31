@@ -107,3 +107,26 @@ class ApprovalChannel(ABC):
     @abstractmethod
     def settle(self, reference: str, outcome: Literal["approved", "declined", "expired", "superseded"]) -> None:
         """Mark a posted request as no longer open, best effort, so nobody answers it again."""
+
+
+class VerifiedChannelReply(_Message):
+    """A reply the host verified against the owner's channel identity and the exact pending request."""
+
+    session: str = Field(description="The helper's session.")
+    request_id: str = Field(description="The pending approval it answers.")
+    decision: Literal["approve", "decline"] = Field(description="What the owner chose.")
+    channel: str = Field(description="Where they answered.")
+
+
+class ChannelReplySource(ABC):
+    """What the confirmation boundary reads to act on verified replies; the host implements it, not a plugin."""
+
+    @abstractmethod
+    def verified(self) -> list[VerifiedChannelReply]:
+        """Replies that passed every check and are not settled yet."""
+
+    @abstractmethod
+    def settled(
+        self, reply: VerifiedChannelReply, outcome: Literal["approved", "declined", "expired", "superseded"]
+    ) -> None:
+        """Record what became of a reply, and tell the channel, so it is never acted on twice."""
