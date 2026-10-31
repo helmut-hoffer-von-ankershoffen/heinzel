@@ -73,6 +73,7 @@ check: ## Everything CI checks that runs offline, in parallel: lint, import cont
 linux-user-manager-proof: ## Inspect an existing Linux user manager without starting services; set PROBE_PREFIX
 	uv run python tests/integration/linux_user_manager_probe.py --prefix "$${PROBE_PREFIX:?Set PROBE_PREFIX to an isolated heinzel-probe- name}"
 
+# Unit tests take every core and have a 5 s budget each; Vitest beside them starved them into timeouts, so it runs after.
 check-fast: ## Seconds-fast feedback for the edit loop: format, lint, contracts, generated files, unit tests
 	@$(WEB) prepare
 	$(STEPS) \
@@ -84,7 +85,7 @@ check-fast: ## Seconds-fast feedback for the edit loop: format, lint, contracts,
 		"&demo=uv run --script scripts/demo_tape.py --check" \
 		"&attributions=uv run --quiet --script scripts/attributions.py --check" \
 		$(WEB_LINT) $(WEB_TYPES) \
-		"unit=uv run pytest -m 'unit and not perf' -n auto -x -q --session-timeout=120" $(WEB_TESTS) $(MANAGED_CHECK)
+		"unit=uv run pytest -m 'unit and not perf' -n auto -x -q --session-timeout=120" "web-tests=$(WEB) exec vitest run" $(MANAGED_CHECK)
 
 preflight: ## What CI checks, before you push: check with coverage, template, build, commits (PREFLIGHT=full adds e2e, audit)
 	@$(WEB) prepare
