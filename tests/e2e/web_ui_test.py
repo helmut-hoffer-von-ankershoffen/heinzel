@@ -236,6 +236,10 @@ def test_hz_ui_opens_the_app_and_it_shows_the_doctor_report(environment, tmp_pat
 @pytest.mark.timeout(600)
 def test_a_refused_sign_in_offers_a_paste_field_that_signs_in_with_the_printed_link(environment, tmp_path):
     """An installed app has no address bar: the sign-in page takes the printed link and rejects another address."""
+
+
+def test_plugin_install_confirmation_opens_in_the_viewport_under_its_own_row(environment, tmp_path):
+    """Install on a row low in Discover shows its confirmation next to the click, focused, on desktop and phone."""
     env, _ = environment
     web_build.ensure_built()
     run = [sys.executable, str(REPO / "scripts" / "web_build.py")]
@@ -257,6 +261,7 @@ def test_a_refused_sign_in_offers_a_paste_field_that_signs_in_with_the_printed_l
         assert url.startswith("http://127.0.0.1:")
         driven = subprocess.run(
             [*run, "exec", "node", "e2e/signin-paste.mjs", url, str(shots)],
+            [*run, "exec", "node", "e2e/plugin-install-inline.mjs", url, str(shots)],
             cwd=REPO,
             capture_output=True,
             text=True,
@@ -271,6 +276,10 @@ def test_a_refused_sign_in_offers_a_paste_field_that_signs_in_with_the_printed_l
                 stream.close()
     assert driven.returncode == 0, driven.stderr
     assert json.loads(driven.stdout.strip().splitlines()[-1]) == {"pasted": True}
+
+    assert driven.returncode == 0, driven.stderr + driven.stdout
+    result = json.loads(driven.stdout.strip().splitlines()[-1])
+    assert [item["name"] for item in result["confirmations"]] == ["desktop", "phone"]
 
 
 @pytest.mark.timeout(600)
