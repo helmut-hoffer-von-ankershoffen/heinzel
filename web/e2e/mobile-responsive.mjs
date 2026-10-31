@@ -1035,6 +1035,10 @@ try {
     await soundPage.getByRole("button", { name: "Choose a soundscape", exact: true }).click();
     const soundDialog = soundPage.getByRole("dialog", { name: "Sound" });
     await soundDialog.getByText("Use your iPhone or iPad volume buttons to adjust YouTube audio.").waitFor();
+    // Safari's toolbars and keyboard resize the window at the same width: the navigation and this dialog stay open.
+    await soundPage.evaluate(() => window.dispatchEvent(new Event("resize")));
+    await soundPage.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve))));
+    assert.equal(await soundDialog.count(), 1, "a same-width resize keeps the sound dialog open");
     assert.equal(await soundDialog.getByRole("slider", { name: "Volume" }).count(), 0);
     assert.equal(await soundDialog.getByRole("switch", { name: "Softer while I type" }).count(), 0);
     await assertContained(soundPage, soundDialog, "iPhone sound controls");
