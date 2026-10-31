@@ -23,6 +23,14 @@ HEAD = os.environ["REVIEW_HEAD"]
 BASE = os.environ["REVIEW_BASE"]
 CLI = Path(os.environ["RUNNER_TEMP"]) / "claude-2.1.312"
 CONTEXT = (
+    "scripts/steps.py",
+    "tests/e2e/docs_test.py",
+    "src/heinzel/modules/heinzel/_contract_review.py",
+    "src/heinzel/modules/heinzel/_interactive_turn.py",
+    "src/heinzel/modules/heinzel/_playbooks.py",
+    "src/heinzel/modules/heinzel/_session_crud.py",
+    "src/heinzel/modules/heinzel/_session_repository.py",
+    "src/heinzel/modules/heinzel/_user_chat.py",
     "src/heinzel/heads/bootstrap.py",
     "src/heinzel/kernel/_installation.py",
     "src/heinzel/kernel/_installation_continuity.py",
@@ -654,6 +662,9 @@ def current_pr() -> None:
     Raises:
         RuntimeError: If its identity is no longer current.
     """
+    if HEAD != "54bcac84cb532d4284c2c79ca786ce1bed93b07d" or BASE != "85a87a109426bce05c50ef8a277152120c7f1fd6":
+        msg = "PR identity changed"
+        raise RuntimeError(msg)
     repo = os.environ["GITHUB_REPOSITORY"]
     token = os.environ["GH_TOKEN"]
     if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repo):
@@ -668,7 +679,7 @@ def current_pr() -> None:
         [
             "/usr/bin/gh",
             "api",
-            f"repos/{repo}/pulls/305",
+            f"repos/{repo}/pulls/307",
             "--jq",
             '[.state,.base.ref,.head.sha,.base.sha,.head.repo.full_name,.base.repo.full_name]|join(" ")',
         ],
@@ -686,7 +697,7 @@ def github_review(root: Path) -> None:
     Raises:
         RuntimeError: If authority, source, or CLI verification fails.
     """
-    if os.environ.get("GITHUB_REF") != "refs/heads/private/independent-source-review" or os.environ.get(
+    if os.environ.get("GITHUB_REF") != "refs/heads/private/independent-source-review-307" or os.environ.get(
         "GITHUB_ACTOR"
     ) != os.environ.get("GITHUB_REPOSITORY_OWNER"):
         msg = "Unapproved dispatch authority"
@@ -708,7 +719,7 @@ def github_review(root: Path) -> None:
             "fetch",
             "--no-tags",
             "origin",
-            "refs/pull/305/head:refs/review/target",
+            "refs/pull/307/head:refs/review/target",
         ],
         limit=8192,
         timeout=60,

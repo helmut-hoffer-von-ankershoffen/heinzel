@@ -22,8 +22,8 @@ with (
         os.environ,
         {
             "GITHUB_WORKSPACE": str(ROOT),
-            "REVIEW_HEAD": "216c0500e9045ec2615e44abd0dec56a598f35e3",
-            "REVIEW_BASE": "5d4a5e378b5ed0dbf5795702f7e342c98df7afc7",
+            "REVIEW_HEAD": "54bcac84cb532d4284c2c79ca786ce1bed93b07d",
+            "REVIEW_BASE": "85a87a109426bce05c50ef8a277152120c7f1fd6",
             "RUNNER_TEMP": "/private/tmp",
         },
     ),
@@ -283,8 +283,8 @@ def test_mac_diagnostics_are_read_only_scoped_and_keep_test_budgets():
     assert diagnostic["permissions"] == {"contents": "read", "pull-requests": "read"}
     steps = diagnostic["steps"]
     assert steps[0]["name"] == "Verify approved target before checkout"
-    assert review.HEAD in steps[0]["run"]
-    assert review.BASE in steps[0]["run"]
+    assert "216c0500e9045ec2615e44abd0dec56a598f35e3" in steps[0]["run"]
+    assert "5d4a5e378b5ed0dbf5795702f7e342c98df7afc7" in steps[0]["run"]
     assert ".state,.base.ref" in steps[0]["run"]
     assert ".base.repo.full_name" in steps[0]["run"]
     assert steps[1]["with"]["ref"] == "${{ inputs.target_head }}"
@@ -322,6 +322,7 @@ def test_current_pr_accepts_only_exact_open_main_and_both_repository_identities(
 
     monkeypatch.setattr(review, "bounded_output", observe)
     review.current_pr()
+    assert "repos/owner/repo/pulls/307" in calls[0]
     assert ".state,.base.ref" in calls[0][-1]
     assert ".base.repo.full_name" in calls[0][-1]
     monkeypatch.setattr(
@@ -337,10 +338,10 @@ def test_current_pr_accepts_only_exact_open_main_and_both_repository_identities(
     ("mode", "ref", "actor", "expected"),
     [
         ("bogus", "refs/heads/main", "owner", False),
-        ("release", "refs/heads/private/independent-source-review", "owner", False),
-        ("source_review", "refs/heads/private/independent-source-review", "other", False),
+        ("release", "refs/heads/private/independent-source-review-307", "owner", False),
+        ("source_review", "refs/heads/private/independent-source-review-307", "other", False),
         ("release", "refs/heads/main", "owner", True),
-        ("diagnostic_unit315", "refs/heads/private/independent-source-review", "owner", True),
+        ("diagnostic_unit315", "refs/heads/private/independent-source-review-307", "owner", True),
     ],
 )
 def test_dispatch_validation_fails_closed(mode, ref, actor, expected):
@@ -360,3 +361,74 @@ def test_dispatch_validation_fails_closed(mode, ref, actor, expected):
     }
     result = subprocess.run(["/bin/bash", "-c", script], env=environment, capture_output=True, timeout=5, check=False)
     assert (result.returncode == 0) is expected
+
+
+@pytest.mark.parametrize("field", ["HEAD", "BASE"])
+def test_wrong_exact_target_refuses_before_github(field, monkeypatch):
+    monkeypatch.setattr(review, field, "f" * 40)
+    monkeypatch.setattr(review, "bounded_output", lambda *_args, **_kwargs: pytest.fail("must not query GitHub"))
+    with pytest.raises(RuntimeError, match="PR identity changed"):
+        review.current_pr()
+
+
+def test_source_review_fetches_only_307_after_authority_checks(tmp_path, monkeypatch):
+    trusted = "a" * 40
+    monkeypatch.setenv("GITHUB_REF", "refs/heads/private/independent-source-review-307")
+    monkeypatch.setenv("GITHUB_ACTOR", "owner")
+    monkeypatch.setenv("GITHUB_REPOSITORY_OWNER", "owner")
+    monkeypatch.setenv("GITHUB_SHA", trusted)
+    monkeypatch.setenv("TRUSTED_COMMIT", trusted)
+    monkeypatch.setattr(review, "git", lambda *_args: trusted.encode())
+    monkeypatch.setattr(review, "current_pr", lambda: None)
+    calls = []
+
+    def fail_fetch(command, **_kwargs):
+        calls.append(command)
+        return 1, b""
+
+    monkeypatch.setattr(review, "bounded_output", fail_fetch)
+    with pytest.raises(RuntimeError, match="PR target unavailable"):
+        review.github_review(tmp_path)
+    assert calls[0][-1] == "refs/pull/307/head:refs/review/target"
+
+
+def test_source_review_rejects_wrong_owner_before_network(tmp_path, monkeypatch):
+    monkeypatch.setenv("GITHUB_REF", "refs/heads/private/independent-source-review-307")
+    monkeypatch.setenv("GITHUB_ACTOR", "other")
+    monkeypatch.setenv("GITHUB_REPOSITORY_OWNER", "owner")
+    monkeypatch.setattr(review, "current_pr", lambda: pytest.fail("must not access network"))
+    with pytest.raises(RuntimeError, match="Unapproved dispatch authority"):
+        review.github_review(tmp_path)
+
+
+def test_305_helper_ref_is_not_307_review_authority(tmp_path, monkeypatch):
+    monkeypatch.setenv("GITHUB_REF", "refs/heads/private/independent-source-review")
+    monkeypatch.setenv("GITHUB_ACTOR", "owner")
+    monkeypatch.setenv("GITHUB_REPOSITORY_OWNER", "owner")
+    monkeypatch.setattr(review, "current_pr", lambda: pytest.fail("must not access network"))
+    with pytest.raises(RuntimeError, match="Unapproved dispatch authority"):
+        review.github_review(tmp_path)
+
+
+def test_source_review_rejects_changed_trusted_commit_before_network(tmp_path, monkeypatch):
+    monkeypatch.setenv("GITHUB_REF", "refs/heads/private/independent-source-review-307")
+    monkeypatch.setenv("GITHUB_ACTOR", "owner")
+    monkeypatch.setenv("GITHUB_REPOSITORY_OWNER", "owner")
+    monkeypatch.setenv("GITHUB_SHA", "a" * 40)
+    monkeypatch.setenv("TRUSTED_COMMIT", "b" * 40)
+    monkeypatch.setattr(review, "current_pr", lambda: pytest.fail("must not access network"))
+    with pytest.raises(RuntimeError, match="Trusted review ref changed"):
+        review.github_review(tmp_path)
+
+
+def test_review_context_contains_playbook_authority_dependencies():
+    assert {
+        "scripts/steps.py",
+        "tests/e2e/docs_test.py",
+        "src/heinzel/modules/heinzel/_contract_review.py",
+        "src/heinzel/modules/heinzel/_interactive_turn.py",
+        "src/heinzel/modules/heinzel/_playbooks.py",
+        "src/heinzel/modules/heinzel/_session_crud.py",
+        "src/heinzel/modules/heinzel/_session_repository.py",
+        "src/heinzel/modules/heinzel/_user_chat.py",
+    } <= set(review.CONTEXT)
