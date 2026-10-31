@@ -35,7 +35,7 @@ Heinzelmännchen (`hz`): a kernel plus modules, each operation exposed as a CLI 
 | What CI checks, before pushing (`PREFLIGHT=full` adds e2e, audit) | `make preflight` |
 | Tests by level | `make test-unit` / `make test-integration` / `make test-e2e` |
 | Render, test and audit the plugin template (`AUDIT=0`: offline, no audit) | `make template-test` |
-| Open the pull request: preflight, push, PR to `main`, auto-merge (`DRAFT=1`: a draft, no auto-merge; `BODY="..."` or `BODY_FILE=path`: a new one's description) | `make pr TITLE="feat(scope): ..."` |
+| Open the pull request: preflight, push, PR to `main` for review (`DRAFT=1`: a draft; `BODY="..."` or `BODY_FILE=path`: a new one's description) | `make pr TITLE="feat(scope): ..."` |
 | What failed in CI (waits for the running build) | `make ci-logs` |
 | A small copy, docs or web UI fix, start to validated pull request, safe for a small model ([docs/SHIP_SMALL.md](docs/SHIP_SMALL.md), skill `ship-small`) | `uv run --script scripts/ship.py start SLUG` |
 | Rebase onto the latest `main` | `make sync` |
