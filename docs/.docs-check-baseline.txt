@@ -89,8 +89,6 @@ docs/adr/0109-adopt-plugin-playbook-terms-as-inert-chat-drafts.md:paragraph
 docs/adr/0110-one-versionless-launcher-installs-and-opens-the-standard-app.md:filler
 docs/guides/catalog.md:paragraph
 docs/guides/contribute.md:claims
-docs/guides/first-steps.md:filler
-docs/guides/install.md:claims
 src/heinzel/kernel/_settings.py:claims
 src/heinzel/kernel/_settings.py:filler
 src/heinzel/modules/ai/access/_models.py:claims

@@ -15,19 +15,18 @@ if TYPE_CHECKING:
 
 ROLES = (
     "engineer",
-    "principal",
     "engineering-manager",
-    "engineering-leadership",
     "product-manager",
-    "product-leadership",
     "program-manager",
 )
 """The core role vocabulary; layers' plugins add roles later, never rename these."""
-OWNER_ROLES = ("engineering-manager", "engineering-leadership", "product-leadership")
+OWNER_ROLES = ("engineering-manager", "product-manager")
 """Roles that own the roster by default; the creator of a team is its first owner whatever their role."""
 HANDLE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 """A handle: lowercase letters and digits, single dashes between; it names a file, so nothing else."""
 MAX_HANDLE = 39
+MAX_TEAM_NAME = 60
+"""A team name is shown in titles; longer ones would not fit."""
 LOGIN = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}$")
 """A GitHub login as GitHub allows it."""
 NAME = re.compile(r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$")
@@ -102,6 +101,12 @@ class TeamSettings(ModuleSettings):
 
     section_title: ClassVar[str | None] = "Team"  # the heading in Settings
 
+    name: str | None = Field(
+        default=None,
+        title="Team name",
+        description="What your team is called here, e.g. Payments. Shown in the team graph and on your profile.",
+        examples=["Payments"],
+    )
     repository: str | None = Field(
         default=None,
         title="Team repository",
@@ -124,7 +129,18 @@ class TeamSettings(ModuleSettings):
         json_schema_extra={"x-expert": True},
     )
 
-    ignored_in_project: ClassVar[frozenset[str]] = frozenset({"repository", "checkout", "layer"})
+    ignored_in_project: ClassVar[frozenset[str]] = frozenset({"name", "repository", "checkout", "layer"})
+
+    @field_validator("name")
+    @classmethod
+    def _name(cls, name: str | None) -> str | None:
+        if name is None:
+            return None
+        name = name.strip()
+        if not name or len(name) > MAX_TEAM_NAME or any(not char.isprintable() for char in name):
+            msg = f"A team name is 1 to {MAX_TEAM_NAME} printable characters, e.g. Payments."
+            raise ValueError(msg)
+        return name
 
     @field_validator("repository")
     @classmethod
