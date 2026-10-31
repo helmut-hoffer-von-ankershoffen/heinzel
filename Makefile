@@ -23,6 +23,7 @@ LINT := \
 		"&zizmor=uv run zizmor --offline --quiet .github/workflows" \
 		"&actionlint=uv run actionlint" \
 		"&typos=uv run typos" \
+		"&docs-check=uv run --script scripts/check_docs.py" \
 		"&confidential=uv run --script scripts/check_confidentiality.py"
 TYPES := "&mypy=uv run mypy" "&pyright=uv run pyright"
 # Unit, then integration (the suite orders them), on 4 workers, stopping at the first failure; coverage is in make test.
@@ -211,7 +212,7 @@ test-browser-deps: ## Install Chromium and WebKit; include Linux host libraries 
 	fi
 
 test-e2e: e2e-prepare ## Run end-to-end tests (needs network), on 3 workers
-	$(STEPS) "e2e=uv run pytest -m e2e -n 3 -q --session-timeout=600 -x tests/e2e/docs_test.py::test_readme_instructions && uv run pytest -m e2e -n 3 -q --session-timeout=600 -x --deselect=tests/e2e/docs_test.py::test_readme_instructions"
+	$(STEPS) "e2e-readme=uv run pytest -m e2e -n 3 -q --session-timeout=600 -x tests/e2e/docs_test.py::test_readme_instructions" "e2e=uv run pytest -m e2e -n 3 -q --session-timeout=600 -x --deselect=tests/e2e/docs_test.py::test_readme_instructions"
 
 e2e-prepare: ## Prepare current build assets before end-to-end procedure deadlines
 	@set -eu; dir="$$(mktemp -d "$${TMPDIR:-/tmp}/heinzel-e2e.XXXXXXXX")"; trap 'rm -rf "$$dir"' EXIT; uv build --quiet --wheel --out-dir "$$dir"
@@ -258,6 +259,7 @@ docs-site-check: docs-site ## Check the built site's catalog, keyboard flow, mob
 	$(WEB) install
 	uv run --quiet --script scripts/site_check.py --install $(if $(CI),--with-deps)
 	uv run --quiet --script scripts/site_check.py
+	uv run --quiet --script scripts/check_docs.py --site site/
 
 docs-publish-check: ## Validate publication with fresh public metadata, or build a standalone plugin's ordinary docs
 	@if [ -f docs/catalog-sources.toml ]; then \

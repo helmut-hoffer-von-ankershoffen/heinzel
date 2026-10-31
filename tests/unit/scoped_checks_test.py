@@ -22,6 +22,11 @@ def test_documents_alone_run_the_documentation_checks_and_no_web_or_unit_suite()
     assert names(steps) == ["template", "docs", "demo", "typos", "tests"]
 
 
+def test_site_assets_and_configuration_run_only_the_documentation_checks():
+    steps = scoped.scoped_steps(["docs/assets/website/site.css", "mkdocs.yml"])
+    assert names(steps) == ["template", "docs", "demo", "typos", "tests"]
+
+
 def test_web_files_alone_run_the_web_checks_without_python_unit_tests_or_the_managed_backend():
     steps = scoped.scoped_steps(["web/src/components/ErrorScreen.tsx"])
     assert names(steps) == ["web-prepare", "web-lint", "web-client", "web-types", "web-tests"]

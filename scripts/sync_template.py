@@ -36,10 +36,11 @@ def makefile() -> str:
         .replace(" test-e2e e2e-prepare ", " test-e2e ")
         .replace("test-e2e: e2e-prepare", "test-e2e:")
         .replace(
-            "uv run pytest -m e2e -n 3 -q --session-timeout=600 -x tests/e2e/docs_test.py::test_readme_instructions && "
-            "uv run pytest -m e2e -n 3 -q --session-timeout=600 -x "
-            "--deselect=tests/e2e/docs_test.py::test_readme_instructions",
-            "uv run pytest -m e2e -n 3 -q --session-timeout=600 -x",
+            '"e2e-readme=uv run pytest -m e2e -n 3 -q --session-timeout=600 -x '
+            'tests/e2e/docs_test.py::test_readme_instructions" '
+            '"e2e=uv run pytest -m e2e -n 3 -q --session-timeout=600 -x '
+            '--deselect=tests/e2e/docs_test.py::test_readme_instructions"',
+            '"e2e=uv run pytest -m e2e -n 3 -q --session-timeout=600 -x"',
         )
     )
     # The core's generate_docs.py writes the plugin pages with everything else; a plugin runs the builder (ADR 0082).
@@ -63,7 +64,7 @@ def makefile() -> str:
     text = text.replace(", and the README's intro; PLUGIN=name", "; PLUGIN=name")
     text = text.replace("scripts/docs_record.py --intro $(if", "scripts/docs_record.py $(if")
     # Steps only Heinzelmännchen has: import contracts, the template, demo tape, ATTRIBUTIONS.md (never a last step).
-    text = re.sub(r'\n\t\t"&?(contracts|template|demo|attributions)=[^\n]*', "", text)
+    text = re.sub(r'\n\t\t"&?(contracts|template|demo|attributions|docs-check)=[^\n]*', "", text)
     text = text.replace("uv build --all-packages", "uv build")
     text = text.replace("lint, import contracts, types, tests", "lint, types, tests")
     text = text.replace(
