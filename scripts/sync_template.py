@@ -63,7 +63,7 @@ def makefile() -> str:
     text = text.replace(", and the README's intro; PLUGIN=name", "; PLUGIN=name")
     text = text.replace("scripts/docs_record.py --intro $(if", "scripts/docs_record.py $(if")
     # Steps only Heinzelmännchen has: import contracts, the template, demo tape, ATTRIBUTIONS.md (never a last step).
-    text = re.sub(r'\n\t\t"&?(contracts|template|demo|attributions)=[^\n]*', "", text)
+    text = re.sub(r'\n\t\t"&?(contracts|template|demo|attributions|docs-check)=[^\n]*', "", text)
     text = text.replace("uv build --all-packages", "uv build")
     text = text.replace("lint, import contracts, types, tests", "lint, types, tests")
     text = text.replace(
@@ -149,8 +149,6 @@ def ci_workflow() -> str:
         "",
     )
     text = re.sub(r"\n      - run: make managed-backend-[^\n]*", "", text)
-    # The docs style check reads the core's documents and i18n strings; plugins have their own docs tooling.
-    text = re.sub(r"\n      - name: Check the style of hand-written docs and user-visible copy\n[^\n]*", "", text)
     # Only the core daemon uses the host's user service manager; plugins ship no such probe.
     text = re.sub(
         r"\n      - name: Inspect the Linux user manager without starting services\n.*?(?=\n      - )",

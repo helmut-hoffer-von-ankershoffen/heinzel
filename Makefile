@@ -23,6 +23,7 @@ LINT := \
 		"&zizmor=uv run zizmor --offline --quiet .github/workflows" \
 		"&actionlint=uv run actionlint" \
 		"&typos=uv run typos" \
+		"&docs-check=uv run --script scripts/check_docs.py" \
 		"&confidential=uv run --script scripts/check_confidentiality.py"
 TYPES := "&mypy=uv run mypy" "&pyright=uv run pyright"
 # Unit, then integration (the suite orders them), on 4 workers, stopping at the first failure; coverage is in make test.
@@ -255,6 +256,7 @@ docs-site-check: docs-site ## Check the built site's catalog, keyboard flow, mob
 	$(WEB) install
 	uv run --quiet --script scripts/site_check.py --install $(if $(CI),--with-deps)
 	uv run --quiet --script scripts/site_check.py
+	uv run --quiet --script scripts/check_docs.py --site site/
 
 docs-publish-check: ## Validate publication with fresh public metadata, or build a standalone plugin's ordinary docs
 	@if [ -f docs/catalog-sources.toml ]; then \
