@@ -257,6 +257,18 @@ def _start_ui(env: dict[str, str], port: int) -> tuple[subprocess.Popen[str], st
     return ui, url
 
 
+def _node(run: list[str], script: str, *args: str) -> subprocess.CompletedProcess[str]:
+    """Run one browser driver of web/e2e and capture what it printed."""
+    return subprocess.run(
+        [*run, "exec", "node", f"e2e/{script}.mjs", *args],
+        cwd=REPO,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=200,
+    )
+
+
 def _stop_ui(ui: subprocess.Popen[str]) -> None:
     ui.send_signal(signal.SIGINT)  # Ctrl-C, as in a terminal
     try:
@@ -380,14 +392,7 @@ def test_a_refused_sign_in_offers_a_paste_field_that_signs_in_with_the_printed_l
     )
     ui, url = _start_ui(env, _free_port())
     try:
-        driven = subprocess.run(
-            [*run, "exec", "node", "e2e/signin-paste.mjs", url, str(tmp_path)],
-            cwd=REPO,
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=200,
-        )
+        driven = _node(run, "signin-paste", url, str(tmp_path))
     finally:
         _stop_ui(ui)
     assert driven.returncode == 0, driven.stderr
