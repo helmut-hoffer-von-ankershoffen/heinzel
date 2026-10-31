@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help install setup release-local doctor tools-verify check check-fast preflight fix lint format typecheck test test-parallel commits test-all-pythons test-unit test-integration test-perf test-e2e audit licenses secrets icons build pypi-clean-build-marker changelog ci-logs pr sync docs-plugins docs-record docs-site release clean update-template
+.PHONY: help install setup release-local doctor tools-verify check check-fast preflight fix lint format typecheck test test-parallel commits test-all-pythons test-unit test-integration test-perf test-e2e audit licenses secrets build pypi-clean-build-marker changelog ci-logs pr sync docs-plugins docs-record docs-site docs-publish-check release clean update-template preview
 
 # Quiet by default: one line per passing step, the tail of a failing one. VERBOSE=1 streams everything.
 # A step starting with & runs concurrently with the one before it; the first failure cancels the rest.
@@ -24,9 +24,10 @@ TYPES := "&mypy=uv run mypy" "&pyright=uv run pyright"
 # Unit, then integration (the suite orders them), on 4 workers, stopping at the first failure; coverage is in make test.
 # Match the covered suite's deadline: the full suite can exceed two minutes on a busy developer machine.
 TESTS := "&tests=uv run pytest -m '(unit or integration) and not perf' -n 4 -x -q --session-timeout=300"
-# The same suite measured, on the same 4 workers: each xdist worker is a Python subprocess, which coverage measures
-# ([tool.coverage.run] patch = ["subprocess"]) into its own data file; `coverage combine` merges them afterwards.
-COVERED := uv run coverage erase && uv run coverage run -m pytest -m '(unit or integration) and not perf' -n 4 -q --session-timeout=300
+# The same suite measured, on the same 4 workers: coverage's subprocess tracing can exceed the unmeasured 300s
+# deadline on a busy developer machine. Match `make test`'s 420s allowance; coverage still measures every worker.
+# ([tool.coverage.run] patch = ["subprocess"]) writes each worker to its own file; `coverage combine` merges them.
+COVERED := uv run coverage erase && uv run coverage run -m pytest -m '(unit or integration) and not perf' -n 4 -q --session-timeout=420
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
@@ -36,7 +37,7 @@ install: ## Install what the build needs: Python with every dependency group (.v
 	@$(TOOLS) install
 
 setup: install ## Install what the build needs, and the git hooks (prek: lint on commit, conventional commits)
-	@uv run --quiet prek install --hook-type pre-commit --hook-type commit-msg --hook-type pre-push >/dev/null
+	@uv tool run --from prek==0.5.7 prek install --hook-type pre-commit --hook-type commit-msg --hook-type pre-push >/dev/null
 	@echo "✓ git hooks: pre-commit, commit-msg, pre-push"
 
 doctor: ## What the build needs, what is missing, and the command that fixes it
@@ -67,7 +68,8 @@ fix: ## Fix what tools can fix: lockfile, formatting, lint autofixes, generated 
 		"lock=uv lock --quiet" \
 		"&docs-plugins=uv run --quiet hz system plugin docs build --directory docs/plugins" \
 		"format=uv run ruff format --quiet ." \
-		"ruff=uv run ruff check --fix --quiet --exit-zero ."
+		"ruff=uv run ruff check --fix --quiet --exit-zero ." \
+		"format-final=uv run ruff format --quiet ."
 	@git status --short
 
 lint: ## Check formatting, lint and workflows
@@ -76,6 +78,7 @@ lint: ## Check formatting, lint and workflows
 format: ## Format and autofix
 	uv run ruff format .
 	uv run ruff check --fix .
+	uv run ruff format .
 
 typecheck: ## Type-check with mypy and pyright (both strict)
 	$(STEPS) "mypy=uv run mypy" "&pyright=uv run pyright"
@@ -89,7 +92,7 @@ test: ## Run unit and integration tests with coverage on 4 workers (offline; wha
 
 # Leave headroom under CI's 10-minute job timeout for the full unit/integration suite on slower runners.
 test-parallel: ## Unit and integration tests on 4 workers, stopping at the first failure; no coverage (the CI test matrix)
-	$(STEPS) "tests=uv run pytest -m '(unit or integration) and not perf' -n 4 -x -q --session-timeout=420"
+	$(STEPS) "tests=uv run pytest -m '(unit or integration) and not perf' -n 4 -x -q --session-timeout=420 --durations=20"
 
 commits: ## Commit messages since BASE, and $$TITLE and $$BRANCH when set: conventional, no confidential terms
 	$(STEPS) \
@@ -111,7 +114,7 @@ test-perf: ## Run the performance tests (timing assertions such as linear time);
 	$(STEPS) "perf=uv run pytest -m perf -q --session-timeout=120"
 
 test-e2e: ## Run end-to-end tests (needs network), on 3 workers
-	$(STEPS) "e2e=uv run pytest -m e2e -n 3 -q --session-timeout=600"
+	$(STEPS) "e2e=uv run pytest -m e2e -n 3 -q --session-timeout=600 -x"
 
 audit: ## Audit runtime dependencies: known vulnerabilities (pip-audit) and licenses (.license-allowlist)
 	$(STEPS) "licenses=$(MAKE) --no-print-directory licenses" "&vulnerabilities=uv export --quiet --no-dev --no-emit-project --no-emit-package heinzel --format requirements-txt --output-file .audit-requirements.txt && uv run pip-audit --strict --disable-pip -r .audit-requirements.txt; status=\$$?; rm -f .audit-requirements.txt; exit \$$status"
@@ -129,12 +132,15 @@ docs-record: ## Record every plugin page's scenes (CLI with VHS, UI with Playwri
 	uv run --quiet --script scripts/docs_record.py $(if $(PLUGIN),--plugin $(PLUGIN)) $(if $(SCENE),--scene $(SCENE))
 
 docs-site: ## Build the documentation site (MkDocs Material) into site/ from docs/; SERVE=1 serves it with reload instead
-	uv run --quiet --group docs mkdocs $(if $(SERVE),serve,build --strict)
+	uv run --quiet --script scripts/site_build.py $(if $(SERVE),serve,build --strict)
 
-icons: ## Make every image of Heinzelmännchen from heinzel.svg: the web app's icons, the favicon, the theme's logo (macOS 14+)
-	@uv run --quiet --script scripts/notifier.py icons
+docs-publish-check: ## Validate publication with fresh public metadata, or build a standalone plugin's ordinary docs
+	@if [ -f docs/catalog-sources.toml ]; then \
+		if [ "$${REFRESH_PUBLIC:-false}" = true ]; then $(MAKE) docs-catalog || exit $$?; else unset HZ_SITE_CATALOG; fi; \
+		$(MAKE) docs-site-check; \
+	else $(MAKE) docs-site; fi
 
-build: ## Build wheels and sdists into dist/ (the core and every first-party plugin)
+build: ## Build this plugin's wheel and sdist into dist/
 	uv build
 
 PYPI_DIST ?= dist
@@ -173,6 +179,13 @@ release-local: ## Open a release pull request from this machine, from an up-to-d
 
 clean: ## Remove build and test artifacts
 	rm -rf dist build .coverage* coverage.xml htmlcov reports .pytest_cache .mypy_cache .ruff_cache site
+
+.PHONY: docs
+
+docs: docs-plugins ## Regenerate this plugin's documentation
+
+preview: ## Launch this plugin using isolated application state
+	uv run --no-project --script scripts/plugin_preview.py
 
 update-template: ## Update this plugin to the latest Heinzelmännchen template (needs a clean working tree)
 	uvx copier update --defaults

@@ -1,6 +1,8 @@
 """Private per-principal session namespaces and the durable creation reservation catalog."""
 
+import os
 import secrets
+import stat
 from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from datetime import UTC, datetime
@@ -8,9 +10,11 @@ from datetime import UTC, datetime
 from pydantic import JsonValue, TypeAdapter
 
 from heinzel import CurrentUser, HeinzelError, SessionHead, SessionRead, SessionStore, SessionWriter
+from heinzel.kernel import Authentication
 from heinzel.modules.heinzel._session_models import Digest, RequestId, SessionId
 
 _SESSION = TypeAdapter(SessionId)
+_PRIVATE_DIRECTORY_MODE = 0o700
 _REQUEST = TypeAdapter(RequestId)
 _DIGEST = TypeAdapter(Digest)
 _ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
@@ -41,6 +45,11 @@ class PersonalSessionRepository:
     def principal_id(self) -> str:
         """The trusted active principal; unauthenticated calls never fall back to installation ownership."""
         return self.current.principal().id
+
+    @property
+    def authentication(self) -> Authentication:
+        """Read the actual trusted call context, without recording credentials or audience."""
+        return self.current.context().authentication
 
     def _store(self, namespace: str) -> SessionStore:
         root = self.current.directory.parent / "heinzel-sessions" / self.principal_id / namespace
@@ -84,6 +93,99 @@ class PersonalSessionRepository:
             )
             return session_id
 
+    def reserved_session_ids(self) -> tuple[str, ...]:
+        """List every owner-reserved session, including incomplete creations.
+
+        Raises:
+            HeinzelError: If the owner catalog is damaged or contains invalid identities.
+        """
+        events = self._catalog().events
+        return tuple(
+            dict.fromkeys(
+                _SESSION.validate_python(event.data.get("session_id"))
+                for event in events
+                if event.kind == "creation.reserved"
+            )
+        )
+
+    def verify_reserved_session_stores(self, sessions: tuple[str, ...]) -> None:
+        """Compare physical owner stores with reservations without relying on a derived index.
+
+        Raises:
+            HeinzelError: If owned journals are missing, unsafe or absent from the owner catalog.
+        """
+        expected = set(sessions)
+        base = os.open(self.current.directory.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        try:
+            try:
+                all_owners = os.open("heinzel-sessions", os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=base)
+                try:
+                    owner = os.open(self.principal_id, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=all_owners)
+                    try:
+                        if os.fstat(all_owners).st_uid != os.getuid() or os.fstat(owner).st_uid != os.getuid():
+                            msg = "The owner session stores need repair"
+                            raise HeinzelError(msg)
+                        for namespace in ("main", "control"):
+                            self._verify_reserved_namespace(owner, namespace, expected)
+                    finally:
+                        os.close(owner)
+                finally:
+                    os.close(all_owners)
+            except FileNotFoundError:
+                if expected:
+                    msg = "The owner session stores need repair"
+                    raise HeinzelError(msg) from None
+        finally:
+            os.close(base)
+
+    @staticmethod
+    def _verify_reserved_namespace(owner: int, namespace: str, expected: set[str]) -> None:
+        try:
+            with PersonalSessionRepository._private_store(owner, namespace) as root:
+                found: set[str] = set()
+                with os.scandir(root) as entries:
+                    for entry in entries:
+                        if entry.is_symlink() or (
+                            entry.name.startswith("hz-") and not entry.is_dir(follow_symlinks=False)
+                        ):
+                            msg = "The owner session stores need repair"
+                            raise HeinzelError(msg)
+                        if entry.is_dir(follow_symlinks=False):
+                            if entry.name not in expected:
+                                msg = "The owner session stores need repair"
+                                raise HeinzelError(msg)
+                            with PersonalSessionRepository._private_store(root, entry.name):
+                                found.add(entry.name)
+                if found != expected:
+                    msg = "The owner session stores need repair"
+                    raise HeinzelError(msg)
+        except FileNotFoundError:
+            if expected:
+                msg = "The owner session stores need repair"
+                raise HeinzelError(msg) from None
+
+    @staticmethod
+    @contextmanager
+    def _private_store(parent: int, name: str) -> Generator[int]:
+        """Inspect an existing private owner store without creating or following it.
+
+        Yields:
+            The verified directory descriptor, closed when inspection ends.
+
+        Raises:
+            HeinzelError: If the store is not private or does not belong to this user.
+            OSError: If the existing directory cannot be safely opened.
+        """
+        descriptor = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent)
+        try:
+            info = os.fstat(descriptor)
+            if info.st_uid != os.getuid() or stat.S_IMODE(info.st_mode) != _PRIVATE_DIRECTORY_MODE:
+                msg = "The owner session stores need repair"
+                raise HeinzelError(msg)
+            yield descriptor
+        finally:
+            os.close(descriptor)
+
     def heads(self) -> list[SessionHead]:
         """Only owned agent spines; the separate catalog and inbox roots are never extra sessions."""
         owned = {
@@ -92,6 +194,44 @@ class PersonalSessionRepository:
             if event.kind == "creation.reserved"
         }
         return [head for head in self._store("main").heads() if head.session in owned]
+
+    def budget_read(self, session_id: str) -> SessionRead:
+        """Read the current owner's shared budget ledger after checking session ownership."""
+        self._owned(session_id)
+        try:
+            return _verified(self._store("budget").read("reservations"))
+        except FileNotFoundError:
+            return SessionRead()
+
+    @contextmanager
+    def budget_writer(self, session_id: str) -> Generator[SessionWriter]:
+        """Serialize reservations across this owner's sessions after verifying session ownership.
+
+        Yields:
+            The exclusively locked owner budget writer.
+        """
+        self._owned(session_id)
+        with self._store("budget").writer("reservations", wait=True) as writer:
+            yield writer
+
+    def subscription_read(self, session_id: str) -> SessionRead:
+        """Read an owner-scoped slot ledger only after checking session ownership."""
+        self._owned(session_id)
+        try:
+            return _verified(self._store("subscription").read("slots"))
+        except FileNotFoundError:
+            return SessionRead()
+
+    @contextmanager
+    def subscription_writer(self, session_id: str) -> Generator[SessionWriter]:
+        """Serialize slots across an owner's sessions.
+
+        Yields:
+            The exclusively locked owner slot writer.
+        """
+        self._owned(session_id)
+        with self._store("subscription").writer("slots", wait=True) as writer:
+            yield writer
 
     def main_read(self, session_id: str) -> SessionRead:
         """Read only after ownership is established; damaged prefixes cannot authorize resumed work."""
@@ -113,6 +253,11 @@ class PersonalSessionRepository:
         self._owned(session_id)
         with self._store("main").writer(session_id, wait=wait) as writer:
             yield writer
+
+    def is_main_writer(self, session_id: str, writer: SessionWriter) -> bool:
+        """Check the scoped active owner/session writer before dispatching a granted operation."""
+        self._owned(session_id)
+        return writer.active and writer.session == session_id and writer.store.root == self._store("main").root
 
     @contextmanager
     def control_writer(self, session_id: str) -> Generator[SessionWriter]:

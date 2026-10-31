@@ -5,7 +5,7 @@ from typing import Annotated
 from pydantic import Field
 
 from heinzel import Check, Module
-from heinzel.kernel import parse_duration
+from heinzel.kernel import DaemonAttestation, DaemonInstallationLifecycle, parse_duration
 from heinzel.modules.system.daemon._models import (
     DaemonSettings,
     DaemonStatus,
@@ -28,6 +28,29 @@ module = Module("daemon", "Run modules' jobs in the background, supervised by la
 `hz system daemon pause`, `hz system daemon uninstall`, or by disabling the module that brings them."""
 module.settings(DaemonSettings)
 module.service(DaemonService, DaemonService.for_user)
+
+
+def _attestation(service: DaemonService) -> DaemonAttestation:
+    """Expose only read-only daemon status through the existing permission boundary."""
+    return DaemonAttestation(status=service.status)
+
+
+def _installation_lifecycle(service: DaemonService) -> DaemonInstallationLifecycle:
+    """Expose separate trusted installation handover; this is not an operation or an approval."""
+    return DaemonInstallationLifecycle(
+        capture=service.capture_handover,
+        request=service.request_handover,
+        observation=service.handover_observation,
+        assess=service.assess_handover,
+        admission=service.admission_guard,
+        quiescent=service.quiescence_guard,
+        recover_quiescent=service.recover_quiescent_install,
+        mutation=service.mutation_guard,
+    )
+
+
+module.service(DaemonAttestation, _attestation)
+module.service(DaemonInstallationLifecycle, _installation_lifecycle)
 
 INTERVAL_PATTERN = r"^[1-9][0-9]*m$|^1h$"
 
@@ -64,7 +87,15 @@ def restart(service: DaemonService) -> Restarted:
 
 @module.operation
 def status(service: DaemonService) -> DaemonStatus:
-    """Show whether the daemon is installed, loaded and paused, its last tick and failing jobs."""
+    """Check-ins need a resumed daemon with 5m ticks and a matching service version.
+
+    For five-minute check-ins, the daemon must be installed and tick every five minutes or faster. If it is absent,
+    `hz system daemon install --interval 5m` installs a persistent login service; the schedule stays dormant until
+    it is installed and a service-managed tick is observed. If paused, run `hz system daemon resume`. If its service
+    tick version is unknown or mismatched, run `hz system daemon restart` and wait until a service-managed tick
+    records the installed version; a manual tick cannot establish that proof. Use the install command to correct a
+    slower cadence.
+    """
     return service.status()
 
 

@@ -64,36 +64,6 @@ Plugins add their own tables.
 | `model` | `HZ_AI_ACCESS__MODEL` | `None` | The model Pydantic AI uses: vendor:model for a vendor's API, or the name your endpoint knows when a base address is set. Its key is the credential ai.access/api-key or the vendor's own variable. Example: "anthropic:claude-sonnet-4-5". Never read from a project's hz.toml. |
 | `base_url` | `HZ_AI_ACCESS__BASE_URL` | `None` | The address of an OpenAI-compatible endpoint, such as Ollama, LM Studio, vLLM or OpenRouter. A key is optional and goes only over https, or over http to this computer. Example: "http://localhost:11434/v1". Never read from a project's hz.toml. |
 
-## `[atlassian]`
-
-| Key | Environment variable | Default | Description |
-| --- | --- | --- | --- |
-| `site_url` | `HZ_ATLASSIAN__SITE_URL` | `None` | The Atlassian Cloud site you are signed in to with the Atlassian CLI; links to issues and pages are built on it. Only your own settings can set it, never a project's. Example: "https://example.atlassian.net". |
-| `acli` | `HZ_ATLASSIAN__ACLI` | `'acli'` | The Atlassian CLI to run: a name found on your PATH, or the full path to it. Never read from a project's settings. |
-| `timeout` | `HZ_ATLASSIAN__TIMEOUT` | `60.0` | How long to wait for each Atlassian CLI command before stopping it. Never read from a project's hz.toml. |
-
-## `[clock]`
-
-| Key | Environment variable | Default | Description |
-| --- | --- | --- | --- |
-| `zones` | `HZ_CLOCK__ZONES` | `[{'name': 'Europe/Berlin', 'hours': [9, 18]}, {'name': 'America/New_York', 'hours': [9, 18]}, {'name': 'America/Los_Angeles', 'hours': [9, 18]}]` | The time zones your team works in, with the working hours in each. The first one is primary. Example: [{ hours = [10, 19], name = "Asia/Tokyo" }]. |
-| `working_hours` | `HZ_CLOCK__WORKING_HOURS` | `None` | Deprecated: the hours of every zone given by name only. Give each zone its hours instead. |
-
-## `[github]`
-
-| Key | Environment variable | Default | Description |
-| --- | --- | --- | --- |
-| `host` | `HZ_GITHUB__HOST` | `'github.com'` | The GitHub host to use: github.com, or your GitHub Enterprise Server's host name. The GitHub CLI's sign-in for that host is used. Only your own settings can set it, never a project's. Example: "github.com". |
-| `gh` | `HZ_GITHUB__GH` | `'gh'` | The GitHub CLI to run: a name found on your PATH, or the full path to it. Never read from a project's hz.toml. |
-| `timeout` | `HZ_GITHUB__TIMEOUT` | `60.0` | How long to wait for each GitHub CLI call before stopping it. Never read from a project's hz.toml. |
-
-## `[google]`
-
-| Key | Environment variable | Default | Description |
-| --- | --- | --- | --- |
-| `gws_path` | `HZ_GOOGLE__GWS_PATH` | `None` | The full path to the Google Workspace CLI; the one on your PATH when not set. Only your own settings can set it, never a project's. |
-| `timeout` | `HZ_GOOGLE__TIMEOUT` | `60.0` | How long to wait for each Google Workspace CLI run before stopping it. Never read from a project's hz.toml. |
-
 ## `[graph]`
 
 | Key | Environment variable | Default | Description |
@@ -110,8 +80,9 @@ Plugins add their own tables.
 | `team_repository` | `HZ_HEINZEL__TEAM_REPOSITORY` | `None` | Deprecated: `hz team join` or `hz team adopt` sets your team's checkout in `[team]` instead. A checkout of your team's state repository, used when `[team]` names none; its contracts are in `workflows/`. Never read from a project's hz.toml. |
 | `schedule_team` | `HZ_HEINZEL__SCHEDULE_TEAM` | platform-specific | Team contracts your daemon runs on their schedule, by name; add @sha256: and a hash to run only the version you approved. The others run only when started by hand, so a team's contracts don't run on everyone's daemon. Never read from a project's hz.toml. |
 | `max_usd` | `HZ_HEINZEL__MAX_USD` | `1.0` | The most one run of a contract may cost in US dollars, scheduled or by hand, whatever the contract asks for. A scheduled run's retries share it. Never read from a project's hz.toml. |
-| `session_max_usd` | `HZ_HEINZEL__SESSION_MAX_USD` | `2.0` | The most one durable Heinzel conversation may cost in US dollars, across its model turns. Never read from a project's hz.toml. |
-| `message_max_usd` | `HZ_HEINZEL__MESSAGE_MAX_USD` | `0.2` | The most one model turn in a durable Heinzel conversation may cost in US dollars. Never read from a project's hz.toml. |
+| `session_max_usd` | `HZ_HEINZEL__SESSION_MAX_USD` | `2.0` | The most one durable Heinzel conversation may cost in US dollars on direct API model turns. Never read from a project's hz.toml. |
+| `message_max_usd` | `HZ_HEINZEL__MESSAGE_MAX_USD` | `0.2` | The most one direct API model turn in a durable Heinzel conversation may cost in US dollars. Never read from a project's hz.toml. |
+| `subscription_budget_mode` | `HZ_HEINZEL__SUBSCRIPTION_BUDGET_MODE` | `'plan-unknown'` | Subscription plans use provider limits and report unknown dollar cost; USD caps govern APIs. Select usd-cap to require a dollar limit, which currently blocks subscription turns. Choices: usd-cap, plan-unknown. Never read from a project's hz.toml. |
 | `retention_days` | `HZ_HEINZEL__RETENTION_DAYS` | `90` | How long drafts and the inputs they were made from are kept, counted from when they were made; 0 keeps them forever. Receipts are always kept, with a hash of the draft instead of its text. Never read from a project's hz.toml. |
 
 ## `[org]`
@@ -170,9 +141,11 @@ Plugins add their own tables.
 | --- | --- | --- | --- |
 | `enabled` | `HZ_SYSTEM_NOTIFY__ENABLED` | `True` | Keep a list of notices at all; off turns every kind off. Never read from a project's hz.toml. |
 | `draft` | `HZ_SYSTEM_NOTIFY__DRAFT` | `True` | Notify when a draft is ready to read and approve. Never read from a project's hz.toml. |
+| `heinzel` | `HZ_SYSTEM_NOTIFY__HEINZEL` | `True` | Notify when a personal Heinzel checks in. Never read from a project's hz.toml. |
 | `failed` | `HZ_SYSTEM_NOTIFY__FAILED` | `True` | Notify when a contract run on your daemon failed. Never read from a project's hz.toml. |
 | `doctor` | `HZ_SYSTEM_NOTIFY__DOCTOR` | `True` | Notify when a health check finds something degraded or down. Never read from a project's hz.toml. |
 | `release` | `HZ_SYSTEM_NOTIFY__RELEASE` | `False` | Notify when a newer release of Heinzelmännchen is out. Never read from a project's hz.toml. |
+| `plugin` | `HZ_SYSTEM_NOTIFY__PLUGIN` | `True` | Notify when an installed plugin reports something that needs attention. Never read from a project's hz.toml. |
 | `quiet` | `HZ_SYSTEM_NOTIFY__QUIET` | `False` | Keep notices in the list but never pop one up, not even an urgent one. Never read from a project's hz.toml. |
 | `working_hours` | `HZ_SYSTEM_NOTIFY__WORKING_HOURS` | `True` | Hold notices that aren't urgent until your working hours start, Monday to Friday, in your time zone (both under Your profile). Never read from a project's hz.toml. |
 | `per_hour` | `HZ_SYSTEM_NOTIFY__PER_HOUR` | `6` | At most this many pop-ups an hour; the rest go to the list only. Never read from a project's hz.toml. |
@@ -183,7 +156,8 @@ Plugins add their own tables.
 
 | Key | Environment variable | Default | Description |
 | --- | --- | --- | --- |
-| `github_token` | `HZ_SYSTEM_PLUGIN__GITHUB_TOKEN` | `None` | A GitHub token for searching plugins and reading a repository before adding a plugin from it, when the GitHub CLI isn't installed; both work without one at a lower rate limit. Also read from GH_TOKEN or GITHUB_TOKEN, and sent to GitHub only. |
+| `catalog_sources` | `HZ_SYSTEM_PLUGIN__CATALOG_SOURCES` | `['helmut-hoffer-von-ankershoffen/heinzel-plugins', 'helmut-hoffer-von-ankershoffen/heinzel', 'helmut-hoffer-von-ankershoffen/heinzel-contrib']` | GitHub repositories scanned for plugin projects, in addition to topic discovery. |
+| `github_token` | `HZ_SYSTEM_PLUGIN__GITHUB_TOKEN` | `None` | A GitHub token for searching plugins and reading a repository before adding a plugin from it, when the GitHub CLI isn't installed; both work without one at a lower rate limit. Also read from GH_TOKEN or GITHUB_TOKEN, and sent to GitHub only. Never read from a project's hz.toml. |
 
 ## `[system.runner]`
 
@@ -241,7 +215,7 @@ Plugins add their own tables.
 
 | Key | Environment variable | Default | Description |
 | --- | --- | --- | --- |
-| `name` | `HZ_SYSTEM_THEME__NAME` | `'default'` | The theme of the web app; default is the built-in one, and plugins can bring others. Never read from a project's hz.toml. |
+| `name` | `HZ_SYSTEM_THEME__NAME` | `'default'` | The selected theme; when unset a plugin may recommend one. Explicit default uses the built-in fallback. Never read from a project's hz.toml. |
 
 ## `[system.ui]`
 
@@ -250,13 +224,6 @@ Plugins add their own tables.
 | `contributions` | `HZ_SYSTEM_UI__CONTRIBUTIONS` | platform-specific | Which status items, actions and widgets show in which place of the app; anything you leave out keeps the place its module chose. Never read from a project's hz.toml. |
 | `audio_visualizer` | `HZ_SYSTEM_UI__AUDIO_VISUALIZER` | `False` | Show the optional audio sharing visualizer at the right edge of the app. Off by default; turning it on asks you to choose a browser audio source before anything is captured. Never read from a project's hz.toml. |
 
-## `[tailscale]`
-
-| Key | Environment variable | Default | Description |
-| --- | --- | --- | --- |
-| `https_port` | `HZ_TAILSCALE__HTTPS_PORT` | `443` | The private Tailscale HTTPS port. Existing services on it are preserved. Never read from a project's hz.toml. |
-| `intent` | `HZ_TAILSCALE__INTENT` | `None` | The last explicit sharing request and its owned mapping; status reads never execute it. Never read from a project's hz.toml. |
-
 ## `[team]`
 
 | Key | Environment variable | Default | Description |
@@ -264,9 +231,3 @@ Plugins add their own tables.
 | `repository` | `HZ_TEAM__REPOSITORY` | `None` | Your team repository's address, the invite others join with; empty for a team repository that exists only on this computer. Example: "https://github.com/example/team.git". Never read from a project's hz.toml. |
 | `checkout` | `HZ_TEAM__CHECKOUT` | `None` | The folder your team repository is checked out in; its workflows folder holds the team's contracts. Never read from a project's hz.toml. |
 | `layer` | `HZ_TEAM__LAYER` | `None` | The layer plugin your team uses, by module name, when your team repository names none or you want another. Never read from a project's hz.toml. |
-
-## `[zoom]`
-
-| Key | Environment variable | Default | Description |
-| --- | --- | --- | --- |
-| `query` | `HZ_ZOOM__QUERY` | `'from:zoom.us'` | The mail search that finds Zoom's meeting-summary emails, in your mail's search syntax; mails that aren't summaries are skipped. Never read from a project's settings. Example: "from:zoom.us label:Meetings". |

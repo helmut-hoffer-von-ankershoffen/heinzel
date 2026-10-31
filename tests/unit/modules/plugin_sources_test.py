@@ -1,5 +1,6 @@
 """Which sources `hz system plugin add` takes, and what it reads about them before installing (ADR 0047)."""
 
+import base64
 import io
 import json
 import subprocess
@@ -11,6 +12,113 @@ from heinzel import HeinzelError
 from heinzel.modules.system.plugin import _sources
 
 pytestmark = pytest.mark.unit
+
+
+@pytest.mark.parametrize("named", [False, True])
+@pytest.mark.parametrize("root", ["virtual", "tooling", "absent"])
+def test_repository_url_selects_its_metadata_declared_collection_project_at_one_commit(named, root):
+    source = _sources.parse(("heinzel-harbor @ git+" if named else "") + "https://github.com/example/collection")
+    revision = "a" * 40
+    requests = []
+    project = (
+        '[project]\nname="heinzel-harbor"\nversion="1.0.0"\n[project.entry-points."heinzel.modules"]\nharbor="harbor"\n'
+    )
+
+    def get(path):
+        requests.append(path)
+        if path == "repos/example/collection":
+            return {"default_branch": "main", "owner": {"login": "example"}, "private": True}
+        if "/commits/" in path:
+            return {"sha": revision}
+        if path.endswith(f"/plugins?ref={revision}"):
+            return [{"type": "dir", "name": "arbitrary-folder"}]
+        if "/arbitrary-folder/" in path:
+            text = project
+        elif root == "absent":
+            msg = "No root pyproject"
+            raise LookupError(msg)
+        elif root == "tooling":
+            text = '[project]\nname="collection-tooling"\nversion="1.0.0"\n'
+        else:
+            text = '[tool.uv.workspace]\nmembers=["plugins/*"]\n'
+        # GitHub wraps base64 content with newlines, including a trailing newline.
+        return {"type": "file", "content": base64.encodebytes(text.encode()).decode()}
+
+    metadata = _sources.from_github(source, get)
+    assert metadata.name == "heinzel-harbor"
+    assert metadata.subdirectory == "plugins/arbitrary-folder"
+    assert metadata.revision == revision
+    assert metadata.private is True
+    assert all(path.endswith(f"ref={revision}") for path in requests if "/contents/" in path)
+
+
+@pytest.mark.parametrize("named", [False, True])
+def test_an_ambiguous_collection_requires_a_distribution_instead_of_installing_a_virtual_root(named):
+    source = _sources.parse(("heinzel-two @ git+" if named else "") + "https://github.com/example/collection")
+
+    def get(path):
+        if path == "repos/example/collection":
+            return {"default_branch": "main"}
+        if "/commits/" in path:
+            return {"sha": "a" * 40}
+        if "/contents/plugins?" in path:
+            return [{"type": "dir", "name": "one"}, {"type": "dir", "name": "two"}]
+        if "/contents/pyproject.toml" in path:
+            text = '[tool.uv.workspace]\nmembers=["plugins/*"]\n'
+        else:
+            folder = path.split("/plugins/")[1].split("/")[0]
+            text = (
+                f'[project]\nname="heinzel-{folder}"\n[project.entry-points."heinzel.modules"]\n{folder}="{folder}"\n'
+            )
+        return {"type": "file", "content": base64.b64encode(text.encode()).decode()}
+
+    if named:
+        metadata = _sources.from_github(source, get)
+        assert (metadata.name, metadata.subdirectory) == ("heinzel-two", "plugins/two")
+    else:
+        with pytest.raises(HeinzelError, match="no unique plugin"):
+            _sources.from_github(source, get)
+
+
+@pytest.mark.parametrize(
+    "entries", [[], [{"type": "symlink", "name": "harbor"}], [{"type": "dir", "name": "../escape"}]]
+)
+def test_collection_discovery_never_follows_links_or_unsafe_paths(entries):
+    source = _sources.parse("https://github.com/example/collection")
+    requests = []
+
+    def get(path):
+        requests.append(path)
+        if path == "repos/example/collection":
+            return {"default_branch": "main"}
+        if "/commits/" in path:
+            return {"sha": "a" * 40}
+        if "/contents/plugins?" in path:
+            return entries
+        assert "/contents/pyproject.toml?" in path
+        return {"type": "file", "content": base64.b64encode(b"[tool.uv.workspace]").decode()}
+
+    with pytest.raises(HeinzelError, match="no unique plugin"):
+        _sources.from_github(source, get)
+    assert len(requests) == 4
+
+
+def test_github_resolved_metadata_is_read_at_the_same_pinned_commit():
+    requests = []
+    # Contents resolves an in-repository symlink to this file response at the requested commit.
+    resolved = {"type": "file", "content": base64.encodebytes(b'[project]\nname="heinzel-harbor"').decode()}
+    project = _sources._github_project_at(
+        lambda path: requests.append(path) or resolved, "repos/example/collection", "a" * 40, "plugins/harbor"
+    )
+    assert project["name"] == "heinzel-harbor"
+    assert requests == [f"repos/example/collection/contents/plugins/harbor/pyproject.toml?ref={'a' * 40}"]
+
+
+@pytest.mark.parametrize("kind", [None, "dir", "symlink"])
+def test_metadata_requires_a_bounded_github_file_response(kind):
+    response = {"type": kind, "content": base64.b64encode(b"[project]").decode()}
+    with pytest.raises(ValueError, match="bounded file response"):
+        _sources._github_project_at(lambda _path: response, "repos/example/collection", "a" * 40, None)
 
 
 @pytest.mark.parametrize(
@@ -85,7 +193,7 @@ def test_pypi_packages_and_https_git_repositories_are_taken(spec, kind, name, ur
     ],
 )
 def test_everything_else_is_refused_with_what_is_taken(spec, why):
-    with pytest.raises(HeinzelError, match="takes a first-party name") as refused:
+    with pytest.raises(HeinzelError, match="takes a catalog short name") as refused:
         _sources.parse(spec)
     assert why in str(refused.value)
 
@@ -149,6 +257,19 @@ def test_gh_timing_out_is_unreachable(monkeypatch):
     monkeypatch.setattr(_sources.subprocess, "run", run)
     with pytest.raises(OSError, match="timed out"):
         _sources.github_getter(None)("repos/o/x")
+
+
+def test_an_installed_but_unsigned_gh_falls_back_to_public_https(monkeypatch):
+    monkeypatch.setattr(_sources.shutil, "which", lambda name: "/opt/bin/gh")
+    monkeypatch.setattr(
+        _sources.subprocess,
+        "run",
+        lambda command, **_: subprocess.CompletedProcess(command, 4, "", "To get started, run: gh auth login"),
+    )
+    requests = []
+    monkeypatch.setattr(_sources, "get_json", lambda url, *_: requests.append(url) or {"public": True})
+    assert _sources.github_getter(None)("repos/example/heinzel-harbor") == {"public": True}
+    assert requests == ["https://api.github.com/repos/example/heinzel-harbor"]
 
 
 def test_without_gh_public_repositories_are_read_over_https(monkeypatch):

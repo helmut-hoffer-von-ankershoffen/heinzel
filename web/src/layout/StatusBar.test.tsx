@@ -13,105 +13,54 @@ const answers = {
   ],
 };
 
-describe("The status bar's clock", () => {
-  it("does not render a clock when the clock plugin is absent", async () => {
+describe("Mounted footer measurements", () => {
+  afterEach(() => vi.restoreAllMocks());
+  it("places the last contributed status after native controls and overflow in DOM and keyboard order", async () => {
     mockApi({
-      ...shell,
-      "/api/system/info": { version: "0.4.0", modules: [] },
+      ...answers,
       "/api/system/ui/status": [
         {
-          id: "clock:primary-zone",
-          module: "clock",
-          plugin: "heinzel-clock",
+          id: "external:first",
+          module: "external",
+          plugin: "example-provider",
+          order: 10,
+          refresh: 60,
+          problem: null,
+          slots: { footer: true },
+          item: {
+            text: "First generic status",
+            tone: "neutral",
+            icon: "bot",
+            detail: [{ text: "First", tone: "neutral" }],
+          },
+        },
+        {
+          id: "external:last",
+          module: "external",
+          plugin: "example-provider",
           order: 900,
           refresh: 60,
           problem: null,
           slots: { footer: true },
-          item: { text: "Berlin", tone: "neutral", icon: "clock" },
+          item: {
+            text: "Last generic status",
+            tone: "neutral",
+            icon: "clock",
+            detail: [{ text: "Last", tone: "neutral" }],
+          },
         },
       ],
+      "/api/heinzel/sessions": { sessions: [] },
     });
     renderAt("/doctor");
-    const bar = await screen.findByRole("contentinfo");
-    expect(within(bar).queryByRole("button", { description: /World clock/ })).not.toBeInTheDocument();
-    expect(bar.textContent).not.toMatch(/\b\d{2}:\d{2}:\d{2}\b/);
+    const footer = await screen.findByRole("contentinfo");
+    const last = await within(footer).findByRole("button", { name: "Last generic status, off" });
+    const buttons = within(footer).getAllByRole("button");
+    expect(buttons.at(-1)).toBe(last);
+    expect(buttons.indexOf(last)).toBeGreaterThan(
+      buttons.indexOf(within(footer).getByRole("button", { name: /System health/ })),
+    );
   });
-
-  it("keeps the zones open while the pointer moves up to them, and their link opens the clock's settings", async () => {
-    mockApi(answers);
-    const user = userEvent.setup();
-    const { container } = renderAt("/doctor");
-    const clock = await screen.findByRole("button", { description: "World clock: time for the team and stakeholders" });
-    const wrapper = clock.parentElement as HTMLElement;
-    fireEvent.mouseEnter(wrapper);
-    const zones = await screen.findByRole("region", { name: "World clock: time for the team and stakeholders" });
-    expect(await within(zones).findByText("New York")).toBeInTheDocument();
-    // The first zone is yours: the clock shows its time, and the panel lists it first, marked, then the others, all on
-    // the 24-hour clock.
-    const rows = within(zones).getAllByRole("listitem");
-    expect(rows).toHaveLength(2);
-    expect(within(rows[0] as HTMLElement).getByText("Berlin")).toBeInTheDocument();
-    expect(within(rows[0] as HTMLElement).getByText("Primary")).toBeInTheDocument();
-    expect(within(rows[1] as HTMLElement).getByText("New York")).toBeInTheDocument();
-    expect(within(rows[1] as HTMLElement).queryByText("Primary")).not.toBeInTheDocument();
-    for (const row of rows) expect(row.textContent).toMatch(/\d{2}:\d{2}$/);
-    const time = clock.querySelector("time") as HTMLTimeElement;
-    expect(time).toHaveTextContent(/^\d{2}:\d{2}:\d{2}$/);
-    expect(time.textContent).not.toMatch(/[ap]m/i);
-    // Leaving the clock for the panel above: the panel is inside the hovered element, so nothing closes.
-    fireEvent.mouseLeave(wrapper);
-    fireEvent.mouseEnter(wrapper);
-    await new Promise((resolve) => setTimeout(resolve, 250));
-    await user.click(within(zones).getByRole("link", { name: "Edit time zones and working hours…" }));
-    expect(await screen.findByRole("dialog", { name: "Settings" })).toBeInTheDocument();
-    await expectAccessible(container);
-  });
-
-  it("shows time until work and since work on the status icons", async () => {
-    vi.useFakeTimers({ toFake: ["Date"] });
-    vi.setSystemTime(new Date("2026-10-19T21:00:00Z"));
-    try {
-      mockApi(answers);
-      renderAt("/doctor");
-      const clock = await screen.findByRole("button", {
-        description: "World clock: time for the team and stakeholders",
-      });
-      fireEvent.mouseEnter(clock.parentElement as HTMLElement);
-      const zones = await screen.findByRole("region", { name: "World clock: time for the team and stakeholders" });
-      const berlin = within(within(zones).getAllByRole("listitem")[0] as HTMLElement).getByRole("img", {
-        name: "Likely sleeping",
-      });
-      expect(berlin).toHaveAttribute(
-        "title",
-        "Likely sleeping · Starts in 10h · 5h since end · Mon–Fri 09:00–18:00 · Starts Tue 09:00",
-      );
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it("closes a short while after the pointer leaves, opens pinned on click, and closes on Escape", async () => {
-    mockApi(answers);
-    const user = userEvent.setup();
-    renderAt("/doctor");
-    const clock = await screen.findByRole("button", { description: "World clock: time for the team and stakeholders" });
-    const wrapper = clock.parentElement as HTMLElement;
-    fireEvent.mouseEnter(wrapper);
-    fireEvent.mouseLeave(wrapper);
-    expect(screen.getByRole("region", { name: "World clock: time for the team and stakeholders" })).toBeInTheDocument();
-    await new Promise((resolve) => setTimeout(resolve, 250));
-    expect(
-      screen.queryByRole("region", { name: "World clock: time for the team and stakeholders" }),
-    ).not.toBeInTheDocument();
-    await user.click(clock);
-    expect(clock).toHaveAttribute("aria-expanded", "true");
-    await user.keyboard("{Escape}");
-    expect(clock).toHaveAttribute("aria-expanded", "false");
-  });
-});
-
-describe("Mounted footer measurements", () => {
-  afterEach(() => vi.restoreAllMocks());
   it("keeps the mounted durable Heinzel control visible alongside resources and health at 375px", async () => {
     vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (this: Element) {
       const id = this.getAttribute("data-footer-content");
@@ -150,7 +99,6 @@ describe("Mounted footer measurements", () => {
     renderAt("/doctor");
     const footer = await screen.findByRole("contentinfo");
     expect(await within(footer).findByRole("button", { name: "Daemon running, OK" })).toBeInTheDocument();
-    expect(within(footer).getByRole("button", { name: /CPU Mem Load/ })).toBeInTheDocument();
     expect(within(footer).getByRole("button", { name: /System health/ })).toBeInTheDocument();
     expect(within(footer).getByRole("button", { name: "0 Heinzelmännchen, off" })).toBeInTheDocument();
     expect(footer.textContent).not.toContain("🐻");

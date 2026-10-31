@@ -25,6 +25,7 @@ IDENTITY_LIMIT = 128
 PRIVATE_READ = "private:read"
 PRIVATE_WRITE = "private:write"
 LOCAL_PERMISSIONS = frozenset({PRIVATE_READ, PRIVATE_WRITE})
+LOCAL_READ_PERMISSIONS = frozenset({PRIVATE_READ})
 Authentication = Literal["cli", "mcp-stdio", "daemon", "api-bearer", "web-session", "web-device"]
 
 
@@ -115,6 +116,17 @@ class CurrentUser:
         with self.using(identity):
             yield
 
+    @contextlib.contextmanager
+    def local_read(self, authentication: Literal["cli", "mcp-stdio", "daemon"]) -> Generator[None]:
+        """Authenticate a trusted local read as the owner, without granting private writes.
+
+        Raises:
+            HeinzelError: If local identity storage is unsafe or unreadable.
+        """
+        identity = CallIdentity(self.owner(), authentication, "local", "hz-local", LOCAL_READ_PERMISSIONS)
+        with self.using(identity):
+            yield
+
     def owner(self) -> Principal:
         """Read or atomically initialize the private installation identity, under a cross-process lock.
 
@@ -130,8 +142,8 @@ class CurrentUser:
                 os.close(parent)
             folder = os.open(self.directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
             try:
-                self._private(os.fstat(folder), directory=True)
-                lock = self._open(folder, "owner.lock", os.O_RDWR | os.O_CREAT)
+                self.verify_private(os.fstat(folder), directory=True)
+                lock = self.open_private(folder, "owner.lock", os.O_RDWR | os.O_CREAT)
                 try:
                     fcntl.flock(lock, fcntl.LOCK_EX)
                     return self._owner(folder)
@@ -144,7 +156,12 @@ class CurrentUser:
             raise HeinzelError(msg) from None
 
     @staticmethod
-    def _private(info: os.stat_result, *, directory: bool = False) -> None:
+    def verify_private(info: os.stat_result, *, directory: bool = False) -> None:
+        """Verify an owner-only regular file or directory using the installation's storage fence.
+
+        Raises:
+            HeinzelError: If ownership, mode, file type or hard-link count is unsafe.
+        """
         expected = PRIVATE_DIRECTORY if directory else PRIVATE_FILE
         kind = stat.S_ISDIR(info.st_mode) if directory else stat.S_ISREG(info.st_mode)
         if (
@@ -157,7 +174,13 @@ class CurrentUser:
             raise HeinzelError(msg)
 
     @classmethod
-    def _open(cls, folder: int, name: str, flags: int) -> int:
+    def open_private(cls, folder: int, name: str, flags: int) -> int:
+        """Open relative to a trusted private directory and verify the returned file descriptor.
+
+        Raises:
+            OSError: If the file cannot be opened without following links.
+            HeinzelError: If the opened file is not private, owner-held and free of hard links.
+        """
         protected = flags | os.O_NOFOLLOW | os.O_NONBLOCK
         if flags & os.O_CREAT and not flags & os.O_EXCL:
             try:
@@ -167,7 +190,7 @@ class CurrentUser:
         else:
             descriptor = os.open(name, protected, PRIVATE_FILE, dir_fd=folder)
         try:
-            cls._private(os.fstat(descriptor))
+            cls.verify_private(os.fstat(descriptor))
         except BaseException:
             os.close(descriptor)
             raise
@@ -176,11 +199,11 @@ class CurrentUser:
     @classmethod
     def _owner(cls, folder: int) -> Principal:
         try:
-            descriptor = cls._open(folder, "owner-v1", os.O_RDONLY)
+            descriptor = cls.open_private(folder, "owner-v1", os.O_RDONLY)
         except FileNotFoundError:
             # Publish only complete durable bytes. A crash before rename leaves no partial owner identity.
             temporary = f".owner-{secrets.token_hex(12)}"
-            descriptor = cls._open(folder, temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL)
+            descriptor = cls.open_private(folder, temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL)
             try:
                 with os.fdopen(descriptor, "wb") as handle:
                     handle.write(f"u-{secrets.token_hex(16)}\n".encode("ascii"))
@@ -191,7 +214,7 @@ class CurrentUser:
             finally:
                 with contextlib.suppress(FileNotFoundError):
                     os.unlink(temporary, dir_fd=folder)
-            descriptor = cls._open(folder, "owner-v1", os.O_RDONLY)
+            descriptor = cls.open_private(folder, "owner-v1", os.O_RDONLY)
         with os.fdopen(descriptor, "rb") as handle:
             data = handle.read(IDENTITY_LIMIT + 1)
         try:

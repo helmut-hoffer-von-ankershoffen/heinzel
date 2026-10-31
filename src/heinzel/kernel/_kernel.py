@@ -6,7 +6,7 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from functools import partial
 from pathlib import Path
-from typing import Any, cast, get_args, get_origin
+from typing import TYPE_CHECKING, Annotated, Any, cast, get_args, get_origin
 
 import pluggy
 from pydantic import ConfigDict, ValidationError, validate_call
@@ -24,7 +24,7 @@ from heinzel.kernel._capabilities import CAPABILITIES, Capability, capability_of
 from heinzel.kernel._config import KERNEL_SECTION, Config, ModuleSettings
 from heinzel.kernel._errors import HeinzelError
 from heinzel.kernel._identity import PRIVATE_READ, PRIVATE_WRITE, CurrentUser
-from heinzel.kernel._installation import Installation
+from heinzel.kernel._installation import CORE_DISTRIBUTION, Installation
 from heinzel.kernel._jobs import CompiledJobs
 from heinzel.kernel._layers import Declared, Label, LayerLet, LayerProblem, LayerProblemKind, Layers, LayerStack
 from heinzel.kernel._lets import (
@@ -47,8 +47,12 @@ from heinzel.kernel._org import OrgContext
 from heinzel.kernel._playbooks import PlaybookLet
 from heinzel.kernel._progress import Progress
 from heinzel.kernel._prompter import Prompter
+from heinzel.kernel._services import ServiceContract
 from heinzel.kernel._settings import Settings
 from heinzel.kernel._spec import PROJECT_NAME, Spec
+
+if TYPE_CHECKING:
+    from heinzel.kernel._source_loading import SourceDiscovery
 
 logger = logging.getLogger(__name__)
 
@@ -105,6 +109,7 @@ class Kernel:
         records: Iterable[ModuleRecord] = (),
         errors: Mapping[str, str] | None = None,
         config: Config | None = None,
+        source_discovery: "SourceDiscovery | None" = None,
     ) -> None:
         """Register modules. Disabled modules (and their submodules) are blocked, not registered.
 
@@ -113,6 +118,7 @@ class Kernel:
             records: Modules to register, typically from `heinzel.kernel.discover`.
             errors: Plugins that failed to load, by entry point name, for reporting.
             config: Configuration files and their content; none (defaults and environment only) if not given.
+            source_discovery: Optional host-owned source continuity catalog.
 
         A plugin module that collides with a registered one — same qualified name, a submodule named like one of its
         parent's operations, or a service type provided twice — is skipped and reported in `errors`, so one bad
@@ -122,6 +128,7 @@ class Kernel:
             HeinzelError: If built-in modules collide.
         """
         self.config = config or Config.empty()
+        self.source_discovery = source_discovery
         self.settings = settings or self.config.settings(Settings, KERNEL_SECTION)
         self.errors: dict[str, str] = dict(errors or {})
         self._manager = pluggy.PluginManager(PROJECT_NAME)
@@ -149,6 +156,8 @@ class Kernel:
             LocalWebRuntime: LocalWebRuntime(),
             Prompter: Prompter(),
         }
+        self._factory_instances: dict[type[Any], object] = {}
+        """Instances constructed by registered factories; explicit binds invalidate this provenance."""
         self._factories: dict[type[Any], Callable[..., Any]] = {
             Installation: Installation,
             CurrentUser: _current_user,
@@ -220,6 +229,7 @@ class Kernel:
 
     def provides(self, kind: object) -> bool:
         """Whether the kernel can inject a parameter annotated with `kind`: a service, settings or a capability."""
+        kind = _injected_type(kind)
         return isinstance(kind, type) and (
             kind in self._instances or kind in self._factories or capability_of(kind) is not None or kind is Adapters
         )
@@ -227,13 +237,28 @@ class Kernel:
     def bind[T](self, kind: type[T], instance: T) -> None:
         """Replace what the kernel injects for `kind`; heads use this to bind their own `Progress`."""
         self._instances[kind] = instance
+        self._factory_instances.pop(kind, None)
 
     def available(self, func: Callable[..., Any]) -> bool:
-        """Whether `func` can be called: none of its parameters needs a type only a disabled module provides."""
-        return not any(
-            (get_origin(p.annotation) or p.annotation) in self._unavailable
-            for p in inspect.signature(func, eval_str=True).parameters.values()
-        )
+        """Whether required services exist, including explicit contracts and transitive factory dependencies."""
+        return self._available(func, frozenset())
+
+    def _available(self, func: Callable[..., Any], visiting: frozenset[type[Any]]) -> bool:
+        for parameter in inspect.signature(func, eval_str=True).parameters.values():
+            kind = _injected_type(parameter.annotation)
+            if not isinstance(kind, type):
+                continue
+            if (kind in self._unavailable or _service_contract(kind)) and not self.provides(kind):
+                return False
+            factory = self._factories.get(kind)
+            if (
+                factory is not None
+                and kind not in self._instances
+                and kind not in visiting
+                and not self._available(factory, visiting | {kind})
+            ):
+                return False
+        return True
 
     def resolve[T](self, kind: type[T]) -> T:
         """Return the instance of `kind`, building it (once) from its service factory.
@@ -245,8 +270,115 @@ class Kernel:
             if kind not in self._factories:
                 msg = f"No module provides {kind.__name__}"
                 raise HeinzelError(msg)
-            self._instances[kind] = self.call(self._factories[kind])
+            instance = self.call(self._factories[kind])
+            self._instances[kind] = instance
+            self._factory_instances[kind] = instance
         return cast("T", self._instances[kind])
+
+    def resolve_builtin_service[T](self, kind: type[T], owner: str) -> T:
+        """Resolve a service only from its named built-in module and its exact registered class.
+
+        This checks registry origin and injection continuity, not a publisher signature or code attestation.
+
+        Raises:
+            HeinzelError: If the provider or bound instance is not the named built-in class.
+        """
+        record = self._records.get(owner)
+        factory = self._factories.get(kind)
+        if (
+            self._providers.get(kind) != owner
+            or record is None
+            or not record.origin.builtin
+            or record.origin.distribution != CORE_DISTRIBUTION
+            or not isinstance(factory, type)
+            or not factory.__module__.startswith(f"heinzel.modules.{owner}.")
+        ):
+            msg = "The expected built-in service provider is unavailable"
+            raise HeinzelError(msg)
+        instance = self.resolve(kind)
+        if type(instance) is not factory or self._factory_instances.get(kind) is not instance:
+            msg = "The expected built-in service instance changed"
+            raise HeinzelError(msg)
+        return instance
+
+    def resolve_registered_service[T](self, kind: type[T], record: ModuleRecord) -> T:
+        """Resolve the exact class instance registered by this kernel's selected module record.
+
+        Selection must already come from trusted host configuration; this does not authenticate a publisher,
+        grant data access, or prove that an installed implementation is safe.
+
+        Raises:
+            HeinzelError: If the record, factory, or cached instance no longer matches the registration.
+        """
+        factory = self._factories.get(kind)
+        if (
+            self._records.get(record.qualname) is not record
+            or self._providers.get(kind) != record.qualname
+            or not isinstance(factory, type)
+        ):
+            msg = "The selected registered service is unavailable"
+            raise HeinzelError(msg)
+        instance = self.resolve(kind)
+        if type(instance) is not factory or self._factory_instances.get(kind) is not instance:
+            msg = "The selected registered service instance changed"
+            raise HeinzelError(msg)
+        return instance
+
+    def resolve_selected_service[T](self, contract: type[T], record: ModuleRecord) -> T:
+        """Resolve one concrete service offered by the exact host-selected module record.
+
+        Different modules may offer distinct concrete subclasses of one contract without competing for a global
+        service key. The caller must derive the selected record from trusted configuration; this is no grant or
+        publisher authentication.
+
+        Raises:
+            HeinzelError: If the record or its unique concrete class service is unavailable.
+        """
+        if self._records.get(record.qualname) is not record:
+            msg = "The selected registered service is unavailable"
+            raise HeinzelError(msg)
+        matches = [
+            let.provides
+            for owner, let in self.lets(ServiceLet)
+            if owner is record
+            and let.provides is not contract
+            and issubclass(let.provides, contract)
+            and let.factory is let.provides
+        ]
+        if len(matches) != 1:
+            msg = "The selected module does not provide exactly one eligible service"
+            raise HeinzelError(msg)
+        return self.resolve_registered_service(matches[0], record)
+
+    def selected_capability_service[T](self, contract: type[T], capability: str) -> tuple[ModuleRecord, T]:
+        """Resolve an installed read service from the actual capability binding in this kernel.
+
+        This identifies registered selection only. The caller must recheck current configuration, source and
+        human authorization before use; it establishes neither approval nor publisher authentication.
+
+        Raises:
+            HeinzelError: If the read adapter is unavailable, ambiguous, or lacks the requested service.
+        """
+        record, _provider = self.selected_capability_provider(capability)
+        return record, self.resolve_selected_service(contract, record)
+
+    def selected_capability_provider(self, capability: str) -> tuple[ModuleRecord, ProviderLet]:
+        """Identify the actual uniquely selected provider with read mode; this is not an access grant.
+
+        Raises:
+            HeinzelError: If the read adapter is unavailable or ambiguous.
+        """
+        selected = self._capabilities.bound(capability)
+        providers = self._capabilities.adapters.get((capability, selected), []) if selected is not None else []
+        if len(providers) != 1 or "read" not in providers[0].let.modes:
+            msg = "The selected read adapter is unavailable or ambiguous"
+            raise HeinzelError(msg)
+        provider = providers[0]
+        record = self._records[provider.module]
+        if not any(owner is record and item is provider.let for owner, item in self.lets(ProviderLet)):
+            msg = "The selected read adapter registration changed"
+            raise HeinzelError(msg)
+        return record, provider.let
 
     def handle_for(self, requester: Requester, capability: str) -> object:
         """A handle on `capability` for `requester`, for code that acts on its behalf without being its function.
@@ -397,9 +529,9 @@ class Kernel:
         # injected, so invalid input never builds a service or an adapter. Capability protocols aren't
         # runtime-checkable, so a caller passing one explicitly is validated as Any.
         public = [
-            p.replace(annotation=Any) if capability_of(get_origin(p.annotation) or p.annotation) else p
+            p.replace(annotation=Any) if capability_of(_injected_type(p.annotation)) else p
             for name, p in signature.parameters.items()
-            if name in kwargs or not self.provides(get_origin(p.annotation) or p.annotation)
+            if name in kwargs or not (self.provides(p.annotation) or _service_contract(p.annotation))
         ]
 
         def collect(**arguments: Any) -> dict[str, Any]:  # noqa: ANN401 - whatever the operation takes
@@ -417,7 +549,7 @@ class Kernel:
 
     def _inject(self, func: Callable[..., Any], kwargs: dict[str, Any]) -> dict[str, Any]:
         for name, parameter in inspect.signature(func, eval_str=True).parameters.items():
-            annotation = get_origin(parameter.annotation) or parameter.annotation
+            annotation = _injected_type(parameter.annotation)
             if name in kwargs:
                 continue
             if annotation is Adapters:
@@ -425,7 +557,7 @@ class Kernel:
             elif capability := capability_of(annotation):
                 # A handle per requester: what it may call depends on what `func` declared (ADR 0028).
                 kwargs[name] = self._capabilities.handle(capability, func)
-            elif self.provides(annotation):
+            elif self.provides(annotation) or _service_contract(annotation):
                 kwargs[name] = self.resolve(annotation)
         return kwargs
 
@@ -579,6 +711,8 @@ def _adapters_capability(annotation: Any) -> Capability:  # noqa: ANN401 - an an
     Raises:
         HeinzelError: If `P` is missing or is no capability's protocol.
     """
+    if get_origin(annotation) is Annotated:
+        annotation = get_args(annotation)[0]
     args = get_args(annotation)
     capability = capability_of(args[0]) if args else None
     if capability is None:
@@ -615,3 +749,15 @@ def _provided_types(module: Module) -> set[type[Any]]:
         elif isinstance(let, SettingsLet):
             provided.add(let.model)
     return provided
+
+
+def _service_contract(kind: object) -> bool:
+    kind = _injected_type(kind)
+    return isinstance(kind, type) and issubclass(kind, ServiceContract)
+
+
+def _injected_type(annotation: Any) -> Any:  # noqa: ANN401 - arbitrary inspected Python annotations
+    """Ignore descriptive metadata while retaining it on the public user-input signature."""
+    if get_origin(annotation) is Annotated:
+        annotation = get_args(annotation)[0]
+    return get_origin(annotation) or annotation

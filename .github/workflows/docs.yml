@@ -1,25 +1,26 @@
 name: Docs
 
-# The documentation of every plugin and the site (ADR 0082). Shared with plugins through the template.
-#
-# Recordings: when the scenes or the demo tape change on main, and on demand, every scene of docs/scenes.toml (and
-# the derived ones) is re-recorded with VHS and Playwright in a sandbox by `make docs-record` (in Heinzelmännchen's
-# repository the README's intro too), and a pull request brings the changed media. Rendering isn't byte-identical
-# between machines, so media isn't diffed on every pull request; the Markdown pages are (`make check`). A release
-# doesn't re-record (every release would grow the history by megabytes); it publishes what main holds.
-#
-# Site: `make docs-site` builds the MkDocs site, and it is deployed to GitHub Pages only when the repository is
-# public, or when the repository variable DOCS_PAGES is `true`. Otherwise the site stays a workflow artifact: a
-# private plugin's pages never leave its repository. The Release tag workflow calls this one for every release (a
-# tag pushed with the GitHub token triggers nothing); the first deploy turns Pages on, which may need the repository
-# owner to do it once by hand when the token isn't allowed to.
+# Product/docs site: offline builds for pull requests; fresh public metadata for publication (ADR 0098).
+# Media recording is explicit and separate. Shared plugin repositories without a catalog retain ordinary MkDocs.
 
 on:
   push:
     branches: [main]
     paths:
-      - docs/scenes.toml
-      - docs/assets/demo.tape
+      - docs/**
+      - scripts/site_*.py
+      - scripts/mkdocs_hooks.*
+      - mkdocs.yml
+      - .github/workflows/docs.yml
+  pull_request:
+    paths:
+      - docs/**
+      - scripts/site_*.py
+      - scripts/mkdocs_hooks.*
+      - mkdocs.yml
+      - .github/workflows/docs.yml
+  schedule:
+    - cron: '17 * * * *'
   workflow_call:
     inputs:
       site_only:
@@ -38,19 +39,19 @@ on:
       record:
         description: Re-record every scene and open a pull request with the changed media
         type: boolean
-        default: true
+        default: false
 
 permissions: {}
 
 concurrency:
-  group: docs-${{ github.ref }}
-  cancel-in-progress: false
+  group: docs-${{ github.repository }}-${{ github.event.pull_request.number || 'production' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   record:
     name: Record the scenes
     # Reusable workflows inherit the caller's event: a release push is explicitly site-only.
-    if: inputs.site_only != true && (github.event_name == 'push' || inputs.record == true)
+    if: inputs.site_only != true && inputs.record == true && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
@@ -60,6 +61,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          ref: ${{ github.event_name == 'pull_request' && github.sha || 'main' }}
       - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
           enable-cache: false # this job pushes a branch, and a poisoned cache must not be able to reach it (zizmor)
@@ -88,18 +90,33 @@ jobs:
   site:
     name: Build the site
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     permissions:
       contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          ref: ${{ github.event_name == 'pull_request' && github.sha || 'main' }}
       - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
           enable-cache: false # the site is published, and a poisoned cache must not be able to reach it (zizmor)
-      - run: make docs-site
-      - uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4.0.0
+      - name: Build and verify the product site or a standalone documentation site
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HZ_SITE_CATALOG: ${{ runner.temp }}/catalog.json
+          REFRESH_PUBLIC: ${{ github.event_name != 'pull_request' }}
+        run: make docs-publish-check
+      - name: Keep browser evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: docs-browser-evidence
+          path: reports/site
+          if-no-files-found: ignore
+          retention-days: 1
+      - if: github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4.0.0
         with:
           path: site
 
@@ -107,7 +124,7 @@ jobs:
     name: Deploy to GitHub Pages
     needs: site
     # Public repositories publish; a private one only when its owner says so, so no page of a company's plugin leaks.
-    if: github.event.repository.visibility == 'public' || vars.DOCS_PAGES == 'true'
+    if: github.event_name != 'pull_request' && (github.event.repository.visibility == 'public' || vars.DOCS_PAGES == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:

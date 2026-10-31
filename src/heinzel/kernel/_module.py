@@ -62,6 +62,7 @@ from heinzel.kernel._soundscapes import Soundscape, SoundscapeLet, sourced_sound
 from heinzel.kernel._spec import hookimpl
 from heinzel.kernel._theme_signals import SignalLet, ThemeSignals
 from heinzel.kernel._themes import Theme, ThemeLet, sourced_themes
+from heinzel.kernel._views import ViewLet, ViewSlot
 
 RESERVED_NAMES = frozenset({"hz", "capabilities", "setup", "join"})
 """Names a module can't take: the kernel's and the capability bindings' tables, `hz setup` and `hz join`."""
@@ -818,6 +819,44 @@ class Module:
             slots={"header": True},
         )
         self._contribute("action", let)
+        return let
+
+    def view(  # noqa: PLR0913 - metadata of one installed view
+        self,
+        directory: Path,
+        *,
+        name: str,
+        source: str,
+        title: str,
+        fallback: str,
+        abi: int,
+        slot: ViewSlot = "panel",
+        order: int = 500,
+        refresh: int = 60,
+        section: str | None = None,
+        route: str | None = None,
+        actions: Mapping[str, Navigate | OpenUrl | RunOperation | RunCommand] | None = None,
+    ) -> ViewLet:
+        """Declare a checked local factory bundle using the shared view SDK (ADR 0094).
+
+        Raises:
+            ValueError: If its metadata, bundle or name is invalid.
+        """
+        let = ViewLet(
+            name=name,
+            directory=directory,
+            source=source,
+            title=title,
+            fallback=fallback,
+            abi=abi,
+            slot=slot,
+            order=order,
+            refresh=refresh,
+            section=section,
+            route=route,
+            actions=dict(actions or {}),
+        )
+        self.add(let)
         return let
 
     def nav(  # noqa: PLR0913 - static data of one navigation entry, by keyword

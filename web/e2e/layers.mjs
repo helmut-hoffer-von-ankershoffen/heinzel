@@ -1,3 +1,5 @@
+import { reportMediaFailure, watchMedia } from "./media-diagnostics.mjs";
+
 // Real CSS hit testing over a live iframe. The local canvas stream avoids external playback/network requirements.
 let stabilityCheck = 0;
 
@@ -66,6 +68,7 @@ export async function verifyLayers(page, shots, screenshot) {
       ],
     }),
   );
+  await watchMedia(page);
   await page.reload();
   await page.getByRole("button", { name: "Choose a soundscape", exact: true }).click();
   await page
@@ -75,7 +78,12 @@ export async function verifyLayers(page, shots, screenshot) {
   await page.keyboard.press("Escape");
   const card = page.getByRole("region", { name: "Layer probe player" });
   const iframe = card.locator("iframe");
-  await iframe.waitFor();
+  try {
+    await iframe.waitFor();
+  } catch (error) {
+    await reportMediaFailure(page, "layer iframe");
+    throw error;
+  }
   await page.evaluate(() => {
     window.layerProofFrame = document.querySelector("[data-dock] iframe");
   });
@@ -265,15 +273,6 @@ export async function verifyLayers(page, shots, screenshot) {
     await versionPane.waitFor({ state: "hidden" });
     await page.mouse.move(0, 0);
     await park();
-    const clock = page.getByRole("button", { description: "World Clock: time for the team and stakeholders" });
-    await clock.click();
-    await front(`${mode}-clock`, page.getByRole("region", { name: "World Clock: time for the team and stakeholders" }));
-    await page.keyboard.press("Escape");
-    await page.mouse.move(0, 0);
-    await park();
-    await page
-      .getByRole("region", { name: "World Clock: time for the team and stakeholders" })
-      .waitFor({ state: "hidden" });
     await page.getByRole("button", { name: "Daemon running, OK" }).click();
     await front(`${mode}-daemon`, page.getByRole("region", { name: "Daemon running" }));
     await page.keyboard.press("Escape");

@@ -25,8 +25,12 @@ class NoticeKind(StrEnum):
     """`hz system doctor` found something degraded or down."""
     RELEASE = "release"
     """A newer release of Heinzelmännchen is available."""
+    PLUGIN = "plugin"
+    """A notice published by an installed provider through the shared notification policy."""
     TEST = "test"
     """`hz system notify test`: to see that notifications reach you."""
+    HEINZEL = "heinzel"
+    """A scheduled durable personal Heinzel checked in."""
 
 
 class Delivery(StrEnum):
@@ -79,6 +83,24 @@ class Notifications:
 
         Never raises for a full or unwritable store: a lost notice must not fail the job that reported it.
         """
+        raise NotImplementedError
+
+    def emit_once(  # noqa: PLR0913 - the notice fields match emit
+        self, kind: NoticeKind, title: str, body: str, *, route: str, command: str, key: str
+    ) -> bool:
+        """Atomically persist one notice and its durable key, or recognize the previously recorded key."""
+        raise NotImplementedError
+
+    def forget_once(self, key: str) -> bool:
+        """Forget a completed outbox key after its authoritative owner journal commits completion."""
+        raise NotImplementedError
+
+    def forget_completed(self, keys: set[str]) -> bool:
+        """Compact a batch of completed outbox keys while preserving unresolved keys and visible notices."""
+        raise NotImplementedError
+
+    def has_once(self, key: str) -> bool | None:
+        """Check a durable key; None means the store could not answer safely."""
         raise NotImplementedError
 
     def recent(self, limit: int = 50) -> list[Notice]:

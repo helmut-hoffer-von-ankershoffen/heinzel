@@ -477,12 +477,14 @@ def contrast_problems(colours: ThemeColours) -> list[str]:
     """Where text in `colours` falls under 4.5:1, in words.
 
     `foreground` and `muted_foreground` are checked on cards, the sidebar, popovers and every main surface.
+    `primary_foreground` is checked on opaque primary controls.
     """
     pairs = [
         (text, surface, getattr(colours, text), getattr(colours, surface))
         for surface in ("card", "sidebar", "popover")
         for text in ("foreground", "muted_foreground")
     ]
+    pairs.append(("primary_foreground", "primary", colours.primary_foreground, colours.primary))
     for surface, value in _surfaces(colours):
         pairs += [
             ("foreground", surface, colours.foreground, value),
@@ -530,6 +532,13 @@ class Theme(BaseModel):
     name: str = Field(pattern=NAME, max_length=MAX_NAME, description="Lowercase words joined by dashes, e.g. `acme`.")
     title: Annotated[str, AfterValidator(_one_line)] = Field(
         min_length=1, max_length=MAX_TITLE, description="What people pick it by, e.g. `Acme`."
+    )
+    default_priority: int | None = Field(
+        default=None,
+        strict=True,
+        ge=0,
+        le=1000,
+        description="Opt into automatic theme selection; higher wins, ties use module and theme name. None opts out.",
     )
     heinzel: ThemeHeinzel | None = Field(default=None, description="The core avatar palette and decorations.")
     light: ThemeColours = Field(description="The colours in light mode.")
@@ -1056,7 +1065,7 @@ DEFAULT_THEME = Theme(
         card="#181818",
         border="#2c2c2c",
         primary="#d97757",
-        primary_foreground="#ffffff",
+        primary_foreground="#181818",
         accent="#444444",
         ok="#7cc39a",
         warn="#e0b45f",

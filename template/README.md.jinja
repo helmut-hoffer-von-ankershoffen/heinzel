@@ -20,14 +20,15 @@ product development teams.
 
 ## Install
 
-With Heinzelmännchen installed (`uv tool install git+https://github.com/[[ heinzel_owner ]]/heinzel`):
+Start the standard app with `uvx heinzel@latest`; it installs its default plugins automatically.
+In another terminal, add this optional plugin:
 
 ```bash
-hz system plugin add git+https://github.com/[[ github_owner ]]/[[ project_name ]]             # shows what it installs
-hz system plugin add git+https://github.com/[[ github_owner ]]/[[ project_name ]] --confirm   # installs it
+hz system plugin add https://github.com/[[ github_owner ]]/[[ project_name ]] --confirm
 ```
 
-Pin a version with `@vX.Y.Z`. Running `hz system plugin add` again upgrades; `hz system plugin remove [[ project_name ]]` removes it.
+Installation history records its resolved source. `hz system update` keeps compatible plugins;
+`hz system plugin remove [[ project_name ]]` removes this one.
 
 ## Use
 
@@ -49,11 +50,20 @@ the site the Docs workflow publishes on release.
 ## Develop
 
 ```bash
+git init -b main # only for this standalone repository, never inside a plugin collection
 make setup     # everything the build needs, and the git hooks; you need only git, make and uv
+make fix       # create the lock and generated plugin reference
 make doctor    # what is missing, and the command that fixes it
+make preview   # this plugin and its installed core, with isolated app state
 make check     # lint, types, unit + integration tests
 make test-e2e  # installs Heinzelmännchen with uv and adds this checkout as a plugin
 ```
+
+The starter contributes a status item, header action, sidebar item, Today widget, local panel and an explicit
+`hz [[ plugin_name ]] notify` operation. Their priorities live beside their declarations. The static view in
+`src/[[ package_name ]]/views/` needs no JavaScript build. `sdk/index.d.ts` describes its versioned host contract;
+`hz system plugin sdk <new-directory>` exports current SDK types and runtime bridges for a larger bundled view.
+Restart preview after changing built view assets. `make build` packages only this plugin.
 
 The modules live in `src/[[ package_name ]]/`. Read [AGENTS.md](AGENTS.md) and
 [docs/CODING_STANDARDS.md](docs/CODING_STANDARDS.md) before changing them; the reviewer agents and hooks in
@@ -61,8 +71,7 @@ The modules live in `src/[[ package_name ]]/`. Read [AGENTS.md](AGENTS.md) and
 
 ## Release
 
-`make release` (or Actions → **Prepare release** → Run workflow) opens a release pull request on GitHub that merges itself
-once CI is green; merging tags and publishes. The version comes
+`make release INTRO="Describe this plugin release."` (or Actions → **Prepare release** → Run workflow) opens a release pull request on GitHub. A maintainer reviews it and its current-head checks before merging; merging tags and publishes. The version comes
 from conventional commits, the changelog from git-cliff; the GitHub release carries the wheel, the sdist and
 provenance attestations. `main` changes only through pull requests.
 

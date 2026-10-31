@@ -21,10 +21,27 @@ PYPROJECT_HEAD = ROOT / "scripts" / "template_pyproject_head.toml.tmpl"
 def makefile() -> str:
     """The Makefile without Heinzelmännchen-only targets, plus `update-template`."""
     text = (ROOT / "Makefile").read_text(encoding="utf-8")
+    # Hook runner is repository tooling, not a plugin test dependency or part of its runtime closure.
+    text = text.replace("uv run --quiet prek install", "uv tool run --from prek==0.5.7 prek install")
     text = text.replace(" template-test template-sync docs attributions fuzz demo", "")
-    text = text.replace(" release clean\n", " release clean update-template\n", 1)
+    text = text.replace(" release clean\n", " release clean update-template preview\n", 1)
     text = text.replace(" (KEEP=dir keeps it)", "")
-    text = re.sub(r"\n(template-test|template-sync|docs|attributions|fuzz|demo):.*?\n(?:\t.*\n)+", "\n", text)
+    text = re.sub(r"\n(template-test|template-sync|docs|attributions|fuzz|demo|icons):.*?\n(?:\t.*\n)+", "\n", text)
+    text = re.sub(r"(?m)^(\.PHONY:.*?) icons\b", r"\1", text)
+    text = re.sub(r"\nlinux-user-manager-proof:.*?\n(?:\t.*\n)+", "\n", text)
+    text = text.replace(" linux-user-manager-proof", "")
+    # Core README e2e builds its own candidate wheel; plugins have no core web/notifier assets to prepare.
+    text = (
+        re.sub(r"\ne2e-prepare:.*?\n(?:\t.*\n)+", "\n", text)
+        .replace(" test-e2e e2e-prepare ", " test-e2e ")
+        .replace("test-e2e: e2e-prepare", "test-e2e:")
+        .replace(
+            "uv run pytest -m e2e -n 3 -q --session-timeout=600 -x tests/e2e/docs_test.py::test_readme_instructions && "
+            "uv run pytest -m e2e -n 3 -q --session-timeout=600 -x "
+            "--deselect=tests/e2e/docs_test.py::test_readme_instructions",
+            "uv run pytest -m e2e -n 3 -q --session-timeout=600 -x",
+        )
+    )
     # The core's generate_docs.py writes the plugin pages with everything else; a plugin runs the builder (ADR 0082).
     text = text.replace(
         '"&docs=env -u HZ_SYSTEM_AGENT__SKILL_DIRS uv run python scripts/generate_docs.py --check"',
@@ -54,10 +71,13 @@ def makefile() -> str:
     )
     text = text.replace("check with coverage, template, build", "check with coverage, build")
     text = text.replace("lint, architecture contracts and workflows", "lint and workflows")
+    # Public product catalog and its browser suite are core website tooling, not plugin template dependencies.
+    text = text.replace(" docs-catalog docs-site-check", "")
+    text = re.sub(r"\n(docs-catalog|docs-site-check):.*?\n(?:\t.*\n)+", "\n", text)
     # The web head's app (web/, ADR 0039): plugins bring operations, not UI.
-    text = text.replace(" web-build web-dev test-web", "")
+    text = text.replace(" web-build web-dev test-web", "").replace(" test-browser-deps", "")
     text = re.sub(r"\n# The web head's app in web/.*?\nWEB_TESTS := [^\n]*", "", text, flags=re.DOTALL)
-    text = re.sub(r"\n(web-build|web-dev|test-web):.*?\n(?:\t.*\n)+", "\n", text)
+    text = re.sub(r"\n(web-build|web-dev|test-web|test-browser-deps):.*?\n(?:\t.*\n)+", "\n", text)
     text = re.sub(r"\n\t\t\$\(WEB_LINT\) \$\(WEB_TYPES\) \\", "", text)
     text = re.sub(r" \$\(WEB_(LINT|TYPES|TESTS)\)", "", text)
     text = re.sub(r'\n\t\t"&web-client=[^\n]*', "", text)
@@ -94,6 +114,16 @@ def makefile() -> str:
     text = re.sub(r"(?m)^(\.PHONY:.*?) terminal-art\b", r"\1", text)
     text = re.sub(r"\nterminal-art:.*?\n(?:\t.*\n)+", "\n", text)
     text = re.sub(r"\n{3,}", "\n\n", text)
+    text = text.replace(
+        "Build the core wheel and sdist into dist/ (the web app first)",
+        "Build this plugin's wheel and sdist into dist/",
+    )
+    text += (
+        "\n.PHONY: docs\n"
+        "\ndocs: docs-plugins ## Regenerate this plugin's documentation\n"
+        "\npreview: ## Launch this plugin using isolated application state\n"
+        "\tuv run --no-project --script scripts/plugin_preview.py\n"
+    )
     return text + (
         "\nupdate-template: ## Update this plugin to the latest Heinzelmännchen template (needs a clean working tree)\n"
         "\tuvx copier update --defaults\n"
@@ -114,7 +144,18 @@ def ci_workflow() -> str:
     text = text.replace("- name: Check the wheel ships the changelog", "- name: Check the wheel ships the package")
     # The web head's app (ADR 0039) and ATTRIBUTIONS.md, the notices of what it bundles: plugins have neither.
     text = re.sub(r"\n      - run: make test-web[^\n]*", "", text)
+    text = text.replace(
+        "\n      - name: Install browser runtimes and host dependencies\n        run: make test-browser-deps",
+        "",
+    )
     text = re.sub(r"\n      - run: make managed-backend-[^\n]*", "", text)
+    # Only the core daemon uses the host's user service manager; plugins ship no such probe.
+    text = re.sub(
+        r"\n      - name: Inspect the Linux user manager without starting services\n.*?(?=\n      - )",
+        "",
+        text,
+        flags=re.DOTALL,
+    )
     text = re.sub(r"\n      - name: Check the wheel ships the attributions\n[^\n]*", "", text)
     text = re.sub(r"\n      - name: Check the wheel ships the web app\n[^\n]*", "", text)
     text = text.replace("      - run: uv build --all-packages\n", "      - run: uv build\n")
@@ -125,6 +166,7 @@ def ci_workflow() -> str:
     text = re.sub(r"\n  changes:\n.*?(?=\n  dependency-review:)", "", text, flags=re.DOTALL)
     # The template has no changed-path job; keep its original E2E matrix policy without core-only gating.
     text = text.replace("    needs: changes\n", "")
+    text = re.sub(r"(?m)^    if: .*needs\.changes\.outputs\.core[^\n]*\n", "", text)
     text = re.sub(
         r"(?m)^        os: .*needs\.changes\.outputs\.mounted_tailscale.*$",
         "        os: ${{ fromJSON(github.event_name == 'pull_request' && "
@@ -142,7 +184,34 @@ def ci_workflow() -> str:
     text = re.sub(r"\n      - name: Unpack Heinzel Notifier into the package\n[^\n]*\n[^\n]*", "", text)
     text = re.sub(r"\n      - name: Check the wheel ships Heinzel Notifier\n[^\n]*\n[^\n]*", "", text)
     text = text.replace(", notifier, electron, build]", ", build]")
+    # Consumer compatibility belongs to core's public-contract release, never a plugin's own edit loop.
+    text = re.sub(r"\n  consumer-(?:plan|check):\n.*?(?=\n  [a-z-]+:)", "\n", text, flags=re.DOTALL)
+    text = re.sub(r"\n  local-plugin-(?:plan|check):\n.*?(?=\n  [a-z-]+:)", "\n", text, flags=re.DOTALL)
+    text = re.sub(r"\n  core-wheel:\n.*?(?=\n  [a-z-]+:)", "\n", text, flags=re.DOTALL)
+    text = text.replace(", consumer-plan, consumer-check]", "]")
+    # Removed jobs must also disappear from the stable required aggregate, irrespective of list order.
+    removed = {
+        "changes",
+        "template",
+        "notifier",
+        "electron",
+        "consumer-plan",
+        "consumer-check",
+        "local-plugin-plan",
+        "local-plugin-check",
+        "core-wheel",
+    }
+    text = re.sub(
+        r"(?m)^    needs: \[([^\n]+)\]$",
+        lambda match: (
+            "    needs: ["
+            + ", ".join(name.strip() for name in match[1].split(",") if name.strip() not in removed)
+            + "]"
+        ),
+        text,
+    )
     # The core's CI covers every platform of the shared scripts/tools.toml; a plugin, possibly private and paying for
+    text = text.replace("    needs: []\n", "")
     # its minutes, sets up on the two most contributors use.
     text = re.sub(
         r"(\n  setup:\n.*?\n        os: )\$\{\{ fromJSON[^\n]*",
@@ -159,21 +228,33 @@ def pyproject() -> str:
     """The plugin's project metadata plus Heinzelmännchen's dev dependencies and tool configuration."""
     source = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
     dev = source[source.index("[dependency-groups]") : source.index("[build-system]")]
+    dev = re.sub(
+        r"(?m)^test = \[[^\n]*\]$",
+        'test = ["editables>=0.5", "coverage>=7.12", "httpx>=0.28", "pytest>=9.0.3,<10", '
+        '"pytest-timeout>=2.4.0,<3", "pytest-xdist>=3.8"]',
+        dev,
+    )
     # Only Heinzelmännchen itself needs these: the template renderer, its import contracts, its first-party plugin and
     # the type stubs of its own dependencies.
     dev = re.sub(r'\n    "(copier|import-linter|heinzel-[a-z]+>=|types-croniter)[^\n]*', "", dev)
     dev = re.sub(r"\n    # The first-party plugins[^\n]*\n    #[^\n]*", "", dev)
     # Fuzzing targets Heinzelmännchen's contract parser (fuzz/).
     dev = re.sub(r"\n# Fuzzing[^\n]*\nfuzz = [^\n]*", "", dev)
-    # The Heinzelmännchen the plugin is developed against: a direct URL in the test group, never in
+    # The installed core artifact the plugin is developed against: a direct URL in the test group, never in
     # [tool.uv.sources], because uv applies a plugin's sources when `hz system plugin add` installs it from a path or
     # git and would fetch this Heinzelmännchen then.
-    dev = dev.replace(
-        "test = [\n",
-        'test = [\n    "heinzel @ git+https://github.com/[[ heinzel_owner ]]/heinzel@v[[ heinzel_version ]]",\n',
-    )
+    dev = dev.replace("test = [", 'test = ["heinzel==[[ heinzel_version ]]", ', 1)
     tools = source[source.index("[tool.ruff]") :]
-    tools = re.sub(r'\nextend-exclude = \["template"\][^\n]*', "", tools)
+    # This scheduling hint is implemented by the core test controller, not the plugin template.
+    tools = tools.replace(
+        '    "e2e_early: Hint to start a long E2E case in an early xdist worker batch; '
+        'no deadline or selection change.",\n',
+        "",
+    )
+    tools = re.sub(r'\nextend-exclude = \["template", "plugins"\][^\n]*', "", tools)
+    tools = tools.replace(
+        'extend-exclude = ["ATTRIBUTIONS.md", "site", "plugins"]', 'extend-exclude = ["ATTRIBUTIONS.md", "site"]'
+    )
     tools = re.sub(r'\n"fuzz/\*\.py" = \[\n[^\]]*\]', "", tools)
     tools = re.sub(r'\n"hatch_build\.py" = \[\n[^\]]*\]', "", tools)  # the web head's build hook
     tools = re.sub(r'\n\[\[tool\.mypy\.overrides\]\]\nmodule = \["atheris"\][^\n]*\n[^\n]*\n', "", tools)

@@ -44,7 +44,7 @@ from heinzel.kernel import (
     input_schema,
 )
 from heinzel.modules.system.plugin._models import PluginInfo
-from heinzel.modules.system.plugin._service import FIRST_PARTY, REPOSITORY, PluginService, short_name
+from heinzel.modules.system.plugin._service import REPOSITORY, PluginService, short_name
 from heinzel.modules.system.plugin.docs._files import read_recording
 from heinzel.modules.system.plugin.docs._models import (
     AdapterDoc,
@@ -188,11 +188,7 @@ class DocsService:
         kinds: list[Kind] = [*info.kinds]
         if info.layers:
             kinds.append("layer")
-        install = (
-            f"hz system plugin add {info.name} --confirm"
-            if info.first_party and info.name in FIRST_PARTY
-            else f"hz system plugin add {install_spec(info)} --confirm"
-        )
+        install = f"hz system plugin add {install_spec(info)} --confirm"
         return self._page(
             distribution=info.distribution,
             name=info.name,

@@ -7,7 +7,15 @@ use <name>` picks one. Every value passes a grammar at import, so a theme can't 
 
 Soundscapes work the same way ([ADR 0058](adr/0058-soundscapes-are-data-a-plugin-ships-chosen-like-a-theme.md)): a plugin
 offers its own with `module.soundscape(Path(__file__).parent / "soundscapes")`, and they appear in `hz system sound
-list` and the web app's picker beside the built-in soundscapes.
+list` and the web app's picker. The standard app automatically installs and enables the Heinzelmännchen theme
+plugin, which owns Claude FM, Die Heinzelmännchen and Hyper Focus. Minimal core contains no soundscape content;
+it keeps a fallback appearance and Off. Installation does not change the selected theme or start playback
+([ADR 0095](adr/0095-standard-heinzel-theme-owns-bundled-soundscapes.md)).
+
+A theme plugin can declare both themes and soundscapes in its own module, ship their TOML and audio/font/logo
+assets, and set a soundscape's `pairs_with` to its theme names. No core edit or central theme/soundscape registry
+entry is required. Core discovers public `ThemeLet` and `SoundscapeLet` contributions; Sound follows the selected
+theme through the optional public `ThemeChoice` contract, without importing a concrete theme plugin.
 
 The sound options include volume, softer sound while typing and muting during meetings. A stream's mini-player
 starts in the sidebar; pop it out, drag it near the sidebar to dock it again, or move the floating player with its
@@ -38,10 +46,12 @@ A **backdrop** is a gradient behind the main area only (the sidebar and cards st
 `main_tint`, `background`, ...), `opacity` up to 0.9 (default 0.6). Prefer tokens as stops: they follow the mode and
 fade with the variant.
 
-**Contrast is checked at import**, in both modes, for the base and every variant: `foreground` and `muted_foreground` on `card`,
+**Contrast is checked at import**, in both modes, for the base and every variant: `primary_foreground` on `primary`, and
+`foreground` and `muted_foreground` on `card`,
 `sidebar`, `popover`, `background`, `main_tint` and every backdrop stop over the background, at
 least 4.5:1. A theme that fails is refused with each failing pair named, e.g. `variant.2.light: muted_foreground on
-backdrop stop #cfd8dc is 4.47:1, under 4.5:1`.
+backdrop stop #cfd8dc is 4.47:1, under 4.5:1`. Primary buttons keep opaque fills on hover so the checked pair
+remains valid; an inset ring provides the hover indication.
 
 ## How to make a weather theme
 

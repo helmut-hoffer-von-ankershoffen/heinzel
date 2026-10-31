@@ -13,7 +13,20 @@ pytestmark = pytest.mark.unit
 
 REPO = "https://github.com/example-org/heinzel"
 PLUGIN = "heinzel-acme @ git+https://github.com/example-org/heinzel-acme@v1.0.0"
-PYTHON = f"{sys.version_info.major}.{sys.version_info.minor}"
+PYTHON = ""
+
+
+@pytest.fixture(autouse=True)
+def isolated_python(tmp_path, monkeypatch):
+    base = tmp_path / "base-python"
+    assert base.parent.resolve() == tmp_path.resolve()
+    assert not base.exists()
+    assert not base.is_symlink()
+    base.write_text("#!/bin/sh\nprintf 'hz 0.2.0\\n'\n")
+    base.chmod(0o700)
+    monkeypatch.setitem(globals(), "PYTHON", str(base))
+
+
 BLOCKED = (
     "error: No solution found when resolving dependencies\n"
     "  cause: Because heinzel-acme==1.0.0 depends on heinzel<0.3 and you require heinzel==0.4.0, we can conclude "
@@ -40,7 +53,9 @@ class FakeUv:
 
     def __init__(self, version: str) -> None:
         self.version = version
+        self.next_version = None
         self.commands: list[list[str]] = []
+        self.constraint_contents: list[str] = []
         self.failures: list[str] = []
         self.hz_starts = True
         self.plugins = {"heinzel-acme": "1.0.0"}  # what a fresh hz lists, by distribution
@@ -50,13 +65,20 @@ class FakeUv:
     def __call__(
         self, command: list[str], environment: dict[str, str] | None = None
     ) -> subprocess.CompletedProcess[str]:
-        self.commands.append(command)
+        recorded = list(command)
+        if "--constraints" in recorded:
+            from pathlib import Path
+
+            index = recorded.index("--constraints")
+            self.constraint_contents.append(Path(recorded[index + 1]).read_text())
+            del recorded[index : index + 2]
+        self.commands.append(recorded)
         self.environments.append(environment)
         if self.failures:
             return subprocess.CompletedProcess(command, 1, "", self.failures.pop(0))
         if command[1:3] == ["tool", "install"]:
             core = command[command.index(PYTHON) + 1]
-            self.version = core.rsplit("@v", 1)[-1] if "@v" in core else self.version
+            self.version = self.next_version or (core.rsplit("@v", 1)[-1] if "@v" in core else self.version)
             self.hz_starts = True
             plugin_specs = [command[i + 1] for i, part in enumerate(command) if part == "--with"]
             self.plugins = {
@@ -75,18 +97,45 @@ class FakeUv:
         return f"hz {self.version}\nrepository {REPO}\n"
 
 
+def _bind_target(target):
+    prefix = target.prefix
+    bin_dir = prefix.parent.parent / "entrypoints"
+    bin_dir.mkdir(exist_ok=True)
+    (prefix / "bin").mkdir(exist_ok=True)
+    (prefix / "bin" / "hz").write_text("fixture", encoding="utf-8")
+    if not (prefix / "bin" / "python").is_symlink():
+        (prefix / "bin" / "python").symlink_to(PYTHON)
+    shim = bin_dir / "hz"
+    if not shim.exists():
+        shim.symlink_to(prefix / "bin" / "hz")
+    receipt = prefix / "uv-receipt.toml"
+    receipt.write_text(
+        receipt.read_text(encoding="utf-8") + f"entrypoints = [{{ name = 'hz', install-path = {str(shim)!r} }}]\n",
+        encoding="utf-8",
+    )
+
+
 def installation(tmp_path, core: str, uv: FakeUv) -> Installation:
+    prefix = tmp_path / "tools" / "heinzel"
+    prefix.mkdir(parents=True)
     lines = [f'{{ name = "heinzel", {core} }}', f'{{ name = "heinzel-acme", git = "{REPO}-acme?rev=v1.0.0" }}']
-    (tmp_path / "uv-receipt.toml").write_text(
+    (prefix / "uv-receipt.toml").write_text(
         "[tool]\nrequirements = [\n" + ",\n".join(lines) + "\n]\n", encoding="utf-8"
     )
-    result = Installation(Progress(), prefix=tmp_path, uv="uv", runner=uv)
+    result = Installation(Progress(), prefix=prefix, uv="uv", runner=uv)
+    _bind_target(result)
     result.hz = uv.hz  # type: ignore[method-assign]
+    result.installed_core_version = lambda: uv.version  # type: ignore[method-assign]
+    result.rollback_identity = lambda: "b" * 64  # type: ignore[method-assign]
+    result.verify_installed_requirements = lambda requirements, **kwargs: {  # type: ignore[method-assign]
+        "heinzel": uv.version,
+        **uv.plugins,
+    }
     return result
 
 
 def install_command(core: str, *plugins: str, refresh: bool = True) -> list[str]:
-    command = ["uv", "tool", "install", "--force", *(["--refresh"] if refresh else []), "--python", PYTHON, core]
+    command = ["uv", "tool", "install", "--reinstall", *(["--refresh"] if refresh else []), "--python", PYTHON, core]
     for plugin in plugins:
         command += ["--with", plugin]
     return command
@@ -181,7 +230,7 @@ def test_without_the_latest_release_a_pinned_install_suggests_no_release(tmp_pat
 def test_a_main_install_is_updated_in_place_keeping_plugins(tmp_path):
     uv = FakeUv("0.5.0.dev3")
     service = UpdateService(installation(tmp_path, f'git = "{REPO}?rev=main"', uv), FakeReleases("0.4.0"))
-    uv.version = "0.5.0.dev7"  # what uv finds on main
+    uv.next_version = "0.5.0.dev7"  # what uv finds on main
     result = service.update(current="0.5.0.dev3", channel="main")
     assert uv.commands == [install_command(f"heinzel @ git+{REPO}@main", PLUGIN)]
     assert (result.message.splitlines()[0], result.updated, result.after, result.next) == (
@@ -232,16 +281,18 @@ def test_a_default_branch_or_index_install_is_reinstalled_asking_again_with_its_
 def test_an_upgrade_that_brings_a_newer_version_says_so(tmp_path):
     uv = FakeUv("0.2.0")
     service = UpdateService(installation(tmp_path, f'git = "{REPO}"', uv), FakeReleases())
-    uv.version = "0.3.0"  # what uv finds on the default branch
+    uv.next_version = "0.3.0"  # what uv finds on the default branch
     assert service.update(current="0.2.0").message.splitlines()[0] == "Updated hz 0.2.0 → 0.3.0."
 
 
 def test_source_reinstalls_from_there_keeping_plugins(tmp_path):
     uv = FakeUv("0.4.0")
     service = UpdateService(installation(tmp_path, f'git = "{REPO}?rev=main"', uv), FakeReleases())
-    result = service.update("/dist/heinzel.whl", current="0.4.0")
-    assert uv.commands == [install_command("/dist/heinzel.whl", PLUGIN)]
-    assert (result.message.splitlines()[0], result.updated) == ("Reinstalled hz 0.4.0 from /dist/heinzel.whl", True)
+    wheel = tmp_path / "heinzel-0.4.0-py3-none-any.whl"
+    wheel.touch()
+    result = service.update(str(wheel), current="0.4.0")
+    assert uv.commands == [install_command(f"heinzel @ {wheel.as_uri()}", PLUGIN)]
+    assert (result.message.splitlines()[0], result.updated) == (f"Reinstalled hz 0.4.0 from {wheel}", True)
 
 
 def test_a_plugin_that_does_not_allow_the_release_is_kept_and_hz_updates(tmp_path):
@@ -279,11 +330,12 @@ def test_an_index_plugin_is_kept_at_its_version_when_the_newer_one_blocks(tmp_pa
     uv.plugins, uv.available = {"heinzel-acme": "1.0.0"}, {"heinzel-acme": "2.0.0"}
     uv.failures = [BLOCKED]
     target = installation(tmp_path, f'git = "{REPO}?rev=v0.2.0"', uv)
-    (tmp_path / "uv-receipt.toml").write_text(
+    (target.prefix / "uv-receipt.toml").write_text(
         f'[tool]\nrequirements = [{{ name = "heinzel", git = "{REPO}?rev=v0.2.0" }},'
         ' { name = "heinzel-acme", specifier = ">=1" }]\n',
         encoding="utf-8",
     )
+    _bind_target(target)
     result = UpdateService(target, FakeReleases("0.4.0")).update(current="0.2.0")
     assert uv.commands[-1][-1] == "heinzel-acme==1.0.0"
     assert (result.plugins[0].status, result.plugins[0].after) == ("failed", "1.0.0")
@@ -300,16 +352,17 @@ def test_a_plugin_follows_a_newer_version_in_the_same_run_as_hz(tmp_path):
     assert "Plugin heinzel-acme: upgraded 1.0.0 → 1.2.0." in result.message
 
 
-def test_a_plugin_of_the_cores_repository_moves_to_the_cores_new_release(tmp_path):
+def test_plugin_revision_stays_independent_of_the_core_release(tmp_path):
     uv = FakeUv("0.2.0")
     target = installation(tmp_path, f'git = "{REPO}?rev=v0.2.0"', uv)
-    (tmp_path / "uv-receipt.toml").write_text(
+    (target.prefix / "uv-receipt.toml").write_text(
         f'[tool]\nrequirements = [{{ name = "heinzel", git = "{REPO}?rev=v0.2.0" }},'
         f' {{ name = "heinzel-clock", git = "{REPO}?subdirectory=plugins%2Fheinzel-clock&rev=v0.2.0" }}]\n',
         encoding="utf-8",
     )
+    _bind_target(target)
     UpdateService(target, FakeReleases("0.4.0")).update(current="0.2.0")
-    assert uv.commands[0][-1] == f"heinzel-clock @ git+{REPO}@v0.4.0#subdirectory=plugins/heinzel-clock"
+    assert uv.commands[0][-1] == f"heinzel-clock @ git+{REPO}@v0.2.0#subdirectory=plugins/heinzel-clock"
 
 
 def test_a_private_git_plugin_is_fetched_with_the_gh_login(tmp_path, monkeypatch):
@@ -325,11 +378,12 @@ def test_a_floating_plugin_is_asked_again_when_hz_is_up_to_date(tmp_path):
     uv = FakeUv("0.4.0")
     uv.available = {"heinzel-acme": "1.1.0"}
     target = installation(tmp_path, f'git = "{REPO}?rev=v0.4.0"', uv)
-    (tmp_path / "uv-receipt.toml").write_text(
+    (target.prefix / "uv-receipt.toml").write_text(
         f'[tool]\nrequirements = [{{ name = "heinzel", git = "{REPO}?rev=v0.4.0" }},'
         f' {{ name = "heinzel-acme", git = "{REPO}-acme?rev=main" }}]\n',
         encoding="utf-8",
     )
+    _bind_target(target)
     result = UpdateService(target, FakeReleases("0.4.0")).update(current="0.4.0")
     assert uv.commands == [install_command(f"heinzel @ git+{REPO}@v0.4.0", f"heinzel-acme @ git+{REPO}-acme@main")]
     assert (result.updated, result.plugins[0].status) == (True, "upgraded")
@@ -339,11 +393,12 @@ def test_a_floating_plugin_that_fails_never_touches_an_up_to_date_hz(tmp_path):
     uv = FakeUv("0.4.0")
     uv.failures = [BLOCKED, BLOCKED]
     target = installation(tmp_path, f'git = "{REPO}?rev=v0.4.0"', uv)
-    (tmp_path / "uv-receipt.toml").write_text(
+    (target.prefix / "uv-receipt.toml").write_text(
         f'[tool]\nrequirements = [{{ name = "heinzel", git = "{REPO}?rev=v0.4.0" }},'
         ' { name = "heinzel-acme", specifier = ">=1" }]\n',
         encoding="utf-8",
     )
+    _bind_target(target)
     result = UpdateService(target, FakeReleases("0.4.0")).update(current="0.4.0")
     assert (result.updated, result.after, result.plugins[0].status) == (False, "0.4.0", "failed")
 
@@ -372,11 +427,12 @@ def test_a_failure_that_is_no_conflict_leaves_the_plugins_alone(tmp_path):
 def test_a_branch_pinned_hz_is_not_moved_by_refreshing_its_plugins(tmp_path):
     uv = FakeUv("0.2.0")
     target = installation(tmp_path, f'git = "{REPO}?rev=feature"', uv)
-    (tmp_path / "uv-receipt.toml").write_text(
+    (target.prefix / "uv-receipt.toml").write_text(
         f'[tool]\nrequirements = [{{ name = "heinzel", git = "{REPO}?rev=feature" }},'
         ' { name = "heinzel-acme", specifier = ">=1" }]\n',
         encoding="utf-8",
     )
+    _bind_target(target)
     UpdateService(target, FakeReleases("0.4.0")).update(current="0.2.0")
     assert uv.commands == []
 
@@ -385,16 +441,17 @@ def test_a_git_plugin_is_kept_at_the_commit_it_has(tmp_path):
     uv = FakeUv("0.2.0")
     uv.failures = [BLOCKED]
     target = installation(tmp_path, f'git = "{REPO}?rev=v0.2.0"', uv)
-    (tmp_path / "uv-receipt.toml").write_text(
+    (target.prefix / "uv-receipt.toml").write_text(
         f'[tool]\nrequirements = [{{ name = "heinzel", git = "{REPO}?rev=v0.2.0" }},'
         f' {{ name = "heinzel-acme", git = "{REPO}-acme?rev=main" }}]\n',
         encoding="utf-8",
     )
+    _bind_target(target)
     uv.hz = (
         lambda *args: (  # type: ignore[method-assign]
             json.dumps([{"distribution": "heinzel-acme", "version": "1.0.0", "revision": "abc1234"}])
             if args[:3] == ("system", "plugin", "list")
-            else "hz 0.2.0\n"
+            else f"hz {uv.version}\n"
         )
     )
     target.hz = uv.hz  # type: ignore[method-assign]
@@ -415,8 +472,10 @@ def test_when_restoring_fails_too_the_error_gives_the_command(tmp_path):
     uv = FakeUv("0.2.0")
     uv.failures, uv.hz_starts = ["network down", "still down"], False
     service = UpdateService(installation(tmp_path, f'git = "{REPO}?rev=v0.2.0"', uv), FakeReleases("0.4.0"))
-    with pytest.raises(HeinzelError, match="hz may not start; restore it with: uv tool install --force"):
+    with pytest.raises(HeinzelError, match="hz may not start; restore it with: UV_TOOL_DIR=") as raised:
         service.update(current="0.2.0")
+    assert "UV_TOOL_BIN_DIR=" in str(raised.value)
+    assert "uv tool install --reinstall" in str(raised.value)
 
 
 def test_outside_a_uv_tool_environment_update_refuses(tmp_path):
@@ -484,3 +543,850 @@ def test_channel_release_on_a_release_install_is_the_plain_update(tmp_path):
     uv = FakeUv("0.4.0")
     service = UpdateService(installation(tmp_path, f'git = "{REPO}?rev=v0.4.0"', uv), FakeReleases("0.4.0"))
     assert service.update(current="0.4.0", channel="release").message == "hz 0.4.0 is up to date (releases)."
+
+
+def test_failed_update_restores_with_scoped_target_after_receipt_and_shim_are_removed(tmp_path):
+    class DestructiveFakeUv(FakeUv):
+        def __call__(self, command, environment=None):
+            if not self.commands:
+                (target.prefix / "uv-receipt.toml").unlink()
+                (target.prefix.parent.parent / "entrypoints" / "hz").unlink()
+                self.hz_starts = False
+            else:
+                (target.prefix / "uv-receipt.toml").write_text(receipt)
+                (target.prefix.parent.parent / "entrypoints" / "hz").symlink_to(target.prefix / "bin" / "hz")
+            return super().__call__(command, environment)
+
+    uv = DestructiveFakeUv("0.2.0")
+    uv.failures = ["network down"]
+    target = installation(tmp_path, f'git = "{REPO}?rev=v0.2.0"', uv)
+    receipt = (target.prefix / "uv-receipt.toml").read_text()
+    service = UpdateService(target, FakeReleases("0.4.0"))
+    with pytest.raises(HeinzelError, match="was restored, with every plugin"):
+        service.update(current="0.2.0")
+    assert len(uv.commands) == 2
+    assert all(env["UV_TOOL_DIR"] == str(target.prefix.parent) for env in uv.environments)
+    assert all(env["UV_TOOL_BIN_DIR"] == str(target.prefix.parent.parent / "entrypoints") for env in uv.environments)
+    (target.prefix / "uv-receipt.toml").unlink()
+    with pytest.raises(HeinzelError, match="Cannot verify the running uv tool"):
+        target.attempt(target.tool_install_command("heinzel", []), "later unrelated operation")
+
+
+@pytest.mark.parametrize("identical", [False, True])
+@pytest.mark.parametrize("plugin_refresh", [False, True])
+def test_failed_update_probes_only_an_identical_restored_generation(tmp_path, identical, plugin_refresh):
+    class ChangedFakeUv(FakeUv):
+        def __call__(self, command, environment=None):
+            (target.prefix / "bin/hz").write_text("changed" if not self.commands or not identical else "fixture")
+            return super().__call__(command, environment)
+
+    current = "0.4.0" if plugin_refresh else "0.2.0"
+    uv = ChangedFakeUv(current)
+    uv.failures = ["network down"]
+    target = installation(tmp_path, f'git = "{REPO}?rev=v{current}"', uv)
+    if plugin_refresh:
+        (target.prefix / "uv-receipt.toml").write_text(
+            f'[tool]\nrequirements = [{{ name = "heinzel", git = "{REPO}?rev=v{current}" }},'
+            ' { name = "heinzel-acme", specifier = ">=1" }]\n'
+        )
+        _bind_target(target)
+    probes = []
+
+    def probe(*args):
+        if uv.commands and args == ("--version",):
+            probes.append(args)
+        return uv.hz(*args)
+
+    target.hz = probe  # type: ignore[method-assign]
+    expected = "was restored" if identical else "restore it with"
+    service = UpdateService(target, FakeReleases("0.4.0"))
+    if plugin_refresh:
+        assert expected in service.update(current=current).message
+    else:
+        with pytest.raises(HeinzelError, match=expected):
+            service.update(current=current)
+    assert len(uv.commands) == 2
+    assert len(probes) == (1 if identical else 0)
+
+
+def test_failed_plugin_refresh_restores_removed_tool_in_same_scope(tmp_path):
+    class DestructiveFakeUv(FakeUv):
+        def __call__(self, command, environment=None):
+            if not self.commands:
+                (target.prefix / "uv-receipt.toml").unlink()
+                (target.prefix.parent.parent / "entrypoints" / "hz").unlink()
+                self.hz_starts = False
+            else:
+                (target.prefix / "uv-receipt.toml").write_text(receipt)
+                (target.prefix.parent.parent / "entrypoints" / "hz").symlink_to(target.prefix / "bin" / "hz")
+            return super().__call__(command, environment)
+
+    uv = DestructiveFakeUv("0.4.0")
+    uv.failures = ["network down"]
+    target = installation(tmp_path, f'git = "{REPO}?rev=v0.4.0"', uv)
+    (target.prefix / "uv-receipt.toml").write_text(
+        f'[tool]\nrequirements = [{{ name = "heinzel", git = "{REPO}?rev=v0.4.0" }},'
+        ' { name = "heinzel-acme", specifier = ">=1" }]\n',
+        encoding="utf-8",
+    )
+    _bind_target(target)
+    receipt = (target.prefix / "uv-receipt.toml").read_text()
+    result = UpdateService(target, FakeReleases("0.4.0")).update(current="0.4.0")
+    assert len(uv.commands) == 2
+    assert "was restored, with every plugin" in result.message
+    assert result.plugins[0].status == "failed"
+
+
+@pytest.mark.parametrize("plugin_refresh", [False, True])
+def test_private_git_recovery_reuses_original_helper_environment(tmp_path, monkeypatch, plugin_refresh):
+    monkeypatch.setattr("shutil.which", lambda name: "/fixture/gh" if name == "gh" else None)
+    monkeypatch.setenv("HZ_CREDENTIAL_EXAMPLE_TOKEN", "fictional-token")
+    uv = FakeUv("0.4.0" if plugin_refresh else "0.2.0")
+    uv.failures, uv.hz_starts = ["network down"], False
+    current = "0.4.0" if plugin_refresh else "0.2.0"
+    target = installation(tmp_path, f'git = "{REPO}?rev=v{current}"', uv)
+    if plugin_refresh:
+        (target.prefix / "uv-receipt.toml").write_text(
+            f'[tool]\nrequirements = [{{ name = "heinzel", git = "{REPO}?rev=v{current}" }},'
+            ' { name = "heinzel-acme", specifier = ">=1" }]\n',
+            encoding="utf-8",
+        )
+        _bind_target(target)
+    service = UpdateService(target, FakeReleases("0.4.0"))
+    if plugin_refresh:
+        assert "was restored" in service.update(current=current).message
+    else:
+        with pytest.raises(HeinzelError, match="was restored") as raised:
+            service.update(current=current)
+        assert "fictional-token" not in str(raised.value)
+    assert len(uv.environments) == 2
+    first, restore = uv.environments
+    assert first == restore
+    assert first["GIT_CONFIG_VALUE_0"] == "!/fixture/gh auth git-credential"
+    assert "HZ_CREDENTIAL_EXAMPLE_TOKEN" not in first
+
+
+def test_conflict_after_owned_shim_goes_dangling_restores_without_retrying_install(tmp_path):
+    class DestructiveFakeUv(FakeUv):
+        def __call__(self, command, environment=None):
+            if not self.commands:
+                (target.prefix / "bin" / "hz").unlink()
+                self.hz_starts = False
+            else:
+                (target.prefix / "bin" / "hz").write_text("fixture")
+            return super().__call__(command, environment)
+
+    uv = DestructiveFakeUv("0.2.0")
+    uv.failures = [BLOCKED]
+    target = installation(tmp_path, f'git = "{REPO}?rev=v0.2.0"', uv)
+    service = UpdateService(target, FakeReleases("0.4.0"))
+    with pytest.raises(HeinzelError, match="was restored, with every plugin"):
+        service.update(current="0.2.0")
+    assert len(uv.commands) == 2
+    assert uv.commands[1] == install_command(f"heinzel @ git+{REPO}@v0.2.0", PLUGIN, refresh=False)
+
+
+def test_removed_interpreter_after_failed_update_still_triggers_restore(tmp_path, monkeypatch):
+    class DestructiveFakeUv(FakeUv):
+        def __call__(self, command, environment=None):
+            if not self.commands:
+                assert executable.resolve().is_relative_to(tmp_path.resolve())
+                assert not executable.samefile(shared_interpreter)
+                assert not executable.samefile(shared_base_interpreter)
+                executable.unlink()
+            else:
+                executable.symlink_to(PYTHON)
+            return super().__call__(command, environment)
+
+    uv = DestructiveFakeUv("0.2.0")
+    uv.failures = ["fixture collision"]
+    target = installation(tmp_path, f'git = "{REPO}?rev=v0.2.0"', uv)
+    executable = target.prefix / "bin" / "python"
+    shared_interpreter = sys.executable
+    shared_base_interpreter = sys._base_executable
+    assert executable.resolve().is_relative_to(tmp_path.resolve())
+    assert not executable.samefile(shared_interpreter)
+    assert not executable.samefile(shared_base_interpreter)
+    executable.write_text("#!/bin/sh\nprintf 'hz 0.2.0\\n'\n", encoding="utf-8")
+    executable.chmod(0o700)
+    monkeypatch.setattr(sys, "executable", str(executable))
+    target.hz = Installation.hz.__get__(target)  # type: ignore[method-assign]
+    service = UpdateService(target, FakeReleases("0.4.0"))
+    with pytest.raises(HeinzelError, match="was restored, with every plugin"):
+        service.update(current="0.2.0")
+    assert len(uv.commands) == 2
+    assert executable.is_file()
+    assert uv.commands[1] == install_command(f"heinzel @ git+{REPO}@v0.2.0", PLUGIN, refresh=False)
+
+
+@pytest.mark.parametrize("wrong", ["version", "plugin_source"])
+def test_successful_update_rejects_wrong_metadata_before_starting_target(tmp_path, wrong):
+    from heinzel.kernel._installed_metadata import inspect_requirements
+
+    uv = FakeUv("0.2.0")
+    target = installation(tmp_path, f'git = "{REPO}?rev=v0.2.0"', uv)
+    site = target.prefix / "lib/python3.14/site-packages"
+    site.mkdir(parents=True)
+    for name, version, url, revision in [
+        ("heinzel", "0.3.0" if wrong == "version" else "0.4.0", REPO, "v0.4.0"),
+        ("heinzel-acme", "1.0.0", REPO + ("-other" if wrong == "plugin_source" else "-acme"), "v1.0.0"),
+    ]:
+        info = site / f"{name}-{version}.dist-info"
+        info.mkdir()
+        (info / "METADATA").write_text(f"Metadata-Version: 2.1\nName: {name}\nVersion: {version}\n")
+        (info / "direct_url.json").write_text(
+            json.dumps({"url": url, "vcs_info": {"vcs": "git", "requested_revision": revision, "commit_id": "a" * 40}})
+        )
+    target.verify_installed_requirements = lambda requirements, **kwargs: inspect_requirements(  # type: ignore[method-assign]
+        target.prefix,
+        requirements,
+        kwargs.get("expected_version"),
+        forbidden=kwargs.get("forbidden", ()),
+        constraints=kwargs.get("constraints", ()),
+    )
+    calls = []
+
+    def probe(*args):
+        if uv.commands:
+            calls.append(args)
+        return uv.hz(*args)
+
+    target.hz = probe  # type: ignore[method-assign]
+    with pytest.raises(HeinzelError, match="metadata does not match"):
+        UpdateService(target, FakeReleases("0.4.0")).update(current="0.2.0")
+    assert len(uv.commands) == 1
+    assert calls == []
+
+
+def test_successful_fallback_refuses_a_dropped_plugin_still_installed(tmp_path):
+    from heinzel.kernel._installed_metadata import inspect_requirements
+
+    uv = FakeUv("0.2.0")
+    uv.failures = [BLOCKED, BLOCKED]
+    target = installation(tmp_path, f'git = "{REPO}?rev=v0.2.0"', uv)
+    site = target.prefix / "lib/python3.14/site-packages"
+    for name, direct in [
+        ("heinzel", {"url": REPO, "vcs_info": {"vcs": "git", "requested_revision": "v0.4.0", "commit_id": "a" * 40}}),
+        ("heinzel-acme", None),
+    ]:
+        info = site / f"{name}-0.4.0.dist-info"
+        info.mkdir(parents=True)
+        (info / "METADATA").write_text(f"Metadata-Version: 2.1\nName: {name}\nVersion: 0.4.0\n")
+        if direct is not None:
+            (info / "direct_url.json").write_text(json.dumps(direct))
+    target.verify_installed_requirements = lambda requirements, **kwargs: inspect_requirements(  # type: ignore[method-assign]
+        target.prefix,
+        requirements,
+        kwargs.get("expected_version"),
+        forbidden=kwargs.get("forbidden", ()),
+        constraints=kwargs.get("constraints", ()),
+    )
+    probes = []
+
+    def probe(*args):
+        if uv.commands:
+            probes.append(args)
+        return uv.hz(*args)
+
+    target.hz = probe  # type: ignore[method-assign]
+    with pytest.raises(HeinzelError, match="metadata does not match"):
+        UpdateService(target, FakeReleases("0.4.0")).update(current="0.2.0")
+    assert len(uv.commands) == 3
+    assert probes == []
+
+
+def test_failed_update_with_missing_original_generation_never_probes_recovery(tmp_path, monkeypatch):
+    uv = FakeUv("0.2.0")
+    uv.failures = ["network down"]
+    target = installation(tmp_path, f'git = "{REPO}?rev=v0.2.0"', uv)
+    calls = []
+
+    def unavailable():
+        msg = "generation unavailable"
+        raise HeinzelError(msg)
+
+    def probe(*args):
+        if uv.commands:
+            calls.append(args)
+        return uv.hz(*args)
+
+    monkeypatch.setattr(target, "startup_fingerprint", unavailable)
+    target.hz = probe  # type: ignore[method-assign]
+    with pytest.raises(HeinzelError, match="restore it with"):
+        UpdateService(target, FakeReleases("0.4.0")).update(current="0.2.0")
+    assert len(uv.commands) == 2
+    assert calls == []
+
+
+class FakeMutationLifecycle:
+    def __init__(self, events, *, checkpoint_matched, active=True):
+        self.events = events
+        self.checkpoint_matched = checkpoint_matched
+        self.active = active
+        self.pending = False
+        self.complete = False
+        self.requested = False
+        self.aborted = False
+
+    def mutation(self, checkpoint, rollback_identity):
+        from contextlib import contextmanager
+
+        @contextmanager
+        def guard():
+            self.events.append("enter")
+            self.pending = True
+            assert checkpoint() is self.checkpoint_matched
+            self.original_identity = rollback_identity()
+            self.rollback_identity = rollback_identity
+            yield self
+            if self.aborted:
+                return
+            if not self.complete or not self.requested:
+                msg = "mutation is uncertain"
+                raise HeinzelError(msg)
+            self.pending = False
+            self.events.append("exit")
+
+        return guard()
+
+    def capture(self):
+        from heinzel.kernel import DaemonHandoverPlan
+
+        self.events.append("capture")
+        return DaemonHandoverPlan(self.active, "darwin", "unit" if self.active else None)
+
+    def verified_complete(self, expected):
+        assert expected == "a" * 64
+        self.events.append("verified")
+        self.complete = True
+
+    def abort_unchanged(self):
+        if self.rollback_identity() != self.original_identity:
+            msg = "installation identity changed"
+            raise HeinzelError(msg)
+        self.pending = False
+        self.aborted = True
+        self.events.append("abort")
+
+    def request(self, plan):
+        from heinzel.kernel import DaemonHandoverRequest
+
+        self.events.append("request")
+        self.requested = True
+        return DaemonHandoverRequest(requested=plan.active, reason="fake manager")
+
+
+def test_core_update_holds_lifecycle_from_before_uv_through_checkpoint_and_handover(tmp_path):
+    events = []
+
+    class TrackingUv(FakeUv):
+        def __call__(self, command, environment=None):
+            events.append("uv")
+            return super().__call__(command, environment)
+
+    uv = TrackingUv("0.2.0")
+    target = installation(tmp_path, f'git = "{REPO}?rev=v0.2.0"', uv)
+    target.startup_fingerprint = lambda: events.append("fingerprint") or "a" * 64  # type: ignore[method-assign]
+    target.startup_state_matches = lambda: True  # type: ignore[method-assign]
+    target.record_startup_state = lambda *, expected: events.append("checkpoint")  # type: ignore[method-assign]
+    target.verify_installed_requirements = lambda requirements, **kwargs: (  # type: ignore[method-assign]
+        events.append("metadata") or {"heinzel": "0.4.0", **uv.plugins}
+    )
+    lifecycle = FakeMutationLifecycle(events, checkpoint_matched=True)
+    result = UpdateService(target, FakeReleases("0.4.0"), lifecycle=lifecycle).update(current="0.2.0")
+    assert events.index("capture") < events.index("uv") < events.index("metadata") < events.index("checkpoint")
+    assert events.index("checkpoint") < events.index("verified") < events.index("request") < events.index("exit")
+    assert not lifecycle.pending
+    assert "fresh service tick is pending" in result.message
+
+
+def test_plugin_only_refresh_keeps_plain_sdk_unseeded_and_hands_over(tmp_path):
+    events = []
+
+    class TrackingUv(FakeUv):
+        def __call__(self, command, environment=None):
+            events.append("uv")
+            return super().__call__(command, environment)
+
+    uv = TrackingUv("0.4.0")
+    target = installation(tmp_path, f'git = "{REPO}?rev=v0.4.0"', uv)
+    (target.prefix / "uv-receipt.toml").write_text(
+        f'[tool]\nrequirements = [{{ name = "heinzel", git = "{REPO}?rev=v0.4.0" }},'
+        ' { name = "heinzel-acme", specifier = ">=1" }]\n'
+    )
+    _bind_target(target)
+    target.startup_fingerprint = lambda: events.append("fingerprint") or "a" * 64  # type: ignore[method-assign]
+    target.startup_state_matches = lambda: False  # type: ignore[method-assign]
+    target.record_startup_state = lambda *, expected: events.append("checkpoint")  # type: ignore[method-assign]
+    target.verify_installed_requirements = lambda requirements, **kwargs: (  # type: ignore[method-assign]
+        events.append("metadata") or {"heinzel": "0.4.0", **uv.plugins}
+    )
+    lifecycle = FakeMutationLifecycle(events, checkpoint_matched=False)
+    UpdateService(target, FakeReleases("0.4.0"), lifecycle=lifecycle).update(current="0.4.0")
+    assert events.index("capture") < events.index("uv") < events.index("metadata") < events.index("request")
+    assert "checkpoint" not in events
+    assert not lifecycle.pending
+
+
+def test_failed_unchanged_update_clears_its_pending_token(tmp_path):
+    uv = FakeUv("0.2.0")
+    uv.failures = ["network down"]
+    target = installation(tmp_path, f'git = "{REPO}?rev=v0.2.0"', uv)
+    target.startup_fingerprint = lambda: "a" * 64  # type: ignore[method-assign]
+    target.startup_state_matches = lambda: False  # type: ignore[method-assign]
+    lifecycle = FakeMutationLifecycle([], checkpoint_matched=False)
+    with pytest.raises(HeinzelError, match="Could not update"):
+        UpdateService(target, FakeReleases("0.4.0"), lifecycle=lifecycle).update(current="0.2.0")
+    assert not lifecycle.pending
+    assert lifecycle.aborted
+    assert not lifecycle.requested
+
+
+def test_required_lifecycle_unavailable_does_not_start_uv(tmp_path):
+    uv = FakeUv("0.2.0")
+    target = installation(tmp_path, f'git = "{REPO}?rev=v0.2.0"', uv)
+    service = UpdateService(target, FakeReleases("0.4.0"), require_lifecycle=True)
+    with pytest.raises(HeinzelError, match="lifecycle boundary is unavailable"):
+        service.update(current="0.2.0")
+    assert not uv.commands
+
+
+def test_plugin_inventory_mismatch_leaves_mutation_pending(tmp_path):
+    events = []
+    uv = FakeUv("0.2.0")
+    target = installation(tmp_path, f'git = "{REPO}?rev=v0.2.0"', uv)
+    target.startup_fingerprint = lambda: "a" * 64  # type: ignore[method-assign]
+    target.startup_state_matches = lambda: False  # type: ignore[method-assign]
+    target.verify_installed_requirements = lambda requirements, **kwargs: {  # type: ignore[method-assign]
+        "heinzel": "0.4.0",
+        "heinzel-acme": "9.0.0",
+    }
+    lifecycle = FakeMutationLifecycle(events, checkpoint_matched=False)
+    with pytest.raises(HeinzelError, match="plugin inventory does not match"):
+        UpdateService(target, FakeReleases("0.4.0"), lifecycle=lifecycle).update(current="0.2.0")
+    assert lifecycle.pending
+    assert not lifecycle.requested
+
+
+def test_builtin_update_factory_uses_registered_lifecycle(make_kernel, tmp_path):
+    from heinzel.kernel import DaemonInstallationLifecycle
+
+    events = []
+    uv = FakeUv("0.2.0")
+    target = installation(tmp_path, f'git = "{REPO}?rev=v0.2.0"', uv)
+    target.startup_fingerprint = lambda: "a" * 64  # type: ignore[method-assign]
+    target.startup_state_matches = lambda: False  # type: ignore[method-assign]
+    lifecycle = FakeMutationLifecycle(events, checkpoint_matched=False)
+    kernel = make_kernel(builtins=True)
+    kernel.bind(Installation, target)
+    kernel.bind(ReleaseSource, FakeReleases("0.4.0"))
+    kernel.bind(DaemonInstallationLifecycle, lifecycle)
+    kernel.resolve(UpdateService).update(current="0.2.0")
+    assert events == ["enter", "capture", "verified", "request", "exit"]
+    assert not lifecycle.pending
+
+
+def test_stale_selection_after_another_update_is_rejected_without_uv_or_plugin_loss(tmp_path):
+    events = []
+    uv = FakeUv("0.2.0")
+    target = installation(tmp_path, f'git = "{REPO}?rev=v0.2.0"', uv)
+    target.startup_fingerprint = lambda: "a" * 64  # type: ignore[method-assign]
+    target.startup_state_matches = lambda: False  # type: ignore[method-assign]
+
+    class OtherWriter(FakeMutationLifecycle):
+        def mutation(self, checkpoint, rollback_identity):
+            (target.prefix / "uv-receipt.toml").write_text(
+                f'[tool]\nrequirements = [{{ name = "heinzel", git = "{REPO}?rev=v0.2.0" }},'
+                f' {{ name = "heinzel-acme", git = "{REPO}-acme?rev=v1.0.0" }},'
+                ' { name = "heinzel-new", specifier = ">=1" }]\n'
+            )
+            _bind_target(target)
+            return super().mutation(checkpoint, rollback_identity)
+
+    lifecycle = OtherWriter(events, checkpoint_matched=False)
+    with pytest.raises(HeinzelError, match="requirements changed"):
+        UpdateService(target, FakeReleases("0.4.0"), lifecycle=lifecycle).update(current="0.2.0")
+    assert not uv.commands
+    assert "heinzel-new" in (target.prefix / "uv-receipt.toml").read_text()
+    assert lifecycle.aborted
+    assert not lifecycle.pending
+
+
+def test_failed_uv_with_changed_identity_stays_pending(tmp_path):
+    uv = FakeUv("0.2.0")
+    uv.failures = ["network down"]
+    target = installation(tmp_path, f'git = "{REPO}?rev=v0.2.0"', uv)
+    target.startup_fingerprint = lambda: "a" * 64  # type: ignore[method-assign]
+    target.startup_state_matches = lambda: False  # type: ignore[method-assign]
+    target.rollback_identity = lambda: ("b" if not uv.commands else "c") * 64  # type: ignore[method-assign]
+    lifecycle = FakeMutationLifecycle([], checkpoint_matched=False)
+    with pytest.raises(HeinzelError, match="Could not update"):
+        UpdateService(target, FakeReleases("0.4.0"), lifecycle=lifecycle).update(current="0.2.0")
+    assert lifecycle.pending
+    assert not lifecycle.aborted
+
+
+def test_stale_running_process_cannot_automatically_downgrade_newer_installed_core(tmp_path):
+    from heinzel.kernel._installed_metadata import inspect_requirements
+
+    uv = FakeUv("0.9.9")
+    target = installation(tmp_path, f'git = "{REPO}?rev=v0.9.9"', uv)
+    target.startup_fingerprint = lambda: "a" * 64  # type: ignore[method-assign]
+    target.installed_core_version = Installation.installed_core_version.__get__(target)  # type: ignore[method-assign]
+    target.verify_installed_requirements = lambda requirements, **kwargs: inspect_requirements(  # type: ignore[method-assign]
+        target.prefix, requirements, kwargs.get("expected_version")
+    )
+    info = target.prefix / "lib/python3.14/site-packages/heinzel-0.9.9.dist-info"
+    info.mkdir(parents=True)
+    (info / "METADATA").write_text("Metadata-Version: 2.1\nName: heinzel\nVersion: 0.9.9\n")
+    (info / "direct_url.json").write_text(
+        json.dumps({"url": REPO, "vcs_info": {"vcs": "git", "requested_revision": "v0.9.9", "commit_id": "a" * 40}})
+    )
+    releases = FakeReleases("0.9.8")
+    lifecycle = FakeMutationLifecycle([], checkpoint_matched=False)
+    with pytest.raises(HeinzelError, match=r"running hz 0\.9\.7.*installation is hz 0\.9\.9.*reload"):
+        UpdateService(target, releases, lifecycle=lifecycle).update(current="0.9.7")
+    assert not releases.asked
+    assert not uv.commands
+    assert not lifecycle.pending
+
+
+def test_same_receipt_new_generation_is_rejected_under_lifecycle_lock(tmp_path):
+    uv = FakeUv("0.2.0")
+    target = installation(tmp_path, f'git = "{REPO}?rev=v0.2.0"', uv)
+    generation = ["a" * 64]
+    target.startup_fingerprint = lambda: generation[0]  # type: ignore[method-assign]
+    target.startup_state_matches = lambda: False  # type: ignore[method-assign]
+
+    class OtherWriter(FakeMutationLifecycle):
+        def mutation(self, checkpoint, rollback_identity):
+            generation[0] = "b" * 64  # same receipt and version, different installed bytes
+            return super().mutation(checkpoint, rollback_identity)
+
+    lifecycle = OtherWriter([], checkpoint_matched=False)
+    with pytest.raises(HeinzelError, match="installation changed since this update was prepared"):
+        UpdateService(target, FakeReleases("0.4.0"), lifecycle=lifecycle).update(current="0.2.0")
+    assert not uv.commands
+    assert lifecycle.aborted
+    assert not lifecycle.pending
+
+
+def test_explicit_source_can_intentionally_move_to_older_release(tmp_path):
+    uv = FakeUv("0.9.9")
+    target = installation(tmp_path, f'git = "{REPO}?rev=v0.9.9"', uv)
+    target.startup_fingerprint = lambda: "a" * 64  # type: ignore[method-assign]
+    target.startup_state_matches = lambda: False  # type: ignore[method-assign]
+    lifecycle = FakeMutationLifecycle([], checkpoint_matched=False)
+    result = UpdateService(target, FakeReleases("0.9.8"), lifecycle=lifecycle).update(
+        source=f"git+{REPO}@v0.9.8", current="0.9.7"
+    )
+    assert result.before == "0.9.7"
+    assert result.after == "0.9.8"
+    assert "this process is running hz 0.9.7" in result.message
+    assert uv.commands
+
+
+def test_current_installed_release_is_not_moved_back_to_older_latest(tmp_path):
+    uv = FakeUv("0.9.9")
+    target = installation(tmp_path, f'git = "{REPO}?rev=v0.9.9"', uv)
+    target.startup_fingerprint = lambda: "a" * 64  # type: ignore[method-assign]
+    lifecycle = FakeMutationLifecycle([], checkpoint_matched=False)
+    result = UpdateService(target, FakeReleases("0.9.8"), lifecycle=lifecycle).update(current="0.9.9")
+    assert not result.updated
+    assert result.before == "0.9.9"
+    assert result.after == "0.9.9"
+    assert not uv.commands
+
+
+def test_index_floor_preserves_original_requirement_and_constraints_through_plugin_fallback(tmp_path):
+    uv = FakeUv("0.9.9")
+    uv.failures = [BLOCKED]
+    target = installation(tmp_path, 'specifier = ">=0.1,<2", extras = ["web"]', uv)
+    receipt = target.prefix / "uv-receipt.toml"
+    receipt.write_text(receipt.read_text() + 'constraints = [{ name = "other", specifier = "<3" }]\n')
+    target.startup_fingerprint = lambda: "a" * 64  # type: ignore[method-assign]
+    target.startup_state_matches = lambda: False  # type: ignore[method-assign]
+    lifecycle = FakeMutationLifecycle([], checkpoint_matched=False)
+    UpdateService(target, FakeReleases("1.0.0"), lifecycle=lifecycle).update(current="0.9.9")
+    assert len(uv.commands) == 2
+    assert all("heinzel[web]<2,>=0.1" in command for command in uv.commands)
+    assert uv.constraint_contents == ["other<3\nheinzel>=0.9.9\n"] * 2
+    assert not lifecycle.pending
+
+
+def test_update_validates_both_plugin_alternatives_without_treating_them_as_one_selection(tmp_path, monkeypatch):
+    uv = FakeUv("0.9.9")
+    target = installation(tmp_path, 'specifier = ">=0.1,<2"', uv)
+    target.startup_fingerprint = lambda: "a" * 64  # type: ignore[method-assign]
+    target.startup_state_matches = lambda: False  # type: ignore[method-assign]
+    lifecycle = FakeMutationLifecycle([], checkpoint_matched=False)
+    validate = target.validate_install_constraints
+    checked = []
+
+    def capture(requirements, constraints):
+        checked.append((requirements, constraints))
+        validate(requirements, constraints)
+
+    monkeypatch.setattr(target, "validate_install_constraints", capture)
+    UpdateService(target, FakeReleases("1.0.0"), lifecycle=lifecycle).update(current="0.9.9")
+    assert len(checked) == 3
+    assert all(len(requirements) == 1 and constraints == ("heinzel>=0.9.9",) for requirements, constraints in checked)
+    assert checked[0][0][0] == "heinzel<2,>=0.1"
+    assert all("heinzel-acme @ git+" in entry[0][0] for entry in checked[1:])
+    assert len(uv.commands) == 1
+    assert not lifecycle.pending
+
+
+def test_incompatible_keep_alternative_refuses_before_uv(tmp_path):
+    uv = FakeUv("0.9.9")
+    target = installation(tmp_path, 'specifier = ">=0.1,<2"', uv)
+    receipt = target.prefix / "uv-receipt.toml"
+    receipt.write_text(
+        receipt.read_text().replace(
+            f'{{ name = "heinzel-acme", git = "{REPO}-acme?rev=v1.0.0" }}',
+            '{ name = "heinzel-acme", specifier = ">=1.5" }',
+        )
+        + 'constraints = [{name="heinzel-acme", specifier=">=1.5"}]\n'
+    )
+    target.startup_fingerprint = lambda: "a" * 64  # type: ignore[method-assign]
+    target.startup_state_matches = lambda: False  # type: ignore[method-assign]
+    lifecycle = FakeMutationLifecycle([], checkpoint_matched=False)
+    with pytest.raises(HeinzelError, match="conflict with existing constraints"):
+        UpdateService(target, FakeReleases("1.0.0"), lifecycle=lifecycle).update(current="0.9.9")
+    assert not uv.commands
+    assert lifecycle.aborted
+    assert not lifecycle.pending
+
+
+@pytest.mark.parametrize("extra", ['{ name = "HEINZEL_ACME", specifier = "==1.0.0" }', '{ name = "heinzel" }'])
+def test_duplicate_selected_plugin_or_core_refuses_before_uv_and_aborts_unchanged(tmp_path, extra):
+    uv = FakeUv("0.9.9")
+    target = installation(tmp_path, 'specifier = ">=0.1,<2"', uv)
+    receipt = target.prefix / "uv-receipt.toml"
+    receipt.write_text(receipt.read_text().replace("\n]\n", f",\n{extra}\n]\n"))
+    original = receipt.read_bytes()
+    target.startup_fingerprint = lambda: "a" * 64  # type: ignore[method-assign]
+    target.startup_state_matches = lambda: False  # type: ignore[method-assign]
+    lifecycle = FakeMutationLifecycle([], checkpoint_matched=False)
+    with pytest.raises(HeinzelError, match="same distribution more than once"):
+        UpdateService(target, FakeReleases("1.0.0"), lifecycle=lifecycle).update(current="0.9.9")
+    assert not uv.commands
+    assert receipt.read_bytes() == original
+    assert lifecycle.aborted
+    assert not lifecycle.pending
+
+
+def test_floating_git_downgrade_is_refused_before_starting_changed_runtime(tmp_path):
+    uv = FakeUv("0.9.9")
+    uv.next_version = "0.9.8"
+    target = installation(tmp_path, f'git = "{REPO}"', uv)
+    target.startup_fingerprint = lambda: "a" * 64  # type: ignore[method-assign]
+    target.startup_state_matches = lambda: False  # type: ignore[method-assign]
+    lifecycle = FakeMutationLifecycle([], checkpoint_matched=False)
+    post_mutation_calls = []
+
+    def runtime(*args):
+        if uv.commands:
+            post_mutation_calls.append(args)
+        return uv.hz(*args)
+
+    target.hz = runtime  # type: ignore[method-assign]
+    with pytest.raises(HeinzelError, match="older than the installed core"):
+        UpdateService(target, FakeReleases("1.0.0"), lifecycle=lifecycle).update(current="0.9.9")
+    assert uv.commands
+    assert post_mutation_calls == []
+    assert lifecycle.pending
+    assert not lifecycle.requested
+
+
+def test_explicit_older_index_source_has_no_automatic_floor(tmp_path):
+    uv = FakeUv("0.9.9")
+    uv.next_version = "0.9.8"
+    target = installation(tmp_path, 'specifier = ">=0.1"', uv)
+    target.startup_fingerprint = lambda: "a" * 64  # type: ignore[method-assign]
+    target.startup_state_matches = lambda: False  # type: ignore[method-assign]
+    lifecycle = FakeMutationLifecycle([], checkpoint_matched=False)
+    result = UpdateService(target, FakeReleases("1.0.0"), lifecycle=lifecycle).update(
+        source="heinzel==0.9.8", current="0.9.9"
+    )
+    assert result.after == "0.9.8"
+    assert not uv.constraint_contents
+    assert not lifecycle.pending
+
+
+def test_index_resolver_downgrade_is_rejected_before_any_new_runtime_code(tmp_path):
+    uv = FakeUv("0.9.9")
+    uv.next_version = "0.9.8"  # adversarial fake ignores the resolver constraint
+    target = installation(tmp_path, 'specifier = ">=0.1"', uv)
+    target.startup_fingerprint = lambda: "a" * 64  # type: ignore[method-assign]
+    target.startup_state_matches = lambda: False  # type: ignore[method-assign]
+    lifecycle = FakeMutationLifecycle([], checkpoint_matched=False)
+    post_mutation_calls = []
+
+    def runtime(*args):
+        if uv.commands:
+            post_mutation_calls.append(args)
+        return uv.hz(*args)
+
+    target.hz = runtime  # type: ignore[method-assign]
+    with pytest.raises(HeinzelError, match="older than the installed core"):
+        UpdateService(target, FakeReleases("1.0.0"), lifecycle=lifecycle).update(current="0.9.9")
+    assert uv.constraint_contents == ["heinzel>=0.9.9\n"]
+    assert not post_mutation_calls
+    assert lifecycle.pending
+    assert not lifecycle.requested
+
+
+def test_exact_index_pin_keeps_its_requirement_without_added_floor(tmp_path):
+    uv = FakeUv("0.9.9")
+    target = installation(tmp_path, 'specifier = "==0.9.9"', uv)
+    target.startup_fingerprint = lambda: "a" * 64  # type: ignore[method-assign]
+    target.startup_state_matches = lambda: False  # type: ignore[method-assign]
+    lifecycle = FakeMutationLifecycle([], checkpoint_matched=False)
+    UpdateService(target, FakeReleases("1.0.0"), lifecycle=lifecycle).update(current="0.9.9")
+    assert "heinzel==0.9.9" in uv.commands[0]
+    assert not uv.constraint_contents
+
+
+def test_unsupported_prior_index_constraint_fails_before_uv_and_clears_unchanged_token(tmp_path):
+    uv = FakeUv("0.9.9")
+    target = installation(tmp_path, 'specifier = ">=0.1"', uv)
+    receipt = target.prefix / "uv-receipt.toml"
+    receipt.write_text(receipt.read_text() + 'constraints = [{ name = "other", mystery = "unknown" }]\n')
+    target.startup_fingerprint = lambda: "a" * 64  # type: ignore[method-assign]
+    target.startup_state_matches = lambda: False  # type: ignore[method-assign]
+    lifecycle = FakeMutationLifecycle([], checkpoint_matched=False)
+    with pytest.raises(HeinzelError, match="constraints cannot be safely preserved"):
+        UpdateService(target, FakeReleases("1.0.0"), lifecycle=lifecycle).update(current="0.9.9")
+    assert not uv.commands
+    assert lifecycle.aborted
+    assert not lifecycle.pending
+
+
+def test_explicit_source_preserves_existing_user_constraints_without_adding_floor(tmp_path):
+    uv = FakeUv("0.9.9")
+    uv.next_version = "0.9.8"
+    target = installation(tmp_path, 'specifier = ">=0.1"', uv)
+    receipt = target.prefix / "uv-receipt.toml"
+    receipt.write_text(receipt.read_text() + 'constraints = [{ name = "other", specifier = "<3" }]\n')
+    target.startup_fingerprint = lambda: "a" * 64  # type: ignore[method-assign]
+    target.startup_state_matches = lambda: False  # type: ignore[method-assign]
+    lifecycle = FakeMutationLifecycle([], checkpoint_matched=False)
+    result = UpdateService(target, FakeReleases("1.0.0"), lifecycle=lifecycle).update(
+        source="heinzel==0.9.8", current="0.9.9"
+    )
+    assert result.after == "0.9.8"
+    assert uv.constraint_contents == ["other<3\n"]
+
+
+def test_explicit_source_conflicting_with_prior_floor_reports_manual_choice(tmp_path):
+    uv = FakeUv("0.9.9")
+    uv.failures = [BLOCKED, BLOCKED, BLOCKED]
+    target = installation(tmp_path, 'specifier = ">=0.1"', uv)
+    receipt = target.prefix / "uv-receipt.toml"
+    receipt.write_text(receipt.read_text() + 'constraints = [{ name = "heinzel", specifier = ">=0.9.9" }]\n')
+    target.startup_fingerprint = lambda: "a" * 64  # type: ignore[method-assign]
+    target.startup_state_matches = lambda: False  # type: ignore[method-assign]
+    lifecycle = FakeMutationLifecycle([], checkpoint_matched=False)
+    with pytest.raises(HeinzelError, match=r"Inspect existing constraints.*explicit uv command"):
+        UpdateService(target, FakeReleases("1.0.0"), lifecycle=lifecycle).update(
+            source="heinzel==0.9.8", current="0.9.9"
+        )
+    assert not uv.commands
+    assert not uv.constraint_contents
+    assert not lifecycle.pending
+
+
+def test_initial_version_rejects_generation_change_during_inspection(tmp_path):
+    uv = FakeUv("0.9.7")
+    target = installation(tmp_path, 'specifier = ">=0.9.0"', uv)
+    target.installed_core_version = Installation.installed_core_version.__get__(target)  # type: ignore[method-assign]
+    info = target.prefix / "lib/python3.14/site-packages/heinzel-0.9.7.dist-info"
+    info.mkdir(parents=True)
+    (info / "METADATA").write_text("Metadata-Version: 2.1\nName: heinzel\nVersion: 0.9.7\n")
+    (info / "direct_url.json").write_text(json.dumps({"url": "file:///tmp/heinzel.whl", "archive_info": {}}))
+    fingerprints = iter(["a" * 64, "b" * 64])
+    target.startup_fingerprint = lambda: next(fingerprints)  # type: ignore[method-assign]
+    with pytest.raises(HeinzelError, match="changed during version inspection"):
+        target.installed_core_version()
+    assert not uv.commands
+
+
+@pytest.mark.parametrize("wrong", ["none", "source", "hash"])
+def test_index_update_uses_pre_uv_direct_constraint_before_runtime(tmp_path, wrong):
+    from heinzel.kernel._installed_metadata import inspect_requirements
+
+    uv = FakeUv("0.9.6")
+    uv.next_version = "0.9.7"
+    target = installation(tmp_path, 'specifier = ">=0.9"', uv)
+    target.startup_fingerprint = lambda: "a" * 64  # type: ignore[method-assign]
+    receipt = target.prefix / "uv-receipt.toml"
+    wheel = (tmp_path / "heinzel-0.9.7-py3-none-any.whl").as_uri()
+    digest = "a" * 64
+    receipt.write_text(receipt.read_text() + f'constraints = [{{name="heinzel", url="{wheel}#sha256={digest}"}}]\n')
+    site = target.prefix / "lib/python3.14/site-packages"
+    for name, version, direct in [
+        (
+            "heinzel",
+            "0.9.7",
+            {
+                "url": wheel + (".different" if wrong == "source" else ""),
+                "archive_info": {"hashes": {"sha256": "b" * 64 if wrong == "hash" else digest}},
+            },
+        ),
+        (
+            "heinzel-acme",
+            "1.0.0",
+            {"url": REPO + "-acme", "vcs_info": {"vcs": "git", "requested_revision": "v1.0.0", "commit_id": "a" * 40}},
+        ),
+    ]:
+        info = site / f"{name}-{version}.dist-info"
+        info.mkdir(parents=True)
+        (info / "METADATA").write_text(f"Metadata-Version: 2.1\nName: {name}\nVersion: {version}\n")
+        (info / "direct_url.json").write_text(json.dumps(direct))
+    target.verify_installed_requirements = lambda requirements, **kwargs: inspect_requirements(  # type: ignore[method-assign]
+        target.prefix,
+        requirements,
+        kwargs.get("expected_version"),
+        forbidden=kwargs.get("forbidden", ()),
+        constraints=kwargs.get("constraints", ()),
+    )
+    probes = []
+
+    def runtime(*args):
+        if uv.commands:
+            probes.append(args)
+        return uv.hz(*args)
+
+    target.hz = runtime  # type: ignore[method-assign]
+    if wrong == "none":
+        original_receipt = receipt.read_text()
+
+        def changed_receipt_after_uv(command, environment):
+            result = uv(command, environment)
+            receipt.write_text(original_receipt.replace(wheel, wheel + ".different"))
+            return result
+
+        target._runner = changed_receipt_after_uv
+        result = UpdateService(target, FakeReleases("1.0.0")).update(current="0.9.6")
+        assert result.after == "0.9.7"
+        assert probes
+    else:
+        with pytest.raises(HeinzelError, match="metadata does not match"):
+            UpdateService(target, FakeReleases("1.0.0")).update(current="0.9.6")
+        assert probes == []
+    assert len(uv.commands) == 1
+    assert wheel in uv.constraint_contents[0]
+
+
+def test_conflicting_direct_source_is_refused_before_uv(tmp_path):
+    uv = FakeUv("0.9.6")
+    target = installation(tmp_path, 'specifier = ">=0.9"', uv)
+    receipt = target.prefix / "uv-receipt.toml"
+    wheel = tmp_path / "heinzel-0.9.7-py3-none-any.whl"
+    other = tmp_path / "heinzel-0.9.8-py3-none-any.whl"
+    other.touch()
+    receipt.write_text(receipt.read_text() + f'constraints = [{{name="heinzel", url="{wheel.as_uri()}"}}]\n')
+    with pytest.raises(HeinzelError, match="conflict with existing constraints"):
+        UpdateService(target, FakeReleases("1.0.0")).update(source=str(other), current="0.9.6")
+    assert not uv.commands

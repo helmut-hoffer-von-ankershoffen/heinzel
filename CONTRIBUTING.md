@@ -137,7 +137,7 @@ Company-, team- or site-specific features belong in a plugin, not in the core ([
 `uv run hz system plugin new ../heinzel-<name>` scaffolds one with the same tooling, hooks, CI and agent setup
 (every plugin is named `heinzel-<name>`, [ADR 0025](docs/adr/0025-plugin-distributions-are-named-heinzel-name.md));
 inside it, `make setup` works as here and `make update-template` keeps it current. A small complete plugin to copy
-from: [plugins/heinzel-clock](plugins/heinzel-clock). Operations, modules, settings and services: [README
+from: [plugins/heinzel-clock](https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/tree/main/plugins/heinzel-clock). Operations, modules, settings and services: [README
 Extend](README.md#extend) and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md); with Claude Code, the skills
 `add-module` and `add-operation`.
 
@@ -230,7 +230,7 @@ release with the changelog section as notes.
 - A ruleset on `main`: pull requests only (squash), required status check `CI OK` on an up-to-date branch, linear
   history, resolved review threads, no force pushes or deletions. Version tags are created by the Release tag
   workflow; Publish refuses a tag that doesn't match the project version.
-- Merges: squash only, commit title = pull request title, delete branches after merge, auto-merge allowed.
+- Merges: squash only, commit title = pull request title, delete branches after merge; review and current-head checks precede merging.
 - Actions: workflow permissions read-only by default, "Allow GitHub Actions to create and approve pull requests" on.
 - Security: private vulnerability reporting, secret scanning with push protection, Dependabot alerts and updates.
 - Confidentiality: secret `CONFIDENTIAL_TERMS` for Actions and for Dependabot (its pull requests only see

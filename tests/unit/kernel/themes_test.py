@@ -36,6 +36,12 @@ pytestmark = pytest.mark.unit
 COLOURS = DEFAULT_THEME.light.model_dump(exclude_none=True)
 
 
+@pytest.mark.parametrize("priority", [True, "100", -1, 1001])
+def test_theme_default_preferences_are_bounded_strict_integers(priority):
+    with pytest.raises(ValidationError, match="default_priority"):
+        Theme.model_validate(DEFAULT_THEME.model_dump() | {"name": "harbor", "default_priority": priority})
+
+
 def theme(**overrides: object) -> dict[str, object]:
     data: dict[str, object] = DEFAULT_THEME.model_dump() | {"name": "acme", "title": "Acme"}
     return data | overrides
@@ -1000,6 +1006,7 @@ def test_contrast_is_the_wcag_ratio():
     [
         ({"foreground": "#bbbbbb"}, "light: foreground on background"),
         ({"muted_foreground": "#cccccc"}, "light: muted_foreground on background"),
+        ({"primary_foreground": "#b4532f"}, "light: primary_foreground on primary"),
         ({"card": "#555555"}, "light: foreground on card"),
         ({"main_tint": "#333333"}, "light: foreground on main_tint"),
         (
@@ -1145,3 +1152,13 @@ def test_avatar_layers_cannot_bypass_reduced_motion_with_svg_or_css_animation(tm
     assert offered.avatar_urls() == {}
     with pytest.raises(ValueError, match=r"static SVG|presentation attributes"):
         ThemeLet(name="acme", theme=value, directory=tmp_path)
+
+
+def test_default_primary_buttons_have_readable_text_in_both_modes():
+    for colours in (DEFAULT_THEME.light, DEFAULT_THEME.dark):
+        assert themes.contrast(colours.primary_foreground, colours.primary) >= themes.MIN_CONTRAST
+
+
+def test_primary_button_contrast_is_checked_for_dark_variants():
+    with pytest.raises(ValidationError, match=re.escape("variant.0.dark: primary_foreground on primary")):
+        Theme.model_validate(theme(variant=[variant(dark={"primary_foreground": "#d97757"})]))

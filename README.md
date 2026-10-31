@@ -1,4 +1,4 @@
-# 🧝 Heinzelmännchen
+# Heinzelmännchen
 
 <!-- badges:start -->
 [![CI](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/actions/workflows/ci.yml/badge.svg)](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/actions/workflows/ci.yml)
@@ -12,6 +12,8 @@
 [![Tooling: Ruff + uv](https://img.shields.io/badge/tooling-Ruff%20%2B%20uv-261230?logo=ruff&logoColor=d7ff64)](https://astral.sh)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 <!-- badges:end -->
+
+[**Install & explore →**](https://helmut.hoffer-von-ankershoffen.me/heinzel/) · [Plugin catalog](https://helmut.hoffer-von-ankershoffen.me/heinzel/CATALOG/) · [Build a plugin](docs/PLUGIN_AUTHORING.md)
 
 <p align="center">
   <picture>
@@ -66,17 +68,45 @@ installs hz, creates the team repository, gets the first weekly report drafted a
 
 ## Install
 
-You need [uv](https://docs.astral.sh/uv/) (`brew install uv`). Then:
+Supported on **macOS and Linux**. Windows may work, but is not supported.
+If you already have [uv](https://docs.astral.sh/uv/), run:
 
+<!-- install:start -->
 <!-- docs-test -->
-```bash
-uv tool install heinzel
+```sh
+uvx heinzel@latest
 ```
+<!-- install:end -->
 
-Install a specific release with `uv tool install heinzel==X.Y.Z`; `hz system update` then moves to the latest PyPI
+**Need uv installed for you?** Use the guided installer instead:
+
+<!-- install-script:start -->
+```sh
+curl -LsSf https://helmut.hoffer-von-ankershoffen.me/heinzel/install.sh | sh
+```
+<!-- install-script:end -->
+
+It reuses uv when available, otherwise runs [Astral's official installer](https://docs.astral.sh/uv/getting-started/installation/).
+It then runs the same app launcher. No administrator access or separate Python installation is needed.
+You can [inspect the script](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/blob/main/docs/install.sh) first.
+
+The first run installs the verified standard app with all default plugins and opens the workspace.
+Later runs open the installed app. Ctrl-C stops the foreground session; background operation stays optional.
+The fresh standard-app installation requires a uv-managed Python: it overrides uv's configured Python preference
+and ignores `UV_PYTHON` for that installation step. Remove system-only `UV_NO_MANAGED_PYTHON` or
+`UV_PYTHON_PREFERENCE` environment settings before installing. If Python downloads are disabled, first install a
+compatible uv-managed Python. Refreshes keep the app's verified existing interpreter.
+On Linux, standard installation needs an accessible systemd user manager in your user session.
+For a minimal core with no plugins use
+`uv tool install heinzel`. The installer selects the newest published standard app and verifies its artifacts;
+`hz system update` then moves core to the latest PyPI
 release in place, keeping plugins (`--source <spec>` moves to another source or ref). It follows releases
 (`--channel main` or setting `update_channel` for the newest commit of `main`); pinned to another branch or a commit,
-it says which `--source` moves it. Shell completion: `hz --install-completion`.
+it says which `--source` moves it. Updates and plugin changes verify the current uv receipt and its linked entrypoints
+before selecting the tool and executable directories. If entrypoints are copied, missing or cannot be verified, use
+uv directly with the intended tool and executable directories explicitly selected. An unresolved symlink in the
+executable directory stops these changes until it is repaired; recovery may reuse an unchanged link verified for the
+original tool. This preflight cannot prevent another process from changing the directory between the check and uv's write. Shell completion: `hz --install-completion`.
 
 **From Claude Code**, add the plugin and let `/hz-init` do everything — install, plugins, configuration, agent
 skills:
@@ -93,6 +123,7 @@ Other agents: `hz system agent install` copies the skills into the directories s
 
 <!-- docs-test -->
 ```bash
+hz system daemon uninstall            # remove the background service, if installed
 hz system agent uninstall             # remove the skills from your agents
 uv tool uninstall heinzel      # remove Heinzelmännchen and its plugins
 ```
@@ -100,6 +131,10 @@ uv tool uninstall heinzel      # remove Heinzelmännchen and its plugins
 Your configuration files stay; `hz system config show` lists them before you uninstall.
 
 ## Use
+
+`hz --command-tree` prints every enabled command, argument, option and operation input/output schema as JSON,
+including expert commands and plugin commands. It runs no operation and leaves your expert-mode setting unchanged.
+The [CLI reference](docs/CLI_REFERENCE.md) is generated from the same executable command tree; CI checks for drift.
 
 <img src="docs/assets/terminal-art.png" alt="A terminal: the command hz prints a pixel-art Heinzelmännchen in a red hat beside the name, version and tagline; after adding the clock plugin, a small one marks the done line" width="560">
 
@@ -119,8 +154,6 @@ hz system config show          # configuration files, settings in effect, their 
 hz system config set hz.log_level INFO
 hz system release              # is there a newer release? (asks GitHub now; hz checks hourly on its own)
 hz system update               # update, keeping plugins
-hz system plugin add clock --confirm     # a first-party plugin
-hz clock                       # its command: the time for everyone on the team
 hz system agent install               # install the skills for coding agents
 ```
 
@@ -175,10 +208,6 @@ rights; `hz system daemon pause` and `uninstall` stop them (see [SECURITY.md](SE
 <!-- modules:start -->
 - [`ai`](docs/MODULES.md#ai) — How hz reaches AI, and what it spends: tokens and cost per run.
 - [`ai.access`](docs/MODULES.md#aiaccess) — Pick how hz reaches AI: Claude Code, your company's gateway, or an option a plugin adds.
-- [`atlassian`](docs/MODULES.md#atlassian) — Read Jira issues and Confluence pages through acli: the tracker and documents capabilities. *First-party plugin: `hz system plugin add atlassian --confirm`.*
-- [`clock`](docs/MODULES.md#clock) — World clock: what time it is for everyone on the team. *First-party plugin: `hz system plugin add clock --confirm`.*
-- [`github`](docs/MODULES.md#github) — Read pull requests and issues from GitHub: the code-host and tracker capabilities. *First-party plugin: `hz system plugin add github --confirm`.*
-- [`google`](docs/MODULES.md#google) — Google Docs, Sheets, Drive, Calendar and Gmail: the documents, calendar and mail capabilities. *First-party plugin: `hz system plugin add google --confirm`.*
 - [`graph`](docs/MODULES.md#graph) — Are your team's promises kept? Artifacts and Heinzelmännchen, and where the flow waits.
 - [`heinzel`](docs/MODULES.md#heinzel) — Your Heinzelmännchen: durable agents that keep your team's documents true.
 - [`org`](docs/MODULES.md#org) — Your profile, and the team, org and company you work with.
@@ -199,46 +228,49 @@ rights; `hz system daemon pause` and `uninstall` stop them (see [SECURITY.md](SE
 - [`system.notify`](docs/MODULES.md#systemnotify) — Pop up what deserves your attention: in the web app while it is open, else natively.
 - [`system.plugin`](docs/MODULES.md#systemplugin) — Find, add, remove, enable, disable, list and scaffold plugins.
 - [`system.plugin.docs`](docs/MODULES.md#systemplugindocs) — Document installed plugins: what each brings, as a model and as Markdown pages.
-- [`system.resource`](docs/MODULES.md#systemresource) — Show this computer's CPU, memory and load.
 - [`system.runner`](docs/MODULES.md#systemrunner) — Run bounded agent sessions with Claude Code or a configured command.
 - [`system.runner.chat`](docs/MODULES.md#systemrunnerchat) — Chat with the agent runner about where you are; it acts through hz once you confirm.
 - [`system.skill`](docs/MODULES.md#systemskill) — List the skills plugins ship for AI, and hand chosen ones to Claude Code.
-- [`system.sound`](docs/MODULES.md#systemsound) — Pick the web app's soundscape: off, a built-in one or one a plugin offers.
+- [`system.sound`](docs/MODULES.md#systemsound) — Pick the web app's soundscape: off or one an installed plugin offers.
 - [`system.state`](docs/MODULES.md#systemstate) — Note how hz is used on this machine and push it to your own state repository.
 - [`system.theme`](docs/MODULES.md#systemtheme) — Pick how the web app looks: the built-in theme or one a plugin offers.
 - [`system.ui`](docs/MODULES.md#systemui) — List what modules add to the web app: status items, header actions and Today widgets.
-- [`tailscale`](docs/MODULES.md#tailscale) — Private web sharing through Tailscale Serve. *First-party plugin: `hz system plugin add tailscale --confirm`.*
 - [`team`](docs/MODULES.md#team) — Your team's repository: create one (`hz team new`), join one by its URL (`hz team join`), add people to it.
-- [`zoom`](docs/MODULES.md#zoom) — Read meetings from Zoom's meeting-summary emails: the meetings capability. *First-party plugin: `hz system plugin add zoom --confirm`.*
 <!-- modules:end -->
 
 Details for each, in every head: [docs/MODULES.md](docs/MODULES.md). Plugins add their own modules.
 
 ### First-party plugins
 
-Maintained and released with the core, from [plugins/](plugins), at the same version; none is installed by default,
-so you only get the integrations you use. `hz system plugin add <name>` shows the one matching your `hz` and `--confirm` installs it, and
-`hz system plugin search` lists them first.
+Maintained in [heinzel-plugins](https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/tree/main/plugins),
+with independent versions, checks and releases. The standard installation includes Clock, Resource, Tailscale and
+the Heinzelmännchen theme. Sharing remains off until explicitly configured, and sound starts only after Play.
+A minimal core installation includes no plugins.
+`hz system plugin add <name>` shows the compatible distribution and `--confirm` installs it;
+`hz system plugin search` discovers the catalog from repository metadata.
 
 | Plugin | What it does | Install |
 | --- | --- | --- |
-| [heinzel-clock](plugins/heinzel-clock) | What time it is for everyone on the team | `hz system plugin add clock --confirm` |
-| [heinzel-github](plugins/heinzel-github) | Pull requests and issues from GitHub: the `code-host` and `tracker` capabilities | `hz system plugin add github --confirm` |
-| [heinzel-atlassian](plugins/heinzel-atlassian) | Jira issues and Confluence pages: the `tracker` and `documents` capabilities | `hz system plugin add atlassian --confirm` |
-| [heinzel-google](plugins/heinzel-google) | Google Docs, Sheets, Drive, Calendar and Gmail through the Google Workspace CLI: the `documents`, `calendar` and `mail` capabilities | `hz system plugin add google --confirm` |
-| [heinzel-zoom](plugins/heinzel-zoom) | Meetings from Zoom's meeting-summary emails, read through the bound `mail` adapter: the `meetings` capability | `hz system plugin add zoom --confirm` |
+| [heinzel-clock](https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/tree/main/plugins/heinzel-clock) | What time it is for everyone on the team | `hz system plugin add clock --confirm` |
+| [heinzel-resource](https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/tree/main/plugins/heinzel-resource) | CPU, memory and load meters and a Today widget | `hz system plugin add resource --confirm` |
+| [heinzel-tailscale](https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/tree/main/plugins/heinzel-tailscale) | Opt-in private sharing over Tailscale | `hz system plugin add tailscale --confirm` |
+| [heinzel-theme](https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/tree/main/plugins/heinzel-theme) | Heinzelmännchen theme and its three soundscapes | `hz system plugin add theme --confirm` |
+| [heinzel-github](https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/tree/main/plugins/heinzel-github) | Pull requests and issues from GitHub: the `code-host` and `tracker` capabilities | `hz system plugin add github --confirm` |
+| [heinzel-atlassian](https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/tree/main/plugins/heinzel-atlassian) | Jira issues and Confluence pages: the `tracker` and `documents` capabilities | `hz system plugin add atlassian --confirm` |
+| [heinzel-google](https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/tree/main/plugins/heinzel-google) | Google Docs, Sheets, Drive, Calendar and Gmail through the Google Workspace CLI: the `documents`, `calendar` and `mail` capabilities | `hz system plugin add google --confirm` |
+| [heinzel-zoom](https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/tree/main/plugins/heinzel-zoom) | Meetings from Zoom's meeting-summary emails, read through the bound `mail` adapter: the `meetings` capability | `hz system plugin add zoom --confirm` |
 
 Slack adapters are planned as first-party plugins too.
 
 ### Community plugins
 
-Plugins useful to many but not to everyone live in [heinzel-contrib](https://github.com/helmut-hoffer-von-ankershoffen/heinzel-contrib), one distribution per plugin in
-`plugins/heinzel-<name>/`, built to the core's standards and tested against it:
+Weather and the Example reference plugin have moved from heinzel-contrib to heinzel-plugins. Each is independently
+tested against a built core artifact:
 
 | Plugin | What it does | Install |
 | --- | --- | --- |
-| [heinzel-weather](https://github.com/helmut-hoffer-von-ankershoffen/heinzel-contrib/tree/main/plugins/heinzel-weather) | Weather from Open-Meteo, with no key: footer item, page, Today widget, notices and a dressed-for-the-weather avatar | `hz system plugin add "heinzel-weather @ git+https://github.com/helmut-hoffer-von-ankershoffen/heinzel-contrib#subdirectory=plugins/heinzel-weather" --confirm` |
-| [heinzel-example](https://github.com/helmut-hoffer-von-ankershoffen/heinzel-contrib/tree/main/plugins/heinzel-example) | How a plugin is built: the template's example | `hz system plugin add "heinzel-example @ git+https://github.com/helmut-hoffer-von-ankershoffen/heinzel-contrib#subdirectory=plugins/heinzel-example" --confirm` |
+| [heinzel-weather](https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/tree/main/plugins/heinzel-weather) | Weather from Open-Meteo, with no key: footer item, page, Today widget, notices and a dressed-for-the-weather avatar | `hz system plugin add weather --confirm` |
+| [heinzel-example](https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/tree/main/plugins/heinzel-example) | How a plugin is built: the template's example | `hz system plugin add example --confirm` |
 
 Company plugins live in their own `heinzel-*` repositories, scaffolded with `hz system plugin new`.
 
@@ -277,9 +309,9 @@ Joining a team is one line, the same for everyone, posted in its chat. It finds 
 `gws` logins, joins the team and sets up what is missing (`hz join` prints the line for the next person):
 
 ```bash
-uvx --from heinzel heinzel join <team repository>
+uvx heinzel@latest join <team repository>
 # from a coding agent, without a terminal:
-uvx --from heinzel heinzel join <team repository> \
+uvx heinzel@latest join <team repository> \
   --role engineer --yes --json
 ```
 
@@ -325,8 +357,10 @@ and runs as `hz setup greet` and as part of `hz setup`
 
 That is `hz greet hello --name Ada` in the CLI, with `--json`, help text, argument validation and
 `HZ_GREET__GREETING` — and the same operation is an MCP tool and a REST endpoint. Scaffold a plugin repository
-with all the tooling, CI/CD and agent setup: `hz system plugin new ../heinzel-mine`. A complete plugin to copy from:
-[plugins/heinzel-clock](plugins/heinzel-clock) (one module, settings, an operation, a health check and a setup step). See
+with a minimal operation, behavior test and owning delivery commands: `hz system plugin new ../heinzel-mine`.
+The [author guide](docs/PLUGIN_AUTHORING.md) covers separate public/private repositories, dependencies, testing and
+publishing; `--preset contributions` adds the complete UI and notification example. A complete plugin to learn from:
+[plugins/heinzel-clock](https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/tree/main/plugins/heinzel-clock) (one module, settings, an operation, a health check and a setup step). See
 [ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Standing on the shoulders of giants

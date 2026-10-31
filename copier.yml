@@ -2,7 +2,7 @@
 #   uvx copier copy gh:helmut-hoffer-von-ankershoffen/heinzel <dir>
 # Update a plugin to the latest Heinzelmännchen standards with `copier update`. See docs/adr/0007-plugins-scaffolded-with-copier.md.
 
-_subdirectory: template
+_subdirectory: "[[ 'template' if preset == 'governed' else 'starter' ]]"
 _templates_suffix: .jinja
 _answers_file: .copier-answers.yml
 # GitHub Actions uses ${{ }}, so the template uses [[ ]] for variables and [% %] for blocks.
@@ -16,9 +16,27 @@ _envops:
   keep_trailing_newline: true
 _message_after_copy: |
   Your Heinzelmännchen plugin is ready in [[ _copier_conf.dst_path ]]. Next:
+  [% if preset != 'governed' %]
+    cd [[ _copier_conf.dst_path ]] && make setup
+    make check-fast
+    make preview
+  [% else %]
     cd [[ _copier_conf.dst_path ]] && git init -b main && make setup && make fix && make check
-    hz system plugin develop .
-    hz [[ plugin_name ]] --help
+    make preview
+  [% endif %]
+
+preset:
+  type: str
+  default: minimal
+  choices: [minimal, contributions, governed]
+  when: false
+
+layout:
+  type: str
+  default: standalone
+  choices: [standalone, collection]
+  when: false
+  validator: "[% if layout == 'collection' and preset == 'governed' %]Collection projects reuse repository governance; use preset=contributions.[% endif %]"
 
 plugin_name:
   type: str
@@ -36,23 +54,31 @@ project_name:
   type: str
   help: Distribution and repository name
   default: heinzel-[[ plugin_name ]]
+  when: false
 
 package_name:
   type: str
   help: Python package name
   default: heinzel_[[ plugin_name | replace('-', '_') ]]
+  when: false
 
 author_name:
   type: str
   help: Your name
+  default: Plugin authors
+  when: "[[ preset == 'contributions' ]]"
 
 author_email:
   type: str
   help: Your email address
+  default: author@example.test
+  when: "[[ preset == 'contributions' ]]"
 
 github_owner:
   type: str
   help: GitHub user or organization that will host the repository
+  default: your-github-account
+  when: "[[ preset == 'contributions' ]]"
 
 class_prefix:
   type: str
@@ -66,5 +92,10 @@ heinzel_owner:
 
 heinzel_version:
   type: str
-  default: "0.8.0" # bumped by the release process
+  default: "0.9.8" # bumped by the release process
+  when: false
+
+heinzel_upper_bound:
+  type: str
+  default: "[[ '0.' ~ ((heinzel_version.split('.')[1] | int) + 1) if heinzel_version.split('.')[0] == '0' else ((heinzel_version.split('.')[0] | int) + 1) | string ]]"
   when: false

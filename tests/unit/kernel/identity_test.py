@@ -31,6 +31,12 @@ def test_context_is_required_deny_by_default_and_restored_on_failure(tmp_path):
         user.context()
     with user.local("cli"):
         assert user.context().permissions == frozenset({"private:read", "private:write"})
+    with user.local_read("mcp-stdio"):
+        assert user.context().authentication == "mcp-stdio"
+        assert user.principal() == user.owner()
+        assert user.context().permissions == frozenset({"private:read"})
+    with pytest.raises(HeinzelError, match="authenticated"):
+        user.context()
 
 
 @pytest.mark.parametrize("target", ["directory", "owner", "lock", "hardlink", "permissions", "malformed"])

@@ -1,6 +1,6 @@
 // The notification center: every notice hz recorded (ADR 0043), newest first, beside the sidebar. Read state is this
 // browser's: notices after the last one seen count as unread, on the bell and in the list.
-import { AlertTriangle, Bell, BellRing, FileText, Gift, Stethoscope, X } from "lucide-react";
+import { AlertTriangle, Bell, BellRing, FileText, Gift, Puzzle, Sparkles, Stethoscope, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 import type { SchemaNotice } from "@/api/client";
@@ -81,7 +81,15 @@ export function BellButton({ className, onOpen }: { className: string; onOpen: (
   );
 }
 
-const icons = { draft: FileText, failed: AlertTriangle, doctor: Stethoscope, release: Gift, test: BellRing } as const;
+const icons = {
+  draft: FileText,
+  failed: AlertTriangle,
+  doctor: Stethoscope,
+  release: Gift,
+  plugin: Puzzle,
+  heinzel: Sparkles,
+  test: BellRing,
+} as const;
 
 export function when(at: string): string {
   const date = new Date(at);
@@ -108,7 +116,16 @@ export function NotificationPanel({ onClose, navOpen }: { onClose: () => void; n
     { label: t("notify.today"), items: list.filter((notice) => new Date(notice.at).toDateString() === today) },
     { label: t("notify.earlier"), items: list.filter((notice) => new Date(notice.at).toDateString() !== today) },
   ].filter((group) => group.items.length > 0);
-  const kinds: (SchemaNotice["kind"] | "all")[] = ["all", "draft", "failed", "doctor", "release", "test"];
+  const kinds: (SchemaNotice["kind"] | "all")[] = [
+    "all",
+    "draft",
+    "failed",
+    "doctor",
+    "release",
+    "plugin",
+    "test",
+    "heinzel",
+  ];
   return (
     <section
       aria-label={t("notify.title")}

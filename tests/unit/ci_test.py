@@ -6,6 +6,7 @@ import io
 import os
 import re
 import stat
+import subprocess
 import tomllib
 import zipfile
 from pathlib import Path
@@ -34,6 +35,7 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
         "uv run --script scripts/check_confidentiality.py --require": "the secret must be configured in this repo",
         "unzip -l ": "asserts what the built wheel contains",
         'changed="$(git diff --name-only': "decides from the changed paths whether a pull request builds the macOS app",
+        "if compgen -G ": "selects the built core candidate or an independently released artifact for source plugins",
         "for result in $RESULTS": "the CI OK gate aggregates the results of the other jobs",
         "tar -czf notifier.tar.gz": "packs the app the macOS job built, with its executable bit, for the build job",
         "tar -xzf notifier.tar.gz": "unpacks Heinzel Notifier into the package before the wheel is built",
@@ -61,6 +63,15 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
         "uv build --package heinzel": "builds only the registered core project, never unpublished workspace plugins",
         "uv run --script scripts/pypi_release.py artifacts": "checks core metadata and complete packaged payloads",
         "python3 - <<'PY'": "rechecks hashes without checking out or running project code in the OIDC job",
+    },
+    "release.yml": {
+        'test "$REF" = refs/heads/main': "restores an original plugin artifact set with the pinned toolkit",
+        'test "$PUBLISH" != true || test "$REF" = refs/heads/main': (
+            "runs the owning Make commands' same toolkit checks, build, audit and acceptance without core work"
+        ),
+        'uv run --no-project --with "$TOOLING" python -m heinzel_plugin_tools.publishing': (
+            "publishes the original verified plugin bytes through its protected generic host workflow"
+        ),
     },
     "prepare-release.yml": {
         'if [[ ! "$INTRO"': "rejects blank dispatch input before checkout or release work",
@@ -113,6 +124,11 @@ def test_workflows_run_checks_through_make(workflow):
     assert not_through_make(workflow) == [], "run these through a make target, or add them to NOT_MAKE with a reason"
 
 
+def test_source_plugin_audits_receive_authoritative_repository_visibility():
+    workflow = yaml.safe_load((REPO / ".github/workflows/ci.yml").read_text())
+    assert workflow["jobs"]["local-plugin-check"]["env"]["PLUGIN_PRIVATE"] == "${{ github.event.repository.private }}"
+
+
 def test_managed_backend_verification_gates_ci_without_leaking_into_plugin_templates():
     """The source-only native owner is checked by required CI; plugins never install its private Node toolchain."""
     workflow = yaml.safe_load((REPO / ".github/workflows/ci.yml").read_text())
@@ -123,6 +139,63 @@ def test_managed_backend_verification_gates_ci_without_leaking_into_plugin_templ
     assert runs.index("make managed-backend-setup managed-backend-check") < runs.index("make typecheck")
     for name in ("Makefile", ".github/workflows/ci.yml.jinja"):
         assert "managed-backend" not in (REPO / "template" / name).read_text()
+
+
+@pytest.mark.parametrize("event", ["pull_request", "push"])
+@pytest.mark.parametrize("path", ["plugins/heinzel-unforeseen/src/plugin.py", "src/heinzel/kernel/public.py"])
+def test_plugin_only_changes_skip_core_work_and_keep_required_plugin_checks(tmp_path, monkeypatch, event, path):
+    workflow = yaml.safe_load((REPO / ".github/workflows/ci.yml").read_text())
+    jobs = workflow["jobs"]
+    foreign_index = tmp_path / "foreign-index"
+    monkeypatch.setenv("GIT_INDEX_FILE", str(foreign_index))
+    monkeypatch.setenv("GIT_DIR", str(tmp_path / "foreign.git"))
+    environment = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+
+    def git(*args):
+        return subprocess.run(
+            ["git", *args], cwd=tmp_path, env=environment, capture_output=True, text=True, check=True, timeout=30
+        )
+
+    git("init", "--quiet")
+    (tmp_path / "README.md").write_text("fixture")
+    git("add", ".")
+    git("-c", "user.name=Fixture", "-c", "user.email=fixture@example.com", "commit", "--quiet", "-m", "chore: init")
+    base = git("rev-parse", "HEAD").stdout.strip()
+    source = tmp_path / path
+    source.parent.mkdir(parents=True)
+    source.write_text("# changed")
+    git("add", ".")
+    git("-c", "user.name=Fixture", "-c", "user.email=fixture@example.com", "commit", "--quiet", "-m", "feat: change")
+    output = tmp_path / "outputs"
+    script = jobs["changes"]["steps"][-1]["run"]
+    subprocess.run(
+        ["bash", "-euo", "pipefail", "-c", script], cwd=tmp_path,
+        env={**environment, "BASE": base, "EVENT": event, "GITHUB_OUTPUT": str(output)}, check=True, timeout=30,
+    )  # fmt: skip
+    values = dict(line.split("=", 1) for line in output.read_text().splitlines())
+    assert not foreign_index.exists()
+    plugin_only = path.startswith("plugins/")
+    assert values["core"] == str(not plugin_only).lower()
+    assert values["plugins"] == str(plugin_only).lower()
+    assert values["contracts"] == str(not plugin_only).lower()
+    if plugin_only:
+        assert values["notifier"] == values["electron"] == "false"
+    for name in ("lint", "setup", "audit", "test", "coverage", "perf", "e2e", "build", "core-wheel"):
+        assert "needs.changes.outputs.core == 'true'" in jobs[name]["if"]
+    assert "local-plugin-check" in jobs["ci-ok"]["needs"]
+    assert "needs.changes.outputs.plugins == 'true'" in jobs["local-plugin-plan"]["if"]
+
+
+def test_plugin_compatibility_does_not_wait_for_core_native_packaging_or_test_matrix():
+    jobs = yaml.safe_load((REPO / ".github/workflows/ci.yml").read_text())["jobs"]
+    assert jobs["core-wheel"]["needs"] == "changes"
+    assert jobs["consumer-plan"]["needs"] == ["changes", "core-wheel"]
+    assert "build" not in jobs["local-plugin-check"]["needs"]
+    assert {"build", "notifier", "core-wheel", "consumer-check"} <= set(jobs["ci-ok"]["needs"])
+    upload = next(
+        step for step in jobs["core-wheel"]["steps"] if step.get("uses", "").startswith("actions/upload-artifact")
+    )
+    assert upload["with"]["name"] == "plugin-core"
 
 
 def test_electron_sandbox_archive_hash_mismatch_is_rejected():
@@ -482,7 +555,7 @@ def test_release_docs_only_publish_existing_recordings_even_when_the_caller_was_
     assert release["jobs"]["docs"].get("with", {}).get("site_only") is True
     assert docs[True]["workflow_call"]["inputs"]["site_only"]["default"] is False
     assert docs["jobs"]["record"]["if"] == (
-        "inputs.site_only != true && (github.event_name == 'push' || inputs.record == true)"
+        "inputs.site_only != true && inputs.record == true && github.event_name != 'pull_request'"
     )
 
 
@@ -736,6 +809,14 @@ def _generated_plugin_ci() -> dict:
     return yaml.safe_load(text.replace("[[ package_name ]]", "x"))
 
 
+def test_plugin_template_does_not_advertise_core_only_e2e_scheduling_hint():
+    generated = _template_sync_module().pyproject()
+    checked_in = (REPO / "template" / "pyproject.toml.jinja").read_text(encoding="utf-8")
+    assert generated == checked_in
+    assert "e2e_early:" not in generated
+    assert "e2e_early:" in (REPO / "pyproject.toml").read_text(encoding="utf-8")
+
+
 def test_plugin_template_makefile_excludes_all_electron_only_targets():
     """Electron's install, sandbox and native-smoke targets stay out of generated plugin Makefiles."""
     generated = _template_sync_module().makefile()
@@ -748,10 +829,20 @@ def test_plugin_template_makefile_excludes_all_electron_only_targets():
     assert "sudo chown root:root" not in generated
 
 
+def test_plugin_ci_excludes_the_core_linux_user_manager_probe():
+    generated = _template_sync_module().ci_workflow()
+    core = (REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    assert "make linux-user-manager-proof" in core
+    assert "linux_user_manager_probe.py" not in generated
+    assert "Inspect the Linux user manager" not in generated
+    assert "linux-user-manager-proof" not in _template_sync_module().makefile()
+
+
 def test_plugin_ci_has_no_core_only_jobs_and_every_need_exists():
     jobs = _generated_plugin_ci()["jobs"]
     for name, job in jobs.items():
         needs = job.get("needs", [])
+        assert "needs" not in job or needs, f"{name} has an empty needs list"
         for need in [needs] if isinstance(needs, str) else needs:
             assert need in jobs, f"{name} needs {need}"
     assert jobs["setup"]["strategy"]["matrix"]["os"] == ["ubuntu-latest", "macos-latest"]
@@ -784,3 +875,117 @@ def test_linux_electron_sandbox_target_configures_only_the_packaged_helper():
     assert '--configure-file "$$packaged_sandbox"' in recipe
     assert 'require.resolve("electron"' not in recipe
     assert 'python3 desktop/ci/restore_linux_sandbox.py "$$electron_root"' not in recipe
+
+
+@pytest.mark.parametrize("fail", [False, True])
+def test_e2e_prepares_core_build_before_suite_and_removes_owned_temp(tmp_path, fail):
+    """A failed build cannot start pytest; the suite still performs its own candidate build."""
+    tool_dir = tmp_path / "bin"
+    tool_dir.mkdir()
+    trace = tmp_path / "trace"
+    uv = tool_dir / "uv"
+    steps = tool_dir / "fake-steps"
+    for path, text in (
+        (
+            uv,
+            (
+                '#!/bin/sh\nprintf "build:%s\\n" "$*" >> "$TRACE"\n'
+                'for last do :; done\nprintf "dir:%s\\n" "$last" >> "$TRACE"\n'
+                'test "$FAIL_PREP" != 1\n'
+            ),
+        ),
+        (steps, '#!/bin/sh\nprintf "suite:%s\\n" "$*" >> "$TRACE"\n'),
+    ):
+        assert not path.exists()
+        assert not path.is_symlink()
+        assert path.parent.resolve().is_relative_to(tmp_path.resolve())
+        path.write_text(text)
+        assert not path.samefile(os.path.realpath(os.sys.executable))
+        assert not path.samefile(os.path.realpath(os.sys._base_executable))
+        path.chmod(0o700)
+    env = {
+        **os.environ,
+        "PATH": f"{tool_dir}:/usr/bin:/bin",
+        "TMPDIR": str(tmp_path),
+        "TRACE": str(trace),
+        "FAIL_PREP": "1" if fail else "0",
+    }
+    result = subprocess.run(
+        ["make", "--no-print-directory", "test-e2e", f"STEPS={steps}"],
+        cwd=REPO,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=20,
+        check=False,
+    )
+    lines = trace.read_text().splitlines()
+    assert lines[0].startswith("build:build --quiet --wheel --out-dir ")
+    assert lines[1].startswith("dir:")
+    directory = Path(lines[1].removeprefix("dir:"))
+    assert directory.is_relative_to(tmp_path)
+    assert not directory.exists()
+    assert (result.returncode == 0) is not fail
+    assert any(line.startswith("suite:e2e=uv run pytest ") for line in lines) is not fail
+    if not fail:
+        [suite] = [line for line in lines if line.startswith("suite:e2e=")]
+        node = "tests/e2e/docs_test.py::test_readme_instructions"
+        first, second = suite.split(" && ")
+        assert first.endswith(f"-x {node}")
+        assert second.endswith(f"-x --deselect={node}")
+        assert first.count("-n 3") == second.count("-n 3") == 1
+        assert first.count("--session-timeout=600") == second.count("--session-timeout=600") == 1
+    generated = _template_sync_module().makefile()
+    assert "e2e-prepare" not in generated
+    assert generated == (REPO / "template/Makefile").read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("first_fails", [False, True])
+def test_e2e_sequence_stops_after_readme_failure(tmp_path, first_fails):
+    """The shared step runs the remaining nodes only after the isolated README succeeds."""
+    tool_dir = tmp_path / "bin"
+    tool_dir.mkdir()
+    trace = tmp_path / "trace"
+    uv = tool_dir / "uv"
+    steps = tool_dir / "steps"
+    for path, text in (
+        (
+            uv,
+            (
+                "#!/bin/sh\n"
+                'printf "%s\\n" "$*" >> "$TRACE"\n'
+                'case "$*" in *--deselect*) exit 0;; '
+                '*docs_test.py::test_readme_instructions*) test "$FIRST_FAIL" != 1;; esac\n'
+            ),
+        ),
+        (steps, '#!/bin/sh\ncommand=${1#e2e=}\nexec /bin/sh -c "$command"\n'),
+    ):
+        assert not path.exists()
+        assert not path.is_symlink()
+        path.write_text(text)
+        assert not path.samefile(os.path.realpath(os.sys.executable))
+        assert not path.samefile(os.path.realpath(os.sys._base_executable))
+        path.chmod(0o700)
+    env = {
+        **os.environ,
+        "PATH": f"{tool_dir}:/usr/bin:/bin",
+        "TMPDIR": str(tmp_path),
+        "TRACE": str(trace),
+        "FIRST_FAIL": "1" if first_fails else "0",
+    }
+    result = subprocess.run(
+        ["make", "--no-print-directory", "test-e2e", f"STEPS={steps}"],
+        cwd=REPO,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=20,
+        check=False,
+    )
+    commands = trace.read_text().splitlines()
+    assert commands[0].startswith("build ")
+    assert len(commands) == (2 if first_fails else 3)
+    assert "--deselect=" not in commands[1]
+    if not first_fails:
+        assert "--deselect=tests/e2e/docs_test.py::test_readme_instructions" in commands[2]
+    assert (result.returncode != 0) is first_fails

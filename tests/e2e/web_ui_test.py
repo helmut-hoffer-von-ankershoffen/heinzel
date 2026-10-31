@@ -13,8 +13,12 @@ import subprocess
 import sys
 import textwrap
 from pathlib import Path
+from urllib.parse import parse_qs, urlsplit
+from urllib.request import Request, urlopen
 
 import pytest
+
+from tests.e2e._mobile_server_output import MobileServerOutput, check_driver, redact, sanitize_timeout
 
 pytestmark = pytest.mark.e2e
 
@@ -75,6 +79,46 @@ def demo_workflows(directory: Path) -> None:
         (directory / f"{name}.prose.md").write_text(text, encoding="utf-8")
 
 
+def verify_fixture_plugins(env: dict[str, str]) -> None:
+    """Refuse real providers before a core browser test can import their code."""
+    subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "from importlib.metadata import entry_points; "
+                "actual={(item.name,item.value) for item in entry_points(group='heinzel.modules')}; "
+                "assert actual=={('sound-demo','heinzel_sound_demo')}, 'Browser tests require a core-only environment'"
+            ),
+        ],
+        env=env,
+        capture_output=True,
+        check=True,
+        timeout=30,
+    )
+
+
+def verify_stream_fixture(url: str) -> None:
+    """Check the real isolated backend before the browser substitutes its sound-list fixture."""
+    parsed = urlsplit(url)
+    assert parsed.scheme == "http"
+    assert parsed.hostname == "127.0.0.1"
+    assert parsed.port is not None
+    tokens = parse_qs(parsed.fragment).get("token", [])
+    assert len(tokens) == 1
+    assert tokens[0]
+    origin = f"http://127.0.0.1:{parsed.port}"
+    with urlopen(origin + "/", timeout=10) as response:  # noqa: S310 - validated loopback origin
+        directives = [part.split() for part in response.headers.get("Content-Security-Policy", "").split(";")]
+        frames = next((part[1:] for part in directives if part and part[0] == "frame-src"), [])
+        assert any(frame == "https://www.youtube-nocookie.com" for frame in frames)
+    request = Request(origin + "/api/system/sound/list", headers={"Authorization": f"Bearer {tokens[0]}"})  # noqa: S310 - validated loopback origin
+    with urlopen(request, timeout=10) as response:  # noqa: S310 - validated loopback origin
+        sound = json.load(response)
+    assert sound["effective"] == "fixture-radio"
+    assert any(item["name"] == "fixture-radio" and item["stream"] for item in sound["soundscapes"])
+
+
 @pytest.fixture
 def environment(tmp_path):
     """Made-up configuration in temporary directories; a BROWSER that records the URL instead of opening it."""
@@ -84,6 +128,11 @@ def environment(tmp_path):
         f"import sys, pathlib\npathlib.Path({str(recorded)!r}).write_text(sys.argv[1])\n", encoding="utf-8"
     )
     demo_workflows(tmp_path / "workflows")
+    # Only a synthetic fixture provides stream content; no real plugin or bundled core catalog is installed.
+    metadata = tmp_path / "plugins/heinzel_sound_demo-1.0.0.dist-info"
+    metadata.mkdir(parents=True)
+    (metadata / "METADATA").write_text("Metadata-Version: 2.1\nName: heinzel-sound-demo\nVersion: 1.0.0\n")
+    (metadata / "entry_points.txt").write_text("[heinzel.modules]\nsound-demo = heinzel_sound_demo\n")
     env = {key: value for key, value in os.environ.items() if not key.startswith("HZ_")}
     env |= {
         "HZ_CONFIG_HOME": str(tmp_path / "config"),
@@ -93,9 +142,10 @@ def environment(tmp_path):
         "HZ_LOG_DIR": str(tmp_path / "log"),
         "HZ_SYSTEM_DAEMON__UNIT_DIR": str(tmp_path / "units"),
         "HZ_SYSTEM_CREDENTIAL__BACKEND": "environment",
-        "HZ_PLUGINS_ENABLED": "false",
+        "HZ_PLUGINS_ENABLED": "true",
+        "PYTHONPATH": os.pathsep.join((str(metadata.parent), str(REPO / "tests/fixtures/sound"))),
         # Let the real server admit the stream origin before the offline iframe layer/playback probe runs.
-        "HZ_SYSTEM_SOUND__NAME": "claude-fm",
+        "HZ_SYSTEM_SOUND__NAME": "fixture-radio",
         "HZ_SYSTEM_SOUND__FOLLOW_THEME": "false",
         "HZ_HEINZEL__USER_DIR": str(tmp_path / "workflows"),
         "HZ_ORG__HANDLE": "mira",
@@ -105,7 +155,19 @@ def environment(tmp_path):
         "HZ_ORG__EMAIL": "mira@example.com",
         "BROWSER": f"{sys.executable} {browser} %s",
     }
+    verify_fixture_plugins(env)
     return env, recorded
+
+
+def test_browser_fixture_refuses_unrelated_providers_before_import(environment, tmp_path):
+    env, _ = environment
+    metadata = tmp_path / "plugins/heinzel_unrelated-1.0.0.dist-info"
+    metadata.mkdir()
+    (metadata / "METADATA").write_text("Metadata-Version: 2.1\nName: heinzel-unrelated\nVersion: 1.0.0\n")
+    (metadata / "entry_points.txt").write_text("[heinzel.modules]\nunrelated = never_import_this_provider\n")
+    with pytest.raises(subprocess.CalledProcessError) as refused:
+        verify_fixture_plugins(env)
+    assert b"Browser tests require a core-only environment" in refused.value.stderr
 
 
 @pytest.mark.timeout(600)
@@ -118,7 +180,11 @@ def test_hz_ui_opens_the_app_and_it_shows_the_doctor_report(environment, tmp_pat
     shots = Path(os.environ.get("HZ_SCREENSHOTS", tmp_path / "screenshots"))
 
     ui = subprocess.Popen(
-        ["uv", "run", "hz", "ui", "--port", "0"], cwd=REPO, env=env, stderr=subprocess.PIPE, text=True
+        [sys.executable, "-m", "heinzel", "ui", "--port", "0"],
+        cwd=REPO,
+        env=env,
+        stderr=subprocess.PIPE,
+        text=True,
     )
     try:
         assert ui.stderr is not None
@@ -215,6 +281,7 @@ def test_theme_image_viewports_preserve_the_cap_hinge_in_actual_chromium(tmp_pat
 
 
 @pytest.mark.timeout(600)
+@pytest.mark.e2e_early
 def test_mobile_touch_viewports_keep_navigation_settings_and_chat_reachable(environment, tmp_path):
     """Chromium mobile emulation checks responsive reachability; it is not a physical iPhone Safari test."""
     env, _recorded = environment
@@ -229,32 +296,53 @@ def test_mobile_touch_viewports_keep_navigation_settings_and_chat_reachable(envi
     )
     shots = Path(os.environ.get("HZ_SCREENSHOTS", tmp_path / "screenshots"))
     ui = subprocess.Popen(
-        ["uv", "run", "hz", "ui", "--port", "0"], cwd=REPO, env=env, stderr=subprocess.PIPE, text=True
+        [sys.executable, "-m", "heinzel", "ui", "--port", "0"], cwd=REPO, env=env, stderr=subprocess.PIPE
     )
+    capture = MobileServerOutput(ui)
+    token = ""
     try:
-        assert ui.stderr is not None
-        line = ""
-        for line in ui.stderr:
-            if "runs at" in line:
-                break
-        url = line.strip().rsplit(" ", 1)[-1]
+        url = capture.wait_url()
         assert url.startswith("http://127.0.0.1:")
         assert "#token=" in url
-        driven = subprocess.run(
-            [*run, "exec", "node", "e2e/mobile-responsive.mjs", url, str(shots)],
-            cwd=REPO,
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=300,
-        )
-        assert driven.returncode == 0, driven.stderr
+        token = parse_qs(urlsplit(url).fragment).get("token", [""])[0]
+        verify_stream_fixture(url)
+        try:
+            driven = subprocess.run(
+                [*run, "exec", "node", "e2e/mobile-responsive.mjs", url, str(shots)],
+                cwd=REPO,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=300,
+            )
+        except subprocess.TimeoutExpired as error:
+            sanitize_timeout(error)
+            raise
+        check_driver(driven.returncode, redact(driven.stderr, token))
         result = json.loads(driven.stdout.strip().splitlines()[-1])
+    except BaseException:
+        sys.stderr.write(f"Mobile server pre-cleanup exit: {ui.poll()}\n")
+        sys.stderr.write(f"Mobile server stderr tail:\n{capture.diagnostic(token)}\n")
+        raise
     finally:
-        ui.terminate()
-        ui.wait(30)
-        if ui.stderr is not None:
-            ui.stderr.close()
+        original = sys.exception()
+        try:
+            if ui.poll() is None:
+                ui.terminate()
+            try:
+                ui.wait(30)
+            except subprocess.TimeoutExpired:
+                ui.kill()
+                ui.wait(5)
+                msg = "Mobile test server required forced cleanup"
+                raise RuntimeError(msg) from None
+            capture.close()
+            if ui.stderr is not None:
+                ui.stderr.close()
+        except (OSError, RuntimeError, subprocess.TimeoutExpired):
+            if original is None:
+                raise
+            original.add_note("Mobile test server cleanup was uncertain; inspect the owned process state.")
 
     assert result["evidence"] == "mobile/touch emulation; not physical iPhone Safari"
     assert len(result["cases"]) == 6
@@ -284,7 +372,7 @@ def test_docked_media_stays_below_every_overlay_in_mounted_chromium(environment,
     )
     shots = Path(os.environ.get("HZ_SCREENSHOTS", tmp_path / "screenshots"))
     ui = subprocess.Popen(
-        ["uv", "run", "hz", "ui", "--port", "0"], cwd=REPO, env=env, stderr=subprocess.PIPE, text=True
+        [sys.executable, "-m", "heinzel", "ui", "--port", "0"], cwd=REPO, env=env, stderr=subprocess.PIPE, text=True
     )
     try:
         assert ui.stderr is not None
@@ -295,6 +383,7 @@ def test_docked_media_stays_below_every_overlay_in_mounted_chromium(environment,
         url = line.strip().rsplit(" ", 1)[-1]
         assert url.startswith("http://127.0.0.1:")
         assert "#token=" in url
+        verify_stream_fixture(url)
         driven = subprocess.run(
             [*run, "exec", "node", "e2e/media-layers.mjs", url, str(shots)],
             cwd=REPO,
@@ -311,12 +400,11 @@ def test_docked_media_stays_below_every_overlay_in_mounted_chromium(environment,
         if ui.stderr is not None:
             ui.stderr.close()
 
-    assert len(result["panes"]) == 14
+    assert len(result["panes"]) == 12
     assert {
         "docked-settings",
         "docked-audio",
         "docked-account",
-        "docked-clock",
         "docked-daemon",
         "docked-version",
     } <= set(result["panes"])

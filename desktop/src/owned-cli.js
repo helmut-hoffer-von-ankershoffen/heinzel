@@ -16,6 +16,7 @@ export function createOwnedCli({
 } = {}) {
   let child = null;
   let childClosed = false;
+  let childProcessError = false;
   let connection = null;
   let startPromise = null;
   let stopPromise = null;
@@ -35,7 +36,6 @@ export function createOwnedCli({
       const cleanup = ({ preserveExit = false } = {}) => {
         clearTimeout(timer);
         if (onData) child?.stdout.removeListener("data", onData);
-        if (onError) child?.removeListener("error", onError);
         if (!preserveExit && onExit) child?.removeListener("exit", onExit);
         output = "";
       };
@@ -51,6 +51,7 @@ export function createOwnedCli({
       };
       try {
         childClosed = false;
+        childProcessError = false;
         child = spawn("hz", ["ui", "--port", "0", "--no-browser"], {
           shell: false,
           windowsHide: true,
@@ -61,11 +62,22 @@ export function createOwnedCli({
         return;
       }
       const ownedChild = child;
-      ownedChild.once("close", () => { childClosed = true; });
+      ownedChild.once("close", () => {
+        childClosed = true;
+        if (onError) ownedChild.removeListener("error", onError);
+      });
       timer = setTimeout(() => fail(new Error("Heinzelmännchen took too long to start its local service.")), startupTimeoutMs);
-      onError = () => fail();
+      onError = () => {
+        childProcessError = true;
+        if (!settled) {
+          fail();
+          return;
+        }
+        exitResult = Object.freeze({ code: null, signal: null, processError: true });
+        resolveExit(exitResult);
+      };
       onExit = (code, signal) => {
-        exitResult = Object.freeze({ code, signal });
+        exitResult = Object.freeze({ code, signal, ...(childProcessError ? { processError: true } : {}) });
         resolveExit(exitResult);
         if (!settled) fail();
       };
@@ -92,7 +104,7 @@ export function createOwnedCli({
           fail();
         }
       };
-      ownedChild.once("error", onError);
+      ownedChild.on("error", onError);
       ownedChild.once("exit", onExit);
       ownedChild.stdout.on("data", onData);
     });
@@ -119,7 +131,7 @@ export function createOwnedCli({
       }
 
       let closed = childClosed;
-      let processError = false;
+      let processError = childProcessError;
       let resolveClosed;
       const closedPromise = new Promise((resolve) => { resolveClosed = resolve; });
       // Node may emit an asynchronous ChildProcess `error` if a process exits between a status check
@@ -154,7 +166,7 @@ export function createOwnedCli({
         }
       };
 
-      if (!closed && !exited()) signal("SIGTERM");
+      if (!closed && !exited()) signal("SIGINT");
       if (!(await waitForClose(stopTimeoutMs))) {
         if (!closed && !exited()) {
           signal("SIGKILL");
@@ -194,7 +206,7 @@ export function createOwnedCli({
     start,
     stop,
     currentConnection: () => connection,
-    isRunning: () => Boolean(child) && child.exitCode === null && child.signalCode === null,
+    isRunning: () => Boolean(child) && !childClosed && !childProcessError && child.exitCode === null && child.signalCode === null,
     exited: () => exitPromise,
     exitResult: () => exitResult,
   });

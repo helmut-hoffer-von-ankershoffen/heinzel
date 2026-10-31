@@ -10,10 +10,6 @@ mode (`hz system expert on`); every one runs either way, and MCP and REST list t
 | --- | --- |
 | [`ai`](#ai) | How hz reaches AI, and what it spends: tokens and cost per run. |
 | [`ai.access`](#aiaccess) | Pick how hz reaches AI: Claude Code, your company's gateway, or an option a plugin adds. |
-| [`atlassian`](#atlassian) | Read Jira issues and Confluence pages through acli: the tracker and documents capabilities. |
-| [`clock`](#clock) | World clock: what time it is for everyone on the team. |
-| [`github`](#github) | Read pull requests and issues from GitHub: the code-host and tracker capabilities. |
-| [`google`](#google) | Google Docs, Sheets, Drive, Calendar and Gmail: the documents, calendar and mail capabilities. |
 | [`graph`](#graph) | Are your team's promises kept? Artifacts and Heinzelmännchen, and where the flow waits. |
 | [`heinzel`](#heinzel) | Your Heinzelmännchen: durable agents that keep your team's documents true. |
 | [`org`](#org) | Your profile, and the team, org and company you work with. |
@@ -34,17 +30,14 @@ mode (`hz system expert on`); every one runs either way, and MCP and REST list t
 | [`system.notify`](#systemnotify) | Pop up what deserves your attention: in the web app while it is open, else natively. |
 | [`system.plugin`](#systemplugin) | Find, add, remove, enable, disable, list and scaffold plugins. |
 | [`system.plugin.docs`](#systemplugindocs) | Document installed plugins: what each brings, as a model and as Markdown pages. |
-| [`system.resource`](#systemresource) | Show this computer's CPU, memory and load. |
 | [`system.runner`](#systemrunner) | Run bounded agent sessions with Claude Code or a configured command. |
 | [`system.runner.chat`](#systemrunnerchat) | Chat with the agent runner about where you are; it acts through hz once you confirm. |
 | [`system.skill`](#systemskill) | List the skills plugins ship for AI, and hand chosen ones to Claude Code. |
-| [`system.sound`](#systemsound) | Pick the web app's soundscape: off, a built-in one or one a plugin offers. |
+| [`system.sound`](#systemsound) | Pick the web app's soundscape: off or one an installed plugin offers. |
 | [`system.state`](#systemstate) | Note how hz is used on this machine and push it to your own state repository. |
 | [`system.theme`](#systemtheme) | Pick how the web app looks: the built-in theme or one a plugin offers. |
 | [`system.ui`](#systemui) | List what modules add to the web app: status items, header actions and Today widgets. |
-| [`tailscale`](#tailscale) | Private web sharing through Tailscale Serve. |
 | [`team`](#team) | Your team's repository: create one (`hz team new`), join one by its URL (`hz team join`), add people to it. |
-| [`zoom`](#zoom) | Read meetings from Zoom's meeting-summary emails: the meetings capability. |
 
 ## `ai`
 
@@ -72,67 +65,6 @@ Settings: [`[ai.access]`](CONFIGURATION.md#aiaccess).
 
 Health checks: reported by `hz system doctor`.
 
-## `atlassian`
-
-Read Jira issues and Confluence pages through acli: the tracker and documents capabilities.
-
-First-party plugin `heinzel-atlassian`: `hz system plugin add atlassian --confirm`.
-
-| Operation | CLI | MCP tool | REST | Web | Changes state | Expert |
-| --- | --- | --- | --- | --- | --- | --- |
-| Show this plugin's version, the Atlassian site and the acli commands it runs. | `hz atlassian info` | `atlassian_info` | `GET /atlassian/info` | `GET /api/atlassian/info` |  | expert |
-
-Settings: [`[atlassian]`](CONFIGURATION.md#atlassian).
-
-Health checks: reported by `hz system doctor`.
-
-## `clock`
-
-World clock: what time it is for everyone on the team.
-
-First-party plugin `heinzel-clock`: `hz system plugin add clock --confirm`.
-
-| Operation | CLI | MCP tool | REST | Web | Changes state | Expert |
-| --- | --- | --- | --- | --- | --- | --- |
-| Show the time in each of the team's time zones. | `hz clock` | `clock` | `GET /clock` | `GET /api/clock` |  |  |
-
-Settings: [`[clock]`](CONFIGURATION.md#clock).
-
-Health checks: reported by `hz system doctor`.
-
-Setup: `hz setup clock` (optional), also part of `hz setup`.
-
-## `github`
-
-Read pull requests and issues from GitHub: the code-host and tracker capabilities.
-
-First-party plugin `heinzel-github`: `hz system plugin add github --confirm`.
-
-| Operation | CLI | MCP tool | REST | Web | Changes state | Expert |
-| --- | --- | --- | --- | --- | --- | --- |
-| Show this plugin's version, the Heinzelmännchen it runs on and the GitHub host it reads. | `hz github info` | `github_info` | `GET /github/info` | `GET /api/github/info` |  | expert |
-
-Settings: [`[github]`](CONFIGURATION.md#github).
-
-Health checks: reported by `hz system doctor`.
-
-## `google`
-
-Google Docs, Sheets, Drive, Calendar and Gmail: the documents, calendar and mail capabilities.
-
-First-party plugin `heinzel-google`: `hz system plugin add google --confirm`.
-
-| Operation | CLI | MCP tool | REST | Web | Changes state | Expert |
-| --- | --- | --- | --- | --- | --- | --- |
-| Show this plugin's version, the Heinzelmännchen it runs on and the gws, scopes and APIs it uses. | `hz google info` | `google_info` | `GET /google/info` | `GET /api/google/info` |  | expert |
-| List the Google Docs and Sheets you can open that changed recently, newest first. | `hz google files` | `google_files` | `GET /google/files` | `GET /api/google/files` |  | expert |
-
-Settings: [`[google]`](CONFIGURATION.md#google).
-
-Health checks: reported by `hz system doctor`.
-
-Setup: `hz setup google` (optional), also part of `hz setup`.
-
 ## `graph`
 
 Are your team's promises kept? Artifacts and Heinzelmännchen, and where the flow waits.
@@ -149,10 +81,26 @@ Your Heinzelmännchen: durable agents that keep your team's documents true.
 
 | Operation | CLI | MCP tool | REST | Web | Changes state | Expert |
 | --- | --- | --- | --- | --- | --- | --- |
+| Read exact private skill draft files and requested sharing scope. | `hz heinzel skill-draft` | `heinzel_skill_draft` | — | `GET /api/heinzel/skill-draft` |  |  |
+| List private draft references without file contents. | `hz heinzel skill-drafts` | `heinzel_skill_drafts` | — | `GET /api/heinzel/skill-drafts` |  |  |
+| Inspect the latest suggested name and look; it has not been applied. | `hz heinzel latest-profile-proposal` | — | — | `GET /api/heinzel/latest-profile-proposal` |  |  |
+| Answer one authenticated user's accepted message; an interrupted request is never silently replayed. | `hz heinzel answer-chat` | — | — | `POST /api/heinzel/answer-chat` | yes |  |
+| Read the recorded turn state; unresolved may still be running. | `hz heinzel chat-turn-state` | — | — | `GET /api/heinzel/chat-turn-state` |  |  |
+| Explicitly set aside a stopped uncertain turn; never retry or undo its possible effects. | `hz heinzel abandon-chat-turn` | — | — | `POST /api/heinzel/abandon-chat-turn` | yes |  |
+| Show recent private exact-result comparisons from approved reads, without source contents. | `hz heinzel input-snapshot-history` | — | — | `GET /api/heinzel/input-snapshot-history` |  |  |
+| Show owner-private host-observed tool decisions, without their arguments. | `hz heinzel tool-activity` | — | — | `GET /api/heinzel/tool-activity` |  |  |
 | Create a durable personal Heinzel with an idempotent request, name and look. | `hz heinzel new-chat` | `heinzel_new_chat` | — | `POST /api/heinzel/new-chat` | yes |  |
 | List your durable personal Heinzels, including new conversations without an approved contract. | `hz heinzel sessions` | `heinzel_sessions` | — | `GET /api/heinzel/sessions` |  |  |
 | Open one durable Heinzel and an ordered page of its accepted messages, even during an active turn. | `hz heinzel session` | `heinzel_session` | — | `GET /api/heinzel/session` |  |  |
 | Save this Heinzel's name or look against the exact profile revision you saw. | `hz heinzel profile` | `heinzel_profile` | — | `POST /api/heinzel/profile` | yes |  |
+| Propose local five-minute check-ins; the schedule stays inactive until activated. | `hz heinzel propose-check-in` | `heinzel_propose_check_in` | — | `POST /api/heinzel/propose-check-in` | yes |  |
+| Associate a Google file locally; no access, provider ownership or permission is verified. | `hz heinzel associate-artifact` | `heinzel_associate_artifact` | — | `POST /api/heinzel/associate-artifact` | yes |  |
+| List local principal-submitted file associations without accessing the provider. | `hz heinzel personal-artifacts` | `heinzel_personal_artifacts` | — | `GET /api/heinzel/personal-artifacts` |  |  |
+| Save an inert agent execution proposal; it neither approves nor starts a model turn. | `hz heinzel propose-scheduled-agent` | `heinzel_propose_scheduled_agent` | — | `POST /api/heinzel/propose-scheduled-agent` | yes |  |
+| Propose revised terms; an independent human review and approval is still required. | `hz heinzel amend-scheduled-agent` | `heinzel_amend_scheduled_agent` | — | `POST /api/heinzel/amend-scheduled-agent` | yes |  |
+| Read the current inert proposal for the personal session, if one exists. | `hz heinzel latest-scheduled-agent-proposal` | `heinzel_latest_scheduled_agent_proposal` | — | `GET /api/heinzel/latest-scheduled-agent-proposal` |  |  |
+| Inspect the exact inert proposal; a separate future human approval is required to run it. | `hz heinzel scheduled-agent-proposal` | `heinzel_scheduled_agent_proposal` | — | `GET /api/heinzel/scheduled-agent-proposal` |  |  |
+| Pause a schedule; activation and resume require an exact-intent approval from a trusted issuer. | `hz heinzel schedule-control` | `heinzel_schedule_control` | — | `POST /api/heinzel/schedule-control` | yes |  |
 | Durably queue a message for this Heinzel; acceptance is distinct from a completed model answer. | `hz heinzel chat` | `heinzel_chat` | — | `POST /api/heinzel/chat` | yes |  |
 | List your Heinzelmännchen, one per contract: owner, schedule, state, last and next run. | `hz heinzel list` | `heinzel_list` | — | `GET /api/heinzel/list` |  |  |
 | Write a starter contract, or a playbook's template (--template), into your workflows directory. | `hz heinzel new` | `heinzel_new` | — | — | yes |  |
@@ -302,7 +250,7 @@ Run modules' jobs in the background, supervised by launchd or systemd.
 | Install and load the launchd agent or systemd timer that ticks every few minutes. | `hz system daemon install` | — | — | `POST /api/system/daemon/install` | yes | expert |
 | Unload and remove the daemon's unit; receipts and logs stay. | `hz system daemon uninstall` | — | — | `POST /api/system/daemon/uninstall` | yes | expert |
 | Restart the daemon so it runs with the installed hz. | `hz system daemon restart` | `system_daemon_restart` | `POST /system/daemon/restart` | `POST /api/system/daemon/restart` | yes | expert |
-| Show whether the daemon is installed, loaded and paused, its last tick and failing jobs. | `hz system daemon status` | `system_daemon_status` | `GET /system/daemon/status` | `GET /api/system/daemon/status` |  | expert |
+| Check-ins need a resumed daemon with 5m ticks and a matching service version. | `hz system daemon status` | `system_daemon_status` | `GET /system/daemon/status` | `GET /api/system/daemon/status` |  | expert |
 | Show the latest lines of the daemon's log. | `hz system daemon logs` | `system_daemon_logs` | `GET /system/daemon/logs` | `GET /api/system/daemon/logs` |  | expert |
 | Run the jobs that are due and write a receipt for each; exits with 1 if any job failed. | `hz system daemon tick` | `system_daemon_tick` | — | — | yes | expert |
 | Pause the daemon: ticks run no job until resumed. | `hz system daemon pause` | `system_daemon_pause` | `POST /system/daemon/pause` | `POST /api/system/daemon/pause` | yes | expert |
@@ -381,7 +329,8 @@ Find, add, remove, enable, disable, list and scaffold plugins.
 | Switch a disabled plugin on again. | `hz system plugin enable` | `system_plugin_enable` | — | `POST /api/system/plugin/enable` | yes | expert |
 | List plugin changes made on this machine, oldest first: what was installed, from where, by whom. | `hz system plugin history` | `system_plugin_history` | — | `GET /api/system/plugin/history` |  | expert |
 | Scaffold a plugin repository from the Heinzelmännchen template, asking for answers not given. | `hz system plugin new` | — | — | — | yes | expert |
-| Find plugins to install: first-party ones, and community ones by querying the GitHub API. | `hz system plugin search` | `system_plugin_search` | `GET /system/plugin/search` | `GET /api/system/plugin/search` |  | expert |
+| Export the versioned plugin view SDK from this installation, without a core checkout. | `hz system plugin sdk` | — | — | — | yes | expert |
+| Find plugins to install: first-party ones, and community ones by querying the GitHub API. | `hz system plugin search` | `system_plugin_search` | — | `GET /api/system/plugin/search` |  | expert |
 
 Settings: [`[system.plugin]`](CONFIGURATION.md#systemplugin).
 
@@ -393,14 +342,6 @@ Document installed plugins: what each brings, as a model and as Markdown pages.
 | --- | --- | --- | --- | --- | --- | --- |
 | Show what each installed plugin brings; `--json` is the full model its page is built from. | `hz system plugin docs show` | `system_plugin_docs_show` | — | `GET /api/system/plugin/docs/show` |  | expert |
 | Write a Markdown page per installed plugin, with theme swatches and its recordings when they exist. | `hz system plugin docs build` | `system_plugin_docs_build` | — | — | yes | expert |
-
-## `system.resource`
-
-Show this computer's CPU, memory and load.
-
-| Operation | CLI | MCP tool | REST | Web | Changes state | Expert |
-| --- | --- | --- | --- | --- | --- | --- |
-| Show machine CPU/memory usage, one-minute load and logical cores; cache each sample for one second. | `hz system resource` | `system_resource` | `GET /system/resource` | `GET /api/system/resource` |  |  |
 
 ## `system.runner`
 
@@ -421,9 +362,19 @@ Chat with the agent runner about where you are; it acts through hz once you conf
 | Operation | CLI | MCP tool | REST | Web | Changes state | Expert |
 | --- | --- | --- | --- | --- | --- | --- |
 | Open a chat session, optionally about a screen, a contract, a draft or a notification event. | `hz chat open` | — | — | `POST /api/system/runner/chat/open` | yes |  |
+| Open a runner chat bound to this owner's durable session and current conversation history. | `hz chat open-check-in` | — | — | `POST /api/system/runner/chat/open-check-in` | yes |  |
 | Send a message in a chat session and wait for the answer; this may cost money. | `hz chat send` | — | — | `POST /api/system/runner/chat/send` | yes |  |
 | Run an action the agent proposed, with exactly the arguments shown; only you can confirm. | `hz chat confirm` | — | — | `POST /api/system/runner/chat/confirm` | yes |  |
+| Authorize one reviewed schedule action for a single MCP run; keep its proof private. | `hz chat authorize-for-mcp` | — | — | `POST /api/system/runner/chat/authorize-for-mcp` | yes |  |
 | Decline an action the agent proposed; it never runs. | `hz chat decline` | — | — | `POST /api/system/runner/chat/decline` | yes |  |
+| Check an interrupted confirmation without running it again; unresolved outcomes stay blocked. | `hz chat recover` | — | — | `POST /api/system/runner/chat/recover` | yes |  |
+| Stage a schedule action for review in chat; creating the proposal never changes or activates it. | `hz chat propose-schedule-control` | — | — | `POST /api/system/runner/chat/propose-schedule-control` | yes |  |
+| Stage the exact current model policy for human review; no grant or model call is made. | `hz chat propose-model-policy` | — | — | `POST /api/system/runner/chat/propose-model-policy` | yes |  |
+| Stage current agent contract terms for human review. | `hz chat propose-agent-contract` | — | — | `POST /api/system/runner/chat/propose-agent-contract` | yes |  |
+| Stage one exact notification draft for a human decision; no notice is sent. | `hz chat propose-agent-notification` | — | — | `POST /api/system/runner/chat/propose-agent-notification` | yes |  |
+| Stage current connected-read terms for an explicit human decision. | `hz chat propose-connected-read-review` | — | — | `POST /api/system/runner/chat/propose-connected-read-review` | yes |  |
+| Stage the current read-set review for an explicit human decision. | `hz chat propose-connected-read-set-review` | — | — | `POST /api/system/runner/chat/propose-connected-read-set-review` | yes |  |
+| Stage the exact current agent schedule for human review; no schedule is approved yet. | `hz chat propose-agent-schedule-review` | — | — | `POST /api/system/runner/chat/propose-agent-schedule-review` | yes |  |
 | Show a chat session: its context, messages, actions and costs. | `hz chat show` | — | — | `GET /api/system/runner/chat/show` |  | expert |
 | List chat sessions, most recent first; they are kept for system.runner.chat.keep_days. | `hz chat list` | — | — | `GET /api/system/runner/chat/list` |  |  |
 | Delete a chat session and everything it holds; returns the sessions left. | `hz chat remove` | — | — | `POST /api/system/runner/chat/remove` | yes | expert |
@@ -447,7 +398,7 @@ Health checks: reported by `hz system doctor`.
 
 ## `system.sound`
 
-Pick the web app's soundscape: off, a built-in one or one a plugin offers.
+Pick the web app's soundscape: off or one an installed plugin offers.
 
 | Operation | CLI | MCP tool | REST | Web | Changes state | Expert |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -491,6 +442,7 @@ List what modules add to the web app: status items, header actions and Today wid
 | List the status items modules add to the web app's status bar, with what each shows now. | `hz system ui status` | `system_ui_status` | — | `GET /api/system/ui/status` |  | expert |
 | List the buttons modules add to the web app's header, with what each does and its badge. | `hz system ui actions` | `system_ui_actions` | — | `GET /api/system/ui/actions` |  | expert |
 | List the widgets modules add to the web app's Today screen, with what each shows now. | `hz system ui widgets` | `system_ui_widgets` | — | `GET /api/system/ui/widgets` |  | expert |
+| List active installed views, their compatible bundles and read-only operation calls. | `hz system ui views` | `system_ui_views` | — | `GET /api/system/ui/views` |  | expert |
 | List active providers' navigation and owned Settings metadata without running their operations. | `hz system ui navigation` | `system_ui_navigation` | — | `GET /api/system/ui/navigation` |  | expert |
 | List every contribution to the web app, where it may show and whether it does; nothing runs. | `hz system ui list` | `system_ui_list` | — | `GET /api/system/ui/list` |  | expert |
 | Show a contribution in a slot of the web app, such as the clock in the sidebar. | `hz system ui show` | `system_ui_show` | — | `POST /api/system/ui/show` | yes | expert |
@@ -499,20 +451,6 @@ List what modules add to the web app: status items, header actions and Today wid
 Settings: [`[system.ui]`](CONFIGURATION.md#systemui).
 
 Health checks: reported by `hz system doctor`.
-
-## `tailscale`
-
-Private web sharing through Tailscale Serve.
-
-First-party plugin `heinzel-tailscale`: `hz system plugin add tailscale --confirm`.
-
-| Operation | CLI | MCP tool | REST | Web | Changes state | Expert |
-| --- | --- | --- | --- | --- | --- | --- |
-| Show private sharing readiness without changing Tailscale or configuration. | `hz tailscale status` | `tailscale_status` | — | `GET /api/tailscale/status` |  | expert |
-| Share hz privately over Tailscale, preserving existing services and requiring authenticated readiness. | `hz tailscale enable` | `tailscale_enable` | — | `POST /api/tailscale/enable` | yes | expert |
-| Stop only hz's private Serve mapping and remove only the origin permission this plugin added. | `hz tailscale disable` | `tailscale_disable` | — | `POST /api/tailscale/disable` | yes | expert |
-
-Settings: [`[tailscale]`](CONFIGURATION.md#tailscale).
 
 ## `team`
 
@@ -527,19 +465,5 @@ Your team's repository: create one (`hz team new`), join one by its URL (`hz tea
 | Make an existing checkout your team repository; replaces the deprecated `heinzel.team_repository`. | `hz team adopt` | `team_adopt` | — | — | yes | expert |
 
 Settings: [`[team]`](CONFIGURATION.md#team).
-
-Health checks: reported by `hz system doctor`.
-
-## `zoom`
-
-Read meetings from Zoom's meeting-summary emails: the meetings capability.
-
-First-party plugin `heinzel-zoom`: `hz system plugin add zoom --confirm`.
-
-| Operation | CLI | MCP tool | REST | Web | Changes state | Expert |
-| --- | --- | --- | --- | --- | --- | --- |
-| Show this plugin's version, the Heinzelmännchen it runs on and where its meetings come from. | `hz zoom info` | `zoom_info` | `GET /zoom/info` | `GET /api/zoom/info` |  | expert |
-
-Settings: [`[zoom]`](CONFIGURATION.md#zoom).
 
 Health checks: reported by `hz system doctor`.

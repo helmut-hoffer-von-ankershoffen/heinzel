@@ -5,7 +5,8 @@ from typing import Annotated, Literal
 from pydantic import Field
 
 from heinzel import Kernel, Module
-from heinzel.kernel import Installation, ReleaseSource
+from heinzel.kernel import CoreMetadataVerifier, DaemonInstallationLifecycle, Installation, ReleaseSource
+from heinzel.modules.system._metadata_identity import CoreMetadataIdentity
 from heinzel.modules.system._models import (
     ModuleInfo,
     PluginUpdate,
@@ -20,7 +21,15 @@ from heinzel.modules.system._update import UpdateService
 
 module = Module("system", "Inspect, configure, diagnose and update Heinzelmännchen itself.", essential=True)
 module.service(SystemService)
-module.service(UpdateService)
+module.service(CoreMetadataVerifier, CoreMetadataIdentity)
+
+
+def _update_service(installation: Installation, releases: ReleaseSource, kernel: Kernel) -> UpdateService:
+    lifecycle = kernel.resolve(DaemonInstallationLifecycle) if kernel.provides(DaemonInstallationLifecycle) else None
+    return UpdateService(installation, releases, lifecycle=lifecycle, require_lifecycle=True)
+
+
+module.service(UpdateService, _update_service)
 module.service(ReleaseSource, github_releases)  # what the CLI's hourly update check asks (ADR 0031)
 
 

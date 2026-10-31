@@ -8,8 +8,12 @@
     "start": "electron .",
     "test": "node --test test/*.test.js",
     "test:native": "node e2e/native-startup.mjs",
+    "test:navigation": "node e2e/ui-navigation.mjs",
+    "test:permissions": "node e2e/permission-proof.mjs && node e2e/native-consent.mjs",
     "build": "node ci/package.mjs",
-    "verify:package": "node ci/verify-package.mjs"
+    "verify:package": "node ci/verify-package.mjs",
+    "test:real-backend": "node e2e/real-backend.mjs",
+    "test:real-backend-crash": "node e2e/real-backend.mjs --crash-test"
   },
   "devDependencies": {
     "@electron-internal/extract-zip": "1.0.6",

@@ -5,6 +5,7 @@ whatever the umask, and every file is written to a temporary name, flushed to di
 disk never leaves half a file.
 """
 
+import contextvars
 import fcntl
 import io
 import json
@@ -49,6 +50,7 @@ class Outcome:
 
 
 TimeLimit = Callable[[Callable[[], object], float], Outcome]
+_HELD_LIFECYCLE_LOCKS: list[io.TextIOWrapper] = []
 
 
 def run(command: Sequence[str]) -> subprocess.CompletedProcess[str]:
@@ -79,7 +81,8 @@ def within(func: Callable[[], object], seconds: float) -> Outcome:
         except BaseException as exc:  # noqa: BLE001 - a job's failure is recorded in its receipt, never raised
             results.append(Outcome(error=describe(exc)))
 
-    thread = threading.Thread(target=target, name="hz-job", daemon=True)
+    context = contextvars.copy_context()
+    thread = threading.Thread(target=context.run, args=(target,), name="hz-job", daemon=True)
     thread.start()
     thread.join(seconds)
     if thread.is_alive():
@@ -97,7 +100,7 @@ def private_dir(path: Path) -> Path:
     return path
 
 
-def _fsync_dir(directory: Path) -> None:
+def fsync_dir(directory: Path) -> None:
     descriptor = os.open(directory, os.O_RDONLY)
     try:
         os.fsync(descriptor)
@@ -122,7 +125,7 @@ def write_private(path: Path, text: str, *, shared_dir: bool = False) -> None:
         os.fsync(handle.fileno())
     temporary.chmod(PRIVATE_FILE)  # the umask may have narrowed os.open's mode
     temporary.replace(path)
-    _fsync_dir(path.parent)
+    fsync_dir(path.parent)
 
 
 def _open_private(path: Path, flags: int) -> int:
@@ -147,6 +150,51 @@ def lock(path: Path) -> Generator[bool]:
             yield True
         finally:
             fcntl.flock(handle, fcntl.LOCK_UN)
+
+
+@contextmanager
+def lock_until_finished(path: Path, pending: Callable[[], Sequence[threading.Thread]]) -> Generator[bool]:
+    """Hold the lifecycle lock until this tick's abandoned job threads actually finish.
+
+    Yields:
+        True if the lock was acquired, or False immediately if another writer holds it.
+    """
+    handle = os.fdopen(_open_private(path, os.O_WRONLY | os.O_APPEND), "a")
+    try:
+        fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        handle.close()
+        yield False
+        return
+    except BaseException:
+        handle.close()
+        raise
+    try:
+        yield True
+    finally:
+        try:
+            alive = [thread for thread in pending() if thread.is_alive()]
+            if alive:
+                watcher = threading.Thread(target=_release_after, args=(handle, alive), daemon=True)
+                watcher.start()
+            else:
+                _release_lock(handle)
+        except Exception:  # noqa: BLE001 - retaining the lock is safer than overlapping unfinished work
+            _HELD_LIFECYCLE_LOCKS.append(handle)
+
+
+def _release_lock(handle: io.TextIOWrapper) -> None:
+    fcntl.flock(handle, fcntl.LOCK_UN)
+    handle.close()
+
+
+def _release_after(handle: io.TextIOWrapper, threads: list[threading.Thread]) -> None:
+    try:
+        for thread in threads:
+            thread.join()
+        _release_lock(handle)
+    except Exception:  # noqa: BLE001 - keep the lock held if work completion cannot be established
+        _HELD_LIFECYCLE_LOCKS.append(handle)
 
 
 class _PrivateRotatingFileHandler(RotatingFileHandler):

@@ -4,6 +4,7 @@ import type { SchemaHeinzelSummary } from "@/api/client";
 import { useHeinzelmaennchen } from "@/api/queries";
 import { CopyCommand, Empty, Loaded, Page } from "@/components/common";
 import { Badge } from "@/components/ui/card";
+import { PersonalHeinzels } from "@/heinzel/PersonalHeinzels";
 import { format, type MessageKey, t } from "@/i18n";
 import { contractPath } from "@/layout/navigation";
 
@@ -35,6 +36,7 @@ export function Heinzelmaennchen() {
   const list = useHeinzelmaennchen();
   return (
     <Page title={t("heinzel.title")} intro={t("heinzel.intro")}>
+      <PersonalHeinzels />
       <Loaded query={list}>
         {(shown) =>
           shown.heinzelmaennchen.length === 0 ? (

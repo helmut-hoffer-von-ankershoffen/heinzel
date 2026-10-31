@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help install setup release-local doctor tools-verify check check-fast preflight fix lint format typecheck test test-parallel commits test-all-pythons test-unit test-integration test-perf test-e2e audit licenses secrets template-test template-sync docs attributions fuzz demo terminal-art notifier icons web-build web-dev test-web managed-backend-setup managed-backend-check desktop-electron-test desktop-electron-sandbox desktop-electron-native desktop-electron-package build pypi-clean-build-marker changelog ci-logs pr sync docs-plugins docs-record docs-site release clean
+.PHONY: help install setup release-local doctor tools-verify check check-fast linux-user-manager-proof preflight fix lint format typecheck test test-parallel commits test-all-pythons test-unit test-integration test-perf test-e2e e2e-prepare test-browser-deps audit licenses secrets template-test template-sync docs attributions fuzz demo terminal-art notifier icons web-build web-dev test-web managed-backend-setup managed-backend-check desktop-electron-test desktop-electron-sandbox desktop-electron-native desktop-electron-package build pypi-clean-build-marker changelog ci-logs pr sync docs-plugins docs-record docs-site docs-catalog docs-site-check docs-publish-check release clean
 
 # Quiet by default: one line per passing step, the tail of a failing one. VERBOSE=1 streams everything.
 # A step starting with & runs concurrently with the one before it; the first failure cancels the rest.
@@ -28,9 +28,10 @@ TYPES := "&mypy=uv run mypy" "&pyright=uv run pyright"
 # Unit, then integration (the suite orders them), on 4 workers, stopping at the first failure; coverage is in make test.
 # Match the covered suite's deadline: the full suite can exceed two minutes on a busy developer machine.
 TESTS := "&tests=uv run pytest -m '(unit or integration) and not perf' -n 4 -x -q --session-timeout=300"
-# The same suite measured, on the same 4 workers: each xdist worker is a Python subprocess, which coverage measures
-# ([tool.coverage.run] patch = ["subprocess"]) into its own data file; `coverage combine` merges them afterwards.
-COVERED := uv run coverage erase && uv run coverage run -m pytest -m '(unit or integration) and not perf' -n 4 -q --session-timeout=300
+# The same suite measured, on the same 4 workers: coverage's subprocess tracing can exceed the unmeasured 300s
+# deadline on a busy developer machine. Match `make test`'s 420s allowance; coverage still measures every worker.
+# ([tool.coverage.run] patch = ["subprocess"]) writes each worker to its own file; `coverage combine` merges them.
+COVERED := uv run coverage erase && uv run coverage run -m pytest -m '(unit or integration) and not perf' -n 4 -q --session-timeout=420
 # The web head's app in web/ (ADR 0039): pnpm from scripts/tools.toml on the Node.js of uv.lock, through scripts/web_build.py,
 # which installs web/'s dependencies first when they are stale. Plugins have no web/; the template leaves these out.
 WEB := uv run --quiet --script scripts/web_build.py
@@ -68,6 +69,9 @@ tools-verify: ## Download every pinned tool for every platform and check its che
 check: ## Everything CI checks that runs offline, in parallel: lint, import contracts, types, tests
 	$(STEPS) $(GATE) $(LINT) $(WEB_LINT) $(TYPES) $(WEB_TYPES) $(TESTS) $(WEB_TESTS) $(MANAGED_CHECK)
 
+linux-user-manager-proof: ## Inspect an existing Linux user manager without starting services; set PROBE_PREFIX
+	uv run python tests/integration/linux_user_manager_probe.py --prefix "$${PROBE_PREFIX:?Set PROBE_PREFIX to an isolated heinzel-probe- name}"
+
 check-fast: ## Seconds-fast feedback for the edit loop: format, lint, contracts, generated files, unit tests
 	$(STEPS) \
 		"format=uv run ruff format --check ." \
@@ -84,7 +88,7 @@ preflight: ## What CI checks, before you push: check with coverage, template, bu
 	$(STEPS) $(GATE) $(LINT) $(WEB_LINT) $(TYPES) $(WEB_TYPES) $(WEB_TESTS) \
 		"&tests=$(COVERED) -x && uv run coverage combine --quiet && uv run coverage report --format=total --fail-under=90" \
 		"&template=TEMPLATE_AUDIT=$(if $(filter full,$(PREFLIGHT)),1) bash scripts/template-test.sh" \
-		"&build=uv build --all-packages --quiet --out-dir .preflight-dist && rm -rf .preflight-dist" \
+		"&build=uv build --quiet --out-dir .preflight-dist && rm -rf .preflight-dist" \
 		"&commits=$(MAKE) --no-print-directory commits" $(MANAGED_CHECK)
 	@if [ "$(PREFLIGHT)" = full ]; then $(MAKE) --no-print-directory audit test-e2e; fi
 
@@ -97,7 +101,8 @@ fix: ## Fix what tools can fix: lockfile, formatting, lint autofixes, generated 
 		"&demo=uv run --script scripts/demo_tape.py" \
 		"&attributions=uv run --quiet --script scripts/attributions.py" \
 		"format=uv run ruff format --quiet ." \
-		"ruff=uv run ruff check --fix --quiet --exit-zero ."
+		"ruff=uv run ruff check --fix --quiet --exit-zero ." \
+		"format-final=uv run ruff format --quiet ."
 	@git status --short
 
 lint: ## Check formatting, lint, architecture contracts and workflows
@@ -106,6 +111,7 @@ lint: ## Check formatting, lint, architecture contracts and workflows
 format: ## Format and autofix
 	uv run ruff format .
 	uv run ruff check --fix .
+	uv run ruff format .
 
 typecheck: ## Type-check with mypy and pyright (both strict)
 	$(STEPS) "mypy=uv run mypy" "&pyright=uv run pyright" $(WEB_TYPES) $(MANAGED_TYPES)
@@ -143,6 +149,7 @@ desktop-electron-sandbox: ## Set Electron's Linux sandbox helper ownership and m
 	fi
 
 desktop-electron-native: ## Launch the Electron window against a temporary authenticated local service
+	pnpm --dir web install --frozen-lockfile
 	@case "$$(uname -s)" in \
 		Linux) target="linux-$$(node -p 'process.arch')"; executable="$$PWD/desktop/dist/Heinzelmaennchen-$$target/Heinzelmaennchen"; runner='xvfb-run --auto-servernum' ;; \
 		Darwin) target="darwin-$$(node -p 'process.arch')"; executable="$$PWD/desktop/dist/Heinzelmaennchen-$$target/Heinzelmaennchen.app/Contents/MacOS/Heinzelmaennchen"; runner='' ;; \
@@ -150,6 +157,14 @@ desktop-electron-native: ## Launch the Electron window against a temporary authe
 	esac; \
 	if [ ! -x "$$executable" ]; then echo "Packaged Electron executable is missing or not executable: $$executable"; exit 1; fi; \
 	HEINZEL_ELECTRON_EXECUTABLE="$$executable" $$runner pnpm --dir desktop test:native
+	# Packaging can replace pnpm's development-runtime directory; provision it again before development navigation tests.
+	pnpm --dir desktop exec node node_modules/electron/install.js
+	@if [ "$$(uname -s)" = Linux ]; then \
+		if [ "$$CI" != true ] || [ "$$HZ_DISPOSABLE_NATIVE_CI" != 1 ]; then echo "Development sandbox setup requires disposable native CI."; exit 1; fi; \
+		sudo python3 desktop/ci/restore_linux_sandbox.py --configure "$$(realpath desktop/node_modules/electron)"; \
+	fi
+	@case "$$(uname -s)" in Linux) xvfb-run --auto-servernum pnpm --dir desktop test:navigation ;; Darwin) pnpm --dir desktop test:navigation ;; esac
+	@case "$$(uname -s)" in Linux) xvfb-run --auto-servernum pnpm --dir desktop test:permissions ;; Darwin) pnpm --dir desktop test:permissions ;; esac
 
 test: ## Run unit and integration tests with coverage on 4 workers (offline; what the CI Coverage job runs)
 	$(STEPS) \
@@ -160,7 +175,7 @@ test: ## Run unit and integration tests with coverage on 4 workers (offline; wha
 
 # Leave headroom under CI's 10-minute job timeout for the full unit/integration suite on slower runners.
 test-parallel: ## Unit and integration tests on 4 workers, stopping at the first failure; no coverage (the CI test matrix)
-	$(STEPS) "tests=uv run pytest -m '(unit or integration) and not perf' -n 4 -x -q --session-timeout=420"
+	$(STEPS) "tests=uv run pytest -m '(unit or integration) and not perf' -n 4 -x -q --session-timeout=420 --durations=20"
 
 commits: ## Commit messages since BASE, and $$TITLE and $$BRANCH when set: conventional, no confidential terms
 	$(STEPS) \
@@ -181,8 +196,18 @@ test-integration: ## Run integration tests
 test-perf: ## Run the performance tests (timing assertions such as linear time); CI only, they flake on a loaded machine
 	$(STEPS) "perf=uv run pytest -m perf -q --session-timeout=120"
 
-test-e2e: ## Run end-to-end tests (needs network), on 3 workers
-	$(STEPS) "e2e=uv run pytest -m e2e -n 3 -q --session-timeout=600"
+test-browser-deps: ## Install Chromium and WebKit; include Linux host libraries when needed
+	@if [ "$$(uname -s)" = Linux ]; then \
+		$(WEB) exec playwright-core install --with-deps chromium webkit; \
+	else \
+		$(WEB) exec playwright-core install chromium webkit; \
+	fi
+
+test-e2e: e2e-prepare ## Run end-to-end tests (needs network), on 3 workers
+	$(STEPS) "e2e=uv run pytest -m e2e -n 3 -q --session-timeout=600 -x tests/e2e/docs_test.py::test_readme_instructions && uv run pytest -m e2e -n 3 -q --session-timeout=600 -x --deselect=tests/e2e/docs_test.py::test_readme_instructions"
+
+e2e-prepare: ## Prepare current build assets before end-to-end procedure deadlines
+	@set -eu; dir="$$(mktemp -d "$${TMPDIR:-/tmp}/heinzel-e2e.XXXXXXXX")"; trap 'rm -rf "$$dir"' EXIT; uv build --quiet --wheel --out-dir "$$dir"
 
 audit: ## Audit runtime dependencies: known vulnerabilities (pip-audit) and licenses (.license-allowlist)
 	$(STEPS) "licenses=$(MAKE) --no-print-directory licenses" "&vulnerabilities=uv export --quiet --no-dev --no-emit-project --no-emit-package heinzel --format requirements-txt --output-file .audit-requirements.txt && uv run pip-audit --strict --disable-pip -r .audit-requirements.txt; status=\$$?; rm -f .audit-requirements.txt; exit \$$status" "&web-vulnerabilities=$(WEB) pnpm audit --prod"
@@ -217,7 +242,21 @@ docs-record: ## Record every plugin page's scenes (CLI with VHS, UI with Playwri
 	uv run --quiet --script scripts/docs_record.py --intro $(if $(PLUGIN),--plugin $(PLUGIN)) $(if $(SCENE),--scene $(SCENE))
 
 docs-site: ## Build the documentation site (MkDocs Material) into site/ from docs/; SERVE=1 serves it with reload instead
-	uv run --quiet --group docs mkdocs $(if $(SERVE),serve,build --strict)
+	uv run --quiet --script scripts/site_build.py $(if $(SERVE),serve,build --strict)
+
+docs-catalog: ## Refresh the public metadata-only website catalog; offline site builds use its checked-in snapshot
+	uv run --quiet --script scripts/site_catalog.py --output "$${HZ_SITE_CATALOG:-docs/_data/catalog.json}"
+
+docs-site-check: docs-site ## Check the built site's catalog, keyboard flow, mobile layout and accessibility
+	$(WEB) install
+	uv run --quiet --script scripts/site_check.py --install $(if $(CI),--with-deps)
+	uv run --quiet --script scripts/site_check.py
+
+docs-publish-check: ## Validate publication with fresh public metadata, or build a standalone plugin's ordinary docs
+	@if [ -f docs/catalog-sources.toml ]; then \
+		if [ "$${REFRESH_PUBLIC:-false}" = true ]; then $(MAKE) docs-catalog || exit $$?; else unset HZ_SITE_CATALOG; fi; \
+		$(MAKE) docs-site-check; \
+	else $(MAKE) docs-site; fi
 
 template-sync: ## Regenerate the template's Makefile, CI workflow and pyproject from Heinzelmännchen's
 	uv run --script scripts/sync_template.py
@@ -240,8 +279,8 @@ icons: ## Make every image of Heinzelmännchen from heinzel.svg: the web app's i
 terminal-art: ## Redraw Heinzelmännchen for the terminal from web/src/components/heinzel.ts (needs node, rsvg-convert, magick)
 	@uv run --quiet --script scripts/terminal_art.py && uv run --quiet ruff format --quiet src/heinzel/heads/cli/_art_data.py
 
-build: web-build ## Build wheels and sdists into dist/ (the core and every first-party plugin; the web app first)
-	uv build --all-packages
+build: web-build ## Build the core wheel and sdist into dist/ (the web app first)
+	uv build
 
 PYPI_DIST ?= dist
 pypi-clean-build-marker: ## Remove uv's generated ignore marker from the PyPI staging directory

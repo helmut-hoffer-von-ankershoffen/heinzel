@@ -1,13 +1,19 @@
-import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { app, BrowserWindow, dialog, ipcMain } from "electron";
 import { lifecycle } from "./connection.js";
 import { createInstanceLifecycle } from "./instance-lifecycle.js";
 import { createLifecycleHandler } from "./lifecycle-ipc.js";
 import { createOwnedCli } from "./owned-cli.js";
+import { createNativePermissions } from "./native-permissions.js";
+import { initializeDesktopIdentity } from "./identity.js";
+import { stopWithReport } from "./shutdown.js";
+import { guardUiNavigation, openProductUi } from "./ui-navigation.js";
 
-app.setName("Heinzelmännchen");
+const identityReady = initializeDesktopIdentity(app, dialog);
 const windows = new WeakSet();
+let quitting = false;
+let stopping = false;
+let permissions;
 const instance = createInstanceLifecycle({
   app,
   parseConnection: () => null,
@@ -15,8 +21,11 @@ const instance = createInstanceLifecycle({
     if (!window.isVisible()) window.show();
     window.focus();
   },
-  createWindow: async () => {
-    const window = new BrowserWindow({
+  createWindow: (connection) => openProductUi({
+    connection,
+    lifecycle,
+    cancelled: () => stopping || quitting,
+    createWindow: () => new BrowserWindow({
       width: 1100,
       height: 760,
       show: false,
@@ -27,32 +36,42 @@ const instance = createInstanceLifecycle({
         sandbox: true,
         webviewTag: false,
       },
-    });
-    windows.add(window);
-    window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
-    window.webContents.on("will-navigate", (event) => event.preventDefault());
-    window.on("closed", () => { if (!quitting) app.quit(); });
-    const html = await readFile(new URL("./index.html", import.meta.url), "utf8");
-    await window.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
-    window.show();
-    return window;
-  },
+    }),
+    prepareWindow: (window) => {
+      windows.add(window);
+      const windowPermissions = createNativePermissions({
+        windows,
+        fromWebContents: (contents) => BrowserWindow.fromWebContents(contents),
+        connection: () => (stopping || quitting ? null : instance.currentConnection()),
+        prompt: (owner, options) => dialog.showMessageBox(owner, options),
+      });
+      permissions = windowPermissions;
+      window.webContents.session.setPermissionCheckHandler(windowPermissions.check);
+      window.webContents.session.setPermissionRequestHandler(windowPermissions.request);
+      window.webContents.on("did-start-navigation", windowPermissions.navigation);
+      guardUiNavigation(window.webContents, connection);
+      window.on("closed", () => { windowPermissions.revoke(); if (!quitting) app.quit(); });
+    },
+  }),
 });
 
-let quitting = false;
 const ownedCli = createOwnedCli();
-if (instance.acquire(process.argv.slice(app.isPackaged ? 1 : 2))) {
+if (identityReady && instance.acquire(process.argv.slice(app.isPackaged ? 1 : 2))) {
   ipcMain.handle("hz:lifecycle", createLifecycleHandler({
     windows,
     fromWebContents: (contents) => BrowserWindow.fromWebContents(contents),
     connection: () => instance.currentConnection(),
     lifecycle,
   }));
-  let stopping = false;
   let serviceStarted = false;
+  let unexpectedExitReported = false;
   void ownedCli.exited().then(() => {
     if (serviceStarted && !stopping && !quitting) {
-      dialog.showErrorBox("Heinzelmännchen stopped", "The local service stopped. Reopen the app to start it again.");
+      unexpectedExitReported = true;
+      dialog.showErrorBox(
+        "Heinzelmännchen stopped unexpectedly",
+        "The local service stopped unexpectedly. Check any work that was in progress, then reopen the app.",
+      );
       app.quit();
     }
   });
@@ -61,7 +80,14 @@ if (instance.acquire(process.argv.slice(app.isPackaged ? 1 : 2))) {
     event.preventDefault();
     if (stopping) return;
     stopping = true;
-    void ownedCli.stop().then(() => {
+    permissions?.revoke();
+    void stopWithReport(ownedCli, () => {
+      if (unexpectedExitReported) return;
+      dialog.showErrorBox(
+        "Heinzelmännchen stopped unexpectedly",
+        "The local service did not shut down cleanly. Check any work that was in progress before continuing.",
+      );
+    }).then(() => {
       quitting = true;
       app.quit();
     }).catch(() => {

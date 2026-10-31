@@ -19,7 +19,6 @@ Usage: uv run python scripts/generate_docs.py [--check]
 # Project-bound: runs in the project environment (`uv run python`), not as an inline-metadata script, because it
 # imports heinzel and its modules to read their operations, settings and schemas.
 
-import importlib
 import json
 import re
 import subprocess
@@ -32,15 +31,14 @@ from urllib.parse import quote, urlsplit
 from pydantic import BaseModel
 from pydantic_core import PydanticUndefined, to_jsonable_python
 
-from heinzel import Config, HealthLet, Kernel, Settings, SettingsLet, SetupLet, TelemetryEntry, __version__
+from heinzel import Config, HealthLet, Kernel, Settings, SettingsLet, SetupLet, TelemetryEntry
 from heinzel.heads._exposure import exposed
 from heinzel.heads.cli import build
 from heinzel.heads.cli._chat import command_words
-from heinzel.kernel import Origin, discover, env_prefix, walk
+from heinzel.kernel import discover, env_prefix
 from heinzel.modules.graph import TeamGraphDocument
 from heinzel.modules.heinzel._models import SCHEMA_VERSION, Frontmatter
 from heinzel.modules.system.config._schema import reference_hints, setting_schemas
-from heinzel.modules.system.plugin._service import FIRST_PARTY, REFERENCE
 from heinzel.modules.system.plugin.docs._build import rendered
 from heinzel.modules.system.plugin.docs._files import write_pages
 from heinzel.modules.system.plugin.docs._models import PluginPage
@@ -83,15 +81,9 @@ Plugins add their own tables.
 
 
 def kernel() -> Kernel:
-    """The built-in modules plus the first-party plugins, with default settings: the same output on every machine."""
+    """The built-in modules alone, with default settings: the same output on every machine."""
     config = Config.empty()
     records = discover(plugins=False)[0]
-    for name in sorted(FIRST_PARTY):
-        package = importlib.import_module(f"heinzel_{name}")
-        # The URL the installed plugin's metadata names (its pyproject's Source), so `hz system plugin docs build`
-        # and this script write the same page.
-        url = f"https://github.com/{OWNER}/{REPOSITORY}/tree/main/plugins/heinzel-{name}"
-        records += walk(package, Origin(distribution=f"heinzel-{name}", version=__version__, builtin=False, url=url))
     return Kernel(config.settings(Settings, "hz"), records, config=config)
 
 
@@ -221,18 +213,15 @@ def plugin_gallery(pages: list[PluginPage]) -> str:
         "## More plugins",
         "",
         (
-            "Plugins in repositories of their own, installed with `hz system plugin add <spec> --confirm`; a community "
-            "plugin lists itself in [registry.toml](registry.toml) with a pull request, and `hz system plugin search` "
-            "finds any repository with the topic `heinzel-plugin`."
+            "Install a discovered plugin with `hz system plugin add <spec> --confirm`. "
+            "`hz system plugin search` discovers plugin metadata in configured repository directories and external "
+            "repositories with the topic `heinzel-plugin`; no registry pull request is needed. "
+            "The optional [registry.toml](registry.toml) curates additional documentation links below."
         ),
         "",
         "| Plugin | What it does | Repository | Documentation |",
         "| --- | --- | --- | --- |",
     ]
-    for name, (summary, url) in sorted(REFERENCE.items()):
-        lines.append(
-            f"| `heinzel-{name}` | {summary} | <{url}> | [page]({url}/blob/main/docs/plugins/heinzel-{name}/index.md) |"
-        )
     for entry in sorted(registry.get("plugin", []), key=lambda item: str(item.get("name", ""))):
         name = entry.get("name", "")
         if not isinstance(name, str) or re.fullmatch(r"heinzel-[a-z0-9]+(?:-[a-z0-9]+)*", name) is None:
@@ -412,6 +401,16 @@ def main() -> int:
     for page in BADGE_PAGES:
         text = with_block((ROOT / page).read_text(encoding="utf-8"), BADGES_START, BADGES_END, ours)
         outputs[ROOT / page] = readme_with_module_list(text) if page == README.name else text
+    command = (DOCS / "_data" / "install-command.txt").read_text(encoding="utf-8").strip()
+    for path in (README, ROOT / "PYPI.md"):
+        body = f"<!-- docs-test -->\n```sh\n{command}\n```"
+        outputs[path] = with_block(
+            outputs.get(path, path.read_text(encoding="utf-8")), "<!-- install:start -->", "<!-- install:end -->", body
+        )
+        guided = (DOCS / "_data" / "install-script-command.txt").read_text(encoding="utf-8").strip()
+        outputs[path] = with_block(
+            outputs[path], "<!-- install-script:start -->", "<!-- install-script:end -->", f"```sh\n{guided}\n```"
+        )
     readme = TEMPLATE / "README.md.jinja"
     outputs[readme] = with_block(readme.read_text(encoding="utf-8"), BADGES_START, BADGES_END, template_badges())
     outputs[TEMPLATE / "SECURITY.md.jinja"] = template_security()

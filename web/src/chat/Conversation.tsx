@@ -1,7 +1,7 @@
 // What a chat shows wherever it is (Home, the right sidebar): the messages, the answer as it streams with the tools
 // it calls, every proposed action as a card that runs only on Confirm, the costs, and the composer.
-import { Check, Info, Send, X } from "lucide-react";
-import { type FormEvent, type RefObject, useId } from "react";
+import { Check, Info, Plus, Send, X } from "lucide-react";
+import { type FormEvent, type RefObject, useEffect, useId, useState } from "react";
 import type { ModelChoice } from "@/api/chat";
 import type { SchemaChatAction, SchemaChatMessage } from "@/api/client";
 import { useConfig } from "@/api/queries";
@@ -41,17 +41,21 @@ export function ActionCard({
   action,
   busy,
   onDecide,
+  onAuthorizeMcp,
+  proposalTitle,
 }: {
   action: SchemaChatAction;
   busy: boolean;
   onDecide: (confirm: boolean) => void;
+  onAuthorizeMcp?: () => void;
+  proposalTitle?: string;
 }) {
   const titleId = useId();
   return (
     <li className="rounded-lg border border-warn bg-muted p-3 text-sm">
       <section aria-labelledby={titleId}>
         <h3 id={titleId} className="font-semibold">
-          {t("chat.proposal")}
+          {proposalTitle ?? t("chat.proposal")}
         </h3>
         <p className="mt-1 text-xs text-muted-foreground">{t("chat.proposalHelp")}</p>
         <code className="mt-2 block break-all rounded bg-background p-2 text-xs">{action.command}</code>
@@ -64,6 +68,12 @@ export function ActionCard({
           </>
         )}
         <div className="mt-2 flex gap-2">
+          {onAuthorizeMcp && (
+            <Button size="sm" variant="outline" disabled={busy} onClick={onAuthorizeMcp}>
+              {action.mcp_authorized ? t("chat.refreshMcpAuthorization") : t("chat.authorizeMcp")}
+            </Button>
+          )}
+          {action.mcp_authorized && <span role="status">{t("chat.authorizedMcp")}</span>}
           <Button size="sm" disabled={busy} onClick={() => onDecide(true)}>
             <Check aria-hidden />
             {t("chat.confirm")}
@@ -187,24 +197,42 @@ export function Composer({
   context,
   inputRef,
   className,
+  onCreatePersonal,
+  initialPersonalMessage,
 }: {
   chat: Chat;
   context: string;
   inputRef?: RefObject<HTMLTextAreaElement | null>;
   className?: string;
+  onCreatePersonal?: (message: string) => Promise<boolean>;
+  initialPersonalMessage?: string;
 }) {
+  const [creating, setCreating] = useState(false);
   const sessionId = chat.session?.id;
   const { message, setMessage, picked, setPicked } = useUpdateDraft(
     context,
     sessionId ?? null,
     chat.live != null || chat.deciding || chat.loading,
   );
+  useEffect(() => {
+    if (initialPersonalMessage) setMessage((current) => current || initialPersonalMessage);
+  }, [initialPersonalMessage, setMessage]);
   const choice: ModelChoice = picked ?? { model: chat.session?.model ?? null, effort: chat.session?.effort ?? null };
   const inputId = useId();
+  const createPersonal = async () => {
+    const text = message;
+    if (!text.trim() || !onCreatePersonal || creating || chat.live || chat.loading) return;
+    setCreating(true);
+    try {
+      if (await onCreatePersonal(text)) setMessage((current) => (current === text ? "" : current));
+    } finally {
+      setCreating(false);
+    }
+  };
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     const text = message.trim();
-    if (!text || chat.live || chat.loading) return;
+    if (!text || chat.live || chat.loading || creating || initialPersonalMessage) return;
     setMessage("");
     if (!(await chat.send(text, context, picked ?? {})))
       setMessage((current) => current || text); // nothing lost
@@ -222,6 +250,8 @@ export function Composer({
           rows={2}
           value={message}
           maxLength={MESSAGE_LIMIT}
+          disabled={creating}
+          readOnly={Boolean(initialPersonalMessage)}
           onChange={(event) => {
             setMessage(event.target.value);
             typed(); // a soundscape plays softer while you type (ADR 0058)
@@ -230,18 +260,41 @@ export function Composer({
             if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) void submit(event);
           }}
           placeholder={t("chat.placeholder")}
-          className="min-h-9 flex-1 resize-none rounded-lg border border-border bg-input px-2 py-1 text-sm"
+          className="min-h-9 min-w-0 flex-1 resize-none rounded-lg border border-border bg-input px-2 py-1 text-sm"
         />
+        {onCreatePersonal && (
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            aria-label="Create Heinzel and take this message"
+            title="Create Heinzel and take this message"
+            disabled={!message.trim() || creating || chat.live != null || chat.loading}
+            onClick={() => void createPersonal()}
+          >
+            <Plus aria-hidden />
+          </Button>
+        )}
         <Button
           type="submit"
           size="icon"
-          disabled={!message.trim() || chat.live != null || chat.loading}
+          disabled={!message.trim() || chat.live != null || chat.loading || creating || Boolean(initialPersonalMessage)}
           aria-label={t("chat.send")}
         >
           <Send aria-hidden />
         </Button>
       </form>
-      <ModelPicker value={choice} onChange={setPicked} disabled={chat.live != null} />
+      {creating && (
+        <span role="status" className="sr-only">
+          Creating your Heinzel…
+        </span>
+      )}
+      {initialPersonalMessage && !creating && (
+        <p role="status" className="text-xs text-muted-foreground">
+          An earlier creation is unresolved. Retry it with the preserved message.
+        </p>
+      )}
+      <ModelPicker value={choice} onChange={setPicked} disabled={chat.live != null || creating} />
     </div>
   );
 }

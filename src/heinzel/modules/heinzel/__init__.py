@@ -22,6 +22,7 @@ from pydantic import Field, JsonValue
 
 from heinzel import Check, Config, ConfigEditor, HeinzelError, Module, Prompter
 from heinzel.kernel import CompiledJobs, PlaybookLet, PlaybookSetup, TeamPromises
+from heinzel.modules.heinzel._autonomous_schedule import AutonomousSchedules
 from heinzel.modules.heinzel._measure import Measurements, Sent
 from heinzel.modules.heinzel._models import (
     CheckReport,
@@ -54,6 +55,7 @@ from heinzel.modules.heinzel._render import (
     render_show,
 )
 from heinzel.modules.heinzel._service import HeinzelService
+from heinzel.modules.heinzel._session_crud import SessionCrud
 from heinzel.modules.heinzel._session_operations import register_session_operations
 
 module = Module(
@@ -65,8 +67,8 @@ module.settings(HeinzelSettings)
 module.service(HeinzelService, HeinzelService.for_user)
 
 
-def _compiled(service: HeinzelService) -> CompiledJobs:
-    return service.compiled()
+def _compiled(service: HeinzelService, sessions: SessionCrud, schedules: AutonomousSchedules) -> CompiledJobs:
+    return service.compiled(sessions=sessions, schedules=schedules)
 
 
 module.service(CompiledJobs, _compiled)

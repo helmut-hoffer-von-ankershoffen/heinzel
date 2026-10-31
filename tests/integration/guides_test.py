@@ -32,7 +32,7 @@ BASH_BLOCK = re.compile(r"```bash\n(.*?)\n```", re.DOTALL)
 INLINE = re.compile(r"`(hz(?: [^`\n]*)?)`")
 PLACEHOLDER = re.compile(r"<[^<>\n]+>")
 COMING = "coming in the next release"
-INVITE = "uvx --from heinzel heinzel join "
+INVITE = "uvx heinzel@latest join "
 
 
 def _split(line: str) -> list[str]:
@@ -125,7 +125,15 @@ CASES = _cases()
 
 
 def test_the_guides_exist_and_cite_commands():
-    assert [g.name for g in GUIDES] == ["joining.md", "manager.md"]
+    assert [g.name for g in GUIDES] == [
+        "architecture.md",
+        "catalog.md",
+        "contribute.md",
+        "first-steps.md",
+        "install.md",
+        "joining.md",
+        "manager.md",
+    ]
     assert len({c for _, c, mention in CASES if not mention}) >= 30
 
 
@@ -150,8 +158,9 @@ def test_guide_command_parses(check, guide, command, mention):
 
 def test_the_invite_line_is_the_console_script_and_marked_lines_carry_the_whole_phrase():
     scripts = tomllib.loads((REPO / "pyproject.toml").read_text(encoding="utf-8"))["project"]["scripts"]
-    assert scripts["heinzel"] == scripts["hz"]
-    for guide in GUIDES:
+    assert scripts["heinzel"] == "_heinzel_launcher:main"
+    assert scripts["hz"] == "_heinzel_launcher:cli"
+    for guide in (REPO / "docs/guides/joining.md", REPO / "docs/guides/manager.md"):
         text = guide.read_text(encoding="utf-8")
         assert INVITE in text, f"{guide.name} doesn't show the invite line"
         for number, line in enumerate(text.splitlines(), start=1):

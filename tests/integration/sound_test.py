@@ -29,8 +29,7 @@ ACME = ("heinzel_acme", "heinzel_acme_payments", "heinzel_acme_lisbon", "heinzel
 TOKEN = "s3ssion-token-for-tests"
 AUTH = {"Authorization": f"Bearer {TOKEN}"}
 FRAMED = f"{web.CSP}; frame-src https://www.youtube-nocookie.com https://www.youtube.com"
-WEATHER_FRAMED = f"{web.CSP}; frame-src {web.OSM_FRAME_ORIGIN}"
-STREAM = {"kind": "stream", "stream": {"provider": "youtube", "video": "tRsQsTMvPNg"}}
+STREAM = {"kind": "stream", "stream": {"provider": "youtube", "video": "abcdefghijk"}}
 
 
 @pytest.fixture
@@ -84,33 +83,25 @@ def client(kernel: Kernel, static: Path | None = None) -> TestClient:
     return TestClient(web.build(kernel, port=8000, token=TOKEN, static=static), base_url="http://127.0.0.1:8000")
 
 
-def test_sound_is_off_by_default_and_the_list_shows_off_the_core_streams_and_each_plugins_soundscape(kernel):
+def test_sound_is_off_by_default_and_lists_only_installed_contributions(kernel):
     code, listed = hz(kernel("heinzel_sound_demo"), "system", "sound", "list")
     assert code == 0, listed
     assert (listed["selected"], listed["effective"]) == ("off", "off")
-    off, fm, focus, hyper_focus, demo = listed["soundscapes"]
+    off, fm, demo = listed["soundscapes"]
     assert (off["name"], off["kind"], off["selected"], off["effective"]) == ("off", "off", True, True)
     assert (fm["name"], fm["title"], fm["module"], fm["plugin"]) == (
-        "claude-fm",
-        "Claude FM",
-        "system.sound",
-        "heinzel",
+        "fixture-radio",
+        "Fixture radio",
+        "sound-demo",
+        "heinzel-sound-demo",
     )
     assert fm["stream"] == {
         "provider": "youtube",
-        "video": "tRsQsTMvPNg",
-        "embed_url": "https://www.youtube-nocookie.com/embed/tRsQsTMvPNg",
+        "video": "abcdefghijk",
+        "embed_url": "https://www.youtube-nocookie.com/embed/abcdefghijk",
         "frame_origin": "https://www.youtube-nocookie.com",
-        "watch_url": "https://www.youtube.com/watch?v=tRsQsTMvPNg",
+        "watch_url": "https://www.youtube.com/watch?v=abcdefghijk",
     }
-    assert (focus["name"], focus["title"], focus["plugin"]) == ("focus", "Die Heinzelmännchen", "heinzel")
-    assert focus["stream"]["video"] == "5Le8Mrx3uA0"
-    assert (hyper_focus["name"], hyper_focus["title"], hyper_focus["plugin"]) == (
-        "hyper-focus",
-        "Hyper Focus",
-        "heinzel",
-    )
-    assert hyper_focus["stream"]["video"] == "uNw_a7HFwvg"
     assert (demo["name"], demo["kind"], demo["plugin"], demo["pairs_with"]) == (
         "demo",
         "layers",
@@ -125,20 +116,28 @@ def test_sound_is_off_by_default_and_the_list_shows_off_the_core_streams_and_eac
     assert listed["signals"]["daypart"] in {"dawn", "morning", "day", "dusk", "evening", "night"}
     assert "weather.rain" not in listed["signals"]  # absent until a plugin publishes it
     assert (listed["volume"], listed["follow_theme"], listed["mute_in_meetings"]) == (50, False, True)
-    assert listed["next"] == ["hz system sound use claude-fm"]
+    assert listed["next"] == ["hz system sound use fixture-radio"]
+
+
+def test_minimal_core_has_no_soundscape_content_and_keeps_a_fallback_theme(settings):
+    records, errors = discover(plugins=False)
+    hzk = Kernel(settings, records, errors, config=Config.empty())
+    code, listed = hz(hzk, "system", "sound", "list")
+    assert code == 0, listed
+    assert [item["name"] for item in listed["soundscapes"]] == ["off"]
+    assert listed["effective"] == "off"
+    assert hz(hzk, "system", "theme", "list")[1]["selected"] == "default"
 
 
 def test_sound_use_writes_the_user_setting_refuses_an_unknown_name_and_off_switches_it_off(kernel):
     hzk = kernel("heinzel_sound_demo")
-    code, used = hz(hzk, "system", "sound", "use", "claude-fm")
+    code, used = hz(hzk, "system", "sound", "use", "fixture-radio")
     assert code == 0, used
-    assert (used["selected"], used["effective"]) == ("claude-fm", "claude-fm")
-    assert '[system.sound]\nname = "claude-fm"' in (user_config_dir() / "config.toml").read_text(encoding="utf-8")
+    assert (used["selected"], used["effective"]) == ("fixture-radio", "fixture-radio")
+    assert '[system.sound]\nname = "fixture-radio"' in (user_config_dir() / "config.toml").read_text(encoding="utf-8")
     code, output = hz(hzk, "system", "sound", "use", "nope", json_output=False)
     assert code != 0
-    assert "No soundscape is called 'nope'; available: off, claude-fm, focus, hyper-focus, demo" in " ".join(
-        str(output).split()
-    )
+    assert "No soundscape is called 'nope'; available: off, fixture-radio, demo" in " ".join(str(output).split())
     assert hz(hzk, "system", "sound", "use", "off")[1]["effective"] == "off"
 
 
@@ -157,7 +156,7 @@ def test_a_soundscape_whose_plugin_is_gone_or_an_invalid_value_falls_back_to_off
 def test_a_project_file_cannot_pick_a_soundscape_or_its_settings(kernel, tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     (tmp_path / "hz.toml").write_text(
-        '[system.sound]\nname = "claude-fm"\nvolume = 100\nfollow_theme = true\nmute_in_meetings = false\n',
+        '[system.sound]\nname = "fixture-radio"\nvolume = 100\nfollow_theme = true\nmute_in_meetings = false\n',
         encoding="utf-8",
     )
     listed = hz(kernel(), "system", "sound", "list")[1]
@@ -171,21 +170,21 @@ def test_a_project_file_cannot_pick_a_soundscape_or_its_settings(kernel, tmp_pat
 
 def test_follow_my_theme_plays_the_soundscape_that_pairs_with_the_theme_in_effect(kernel):
     hzk = kernel()
-    hz(hzk, "system", "sound", "use", "claude-fm")
-    assert hz(hzk, "system", "sound", "list")[1]["effective"] == "claude-fm"  # follow_theme is off
-    configure('[system.sound]\nname = "claude-fm"\nfollow_theme = true\n')
-    assert hz(hzk, "system", "sound", "list")[1]["effective"] == "claude-fm"  # the default theme pairs with none
+    hz(hzk, "system", "sound", "use", "fixture-radio")
+    assert hz(hzk, "system", "sound", "list")[1]["effective"] == "fixture-radio"  # follow_theme is off
+    configure('[system.sound]\nname = "fixture-radio"\nfollow_theme = true\n')
+    assert hz(hzk, "system", "sound", "list")[1]["effective"] == "fixture-radio"  # the default theme pairs with none
     hz(hzk, "system", "theme", "use", "acme")
     listed = hz(hzk, "system", "sound", "list")[1]
-    assert (listed["selected"], listed["effective"]) == ("claude-fm", "demo")
+    assert (listed["selected"], listed["effective"]) == ("fixture-radio", "demo")
     assert "The theme 'acme' brings its own soundscape, 'demo'" in listed["note"]
     assert [s["name"] for s in listed["soundscapes"] if s["effective"]] == ["demo"]
 
 
-@pytest.mark.parametrize("name", ["claude-fm", "demo", "off"])
+@pytest.mark.parametrize("name", ["fixture-radio", "demo", "off"])
 def test_manual_soundscape_choice_turns_off_theme_following(kernel, name):
     hzk = kernel()
-    configure('[system.theme]\nname = "acme"\n[system.sound]\nname = "claude-fm"\nfollow_theme = true\n')
+    configure('[system.theme]\nname = "acme"\n[system.sound]\nname = "fixture-radio"\nfollow_theme = true\n')
     assert hz(hzk, "system", "sound", "list")[1]["effective"] == "demo"
     selected = hz(hzk, "system", "sound", "use", name)[1]
     assert (selected["selected"], selected["effective"], selected["follow_theme"]) == (name, name, False)
@@ -232,7 +231,7 @@ def test_a_layer_whose_file_is_gone_after_import_drops_out_of_the_list_and_is_no
 @pytest.mark.parametrize("how", ["module off", "service fails"])
 def test_follow_my_theme_without_the_theme_module_plays_the_pick(kernel, monkeypatch, how):
     hzk = kernel()
-    configure('[system.theme]\nname = "acme"\n[system.sound]\nname = "claude-fm"\nfollow_theme = true\n')
+    configure('[system.theme]\nname = "acme"\n[system.sound]\nname = "fixture-radio"\nfollow_theme = true\n')
     provides, resolve = hzk.provides, hzk.resolve
     if how == "module off":
         monkeypatch.setattr(hzk, "provides", lambda kind: kind is not ThemeChoice and provides(kind))
@@ -246,7 +245,7 @@ def test_follow_my_theme_without_the_theme_module_plays_the_pick(kernel, monkeyp
 
         monkeypatch.setattr(hzk, "resolve", unbuildable)
     listed = hz(hzk, "system", "sound", "list")[1]
-    assert (listed["selected"], listed["effective"], listed["note"]) == ("claude-fm", "claude-fm", None)
+    assert (listed["selected"], listed["effective"], listed["note"]) == ("fixture-radio", "fixture-radio", None)
 
 
 def test_audio_answers_404_when_reading_it_fails(kernel, monkeypatch):
@@ -264,8 +263,7 @@ def test_the_cli_renders_the_soundscapes_with_the_one_in_effect_marked(kernel):
     assert code == 0, output
     assert "*  off" in str(output)
     lines = [" ".join(line.split()) for line in str(output).splitlines()]
-    assert any("claude-fm Claude FM stream (youtube)" in line for line in lines)
-    assert any("hyper-focus Hyper Focus stream (youtube)" in line for line in lines)
+    assert any("fixture-radio Fixture radio stream (youtube)" in line for line in lines)
     assert not any("CEO mode" in line for line in lines)
     assert any("demo Demo hum 1 layer" in line for line in lines)
 
@@ -274,9 +272,9 @@ def test_the_web_head_lists_soundscapes_and_the_pick_round_trips_behind_the_toke
     web_client = client(kernel())
     assert web_client.get("/api/system/sound/list").status_code == 401
     assert web_client.get("/api/system/sound/list", headers=AUTH).json()["effective"] == "off"
-    used = web_client.post("/api/system/sound/use", params={"name": "claude-fm"}, headers=AUTH)
+    used = web_client.post("/api/system/sound/use", params={"name": "fixture-radio"}, headers=AUTH)
     assert used.status_code == 200, used.text
-    assert web_client.get("/api/system/sound/list", headers=AUTH).json()["effective"] == "claude-fm"
+    assert web_client.get("/api/system/sound/list", headers=AUTH).json()["effective"] == "fixture-radio"
 
 
 def test_the_web_head_serves_a_soundscapes_audio_typed_by_its_signature_without_the_token(kernel):
@@ -302,7 +300,7 @@ def test_the_web_head_serves_a_soundscapes_audio_typed_by_its_signature_without_
         "/sound-assets/demo/earcon-failed.opus",
         "/sound-assets/demo/hum.opus",
         "/sound-assets/demo/..%2Fdemo.toml",
-        "/sound-assets/claude-fm/layer-0.opus",
+        "/sound-assets/fixture-radio/layer-0.opus",
         "/sound-assets/nope/layer-0.opus",
         "/sound-assets/Demo/layer-0.opus",
     ],
@@ -323,7 +321,7 @@ def test_audio_is_refused_to_another_host_or_site(kernel, headers):
 def test_the_page_admits_the_streams_frame_origin_only_while_a_stream_is_in_effect(kernel, static):
     web_client = client(kernel(), static)
     assert web_client.get("/").headers["content-security-policy"] == web.CSP  # off: no frame at all
-    hz(kernel(), "system", "sound", "use", "claude-fm")
+    hz(kernel(), "system", "sound", "use", "fixture-radio")
     page = web_client.get("/contracts")
     assert page.headers["content-security-policy"] == FRAMED
     assert page.headers["x-frame-options"] == "DENY"
@@ -342,22 +340,16 @@ def test_follow_my_theme_to_a_stream_admits_its_frame_origin(kernel, static):
     assert client(hzk, static).get("/").headers["content-security-policy"] == FRAMED
 
 
-def test_the_weather_map_frame_is_admitted_only_when_a_weather_module_is_installed(kernel, static):
-    web_client = client(kernel(), static)
-    assert web_client.get("/").headers["content-security-policy"] == web.CSP
-    weather = Module("weather", "Weather for the team's locations.")
-    with_weather = client(kernel(extra=(weather,)), static)
-    assert with_weather.get("/").headers["content-security-policy"] == WEATHER_FRAMED
-    hzk = kernel("heinzel_sound_demo", extra=(weather,))
-    hz(hzk, "system", "sound", "use", "claude-fm")
-    weather_and_stream = client(hzk, static)
-    assert weather_and_stream.get("/").headers["content-security-policy"] == (
-        f"{web.CSP}; frame-src {web.OSM_FRAME_ORIGIN} https://www.youtube-nocookie.com https://www.youtube.com"
-    )
+def test_an_arbitrary_module_never_changes_frame_permissions(kernel, static):
+    unrelated = Module("unforeseen", "An unrelated provider.")
+    assert client(kernel(extra=(unrelated,)), static).get("/").headers["content-security-policy"] == web.CSP
+    hzk = kernel("heinzel_sound_demo", extra=(unrelated,))
+    hz(hzk, "system", "sound", "use", "fixture-radio")
+    assert client(hzk, static).get("/").headers["content-security-policy"] == FRAMED
 
 
 def test_the_page_admits_no_frame_when_the_sound_service_fails(kernel, static, monkeypatch):
-    configure('[system.sound]\nname = "claude-fm"\n')
+    configure('[system.sound]\nname = "fixture-radio"\n')
 
     def broken(_: SoundService) -> str | None:
         raise RuntimeError
@@ -372,7 +364,7 @@ def test_the_page_admits_no_frame_for_a_provider_the_head_does_not_know(kernel, 
 
 
 def test_no_audio_and_no_frame_when_the_sound_module_is_off(kernel, static, monkeypatch):
-    configure('[system.sound]\nname = "claude-fm"\n')
+    configure('[system.sound]\nname = "fixture-radio"\n')
     hzk = kernel()
     web_client = client(hzk, static)
     monkeypatch.setattr(hzk, "provides", lambda kind: False)

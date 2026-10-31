@@ -1,11 +1,12 @@
 """The plugin module: find, add, remove, enable, disable, list and scaffold plugins."""
 
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import Field
 
-from heinzel import CurrentUser, HeinzelError, Module, Prompter
+from heinzel import CurrentUser, HeinzelError, Kernel, Module, Prompter
+from heinzel.kernel import DaemonInstallationLifecycle, Installation
 from heinzel.modules.system.plugin._models import (
     AvailablePlugin,
     PluginCandidate,
@@ -22,7 +23,14 @@ from heinzel.modules.system.plugin._service import TEMPLATE, PluginService
 
 module = Module("plugin", "Find, add, remove, enable, disable, list and scaffold plugins.")
 module.settings(PluginSettings)
-module.service(PluginService)
+
+
+def _plugin_service(kernel: Kernel, installation: Installation, settings: PluginSettings) -> PluginService:
+    lifecycle = kernel.resolve(DaemonInstallationLifecycle) if kernel.provides(DaemonInstallationLifecycle) else None
+    return PluginService(kernel, installation, settings, lifecycle=lifecycle)
+
+
+module.service(PluginService, _plugin_service)
 
 # Changing plugins installs or switches off code that runs with your rights, so it happens where a person or their
 # agent is (the CLI, MCP over stdio) or behind the web head's session token, never on the unauthenticated REST head or
@@ -67,7 +75,9 @@ def add(
             description="A first-party plugin by name (`github`, `acme`), a PyPI package named heinzel-<name> "
             "(`heinzel-crm==1.2.0`), or a git repository over https "
             "(`git+https://github.com/acme-example/heinzel-crm@v1.0.0`); private GitHub repositories use your gh "
-            "login. Pass `requirement` from an earlier answer to install exactly what it showed."
+            "login. If the repository's distribution name cannot be resolved, provide its actual name in a named "
+            "requirement, such as `heinzel-example @ git+https://example.com/repository`. Pass `requirement` from an "
+            "earlier answer to install exactly what it showed."
         ),
     ],
     confirm: Annotated[
@@ -143,9 +153,10 @@ def history(service: PluginService) -> list[PluginEvent]:
 
 
 @module.operation(read_only=False, heads={"cli"})  # copier asks questions on the terminal
-def new(
+def new(  # noqa: PLR0913 - each option is independently exposed and documented by the CLI
     service: PluginService,
     destination: Annotated[Path, Field(description="Directory for the new plugin repository.")],
+    *,
     data: Annotated[
         list[str] | None,
         Field(description="Answer a template question as key=value, e.g. plugin_name=crm; repeat for each."),
@@ -156,12 +167,32 @@ def new(
     ref: Annotated[
         str | None, Field(description="Template version; defaults to this Heinzelmännchen's release tag.")
     ] = None,
+    defaults: Annotated[bool, Field(description="Use template defaults without interactive questions.")] = False,
+    layout: Annotated[
+        Literal["standalone", "collection"],
+        Field(description="A standalone repository, or only owning files inside a plugin collection."),
+    ] = "standalone",
+    preset: Annotated[
+        Literal["minimal", "contributions"],
+        Field(description="One operation and test, or the complete UI and notification example."),
+    ] = "minimal",
 ) -> Path:
     """Scaffold a plugin repository from the Heinzelmännchen template, asking for answers not given."""
-    return service.new(destination, template, ref, data or ())
+    return service.new(destination, template, ref, data or (), defaults=defaults, layout=layout, preset=preset)
 
 
-@module.operation(render=render_search)
+@module.operation(read_only=False, heads={"cli"})
+def sdk(
+    service: PluginService,
+    destination: Annotated[
+        Path, Field(description="New directory for the installed view SDK and TypeScript definitions.")
+    ],
+) -> list[Path]:
+    """Export the versioned plugin view SDK from this installation, without a core checkout."""
+    return service.sdk(destination)
+
+
+@module.operation(render=render_search, private=True)
 def search(
     service: PluginService,
     text: Annotated[
@@ -174,8 +205,10 @@ def search(
 ) -> PluginSearch:
     """Find plugins to install: first-party ones, and community ones by querying the GitHub API.
 
-    Community plugins are GitHub repositories with the topic heinzel-plugin; GH_TOKEN or GITHUB_TOKEN raises the rate
-    limit. Offline, only first-party plugins are listed. PyPI has no keyword search, so it is not queried. Community
+    Configured repositories are scanned for plugin projects; topic heinzel-plugin discovers external repositories.
+    Your GitHub login also reads private catalogs; authenticated heads only. GH_TOKEN or GITHUB_TOKEN raises the
+    rate limit. Catalog outages retain last successfully read metadata.
+    PyPI has no keyword search, so it is not queried. Community
     plugins are not reviewed by the Heinzelmännchen maintainers, and every plugin runs with your rights.
     """
     return service.search(text)

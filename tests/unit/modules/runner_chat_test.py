@@ -149,6 +149,32 @@ def test_a_session_is_kept_privately_and_lists_most_recent_first(store, settings
     assert store.load(second.id).context == second.context
 
 
+def test_a_symlinked_session_directory_cannot_redirect_private_approval_storage(store):
+    chat = store.create(None)
+    folder = store.root / chat.id
+    outside = store.root / "outside-session"
+    folder.rename(outside)
+    folder.symlink_to(outside, target_is_directory=True)
+
+    with pytest.raises(HeinzelError, match="There is no chat session"):
+        store.prepare_mcp_approval(chat.id)
+
+    assert not (outside / "mcp-approvals").exists()
+
+
+def test_a_symlinked_chat_root_is_rejected_before_creating_a_session(store, tmp_path):
+    root = store.root
+    outside = tmp_path / "outside-chat-root"
+    root.mkdir(parents=True)
+    root.rename(outside)
+    root.symlink_to(outside, target_is_directory=True)
+
+    with pytest.raises(HeinzelError, match="private chat store is unavailable"):
+        store.create(None)
+
+    assert list(outside.iterdir()) == []
+
+
 @pytest.mark.parametrize("bad", ["../../etc", "0123", "ZZZZZZZZZZZZZZZZ", "0123456789abcdeg"])
 def test_a_session_id_is_never_a_path(store, bad):
     with pytest.raises(HeinzelError, match="not a chat session id"):
@@ -185,11 +211,21 @@ def test_proposals_get_one_id_each_and_are_bounded(store):
 
 
 def test_context_parses_kinds_and_a_bare_id_is_an_event():
-    assert parse_context("route:/contracts", None).model_dump() == {"kind": "route", "ref": "/contracts", "detail": ""}  # type: ignore[union-attr]
+    assert parse_context("route:/contracts", None).model_dump() == {
+        "kind": "route",
+        "ref": "/contracts",
+        "detail": "",
+        "request_id": None,
+        "timezone": None,
+        "owner_id": None,
+    }  # type: ignore[union-attr]
     assert parse_context("3f2a", "Build failed").model_dump() == {
         "kind": "event",
         "ref": "3f2a",
         "detail": "Build failed",
+        "request_id": None,
+        "timezone": None,
+        "owner_id": None,
     }  # type: ignore[union-attr]
     assert parse_context(None, None) is None
     with pytest.raises(HeinzelError, match="Unknown chat context 'mail'"):
@@ -262,6 +298,26 @@ def test_what_the_agent_proposes_is_attached_to_its_answer_and_runs_only_when_co
     assert len(seen) == 1
 
 
+def test_recover_marks_an_interrupted_action_uncertain_without_repeating_it(service, store, seen):
+    chat = service.open(None)
+    service.send(Recorder(store, propose=[call()]), chat.id, "Tag weekly", None)  # type: ignore[arg-type]
+    saved = store.load(chat.id)
+    saved.actions[0].status = "running"
+    store.save(saved)
+
+    recovered = service.recover(chat.id, "a1")
+
+    assert recovered.actions[0].status == "uncertain"
+    assert "not repeated" in recovered.actions[0].result
+    assert recovered.messages[-1].role == "action"
+    assert seen == []
+    with pytest.raises(HeinzelError, match="not interrupted"):
+        service.recover(chat.id, "a1")
+    with pytest.raises(HeinzelError, match="uncertain already"):
+        service.confirm(chat.id, "a1")
+    assert seen == []
+
+
 def test_a_declined_action_never_runs(service, store, seen):
     chat = service.open(None)
     service.send(Recorder(store, propose=[call()]), chat.id, "Tag weekly", None)  # type: ignore[arg-type]
@@ -295,7 +351,7 @@ def test_a_failing_action_is_recorded_as_failed(service, store):
 
 def test_a_session_answering_a_message_is_busy_for_everyone_else(service, store):
     chat = service.open(None)
-    with store.locked(chat.id), pytest.raises(HeinzelError, match="answering a message right now"):
+    with store.locked(chat.id), pytest.raises(HeinzelError, match="is busy right now"):
         service.confirm(chat.id, "a1")
 
 
@@ -343,7 +399,7 @@ def test_the_session_is_locked_while_the_agent_runs(service, store):
     refused: list[str] = []
 
     def confirm_meanwhile(session: str) -> None:
-        with pytest.raises(HeinzelError, match="answering a message right now") as busy:
+        with pytest.raises(HeinzelError, match="is busy right now") as busy:
             service.confirm(session, "a1")
         refused.append(str(busy.value))
 
@@ -394,6 +450,20 @@ def test_a_setting_that_changes_nothing_that_runs_may_be_proposed(store, service
         command="hz system config set",
     )
     assert StoreGate(store, kernel).propose(proposal) == "a1"
+
+
+def test_model_cannot_stage_read_set_human_confirmation(store, service, kernel):
+    chat = service.open(None)
+    proposal = ProposedCall(
+        session=chat.id,
+        module="heinzel",
+        operation="approve-connected-read-set",
+        tool="heinzel_approve_connected_read_set",
+        arguments={},
+        command="hz heinzel approve-connected-read-set",
+    )
+    with pytest.raises(HeinzelError, match="human review surface"):
+        StoreGate(store, kernel).propose(proposal)
 
 
 @pytest.mark.parametrize("operation", ["set", "unset"])

@@ -33,6 +33,34 @@ describe("The durable Heinzel footer control", () => {
     expect(await screen.findByText("No persisted Heinzels yet.")).toBeInTheDocument();
   });
 
+  it("creates a durable personal Heinzel and opens its inspectable session", async () => {
+    const sessionId = "hz-01ARZ3NDEKTSV4RRFFQ69G5FAV";
+    const created = {
+      session_id: sessionId,
+      heinzel_id: sessionId,
+      name: "Personal helper",
+      schedule: null,
+      messages: [],
+    };
+    const { calls } = mockApi({
+      ...shell,
+      "/api/heinzel/sessions": { sessions: [] },
+      "/api/heinzel/new-chat": (request: Request) => {
+        expect(request.method).toBe("POST");
+        return created;
+      },
+      "/api/heinzel/session": created,
+    });
+    renderAt("/doctor");
+    fireEvent.click(await screen.findByRole("button", { name: "0 Heinzelmännchen, off" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Create a personal Heinzel" }));
+    expect(await screen.findByRole("heading", { name: "Personal helper" })).toBeInTheDocument();
+    const request = calls.find((item) => new URL(item.url).pathname.endsWith("/new-chat"));
+    expect(request).toBeDefined();
+    if (!request) throw new Error("The personal Heinzel creation request was not sent");
+    expect(await request.json()).toMatchObject({ name: "Personal helper" });
+  });
+
   it("shows a loading placeholder without implying a count before the persisted list arrives", async () => {
     let finish: (response: Response) => void = () => {};
     mockApi({

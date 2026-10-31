@@ -44,17 +44,9 @@ type Props = {
   terminalOpen: boolean;
   onToggleTerminal: () => void;
   navigationMode?: boolean;
-  onWorldClock?: () => void;
 };
 
-export function TopBar({
-  chatOpen,
-  onToggleChat,
-  terminalOpen,
-  onToggleTerminal,
-  navigationMode = false,
-  onWorldClock,
-}: Props) {
+export function TopBar({ chatOpen, onToggleChat, terminalOpen, onToggleTerminal, navigationMode = false }: Props) {
   const { title, command } = useScreen();
   const queries = useQueryClient();
   const playful = usePlayful();
@@ -119,7 +111,7 @@ export function TopBar({
         )}
       </div>
       <div className="ml-auto flex items-center gap-0.5 text-icon">
-        <HeaderActions onWorldClock={onWorldClock} />
+        <HeaderActions />
         <Button variant="ghost" size="icon" onClick={refresh} aria-label={t("top.refresh")} title={t("top.refresh")}>
           <RefreshCw aria-hidden />
         </Button>

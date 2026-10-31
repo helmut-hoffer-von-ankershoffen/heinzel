@@ -1,11 +1,12 @@
 // Navigation on the left, the screen in the middle, and one panel with the chat and the terminal (ADR 0039, 0045):
 // beside the screen when the window leaves it at least 30rem, below it otherwise; never both at once.
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Outlet, useLocation, useSearchParams } from "react-router";
 import { useConfig } from "@/api/queries";
 import { AudioVisualizer } from "@/audio/AudioVisualizer";
 import { ChatProvider } from "@/chat/ChatContext";
+import { isDurableSession } from "@/chat/useChat";
 import { AvatarThemeProvider } from "@/components/AvatarTheme";
 import { FOOTER_RELOCATED } from "@/components/FooterLayout";
 import { t } from "@/i18n";
@@ -16,6 +17,7 @@ import { cn } from "@/lib/utils";
 import { useVisualViewport } from "@/lib/viewport";
 import { useNoticeStream } from "@/notifications/useNoticeStream";
 import { Onboarding } from "@/onboarding/OnboardingWizard";
+import { InstalledView, useViews, ViewSlot } from "@/plugins/Views";
 import { SoundEngine } from "@/sound/SoundEngine";
 import { ChatPanel } from "./ChatPanel";
 import { InfoDialog, type Panel } from "./InfoDialog";
@@ -28,7 +30,6 @@ import { TerminalPanel } from "./TerminalPanel";
 import { ThemeTokens } from "./ThemeTokens";
 import { TopBar } from "./TopBar";
 import { WorkspacePanels } from "./WorkspacePanels";
-import { WorldClock } from "./WorldClock";
 
 /** A pane's open state, remembered in this browser; without storage it starts from `initial` each time. */
 function useRemembered(
@@ -92,7 +93,9 @@ function Layout() {
   const [terminalOpen, setTerminalOpen] = useState(false);
   const [terminalFull, setTerminalFull] = useState(false);
   const [activePanel, setActivePanel] = useState(() => (window.innerWidth < 1024 ? "page" : "chat"));
-  const [clockRetained, setClockRetained] = useState(false);
+  const views = useViews();
+  const panelViews = useMemo(() => (views.data ?? []).filter((view) => view.slot === "panel"), [views.data]);
+  const [retainedViews, setRetainedViews] = useState<string[]>([]);
   // Getting narrower folds the navigation; getting wider leaves it as the person set it. The chat moves below instead.
   useEffect(() => {
     const fold = () => {
@@ -171,31 +174,40 @@ function Layout() {
   useLayoutEffect(() => () => footerHost.remove(), [footerHost]);
   // Settings is a dialog over the screen, open while the URL has `?settings=<section>`, so links can point into it.
   const [params, setParams] = useSearchParams();
-  const settings = params.get("settings");
-  const clockOpen = params.get("panel") === "world-clock";
+  const durableChat = params.get("chat");
   useEffect(() => {
-    if (clockOpen) {
-      setClockRetained(true);
-      setActivePanel("world-clock");
+    if (durableChat && isDurableSession(durableChat)) {
+      setChatOpen(true);
+      setTerminalFull(false);
     }
-  }, [clockOpen]);
-  const selectedPanel = clockOpen
-    ? "world-clock"
-    : activePanel === "page" && !beside
+  }, [durableChat, setChatOpen]);
+  const settings = params.get("settings");
+  const requestedView = panelViews.find((view) => view.id === params.get("panel"));
+  const viewOpen = Boolean(requestedView);
+  const requestedId = requestedView?.id;
+  useEffect(() => {
+    if (requestedId) {
+      setRetainedViews((current) => (current.includes(requestedId) ? current : [...current, requestedId]));
+      setActivePanel(requestedId);
+    }
+  }, [requestedId]);
+  const selectedPanel =
+    requestedId ??
+    (activePanel === "page" && !beside
       ? "page"
       : activePanel === "chat" && chatOpen
         ? "chat"
         : activePanel === "terminal" && terminalOpen
           ? "terminal"
-          : activePanel === "world-clock" && clockRetained
-            ? "world-clock"
+          : retainedViews.includes(activePanel) && panelViews.some((view) => view.id === activePanel)
+            ? activePanel
             : chatOpen
               ? "chat"
               : terminalOpen
                 ? "terminal"
                 : !beside
                   ? "page"
-                  : "chat";
+                  : "chat");
   // Panel and full-screen changes can reveal the same footer at a new capacity without a viewport resize.
   // biome-ignore lint/correctness/useExhaustiveDependencies: each layout change requires a fresh footer measurement
   useLayoutEffect(() => {
@@ -209,7 +221,7 @@ function Layout() {
   }, [route, beside]);
   const full = terminalOpen && terminalFull && selectedPanel === "terminal";
   const flowingWorkspace = !beside && !full;
-  // An explicit navigation to the clock can repeat the same URL, and should still bring it into view.
+  // An explicit navigation to the view can repeat the same URL, and should still bring it into view.
   const previousLocation = useRef(location);
   const ownNavigation = useRef<{ path: string; search: string } | null>(null);
   useEffect(() => {
@@ -228,17 +240,17 @@ function Layout() {
     }
     if (
       !beside &&
-      clockOpen &&
+      viewOpen &&
       changed &&
       !own &&
       (previous.pathname !== location.pathname ||
         previous.search === location.search ||
-        new URLSearchParams(previous.search).get("panel") !== "world-clock")
+        new URLSearchParams(previous.search).get("panel") !== requestedId)
     ) {
       pageScroll.current?.();
-      requestScroll("world-clock");
+      requestScroll(requestedId ?? "page");
     }
-  }, [beside, clockOpen, location, requestScroll]);
+  }, [beside, viewOpen, location, requestScroll, requestedId]);
 
   useLayoutEffect(() => {
     if (!scrollTarget) return;
@@ -303,18 +315,18 @@ function Layout() {
       setTerminalFull(false);
       setParams((current) => {
         const next = new URLSearchParams(current);
-        if (id === "world-clock") next.set("panel", "world-clock");
-        else if (next.get("panel") === "world-clock") next.delete("panel");
+        if (panelViews.some((view) => view.id === id)) next.set("panel", id);
+        else if (panelViews.some((view) => view.id === next.get("panel"))) next.delete("panel");
         ownNavigation.current = { path: location.pathname, search: next.toString() };
         return next;
       });
       if (!beside) requestScroll(id);
     },
-    [beside, full, location.pathname, requestScroll, selectedPanel, setParams],
+    [beside, full, location.pathname, requestScroll, selectedPanel, setParams, panelViews],
   );
-  const closeClock = () => {
+  const closeView = (id: string) => {
     pageScroll.current?.();
-    setClockRetained(false);
+    setRetainedViews((current) => current.filter((entry) => entry !== id));
     setParams((current) => {
       const next = new URLSearchParams(current);
       next.delete("panel");
@@ -423,7 +435,10 @@ function Layout() {
             </main>
             <div ref={besideFooter} hidden={!beside} className="shrink-0" />
           </div>
-          {(chatOpen || terminalOpen || clockOpen || clockRetained) && (
+          {(chatOpen ||
+            terminalOpen ||
+            viewOpen ||
+            retainedViews.some((id) => panelViews.some((view) => view.id === id))) && (
             // One selected workspace panel; the same mounted contents move between desktop and phone layouts.
             <div
               ref={workspace}
@@ -431,7 +446,8 @@ function Layout() {
               data-placement={beside ? "beside" : "below"}
               data-active={selectedPanel}
               className={cn(
-                "workspace-panel flex min-h-0 flex-col bg-background",
+                "workspace-panel flex flex-col bg-background",
+                flowingWorkspace && panelViews.some((view) => view.id === selectedPanel) ? "min-h-full" : "min-h-0",
                 full
                   ? "absolute inset-0"
                   : beside
@@ -468,6 +484,7 @@ function Layout() {
                           content: (
                             <TerminalPanel
                               full={terminalFull}
+                              onActivate={() => selectPanel("terminal")}
                               onToggleFull={() => setTerminalFull((value) => !value)}
                               onClose={() => {
                                 setTerminalOpen(false);
@@ -478,22 +495,23 @@ function Layout() {
                         },
                       ]
                     : []),
-                  ...(clockOpen || clockRetained
-                    ? [
-                        {
-                          id: "world-clock",
-                          title: t("worldClock.title"),
-                          content: (
-                            <aside
-                              aria-label={t("worldClock.panel")}
-                              className={flowingWorkspace ? "" : "h-full min-h-0"}
-                            >
-                              <WorldClock onClose={closeClock} flowing={flowingWorkspace} />
-                            </aside>
-                          ),
-                        },
-                      ]
-                    : []),
+                  ...panelViews
+                    .filter((view) => view.id === requestedId || retainedViews.includes(view.id))
+                    .map((view) => ({
+                      id: view.id,
+                      title: view.title,
+                      scrollable: true,
+                      content: (
+                        <aside aria-label={view.title} className={flowingWorkspace ? "" : "h-full min-h-0"}>
+                          <InstalledView
+                            entry={view}
+                            onClose={() => closeView(view.id)}
+                            flowing={flowingWorkspace}
+                            visible={selectedPanel === view.id || flowingWorkspace}
+                          />
+                        </aside>
+                      ),
+                    })),
                 ]}
               />
             </div>
@@ -507,7 +525,6 @@ function Layout() {
         {createPortal(
           <TopBar
             navigationMode={!beside}
-            onWorldClock={() => selectPanel("world-clock")}
             chatOpen={chatOpen && selectedPanel === "chat"}
             onToggleChat={() => {
               if (beside && chatOpen && selectedPanel === "chat") setChatOpen(false);
@@ -550,6 +567,7 @@ function Layout() {
         />
       )}
       <ThemeTokens />
+      <ViewSlot slot="background" />
       <SoundEngine />
       <SearchPalette open={searchOpen} onOpenChange={setSearchOpen} />
       <Onboarding />

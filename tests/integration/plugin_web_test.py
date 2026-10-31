@@ -19,6 +19,7 @@ from heinzel.heads._exposure import exposed
 from heinzel.heads.cli import build as cli_app
 from heinzel.kernel import Installation, user_config_dir
 from heinzel.modules.system.plugin import PluginService, _sources
+from heinzel.modules.system.plugin._models import PluginInfo
 
 pytestmark = pytest.mark.integration
 
@@ -51,21 +52,44 @@ def kernel(make_kernel, tmp_path, monkeypatch):
     kernel = make_kernel(builtins=True, config=Config.load(tmp_path), crm=crm())
     service = kernel.resolve(PluginService)
     runs: list[list[str]] = []
+    installed = []
 
     def runner(command, environment=None):
         runs.append(command)
+        installed.clear()
+        if "install" in command:
+            source = _sources.parse(command[-1])
+            name = source.name or "heinzel-crm"
+            installed.append(
+                {
+                    "distribution": name,
+                    "version": "1.1.0",
+                    "modules": ["crm"],
+                    "name": "crm",
+                    "source_kind": source.kind,
+                    "revision": "a" * 40 if source.kind == "git" else None,
+                    "source_url": _sources.installed_repository_url(source.url, "a" * 40, source.subdirectory),
+                }
+            )
         return subprocess.CompletedProcess(command, 0, "", "")
 
     service._installation = Installation(Progress(), prefix=tmp_path, uv="uv", runner=runner)
-    monkeypatch.setattr(service._installation, "hz", lambda *args: "[]")
+    monkeypatch.setattr(
+        service._installation,
+        "hz",
+        lambda *args: json.dumps(installed) if args[:3] == ("system", "plugin", "list") else "[]",
+    )
     monkeypatch.setattr(_sources.shutil, "which", lambda name: None)
+    monkeypatch.setattr(
+        service, "_host_list", lambda **_kwargs: [PluginInfo.model_validate(item) for item in installed]
+    )
     service.pypi = lambda url: {
         "info": {"version": "1.1.0", "summary": "CRM notes.", "author": "Ada Example"},
         "releases": {"1.1.0": [{}]},
     }
-    # The real first-party catalog stays in use; community discovery has its own tests and never goes online here.
+    # Each test owns its source metadata; discovery has no concrete-plugin allowlist.
     monkeypatch.setattr(PluginService, "_github_repositories", lambda *_args: [])
-    monkeypatch.setattr(PluginService, "_contrib_plugins", lambda *_args: [])
+    service._settings = service._settings.model_copy(update={"catalog_sources": []})
     kernel.runs = runs  # type: ignore[attr-defined] - for the assertions
     return kernel
 
@@ -75,12 +99,13 @@ def client(kernel):
     return TestClient(web.build(kernel, port=8000, token=TOKEN, static=None), base_url=BASE)
 
 
-def test_the_web_head_manages_plugins_and_the_rest_head_only_lists_and_searches(kernel):
+def test_the_web_head_manages_plugins_and_the_public_rest_head_only_lists(kernel):
     on_the_web = {item.name for item in exposed(kernel, web.HEAD)}
     on_rest = {item.name for item in exposed(kernel, api.HEAD)}
     assert {"system_plugin_list", "system_plugin_search", "system_plugin_operation", *CHANGES} <= on_the_web
     assert not on_rest & CHANGES
-    assert {"system_plugin_list", "system_plugin_search"} <= on_rest
+    assert "system_plugin_list" in on_rest
+    assert "system_plugin_search" not in on_rest  # authenticated GitHub search can return private repositories
     assert not {"system_plugin_develop", "system_plugin_new"} & (on_the_web | on_rest)  # paths, terminals: CLI only
     rest = TestClient(api.build(kernel, port=8000), base_url=BASE)
     assert rest.post("/system/plugin/add", params={"spec": "heinzel-crm", "confirm": True}).status_code == 404
@@ -191,6 +216,21 @@ def test_confirmed_the_shown_requirement_is_installed_recorded_and_a_restart_ask
     assert [(e["action"], e["requirement"]) for e in history] == [("add", "heinzel-crm==1.1.0")]
 
 
+def test_an_installer_noop_is_an_error_in_the_web_app_and_never_records_success(client, kernel, monkeypatch):
+    service = kernel.resolve(PluginService)
+    monkeypatch.setattr(service, "_host_list", lambda **_kwargs: [])
+    shown = client.post("/api/system/plugin/add", params={"spec": "heinzel-crm"}, headers=AUTH).json()
+    response = client.post(
+        "/api/system/plugin/add",
+        params={"spec": "heinzel-crm==1.1.0", "confirm": True, "operation_id": shown["operation_id"]},
+        headers=AUTH,
+    )
+    assert response.status_code == 400
+    assert "not present after installation" in response.json()["error"]
+    assert service.history() == []
+    assert service.operation(shown["operation_id"]).status == "unknown"
+
+
 def test_a_confirmed_plugin_install_streams_progress_and_its_result(client, kernel):
     """The UI's long-running install path uses the authenticated operation stream, not a timed REST request."""
     # The fixture constructs PluginService before the web head replaces Progress with its request-scoped stream sink.
@@ -217,17 +257,28 @@ def test_a_confirmed_plugin_install_streams_progress_and_its_result(client, kern
     assert receipt["status"] == "completed"
 
 
-def test_a_first_party_catalog_entry_installs_through_the_add_endpoint_by_its_install_spec(client, kernel):
-    entry = next(p for p in kernel.resolve(PluginService).search("clock").plugins if p.short_name == "clock")
-    assert (entry.source, entry.install_spec) == ("first-party", "clock")
+def test_a_new_catalog_entry_installs_through_the_add_endpoint_without_a_name_registry(client, kernel):
+    service = kernel.resolve(PluginService)
+    repository = "https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins"
+    service._github_repositories = lambda _text: [{"full_name": "example/catalog", "html_url": repository}]
+    service._monorepo_plugins = lambda _repository: [("heinzel-unforeseen", "plugins/unforeseen", "A new provider.")]
+
+    def offline(_path):
+        msg = "offline fixture"
+        raise OSError(msg)
+
+    service.github_api = offline
+    [entry] = service.search("unforeseen").plugins
+    assert entry.source == "first-party"
     shown = client.post("/api/system/plugin/add", params={"spec": entry.install_spec}, headers=AUTH).json()
-    assert (shown["done"], shown["candidate"]["first_party"], shown["candidate"]["spec"]) == (False, True, "clock")
+    assert not shown["done"]
+    assert shown["candidate"]["first_party"]
     assert kernel.runs == []
-    params = {"spec": shown["candidate"]["spec"], "confirm": True}
+    params = {"spec": shown["candidate"]["spec"], "confirm": True, "operation_id": shown["operation_id"]}
     answer = client.post("/api/system/plugin/add", params=params, headers=AUTH)
-    assert answer.status_code == 200
-    assert answer.json()["done"] is True
-    assert any("heinzel-clock" in part for part in kernel.runs[0])
+    assert answer.status_code == 200, answer.text
+    assert answer.json()["done"]
+    assert any("heinzel-unforeseen" in part for part in kernel.runs[0])
 
 
 @pytest.mark.parametrize(
@@ -244,7 +295,7 @@ def test_a_first_party_catalog_entry_installs_through_the_add_endpoint_by_its_in
 def test_sources_other_than_pypi_and_https_git_are_refused(client, kernel, spec):
     answer = client.post("/api/system/plugin/add", params={"spec": spec, "confirm": True}, headers=AUTH)
     assert answer.status_code == 400
-    assert "takes a first-party name" in answer.json()["error"]
+    assert "takes a catalog short name" in answer.json()["error"]
     assert kernel.runs == []
 
 
@@ -408,7 +459,8 @@ def test_mcp_over_stdio_manages_plugins_and_unauthenticated_http_mcp_cannot(kern
     http = {tool.name for tool in asyncio.run(mcp.build(kernel, "streamable-http").list_tools())}
     assert stdio >= CHANGES
     assert not CHANGES & http
-    assert {"system_plugin_list", "system_plugin_search", "heinzel_wake"} <= http  # the rest stays as it was
+    assert {"system_plugin_list", "heinzel_wake"} <= http
+    assert "system_plugin_search" not in http
 
 
 def test_a_handed_over_socket_that_isnt_a_loopback_listener_starts_a_fresh_session(monkeypatch):

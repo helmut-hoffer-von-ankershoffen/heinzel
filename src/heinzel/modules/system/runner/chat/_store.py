@@ -12,13 +12,15 @@ import os
 import secrets
 import shlex
 import shutil
+import stat
 from collections.abc import Generator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from pydantic import JsonValue, ValidationError
 
-from heinzel import ActionGate, HeinzelError, Kernel, ProposedCall, Settings
+from heinzel import ActionGate, CurrentUser, HeinzelError, Kernel, ProposedCall, Settings
+from heinzel.kernel import McpChatSessions
 from heinzel.modules.system.runner._models import RunnerSettings
 from heinzel.modules.system.runner.chat._models import (
     ChatAction,
@@ -49,29 +51,53 @@ def now() -> datetime:
 
 def _private_dir(path: Path) -> Path:
     path.mkdir(mode=PRIVATE_DIR, parents=True, exist_ok=True)
+    if not stat.S_ISDIR(path.lstat().st_mode):
+        msg = "The private chat store is unavailable"
+        raise HeinzelError(msg)
     path.chmod(PRIVATE_DIR)
     return path
 
 
 def _write_private(path: Path, text: str) -> None:
-    temporary = path.with_name(f".{path.name}.tmp")
-    descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, PRIVATE_FILE)
-    with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
-        handle.write(text)
-        handle.flush()
-        os.fsync(handle.fileno())
-    temporary.chmod(PRIVATE_FILE)
-    temporary.replace(path)
+    temporary = path.with_name(f".{path.name}.{secrets.token_hex(12)}.tmp")
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    descriptor = os.open(temporary, flags, PRIVATE_FILE)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
+        temporary.chmod(PRIVATE_FILE)
+        temporary.replace(path)
+    finally:
+        with contextlib.suppress(FileNotFoundError):
+            temporary.unlink()
 
 
-class ChatStore:
+class ChatStore(McpChatSessions):
     """Reads, writes and prunes chat sessions."""
 
-    def __init__(self, settings: Settings, chat: ChatSettings, runner: RunnerSettings) -> None:
+    def __init__(
+        self, settings: Settings, chat: ChatSettings, runner: RunnerSettings, current: CurrentUser | None = None
+    ) -> None:
         """Keep sessions under the state directory, within the chat settings' bounds."""
         self.root = settings.state_dir / "chat"
         self._chat = chat
         self._runner = runner
+        self._current = current
+
+    def personal_owner(self) -> str:
+        """Return the authenticated principal for a personal chat, failing closed if unavailable.
+
+        Raises:
+            HeinzelError: If no authenticated owner is available.
+        """
+        if self._current is None:
+            msg = "The personal chat owner is unavailable"
+            raise HeinzelError(msg)
+        return self._current.principal().id
 
     def directory(self, session: str) -> Path:
         """The directory of `session`.
@@ -83,19 +109,34 @@ class ChatStore:
             msg = f"{session!r} is not a chat session id; `hz chat list` shows them."
             raise HeinzelError(msg)
         path = self.root / session
-        if not (path / SESSION).is_file():
+        try:
+            root_is_directory = stat.S_ISDIR(self.root.lstat().st_mode)
+            session_is_directory = stat.S_ISDIR(path.lstat().st_mode)
+            session_file_is_regular = stat.S_ISREG((path / SESSION).lstat().st_mode)
+        except OSError:
+            root_is_directory = session_is_directory = session_file_is_regular = False
+        if not root_is_directory or not session_is_directory or not session_file_is_regular:
             msg = f"There is no chat session {session}; `hz chat list` shows them."
             raise HeinzelError(msg)
         return path
 
-    def create(self, context: ChatContext | None) -> ChatSession:
+    def create(self, context: ChatContext | None, *, personal_session_id: str | None = None) -> ChatSession:
         """A new, empty session, saved; then sessions beyond the retention are removed."""
+        owner_id = self.personal_owner() if personal_session_id is not None else None
         session = secrets.token_hex(8)
+        _private_dir(self.root)
         _private_dir(self.root / session)
         created = now()
         title = f"{context.kind} {context.ref}".strip() if context else "New chat"
         chat = ChatSession(
-            id=session, title=title, created=created, updated=created, context=context, costs=self.costs([])
+            id=session,
+            title=title,
+            created=created,
+            updated=created,
+            context=context,
+            costs=self.costs([]),
+            personal_session_id=personal_session_id,
+            personal_owner_id=owner_id,
         )
         self.save(chat)
         self.prune()
@@ -116,12 +157,86 @@ class ChatStore:
         if chat.id != session:
             msg = f"Chat session {session} holds another session's file; `hz chat remove {session}`."
             raise HeinzelError(msg)
+        personal = chat.personal_session_id is not None or chat.personal_owner_id is not None
+        if personal or (chat.context is not None and chat.context.kind == "check-in"):
+            if self._current is None or chat.personal_session_id is None or chat.personal_owner_id is None:
+                msg = "This personal chat has no verified owner binding"
+                raise HeinzelError(msg)
+            if chat.personal_owner_id != self._current.principal().id:
+                msg = "This personal chat is not available to this owner"
+                raise HeinzelError(msg)
+            if (
+                chat.context is not None
+                and chat.context.kind == "check-in"
+                and (chat.context.owner_id != chat.personal_owner_id or chat.context.ref != chat.personal_session_id)
+            ):
+                msg = "This personal chat has an inconsistent session binding"
+                raise HeinzelError(msg)
         known = {action.id for action in chat.actions}
         chat.actions += [action for action in self.proposals(session) if action.id not in known]
         for action in chat.actions:  # what the person reads is derived from what runs, never stored text
-            action.command = describe(action.module, action.operation, action.arguments)
+            self._check_personal_action(chat, action.module, action.operation, action.arguments)
+            if action.module == "heinzel" and action.operation in {
+                "approve-model-grant",
+                "accept-agent-contract",
+                "approve-connected-read",
+                "approve-connected-read-set",
+                "approve-agent-schedule",
+                "queue-agent-notification",
+            }:
+                # The review remains visible in the action, not in model-visible transcript text.
+                action.command = (
+                    "Review notification"
+                    if action.operation == "queue-agent-notification"
+                    else "Review connected read"
+                    if action.operation in {"approve-connected-read", "approve-connected-read-set"}
+                    else "Review agent schedule"
+                    if action.operation == "approve-agent-schedule"
+                    else "Review agent contract"
+                    if action.operation == "accept-agent-contract"
+                    else "Review model policy"
+                )
+            else:
+                action.command = describe(action.module, action.operation, action.arguments)
         chat.costs = self.costs(chat.messages)
         return chat
+
+    def _check_personal_action(
+        self, chat: ChatSession, module: str, operation: str, arguments: dict[str, JsonValue]
+    ) -> None:
+        if chat.personal_session_id is not None and (
+            module != "heinzel"
+            or operation
+            not in {
+                "schedule-control",
+                "propose-check-in",
+                "approve-model-grant",
+                "accept-agent-contract",
+                "approve-connected-read",
+                "approve-connected-read-set",
+                "approve-agent-schedule",
+                "queue-agent-notification",
+            }
+        ):
+            msg = "This personal chat cannot authorize that action"
+            raise HeinzelError(msg)
+        if module != "heinzel" or ("session_id" not in arguments and operation != "schedule-control"):
+            return
+        if chat.personal_session_id is None or chat.personal_owner_id is None:
+            msg = "This personal action has no verified owner binding"
+            raise HeinzelError(msg)
+        if arguments.get("session_id") != chat.personal_session_id:
+            msg = "This personal action does not match its bound session"
+            raise HeinzelError(msg)
+
+    def require(self, session_id: str) -> None:
+        """Validate existence without exposing this head's private chat model."""
+        self.load(session_id)
+
+    def is_check_in(self, session_id: str) -> bool:
+        """Whether a local chat is bound to a durable personal check-in."""
+        context = self.load(session_id).context
+        return context is not None and context.kind == "check-in" and context.timezone is not None
 
     def save(self, chat: ChatSession) -> None:
         """Write `chat` atomically, readable by this user only.
@@ -136,6 +251,59 @@ class ChatStore:
         chat.updated = now()
         chat.costs = self.costs(chat.messages)
         _write_private(folder / SESSION, chat.model_dump_json(indent=1) + "\n")
+
+    def save_mcp_approval(self, session: str, action: str, proof: str, expires_at: datetime) -> None:
+        """Keep a one-use approval proof private for the MCP consumer; never return it to a head or model."""
+        folder = self._mcp_approval_directory(session)
+        _write_private(folder / f"{action}.proof", f"{proof}\n{expires_at.isoformat()}")
+
+    def prepare_mcp_approval(self, session: str) -> None:
+        """Validate the private handoff location before asking the issuer to create a proof."""
+        self._mcp_approval_directory(session)
+
+    def take_mcp_approval(self, session: str, action: str) -> tuple[str, datetime] | None:
+        """Atomically consume the private proof for one action while its session lock is held."""
+        path = self._mcp_approval_directory(session) / f"{action}.proof"
+        try:
+            flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+            descriptor = os.open(path, flags)
+            if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+                os.close(descriptor)
+                return None
+            with os.fdopen(descriptor, "r", encoding="ascii") as handle:
+                proof, expiry = handle.read(512).splitlines()
+            expires_at = datetime.fromisoformat(expiry)
+        except FileNotFoundError:
+            return None
+        except OSError:
+            return None
+        except ValueError:
+            with contextlib.suppress(FileNotFoundError):
+                path.unlink()
+            return None
+        path.unlink()
+        if expires_at.tzinfo is None or expires_at.utcoffset() is None:
+            return None
+        return proof, expires_at
+
+    def remove_mcp_approval(self, session: str, action: str) -> None:
+        """Discard any unconsumed handoff proof when an action is declined or resolved."""
+        with contextlib.suppress(FileNotFoundError):
+            (self._mcp_approval_directory(session) / f"{action}.proof").unlink()
+
+    def _mcp_approval_directory(self, session: str) -> Path:
+        """The private handoff directory; reject symlinks so a model cannot redirect bearer storage.
+
+        Raises:
+            HeinzelError: If the handoff directory is a symlink or cannot be resolved safely.
+        """
+        folder = self.directory(session) / "mcp-approvals"
+        folder.mkdir(mode=PRIVATE_DIR, exist_ok=True)
+        if not stat.S_ISDIR(folder.lstat().st_mode):
+            msg = "The private MCP approval store is unavailable"
+            raise HeinzelError(msg)
+        folder.chmod(PRIVATE_DIR)
+        return folder
 
     def costs(self, messages: list[ChatMessage]) -> ChatCosts:
         """What `messages` cost, the session's cap, and the most the next message may cost."""
@@ -179,7 +347,7 @@ class ChatStore:
         """
         with self.held(self.directory(session)) as holding:
             if not holding:
-                msg = f"Chat session {session} is answering a message right now; try again when it is done."
+                msg = f"Chat session {session} is busy right now; try again when the current operation is done."
                 raise HeinzelError(msg)
             yield self.load(session)
 
@@ -200,11 +368,26 @@ class ChatStore:
         Raises:
             HeinzelError: If there is no such session, or it has too many proposals.
         """
+        chat = self.load(call.session)  # Verify a personal chat owner before opening its proposal file.
+        self._check_personal_action(chat, call.module, call.operation, call.arguments)
         path = self.directory(call.session) / PROPOSALS
         descriptor = os.open(path, os.O_RDWR | os.O_CREAT | os.O_APPEND, PRIVATE_FILE)
         with os.fdopen(descriptor, "r+", encoding="utf-8") as handle:
             fcntl.flock(handle, fcntl.LOCK_EX)  # the agent may call tools in parallel: one id each
             try:
+                chat = self.load(call.session)
+                if (
+                    chat.context is not None
+                    and chat.context.kind == "check-in"
+                    and any(
+                        action.module == "heinzel"
+                        and action.operation == "propose-check-in"
+                        and action.status in {"pending", "running"}
+                        for action in chat.actions
+                    )
+                ):
+                    msg = "This check-in already has an action awaiting a decision or recovery"
+                    raise HeinzelError(msg)
                 handle.seek(0)
                 count = sum(1 for line in handle if line.strip())
                 if count >= MAX_PROPOSALS:
@@ -224,6 +407,88 @@ class ChatStore:
             finally:
                 fcntl.flock(handle, fcntl.LOCK_UN)
         return action.id
+
+    @contextlib.contextmanager
+    def proposal_request_lock(self) -> Generator[None]:
+        """Serialize idempotent schedule proposal lookup and creation across processes."""
+        _private_dir(self.root)
+        descriptor = os.open(self.root / ".proposal-requests.lock", os.O_WRONLY | os.O_CREAT, PRIVATE_FILE)
+        with os.fdopen(descriptor, "w") as handle:
+            fcntl.flock(handle, fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(handle, fcntl.LOCK_UN)
+
+    def find_proposal(
+        self, module: str, operation: str, session_id: str, request_id: str
+    ) -> tuple[ChatSession, ChatAction] | None:
+        """Find an existing proposal by its operation request id, if any."""
+        paths = sorted(self.root.glob(f"*/{SESSION}")) if self.root.is_dir() else []
+        for path in paths:
+            with contextlib.suppress(HeinzelError):
+                chat = self.load(path.parent.name)
+                found = next(
+                    (
+                        action
+                        for action in chat.actions
+                        if action.module == module
+                        and action.operation == operation
+                        and action.arguments.get("session_id") == session_id
+                        and action.arguments.get("request_id") == request_id
+                    ),
+                    None,
+                )
+                if found is not None:
+                    return chat, found
+        return None
+
+    def find_personal_chat(self, session_id: str) -> ChatSession | None:
+        """Find the single owner-bound chat, refusing ambiguous or unbound legacy associations.
+
+        Raises:
+            HeinzelError: If multiple or unbound chats claim this personal session.
+        """
+        found: ChatSession | None = None
+        paths = sorted(self.root.glob(f"*/{SESSION}")) if self.root.is_dir() else []
+        for path in paths:
+            try:
+                raw = ChatSession.model_validate_json(path.read_text(encoding="utf-8"))
+            except (OSError, ValidationError):
+                continue
+            if (
+                raw.context is not None
+                and raw.context.kind == "check-in"
+                and raw.context.ref == session_id
+                and raw.personal_session_id is None
+            ):
+                msg = "This personal session has an unbound legacy chat; inspect it before continuing"
+                raise HeinzelError(msg)
+            if raw.personal_session_id != session_id or raw.personal_owner_id != self.personal_owner():
+                continue
+            chat = self.load(path.parent.name)
+            if found is not None:
+                msg = "This personal session has multiple bound chats; inspect them before continuing"
+                raise HeinzelError(msg)
+            found = chat
+        return found
+
+    def find_context(self, kind: str, ref: str, request_id: str) -> ChatSession | None:
+        """Find a scoped chat opened by one idempotency key, if any.
+
+        Raises:
+            HeinzelError: If duplicate contexts already exist for this key.
+        """
+        found: ChatSession | None = None
+        for summary in self.sessions():
+            context = summary.context
+            if context is None or (context.kind, context.ref, context.request_id) != (kind, ref, request_id):
+                continue
+            if found is not None:
+                msg = "More than one chat has this durable-session request id; inspect the chat list before continuing"
+                raise HeinzelError(msg)
+            found = self.load(summary.id)
+        return found
 
     def sessions(self) -> list[ChatSummary]:
         """Every session, most recently changed first; unreadable ones are left out."""
@@ -251,10 +516,13 @@ class ChatStore:
         Raises:
             HeinzelError: If there is no such session.
         """
-        with self.locked(session):
+        with self.locked(session) as chat:
+            if chat.personal_session_id is not None:
+                msg = "A personal agent's continuous chat cannot be removed separately"
+                raise HeinzelError(msg)
             shutil.rmtree(self.directory(session))
 
-    def prune(self) -> list[str]:
+    def prune(self) -> list[str]:  # noqa: C901 - retention and owner isolation share the cleanup boundary
         """Remove sessions unchanged for longer than `keep_days`, and the oldest beyond `keep_sessions`.
 
         Returns:
@@ -267,6 +535,12 @@ class ChatStore:
         for path in self.root.iterdir():
             marker = path / SESSION
             if path.is_dir() and marker.is_file():
+                try:
+                    chat = self.load(path.name)
+                except HeinzelError:
+                    continue
+                if chat.personal_session_id is not None:
+                    continue  # A personal agent's continuous chat is not subject to generic chat retention.
                 found.append((marker.stat().st_mtime, path))
             elif path.is_dir() and not path.name.startswith("."):
                 with contextlib.suppress(OSError):
@@ -297,6 +571,45 @@ class StoreGate(ActionGate):
         Raises:
             HeinzelError: If a chat may never run it, there is no such session, or it has too many proposals.
         """
+        chat = self._store.load(call.session)
+        if call.module == "heinzel" and call.operation in {
+            "approve-model-grant",
+            "accept-agent-contract",
+            "approve-connected-read",
+            "approve-connected-read-set",
+            "approve-agent-schedule",
+            "queue-agent-notification",
+        }:
+            msg = "Only the human review surface can stage a model policy approval"
+            raise HeinzelError(msg)
+        if chat.context is not None and chat.context.kind == "check-in":
+            arguments = dict(call.arguments)
+            arguments.setdefault("timezone", chat.context.timezone)
+            if (
+                call.module != "heinzel"
+                or call.operation != "propose-check-in"
+                or chat.context.timezone is None
+                or arguments.get("session_id") != chat.context.ref
+                or arguments.get("timezone") != chat.context.timezone
+            ):
+                msg = "This check-in conversation may only propose its bound five-minute schedule"
+                raise HeinzelError(msg)
+            if any(
+                action.module == "heinzel"
+                and action.operation == "propose-check-in"
+                and action.status in {"pending", "running"}
+                for action in chat.actions
+            ):
+                msg = "This check-in already has an action awaiting a decision or recovery"
+                raise HeinzelError(msg)
+            call = ProposedCall(
+                session=call.session,
+                module=call.module,
+                operation=call.operation,
+                tool=call.tool,
+                arguments=arguments,
+                command=describe(call.module, call.operation, arguments),
+            )
         if reason := refusal(call.module, call.operation, call.arguments, guarded_settings(self._kernel)):
             raise HeinzelError(reason)
         return self._store.propose(call)

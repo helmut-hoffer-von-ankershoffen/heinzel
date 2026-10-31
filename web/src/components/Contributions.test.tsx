@@ -130,6 +130,46 @@ describe("Contributions", () => {
     await expectAccessible(container);
   });
 
+  it.each(["footer", "sidebar"])(
+    "preserves detail designations, state icons, sublines and times in %s",
+    async (slot) => {
+      mockApi({
+        ...answers,
+        "/api/system/ui/status": [
+          {
+            ...entry,
+            id: "acme:clock",
+            slots: { [slot]: true },
+            item: {
+              text: "Team time",
+              icon: "clock",
+              tone: "neutral",
+              detail: [
+                {
+                  text: "Berlin",
+                  badge: "Primary",
+                  icon: "moon",
+                  tone: "neutral",
+                  secondary: "Starts in 1h 4m",
+                  tooltip: "Sleeping",
+                  live: { kind: "clock", zone: "Europe/Berlin" },
+                },
+              ],
+            },
+          },
+        ],
+      });
+      renderAt("/doctor");
+      await userEvent.hover(await screen.findByRole("button", { name: /^Team time/ }));
+      const row = (await screen.findByText("Starts in 1h 4m")).closest("li");
+      if (!row) throw new Error("Missing detail row");
+      expect(within(row).getByText("Primary")).toBeInTheDocument();
+      expect(row.querySelector(".lucide-moon")).toBeInTheDocument();
+      expect(within(row).getByText(/^\d{2}:\d{2}:\d{2}$/)).toBeInTheDocument();
+      expect(within(row).getByTitle("Sleeping")).toBeInTheDocument();
+    },
+  );
+
   it("asks before a write and runs exactly the call the server built", async () => {
     const { calls } = mockApi(answers);
     const user = userEvent.setup();
@@ -152,7 +192,7 @@ describe("Contributions", () => {
     renderAt("/doctor");
     expect(await screen.findByRole("button", { name: "Team clock (2)" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Hidden/ })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Weather map" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Weather map" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Open weather report" })).not.toBeInTheDocument();
   });
 
@@ -272,7 +312,7 @@ describe("Contribution toggles", () => {
 
 describe("Contribution data", () => {
   it("maps every icon and renders live values", () => {
-    expect(Object.keys(ICONS)).toHaveLength(38);
+    expect(Object.keys(ICONS)).toHaveLength(41);
     expect(ICONS["cloud-sun"]).toBeDefined();
     const now = new Date("2026-10-26T10:00:00Z");
     expect(liveText({ kind: "until", at: "2026-10-26T10:12:00Z" }, now)).toBe("in 12 min");
@@ -294,4 +334,27 @@ describe("Contribution data", () => {
       "Release: 2 of 5",
     );
   });
+});
+
+it("exposes generic meter labels and readings without provider-specific details", async () => {
+  mockApi({
+    ...answers,
+    "/api/system/ui/status": [
+      {
+        ...entry,
+        id: "arbitrary:capacity",
+        slots: { footer: true },
+        item: {
+          text: "Capacity",
+          tone: "ok",
+          meters: [
+            { label: "Queue", value: 25, tone: "ok" },
+            { label: "Workers", value: null, tone: "neutral" },
+          ],
+        },
+      },
+    ],
+  });
+  renderAt("/doctor");
+  expect(await screen.findByRole("button", { name: /Capacity; Queue: 25%; Workers: unavailable/ })).toBeInTheDocument();
 });

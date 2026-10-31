@@ -1,4 +1,4 @@
-// Actual mounted footer proof. Its synthetic provider exercises declarations; resources use the real backend.
+// Actual mounted footer layout proof with synthetic provider declarations.
 import assert from "node:assert/strict";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
@@ -26,16 +26,6 @@ export async function verifyFooter(page, shots) {
   await page.locator("#splash").waitFor({ state: "hidden" });
   await page.waitForFunction(() => !document.querySelector("#root")?.hasAttribute("inert"));
   const footer = page.getByRole("contentinfo");
-  const resourceTrigger = footer.locator('[data-footer-content="@resources"] button');
-  await resourceTrigger.waitFor();
-  const resourceIcon = await resourceTrigger.evaluate((button) => ({
-    width: button.getBoundingClientRect().width,
-    text: button.textContent,
-    bars: button.querySelectorAll("[data-state]").length,
-  }));
-  assert.ok(resourceIcon.width <= 24, `Resource indicator must fit one footer icon: ${resourceIcon.width}px`);
-  assert.equal(resourceIcon.text, "");
-  assert.equal(resourceIcon.bars, 3);
   await footer.locator('[data-footer-content="@version"] button').waitFor();
   await footer.evaluate((bar) => {
     window.footerSyntheticResizes = 0;
@@ -272,26 +262,6 @@ export async function verifyFooter(page, shots) {
         JSON.stringify({ width, popup: box }),
       );
       for (const part of hidden) assert.equal(await page.locator(`[data-footer-host="${part.id}"]`).count(), 1);
-      if (hidden.some((part) => part.id === "@resources")) {
-        const resource = popup.locator('[data-footer-host="@resources"] button').first();
-        await resource.click();
-        const detail = page.getByRole("region", { name: "System resources", exact: true });
-        await detail.waitFor();
-        await page.waitForFunction(
-          (element) => {
-            const box = element.getBoundingClientRect();
-            const hit = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
-            return (
-              box.x >= 0 && box.y >= 0 && box.right <= innerWidth && box.bottom <= innerHeight && element.contains(hit)
-            );
-          },
-          await detail.elementHandle(),
-        );
-        if (shots) await page.screenshot({ path: join(shots, `footer-more-${width}.png`) });
-        await detail.getByRole("button", { name: "Refresh resources", exact: true }).click();
-        assert.ok(await popup.isVisible(), "A nested detail action must keep its containing More list open.");
-        await page.keyboard.press("Escape");
-      }
       await page.keyboard.press("Escape");
       // The first Escape belongs to a focused nested detail pane; the second closes its containing More list.
       if (await popup.isVisible()) await page.keyboard.press("Escape");

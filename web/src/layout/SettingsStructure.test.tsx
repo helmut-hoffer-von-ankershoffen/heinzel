@@ -461,7 +461,7 @@ describe("Installed plugins by kind", () => {
     const { container } = renderAt("/doctor?settings=plugins");
     const row = (await screen.findByText("GitHub", { selector: "span *, span" })).closest("li") as HTMLElement;
     expect(within(row).getByTitle("Connector: code-host, tracker")).toBeInTheDocument();
-    const acmeRow = screen.getByText("ACME", { selector: "li span" }).closest("li") as HTMLElement;
+    const acmeRow = screen.getByText("Acme", { selector: "li span" }).closest("li") as HTMLElement;
     expect(within(acmeRow).getByTitle("Theme: acme")).toBeInTheDocument();
     expect(within(acmeRow).getByTitle("Playbook: engineering-team")).toBeInTheDocument();
     await expectAccessible(container);
@@ -474,7 +474,7 @@ describe("Installed plugins by kind", () => {
 describe("Where settings live", () => {
   it("keeps the capitals of acronyms in module and setting names", () => {
     expect(displayName("ai")).toBe("AI");
-    expect(displayName("clock", "World clock: what time it is.")).toBe("World clock");
+    expect(displayName("clock", "World clock: what time it is.")).toBe("Clock");
     expect(displayName("mcp")).toBe("MCP");
     expect(displayName("cli")).toBe("CLI");
     expect(displayName("github")).toBe("GitHub");

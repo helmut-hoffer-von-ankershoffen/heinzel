@@ -1,0 +1,39 @@
+# [[ project_name ]]
+
+Read [README.md](README.md). Edit the feature in `src/[[ package_name ]]/` and its tests; use the public `heinzel`
+and `heinzel.kernel` API. One `@module.operation` supplies CLI, MCP and REST. Add a service or model when the
+feature needs it; neither is required for a small operation. Never import a plugin implementation or core internals.
+
+Run from this plugin's directory:
+```sh
+make setup
+make check-fast
+make check
+make build
+make acceptance
+make preview
+make lock # after changing dependencies
+make release # preview only
+```
+[% if layout == 'collection' %]
+Keep all feature changes in this directory. Setup never initializes Git for a collection plugin. The owning
+Makefile works even when the parent repository builds something else. A parent that provides collection commands
+also accepts `NAME=[[ project_name ]]` from its root. Publication uses the parent's generic plugin release workflow;
+do not copy a nested `.github/` or edit a parent registry.
+[% endif %]
+
+Each pytest file declares exactly one level: `unit`, `integration` or `e2e`. Write a behavior test for a change.
+Run the fast loop while editing and the owning full/installed-wheel checks before release. These commands install
+a compatible core wheel; they never run the core suite. `CORE=<wheel>` explicitly selects a candidate SDK.
+
+The source operation in the starter shows the minimum abstraction. Use the contributions preset or
+[extension guide](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/blob/main/docs/PLUGINS.md) for views,
+priorities, Today widgets, notifications and shared contracts. Ordinary dependencies belong in this project's
+`pyproject.toml`; regenerate its own lock. Use conventional commits and review nontrivial changes.
+
+Publishing requires a merged commit, this plugin's version and configured GitHub/PyPI publishing. Local
+`release` only checks/builds and previews; `publish` dispatches the protected workflow. Never upload a different
+rebuild under an existing version. See the README's release steps.
+Private sources use private GitHub releases and the installing person's `gh` login. PyPI is public; do not publish
+private sources there. The [custom plugin guide](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/blob/main/docs/PLUGIN_AUTHORING.md)
+documents separate repositories, catalog discovery and both release paths.

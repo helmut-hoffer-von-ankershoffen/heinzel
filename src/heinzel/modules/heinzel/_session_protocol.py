@@ -6,6 +6,7 @@ from typing import Protocol
 from pydantic import JsonValue
 
 from heinzel import SessionHead, SessionRead, SessionWriter
+from heinzel.kernel import Authentication
 
 
 class SessionRepository(Protocol):
@@ -20,8 +21,29 @@ class SessionRepository(Protocol):
         """The current trusted principal; absence of a trusted context is an error, never an owner fallback."""
         ...
 
+    @property
+    def authentication(self) -> Authentication:
+        """The verified current call's channel; never a request argument or approval claim."""
+        ...
+
     def heads(self) -> list[SessionHead]:
         """Owned agents only; creation catalogs and control journals do not appear as extra agents."""
+        ...
+
+    def budget_read(self, session_id: str) -> SessionRead:
+        """Read the authenticated owner's shared budget ledger after checking session ownership."""
+        ...
+
+    def budget_writer(self, session_id: str) -> AbstractContextManager[SessionWriter]:
+        """Serialize this owner's reservations after checking session ownership."""
+        ...
+
+    def subscription_read(self, session_id: str) -> SessionRead:
+        """Read owner-scoped subscription request slots."""
+        ...
+
+    def subscription_writer(self, session_id: str) -> AbstractContextManager[SessionWriter]:
+        """Serialize the owner-scoped subscription request ledger."""
         ...
 
     def main_read(self, session_id: str) -> SessionRead:
@@ -34,6 +56,10 @@ class SessionRepository(Protocol):
 
     def main_writer(self, session_id: str, *, wait: bool = False) -> AbstractContextManager[SessionWriter]:
         """Own the active turn; wait is reserved for short creation repair, before taking the control writer."""
+        ...
+
+    def is_main_writer(self, session_id: str, writer: SessionWriter) -> bool:
+        """Verify an active writer is scoped to this principal's main journal."""
         ...
 
     def control_writer(self, session_id: str) -> AbstractContextManager[SessionWriter]:

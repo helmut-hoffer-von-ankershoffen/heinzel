@@ -1,10 +1,12 @@
 """scripts/pr.sh (`make pr`) against throwaway git repositories, with `uv`, `make` and `gh` stubbed out."""
 
+import json
 import os
 import re
 import shlex
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -15,14 +17,39 @@ SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "pr.sh"
 URL = "https://github.com/example/widget/pull/7"
 # Each stub logs its arguments to $LOG/<name>; gh answers `pr list` with $PR_URL when set, as if the PR existed.
 STUBS = {
-    "uv": 'printf "%s\\n" "$*" >> "$LOG/uv"',
+    "uv": (
+        'printf "%s\\n" "$*" >> "$LOG/uv"; '
+        'case "$*" in *scripts/scoped_checks.py*) git rev-parse HEAD >> "$LOG/preflight-head";; esac'
+    ),
     "make": (
         'printf "%s\\n" "$*" >> "$LOG/make"; git rev-parse HEAD >> "$LOG/preflight-head"; '
-        'if [ "${FAIL_MAKE:-0}" = 1 ]; then exit 1; fi'
+        'if [ "${FAIL_MAKE:-0}" = 1 ]; then exit 1; fi; '
+        'if [ "${DIRTY_MAKE:-0}" = 1 ]; then printf changed > base; fi; '
+        'if [ "${COMMIT_MAKE:-0}" = 1 ]; then printf changed > base; git add base; '
+        'git commit --quiet -m "feat: modify during preflight"; fi'
     ),
     "gh": f"""printf '%s\\n' "$@" > "$LOG/gh-$1-$2"
 case "$1 $2" in
-  "pr list") echo "${{PR_URL:-}}" ;;
+  "repo view")
+    if [ "${{FAIL_REPO:-0}}" = 1 ]; then exit 1; fi
+    if [ -n "${{CANONICAL_REPO:-}}" ]; then echo "$CANONICAL_REPO"; else
+      git remote get-url origin | sed -E 's#/+$##; s#\\.git$##; s#^.*[:/]([^/:]+/[^/:]+)$#\\1#'
+    fi ;;
+  "pr list")
+    if [ "${{FAIL_LIST:-0}}" = 1 ]; then exit 1; fi
+    if [ -n "${{PR_DATA:-}}" ]; then
+      filter=""; base=""; shift 2
+      while [ "$#" -gt 0 ]; do
+        case "$1" in --jq) filter="$2"; shift 2 ;; --base) base="$2"; shift 2 ;; *) shift ;; esac
+      done
+      if [ "$base" = main ]; then
+        printf '%s' "$PR_DATA" | jq '[.[] | select(.baseRefName == "main")][:101]' | jq -r "$filter" || exit 1
+      else
+        printf '%s' "$PR_DATA" | jq -r "$filter" || exit 1
+      fi
+    else echo "${{PR_URL:-}}"; fi ;;
+
+  "pr view") if [ "${{FAIL_VIEW:-0}}" = 1 ]; then exit 1; fi; echo "${{AUTO_STATE-disabled}}" ;;
   "pr create") echo {URL} ;;
 esac""",
 }
@@ -332,6 +359,231 @@ def test_failed_preflight_stops_before_push(repo):
     assert repo.log("gh-pr-create") == []
 
 
+def test_scoped_preflight_observes_integrated_remote_commit(repo):
+    (repo.dir / "scripts").mkdir()
+    repo.commit("scripts/scoped_checks.py", "# fixture")
+    repo.git("push", "--quiet", "origin", "HEAD:main")
+    repo.git("fetch", "--quiet", "origin", "main")
+    repo.commit("widget")
+    repo.push()
+    repo.on_remote_only(lambda: repo.commit("nut"))
+    repo.commit("bolt")
+
+    done = repo.pr()
+
+    assert done.returncode == 0, done.stderr
+    assert repo.log("preflight-head") == [repo.remote()]
+    assert repo.log("gh-pr-merge") == []
+
+
+def test_dirty_after_preflight_stops_before_push(repo):
+    repo.commit("widget")
+    repo.push()
+    remote = repo.remote()
+    repo.commit("bolt")
+
+    done = repo.pr(DIRTY_MAKE="1")
+
+    assert done.returncode == 2
+    assert "changed after preflight" in done.stderr
+    assert repo.remote() == remote
+    assert repo.log("gh-pr-create") == []
+
+
+def test_committed_change_after_preflight_stops_before_push(repo):
+    repo.commit("widget")
+    repo.push()
+    remote = repo.remote()
+    repo.commit("bolt")
+
+    done = repo.pr(COMMIT_MAKE="1")
+
+    assert done.returncode == 2
+    assert "changed after preflight" in done.stderr
+    assert repo.git("status", "--porcelain") == ""
+    assert repo.remote() == remote
+    assert repo.log("gh-pr-create") == []
+
+
+@pytest.mark.skipif(shutil.which("jq") is None, reason="the fixture needs jq to exercise the real selector")
+def test_existing_main_pr_matches_owner_case_and_ignores_other_bases(repo):
+    repo.commit("widget")
+    repo.push()
+    remote = repo.remote()
+    repo.commit("bolt")
+    origin = Path(repo.git("remote", "get-url", "origin"))
+    origin_name = f"{origin.parent.name}/{origin.stem}"
+    rows = [
+        {
+            "url": "https://github.com/example/widget/pull/9",
+            "headRepository": {"nameWithOwner": origin_name},
+            "baseRefName": "other",
+        },
+        {"url": URL, "headRepository": {"nameWithOwner": origin_name.upper()}, "baseRefName": "main"},
+    ]
+
+    done = repo.pr(PR_DATA=json.dumps(rows), AUTO_STATE="enabled")
+
+    assert done.returncode == 2, done.stderr
+    assert repo.remote() == remote
+    assert URL in repo.log("gh-pr-view")
+    args = repo.log("gh-pr-list")
+    assert args[args.index("--base") + 1] == "main"
+    assert args[args.index("--limit") + 1] == "101"
+
+
+@pytest.mark.skipif(shutil.which("jq") is None, reason="the fixture needs jq to exercise the real selector")
+def test_same_owner_different_repository_does_not_hide_matching_pr(repo):
+    repo.commit("widget")
+    repo.push()
+    remote = repo.remote()
+    repo.commit("bolt")
+    origin = Path(repo.git("remote", "get-url", "origin"))
+    rows = [
+        {
+            "url": "https://github.com/example/widget/pull/9",
+            "headRepository": {"nameWithOwner": f"{origin.parent.name}/other"},
+            "baseRefName": "main",
+        },
+        {"url": URL, "headRepository": {"nameWithOwner": f"{origin.parent.name}/{origin.stem}"}, "baseRefName": "main"},
+    ]
+
+    done = repo.pr(PR_DATA=json.dumps(rows), AUTO_STATE="enabled")
+
+    assert done.returncode == 2, done.stderr
+    assert repo.remote() == remote
+    assert URL in repo.log("gh-pr-view")
+
+
+@pytest.mark.skipif(shutil.which("jq") is None, reason="the fixture needs jq to exercise the real selector")
+def test_redirected_origin_uses_canonical_repository_identity(repo):
+    repo.commit("widget")
+    repo.push()
+    remote = repo.remote()
+    repo.commit("bolt")
+    rows = [{"url": URL, "headRepository": {"nameWithOwner": "Canonical/Real"}, "baseRefName": "main"}]
+
+    done = repo.pr(PR_DATA=json.dumps(rows), CANONICAL_REPO="Canonical/Real", AUTO_STATE="enabled")
+
+    assert done.returncode == 2, done.stderr
+    assert repo.remote() == remote
+    assert URL in repo.log("gh-pr-view")
+
+
+def test_failed_origin_resolution_is_refused_before_push(repo):
+    repo.commit("widget")
+    repo.push()
+    remote = repo.remote()
+    repo.commit("bolt")
+
+    done = repo.pr(FAIL_REPO="1")
+
+    assert done.returncode == 2
+    assert "Cannot verify the origin repository" in done.stderr
+    assert repo.remote() == remote
+
+
+@pytest.mark.skipif(shutil.which("jq") is None, reason="the fixture needs jq to exercise the real selector")
+def test_missing_head_repository_is_refused_before_push(repo):
+    repo.commit("widget")
+    repo.push()
+    remote = repo.remote()
+    repo.commit("bolt")
+    rows = [{"url": URL, "headRepository": None, "baseRefName": "main"}]
+
+    done = repo.pr(PR_DATA=json.dumps(rows))
+
+    assert done.returncode != 0
+    assert repo.remote() == remote
+    assert repo.log("gh-pr-merge") == []
+
+
+@pytest.mark.skipif(shutil.which("jq") is None, reason="the fixture needs jq to exercise the real selector")
+@pytest.mark.parametrize("invalid", ["empty-name", "bad-name", "empty-url", "missing-url"])
+def test_malformed_pr_metadata_is_refused_before_push(repo, invalid):
+    repo.commit("widget")
+    repo.push()
+    remote = repo.remote()
+    repo.commit("bolt")
+    origin = Path(repo.git("remote", "get-url", "origin"))
+    item = {
+        "url": URL,
+        "headRepository": {"nameWithOwner": f"{origin.parent.name}/{origin.stem}"},
+        "baseRefName": "main",
+    }
+    if invalid == "empty-name":
+        item["headRepository"]["nameWithOwner"] = ""
+    elif invalid == "bad-name":
+        item["headRepository"]["nameWithOwner"] = "invalid name"
+    elif invalid == "empty-url":
+        item["url"] = ""
+    else:
+        del item["url"]
+
+    done = repo.pr(PR_DATA=json.dumps([item]))
+
+    assert done.returncode != 0
+    assert repo.remote() == remote
+    assert repo.log("gh-pr-merge") == []
+
+
+@pytest.mark.skipif(shutil.which("jq") is None, reason="the fixture needs jq to exercise the real selector")
+def test_excessive_pr_search_is_refused_before_push(repo):
+    repo.commit("widget")
+    repo.push()
+    remote = repo.remote()
+    repo.commit("bolt")
+    rows = [{"url": URL, "headRepository": {"nameWithOwner": "other/repo"}, "baseRefName": "main"}] * 101
+
+    done = repo.pr(PR_DATA=json.dumps(rows))
+
+    assert done.returncode != 0
+    assert repo.remote() == remote
+    assert repo.log("gh-pr-merge") == []
+
+
+@pytest.mark.parametrize("state", ["enabled", "unknown", ""])
+def test_existing_auto_merge_is_refused_before_push(repo, state):
+    repo.commit("widget")
+    repo.push()
+    remote = repo.remote()
+    repo.commit("bolt")
+
+    done = repo.pr(PR_URL=URL, AUTO_STATE=state)
+
+    assert done.returncode == 2
+    assert "Auto-merge is enabled or unknown" in done.stderr
+    assert repo.remote() == remote
+    assert repo.log("gh-pr-merge") == []
+
+
+def test_pr_lookup_failure_is_refused_before_push(repo):
+    repo.commit("widget")
+    repo.push()
+    remote = repo.remote()
+    repo.commit("bolt")
+
+    done = repo.pr(FAIL_LIST="1")
+
+    assert done.returncode != 0
+    assert repo.remote() == remote
+    assert repo.log("gh-pr-merge") == []
+
+
+def test_auto_merge_lookup_failure_is_refused_before_push(repo):
+    repo.commit("widget")
+    repo.push()
+    remote = repo.remote()
+    repo.commit("bolt")
+
+    done = repo.pr(PR_URL=URL, FAIL_VIEW="1")
+
+    assert done.returncode == 2
+    assert "Cannot verify" in done.stderr
+    assert repo.remote() == remote
+    assert repo.log("gh-pr-merge") == []
+
+
 def test_pushes_a_branch_that_fast_forwards_after_preflight(repo):
     repo.commit("widget")
     repo.push()
@@ -344,6 +596,129 @@ def test_pushes_a_branch_that_fast_forwards_after_preflight(repo):
     assert repo.log("make") == ["--no-print-directory preflight BASE=origin/main"]
     assert f"✓ {URL} (review and checks required before merging)" in done.stdout
     assert repo.log("gh-pr-merge") == [], "the script must not turn on auto-merge"
+
+
+@pytest.mark.parametrize("mixed", [False, True])
+def test_actual_pr_selects_owning_preflight_for_plugin_only_changes_and_preserves_core_checks(repo, mixed):
+    helper = repo.dir / "scripts/scoped_checks.py"
+    helper.parent.mkdir()
+    repo.commit("scripts/scoped_checks.py", (SCRIPT.parent / "scoped_checks.py").read_text())
+    repo.git("push", "--quiet", "origin", "HEAD:main")
+    repo.git("fetch", "--quiet", "origin", "main")
+    (repo.dir / "plugins/heinzel-harbor").mkdir(parents=True)
+    repo.commit("plugins/heinzel-harbor/feature.py", "value = 1")
+    if mixed:
+        repo.commit("core.py", "core = True")
+    # Run the real scope helper and Git diff, but capture SDK and make invocations instead of testing Core.
+    (repo.tmp / "bin/uv").write_text(
+        f"#!{sys.executable}\nimport json,os,subprocess,sys\nfrom pathlib import Path\n"
+        "args=sys.argv[1:]\n"
+        "with (Path(os.environ['LOG'])/'scope').open('a') as stream: stream.write(json.dumps(args)+'\\n')\n"
+        "if 'scripts/scoped_checks.py' in args:\n"
+        "    index=args.index('scripts/scoped_checks.py')\n"
+        "    sys.exit(subprocess.call([sys.executable,*args[index:]]))\n"
+        "if 'hz-plugin' in args and 'plan' in args:\n"
+        "    print(json.dumps({'include':[{'name':'heinzel-harbor'},{'name':'heinzel-reader'}]}))\n"
+    )
+    done = repo.pr()
+    assert done.returncode == 0, done.stderr
+    calls = [json.loads(line) for line in repo.log("scope")]
+    owning = [call[call.index("hz-plugin") + 1 :] for call in calls if "hz-plugin" in call]
+    if mixed:
+        assert repo.log("make") == ["preflight BASE=origin/main"]
+        assert owning == []
+    else:
+        assert repo.log("make") == ["commits secrets BASE=origin/main"]
+        assert ["run", "--script", "scripts/check_confidentiality.py"] in calls
+        assert owning == [
+            ["plan", "--changed", "plugins/heinzel-harbor/feature.py"],
+            ["preflight", "heinzel-harbor"],
+            ["preflight", "heinzel-reader"],
+        ]
+
+
+@pytest.mark.parametrize("change", ["deleted-plugin", "untracked-plugin", "core"])
+def test_core_root_agent_scope_uses_owning_checks_including_deletions_and_untracked_files(repo, change):
+    (repo.dir / "scripts").mkdir()
+    helper = repo.dir / "scripts/scoped_checks.py"
+    repo.commit("scripts/scoped_checks.py", (SCRIPT.parent / "scoped_checks.py").read_text())
+    (repo.dir / "plugins/heinzel-harbor").mkdir(parents=True)
+    repo.commit("plugins/heinzel-harbor/obsolete.py", "value = 1")
+    if change == "deleted-plugin":
+        (repo.dir / "plugins/heinzel-harbor/obsolete.py").unlink()
+    else:
+        path = "plugins/heinzel-harbor/new.py" if change == "untracked-plugin" else "core.py"
+        (repo.dir / path).write_text("value = 2\n")
+    done = subprocess.run(
+        [sys.executable, str(helper), "fast"],
+        cwd=repo.dir,
+        env=repo.env,
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    assert done.returncode == 0, done.stderr
+    if change == "core":
+        assert repo.log("make") == ["check-fast BASE=origin/main"]
+    else:
+        assert repo.log("make") == []
+        assert any("hz-plugin check-changed --changed plugins/heinzel-harbor/" in call for call in repo.log("uv"))
+
+
+@pytest.mark.parametrize("core_host", [False, True])
+@pytest.mark.parametrize("filename", ["feature.py", "feature name.py", "föö.py"])
+def test_actual_agent_stop_hook_dispatches_scoped_checks_only_in_core_hosts(repo, core_host, filename):
+    if core_host:
+        (repo.dir / "scripts").mkdir()
+        repo.commit("scripts/scoped_checks.py", (SCRIPT.parent / "scoped_checks.py").read_text())
+    (repo.dir / "plugins/heinzel-harbor").mkdir(parents=True)
+    (repo.dir / "plugins/heinzel-harbor" / filename).write_text("value = 1\n")
+    hook = SCRIPT.parents[1] / ".claude/hooks/check_before_stop.py"
+    done = subprocess.run(
+        [sys.executable, str(hook)],
+        input=json.dumps({"cwd": str(repo.dir)}),
+        cwd=repo.dir,
+        env=repo.env,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=30,
+    )
+    assert done.returncode == 0, done.stderr
+    if core_host:
+        assert repo.log("uv") == [f"run --no-project --script {repo.dir}/scripts/scoped_checks.py fast"]
+        assert repo.log("make") == []
+    else:
+        assert repo.log("make") == ["check-fast"]
+
+
+@pytest.mark.parametrize("conflict", [False, True], ids=["clean merge", "resolved conflict"])
+def test_preserves_a_pushed_branch_after_merging_main(repo, conflict):
+    repo.commit("widget")
+    repo.push()
+    repo.commit("base", "feature")
+    repo.git("switch", "--quiet", "main")
+    repo.commit("base" if conflict else "gear", "main changes")
+    repo.git("push", "--quiet", "origin", "main")
+    repo.git("switch", "--quiet", "feat")
+    merged = subprocess.run(
+        ["git", "merge", "--no-edit", "main"], cwd=repo.dir, env=repo.env, capture_output=True, check=False, timeout=30
+    )
+    assert merged.returncode == (1 if conflict else 0)
+    if conflict:
+        (repo.dir / "base").write_text("feature and main\n", encoding="utf-8")
+        repo.git("add", "base")
+        repo.git("commit", "--quiet", "--no-edit")
+    head = repo.git("rev-parse", "HEAD")
+
+    done = repo.pr()
+
+    assert done.returncode == 0, done.stderr
+    assert repo.remote() == head, "an ordinary push must preserve the resolved merge and commit identities"
+    assert (repo.dir / "base").read_text(encoding="utf-8") == ("feature and main\n" if conflict else "feature\n")
+    assert repo.git("status", "--porcelain") == ""
+    assert repo.log("make") == ["--no-print-directory preflight BASE=origin/main"]
 
 
 @pytest.mark.parametrize(

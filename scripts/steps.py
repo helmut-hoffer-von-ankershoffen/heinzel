@@ -28,6 +28,8 @@ from typing import IO
 
 TAIL = 40
 POLL = 0.05
+STOP_GRACE = 0.5
+REAP_TIMEOUT = 2.0
 ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
 # `uv run --script` points VIRTUAL_ENV at this script's own environment; steps run project commands (`uv run ...`),
 # which would warn on every step that it doesn't match the project's .venv.
@@ -51,11 +53,17 @@ class Step:
     code: int | None = None
     note: str = ""
 
-    def start(self) -> None:
+    def start(self, *, verbose: bool = False) -> None:
         """Start the command in its own process group, so cancelling it also stops what it spawned."""
         self.started = time.monotonic()
         self.process = subprocess.Popen(  # noqa: S602 - commands come from the Makefile
-            self.command, shell=True, env=ENV, stdout=self.output, stderr=subprocess.STDOUT, start_new_session=True
+            self.command,
+            shell=True,
+            env=ENV,
+            stdout=None if verbose else self.output,
+            stderr=None if verbose else subprocess.STDOUT,
+            start_new_session=True,
+            text=True,
         )
 
     def poll(self, timeout: float) -> bool:
@@ -70,13 +78,8 @@ class Step:
         return self.code is not None
 
     def stop(self, note: str, code: int = -1) -> None:
-        """Kill the step's process group; 124 marks a timeout, as with timeout(1)."""
-        if self.process is not None and self.process.poll() is None:
-            # The step may exit between poll() and killpg(); macOS then reports EPERM instead of ESRCH.
-            with contextlib.suppress(ProcessLookupError, PermissionError):
-                os.killpg(self.process.pid, signal.SIGKILL)
-            self.process.wait()
-        self.code, self.note = code, note
+        """Stop this step's owned process group; 124 marks a timeout."""
+        stop_steps([self], note, code)
 
     def report(self) -> None:
         """One line, plus the tail of the output for a failure."""
@@ -114,46 +117,100 @@ def groups(argv: list[str]) -> list[list[Step]]:
     return result
 
 
-def run_group(group: list[Step], timeout: float) -> int:
-    """Run the steps together, report them in order, cancel the rest on the first failure."""
-    for step in group:
-        step.start()
-    reported = 0
-    while reported < len(group):
+class Interruption:
+    """Record the first termination signal without interrupting process creation or cleanup."""
+
+    def __init__(self) -> None:
+        """Start with no termination request."""
+        self.signum = 0
+
+    def receive(self, signum: int, _frame: object) -> None:
+        """Record only the first termination signal."""
+        if not self.signum:
+            self.signum = signum
+
+    def exit_code(self) -> int:
+        """Return a conventional signal exit code, or zero if not interrupted."""
+        return 128 + self.signum if self.signum else 0
+
+
+def stop_steps(steps: list[Step], note: str, code: int = -1) -> None:
+    """Stop only unreaped owned child process groups, then reap each with a deadline."""
+    active = [step for step in steps if step.process is not None and step.process.returncode is None]
+    for step in active:
+        with contextlib.suppress(ProcessLookupError, PermissionError):
+            os.killpg(step.process.pid, signal.SIGTERM)  # type: ignore[union-attr]
+    if active:
+        # Keep each direct child unreaped while signalling, so its process-group ID cannot be reused.
+        time.sleep(STOP_GRACE)
+    for step in active:
+        with contextlib.suppress(ProcessLookupError, PermissionError):
+            os.killpg(step.process.pid, signal.SIGKILL)  # type: ignore[union-attr]
+    for step in active:
+        try:
+            step.process.wait(timeout=REAP_TIMEOUT)  # type: ignore[union-attr]
+        except subprocess.TimeoutExpired:
+            print(f"Could not confirm that {step.name} stopped.", file=sys.stderr, flush=True)
+        step.code, step.note = code, note
+
+
+def run_group(group: list[Step], timeout: float, interruption: Interruption, *, verbose: bool = False) -> int:  # noqa: C901 - bounded child lifecycle
+    """Run owned steps together and cancel their process groups on failure or termination."""
+    try:
         for step in group:
-            step.poll(timeout)
-        if any(step.code for step in group):  # a failure: stop whatever still runs
+            if interruption.signum:
+                break
+            if verbose:
+                print(f"--- {step.name}: {step.command}", flush=True)
+            step.start(verbose=verbose)
+        reported = 0
+        while reported < len(group):
+            if interruption.signum:
+                stop_steps(group, "interrupted", 128 + interruption.signum)
+                return 128 + interruption.signum
             for step in group:
-                if step.code is None:
-                    step.stop("cancelled")
-        while reported < len(group) and group[reported].code is not None:
-            group[reported].report()
-            reported += 1
-        time.sleep(POLL)
-    return next((step.code for step in group if step.code and step.note != "cancelled"), 0) or 0
+                step.poll(timeout)
+            if any(step.code for step in group):
+                stop_steps([step for step in group if step.code is None], "cancelled")
+            while reported < len(group) and group[reported].code is not None:
+                if not verbose:
+                    group[reported].report()
+                reported += 1
+            time.sleep(POLL)
+        return next((step.code for step in group if step.code and step.note != "cancelled"), 0) or 0
+    except BaseException:
+        stop_steps(group, "interrupted")
+        raise
 
 
 def main(argv: list[str]) -> int:
-    """Run the groups in order and stop at the first failure."""
+    """Run groups in order, stopping their owned children on SIGINT or SIGTERM."""
     try:
         plan = groups(argv)
     except ValueError as exc:
         print(exc, file=sys.stderr)
         return 2
     timeout = float(os.environ.get("STEP_TIMEOUT", "600"))
-    if os.environ.get("VERBOSE", "") not in {"", "0"}:
-        for step in (step for group in plan for step in group):
-            print(f"--- {step.name}: {step.command}", flush=True)
-            if code := subprocess.run(step.command, shell=True, env=ENV, check=False, timeout=timeout).returncode:  # noqa: S602
+    interruption = Interruption()
+    handlers = {sig: signal.signal(sig, interruption.receive) for sig in (signal.SIGINT, signal.SIGTERM)}
+    try:
+        verbose = os.environ.get("VERBOSE", "") not in {"", "0"}
+        execution = [[step] for group in plan for step in group] if verbose else plan
+        for index, group in enumerate(execution):
+            if interrupted := interruption.exit_code():
+                return interrupted
+            if code := run_group(group, timeout, interruption, verbose=verbose):
+                if interrupted := interruption.exit_code():
+                    return interrupted
+                if not verbose:
+                    for later in execution[index + 1 :]:
+                        for step in later:
+                            step.report()
                 return code
-        return 0
-    for index, group in enumerate(plan):
-        if code := run_group(group, timeout):
-            for later in plan[index + 1 :]:
-                for step in later:
-                    step.report()
-            return code
-    return 0
+        return interruption.exit_code()
+    finally:
+        for sig, handler in handlers.items():
+            signal.signal(sig, handler)
 
 
 if __name__ == "__main__":

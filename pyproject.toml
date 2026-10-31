@@ -1,8 +1,8 @@
 [project]
 name = "heinzel"
-version = "0.8.0"
+version = "0.9.8"
 description = "Heinzelmännchen: an open-source, AI-driven operating system for product development teams."
-readme = "README.md"
+readme = "PYPI.md"
 authors = [{ name = "Helmut Hoffer von Ankershoffen", email = "helmuthva@gmail.com" }]
 license = "MIT"
 # ATTRIBUTIONS.md: every package hz ships, with its license text; the wheel bundles the web app's (`make attributions`).
@@ -22,25 +22,7 @@ classifiers = [
     "Programming Language :: Python :: 3.15",
     "Typing :: Typed",
 ]
-dependencies = [
-    "croniter>=6.2.4",
-    "fastapi>=0.161",
-    "keyring>=25.6",
-    "mcp>=2.3",
-    "packaging>=25.0",
-    "platformdirs>=4.5",
-    "pluggy>=1.6.0,<2",
-    "psutil==7.2.2",
-    "pydantic>=2.12.0,<3",
-    "pydantic-ai-slim==2.61.0",
-    "pydantic-settings>=2.11.0,<3",
-    "pyyaml>=6.0.2,<7",
-    "rich>=14.2.0",
-    "tomlkit>=0.13",
-    "typer>=0.23.0",
-    "uvicorn>=0.54",
-    "wsproto>=1.3",
-]
+dependencies = ["croniter>=6.2.4", "fastapi>=0.161", "keyring>=25.6", "mcp>=2.3", "packaging>=25.0", "platformdirs>=4.5", "pluggy>=1.6.0,<2", "psutil==7.2.2", "pydantic>=2.12.0,<3", "pydantic-ai-slim==2.61.0", "pydantic-settings>=2.11.0,<3", "pyyaml>=6.0.2,<7", "rich>=14.2.0", "tomlkit>=0.13", "typer>=0.23.0", "uvicorn>=0.54", "wsproto>=1.3"]
 
 [project.optional-dependencies]
 # A vendor's client for the `pydantic-ai` AI access option (ADR 0050, 0057); the core imports only pydantic_ai.
@@ -48,41 +30,23 @@ anthropic = ["pydantic-ai-slim[anthropic]==2.61.0"]
 openai = ["pydantic-ai-slim[openai]==2.61.0"]
 
 [project.scripts]
-hz = "heinzel.heads.cli:main"
-heinzel = "heinzel.heads.cli:main" # the same command, so `uvx --from <source> heinzel join <team repository>` runs it
+hz = "_heinzel_launcher:cli"
+hz-install = "_heinzel_launcher:install"
+heinzel = "_heinzel_launcher:main" # Isolate imports before entering the managed app launcher.
 
 [project.entry-points.pytest11]
 heinzel = "heinzel.testing"
 
 [project.urls]
-Homepage = "https://github.com/helmut-hoffer-von-ankershoffen/heinzel"
+Homepage = "https://helmut.hoffer-von-ankershoffen.me/heinzel/"
+Documentation = "https://helmut.hoffer-von-ankershoffen.me/heinzel/guides/install/"
 Source = "https://github.com/helmut-hoffer-von-ankershoffen/heinzel"
 Changelog = "https://github.com/helmut-hoffer-von-ankershoffen/heinzel/blob/main/CHANGELOG.md"
 Issues = "https://github.com/helmut-hoffer-von-ankershoffen/heinzel/issues"
 
 [dependency-groups]
 # What the unit, integration and e2e tests need, and no more: CI installs only this group for the test matrix.
-test = [
-    # The first-party plugins (workspace members), so their tests run in this suite; the release process bumps the
-    # bounds. Test-only: `hz system plugin add <name>` installs them for users, nothing installs them by default.
-    "heinzel-atlassian>=0.8.0",
-    "heinzel-clock>=0.8.0",
-    "heinzel-github>=0.8.0",
-    "heinzel-google>=0.8.0",
-    "heinzel-tailscale>=0.8.0",
-    "heinzel-zoom>=0.8.0",
-    "coverage>=7.12",
-    "httpx>=0.28",
-    "hypothesis>=6.140",
-    "jsonschema>=4.26",
-    # OpenAI's client, so the ChatGPT sign-in flow and a test turn through Pydantic AI run in tests (ADR 0057).
-    "pydantic-ai-slim[openai]==2.61.0",
-    "prek>=0.2",
-    "pytest>=9.0.3,<10",
-    "pytest-timeout>=2.4.0,<3",
-    "pytest-xdist>=3.8",
-    "types-psutil>=7.2.2.20260906",
-]
+test = ["coverage>=7.12", "httpx>=0.28", "hypothesis>=6.140", "jsonschema>=4.26", "pydantic-ai-slim[openai]==2.61.0", "prek>=0.2", "pytest>=9.0.3,<10", "pytest-timeout>=2.4.0,<3", "pytest-xdist>=3.8", "types-psutil>=7.2.2.20260906"]
 # Fuzzing the contract parser (`make fuzz`, weekly in CI); atheris has wheels for x86_64 Linux, Python 3.12 to 3.14.
 fuzz = ["atheris>=3.1; sys_platform == 'linux' and platform_machine == 'x86_64' and python_version < '3.15'"]
 dev = [
@@ -119,6 +83,7 @@ packages = ["src/heinzel"]
 
 # Ship the changelog inside the package so `hz system changelog` works from an installed wheel.
 [tool.hatch.build.targets.wheel.force-include]
+"src/_heinzel_launcher.py" = "_heinzel_launcher.py"
 "CHANGELOG.md" = "heinzel/CHANGELOG.md"
 "agent-skills/skills" = "heinzel/skills"
 
@@ -128,28 +93,15 @@ packages = ["src/heinzel"]
 path = "hatch_build.py"
 
 [tool.hatch.build.targets.sdist]
-exclude = ["web/node_modules", "web/test-results"]
+exclude = ["web/node_modules", "web/test-results", "/plugins"]
 
 [tool.uv]
 required-version = ">=0.13.0"
 
-# First-party plugins (ADR 0017): separate distributions in plugins/, developed and released with the core.
-[tool.uv.workspace]
-members = ["plugins/*"]
-
-[tool.uv.sources]
-heinzel = { workspace = true }
-heinzel-atlassian = { workspace = true }
-heinzel-clock = { workspace = true }
-heinzel-github = { workspace = true }
-heinzel-google = { workspace = true }
-heinzel-tailscale = { workspace = true }
-heinzel-zoom = { workspace = true }
-
 [tool.ruff]
 line-length = 120
 fix = true
-extend-exclude = ["template"] # rendered and checked by `make template-test`
+extend-exclude = ["template", "plugins"] # independent projects run their own checks
 
 [tool.ruff.lint]
 select = ["ALL"]
@@ -214,11 +166,11 @@ docstring-code-format = true
 
 [tool.mypy]
 strict = true
-mypy_path = ["src", "plugins/heinzel-atlassian/src", "plugins/heinzel-clock/src", "plugins/heinzel-github/src", "plugins/heinzel-google/src", "plugins/heinzel-tailscale/src", "plugins/heinzel-zoom/src"]
+mypy_path = ["src"]
 warn_unreachable = true
 enable_error_code = ["ignore-without-code", "redundant-expr", "truthy-bool"]
 plugins = ["pydantic.mypy"]
-files = ["src", "plugins/*/src"]
+files = ["src"]
 
 [[tool.mypy.overrides]]
 module = ["atheris"] # no type information; installed only for `make fuzz` on Linux
@@ -232,7 +184,7 @@ warn_required_dynamic_aliases = true
 [tool.pytest]
 minversion = "9.0"
 strict = true
-testpaths = ["tests", "plugins"]
+testpaths = ["tests"]
 norecursedirs = ["tests/fixtures", ".hypothesis"]
 addopts = ["-ra", "--import-mode=importlib"]
 filterwarnings = ["error"]
@@ -246,11 +198,12 @@ markers = [
     "integration: Sociable integration tests - test interactions across layers (CLI -> service -> utils) or between modules with real collaborators, real file I/O and real subprocesses. Must pass offline; external services are mocked. Timeout 15 s.",
     "e2e: End-to-end tests - complete workflows against real external services (PyPI, GitHub, a real `uv tool` install). Need network. Timeout 120 s; mark as long_running if a test needs >= 5 min.",
     "long_running: Tests with a timeout >= 5 min.",
+    "e2e_early: Hint to start a long E2E case in an early xdist worker batch; no deadline or selection change.",
     "perf: Performance tests that assert on elapsed time (linear time, a budget). Additional to the level marker; excluded from make check-fast, test, test-parallel and test-all-pythons, run by make test-perf in CI only, because load makes them flake.",
 ]
 
 [tool.coverage.run]
-source = ["heinzel", "heinzel_atlassian", "heinzel_clock", "heinzel_github", "heinzel_google", "heinzel_tailscale", "heinzel_zoom"]
+source = ["heinzel"]
 branch = true
 relative_files = true
 # make test runs the suite on xdist workers: subprocesses, measured through coverage's .pth hook into a data file each
@@ -280,7 +233,7 @@ example = "fix(cli): exit with code 1 when an operation fails"
 info = "Conventional commits with the types and scopes in docs/CODING_STANDARDS.md."
 
 [tool.bumpversion]
-current_version = "0.8.0"
+current_version = "0.9.8"
 parse = "(?P<major>\\d+)\\.(?P<minor>\\d+)\\.(?P<patch>\\d+)"
 serialize = ["{major}.{minor}.{patch}"]
 commit = false
@@ -292,96 +245,6 @@ search = "name = \"heinzel\"\nversion = \"{current_version}\""
 replace = "name = \"heinzel\"\nversion = \"{new_version}\""
 
 [[tool.bumpversion.files]]
-filename = "plugins/heinzel-clock/pyproject.toml"
-search = "name = \"heinzel-clock\"\nversion = \"{current_version}\""
-replace = "name = \"heinzel-clock\"\nversion = \"{new_version}\""
-
-[[tool.bumpversion.files]] # first-party plugins need the core they are released with
-filename = "plugins/heinzel-clock/pyproject.toml"
-search = "\"heinzel>={current_version}\""
-replace = "\"heinzel>={new_version}\""
-
-[[tool.bumpversion.files]]
-filename = "pyproject.toml"
-search = "\"heinzel-clock>={current_version}\""
-replace = "\"heinzel-clock>={new_version}\""
-
-[[tool.bumpversion.files]]
-filename = "plugins/heinzel-github/pyproject.toml"
-search = "name = \"heinzel-github\"\nversion = \"{current_version}\""
-replace = "name = \"heinzel-github\"\nversion = \"{new_version}\""
-
-[[tool.bumpversion.files]]
-filename = "plugins/heinzel-github/pyproject.toml"
-search = "\"heinzel>={current_version}\""
-replace = "\"heinzel>={new_version}\""
-
-[[tool.bumpversion.files]]
-filename = "pyproject.toml"
-search = "\"heinzel-github>={current_version}\""
-replace = "\"heinzel-github>={new_version}\""
-
-[[tool.bumpversion.files]]
-filename = "plugins/heinzel-google/pyproject.toml"
-search = "name = \"heinzel-google\"\nversion = \"{current_version}\""
-replace = "name = \"heinzel-google\"\nversion = \"{new_version}\""
-
-[[tool.bumpversion.files]]
-filename = "plugins/heinzel-google/pyproject.toml"
-search = "\"heinzel>={current_version}\""
-replace = "\"heinzel>={new_version}\""
-
-[[tool.bumpversion.files]]
-filename = "pyproject.toml"
-search = "\"heinzel-google>={current_version}\""
-replace = "\"heinzel-google>={new_version}\""
-
-[[tool.bumpversion.files]]
-filename = "plugins/heinzel-zoom/pyproject.toml"
-search = "name = \"heinzel-zoom\"\nversion = \"{current_version}\""
-replace = "name = \"heinzel-zoom\"\nversion = \"{new_version}\""
-
-[[tool.bumpversion.files]]
-filename = "plugins/heinzel-zoom/pyproject.toml"
-search = "\"heinzel>={current_version}\""
-replace = "\"heinzel>={new_version}\""
-
-[[tool.bumpversion.files]]
-filename = "pyproject.toml"
-search = "\"heinzel-zoom>={current_version}\""
-replace = "\"heinzel-zoom>={new_version}\""
-
-[[tool.bumpversion.files]]
-filename = "plugins/heinzel-atlassian/pyproject.toml"
-search = "name = \"heinzel-atlassian\"\nversion = \"{current_version}\""
-replace = "name = \"heinzel-atlassian\"\nversion = \"{new_version}\""
-
-[[tool.bumpversion.files]]
-filename = "plugins/heinzel-atlassian/pyproject.toml"
-search = "\"heinzel>={current_version}\""
-replace = "\"heinzel>={new_version}\""
-
-[[tool.bumpversion.files]]
-filename = "pyproject.toml"
-search = "\"heinzel-atlassian>={current_version}\""
-replace = "\"heinzel-atlassian>={new_version}\""
-
-[[tool.bumpversion.files]]
-filename = "plugins/heinzel-tailscale/pyproject.toml"
-search = "name = \"heinzel-tailscale\"\nversion = \"{current_version}\""
-replace = "name = \"heinzel-tailscale\"\nversion = \"{new_version}\""
-
-[[tool.bumpversion.files]]
-filename = "plugins/heinzel-tailscale/pyproject.toml"
-search = "\"heinzel>={current_version}\""
-replace = "\"heinzel>={new_version}\""
-
-[[tool.bumpversion.files]]
-filename = "pyproject.toml"
-search = "\"heinzel-tailscale>={current_version}\""
-replace = "\"heinzel-tailscale>={new_version}\""
-
-[[tool.bumpversion.files]]
 filename = "agent-skills/.claude-plugin/plugin.json"
 search = "\"version\": \"{current_version}\""
 replace = "\"version\": \"{new_version}\""
@@ -390,7 +253,6 @@ replace = "\"version\": \"{new_version}\""
 filename = "copier.yml"
 search = "default: \"{current_version}\" # bumped by the release process"
 replace = "default: \"{new_version}\" # bumped by the release process"
-
 [tool.git-cliff.remote.github]
 owner = "helmut-hoffer-von-ankershoffen"
 repo = "heinzel"
@@ -450,7 +312,7 @@ protect_breaking_commits = true
 tag_pattern = "v[0-9].*"
 
 [tool.pyright]
-include = ["src", "plugins/*/src"]
+include = ["src"]
 typeCheckingMode = "strict"
 pythonVersion = "3.12"
 venvPath = "."
@@ -462,16 +324,16 @@ Prompty = "Prompty" # a prompt file format, cited in docs/research/workflow-cont
 intoto = "intoto" # in-toto attestations, as in provenance.intoto.jsonl
 
 [tool.typos.files]
-extend-exclude = ["ATTRIBUTIONS.md", "site"] # third-party license texts, quoted as their authors wrote them; the built site
+extend-exclude = ["ATTRIBUTIONS.md", "site", "plugins"] # independent plugin checks own their sources and docs
 
 [tool.importlinter]
-root_packages = ["heinzel", "heinzel_atlassian", "heinzel_clock", "heinzel_github", "heinzel_google", "heinzel_tailscale", "heinzel_zoom"]
+root_packages = ["heinzel"]
 include_external_packages = true # so contracts can forbid a head's toolkit
 
 [[tool.importlinter.contracts]]
 name = "Modules never import a head's toolkit: they return results, heads present them"
 type = "forbidden"
-source_modules = ["heinzel.modules", "heinzel_atlassian", "heinzel_clock", "heinzel_github", "heinzel_google", "heinzel_tailscale", "heinzel_zoom"]
+source_modules = ["heinzel.modules"]
 forbidden_modules = ["typer", "fastapi", "mcp", "uvicorn"]
 
 [[tool.importlinter.contracts]]
@@ -501,30 +363,7 @@ forbidden_modules = ["heinzel.heads"]
 [[tool.importlinter.contracts]]
 name = "Every module could be a plugin: system's submodules don't import each other"
 type = "independence"
-modules = [
-    "heinzel.modules.system.agent",
-    "heinzel.modules.system.capability",
-    "heinzel.modules.system.changelog",
-    "heinzel.modules.system.claude",
-    "heinzel.modules.system.state",
-    "heinzel.modules.system.config",
-    "heinzel.modules.system.connector",
-    "heinzel.modules.system.lifecycle",
-    "heinzel.modules.system.credential",
-    "heinzel.modules.system.daemon",
-    "heinzel.modules.system.directory",
-    "heinzel.modules.system.doctor",
-    "heinzel.modules.system.expert",
-    "heinzel.modules.system.layer",
-    "heinzel.modules.system.notify",
-    "heinzel.modules.system.plugin",
-    "heinzel.modules.system.resource",
-    "heinzel.modules.system.runner",
-    "heinzel.modules.system.skill",
-    "heinzel.modules.system.sound",
-    "heinzel.modules.system.theme",
-    "heinzel.modules.system.ui",
-]
+modules = ["heinzel.modules.system.agent", "heinzel.modules.system.capability", "heinzel.modules.system.changelog", "heinzel.modules.system.claude", "heinzel.modules.system.state", "heinzel.modules.system.config", "heinzel.modules.system.connector", "heinzel.modules.system.lifecycle", "heinzel.modules.system.credential", "heinzel.modules.system.daemon", "heinzel.modules.system.directory", "heinzel.modules.system.doctor", "heinzel.modules.system.expert", "heinzel.modules.system.layer", "heinzel.modules.system.notify", "heinzel.modules.system.plugin", "heinzel.modules.system.runner", "heinzel.modules.system.skill", "heinzel.modules.system.sound", "heinzel.modules.system.theme", "heinzel.modules.system.ui"]
 
 [[tool.importlinter.contracts]]
 name = "Every module could be a plugin: top-level modules don't import each other, they inject services by type"
@@ -536,30 +375,12 @@ name = "Modules use only the kernel's public API, like plugins"
 type = "forbidden"
 source_modules = ["heinzel.modules"]
 forbidden_modules = [
-    "heinzel.kernel._agents", "heinzel.kernel._bindings", "heinzel.kernel._chat", "heinzel.kernel._boot", "heinzel.kernel._capabilities", "heinzel.kernel._config", "heinzel.kernel._credentials", "heinzel.kernel._discovery", "heinzel.kernel._duration", "heinzel.kernel._errors", "heinzel.kernel._installation", "heinzel.kernel._identity", "heinzel.kernel._jobs",
+    "heinzel.kernel._agents", "heinzel.kernel._bindings", "heinzel.kernel._chat", "heinzel.kernel._boot", "heinzel.kernel._capabilities", "heinzel.kernel._config", "heinzel.kernel._connected_read", "heinzel.kernel._credentials", "heinzel.kernel._discovery", "heinzel.kernel._duration", "heinzel.kernel._errors", "heinzel.kernel._installation", "heinzel.kernel._identity", "heinzel.kernel._jobs",
     "heinzel.kernel._git", "heinzel.kernel._presence",
     "heinzel.kernel._kernel", "heinzel.kernel._lets", "heinzel.kernel._module", "heinzel.kernel._notifications", "heinzel.kernel._org", "heinzel.kernel._progress", "heinzel.kernel._release", "heinzel.kernel._settings", "heinzel.kernel._session", "heinzel.kernel._session_io", "heinzel.kernel._session_store", "heinzel.kernel._skills", "heinzel.kernel._signals", "heinzel.kernel._soundscapes",
     "heinzel.kernel._protocols", "heinzel.kernel._spec", "heinzel.kernel._telemetry",
 ]
-allow_indirect_imports = true # going through heinzel.kernel's public API is the point
-
-[[tool.importlinter.contracts]]
-name = "First-party plugins use only the public API, like any plugin"
-type = "forbidden"
-source_modules = ["heinzel_atlassian", "heinzel_clock", "heinzel_github", "heinzel_google", "heinzel_tailscale", "heinzel_zoom"]
-forbidden_modules = ["heinzel.heads", "heinzel.modules", "heinzel.kernel._boot", "heinzel.kernel._kernel", "heinzel.kernel._module"]
 allow_indirect_imports = true
-
-[[tool.importlinter.contracts]]
-name = "First-party plugins are independent of each other, like separate repositories"
-type = "independence"
-modules = ["heinzel_atlassian", "heinzel_clock", "heinzel_github", "heinzel_google", "heinzel_tailscale", "heinzel_zoom"]
-
-[[tool.importlinter.contracts]]
-name = "The core imports no plugin: first-party plugins are installed on request, never by default (ADR 0017, 0028)"
-type = "forbidden"
-source_modules = ["heinzel"]
-forbidden_modules = ["heinzel_atlassian", "heinzel_clock", "heinzel_github", "heinzel_google", "heinzel_tailscale", "heinzel_zoom"]
 
 [[tool.importlinter.contracts]]
 name = "Heads only know what the kernel discovered"

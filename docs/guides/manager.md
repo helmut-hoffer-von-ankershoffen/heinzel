@@ -13,8 +13,15 @@ You need [uv](https://docs.astral.sh/uv/) (`brew install uv`), the [GitHub CLI](
 (`brew install gh`), the right to create a private repository in your GitHub organisation, and, for drafting, the
 [Claude Code](https://docs.claude.com/en/docs/claude-code) CLI installed and signed in (the default agent runner).
 
+Start the workspace with:
+
+```sh
+uvx heinzel@latest
+```
+
+Leave it running and use another terminal for the following commands:
+
 ```bash
-uv tool install heinzel
 gh auth login                                            # once; hz stores no token
 hz setup                                                 # who you are: found from gh, the rest asked once
 hz system plugin add github --confirm                              # pull requests and issues through gh
@@ -43,14 +50,13 @@ the same path with what you should see, and the choices along the way.
 
 You need [uv](https://docs.astral.sh/uv/) (`brew install uv`).
 
-```bash
-uv tool install heinzel
-hz --version
+```sh
+uvx heinzel@latest
 ```
 
-What you should see: the version on the first line (hz 0.x.y), then the repository, Python, platform and installation, and one line
-per installed plugin (none on a fresh install). Pin a release with `@vX.Y.Z`; `hz system update` then moves to the latest release and keeps your plugins. From
-Claude Code, `/hz-init` does the same ([README](../../README.md#install)).
+The first run installs the standard app and its default plugins and opens the workspace. In another terminal,
+`hz --version` shows the installed version and plugins. `hz system update` keeps the app current while preserving
+plugins and configuration. From Claude Code, `/hz-init` provides the setup flow ([README](../../README.md#install)).
 
 ## 2. Sign in to the tools you already use
 
@@ -62,7 +68,7 @@ never sees, stores or asks for a token, and no administrator has to register an 
 | --- | --- | --- |
 | [GitHub CLI](https://cli.github.com) `gh` | pull requests, issues, the team repository, the roster draft | `gh auth login` (or `gh auth login --hostname ghe.example.com`) |
 | [Atlassian CLI](https://developer.atlassian.com/cloud/acli/) `acli` | Jira issues, Confluence pages | `acli jira auth login --web` and `acli confluence auth login --web` |
-| [Google Workspace CLI](https://github.com/googleworkspace/cli) `gws` | Docs, Sheets, Drive, Calendar, Gmail | `npm install -g @googleworkspace/cli`, then `hz setup google` signs it in with read-only scopes ([README](../../plugins/heinzel-google/README.md)) |
+| [Google Workspace CLI](https://github.com/googleworkspace/cli) `gws` | Docs, Sheets, Drive, Calendar, Gmail | `npm install -g @googleworkspace/cli`, then `hz setup google` signs it in with read-only scopes ([README](https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/tree/main/plugins/heinzel-google/README.md)) |
 
 What you should see: `gh auth status` names your login; `hz system doctor` reports each CLI found, its version and
 its stored sign-in, without contacting the vendor.
@@ -117,12 +123,12 @@ hz system capability list                                 # every capability, it
 
 What you should see: `hz system plugin list` names the plugins and the modules they bring; `hz system doctor` has a
 line per plugin (`gh` found, its version and login; bindings in place). Each plugin's README has the details:
-[heinzel-github](../../plugins/heinzel-github/README.md), [heinzel-atlassian](../../plugins/heinzel-atlassian/README.md),
-[heinzel-google](../../plugins/heinzel-google/README.md), [heinzel-zoom](../../plugins/heinzel-zoom/README.md).
+[heinzel-github](https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/tree/main/plugins/heinzel-github/README.md), [heinzel-atlassian](https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/tree/main/plugins/heinzel-atlassian/README.md),
+[heinzel-google](https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/tree/main/plugins/heinzel-google/README.md), [heinzel-zoom](https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/tree/main/plugins/heinzel-zoom/README.md).
 
 **Your company's own plugins.** Anything specific to a company, org, site or team is a plugin, never part of the
 core ([INTENT: tenets](../../INTENT.md#tenets)). A company keeps its plugins in one private repository, laid out like
-this repository's [plugins/](../../plugins), and everyone installs from it:
+this repository's [plugins/](https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/tree/main/plugins), and everyone installs from it:
 
 ```bash
 hz system plugin new ../heinzel-acme               # scaffold one: tests, CI, release automation, agent setup
@@ -304,7 +310,7 @@ says what hz keeps about the person, finds out who they are from their `gh` and 
 up what is still missing:
 
 ```bash
-uvx --from heinzel heinzel join https://github.com/acme-example/hz-team-checkout.git
+uvx heinzel@latest join https://github.com/acme-example/hz-team-checkout.git
 ```
 
 The invite printed by `hz join` currently uses the Git repository at your release tag (`@vX.Y.Z`). Whoever can read

@@ -384,7 +384,21 @@ def test_the_pinned_tools_are_run_through_tools_py_not_downloaded_on_their_own()
     assert all("gitleaks" not in repo["repo"] for repo in config["repos"])
     (hook,) = [hook for repo in config["repos"] for hook in repo.get("hooks", []) if hook["id"] == "gitleaks"]
     assert hook["entry"].startswith("uv run --quiet --script scripts/tools.py run gitleaks ")
-    workflows = "".join(path.read_text(encoding="utf-8") for path in (REPO / ".github" / "workflows").glob("*.yml"))
+    sources = []
+    for path in (REPO / ".github" / "workflows").glob("*.yml"):
+        text = path.read_text(encoding="utf-8")
+        if path.name == "release.yml":
+            # ADR 0097's ordinary, digest-pinned Python wheel is installed by uv, not as a managed binary.
+            pin = yaml.safe_load(text)["env"]["TOOLING"]
+            assert re.fullmatch(
+                r"heinzel-plugin-tools @ https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/"
+                r"releases/download/tools-v(?P<version>\d+\.\d+\.\d+)/"
+                r"heinzel_plugin_tools-(?P=version)-py3-none-any.whl#sha256=[a-f0-9]{64}",
+                pin,
+            )
+            text = text.replace(pin, "<ordinary hashed Python dependency>")
+        sources.append(text)
+    workflows = "".join(sources)
     assert "releases/download" not in workflows, "install pinned binaries through scripts/tools.toml"
 
 

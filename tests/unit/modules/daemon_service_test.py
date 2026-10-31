@@ -2,9 +2,12 @@
 
 import json
 import os
+import select
 import stat
 import subprocess
+import sys
 import threading
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -16,6 +19,7 @@ from heinzel.modules.system.daemon import DaemonService, DaemonSettings
 from heinzel.modules.system.daemon._ledger import Ledger
 from heinzel.modules.system.daemon._models import Disposition, Wake, unit_dir
 from heinzel.modules.system.daemon._runtime import Outcome, lock, within
+from heinzel.modules.system.daemon._service import MAX_SERVICE_MANAGER_OUTPUT, _launchd_pid, _reported_pid
 from heinzel.modules.system.daemon._units import LABEL
 
 pytestmark = pytest.mark.unit
@@ -121,6 +125,8 @@ def make(make_kernel, settings, tmp_path, bin_dir):
             time_limit=time_limit,
             zone=BERLIN,
             notifier_installed=lambda: notifier,
+            birth_fence=lambda: None,
+            process_birth=lambda: None,
         )
 
     return build
@@ -480,7 +486,7 @@ def test_failures_are_retried_within_the_tick(make, calls):
     assert (calls.count("try"), calls.count("never")) == (2, 3)
 
 
-def test_a_job_that_times_out_is_final_and_skipped_while_it_still_runs(make, calls):
+def test_a_job_that_times_out_keeps_lifecycle_locked_while_it_still_runs(make, calls):
     slow = Module("slow", "Slow jobs.")
 
     @slow.job(schedule="0 * * * *", retries=3)
@@ -501,15 +507,37 @@ def test_a_job_that_times_out_is_final_and_skipped_while_it_still_runs(make, cal
     [first] = service.tick().runs
     assert (first.disposition, seen) == (Disposition.FAILED, [900.0])  # no retry after a timeout
     assert "abandoned" in (first.error or "")
-    clock.set(11, 1)
-    [second] = service.tick().runs
-    assert (second.disposition, second.error) == (
-        Disposition.SKIPPED,
-        "its previous run timed out and is still running",
-    )
-    assert seen == [900.0]
-    still_running.set()
-    thread.join()
+    try:
+        clock.set(11, 1)
+        assert service.tick().locked
+        import sys
+
+        script = "import fcntl,sys; f=open(sys.argv[1], 'a'); fcntl.flock(f,fcntl.LOCK_EX|fcntl.LOCK_NB)"
+        child = subprocess.run(
+            [sys.executable, "-c", script, str(service.state_dir / "lifecycle.lock")],
+            capture_output=True,
+            check=False,
+            timeout=5,
+        )
+        assert child.returncode != 0
+        assert b"BlockingIOError" in child.stderr
+        with (
+            pytest.raises(HeinzelError, match="lifecycle is changing"),
+            service.mutation_guard(lambda: False, lambda: "a" * 64),
+        ):
+            pytest.fail("mutation started while abandoned work was live")
+        assert seen == [900.0]
+    finally:
+        still_running.set()
+        thread.join(timeout=5)
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline:
+        with lock(service.state_dir / "lifecycle.lock") as acquired:
+            if acquired:
+                break
+        time.sleep(0.01)
+    else:
+        pytest.fail("lifecycle lock remained held after abandoned work ended")
     clock.set(12, 1)
     assert service.tick().runs[0].disposition is Disposition.FAILED
     assert seen == [900.0, 900.0]
@@ -822,24 +850,1381 @@ def test_a_failing_notifier_never_fails_the_tick(make, jobs):
     assert "posting notices failed: OSError: disk full" in service.log_path.read_text(encoding="utf-8")
 
 
-def test_status_reports_the_version_the_daemon_was_started_with(make):
+def test_manual_tick_cannot_attest_the_daemon_and_restart_stays_unknown_until_a_service_tick(make, monkeypatch):
     service = make()
     assert (service.status().version, service.status().version_mismatch) == (None, False)
     service.install(timedelta(minutes=5))
-    assert (service.status().version, service.status().version_mismatch) == (__version__, False)
+    assert service.status().installed_version == __version__
+    assert (service.status().version, service.status().version_mismatch) == (None, False)
+    service.tick()
+    assert (service.status().version, service.status().version_mismatch) == (None, False)
+    monkeypatch.setattr(service, "_service_manager_pid", lambda: os.getpid() + 1)
+    service.tick()
+    assert (service.status().version, service.status().version_mismatch) == (None, False)
+    monkeypatch.setattr(service, "_service_manager_pid", os.getpid)
+    service.tick()
+    assert (
+        service.status().version,
+        service.status().installed_version,
+        service.status().version_mismatch,
+    ) == (__version__, __version__, False)
 
 
-def test_a_daemon_started_by_an_older_hz_is_flagged_and_restart_mends_it(make, tmp_path):
+def test_a_daemon_started_by_an_older_hz_is_flagged_until_current_service_tick(make, tmp_path, monkeypatch):
     service = make()
     service.install(timedelta(minutes=5))
-    state = service.state_dir / "install.json"
-    state.write_text(state.read_text().replace(__version__, "0.0.1"), encoding="utf-8")
+    monkeypatch.setattr(service, "_service_manager_pid", os.getpid)
+    service.tick()
+    heartbeat = service.state_dir / "heartbeat.json"
+    heartbeat.write_text(heartbeat.read_text().replace(__version__, "0.0.1"), encoding="utf-8")
     status = service.status()
     assert (status.version, status.version_mismatch) == ("0.0.1", True)
     restarted = service.restart()
     assert (restarted.restarted, restarted.version, restarted.interval_minutes) == (True, __version__, 5)
+    assert (service.status().version, service.status().version_mismatch) == ("0.0.1", True)
+    service.tick()
     assert (service.status().version, service.status().version_mismatch) == (__version__, False)
+
+
+def test_launchd_service_pid_is_read_from_its_running_job(make, bin_dir, monkeypatch):
+    service = make(runner=Runner(bin_dir))
+    output = f'{{\n\t"Label" = "{LABEL}";\n\t"PID" = {os.getpid()};\n}}\n'
+    commands = []
+
+    def runner(command):
+        commands.append(command)
+        return subprocess.CompletedProcess(command, 0, output, "")
+
+    monkeypatch.setattr(
+        service,
+        "_runner",
+        runner,
+    )
+    assert service._service_manager_pid() == os.getpid()
+    assert commands[0][-2:] == ["list", LABEL]
+
+
+def test_systemd_service_pid_is_read_from_main_pid(make, bin_dir, monkeypatch):
+    service = make(platform="linux", runner=Runner(bin_dir))
+    monkeypatch.setattr(
+        service,
+        "_runner",
+        lambda command: subprocess.CompletedProcess(command, 0, "417\n", ""),
+    )
+    assert service._service_manager_pid() == 417
+
+
+@pytest.mark.parametrize(
+    "output",
+    [
+        f'{{\n"Label" = "{LABEL}";\n"PID" = "-";\n}}\n',
+        f'{{\n"Label" = "{LABEL}";\n"PID" = 12345678901;\n}}\n',
+        f'{{\n"Label" = "{LABEL}-lookalike";\n"PID" = 12;\n}}\n',
+        f'{{\n"Label" = "{LABEL}";\n"PID" = 12;\n"PID" = 13;\n}}\n',
+        "x" * (MAX_SERVICE_MANAGER_OUTPUT + 1),
+    ],
+    ids=["unrunning", "oversized-pid", "wrong-label", "duplicate-pid", "oversized-output"],
+)
+def test_launchd_pid_parser_fails_closed_on_malformed_or_unbounded_output(output):
+    assert _launchd_pid(output, LABEL) is None
+
+
+@pytest.mark.parametrize("output", ["0", "-1", "12\n99", "12345678901", "x" * (MAX_SERVICE_MANAGER_OUTPUT + 1)])
+def test_systemd_pid_parser_fails_closed_on_malformed_or_unbounded_output(output):
+    assert _reported_pid(output) is None
+
+
+def test_failed_daemon_replacement_keeps_the_old_version_marker_fail_closed(make, tmp_path, bin_dir):
+    service = make(runner=Runner(bin_dir))
+    service.install(timedelta(minutes=5))
+    state = service.state_dir / "install.json"
+    state.write_text(state.read_text().replace(__version__, "0.0.1"), encoding="utf-8")
+
+    with pytest.raises(HeinzelError, match="bootstrap failed"):
+        make(runner=Runner(bin_dir, {"bootstrap": 5})).install(timedelta(minutes=5))
+
+    assert json.loads(state.read_text(encoding="utf-8"))["version"] == "0.0.1"
+    status = service.status()
+    assert (status.version, status.installed_version, status.version_mismatch) == (None, "0.0.1", True)
 
 
 def test_restarting_a_daemon_that_is_not_installed_does_nothing(make):
     assert make(runner=Refuses()).restart().restarted is False
+
+
+def test_worker_thread_inherits_only_the_callers_context():
+    from contextvars import ContextVar
+
+    owner = ContextVar("test_owner", default="none")
+    token = owner.set("first")
+    try:
+        assert within(owner.get, 1).value == "first"
+        owner.set("second")
+        assert within(owner.get, 1).value == "second"
+    finally:
+        owner.reset(token)
+    assert within(owner.get, 1).value == "none"
+
+
+@pytest.mark.parametrize("platform", ["darwin", "linux"])
+def test_update_handover_keeps_uninstalled_unloaded_and_paused_services_off(make, bin_dir, platform):
+    runner = Runner(bin_dir)
+    service = make(platform=platform, runner=runner)
+    absent = service.capture_handover()
+    assert not absent.active
+    assert not service.request_handover(absent).requested
+    assert runner.commands == []
+    service.install(timedelta(minutes=5))
+    runner.commands.clear()
+    runner.codes["print" if platform == "darwin" else "is-active"] = 3
+    stopped = service.capture_handover()
+    assert not stopped.active
+    assert not service.request_handover(stopped).requested
+    assert all("kickstart" not in cmd and "try-restart" not in cmd for cmd in runner.commands)
+    runner.codes.clear()
+    service.pause()
+    runner.commands.clear()
+    paused = service.capture_handover()
+    assert not paused.active
+    assert not service.request_handover(paused).requested
+    assert runner.commands == []
+    assert service.paused
+
+
+@pytest.mark.parametrize("platform", ["darwin", "linux"])
+def test_update_handover_only_requests_unchanged_active_service_and_is_not_a_tick(make, bin_dir, platform):
+    runner = Runner(bin_dir)
+    service = make(platform=platform, runner=runner)
+    service.install(timedelta(minutes=5))
+    runner.commands.clear()
+    before = service.capture_handover()
+    assert before.active
+    result = service.request_handover(before)
+    assert result.requested
+    assert "later service tick" in result.reason
+    assert service.status().version is None
+    commands = [" ".join(item) for item in runner.commands]
+    expected = "kickstart" if platform == "darwin" else "try-restart"
+    assert sum(expected in command for command in commands) == 1
+    assert not any("bootstrap" in command or "enable" in command or "-k" in command for command in commands)
+    assert not service.paused
+
+
+@pytest.mark.parametrize("changed", ["unloaded", "paused", "unit", "marker"])
+def test_update_handover_refuses_a_changed_service(make, bin_dir, changed):
+    runner = Runner(bin_dir)
+    service = make(runner=runner)
+    service.install(timedelta(minutes=5))
+    before = service.capture_handover()
+    if changed == "unloaded":
+        runner.codes["print"] = 3
+    elif changed == "paused":
+        service.pause()
+    elif changed == "unit":
+        service._unit_paths()[0].write_text("changed unit")
+    else:
+        (service.state_dir / "install.json").write_text("changed marker")
+    runner.commands.clear()
+    assert not service.request_handover(before).requested
+    assert all("kickstart" not in command for command in runner.commands)
+
+
+def test_update_handover_refuses_a_symlinked_unit(make, bin_dir, tmp_path):
+    service = make(runner=Runner(bin_dir))
+    service.install(timedelta(minutes=5))
+    unit = service._unit_paths()[0]
+    unit.unlink()
+    foreign = tmp_path / "foreign"
+    foreign.write_text("not a unit")
+    unit.symlink_to(foreign)
+    with pytest.raises(HeinzelError, match="could not be verified"):
+        service.capture_handover()
+    assert foreign.read_text() == "not a unit"
+
+
+def test_handover_observes_only_fresh_manager_tick_and_actual_contributions(make, jobs, bin_dir, monkeypatch):
+    service = make(jobs, runner=Runner(bin_dir))
+    service.install(timedelta(minutes=5))
+    service._boot_identity = lambda: "fixture-boot"
+    service._continuity_fingerprint = lambda: "a" * 64
+    fence = {"ticks": 100, "hz": 100, "ns_dev": 1, "ns_ino": 2}
+    service._birth_fence = lambda: fence
+    result = service.request_handover(service.capture_handover())
+    assert result.requested
+    assert result.request_id is not None
+    assert service.handover_observation(result.request_id) is None
+    monkeypatch.setattr(service, "_service_manager_pid", os.getpid)
+    service._process_birth = lambda: {**fence, "ticks": 99}
+    service.tick()
+    assert service.handover_observation(result.request_id) is None  # old process cannot accept a new nonce
+    service._process_birth = lambda: {**fence, "ticks": 101}
+    service.tick()
+    observed = service.handover_observation(result.request_id)
+    assert observed is not None
+    assert observed.version == __version__
+    assert observed.fingerprint == "a" * 64
+    assert any(row[0] == "example" for row in observed.contributions)
+    assert service.handover_observation("b" * 64) is None
+    service._continuity_fingerprint = lambda: "b" * 64
+    assert service.handover_observation(result.request_id) is None
+    assert service.status().version_mismatch
+    service._continuity_fingerprint = lambda: "a" * 64
+    assert not service.status().version_mismatch
+    service._boot_identity = lambda: "another-boot"
+    assert service.handover_observation(result.request_id) is None
+
+
+@pytest.mark.parametrize("failure", ["manual", "wrong-boot", "missing-boot", "changed-fingerprint", "changed-request"])
+def test_handover_remains_pending_when_fresh_tick_evidence_is_uncertain(make, bin_dir, monkeypatch, failure):
+    service = make(runner=Runner(bin_dir))
+    service.install(timedelta(minutes=5))
+    service._boot_identity = lambda: "boot-one"
+    service._continuity_fingerprint = lambda: "a" * 64
+    fence = {"ticks": 100, "hz": 100, "ns_dev": 1, "ns_ino": 2}
+    service._birth_fence = lambda: fence
+    result = service.request_handover(service.capture_handover())
+    assert result.request_id is not None
+    service._process_birth = lambda: {**fence, "ticks": 101}
+    monkeypatch.setattr(service, "_service_manager_pid", os.getpid if failure != "manual" else lambda: os.getpid() + 1)
+    if failure == "wrong-boot":
+        service._boot_identity = lambda: "boot-two"
+    elif failure == "missing-boot":
+        service._boot_identity = lambda: None
+    elif failure == "changed-fingerprint":
+        samples = iter(["a" * 64, "b" * 64])
+        service._continuity_fingerprint = lambda: next(samples)
+    elif failure == "changed-request":
+        samples = iter(["a" * 64, "a" * 64])
+
+        def replace_request():
+            value = next(samples)
+            if value and (service.state_dir / "handover-request.json").exists():
+                request = service._read_state("handover-request.json")
+                request["request_id"] = "c" * 64
+                service._write_state("handover-request.json", request)
+            return value
+
+        service._continuity_fingerprint = replace_request
+    service.tick()
+    assert service.handover_observation(result.request_id) is None
+
+
+def test_attestation_boundary_exposes_scoped_handover_and_rejects_forged_snapshot(make):
+    from dataclasses import fields
+
+    from heinzel.kernel import DaemonAttestation
+    from heinzel.modules.system.daemon import _attestation, _installation_lifecycle
+
+    service = make()
+    assert [field.name for field in fields(DaemonAttestation)] == ["status"]
+    assert _attestation(service).status().installed is False
+    boundary = _installation_lifecycle(service)
+    snapshot = boundary.capture()
+    assert not boundary.request(snapshot).requested
+    with pytest.raises(HeinzelError, match="observation is invalid"):
+        boundary.request(object())
+    assert boundary.observation("a" * 64) is None
+
+
+@pytest.mark.parametrize(("platform", "verb"), [("darwin", "kickstart"), ("linux", "try-restart")])
+def test_manager_failure_never_claims_a_successful_handover(make, bin_dir, platform, verb):
+    runner = Runner(bin_dir)
+    service = make(platform=platform, runner=runner)
+    service.install(timedelta(minutes=5))
+    before = service.capture_handover()
+    runner.codes[verb] = 1
+    with pytest.raises(HeinzelError, match="handover request failed"):
+        service.request_handover(before)
+    assert not service.paused
+
+
+def test_boot_identity_reads_bounded_linux_file_without_running_a_command(tmp_path):
+    from heinzel.modules.system.daemon._service import _platform_boot_identity
+
+    boot = tmp_path / "boot-id"
+    value = "12345678-1234-4234-8234-123456789abc"
+    boot.write_text(value + "\n")
+    assert _platform_boot_identity("linux", Refuses(), boot) == value
+    for invalid in ("not-a-uuid", "{" + value + "}", "a" * 129, ""):
+        boot.write_text(invalid)
+        assert _platform_boot_identity("linux", Refuses(), boot) is None
+    boot.unlink()
+    assert _platform_boot_identity("linux", Refuses(), boot) is None
+
+
+def test_boot_identity_uses_fixed_readonly_macos_query_and_rejects_failure():
+    from heinzel.modules.system.daemon._service import _platform_boot_identity
+
+    value = "12345678-1234-4234-8234-123456789abc"
+    commands = []
+
+    def runner(command):
+        commands.append(command)
+        return subprocess.CompletedProcess(command, 0, value.upper() + "\n", "")
+
+    assert _platform_boot_identity("darwin", runner) == value
+    assert commands == [["/usr/sbin/sysctl", "-n", "kern.bootsessionuuid"]]
+    assert (
+        _platform_boot_identity("darwin", lambda command: subprocess.CompletedProcess(command, 1, value, "no")) is None
+    )
+    assert (
+        _platform_boot_identity("darwin", lambda command: subprocess.CompletedProcess(command, 0, value + "!", ""))
+        is None
+    )
+    assert _platform_boot_identity("other", Refuses()) is None
+
+
+@pytest.mark.parametrize("which", ["unit", "marker"])
+@pytest.mark.parametrize("mode", [0o020, 0o002])
+def test_update_handover_refuses_writable_unit_or_marker(make, bin_dir, which, mode):
+    runner = Runner(bin_dir)
+    service = make(runner=runner)
+    service.install(timedelta(minutes=5))
+    target = service._unit_paths()[0] if which == "unit" else service.state_dir / "install.json"
+    target.chmod(target.stat().st_mode | mode)
+    runner.commands.clear()
+    with pytest.raises(HeinzelError, match="could not be verified"):
+        service.capture_handover()
+    assert all("kickstart" not in cmd and "try-restart" not in cmd for cmd in runner.commands)
+
+
+@pytest.mark.parametrize("which", ["unit", "marker"])
+@pytest.mark.parametrize("mode", [0o020, 0o002])
+def test_update_handover_refuses_writable_parent(make, bin_dir, which, mode):
+    service = make(runner=Runner(bin_dir))
+    service.install(timedelta(minutes=5))
+    target = service._unit_paths()[0] if which == "unit" else service.state_dir / "install.json"
+    parent = target.parent
+    old_mode = parent.stat().st_mode
+    try:
+        parent.chmod(old_mode | mode)
+        with pytest.raises(HeinzelError, match="could not be verified"):
+            service.capture_handover()
+    finally:
+        parent.chmod(old_mode)
+
+
+def test_handover_assessment_compares_explicit_target_not_old_callers_version(make, jobs, bin_dir, monkeypatch):
+    from heinzel.modules.system.daemon import _service
+
+    runner = Runner(bin_dir)
+    clock = Clock()
+    service = make(jobs, runner=runner, clock=clock)
+    service.install(timedelta(minutes=5))
+    marker = service.state_dir / "install.json"
+    marker.write_text(json.dumps({**json.loads(marker.read_text()), "version": "0.0.0"}))
+    marker_before = marker.read_bytes()
+    fence = {"ticks": 100, "hz": 100, "ns_dev": 1, "ns_ino": 2}
+    service._boot_identity = lambda: "boot-one"
+    service._birth_fence = lambda: fence
+    service._process_birth = lambda: {**fence, "ticks": 101}
+    service._continuity_fingerprint = lambda: "a" * 64
+    request = service.request_handover(service.capture_handover())
+    assert request.request_id is not None
+    expected = tuple((item.qualname, item.origin.distribution, item.origin.version) for item in service._kernel.modules)
+    assert service.assess_handover(request.request_id, __version__, "a" * 64, expected).status == "pending"
+    monkeypatch.setattr(service, "_service_manager_pid", os.getpid)
+    service.tick()
+    monkeypatch.setattr(_service, "__version__", "0.0.0")  # caller still has the old core imported
+    matched = service.assess_handover(request.request_id, __version__, "a" * 64, expected)
+    assert matched.status == "matched"
+    assert matched.observed is not None
+    assert matched.observed.version == __version__
+    before_fields = json.loads(marker_before)
+    after_fields = json.loads(marker.read_bytes())
+    assert {key: after_fields[key] for key in before_fields if key != "version"} == {
+        key: value for key, value in before_fields.items() if key != "version"
+    }
+    assert after_fields["version"] == __version__
+    assert after_fields["handover_id"] == request.request_id
+    assert service.assess_handover(request.request_id, "0.0.0", "a" * 64, expected).status == "mismatched"
+    assert service.assess_handover(request.request_id, __version__, "b" * 64, expected).status == "mismatched"
+    extra = (*expected, ("other-plugin", "other-distribution", "1.0"))
+    assert service.assess_handover(request.request_id, __version__, "a" * 64, extra).status == "mismatched"
+    heartbeat = service.state_dir / "heartbeat.json"
+    saved_heartbeat = heartbeat.read_bytes()
+    heartbeat.unlink()
+    assert service.assess_handover(request.request_id, __version__, "a" * 64, expected).status == "pending"
+    heartbeat.write_bytes(saved_heartbeat)
+    clock.set(10, 30)
+    assert service.assess_handover(request.request_id, __version__, "a" * 64, expected).status == "pending"
+    clock.set(10, 2)
+    service.pause()
+    assert service.assess_handover(request.request_id, __version__, "a" * 64, expected).status == "pending"
+    service.resume()
+    runner.codes["print"] = 1
+    assert service.assess_handover(request.request_id, __version__, "a" * 64, expected).status == "pending"
+    runner.codes.clear()
+    service._unit_paths()[0].write_text("different unit")
+    assert service.assess_handover(request.request_id, __version__, "a" * 64, expected).status == "pending"
+
+
+@pytest.mark.parametrize("changed", ["request", "unit"])
+def test_handover_race_does_not_advance_install_marker(make, jobs, bin_dir, monkeypatch, changed):
+    service = make(jobs, runner=Runner(bin_dir))
+    service.install(timedelta(minutes=5))
+    marker = service.state_dir / "install.json"
+    before = marker.read_bytes()
+    fence = {"ticks": 100, "hz": 100, "ns_dev": 1, "ns_ino": 2}
+    service._boot_identity = lambda: "fixture-boot"
+    service._birth_fence = lambda: fence
+    service._process_birth = lambda: {**fence, "ticks": 101}
+    service._continuity_fingerprint = lambda: "a" * 64
+    request = service.request_handover(service.capture_handover())
+    assert request.request_id is not None
+    monkeypatch.setattr(service, "_service_manager_pid", os.getpid)
+    observation = service._begin_handover_observation()
+    assert observation is not None
+
+    def change_after_validation():
+        if changed == "request":
+            service._write_state("handover-request.json", {"request_id": "b" * 64, "boot": "fixture-boot"})
+        else:
+            service._unit_paths()[0].write_text("replacement unit")
+        return "a" * 64
+
+    service._continuity_fingerprint = change_after_validation
+    service._finish_handover_observation(observation, service._clock())
+    service._continuity_fingerprint = lambda: "a" * 64
+    assert marker.read_bytes() == before
+    assert service.handover_observation(request.request_id) is None
+
+
+@pytest.mark.parametrize("failed_file", ["install.json", "handover-observation.json"])
+def test_interrupted_marker_transaction_does_not_allow_install_to_clear_evidence(
+    make, jobs, bin_dir, monkeypatch, failed_file
+):
+    from heinzel.modules.system.daemon import _service
+
+    service = make(jobs, runner=Runner(bin_dir))
+    service.install(timedelta(minutes=5))
+    fence = {"ticks": 100, "hz": 100, "ns_dev": 1, "ns_ino": 2}
+    service._boot_identity = lambda: "fixture-boot"
+    service._birth_fence = lambda: fence
+    service._process_birth = lambda: {**fence, "ticks": 101}
+    service._continuity_fingerprint = lambda: "a" * 64
+    request = service.request_handover(service.capture_handover())
+    assert request.request_id is not None
+    monkeypatch.setattr(service, "_service_manager_pid", os.getpid)
+    real_write = _service.write_private
+
+    def interrupted(path, text, **kwargs):
+        if path.name == failed_file:
+            msg = "injected interrupted transaction"
+            raise OSError(msg)
+        return real_write(path, text, **kwargs)
+
+    monkeypatch.setattr(_service, "write_private", interrupted)
+    service.tick()
+    assert (service.state_dir / "handover-pending.json").exists()
+    assert service.status().version_mismatch
+    assert service.handover_observation(request.request_id) is None
+    assert not service.request_handover(service.capture_handover()).requested
+    monkeypatch.setattr(_service, "write_private", real_write)
+    with pytest.raises(HeinzelError, match="requires recovery"):
+        service.install(timedelta(minutes=5))
+    assert (service.state_dir / "handover-pending.json").exists()
+    assert service.status().version_mismatch
+
+
+def test_lifecycle_writers_refuse_concurrent_commit(make, jobs, bin_dir):
+    from heinzel.modules.system.daemon._runtime import lock
+
+    service = make(jobs, runner=Runner(bin_dir))
+    service.install(timedelta(minutes=5))
+    plan = service.capture_handover()
+    marker = (service.state_dir / "install.json").read_bytes()
+    with lock(service.state_dir / "lifecycle.lock") as acquired:
+        assert acquired
+        assert not service.request_handover(plan).requested
+        with pytest.raises(HeinzelError, match="lifecycle is changing"):
+            service.install(timedelta(minutes=5))
+        with pytest.raises(HeinzelError, match="lifecycle is changing"):
+            service.uninstall()
+        service._finish_handover_observation(None, service._clock())
+    assert (service.state_dir / "install.json").read_bytes() == marker
+
+
+def test_marker_fsync_failure_leaves_pending_even_after_heartbeat(make, jobs, bin_dir, monkeypatch):
+    from heinzel.modules.system.daemon import _runtime
+
+    service = make(jobs, runner=Runner(bin_dir))
+    service.install(timedelta(minutes=5))
+    fence = {"ticks": 100, "hz": 100, "ns_dev": 1, "ns_ino": 2}
+    service._boot_identity = lambda: "fixture-boot"
+    service._birth_fence = lambda: fence
+    service._process_birth = lambda: {**fence, "ticks": 101}
+    service._continuity_fingerprint = lambda: "a" * 64
+    request = service.request_handover(service.capture_handover())
+    monkeypatch.setattr(service, "_service_manager_pid", os.getpid)
+    original = _runtime.fsync_dir
+    failed = []
+
+    def interrupted(directory):
+        marker = service.state_dir / "install.json"
+        if not failed and marker.exists() and "handover_id" in marker.read_text():
+            failed.append(True)
+            msg = "injected fsync failure"
+            raise OSError(msg)
+        return original(directory)
+
+    monkeypatch.setattr(_runtime, "fsync_dir", interrupted)
+    service.tick()
+    assert failed
+    assert (service.state_dir / "heartbeat.json").exists()
+    assert (service.state_dir / "handover-pending.json").exists()
+    assert service.status().version_mismatch
+    assert request.request_id is not None
+    assert service.handover_observation(request.request_id) is None
+
+
+def test_inaccessible_pending_marker_denies_lifecycle_and_status(make, bin_dir, monkeypatch):
+    service = make(runner=Runner(bin_dir))
+    service.install(timedelta(minutes=5))
+    plan = service.capture_handover()
+    original = Path.lstat
+
+    def inaccessible(path, *args, **kwargs):
+        if path == service.state_dir / "handover-pending.json":
+            raise PermissionError
+        return original(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "lstat", inaccessible)
+    assert service.status().version_mismatch
+    assert not service.request_handover(plan).requested
+    assert service.handover_observation("a" * 64) is None
+
+
+def test_admission_guard_blocks_another_process_lifecycle_writer(make, bin_dir):
+    import sys
+
+    service = make(runner=Runner(bin_dir))
+    lock_path = service.state_dir / "lifecycle.lock"
+    script = "import fcntl,sys; f=open(sys.argv[1], 'a'); fcntl.flock(f,fcntl.LOCK_EX|fcntl.LOCK_NB)"
+    with service.admission_guard():
+        blocked = subprocess.run(
+            [sys.executable, "-c", script, str(lock_path)], capture_output=True, check=False, timeout=5
+        )
+        assert blocked.returncode != 0
+        assert b"BlockingIOError" in blocked.stderr
+    available = subprocess.run(
+        [sys.executable, "-c", script, str(lock_path)], capture_output=True, check=False, timeout=5
+    )
+    assert available.returncode == 0
+
+
+def test_external_mutation_lock_prevents_tick_jobs(make, jobs, calls, bin_dir):
+    import sys
+
+    service = make(jobs, runner=Runner(bin_dir))
+    lock_path = service.state_dir / "lifecycle.lock"
+    lock_path.parent.mkdir(parents=True)
+    script = (
+        "import fcntl,sys; f=open(sys.argv[1], 'a'); "
+        "fcntl.flock(f,fcntl.LOCK_EX); print('ready',flush=True); sys.stdin.read(1)"
+    )
+    child = subprocess.Popen(
+        [sys.executable, "-c", script, str(lock_path)], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True
+    )
+    try:
+        assert child.stdout is not None
+        assert child.stdout.readline().strip() == "ready"
+        report = service.tick()
+        assert report.locked
+        assert not report.runs
+        assert not calls
+    finally:
+        if child.stdin is not None:
+            child.stdin.close()
+        child.wait(timeout=5)
+        if child.stdout is not None:
+            child.stdout.close()
+
+
+def test_tick_blocks_mutation_and_pause_remains_available(make, jobs, bin_dir, monkeypatch, tmp_path):
+    import sys
+
+    service = make(jobs, runner=Runner(bin_dir))
+    entered, release = threading.Event(), threading.Event()
+    reports = []
+
+    def running(*_args):
+        entered.set()
+        assert release.wait(timeout=5)
+        return []
+
+    monkeypatch.setattr(service, "_run", running)
+    thread = threading.Thread(target=lambda: reports.append(service.tick()))
+    thread.start()
+    try:
+        assert entered.wait(timeout=5)
+        invoked = []
+        with (
+            pytest.raises(HeinzelError, match="lifecycle is changing"),
+            service.mutation_guard(lambda: False, lambda: "a" * 64),
+        ):
+            invoked.append("uv")
+        assert not invoked
+        sentinel = tmp_path / "unsafe-mutation"
+        script = (
+            "import fcntl,sys; from pathlib import Path; f=open(sys.argv[1], 'a'); "
+            "fcntl.flock(f,fcntl.LOCK_EX|fcntl.LOCK_NB); Path(sys.argv[2]).touch()"
+        )
+        child = subprocess.run(
+            [sys.executable, "-c", script, str(service.state_dir / "lifecycle.lock"), str(sentinel)],
+            capture_output=True,
+            check=False,
+            timeout=5,
+        )
+        assert child.returncode != 0
+        assert b"BlockingIOError" in child.stderr
+        assert not sentinel.exists()
+        assert service.pause().paused
+    finally:
+        release.set()
+        thread.join(timeout=5)
+    assert not thread.is_alive()
+    assert reports
+    assert service.paused
+
+
+def test_pending_or_unreadable_mutation_state_refuses_tick(make, jobs, calls, bin_dir, monkeypatch):
+    service = make(jobs, runner=Runner(bin_dir))
+    pending = service.state_dir / "mutation-pending.json"
+    pending.parent.mkdir(parents=True)
+    pending.write_text("uncertain")
+    assert service.tick().locked
+    pending.unlink()
+    original = Path.lstat
+
+    def inaccessible(path, *args, **kwargs):
+        if path == pending:
+            raise PermissionError
+        return original(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "lstat", inaccessible)
+    assert service.tick().locked
+    assert not calls
+
+
+def test_later_heartbeat_covers_prior_handover():
+    from heinzel.modules.system.daemon._service import _heartbeat_covers
+
+    tick = "2026-10-30T10:02:00+00:00"
+    assert _heartbeat_covers({"last_tick": "2026-10-30T10:03:00+00:00", "version": "1.0"}, tick, "1.0")
+    assert not _heartbeat_covers({"last_tick": "2026-10-30T10:01:00+00:00", "version": "1.0"}, tick, "1.0")
+    assert not _heartbeat_covers({"last_tick": "2026-10-30T10:03:00+00:00", "version": "0.9"}, tick, "1.0")
+
+
+@pytest.mark.parametrize("changed", ["request", "unit", "fingerprint"])
+def test_change_during_marker_commit_keeps_transaction_denied(make, jobs, bin_dir, monkeypatch, changed):
+    from heinzel.modules.system.daemon import _service
+
+    service = make(jobs, runner=Runner(bin_dir))
+    service.install(timedelta(minutes=5))
+    fence = {"ticks": 100, "hz": 100, "ns_dev": 1, "ns_ino": 2}
+    service._boot_identity = lambda: "fixture-boot"
+    service._birth_fence = lambda: fence
+    service._process_birth = lambda: {**fence, "ticks": 101}
+    service._continuity_fingerprint = lambda: "a" * 64
+    request = service.request_handover(service.capture_handover())
+    assert request.request_id is not None
+    monkeypatch.setattr(service, "_service_manager_pid", os.getpid)
+    real_write = _service.write_private
+
+    def interleaved(path, text, **kwargs):
+        result = real_write(path, text, **kwargs)
+        if path.name == "install.json":
+            if changed == "request":
+                service._write_state("handover-request.json", {"request_id": "b" * 64})
+            elif changed == "unit":
+                service._unit_paths()[0].write_text("replacement unit")
+            else:
+                service._continuity_fingerprint = lambda: "b" * 64
+        return result
+
+    monkeypatch.setattr(_service, "write_private", interleaved)
+    service.tick()
+    assert (service.state_dir / "handover-pending.json").exists()
+    assert service.status().version_mismatch
+    assert service.handover_observation(request.request_id) is None
+
+
+def test_mutation_scope_commits_verified_checkpoint_and_requests_active_handover(make, bin_dir):
+    runner = Runner(bin_dir)
+    service = make(runner=runner)
+    service.install(timedelta(minutes=5))
+    service._continuity_fingerprint = lambda: "a" * 64
+    service._boot_identity = lambda: "fixture-boot"
+    service._birth_fence = lambda: {"ticks": 100, "hz": 100, "ns_dev": 1, "ns_ino": 2}
+    with service.mutation_guard(lambda: True, lambda: "b" * 64) as scope:
+        plan = scope.capture()
+        assert plan.active
+        assert not service.request_handover(plan).requested  # the outer scope owns the nonreentrant lock
+        scope.verified_complete("a" * 64)
+        assert scope.request(plan).requested
+        assert (service.state_dir / "mutation-pending.json").exists()
+    assert not (service.state_dir / "mutation-pending.json").exists()
+    assert service.status().version_mismatch  # request alone is not a fresh tick
+    with pytest.raises(HeinzelError, match="scope is unavailable"):
+        scope.capture()
+
+
+@pytest.mark.parametrize("state", ["off", "paused"])
+def test_mutation_scope_preserves_inactive_daemon(make, bin_dir, state):
+    runner = Runner(bin_dir)
+    service = make(runner=runner)
+    if state == "paused":
+        service.install(timedelta(minutes=5))
+        service.pause()
+    service._continuity_fingerprint = lambda: "a" * 64
+    runner.commands.clear()
+    with service.mutation_guard(lambda: True, lambda: "b" * 64) as scope:
+        plan = scope.capture()
+        assert not plan.active
+        scope.verified_complete("a" * 64)
+        assert not scope.request(plan).requested
+    assert service.paused == (state == "paused")
+    assert all("kickstart" not in command and "try-restart" not in command for command in runner.commands)
+
+
+def test_plain_sdk_mutation_does_not_seed_a_missing_checkpoint(make, bin_dir):
+    service = make(runner=Runner(bin_dir))
+    service._continuity_fingerprint = lambda: "a" * 64
+    with service.mutation_guard(lambda: False, lambda: "b" * 64) as scope:
+        plan = scope.capture()
+        scope.verified_complete("a" * 64)
+        assert not scope.request(plan).requested
+    assert not (service.state_dir / "mutation-pending.json").exists()
+
+
+def test_mutation_scope_refuses_checkpoint_creation_for_plain_sdk(make, bin_dir):
+    service = make(runner=Runner(bin_dir))
+    service._continuity_fingerprint = lambda: "a" * 64
+    checkpoint = [False]
+
+    def attempt():
+        with service.mutation_guard(lambda: checkpoint[0], lambda: "b" * 64) as scope:
+            scope.capture()
+            checkpoint[0] = True
+            scope.verified_complete("a" * 64)
+
+    with pytest.raises(HeinzelError, match="durable checkpoint"):
+        attempt()
+    assert (service.state_dir / "mutation-pending.json").exists()
+
+
+def test_mutation_scope_rejects_changed_token_and_replay(make, bin_dir):
+    service = make(runner=Runner(bin_dir))
+    service._continuity_fingerprint = lambda: "a" * 64
+
+    def attempt():
+        with service.mutation_guard(lambda: True, lambda: "b" * 64) as scope:
+            scope.capture()
+            service._write_state("mutation-pending.json", {"token": "b" * 64})
+            scope.verified_complete("a" * 64)
+
+    with pytest.raises(HeinzelError, match="pending token changed"):
+        attempt()
+    assert (service.state_dir / "mutation-pending.json").exists()
+    with pytest.raises(HeinzelError, match="requires recovery"), service.mutation_guard(lambda: True, lambda: "b" * 64):
+        pytest.fail("pending mutation must not be replayed")
+
+
+def test_killed_mutator_leaves_admission_denied_after_fake_uv(make, bin_dir, tmp_path):
+    service = make(runner=Runner(bin_dir))
+    service._continuity_fingerprint = lambda: "a" * 64
+    fake_uv_output = tmp_path / "fake-uv-wrote"
+    code = """import os, sys, time
+from pathlib import Path
+from heinzel import Kernel, Settings
+from heinzel.modules.system.daemon import DaemonService, DaemonSettings
+settings = Settings(state_dir=Path(sys.argv[1]), data_dir=Path(sys.argv[2]), log_dir=Path(sys.argv[3]))
+service = DaemonService(Kernel(settings, []), settings, DaemonSettings(unit_dir=Path(sys.argv[4])),
+                        platform="darwin", continuity_fingerprint=lambda: "a" * 64)
+with service.mutation_guard(lambda: True, lambda: "b" * 64) as scope:
+    scope.capture()
+    Path(sys.argv[5]).write_text("fake mutation completed")
+    os.write(1, b"R")
+    time.sleep(60)
+"""
+    child = subprocess.Popen(
+        [sys.executable, "-c", code, str(service.state_dir.parent), str(tmp_path / "data"),
+         str(tmp_path / "logs"), str(tmp_path / "units"), str(fake_uv_output)],
+        stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+    )  # fmt: skip
+    try:
+        assert child.stdout is not None
+        ready, _, _ = select.select([child.stdout], [], [], 3)
+        assert ready
+        assert os.read(child.stdout.fileno(), 1) == b"R"
+        assert fake_uv_output.read_text() == "fake mutation completed"
+        with lock(service.state_dir / "lifecycle.lock") as acquired:
+            assert not acquired
+        with pytest.raises(HeinzelError, match="changing or requires recovery"), service.admission_guard():
+            pytest.fail("an active mutation must hold the cross-process lifecycle lock")
+        child.kill()
+        assert child.wait(timeout=2) < 0
+    finally:
+        if child.poll() is None:
+            child.kill()
+            child.wait(timeout=2)
+        if child.stdout is not None:
+            child.stdout.close()
+    assert fake_uv_output.read_text() == "fake mutation completed"
+    with lock(service.state_dir / "lifecycle.lock") as acquired:
+        assert acquired
+    assert (service.state_dir / "mutation-pending.json").exists()
+    with pytest.raises(HeinzelError, match="requires recovery"), service.admission_guard():
+        pytest.fail("uncertain mutation must deny schedule admission")
+
+
+def test_unreadable_handover_request_keeps_legacy_marker_denied(make, bin_dir):
+    service = make(runner=Runner(bin_dir))
+    service.install(timedelta(minutes=5))
+    service._write_state("heartbeat.json", {"last_tick": service._clock().isoformat(), "version": __version__})
+    (service.state_dir / "handover-request.json").write_text("{")
+    assert service.status().version_mismatch
+
+
+@pytest.mark.parametrize("failure", ["different_generation", "different_plan", "missing_request"])
+def test_mutation_scope_keeps_pending_on_incomplete_or_mismatched_completion(make, bin_dir, failure):
+    service = make(runner=Runner(bin_dir))
+    service._continuity_fingerprint = lambda: "a" * 64
+
+    def attempt():
+        with service.mutation_guard(lambda: True, lambda: "b" * 64) as scope:
+            plan = scope.capture()
+            if failure == "different_generation":
+                scope.verified_complete("b" * 64)
+            else:
+                scope.verified_complete("a" * 64)
+                if failure == "different_plan":
+                    scope.request(type(plan)(plan.active, plan.platform, plan.unit_signature))
+
+    with pytest.raises(HeinzelError):
+        attempt()
+    assert (service.state_dir / "mutation-pending.json").exists()
+    with pytest.raises(HeinzelError, match="requires recovery"), service.admission_guard():
+        pytest.fail("an uncertain mutation must block admission")
+
+
+def test_mutation_scope_refuses_handover_if_generation_changes_after_verification(make, bin_dir):
+    runner = Runner(bin_dir)
+    service = make(runner=runner)
+    service.install(timedelta(minutes=5))
+    current = ["a" * 64]
+    service._continuity_fingerprint = lambda: current[0]
+    runner.commands.clear()
+
+    def attempt():
+        with service.mutation_guard(lambda: True, lambda: "b" * 64) as scope:
+            plan = scope.capture()
+            scope.verified_complete("a" * 64)
+            current[0] = "b" * 64
+            scope.request(plan)
+
+    with pytest.raises(HeinzelError, match="generation or its durable checkpoint"):
+        attempt()
+    assert (service.state_dir / "mutation-pending.json").exists()
+    assert all("kickstart" not in command for command in runner.commands)
+
+
+def test_user_daemon_factory_uses_the_kernel_installation_fingerprint(settings, tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    from heinzel.kernel import Installation
+    from heinzel.modules.system.daemon import _service
+
+    marker = "a" * 64
+    fake_installation = SimpleNamespace(startup_fingerprint=lambda: marker)
+    fake_kernel = SimpleNamespace(resolve=lambda kind: fake_installation if kind is Installation else None)
+    fake_config = SimpleNamespace(
+        settings=lambda kind, section: settings if kind is _service.Settings else DaemonSettings(unit_dir=tmp_path)
+    )
+    monkeypatch.setattr(_service.Config, "load", lambda path: fake_config)
+    service = DaemonService.for_user(fake_kernel)
+    assert service._continuity_fingerprint() == marker
+
+
+@pytest.mark.parametrize("changed", [False, True])
+def test_abort_unchanged_requires_exact_original_identity(make, bin_dir, changed):
+    service = make(runner=Runner(bin_dir))
+    service._continuity_fingerprint = lambda: "a" * 64
+    identity = ["b" * 64]
+
+    def attempt():
+        with service.mutation_guard(lambda: True, lambda: identity[0]) as scope:
+            scope.capture()
+            if changed:
+                identity[0] = "c" * 64
+            scope.abort_unchanged()
+
+    if changed:
+        with pytest.raises(HeinzelError, match="identity changed"):
+            attempt()
+        assert (service.state_dir / "mutation-pending.json").exists()
+    else:
+        attempt()
+        assert not (service.state_dir / "mutation-pending.json").exists()
+
+
+def _fresh_quiescence_target(service, tmp_path):
+    from heinzel import Progress
+    from heinzel.kernel import Installation
+
+    store = tmp_path / "selected-store"
+    binary = tmp_path / "selected-bin"
+    store.mkdir()
+    binary.mkdir()
+    service._quiescence_installation = Installation(Progress(), prefix=store / "heinzel", uv="uv")
+    return binary
+
+
+def test_quiescent_accepts_only_verified_gui_absence_under_admission(make, bin_dir, tmp_path):
+    from heinzel.kernel import ProcessOutcome
+
+    service = make(runner=Runner(bin_dir))
+    selected_bin = _fresh_quiescence_target(service, tmp_path)
+    calls = []
+
+    def probe(command):
+        calls.append(command)
+        output = {"managername": "Aqua\n", "manageruid": "501\n", "list": "PID\tStatus\tLabel\n-\t0\tother.service\n"}
+        return ProcessOutcome(0, output[command[1]], "")
+
+    service._quiescence_probe = probe
+    with service.quiescence_guard(selected_bin):
+        assert not service.request_handover(service.capture_handover()).requested
+        installation = service._quiescence_installation
+        prefix = installation.prefix
+        (prefix / "bin").mkdir(parents=True)
+        (prefix / "bin/hz").write_text("fixture")
+        (selected_bin / "hz").symlink_to(prefix / "bin/hz")
+        (prefix / "uv-receipt.toml").write_text(
+            '[tool]\nrequirements=[{name="heinzel"}]\nentrypoints=[{name="hz",install-path='
+            + repr(str(selected_bin / "hz"))
+            + "}]\n"
+        )
+        installation.record_startup_state(expected=installation.startup_fingerprint())
+    assert [command[1] for command in calls] == ["managername", "manageruid", "list", "managername", "manageruid"] * 2
+    assert not service._handover_pending()
+    service._write_state("standard-install-pending.json", {"token": "a" * 64})
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(installation, "startup_state_matches", lambda: False)
+        with pytest.raises(HeinzelError, match="could not be verified"):
+            service.recover_quiescent_install(selected_bin)
+    assert service._handover_pending()
+    service.recover_quiescent_install(selected_bin)
+    assert not service._handover_pending()
+
+
+@pytest.mark.parametrize(
+    "failure", ["background", "wrong_uid", "loaded", "malformed", "truncated", "error", "changed_context"]
+)
+def test_quiescent_denies_ambiguous_or_present_manager_state(make, bin_dir, tmp_path, failure):
+    from heinzel.kernel import ProcessOutcome
+
+    service = make(runner=Runner(bin_dir))
+    selected_bin = _fresh_quiescence_target(service, tmp_path)
+    count = []
+
+    def probe(command):
+        count.append(command[1])
+        name = (
+            "Background\n" if failure == "background" or (failure == "changed_context" and len(count) > 3) else "Aqua\n"
+        )
+        uid = "502\n" if failure == "wrong_uid" else "501\n"
+        listing = "PID\tStatus\tLabel\n"
+        if failure == "loaded":
+            listing += f"-\t0\t{LABEL}\n"
+        if failure == "malformed":
+            listing += "not-three-columns\n"
+        return ProcessOutcome(
+            1 if failure == "error" else 0,
+            {"managername": name, "manageruid": uid, "list": listing}[command[1]],
+            "",
+            truncated=failure == "truncated",
+        )
+
+    service._quiescence_probe = probe
+    with pytest.raises(HeinzelError, match="not proven quiescent"), service.quiescence_guard(selected_bin):
+        pytest.fail("ambiguous manager state must deny")
+
+
+@pytest.mark.parametrize("kind", ["unit", "marker", "request", "pending", "symlink"])
+def test_quiescent_refuses_any_existing_daemon_artifact(make, bin_dir, tmp_path, kind):
+    service = make(runner=Runner(bin_dir))
+    selected_bin = _fresh_quiescence_target(service, tmp_path)
+    if kind in {"unit", "symlink"}:
+        path = service._unit_paths()[0]
+        path.parent.mkdir(parents=True)
+    else:
+        name = {"marker": "install.json", "request": "handover-request.json", "pending": "mutation-pending.json"}[kind]
+        path = service.state_dir / name
+        path.parent.mkdir(parents=True)
+    if kind == "symlink":
+        path.symlink_to(tmp_path / "missing")
+    else:
+        path.write_text("uncertain")
+    with pytest.raises(HeinzelError), service.quiescence_guard(selected_bin):
+        pytest.fail("existing or uncertain daemon artifacts must deny")
+
+
+def test_quiescent_refuses_writable_unit_parent_before_manager_query(make, bin_dir, tmp_path):
+    service = make(runner=Runner(bin_dir))
+    selected_bin = _fresh_quiescence_target(service, tmp_path)
+    service.unit_dir.mkdir(parents=True)
+    old_mode = service.unit_dir.stat().st_mode
+    service.unit_dir.chmod(old_mode | 0o002)
+    calls = []
+
+    def probe(command):
+        from heinzel.kernel import ProcessOutcome
+
+        calls.append(command)
+        return ProcessOutcome(0, "", "")
+
+    service._quiescence_probe = probe
+    try:
+        with pytest.raises(HeinzelError, match="not proven quiescent"), service.quiescence_guard(selected_bin):
+            pytest.fail("writable unit parent must deny")
+    finally:
+        service.unit_dir.chmod(old_mode)
+    assert not calls
+
+
+def test_quiescence_reader_bounds_an_owned_child_output():
+    import sys
+
+    from heinzel.modules.system.daemon._service import _quiescence_command
+
+    result = _quiescence_command([sys.executable, "-c", "print('x' * 1100000)"])
+    assert result.truncated
+    assert result.returncode is None
+
+
+@pytest.mark.parametrize("paused", [False, True])
+def test_quiescence_preserves_owned_stopped_unit_and_pause_state(make, bin_dir, tmp_path, paused):
+    from heinzel import Progress
+    from heinzel.kernel import Installation, ProcessOutcome
+
+    prefix = tmp_path / "tools" / "heinzel"
+    (prefix / "bin").mkdir(parents=True)
+    (prefix / "bin/hz").write_text("fixture")
+    (bin_dir / "hz").unlink()
+    (bin_dir / "hz").symlink_to(prefix / "bin/hz")
+    (prefix / "uv-receipt.toml").write_text(
+        f'[tool]\nrequirements=[{{name="heinzel"}}]\nentrypoints=[{{name="hz",install-path={str(bin_dir / "hz")!r}}}]\n'
+    )
+    installation = Installation(Progress(), prefix=prefix, uv="uv")
+    installation.record_startup_state(expected=installation.startup_fingerprint())
+    service = make(runner=Runner(bin_dir))
+    service._quiescence_installation = installation
+    service.install(timedelta(minutes=5))
+    if paused:
+        service.pause()
+    unit = service._unit_paths()[0]
+    before = unit.read_bytes()
+
+    def probe(command):
+        output = {"managername": "Aqua\n", "manageruid": "501\n", "list": "PID\tStatus\tLabel\n"}
+        return ProcessOutcome(0, output[command[1]], "")
+
+    service._quiescence_probe = probe
+    with service.quiescence_guard(bin_dir):
+        assert unit.read_bytes() == before
+        if paused:
+            with pytest.raises(HeinzelError, match="lifecycle is changing"):
+                service.resume()
+    assert service.paused == paused
+    assert unit.read_bytes() == before
+
+
+def test_quiescence_refuses_symlinked_selected_prefix(make, tmp_path):
+    service = make()
+    selected_bin = _fresh_quiescence_target(service, tmp_path)
+    prefix = service._quiescence_installation.prefix
+    other = tmp_path / "other" / "heinzel"
+    other.mkdir(parents=True)
+    prefix.symlink_to(other, target_is_directory=True)
+    with pytest.raises(HeinzelError, match="not proven quiescent"), service.quiescence_guard(selected_bin):
+        pass
+
+
+def test_quiescence_refuses_unknown_platform_before_manager_query(make, tmp_path):
+    service = make()
+    selected_bin = _fresh_quiescence_target(service, tmp_path)
+    service._platform = "freebsd"
+    service._quiescence_probe = lambda _command: pytest.fail("unexpected manager query")
+    with pytest.raises(HeinzelError, match="not proven quiescent"), service.quiescence_guard(selected_bin):
+        pass
+
+
+def test_quiescence_interrupted_install_retains_pending(make, tmp_path):
+    from heinzel.kernel import ProcessOutcome
+
+    service = make()
+    selected_bin = _fresh_quiescence_target(service, tmp_path)
+    output = {"managername": "Aqua\n", "manageruid": "501\n", "list": "PID\tStatus\tLabel\n"}
+    service._quiescence_probe = lambda command: ProcessOutcome(0, output[command[1]], "")
+
+    def interrupted():
+        with service.quiescence_guard(selected_bin):
+            assert service._handover_pending()
+            msg = "interrupted"
+            raise RuntimeError(msg)
+
+    with pytest.raises(RuntimeError, match="interrupted"):
+        interrupted()
+    assert service._handover_pending()
+    with pytest.raises(HeinzelError, match="requires recovery"), service.quiescence_guard(selected_bin):
+        pass
+
+
+@pytest.mark.parametrize("pending", ["standard-install-pending.json", "mutation-pending.json", "handover-pending.json"])
+@pytest.mark.parametrize("operation", ["install", "restart", "uninstall"])
+def test_pending_transaction_denies_manager_writers_without_effect(make, bin_dir, pending, operation):
+    runner = Runner(bin_dir)
+    service = make(runner=runner)
+    service.install(timedelta(minutes=5))
+    unit = service._unit_paths()[0]
+    marker = service.state_dir / "install.json"
+    original_unit, original_marker = unit.read_bytes(), marker.read_bytes()
+    pending_path = service.state_dir / pending
+    pending_path.write_text('{"token":"fixture"}')
+    before = pending_path.read_bytes()
+    runner.commands.clear()
+    writer = {
+        "install": lambda: service.install(timedelta(minutes=5)),
+        "restart": service.restart,
+        "uninstall": service.uninstall,
+    }[operation]
+    with pytest.raises(HeinzelError, match="requires recovery"):
+        writer()
+    assert runner.commands == []
+    assert unit.read_bytes() == original_unit
+    assert marker.read_bytes() == original_marker
+    assert pending_path.read_bytes() == before
+    service.pause()
+    assert service.paused
+
+
+@pytest.mark.parametrize("operation", ["install", "restart", "uninstall"])
+def test_writer_rechecks_pending_after_acquiring_lifecycle_lock(make, bin_dir, monkeypatch, operation):
+    from contextlib import contextmanager
+
+    from heinzel.modules.system.daemon import _service
+
+    runner = Runner(bin_dir)
+    service = make(runner=runner)
+    service.install(timedelta(minutes=5))
+    unit = service._unit_paths()[0]
+    original = unit.read_bytes()
+    runner.commands.clear()
+    real_lock = _service.lock
+
+    @contextmanager
+    def interleaved(path):
+        with real_lock(path) as acquired:
+            if acquired:
+                (service.state_dir / "standard-install-pending.json").write_text('{"token":"fixture"}')
+            yield acquired
+
+    monkeypatch.setattr(_service, "lock", interleaved)
+    writer = {
+        "install": lambda: service.install(timedelta(minutes=5)),
+        "restart": service.restart,
+        "uninstall": service.uninstall,
+    }[operation]
+    with pytest.raises(HeinzelError, match="requires recovery"):
+        writer()
+    assert runner.commands == []
+    assert unit.read_bytes() == original
+    assert (service.state_dir / "standard-install-pending.json").exists()
+
+
+def test_restart_denies_pending_even_when_unit_absent(make):
+    service = make(runner=Refuses())
+    service.state_dir.mkdir(parents=True)
+    pending = service.state_dir / "standard-install-pending.json"
+    pending.write_text('{"token":"fixture"}')
+    with pytest.raises(HeinzelError, match="requires recovery"):
+        service.restart()
+    assert pending.exists()
+
+
+def test_recovery_never_clears_unowned_or_conflicting_transaction(make, bin_dir, tmp_path):
+    from heinzel.kernel import ProcessOutcome
+
+    service = make(runner=Runner(bin_dir))
+    selected_bin = _fresh_quiescence_target(service, tmp_path)
+    output = {"managername": "Aqua\n", "manageruid": "501\n", "list": "PID\tStatus\tLabel\n"}
+    service._quiescence_probe = lambda command: ProcessOutcome(0, output[command[1]], "")
+    service._write_state("standard-install-pending.json", {"token": "bad"})
+    with pytest.raises(HeinzelError, match="recovery record"):
+        service.recover_quiescent_install(selected_bin)
+    assert (service.state_dir / "standard-install-pending.json").exists()
+    installation = service._quiescence_installation
+    prefix = installation.prefix
+    (prefix / "bin").mkdir(parents=True)
+    (prefix / "bin/hz").write_text("fixture")
+    (selected_bin / "hz").symlink_to(prefix / "bin/hz")
+    (prefix / "uv-receipt.toml").write_text(
+        '[tool]\nrequirements=[{name="heinzel"}]\nentrypoints=[{name="hz",install-path='
+        + repr(str(selected_bin / "hz"))
+        + "}]\n"
+    )
+    installation.record_startup_state(expected=installation.startup_fingerprint())
+    service._write_state("standard-install-pending.json", {"token": "a" * 64})
+    service._write_state("mutation-pending.json", {"token": "b" * 64})
+    with pytest.raises(HeinzelError, match="could not be verified"):
+        service.recover_quiescent_install(selected_bin)
+    assert (service.state_dir / "standard-install-pending.json").exists()
+    assert (service.state_dir / "mutation-pending.json").exists()
+
+
+@pytest.mark.parametrize(
+    "failure", ["none", "bus", "busy", "active", "job", "failed", "pid", "malformed", "changed", "context", "error"]
+)
+def test_linux_quiescence_requires_own_bus_and_both_inactive_units(make, tmp_path, failure):
+    from heinzel.kernel import ProcessOutcome
+
+    service = make(platform="linux")
+    binary = _fresh_quiescence_target(service, tmp_path)
+    identities = iter([(1, 2, 3, 4), (1, 2, 3, 5) if failure == "context" else (1, 2, 3, 4)])
+    service._linux_manager_identity = lambda: None if failure == "bus" else next(identities)
+    calls = []
+
+    def probe(command):
+        calls.append(command)
+        if command[-1] == "--property=Version":
+            version = "different" if failure == "changed" and len(calls) == 6 else "257"
+            return ProcessOutcome(0, f"Version={version}\n", "")
+        unit = command[-1]
+        index = len(calls)
+        active = "active" if failure == "active" and unit.endswith(".service") else "inactive"
+        load = "error" if failure == "failed" else "not-found"
+        job = "12" if failure == "job" else ""
+        pid = "23" if failure == "pid" and unit.endswith(".service") else "0"
+        result = f"Id={unit}\nLoadState={load}\nActiveState={active}\nSubState=dead\nJob={job}\n"
+        result += f"MainPID={pid}\nControlPID=0\n"
+        if failure == "malformed":
+            result += "Id=other.service\n"
+        if failure == "busy" and index == 4:
+            result = result.replace("ActiveState=inactive", "ActiveState=activating")
+        return ProcessOutcome(1 if failure == "error" else 0, result, "")
+
+    service._quiescence_probe = probe
+    assert service._quiescent_snapshot(binary) is (failure == "none")
+    if failure == "none":
+        assert [call[-1] for call in calls] == [
+            "--property=Version",
+            "hz-daemon.service",
+            "hz-daemon.timer",
+            "hz-daemon.service",
+            "hz-daemon.timer",
+            "--property=Version",
+        ]
+
+
+def test_linux_quiescence_denies_missing_properties_and_queued_jobs():
+    from heinzel.modules.system.daemon._service import _systemd_quiescent_unit
+
+    unit = "hz-daemon.service"
+    base = f"Id={unit}\nLoadState=loaded\nActiveState=inactive\nSubState=dead\nJob=\nMainPID=0\nControlPID=0\n"
+    assert _systemd_quiescent_unit(base, unit)
+    assert not _systemd_quiescent_unit(base.replace("Job=\n", ""), unit)
+    assert not _systemd_quiescent_unit(base.replace("Job=\n", "Job=1\n"), unit)
+    assert not _systemd_quiescent_unit(base.replace("MainPID=0\n", ""), unit)
+
+
+def test_linux_quiescence_guard_keeps_pending_if_install_is_interrupted(make, tmp_path):
+    from heinzel.kernel import ProcessOutcome
+
+    service = make(platform="linux")
+    binary = _fresh_quiescence_target(service, tmp_path)
+    service._linux_manager_identity = lambda: (1, 2, 3, 4)
+
+    def probe(command):
+        unit = command[-1]
+        if unit == "--property=Version":
+            return ProcessOutcome(0, "Version=257 (fixture)\n", "")
+        return ProcessOutcome(0, f"Id={unit}\nLoadState=not-found\nActiveState=inactive\nSubState=dead\nJob=\n", "")
+
+    service._quiescence_probe = probe
+
+    def interrupted():
+        with service.quiescence_guard(binary):
+            assert service._handover_pending()
+            msg = "interrupted"
+            raise RuntimeError(msg)
+
+    with pytest.raises(RuntimeError, match="interrupted"):
+        interrupted()
+    assert service._handover_pending()
+    with pytest.raises(HeinzelError, match="requires recovery"), service.quiescence_guard(binary):
+        pass
+
+
+def test_linux_manager_environment_ignores_ambient_bus(monkeypatch, tmp_path):
+    from heinzel.modules.system.daemon._service import _manager_environment
+
+    monkeypatch.setenv("DBUS_SESSION_BUS_ADDRESS", f"unix:path={tmp_path}/foreign")
+    monkeypatch.setenv("XDG_RUNTIME_DIR", str(tmp_path))
+    monkeypatch.setenv("SYSTEMD_BUS_ADDRESS", f"unix:path={tmp_path}/foreign")
+    environment = _manager_environment(["/usr/bin/systemctl", "--user", "show"])
+    runtime = f"/run/user/{os.getuid()}"
+    assert environment["XDG_RUNTIME_DIR"] == runtime
+    assert "DBUS_SESSION_BUS_ADDRESS" not in environment
+    assert "SYSTEMD_BUS_ADDRESS" not in environment
+
+
+def test_linux_guard_explains_missing_user_manager(make, tmp_path):
+    service = make(platform="linux")
+    binary = _fresh_quiescence_target(service, tmp_path)
+    service._linux_manager_identity = lambda: None
+    service._quiescence_probe = lambda _command: pytest.fail("unexpected manager query")
+    with (
+        pytest.raises(HeinzelError, match=r"user manager is unavailable.*hz system daemon status"),
+        service.quiescence_guard(binary),
+    ):
+        pytest.fail("unexpected installation")
+    assert not service._handover_pending()
+
+
+def test_linux_private_manager_socket_identity_rejects_wrong_or_replaced_socket(tmp_path, monkeypatch):
+    import socket
+
+    from heinzel.modules.system.daemon._service import _linux_user_manager_identity
+
+    run_root = tmp_path / "run"
+    user_root = run_root / "user"
+    manager = user_root / str(os.getuid()) / "systemd"
+    manager.mkdir(parents=True)
+    manager.parent.chmod(0o700)
+    manager.chmod(0o700)
+    original_lstat = Path.lstat
+
+    def stat_with_root_owned_ancestors(path):
+        result = original_lstat(path)
+        if path in {run_root, user_root}:
+            fields = list(result)
+            fields[4] = 0
+            return os.stat_result(fields)
+        return result
+
+    monkeypatch.setattr(Path, "lstat", stat_with_root_owned_ancestors)
+    private = manager / "private"
+    monkeypatch.chdir(manager)
+    with socket.socket(socket.AF_UNIX) as first:
+        first.bind("private")
+        identity = _linux_user_manager_identity(run_root)
+        assert identity is not None
+        manager.chmod(0o777)
+        assert _linux_user_manager_identity(run_root) is None
+        manager.chmod(0o700)
+        private.unlink()
+        with socket.socket(socket.AF_UNIX) as second:
+            second.bind("private")
+            assert _linux_user_manager_identity(run_root) != identity

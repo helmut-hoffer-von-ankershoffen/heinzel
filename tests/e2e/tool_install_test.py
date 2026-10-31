@@ -9,10 +9,14 @@ import os
 import re
 import shlex
 import subprocess
+import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
+
+from tests.e2e._interpreter_diagnostics import interpreter_diagnostics
+from tests.e2e.uv_tool_collision_test import _fixture_wheel
 
 pytestmark = pytest.mark.e2e
 
@@ -22,13 +26,6 @@ HEAD = subprocess.run(
 ).stdout.strip()
 DUMMY_PLUGIN = REPO / "tests" / "fixtures" / "heinzel-dummy"
 SKILLS = REPO / "agent-skills" / "skills"
-# --color never: with FORCE_COLOR (as in CI) uv would wrap the path in escape codes.
-UV_CACHE_DIR = subprocess.run(
-    ["uv", "--color", "never", "cache", "dir"], capture_output=True, text=True, check=False, timeout=60
-).stdout.strip()
-UV_PYTHON_DIR = subprocess.run(
-    ["uv", "--color", "never", "python", "dir"], capture_output=True, text=True, check=False, timeout=60
-).stdout.strip()
 MODULES_DIR = REPO / "src" / "heinzel" / "modules"
 
 
@@ -59,6 +56,8 @@ class Sandbox:
     """An isolated place to install Heinzelmännchen: uv tool and bin directories, configuration, data and skills."""
 
     root: Path
+    python_directory: Path
+    python: Path
     own_home: bool = False
     """Give the sandbox its own $HOME and let Heinzelmännchen use its default directories inside it."""
 
@@ -72,6 +71,9 @@ class Sandbox:
             **os.environ,
             "UV_TOOL_DIR": str(self.root / "tools"),
             "UV_TOOL_BIN_DIR": str(self.root / "bin"),
+            "UV_CACHE_DIR": str(self.root / "uv-cache"),
+            "UV_PYTHON_INSTALL_DIR": str(self.python_directory),
+            "UV_PYTHON": str(self.python),
             "HZ_SYSTEM_AGENT__SKILL_DIRS": json.dumps([str(self.skills)]),
         }
         for name in ("VIRTUAL_ENV", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME", "XDG_STATE_HOME"):
@@ -79,8 +81,8 @@ class Sandbox:
         if self.own_home:
             for name in ("HZ_CONFIG", "HZ_CONFIG_HOME", "HZ_DATA_DIR", "HZ_CACHE_DIR", "HZ_STATE_DIR", "HZ_LOG_DIR"):
                 env.pop(name, None)
-            # Keep uv's caches and Pythons from the real home, so the sandbox doesn't download everything again.
-            env |= {"HOME": str(self.home), "UV_CACHE_DIR": UV_CACHE_DIR, "UV_PYTHON_INSTALL_DIR": UV_PYTHON_DIR}
+            # Reuse managed Pythons while keeping package cache in this sandbox.
+            env["HOME"] = str(self.home)
         else:
             env |= {
                 "HZ_CONFIG_HOME": str(self.root / "config"),
@@ -115,6 +117,7 @@ class Sandbox:
     def diagnose(self) -> str:
         """What the sandbox's bin directory holds, and where the hz launcher's interpreter points."""
         lines = [f"bin: {sorted(p.name for p in (self.root / 'bin').glob('*'))}"]
+        lines.append(interpreter_diagnostics(self.root / "tools/heinzel"))
         if self.hz_bin.is_symlink() or self.hz_bin.exists():
             lines.append(f"hz -> {self.hz_bin.resolve()} (exists: {self.hz_bin.resolve().exists()})")
             if self.hz_bin.resolve().exists():
@@ -129,6 +132,31 @@ class Sandbox:
         return self.run(self.hz_bin, *args)
 
 
+def test_sandboxes_keep_separate_uv_caches_and_normal_link_policy(tmp_path, monkeypatch):
+    monkeypatch.setenv("UV_CACHE_DIR", str(tmp_path / "foreign-cache"))
+    monkeypatch.delenv("UV_LINK_MODE", raising=False)
+    directory, python = tmp_path / "pythons", tmp_path / "pythons/python"
+    first = Sandbox(tmp_path / "one", directory, python).env
+    second = Sandbox(tmp_path / "two", directory, python, own_home=True).env
+    assert first["UV_CACHE_DIR"] == str(tmp_path / "one/uv-cache")
+    assert second["UV_CACHE_DIR"] == str(tmp_path / "two/uv-cache")
+    assert first["UV_PYTHON_INSTALL_DIR"] == second["UV_PYTHON_INSTALL_DIR"] == str(directory)
+    assert first["UV_PYTHON"] == second["UV_PYTHON"] == str(python)
+    assert "UV_LINK_MODE" not in first
+    assert "UV_LINK_MODE" not in second
+
+
+def test_sandbox_selects_private_managed_python_without_receipt_options(sandbox, tmp_path):
+    wheels = tmp_path / "wheels"
+    wheels.mkdir()
+    wheel = _fixture_wheel(wheels, "1.0.0", ["fixture-owned"])
+    sandbox.run("uv", "tool", "install", "--offline", wheel)
+    prefix = sandbox.root / "tools/fixture-owned"
+    assert (prefix / "bin/python").resolve(strict=True) == sandbox.python
+    receipt = tomllib.loads((prefix / "uv-receipt.toml").read_text())
+    assert not receipt.get("tool", {}).get("options")
+
+
 @pytest.fixture(scope="module")
 def wheel(tmp_path_factory) -> Path:
     dist = tmp_path_factory.mktemp("dist")
@@ -137,8 +165,8 @@ def wheel(tmp_path_factory) -> Path:
 
 
 @pytest.fixture
-def sandbox(tmp_path) -> Sandbox:
-    return Sandbox(tmp_path)
+def sandbox(tmp_path, fixture_managed_python) -> Sandbox:
+    return Sandbox(tmp_path, *fixture_managed_python)
 
 
 @pytest.mark.timeout(300)
@@ -185,9 +213,9 @@ def test_direct_lifecycle(sandbox, wheel):
     assert not sandbox.hz_bin.exists()
 
 
-def test_skill_lifecycle(tmp_path, wheel):
+def test_skill_lifecycle(tmp_path, wheel, fixture_managed_python):
     """What `/hz-init` and `/hz-uninstall --purge` do, through the scripts that ship with the skills."""
-    sandbox = Sandbox(tmp_path, own_home=True)
+    sandbox = Sandbox(tmp_path, *fixture_managed_python, own_home=True)
     sandbox.home.mkdir()
     output = sandbox.run(
         "bash", SKILLS / "hz-init" / "scripts" / "install.sh", "--plugin", DUMMY_PLUGIN, HZ_SOURCE=str(wheel)
@@ -229,32 +257,14 @@ def test_install_from_git_like_users_do(sandbox):
 
 
 def installed_from_git(sandbox) -> None:
-    """Core installed from this checkout's HEAD, so first-party plugins come from the same repository and revision."""
+    """Core installed from this checkout's HEAD; plugin artifacts and revisions are selected independently."""
     if not HEAD:
         pytest.skip("needs a git checkout with at least one commit")
     sandbox.run("uv", "tool", "install", f"git+file://{REPO}@{HEAD}")
 
 
-def test_a_first_party_plugin_is_added_by_name_and_the_previews_hint_works_pasted(sandbox):
-    installed_from_git(sandbox)
-    preview = sandbox.hz("system", "plugin", "add", "clock")
-    assert "Not installed yet" in preview
-    assert "not reviewed" not in preview  # first-party: no community warning
-    [hint] = [line for line in preview.splitlines() if line.startswith("To install: ")]
-    command = shlex.split(hint.removeprefix("To install: "))
-    assert command[0] == "hz"
-    operation_id = command[command.index("--operation-id") + 1]
-    assert re.fullmatch(r"[A-Za-z0-9_-]{40,50}", operation_id)
-    assert "Installed heinzel-clock" in sandbox.run(sandbox.hz_bin, *command[1:])
-    assert [p["distribution"] for p in json.loads(sandbox.hz("system", "plugin", "list", "--json"))] == [
-        "heinzel-clock"
-    ]
-    assert sandbox.hz("clock", "--help")  # the plugin loads
-
-
-def test_a_plugin_from_a_git_repository_is_added_with_confirm(sandbox, tmp_path):
-    """A git spec over https, served from a local bare repository through git's insteadOf (no network)."""
-    installed_from_git(sandbox)
+def dummy_git_source(sandbox, tmp_path):
+    """A synthetic HTTPS source backed by a local bare repository; no real plugin or network."""
     work = tmp_path / "work"
     subprocess.run(["cp", "-R", str(DUMMY_PLUGIN), str(work)], check=True, timeout=60)
     git = ["git", "-C", str(work), "-c", "user.name=t", "-c", "user.email=t@example.com"]
@@ -268,25 +278,45 @@ def test_a_plugin_from_a_git_repository_is_added_with_confirm(sandbox, tmp_path)
         "GIT_CONFIG_KEY_0": f"url.{bare}.insteadOf",
         "GIT_CONFIG_VALUE_0": "https://git.example.test/acme/heinzel-dummy",
     }
-    spec = "git+https://git.example.test/acme/heinzel-dummy@main"
+    spec = "heinzel-dummy @ git+https://git.example.test/acme/heinzel-dummy@main"
+    return spec, rewrite
+
+
+def test_a_plugin_preview_hint_works_pasted_with_its_operation_receipt(sandbox, tmp_path):
+    installed_from_git(sandbox)
+    spec, rewrite = dummy_git_source(sandbox, tmp_path)
+    preview = sandbox.run(sandbox.hz_bin, "system", "plugin", "add", spec, **rewrite)
+    assert "Not installed yet" in preview
+    [hint] = [line for line in preview.splitlines() if line.startswith("To install: ")]
+    command = shlex.split(hint.removeprefix("To install: "))
+    assert command[0] == "hz"
+    operation_id = command[command.index("--operation-id") + 1]
+    assert re.fullmatch(r"[A-Za-z0-9_-]{40,50}", operation_id)
+    assert "Installed heinzel-dummy" in sandbox.run(sandbox.hz_bin, *command[1:], **rewrite)
+    assert [p["distribution"] for p in json.loads(sandbox.hz("system", "plugin", "list", "--json"))] == [
+        "heinzel-dummy"
+    ]
+    assert sandbox.hz("dummy", "--help")  # the plugin loads
+
+
+def test_a_plugin_from_a_git_repository_is_added_with_confirm(sandbox, tmp_path):
+    """A git spec over https, served from a local bare repository through git's insteadOf (no network)."""
+    installed_from_git(sandbox)
+    spec, rewrite = dummy_git_source(sandbox, tmp_path)
     preview = sandbox.run(sandbox.hz_bin, "system", "plugin", "add", spec, **rewrite)
     assert "Not installed yet" in preview
     assert "✓ Installed" in sandbox.run(sandbox.hz_bin, "system", "plugin", "add", spec, "--confirm", **rewrite)
     assert sandbox.hz("dummy", "hello").strip() == "hello from dummy"
 
 
-def test_the_web_head_installs_a_first_party_catalog_entry_by_its_install_spec(sandbox):
+def test_the_web_head_streams_an_independent_plugin_installation(sandbox, tmp_path):
     import httpx
 
     installed_from_git(sandbox)
-    entry = next(
-        p
-        for p in json.loads(sandbox.hz("system", "plugin", "search", "--text", "clock", "--json"))["plugins"]
-        if p["short_name"] == "clock"
-    )
+    spec, rewrite = dummy_git_source(sandbox, tmp_path)
     ui = subprocess.Popen(
         [str(sandbox.hz_bin), "ui", "--port", "0"],
-        env={**sandbox.env, "BROWSER": "true"},
+        env={**sandbox.env, **rewrite, "BROWSER": "true"},
         stderr=subprocess.PIPE,
         text=True,
     )
@@ -297,9 +327,9 @@ def test_the_web_head_installs_a_first_party_catalog_entry_by_its_install_spec(s
         base, token = url.split("#token=")
         auth = {"Authorization": f"Bearer {token}"}
         add = f"{base.rstrip('/')}/api/system/plugin/add"
-        shown = httpx.post(add, params={"spec": entry["install_spec"]}, headers=auth, timeout=120).json()
+        shown = httpx.post(add, params={"spec": spec}, headers=auth, timeout=120).json()
         assert shown["done"] is False
-        assert shown["candidate"]["first_party"] is True
+        assert shown["candidate"]["first_party"] is False
         # The UI streams installation so the task appears immediately and quiet builds stay alive across proxies.
         events: list[tuple[str, dict]] = []
         event_name = ""
@@ -323,7 +353,7 @@ def test_the_web_head_installs_a_first_party_catalog_entry_by_its_install_spec(s
                     event_name = data = ""
                     if events[-1][0] in {"result", "error"}:
                         break
-        assert events[0] == ("task", {"text": "Adding plugin heinzel-clock"})
+        assert events[0] == ("task", {"text": "Adding plugin heinzel-dummy"})
         assert events[-1][0] == "result", events
         assert events[-1][1]["data"]["done"] is True
     finally:
@@ -331,4 +361,4 @@ def test_the_web_head_installs_a_first_party_catalog_entry_by_its_install_spec(s
         ui.wait(30)
         if ui.stderr is not None:
             ui.stderr.close()
-    assert sandbox.hz("clock", "--help")
+    assert sandbox.hz("dummy", "--help")
