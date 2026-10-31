@@ -106,7 +106,7 @@ def install(service: NotifyService) -> Installed:
 # Ends processes on this machine: for the person at the terminal, never an agent.
 @module.operation(read_only=False, heads={"cli"})
 def clean(service: NotifyService) -> Cleaned:
-    """End leftover Heinzel Notifier processes (it should end by itself within a minute of each notification)."""
+    """End leftover Heinzel Notifier processes and make macOS forget its stray copies."""
     return service.clean()
 
 
