@@ -158,7 +158,10 @@ def git_in(directory, *args):
 
 
 @pytest.fixture
-def repo(tmp_path):
+def repo(tmp_path, monkeypatch):
+    # A pre-push hook exports GIT_DIR and GIT_INDEX_FILE: without this, the test would write into the real repository.
+    for key in [key for key in os.environ if key.startswith("GIT_")]:
+        monkeypatch.delenv(key)
     root = tmp_path / "repo"
     root.mkdir()
     git_in(root, "init", "-q", "-b", "main")
