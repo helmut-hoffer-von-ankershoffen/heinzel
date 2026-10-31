@@ -120,9 +120,8 @@ data.
   in the terminal with the number of zones at work as the badge; its widget is the metric "At work now 2/3". `org`
   shows the meeting now or next as a status item, with the join link as its effect. `system.daemon` shows whether the
   daemon runs (ok, with its next tick), is paused (warn), is not installed, or fails, isn't loaded or stopped ticking
-  (bad), with its jobs, last tick and failing jobs as detail, and buttons: Install and Uninstall open the terminal
-  with the command for the person to run (installing stays a CLI act, ADR 0020), Pause and Resume are confirmed
-  calls, Logs runs `hz system daemon logs`; other platforms say unsupported. The clock shows in the footer by default
+  (bad), with its jobs, last tick and failing jobs as detail, and buttons: Install and Uninstall are confirmed
+  calls (see the 2026-10-31 amendment), Pause and Resume are confirmed calls, Logs runs `hz system daemon logs`; other platforms say unsupported. The clock shows in the footer by default
   and in the sidebar once the person turns it on. `hz clock` and `hz org agenda` stay as they are.
 - **Public API**, additive ([ADR 0026](0026-plugin-api-versioned-with-semver.md)): the shapes, effects, `Tone`,
   `Icon`, the three lets and decorators in `heinzel`; `operation_path`, the path every head gives an operation, in
@@ -162,3 +161,12 @@ data.
 - Extension, not decided: a `page` slot (a navigation entry with a screen composed of the same widget shapes),
   translations of contributed text, and the status bar drawing the clock and the agenda generically once the shapes
   carry what their panels show.
+
+- Amendment, 2026-10-31: a button never types an `hz` command into the terminal to change something. A write the app
+  confirms (`RunOperation`) runs through `POST /api/stream/<path>` and the dialog shows the real steps the operation
+  reports as `phase` events (`{id, label, state, detail?}`, planned first as `pending`, so "step 2 of 5" is a count and
+  never an invented percentage), then how it ended, with the cause and the next step when it failed. `system.daemon`
+  installs and uninstalls this way (its operations are on the cli and web heads, ADR 0020), checks first that macOS puts
+  the process in the desktop session (Aqua) and says so when it does not, and puts the unit file back when loading
+  fails. The status item says "starting" with the time of the first check until the first tick, and asks for a restart
+  only on a real version mismatch.

@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { connectTerminal, runInTerminal } from "@/lib/terminal";
 import { doctor, noTeam, profile, shell } from "@/test/fixtures";
-import { expectAccessible, mockApi, renderAt } from "@/test/render";
+import { eventStream, expectAccessible, mockApi, renderAt } from "@/test/render";
 import { contractName, loadProgress, setupIncomplete } from "./progress";
 
 const answers = {
@@ -157,8 +157,9 @@ describe("Onboarding focus and answers", { timeout: 20_000 }, () => {
     const dialog = await screen.findByRole("dialog", { name: "Set up hz" });
     await user.click(within(dialog).getByRole("button", { name: /Notifications/ }));
     await user.click(within(dialog).getByRole("button", { name: "Install the daemon" }));
-    expect(within(dialog).getByRole("button", { name: "Run it" })).toHaveFocus();
+    expect(await screen.findByRole("button", { name: "Cancel" })).toHaveFocus();
     await user.keyboard("{Escape}");
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
     expect(screen.getByRole("dialog", { name: "Set up hz" })).toBeInTheDocument();
     await waitFor(() => expect(within(dialog).getByRole("button", { name: "Install the daemon" })).toHaveFocus());
     await user.click(within(dialog).getByRole("button", { name: /AI access/ }));
@@ -232,14 +233,27 @@ describe("Onboarding notifications step", { timeout: 20_000 }, () => {
     expect(await within(dialog).findByText(/Notifications are off/)).toHaveAttribute("role", "alert");
   });
 
-  it("closes the dialog when the daemon install goes to the terminal, so the terminal is seen", async () => {
+  it("installs the daemon in the app, asking first and showing the steps, never typing into the terminal", async () => {
     const sent: string[] = [];
     connectTerminal((text) => sent.push(text));
-    const { user, dialog } = await open({ "/api/system/daemon/status": idle });
+    const { user, dialog } = await open({
+      "/api/system/daemon/status": idle,
+      "/api/stream/system/daemon/install": () =>
+        eventStream(
+          [
+            ["phase", { id: "unit", label: "Writing the service definition", state: "pending" }],
+            ["phase", { id: "unit", label: "Writing the service definition", state: "done" }],
+          ],
+          {},
+        ),
+    });
     await user.click(within(dialog).getByRole("button", { name: "Install the daemon" }));
-    await user.click(within(dialog).getByRole("button", { name: "Run it" }));
-    expect(sent).toEqual(["hz system daemon install\r"]);
-    expect(screen.queryByRole("dialog", { name: "Set up hz" })).not.toBeInTheDocument();
+    const confirm = await screen.findByRole("alertdialog", { name: /Keep my Heinzelmännchen working/ });
+    expect(confirm).toHaveTextContent("hz system daemon install");
+    await user.click(within(confirm).getByRole("button", { name: "Install background service" }));
+    expect(await screen.findByText(/Installed\. Its first check comes within 5 minutes/)).toBeInTheDocument();
+    expect(sent).toEqual([]);
+    expect(screen.getByRole("dialog", { name: "Set up hz" })).toBeInTheDocument();
     connectTerminal(null);
   });
 

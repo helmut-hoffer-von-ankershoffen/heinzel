@@ -11,11 +11,14 @@ import { Link, useSearchParams } from "react-router";
 import { api, type SchemaProfile, unwrap } from "@/api/client";
 import { keys, useConfig, usePlaybooks, useProfile, useSetSetting } from "@/api/queries";
 import { Gnome } from "@/components/Gnome";
+import { OperationDialog } from "@/components/OperationDialog";
 import { Button } from "@/components/ui/button";
 import { type MessageKey, t } from "@/i18n";
 import { ThemePreviews } from "@/layout/ThemePreviews";
 import { TimeZonePicker } from "@/layout/TimeZonePicker";
 import { isLocalServer } from "@/lib/browser";
+import { DAEMON_INSTALL } from "@/lib/operationCalls";
+import { requestOperation } from "@/lib/operationRun";
 import { runInTerminal } from "@/lib/terminal";
 import { cn } from "@/lib/utils";
 import { setDesktop, useDesktopState } from "@/notifications/desktop";
@@ -510,11 +513,10 @@ function Notifications({ onClose }: { onClose: () => void }) {
             </span>
           ) : (
             <>
-              <Confirmed
-                command="hz system daemon install"
-                label={t("onboarding.notifications.install")}
-                onRun={onClose}
-              />
+              <Button variant="outline" onClick={() => requestOperation(DAEMON_INSTALL)}>
+                {t("onboarding.notifications.install")}
+              </Button>
+              <OperationDialog />
               {daemon?.installed && (
                 <span role="status" className="text-xs text-warn">
                   {t("onboarding.notifications.notLoaded")}

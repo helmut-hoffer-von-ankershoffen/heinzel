@@ -5,9 +5,12 @@ import { useState } from "react";
 import { useNavigate } from "react-router";
 import { api, type SchemaChannel } from "@/api/client";
 import { useOpenNotificationSettings, useTestNotice } from "@/api/queries";
+import { OperationDialog } from "@/components/OperationDialog";
 import { Button } from "@/components/ui/button";
 import { type MessageKey, t } from "@/i18n";
 import { isLocalServer } from "@/lib/browser";
+import { DAEMON_INSTALL } from "@/lib/operationCalls";
+import { requestOperation } from "@/lib/operationRun";
 import { runInTerminal } from "@/lib/terminal";
 import { cn } from "@/lib/utils";
 import { type DesktopState, setDesktop, useDesktopState } from "./desktop";
@@ -73,13 +76,15 @@ export function NotificationTest({
         </Button>
       );
     }
+    if (channel.fix === "install-daemon") {
+      return (
+        <Button size="sm" variant="outline" onClick={fix(() => requestOperation(DAEMON_INSTALL))}>
+          {t("notify.fix.installDaemon")}
+        </Button>
+      );
+    }
     if (channel.command) {
-      const label =
-        channel.fix === "install-notifier"
-          ? t("notify.fix.installNotifier")
-          : channel.fix === "install-daemon"
-            ? t("notify.fix.installDaemon")
-            : t("notify.fix.turnOn");
+      const label = channel.fix === "install-notifier" ? t("notify.fix.installNotifier") : t("notify.fix.turnOn");
       return (
         <Button size="sm" variant="outline" onClick={() => setConfirm(channel.command ?? null)}>
           {label}
@@ -115,6 +120,7 @@ export function NotificationTest({
   const outside = delivery === "shown" || (local && result?.native === "shown");
   return (
     <div className={cn("flex flex-col gap-2", className)}>
+      <OperationDialog />
       <div className="flex flex-wrap items-center gap-2">
         <Button size="sm" variant="outline" onClick={again} disabled={test.isPending || delivery === "showing"}>
           {result ? <RotateCcw aria-hidden /> : <BellRing aria-hidden />}

@@ -9,6 +9,7 @@ import { ChatProvider } from "@/chat/ChatContext";
 import { isDurableSession } from "@/chat/useChat";
 import { AvatarThemeProvider } from "@/components/AvatarTheme";
 import { FOOTER_RELOCATED } from "@/components/FooterLayout";
+import { OperationDialog } from "@/components/OperationDialog";
 import { t } from "@/i18n";
 import { OPEN_CHAT } from "@/lib/chatIntent";
 import { OPEN_TERMINAL } from "@/lib/terminal";
@@ -575,6 +576,7 @@ function Layout() {
       <SoundEngine />
       <SearchPalette open={searchOpen} onOpenChange={setSearchOpen} />
       <Onboarding />
+      <OperationDialog />
       {(params.get("panel") === "changelog" || params.get("panel") === "help") && (
         <InfoDialog
           panel={params.get("panel") as Panel}

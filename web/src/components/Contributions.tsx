@@ -67,9 +67,11 @@ import { FooterItem, stateOf } from "@/components/FooterItem";
 import { FooterPart } from "@/components/FooterLayout";
 import { HeinzelAvatar } from "@/components/HeinzelAvatar";
 import { HeinzelFace } from "@/components/HeinzelFace";
+import { OperationDialog } from "@/components/OperationDialog";
 import { Button } from "@/components/ui/button";
 import { type MessageKey, t } from "@/i18n";
 import { contributionPath } from "@/lib/navigation";
+import { requestOperation } from "@/lib/operationRun";
 import { runInTerminal, runsAsIs, typeInTerminal } from "@/lib/terminal";
 import { cn } from "@/lib/utils";
 import { zoneClock, zoneTime } from "@/lib/zoneTime";
@@ -210,7 +212,6 @@ export function useEffectRunner(): { run: (effect: Effect) => void; dialog: Reac
   const navigate = useNavigate();
   const location = useLocation();
   const queries = useQueryClient();
-  const [pending, setPending] = useState<SchemaOperationCall | null>(null);
   const [outcome, setOutcome] = useState<string | null>(null);
   const call = async (operation: SchemaOperationCall) => {
     const url = new URL(`/api${operation.path}`, window.location.origin);
@@ -239,41 +240,12 @@ export function useEffectRunner(): { run: (effect: Effect) => void; dialog: Reac
       else typeInTerminal(effect.command);
     } else if (effect.call) {
       if (effect.call.read_only) void call(effect.call);
-      else setPending(effect.call);
+      else requestOperation(effect.call);
     }
   };
   const dialog = (
     <>
-      {pending && (
-        <div
-          role="alertdialog"
-          aria-modal="true"
-          aria-labelledby="contrib-confirm"
-          onKeyDown={(event) => event.key === "Escape" && setPending(null)}
-          className="confirmation-dialog fixed z-(--layer-modal) max-h-[calc(var(--hz-viewport-height,100dvh)-2rem)] w-[min(28rem,calc(var(--hz-viewport-width,100vw)-2rem))] overflow-y-auto rounded-xl border border-border bg-popover p-4 text-sm shadow-xl"
-        >
-          <p id="contrib-confirm" className="font-medium">
-            {pending.summary}
-          </p>
-          <p className="mt-1 text-muted-foreground">{t("contrib.confirm")}</p>
-          <code className="mt-2 block rounded bg-muted px-2 py-1 font-mono text-xs break-all">{pending.command}</code>
-          <div className="mt-3 flex justify-end gap-2">
-            <Button size="sm" variant="outline" autoFocus onClick={() => setPending(null)}>
-              {t("contrib.cancel")}
-            </Button>
-            <Button
-              size="sm"
-              onClick={() => {
-                const confirmed = pending;
-                setPending(null);
-                void call(confirmed);
-              }}
-            >
-              {t("contrib.run")}
-            </Button>
-          </div>
-        </div>
-      )}
+      <OperationDialog />
       <span className="sr-only" aria-live="polite">
         {outcome}
       </span>
