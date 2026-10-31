@@ -22,6 +22,7 @@ if TYPE_CHECKING:
 ROOT = Path(__file__).resolve().parents[1]
 REPORTS = ROOT / "reports" / "site"
 MAX_HELPERS = 5
+FITS_VIEWPORT = "document.documentElement.scrollWidth <= innerWidth + 1"
 
 
 class SiteError(Exception):
@@ -164,7 +165,7 @@ def gallery_flow(page: "Page", count: int) -> None:
     page.mouse.wheel(1500, 0)
     page.wait_for_function("document.querySelector('[data-gallery-track]').scrollLeft > 0")
     require(
-        page.evaluate("document.documentElement.scrollWidth <= innerWidth + 1"),
+        page.evaluate(FITS_VIEWPORT),
         "The gallery scrolls internally, never the whole page",
     )
 
@@ -181,7 +182,7 @@ def media_flow(page: "Page", base: str, snapshot: dict[str, Any]) -> None:
             media.on("request", lambda request, found=requests: found.append(request.url))
             media.goto(base + f"catalog/{project['id']}/")
             require(
-                media.evaluate("document.documentElement.scrollWidth <= innerWidth + 1"),
+                media.evaluate(FITS_VIEWPORT),
                 "Plugin media must fit desktop and phone layouts",
             )
             require(
@@ -238,7 +239,7 @@ def sweep(browser: "Browser", engine: str, base: str, axe: Path, snapshot: dict[
                     # Material replaces the source PRE with its rendered diagram's closed-shadow host DIV.
                     page.wait_for_function("document.querySelector('.mermaid')?.tagName === 'DIV'")
                 require(
-                    page.evaluate("document.documentElement.scrollWidth <= innerWidth + 1"),
+                    page.evaluate(FITS_VIEWPORT),
                     f"Horizontal overflow: {engine}/{width}/{mode}/{name}",
                 )
                 require(
