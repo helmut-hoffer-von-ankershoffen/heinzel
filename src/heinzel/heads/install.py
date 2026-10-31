@@ -24,7 +24,13 @@ from packaging.version import InvalidVersion, Version
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from heinzel import Config, HeinzelError, Progress, Settings
-from heinzel.heads._tool_install import resolve_target, run_tool, target_installation
+from heinzel.heads._tool_install import (
+    resolve_target,
+    run_tool,
+    target_installation,
+    verify_fresh_python_policy,
+    verify_offline_managed_python,
+)
 from heinzel.kernel import DaemonInstallationLifecycle, Installation, boot, subprocess_environment
 
 PROFILE_ROOT = "https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/releases/download"
@@ -334,6 +340,11 @@ def _managed_install(
     """
     uv = uv_executable()
     target = resolve_target(uv)
+    if not os.path.lexists(target.prefix):
+        environment = subprocess_environment()
+        verify_fresh_python_policy(environment)
+        expected_hashes = {artifact.filename: artifact.sha256 for artifact in selected}
+        verify_offline_managed_python(uv, {path: expected_hashes[path.name] for path in paths}, environment)
     installation = target_installation(target, uv)
     kernel = boot(settings.model_copy(update={"plugins_enabled": False}))
     kernel.bind(Installation, installation)

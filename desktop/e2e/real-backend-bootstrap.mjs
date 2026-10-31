@@ -44,4 +44,11 @@ childProcess.spawn = function observeOwned(command, args, options) {
   return child;
 };
 syncBuiltinESMExports();
-await import("../src/main.js");
+if (process.env.HZ_NATIVE_TEST_CONTROLLER_GATE === "1") {
+  const { waitForController } = await import("./controller-gate.mjs");
+  void waitForController(root)
+    .then(() => import("../src/main.js"))
+    .catch((error) => setImmediate(() => { throw error; }));
+} else {
+  await import("../src/main.js");
+}

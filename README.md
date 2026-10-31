@@ -92,6 +92,10 @@ You can [inspect the script](https://github.com/helmut-hoffer-von-ankershoffen/h
 
 The first run installs the verified standard app with all default plugins and opens the workspace.
 Later runs open the installed app. Ctrl-C stops the foreground session; background operation stays optional.
+The fresh standard-app installation requires a uv-managed Python: it overrides uv's configured Python preference
+and ignores `UV_PYTHON` for that installation step. Remove system-only `UV_NO_MANAGED_PYTHON` or
+`UV_PYTHON_PREFERENCE` environment settings before installing. If Python downloads are disabled, first install a
+compatible uv-managed Python. Refreshes keep the app's verified existing interpreter.
 On Linux, standard installation needs an accessible systemd user manager in your user session.
 For a minimal core with no plugins use
 `uv tool install heinzel`. The installer selects the newest published standard app and verifies its artifacts;

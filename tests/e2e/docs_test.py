@@ -23,6 +23,7 @@ import time
 from pathlib import Path
 from urllib.request import urlopen
 
+import psutil
 import pytest
 
 pytestmark = pytest.mark.e2e
@@ -36,6 +37,20 @@ MAX_OUTPUT = 65536
 GUARDIAN_UNCERTAIN = "README process-group cleanup is uncertain: guardian exited unexpectedly."
 GUARDIAN_INVALID = "README guardian returned invalid status."
 GUARDIAN_START = "README guardian could not start its command."
+_LIVE_GUARDIAN_STATES = frozenset(
+    {
+        psutil.STATUS_RUNNING,
+        psutil.STATUS_SLEEPING,
+        psutil.STATUS_DISK_SLEEP,
+        psutil.STATUS_STOPPED,
+        psutil.STATUS_TRACING_STOP,
+        psutil.STATUS_IDLE,
+        psutil.STATUS_LOCKED,
+        psutil.STATUS_WAITING,
+        psutil.STATUS_WAKING,
+        psutil.STATUS_PARKED,
+    }
+)
 PROCEDURE_BUDGET = 100  # Reserve cleanup time within the unchanged outer 120s test limit.
 
 
@@ -54,6 +69,8 @@ class CapturedOutput:
     def __init__(self, process):
         self.selector = selectors.DefaultSelector()
         self.buffers = {"stdout": b"", "stderr": b""}
+        self.started = time.monotonic()
+        self.markers = {}
         for name in self.buffers:
             stream = getattr(process, name)
             if stream is not None:
@@ -69,7 +86,16 @@ class CapturedOutput:
                 chunk = os.read(key.fd, 8192)
                 if chunk:
                     name = key.data
-                    self.buffers[name] = (self.buffers[name] + chunk)[-MAX_OUTPUT:]
+                    combined = self.buffers[name] + chunk
+                    for label, pattern in (
+                        ("packages-output", rb"Installed [0-9]+ packages in"),
+                        ("app-install-output", rb"Installing Heinzelm"),
+                        ("executables-output", rb"Installed [0-9]+ executables:"),
+                        ("loopback-url-output", rb"http://127\.0\.0\.1:[0-9]+/"),
+                    ):
+                        if label not in self.markers and re.search(pattern, combined):
+                            self.markers[label] = time.monotonic() - self.started
+                    self.buffers[name] = combined[-MAX_OUTPUT:]
                 else:
                     self.selector.unregister(key.fileobj)
 
@@ -122,6 +148,12 @@ class GuardedCommand:
         finally:
             os.close(writer)
         os.set_blocking(self.status_fd, False)
+        try:
+            self.guardian = psutil.Process(self.process.pid)
+            self.guardian_started = self.guardian.create_time()
+        except (psutil.Error, OSError):
+            self.guardian = None
+            self.guardian_started = None
         self.capture = CapturedOutput(self.process)
         self.buffer = bytearray()
         self.ready = False
@@ -129,7 +161,16 @@ class GuardedCommand:
 
     def alive(self):
         """Observe but do not reap the process-group leader before its final signal."""
-        return os.waitid(os.P_PID, self.process.pid, os.WEXITED | os.WNOHANG | os.WNOWAIT) is None
+        if self.process.returncode is not None or self.guardian is None or self.guardian_started is None:
+            return False
+        try:
+            return (
+                self.guardian.is_running()
+                and psutil.Process(self.process.pid).create_time() == self.guardian_started
+                and self.guardian.status() in _LIVE_GUARDIAN_STATES
+            )
+        except (psutil.Error, OSError):
+            return False
 
     def poll_command(self):
         """Read only the fixed ready/return-code messages, never command output or arguments."""
@@ -172,7 +213,8 @@ class GuardedCommand:
         """Signal only the original group while its trusted guardian is alive; detached sessions are excluded."""
         try:
             if not self.alive():
-                self.process.wait(timeout=1)
+                with contextlib.suppress(subprocess.TimeoutExpired):
+                    self.process.wait(timeout=1)
                 raise RuntimeError(GUARDIAN_UNCERTAIN)
             status_error = None
             try:
@@ -184,7 +226,8 @@ class GuardedCommand:
                 with contextlib.suppress(subprocess.TimeoutExpired):
                     self.wait(10)
             if not self.alive():
-                self.process.wait(timeout=1)
+                with contextlib.suppress(subprocess.TimeoutExpired):
+                    self.process.wait(timeout=1)
                 raise RuntimeError(GUARDIAN_UNCERTAIN)
             os.killpg(self.process.pid, signal.SIGKILL)
             self.process.wait(timeout=5)
@@ -262,7 +305,15 @@ def launch_documented_app(command, env, tmp_path, deadline, *, bootstrap_wheels)
             assert process.returncode is None, safe_diagnostics(text)
         else:
             diagnostic = safe_diagnostics(process.capture.text("stdout") + process.capture.text("stderr"))
-            pytest.fail(f"Documented launcher did not serve its app:\n{diagnostic}")
+            marker_times = ", ".join(
+                f"{label}={process.capture.markers[label]:.1f}s"
+                if label in process.capture.markers
+                else f"{label}=missing"
+                for label in ("packages-output", "app-install-output", "executables-output", "loopback-url-output")
+            )
+            pytest.fail(
+                f"Documented launcher did not serve its app:\n{diagnostic}\nREADME output markers: {marker_times}"
+            )
     finally:
         process.stop()
         log.write_text(safe_diagnostics(process.capture.text("stdout") + process.capture.text("stderr")))
@@ -290,7 +341,7 @@ def readme_phase(label, deadline):
         sys.stderr.write(f"README phase={label} elapsed={now - started:.1f}s remaining={deadline - now:.1f}s\n")
 
 
-def test_readme_instructions(tmp_path):
+def test_readme_instructions(tmp_path, fixture_managed_python):
     deadline = time.monotonic() + PROCEDURE_BUDGET
     with socket.socket() as listener:
         listener.bind(("127.0.0.1", 0))
@@ -345,8 +396,9 @@ def test_readme_instructions(tmp_path):
     }
     env.pop("VIRTUAL_ENV", None)
     env.pop("UV_OVERRIDE", None)
-    if python_directory := os.environ.get("UV_PYTHON_INSTALL_DIR"):
-        env["UV_PYTHON_INSTALL_DIR"] = python_directory
+    python_directory, python = fixture_managed_python
+    env["UV_PYTHON_INSTALL_DIR"] = str(python_directory)
+    env["UV_PYTHON"] = str(python)
     # A stale checkout is a common developer environment; all packaged heads must still use this wheel.
     shadow = tmp_path / "stale-source/heinzel"
     shadow.mkdir(parents=True)
@@ -358,6 +410,7 @@ def test_readme_instructions(tmp_path):
             with readme_phase("install-and-launch", deadline):
                 launch_documented_app(block, env, tmp_path, deadline, bootstrap_wheels=artifacts)
             assert (tmp_path / "data/standard-app.json").is_file()
+            assert (tmp_path / "tools/heinzel/bin/python").resolve(strict=True) == python
             continue
         with readme_phase("uninstall" if UNINSTALL in block else "documented-cli", deadline):
             # Bash expands SECONDS for each traced command, identifying a slow phase without extra operations.

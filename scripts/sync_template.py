@@ -30,6 +30,18 @@ def makefile() -> str:
     text = re.sub(r"(?m)^(\.PHONY:.*?) icons\b", r"\1", text)
     text = re.sub(r"\nlinux-user-manager-proof:.*?\n(?:\t.*\n)+", "\n", text)
     text = text.replace(" linux-user-manager-proof", "")
+    # Core README e2e builds its own candidate wheel; plugins have no core web/notifier assets to prepare.
+    text = (
+        re.sub(r"\ne2e-prepare:.*?\n(?:\t.*\n)+", "\n", text)
+        .replace(" test-e2e e2e-prepare ", " test-e2e ")
+        .replace("test-e2e: e2e-prepare", "test-e2e:")
+        .replace(
+            "uv run pytest -m e2e -n 3 -q --session-timeout=600 -x tests/e2e/docs_test.py::test_readme_instructions && "
+            "uv run pytest -m e2e -n 3 -q --session-timeout=600 -x "
+            "--deselect=tests/e2e/docs_test.py::test_readme_instructions",
+            "uv run pytest -m e2e -n 3 -q --session-timeout=600 -x",
+        )
+    )
     # The core's generate_docs.py writes the plugin pages with everything else; a plugin runs the builder (ADR 0082).
     text = text.replace(
         '"&docs=env -u HZ_SYSTEM_AGENT__SKILL_DIRS uv run python scripts/generate_docs.py --check"',
@@ -233,6 +245,12 @@ def pyproject() -> str:
     # git and would fetch this Heinzelmännchen then.
     dev = dev.replace("test = [", 'test = ["heinzel==[[ heinzel_version ]]", ', 1)
     tools = source[source.index("[tool.ruff]") :]
+    # This scheduling hint is implemented by the core test controller, not the plugin template.
+    tools = tools.replace(
+        '    "e2e_early: Hint to start a long E2E case in an early xdist worker batch; '
+        'no deadline or selection change.",\n',
+        "",
+    )
     tools = re.sub(r'\nextend-exclude = \["template", "plugins"\][^\n]*', "", tools)
     tools = tools.replace(
         'extend-exclude = ["ATTRIBUTIONS.md", "site", "plugins"]', 'extend-exclude = ["ATTRIBUTIONS.md", "site"]'

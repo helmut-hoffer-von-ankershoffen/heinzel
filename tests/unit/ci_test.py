@@ -812,6 +812,14 @@ def _generated_plugin_ci() -> dict:
     return yaml.safe_load(text.replace("[[ package_name ]]", "x"))
 
 
+def test_plugin_template_does_not_advertise_core_only_e2e_scheduling_hint():
+    generated = _template_sync_module().pyproject()
+    checked_in = (REPO / "template" / "pyproject.toml.jinja").read_text(encoding="utf-8")
+    assert generated == checked_in
+    assert "e2e_early:" not in generated
+    assert "e2e_early:" in (REPO / "pyproject.toml").read_text(encoding="utf-8")
+
+
 def test_plugin_template_makefile_excludes_all_electron_only_targets():
     """Electron's install, sandbox and native-smoke targets stay out of generated plugin Makefiles."""
     generated = _template_sync_module().makefile()
@@ -870,3 +878,117 @@ def test_linux_electron_sandbox_target_configures_only_the_packaged_helper():
     assert '--configure-file "$$packaged_sandbox"' in recipe
     assert 'require.resolve("electron"' not in recipe
     assert 'python3 desktop/ci/restore_linux_sandbox.py "$$electron_root"' not in recipe
+
+
+@pytest.mark.parametrize("fail", [False, True])
+def test_e2e_prepares_core_build_before_suite_and_removes_owned_temp(tmp_path, fail):
+    """A failed build cannot start pytest; the suite still performs its own candidate build."""
+    tool_dir = tmp_path / "bin"
+    tool_dir.mkdir()
+    trace = tmp_path / "trace"
+    uv = tool_dir / "uv"
+    steps = tool_dir / "fake-steps"
+    for path, text in (
+        (
+            uv,
+            (
+                '#!/bin/sh\nprintf "build:%s\\n" "$*" >> "$TRACE"\n'
+                'for last do :; done\nprintf "dir:%s\\n" "$last" >> "$TRACE"\n'
+                'test "$FAIL_PREP" != 1\n'
+            ),
+        ),
+        (steps, '#!/bin/sh\nprintf "suite:%s\\n" "$*" >> "$TRACE"\n'),
+    ):
+        assert not path.exists()
+        assert not path.is_symlink()
+        assert path.parent.resolve().is_relative_to(tmp_path.resolve())
+        path.write_text(text)
+        assert not path.samefile(os.path.realpath(os.sys.executable))
+        assert not path.samefile(os.path.realpath(os.sys._base_executable))
+        path.chmod(0o700)
+    env = {
+        **os.environ,
+        "PATH": f"{tool_dir}:/usr/bin:/bin",
+        "TMPDIR": str(tmp_path),
+        "TRACE": str(trace),
+        "FAIL_PREP": "1" if fail else "0",
+    }
+    result = subprocess.run(
+        ["make", "--no-print-directory", "test-e2e", f"STEPS={steps}"],
+        cwd=REPO,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=20,
+        check=False,
+    )
+    lines = trace.read_text().splitlines()
+    assert lines[0].startswith("build:build --quiet --wheel --out-dir ")
+    assert lines[1].startswith("dir:")
+    directory = Path(lines[1].removeprefix("dir:"))
+    assert directory.is_relative_to(tmp_path)
+    assert not directory.exists()
+    assert (result.returncode == 0) is not fail
+    assert any(line.startswith("suite:e2e=uv run pytest ") for line in lines) is not fail
+    if not fail:
+        [suite] = [line for line in lines if line.startswith("suite:e2e=")]
+        node = "tests/e2e/docs_test.py::test_readme_instructions"
+        first, second = suite.split(" && ")
+        assert first.endswith(f"-x {node}")
+        assert second.endswith(f"-x --deselect={node}")
+        assert first.count("-n 3") == second.count("-n 3") == 1
+        assert first.count("--session-timeout=600") == second.count("--session-timeout=600") == 1
+    generated = _template_sync_module().makefile()
+    assert "e2e-prepare" not in generated
+    assert generated == (REPO / "template/Makefile").read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("first_fails", [False, True])
+def test_e2e_sequence_stops_after_readme_failure(tmp_path, first_fails):
+    """The shared step runs the remaining nodes only after the isolated README succeeds."""
+    tool_dir = tmp_path / "bin"
+    tool_dir.mkdir()
+    trace = tmp_path / "trace"
+    uv = tool_dir / "uv"
+    steps = tool_dir / "steps"
+    for path, text in (
+        (
+            uv,
+            (
+                "#!/bin/sh\n"
+                'printf "%s\\n" "$*" >> "$TRACE"\n'
+                'case "$*" in *--deselect*) exit 0;; '
+                '*docs_test.py::test_readme_instructions*) test "$FIRST_FAIL" != 1;; esac\n'
+            ),
+        ),
+        (steps, '#!/bin/sh\ncommand=${1#e2e=}\nexec /bin/sh -c "$command"\n'),
+    ):
+        assert not path.exists()
+        assert not path.is_symlink()
+        path.write_text(text)
+        assert not path.samefile(os.path.realpath(os.sys.executable))
+        assert not path.samefile(os.path.realpath(os.sys._base_executable))
+        path.chmod(0o700)
+    env = {
+        **os.environ,
+        "PATH": f"{tool_dir}:/usr/bin:/bin",
+        "TMPDIR": str(tmp_path),
+        "TRACE": str(trace),
+        "FIRST_FAIL": "1" if first_fails else "0",
+    }
+    result = subprocess.run(
+        ["make", "--no-print-directory", "test-e2e", f"STEPS={steps}"],
+        cwd=REPO,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=20,
+        check=False,
+    )
+    commands = trace.read_text().splitlines()
+    assert commands[0].startswith("build ")
+    assert len(commands) == (2 if first_fails else 3)
+    assert "--deselect=" not in commands[1]
+    if not first_fails:
+        assert "--deselect=tests/e2e/docs_test.py::test_readme_instructions" in commands[2]
+    assert (result.returncode != 0) is first_fails

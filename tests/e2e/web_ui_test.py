@@ -18,6 +18,8 @@ from urllib.request import Request, urlopen
 
 import pytest
 
+from tests.e2e._mobile_server_output import MobileServerOutput, check_driver, redact, sanitize_timeout
+
 pytestmark = pytest.mark.e2e
 
 REPO = Path(__file__).resolve().parents[2]
@@ -279,6 +281,7 @@ def test_theme_image_viewports_preserve_the_cap_hinge_in_actual_chromium(tmp_pat
 
 
 @pytest.mark.timeout(600)
+@pytest.mark.e2e_early
 def test_mobile_touch_viewports_keep_navigation_settings_and_chat_reachable(environment, tmp_path):
     """Chromium mobile emulation checks responsive reachability; it is not a physical iPhone Safari test."""
     env, _recorded = environment
@@ -293,33 +296,53 @@ def test_mobile_touch_viewports_keep_navigation_settings_and_chat_reachable(envi
     )
     shots = Path(os.environ.get("HZ_SCREENSHOTS", tmp_path / "screenshots"))
     ui = subprocess.Popen(
-        [sys.executable, "-m", "heinzel", "ui", "--port", "0"], cwd=REPO, env=env, stderr=subprocess.PIPE, text=True
+        [sys.executable, "-m", "heinzel", "ui", "--port", "0"], cwd=REPO, env=env, stderr=subprocess.PIPE
     )
+    capture = MobileServerOutput(ui)
+    token = ""
     try:
-        assert ui.stderr is not None
-        line = ""
-        for line in ui.stderr:
-            if "runs at" in line:
-                break
-        url = line.strip().rsplit(" ", 1)[-1]
+        url = capture.wait_url()
         assert url.startswith("http://127.0.0.1:")
         assert "#token=" in url
+        token = parse_qs(urlsplit(url).fragment).get("token", [""])[0]
         verify_stream_fixture(url)
-        driven = subprocess.run(
-            [*run, "exec", "node", "e2e/mobile-responsive.mjs", url, str(shots)],
-            cwd=REPO,
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=300,
-        )
-        assert driven.returncode == 0, driven.stderr
+        try:
+            driven = subprocess.run(
+                [*run, "exec", "node", "e2e/mobile-responsive.mjs", url, str(shots)],
+                cwd=REPO,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=300,
+            )
+        except subprocess.TimeoutExpired as error:
+            sanitize_timeout(error)
+            raise
+        check_driver(driven.returncode, redact(driven.stderr, token))
         result = json.loads(driven.stdout.strip().splitlines()[-1])
+    except BaseException:
+        sys.stderr.write(f"Mobile server pre-cleanup exit: {ui.poll()}\n")
+        sys.stderr.write(f"Mobile server stderr tail:\n{capture.diagnostic(token)}\n")
+        raise
     finally:
-        ui.terminate()
-        ui.wait(30)
-        if ui.stderr is not None:
-            ui.stderr.close()
+        original = sys.exception()
+        try:
+            if ui.poll() is None:
+                ui.terminate()
+            try:
+                ui.wait(30)
+            except subprocess.TimeoutExpired:
+                ui.kill()
+                ui.wait(5)
+                msg = "Mobile test server required forced cleanup"
+                raise RuntimeError(msg) from None
+            capture.close()
+            if ui.stderr is not None:
+                ui.stderr.close()
+        except (OSError, RuntimeError, subprocess.TimeoutExpired):
+            if original is None:
+                raise
+            original.add_note("Mobile test server cleanup was uncertain; inspect the owned process state.")
 
     assert result["evidence"] == "mobile/touch emulation; not physical iPhone Safari"
     assert len(result["cases"]) == 6

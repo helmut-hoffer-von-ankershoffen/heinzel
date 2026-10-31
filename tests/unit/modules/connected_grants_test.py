@@ -64,16 +64,18 @@ def connected(tmp_path, monkeypatch):
 
         def review(self):
             descriptor = describe_capability_read(holder["kernel"], "calendar", "events")
-            return ConnectedReadReview(
-                owner=current.principal().id,
-                session=self.session,
-                operation=self.operation,
-                schema_sha256=arguments_hash(descriptor.schema),
-                source_revision=state["source"],
-                account_identity=state["account"],
-                provider_scopes=state["scopes"],
-                fixed_arguments={**self.fixed, **({"count": True} if state.get("coerce") else {})},
-                item_identity=state.get("item_identity"),
+            return state.get("review_failure", lambda value: value)(
+                ConnectedReadReview(
+                    owner=current.principal().id,
+                    session=self.session,
+                    operation=self.operation,
+                    schema_sha256=arguments_hash(descriptor.schema),
+                    source_revision=state["source"],
+                    account_identity=state["account"],
+                    provider_scopes=state["scopes"],
+                    fixed_arguments={**self.fixed, **({"count": True} if state.get("coerce") else {})},
+                    item_identity=state.get("item_identity"),
+                )
             )
 
         def read(self, arguments):
@@ -85,7 +87,7 @@ def connected(tmp_path, monkeypatch):
             return state.get("result", {"events": ["fictional"]})
 
         def close(self):
-            pass
+            state.get("close_hook", lambda: None)()
 
     class Provider(ConnectedReadService):
         def supported_reads(self):
@@ -946,3 +948,71 @@ def test_changed_provider_item_identity_refuses_approved_read(connected):
     with crud.repository.main_writer(session) as writer, pytest.raises(HeinzelError):
         grants.read(session, writer)
     assert state["reads"] == 0
+
+
+@pytest.mark.parametrize("change", ["account", "source", "config", "disconnect", "grant", "account-on-close"])
+def test_inflight_account_rotation_never_returns_or_records_snapshot(connected, change):
+    from heinzel.modules.heinzel._input_receipts import ApprovedInputSnapshots
+
+    current, crud, session, grants, fixed, state = connected
+    proposal = grants.propose(session, "snapshot-rotation", "calendar", "events", fixed)
+    proof = grants.issue(session, proposal.request_id, "human-confirmation")
+    confirmation = ApprovalConfirmation()
+    review = proposal.model_dump(mode="json")
+    args = {"session_id": session, "request_id": proposal.request_id, "review": review, "approval_proof": proof}
+    with confirmation.using("heinzel", "approve-connected-read", args):
+        grants.approve(session, proposal.request_id, review, proof, confirmation)
+
+    def mutate():
+        if change == "account":
+            state["account"] = "account-b"
+        elif change == "source":
+            state["source"] = "source-v2"
+        elif change == "config":
+            state["config"] = Config(files=(), data={"capabilities": {"calendar": "another"}})
+        elif change == "disconnect":
+            state["claims"] = ()
+        elif change == "grant":
+            with crud.repository.control_writer(session) as control:
+                control.append("connected.revoked", key=proposal.request_id, data={})
+        else:
+            state["close_hook"] = lambda: state.update(account="account-b")
+
+    state["read_hook"] = mutate
+    with crud.repository.main_writer(session) as writer, pytest.raises(HeinzelError):
+        ApprovedInputSnapshots(grants, current).read(session, writer)
+    assert state["reads"] == 1
+    assert not any(e.kind == "input-snapshot.observed" for e in crud.repository.control_read(session).events)
+
+
+@pytest.mark.parametrize("failure", ["raise", "malformed"])
+def test_postread_review_failure_is_failed_activity_not_denial(connected, failure):
+    _current, crud, session, grants, fixed, state = connected
+    proposal = grants.propose(session, "failed-review", "calendar", "events", fixed)
+    proof = grants.issue(session, proposal.request_id, "human-confirmation")
+    confirmation = ApprovalConfirmation()
+    review = proposal.model_dump(mode="json")
+    args = {"session_id": session, "request_id": proposal.request_id, "review": review, "approval_proof": proof}
+    with confirmation.using("heinzel", "approve-connected-read", args):
+        grants.approve(session, proposal.request_id, review, proof, confirmation)
+
+    def fail_review(_value):
+        if failure == "raise":
+            msg = "synthetic provider secret"
+            raise HeinzelError(msg)
+        return {}
+
+    state["read_hook"] = lambda: state.update(review_failure=fail_review)
+    crud.accept(session, MessageRequest(request_id="read-failure", text="Read the approved source."))
+    result = asyncio.run(
+        InteractiveTurn(crud).run(
+            session, "read-failure", _model("did not produce", "Could not read."), limits=TurnLimits(), connected=grants
+        )
+    )
+    assert result.text == "Could not read."
+    assert state["reads"] == 1
+    events = crud.repository.control_read(session).events
+    activity = [event.data.get("status") for event in events if event.kind == "interactive.tool"]
+    assert activity == ["requested", "failed"]
+    assert not any(event.kind == "input-snapshot.observed" for event in events)
+    assert "synthetic provider secret" not in str(events)

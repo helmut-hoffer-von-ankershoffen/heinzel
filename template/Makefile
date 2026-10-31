@@ -92,7 +92,7 @@ test: ## Run unit and integration tests with coverage on 4 workers (offline; wha
 
 # Leave headroom under CI's 10-minute job timeout for the full unit/integration suite on slower runners.
 test-parallel: ## Unit and integration tests on 4 workers, stopping at the first failure; no coverage (the CI test matrix)
-	$(STEPS) "tests=uv run pytest -m '(unit or integration) and not perf' -n 4 -x -q --session-timeout=420"
+	$(STEPS) "tests=uv run pytest -m '(unit or integration) and not perf' -n 4 -x -q --session-timeout=420 --durations=20"
 
 commits: ## Commit messages since BASE, and $$TITLE and $$BRANCH when set: conventional, no confidential terms
 	$(STEPS) \
@@ -114,7 +114,7 @@ test-perf: ## Run the performance tests (timing assertions such as linear time);
 	$(STEPS) "perf=uv run pytest -m perf -q --session-timeout=120"
 
 test-e2e: ## Run end-to-end tests (needs network), on 3 workers
-	$(STEPS) "e2e=uv run pytest -m e2e -n 3 -q --session-timeout=600"
+	$(STEPS) "e2e=uv run pytest -m e2e -n 3 -q --session-timeout=600 -x"
 
 audit: ## Audit runtime dependencies: known vulnerabilities (pip-audit) and licenses (.license-allowlist)
 	$(STEPS) "licenses=$(MAKE) --no-print-directory licenses" "&vulnerabilities=uv export --quiet --no-dev --no-emit-project --no-emit-package heinzel --format requirements-txt --output-file .audit-requirements.txt && uv run pip-audit --strict --disable-pip -r .audit-requirements.txt; status=\$$?; rm -f .audit-requirements.txt; exit \$$status"

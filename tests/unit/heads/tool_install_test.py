@@ -70,12 +70,14 @@ def run_tool(command, target, expected):
 def test_fresh_install_binds_both_targets_and_probes_the_managed_app(target, monkeypatch):
     calls = []
     monkeypatch.setenv("HZ_CREDENTIAL_EXAMPLE_SECRET", "fixture-private-value")
+    monkeypatch.setenv("UV_PYTHON", "/untrusted/system/python")
 
     def run(command, **kwargs):
-        assert command == COMMAND
+        assert command == [*COMMAND[:3], "--managed-python", *COMMAND[3:]]
         assert kwargs["env"]["UV_TOOL_DIR"] == str(target.store)
         assert kwargs["env"]["UV_TOOL_BIN_DIR"] == str(target.binary)
         assert "HZ_CREDENTIAL_EXAMPLE_SECRET" not in kwargs["env"]
+        assert "UV_PYTHON" not in kwargs["env"]
         assert kwargs["stdout"] is tool.sys.stderr
         assert kwargs["timeout"] == 600
         write_tool(target)
@@ -89,6 +91,45 @@ def test_fresh_install_binds_both_targets_and_probes_the_managed_app(target, mon
     )
     run_tool(COMMAND, target, EXPECTED)
     assert calls == [(target.prefix, ("--version",))]
+
+
+@pytest.mark.parametrize("option", ["--python", "--python=/foreign/python", "-p/foreign/python", "--no-managed-python"])
+def test_fresh_install_rejects_conflicting_python_selection_before_uv(target, monkeypatch, option):
+    monkeypatch.setattr(tool.subprocess, "run", lambda *_args, **_kwargs: pytest.fail("uv must not run"))
+    with pytest.raises(HeinzelError, match="requires a uv-managed Python"):
+        run_tool([*COMMAND, option], target, EXPECTED)
+    assert not target.prefix.exists()
+
+
+@pytest.mark.parametrize(
+    ("variable", "value"),
+    [
+        ("UV_NO_MANAGED_PYTHON", "1"),
+        ("UV_NO_MANAGED_PYTHON", "t"),
+        ("UV_NO_MANAGED_PYTHON", "y"),
+        ("UV_NO_MANAGED_PYTHON", "T"),
+        ("UV_NO_MANAGED_PYTHON", "Y"),
+        ("UV_PYTHON_PREFERENCE", "only-system"),
+    ],
+)
+def test_fresh_install_refuses_system_only_preference_before_uv(target, monkeypatch, variable, value):
+    monkeypatch.setenv(variable, value)
+    monkeypatch.setattr(tool.subprocess, "run", lambda *_args, **_kwargs: pytest.fail("uv must not run"))
+    with pytest.raises(HeinzelError, match="Remove the system-only Python environment setting"):
+        run_tool(COMMAND, target, EXPECTED)
+    assert not target.prefix.exists()
+
+
+def test_fresh_install_explains_disabled_python_downloads_on_failure(target, monkeypatch):
+    monkeypatch.setenv("UV_PYTHON_DOWNLOADS", "never")
+    monkeypatch.setattr(tool, "verify_offline_managed_python", lambda *_args: None)
+
+    def fail(command, **_kwargs):
+        raise subprocess.CalledProcessError(1, command)
+
+    monkeypatch.setattr(tool.subprocess, "run", fail)
+    with pytest.raises(HeinzelError, match="Python downloads are disabled"):
+        run_tool(COMMAND, target, EXPECTED)
 
 
 def test_the_heads_command_preflight_does_not_claim_other_tools_names(target):
@@ -198,7 +239,24 @@ def test_fresh_uv_noop_cannot_claim_another_artifact_was_installed(target, monke
     assert (target.prefix / "concurrent-owner").read_text() == "keep"
 
 
+def test_fresh_rechecks_download_policy_before_running_uv(target, monkeypatch):
+    monkeypatch.setenv("UV_PYTHON_DOWNLOADS", "manual")
+    monkeypatch.setattr(tool.subprocess, "run", lambda *_args, **_kwargs: pytest.fail("uv must not run"))
+
+    def unavailable(_uv, _wheels, environment):
+        assert environment["UV_PYTHON_DOWNLOADS"] == "manual"
+        msg = "managed Python unavailable"
+        raise HeinzelError(msg)
+
+    monkeypatch.setattr(tool, "verify_offline_managed_python", unavailable)
+    with pytest.raises(HeinzelError, match="managed Python unavailable"):
+        run_tool(COMMAND, target, EXPECTED)
+    assert not target.prefix.exists()
+
+
 def test_refresh_delegates_to_the_guarded_kernel_and_keeps_its_failure(target, monkeypatch):
+    monkeypatch.setenv("UV_PYTHON_DOWNLOADS", "manual")
+    monkeypatch.setattr(tool, "verify_offline_managed_python", lambda *_args: pytest.fail("refresh must not probe"))
     write_tool(target)
     calls = []
 

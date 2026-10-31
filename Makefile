@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help install setup release-local doctor tools-verify check check-fast linux-user-manager-proof preflight fix lint format typecheck test test-parallel commits test-all-pythons test-unit test-integration test-perf test-e2e test-browser-deps audit licenses secrets template-test template-sync docs attributions fuzz demo terminal-art notifier icons web-build web-dev test-web managed-backend-setup managed-backend-check desktop-electron-test desktop-electron-sandbox desktop-electron-native desktop-electron-package build pypi-clean-build-marker changelog ci-logs pr sync docs-plugins docs-record docs-site docs-catalog docs-site-check docs-publish-check release clean
+.PHONY: help install setup release-local doctor tools-verify check check-fast linux-user-manager-proof preflight fix lint format typecheck test test-parallel commits test-all-pythons test-unit test-integration test-perf test-e2e e2e-prepare test-browser-deps audit licenses secrets template-test template-sync docs attributions fuzz demo terminal-art notifier icons web-build web-dev test-web managed-backend-setup managed-backend-check desktop-electron-test desktop-electron-sandbox desktop-electron-native desktop-electron-package build pypi-clean-build-marker changelog ci-logs pr sync docs-plugins docs-record docs-site docs-catalog docs-site-check docs-publish-check release clean
 
 # Quiet by default: one line per passing step, the tail of a failing one. VERBOSE=1 streams everything.
 # A step starting with & runs concurrently with the one before it; the first failure cancels the rest.
@@ -175,7 +175,7 @@ test: ## Run unit and integration tests with coverage on 4 workers (offline; wha
 
 # Leave headroom under CI's 10-minute job timeout for the full unit/integration suite on slower runners.
 test-parallel: ## Unit and integration tests on 4 workers, stopping at the first failure; no coverage (the CI test matrix)
-	$(STEPS) "tests=uv run pytest -m '(unit or integration) and not perf' -n 4 -x -q --session-timeout=420"
+	$(STEPS) "tests=uv run pytest -m '(unit or integration) and not perf' -n 4 -x -q --session-timeout=420 --durations=20"
 
 commits: ## Commit messages since BASE, and $$TITLE and $$BRANCH when set: conventional, no confidential terms
 	$(STEPS) \
@@ -203,8 +203,11 @@ test-browser-deps: ## Install Chromium and WebKit; include Linux host libraries 
 		$(WEB) exec playwright-core install chromium webkit; \
 	fi
 
-test-e2e: ## Run end-to-end tests (needs network), on 3 workers
-	$(STEPS) "e2e=uv run pytest -m e2e -n 3 -q --session-timeout=600"
+test-e2e: e2e-prepare ## Run end-to-end tests (needs network), on 3 workers
+	$(STEPS) "e2e=uv run pytest -m e2e -n 3 -q --session-timeout=600 -x tests/e2e/docs_test.py::test_readme_instructions && uv run pytest -m e2e -n 3 -q --session-timeout=600 -x --deselect=tests/e2e/docs_test.py::test_readme_instructions"
+
+e2e-prepare: ## Prepare current build assets before end-to-end procedure deadlines
+	@set -eu; dir="$$(mktemp -d "$${TMPDIR:-/tmp}/heinzel-e2e.XXXXXXXX")"; trap 'rm -rf "$$dir"' EXIT; uv build --quiet --wheel --out-dir "$$dir"
 
 audit: ## Audit runtime dependencies: known vulnerabilities (pip-audit) and licenses (.license-allowlist)
 	$(STEPS) "licenses=$(MAKE) --no-print-directory licenses" "&vulnerabilities=uv export --quiet --no-dev --no-emit-project --no-emit-package heinzel --format requirements-txt --output-file .audit-requirements.txt && uv run pip-audit --strict --disable-pip -r .audit-requirements.txt; status=\$$?; rm -f .audit-requirements.txt; exit \$$status" "&web-vulnerabilities=$(WEB) pnpm audit --prod"

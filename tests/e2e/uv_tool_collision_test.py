@@ -7,12 +7,13 @@ import io
 import os
 import shutil
 import subprocess
-import sys
 import tempfile
 import zipfile
 from pathlib import Path
 
 import pytest
+
+from tests.e2e._interpreter_diagnostics import interpreter_diagnostics
 
 pytestmark = pytest.mark.e2e
 
@@ -43,7 +44,9 @@ def _fixture_wheel(directory, version, commands):
     return wheel
 
 
-def test_uv_reinstall_preserves_foreign_entrypoint_and_allows_restoration(tmp_path, monkeypatch):
+def test_uv_reinstall_preserves_foreign_entrypoint_and_allows_restoration(
+    tmp_path, monkeypatch, fixture_managed_python
+):
     uv = shutil.which("uv")
     if uv is None:
         pytest.skip("uv is not available")
@@ -74,7 +77,7 @@ def test_uv_reinstall_preserves_foreign_entrypoint_and_allows_restoration(tmp_pa
         "HZ_CACHE_DIR": str(root / "cache"),
         "HZ_LOG_DIR": str(root / "logs"),
     }
-    python = os.path.realpath(sys.executable)
+    python = str(fixture_managed_python[1])
     uv = os.path.realpath(uv)
 
     def run(wheel, *, reinstall):
@@ -143,8 +146,11 @@ def _assert_dangling_guard(root, shim, monkeypatch, run, previous):
     installation = Installation(
         Progress(), prefix=root / "tools" / "fixture-owned", uv="fixture-guard", runner=lambda *_: pytest.fail("uv ran")
     )
-    with pytest.raises(HeinzelError, match="unresolved uv executable symlinks"):
+    with pytest.raises(HeinzelError) as failure:
         installation.attempt(installation.tool_install_command(str(later), []), "fixture")
+    assert "unresolved uv executable symlinks" in str(failure.value), interpreter_diagnostics(
+        root / "tools/fixture-owned"
+    )
     assert dangling.is_symlink()
     assert dangling.readlink() == missing
     assert shim.is_symlink()

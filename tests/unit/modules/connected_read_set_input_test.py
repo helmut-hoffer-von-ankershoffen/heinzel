@@ -77,7 +77,7 @@ def test_account_changed_during_read_never_records_receipt_or_returns_value(conn
     state["read_hook"] = lambda: state.update(account="other-account")
     with (
         crud.repository.main_writer(session) as writer,
-        pytest.raises(HeinzelError, match="snapshot could not be recorded"),
+        pytest.raises(HeinzelError, match="source or account could not be confirmed"),
     ):
         grants.read_set_entry(session, writer, call, approvals)
     assert state["reads"] == 1
