@@ -114,7 +114,7 @@ IMPORT = re.compile(r"^\s*(import\b|export .* from\b|.*\brequire\()")
 FENCE = re.compile(r"^\s*(```|~~~)")
 SPAN = re.compile(r"(`[^`\n]+`)|\]\((https?://[^)\s]+)\)|(?<![\w/])(https?://[^\s)>\]]+)")
 LINK = re.compile(r"\]\(([^)\s#]+)(#[^)\s]*)?\)")
-SITE = "https://helmut.hoffer-von-ankershoffen.me/heinzel/"  # mkdocs.yml site_url
+SITE = "https://heinzel.team/"  # mkdocs.yml site_url
 
 
 # --- output, state and the failure budget -----------------------------------------------------------------------------
