@@ -6,7 +6,7 @@ description: Install the standard Heinzel app, start the web workspace, and veri
 # Your first Heinzelmännchen.
 
 The standard app installs the core and the default Clock, Resource, Tailscale and theme plugins. It runs on
-**macOS and Linux**; Windows is not supported. You need no separate Python.
+**macOS and Linux**. Windows may work, but is not supported. You need no separate Python.
 
 ## Install the standard app
 
