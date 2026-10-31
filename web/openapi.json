@@ -5880,6 +5880,7 @@
         "type": "object"
       },
       "Homebrew": {
+        "additionalProperties": false,
         "description": "One named formula or cask; its dependencies are resolved by Homebrew, without a shell script.",
         "properties": {
           "cask": {
@@ -6921,6 +6922,7 @@
         "type": "object"
       },
       "ManualInstall": {
+        "additionalProperties": false,
         "description": "Owner-provided instructions and an optional HTTPS link; these are displayed, never executed.",
         "properties": {
           "instructions": {
@@ -9625,6 +9627,7 @@
         "type": "object"
       },
       "PrerequisiteCheck": {
+        "additionalProperties": false,
         "description": "An observed tool state, separate from Python package installation and account authentication.",
         "properties": {
           "automatic": {
@@ -9690,6 +9693,7 @@
         "type": "object"
       },
       "PrerequisiteDefinition": {
+        "additionalProperties": false,
         "description": "Portable metadata for people, setup and catalogs; it contains no executable condition callback.",
         "properties": {
           "condition": {
@@ -9855,6 +9859,7 @@
         "type": "object"
       },
       "PrerequisiteReport": {
+        "additionalProperties": false,
         "description": "One context's actual readiness; instructions and installer exit codes do not establish success.",
         "properties": {
           "checks": {
