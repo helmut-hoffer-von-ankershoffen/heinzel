@@ -194,3 +194,9 @@ default when `[system.notify] sound` is on (the default). `--status` also says w
 Settings (`authorized banners=none sound=disabled`), so "allowed, but no banner" is told apart from a refusal, and
 `--delivered` lists what macOS still holds. A click opens `http://127.0.0.1:<ui_port>/heinzel?chat=<id>&event=<id>`, the
 exact chat. Delivery is never claimed from the API's answer alone: `posted` means macOS accepted it.
+
+The daemon hands each due notice to the native notifier as a `NativeChannel`, a `NotificationChannel` of ADR 0112
+(`ChannelNotice` carries the helper's name, hat and reason). Its receipt says what was observed: `delivered` only when
+macOS lists the notification as held in Notification Center (never that a banner was seen), `queued` when the notifier
+accepted it and nothing more can be known, `refused` (macOS doesn't allow it, hasn't asked, or the app is missing: the
+notice stays due) and `unknown` (no answer in time: never retried, doctor says so).

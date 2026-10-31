@@ -15,6 +15,8 @@ from typing import Literal
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 
+from heinzel.kernel._notifications import HatColour
+
 
 class _Message(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -28,6 +30,10 @@ class ChannelNotice(_Message):
     title: str = Field(min_length=1, max_length=120, description="Short headline.")
     body: str = Field(max_length=500, description="Plain text; helper-written, may repeat untrusted source text.")
     route: str = Field(description="Path in the web app that opens this helper's chat, such as /heinzel?chat=hz-…")
+    hat: HatColour | None = Field(default=None, description="The helper's hat colour, so a channel can show its face.")
+    reason: str | None = Field(
+        default=None, max_length=120, description="Why the helper speaks now, a few words: `scheduled check-in`."
+    )
 
 
 class ChannelReceipt(_Message):

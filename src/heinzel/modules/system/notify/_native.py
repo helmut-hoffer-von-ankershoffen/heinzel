@@ -129,7 +129,11 @@ class Native:
         """
         if self.name == HEINZEL and self.app is not None:
             look = Look(
-                subtitle=sanitise(f"{helper.name} \u00b7 {helper.reason}", TITLE_LIMIT) if helper else None,
+                subtitle=sanitise(
+                    f"{helper.name} \u00b7 {helper.reason}" if helper.reason else helper.name, TITLE_LIMIT
+                )
+                if helper
+                else None,
                 hat=(helper.hat or "red") if helper else None,  # red: the default hat, so every helper has a face
                 sound=sound,
                 ident=ident,

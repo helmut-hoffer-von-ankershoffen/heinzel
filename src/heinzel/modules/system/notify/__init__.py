@@ -11,6 +11,7 @@ from typing import Annotated
 from pydantic import Field
 
 from heinzel import Check, Module, Notifications
+from heinzel.modules.system.notify._channel import NativeChannel
 from heinzel.modules.system.notify._models import (
     Channel,
     Delivered,
@@ -33,6 +34,13 @@ def _notifications(service: NotifyService) -> Notifications:
 
 
 module.service(Notifications, _notifications)
+
+
+def _native_channel(service: NotifyService) -> NativeChannel:
+    return service.channel
+
+
+module.service(NativeChannel, _native_channel)  # found by `Kernel.implementations(NotificationChannel)` (ADR 0112)
 
 # Notices name your contracts and what failed on your machine: like `drafts`, they aren't for the unauthenticated REST
 # head, which any web page can reach; the web head's token closes that hole (ADR 0039).
@@ -119,6 +127,7 @@ __all__ = [
     "Channel",
     "Delivered",
     "Installed",
+    "NativeChannel",
     "NoticeList",
     "NotifyService",
     "NotifySettings",

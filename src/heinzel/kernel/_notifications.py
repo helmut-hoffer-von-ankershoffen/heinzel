@@ -119,10 +119,18 @@ class Notifications:
         raise NotImplementedError
 
     def emit_once_now(  # noqa: PLR0913 - the notice fields match emit
-        self, kind: NoticeKind, title: str, body: str, *, route: str, command: str, key: str
+        self,
+        kind: NoticeKind,
+        title: str,
+        body: str,
+        *,
+        route: str,
+        command: str,
+        key: str,
+        helper: NoticeHelper | None = None,
     ) -> bool:
         """`emit_once` for a notice its owner timed themselves, in a reviewed schedule: working hours don't delay it."""
-        return self.emit_once(kind, title, body, route=route, command=command, key=key)
+        return self.emit_once(kind, title, body, route=route, command=command, key=key, helper=helper)
 
     def forget_once(self, key: str) -> bool:
         """Forget a completed outbox key after its authoritative owner journal commits completion."""
