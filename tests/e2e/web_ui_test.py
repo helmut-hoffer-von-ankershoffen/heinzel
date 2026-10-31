@@ -452,3 +452,48 @@ def test_docked_media_stays_below_every_overlay_in_mounted_chromium(environment,
         {"width": 768, "bounded": True},
         {"width": 390, "bounded": True},
     ]
+
+
+@pytest.mark.timeout(600)
+def test_sound_picker_stays_open_and_plays_the_pick_in_mounted_chromium(environment, tmp_path):
+    """Open the picker, pick a soundscape: it plays at once and the picker stays; the old flow closed it silent."""
+    env, _recorded = environment
+    web_build.ensure_built()
+    run = [sys.executable, str(REPO / "scripts" / "web_build.py")]
+    subprocess.run(
+        [*run, "exec", "playwright-core", "install", "chromium"],
+        cwd=REPO,
+        check=True,
+        timeout=600,
+        capture_output=True,
+    )
+    shots = Path(os.environ.get("HZ_SCREENSHOTS", tmp_path / "screenshots"))
+    ui = subprocess.Popen(
+        [sys.executable, "-m", "heinzel", "ui", "--port", "0"], cwd=REPO, env=env, stderr=subprocess.PIPE, text=True
+    )
+    try:
+        assert ui.stderr is not None
+        line = ""
+        for line in ui.stderr:
+            if "runs at" in line:
+                break
+        url = line.strip().rsplit(" ", 1)[-1]
+        assert url.startswith("http://127.0.0.1:")
+        verify_stream_fixture(url)
+        driven = subprocess.run(
+            [*run, "exec", "node", "e2e/sound-picker.mjs", url, str(shots)],
+            cwd=REPO,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=180,
+        )
+        assert driven.returncode == 0, driven.stderr
+        result = json.loads(driven.stdout.strip().splitlines()[-1])
+    finally:
+        ui.terminate()
+        ui.wait(30)
+        if ui.stderr is not None:
+            ui.stderr.close()
+
+    assert result == {"stayedOpen": True, "played": True, "switched": True, "closes": ["Escape", "outside"]}

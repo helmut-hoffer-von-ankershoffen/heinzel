@@ -316,7 +316,7 @@ const en = {
   "theme.toggle": "Switch between light and dark",
   "sound.title": "Sound",
   "sound.help":
-    "A soundscape plays once you press Play. It mutes in meetings and, where supported, gets softer while you type.",
+    "Pick a soundscape and it plays. It mutes in meetings and, where supported, gets softer while you type.",
   "sound.choose": "Choose a soundscape",
   "sound.play": "Play {title}",
   "sound.pause": "Pause {title}",
