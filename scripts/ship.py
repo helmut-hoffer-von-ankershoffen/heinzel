@@ -759,13 +759,12 @@ def stage_pr(args: argparse.Namespace) -> None:
         stop("pr", f"Your branch conflicts with main: {synced}", state)
     path = write_body(args.body or args.title)
     command = ["make", "--no-print-directory", "pr", f"TITLE={args.title}", f"BODY_FILE={path}"]
-    code, out = run(gate(command), cwd=root(), timeout=2400, env={"NO_PREFLIGHT": "1", "DRAFT": "1"})
+    env = {"NO_PREFLIGHT": "1", "DRAFT": "1"}
+    code, out = run(gate(command), cwd=root(), timeout=4 * 3600, env=env)  # the hz-gate queue may be long
     url = next((m[0] for m in re.finditer(r"https://github\.com/\S+/pull/\d+", out)), None)
     if code != 0 or not url:
-        behind = (
-            "If detail says behind main: git fetch origin main && git merge origin/main, then pr again. Else escalate"
-        )
-        fail("pr", "make pr failed.", behind, out.splitlines()[-12:])
+        hint = "Read detail. A hook or test you did not cause, or a refused push: escalate. Else fix what it names"
+        fail("pr", "make pr failed.", hint, out.splitlines()[-12:])
     number = int(url.rsplit("/", 1)[1])
     label_and_unarm(number, url, state)
     state.update(pr=number, url=url)
