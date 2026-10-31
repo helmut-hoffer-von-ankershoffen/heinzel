@@ -119,6 +119,8 @@ CORE_ONLY = {  # path: why plugins don't get it
     "scripts/template_pyproject_head.toml.tmpl": "input of sync_template.py",
     "scripts/review_tier.py": "picks the source review tier of a core change from its paths; plugins have none",
     "scripts/review.sh": "dispatches the core's protected source review (`make review`); plugins have none",
+    "scripts/source_review.py.lock": "locks that script for the review workflow",
+    "scripts/review_tier.py.lock": "locks the tier decision for the review command",
     "scripts/source_review.py": "guard and runner of the core's protected source review workflow; plugins have none",
     ".github/workflows/source-review.yml": "runs only on the core's protected review ref, with its own secret",
     "scripts/web.py": "the web head's typed client and dev server (web/, ADR 0039); plugins bring no UI",

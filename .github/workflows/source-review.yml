@@ -82,7 +82,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-        run: uv run --script scripts/source_review.py
+        run: uv run --no-build --frozen --script scripts/source_review.py
 
   identity:
     needs: review

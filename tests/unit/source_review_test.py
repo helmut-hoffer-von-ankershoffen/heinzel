@@ -3,6 +3,7 @@ import json
 import os
 import subprocess
 import sys
+import types
 from pathlib import Path
 
 import pytest
@@ -535,3 +536,12 @@ def test_a_change_without_the_pair_asks_github_nothing(repo, monkeypatch):
     root, base, head = repo
     monkeypatch.setattr(source_review, "gh_json", lambda *_a, **_k: pytest.fail("no read is needed"))
     assert source_review.build_payload(repo_config(root, base, head))[1]["generated_pair_omitted"] is False
+
+
+def test_the_summary_never_repeats_a_secret(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "key-value")
+    monkeypatch.setenv("GH_TOKEN", "token-value")
+    summary = tmp_path / "summary.md"
+    source_review.summarize(types.SimpleNamespace(summary=summary), ["said key-value and token-value"])
+    assert "value" not in capsys.readouterr().out
+    assert "value" not in summary.read_text()

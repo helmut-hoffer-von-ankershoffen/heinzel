@@ -94,7 +94,7 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
     },
     "source-review.yml": {
         ': "source-review dispatch authority"': "refuses any other ref, actor or commit, before checkout",
-        "uv run --script scripts/source_review.py": "the guard and the tool-free review, from the protected commit",
+        "uv run --no-build --frozen --script scripts/source_review.py": "the guard and the tool-free review",
         ': "source-review final identity"': "rechecks the pull request and the protected ref on a fresh runner",
     },
     "release-tag.yml": {'tag="v$(uv version --short)"': "tags a merged release commit"},

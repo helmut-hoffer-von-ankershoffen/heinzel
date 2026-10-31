@@ -43,7 +43,7 @@ IFS=$'\t' read -r ref_sha ref_protected <<<"$protected"
 list="$(mktemp)"; trap 'rm -f "$list"' EXIT
 gh api --paginate "repos/$repo/pulls/$pr/files" --jq '.[] | [.filename, (.previous_filename // empty)] | @json' >"$list"
 [ "$(wc -l <"$list" | tr -d ' ')" = "$changed" ] || die "read $(wc -l <"$list" | tr -d ' ') of $changed changed files; the list is incomplete"
-tier="$(cd "$here" && uv run --quiet --script scripts/review_tier.py --why --json <"$list")"
+tier="$(cd "$here" && uv run --quiet --no-build --frozen --script scripts/review_tier.py --why --json <"$list")"
 echo "PR $pr: tier $tier (head ${head:0:12}, base ${base:0:12})"
 if [ "$tier" = none ]; then
   echo "Only documentation, tests and Markdown changed: no model run, nothing spent."

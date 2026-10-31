@@ -342,8 +342,14 @@ def live_snapshot(config: Config) -> dict[str, Any]:
 
 
 def summarize(config: Config, lines: list[str]) -> None:
-    """Print lines and append them to the run summary."""
+    """Print lines and append them to the run summary, without any secret the run holds.
+
+    The lines quote the model's words, and the model's process held the API key.
+    """
     text = "\n".join(lines) + "\n"
+    for name in ("ANTHROPIC_API_KEY", "GH_TOKEN"):
+        if secret := os.environ.get(name):
+            text = text.replace(secret, "<redacted>")
     print(text, end="")
     if config.summary:
         with config.summary.open("a", encoding="utf-8") as stream:
