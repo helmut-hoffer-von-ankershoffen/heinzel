@@ -3,7 +3,10 @@ status: proposed
 date: 2026-10-24
 decision-makers: maintainer (direction), architect and security reviewer (shape)
 amends: 0014, 0050
+amends-0014: plugin skills reach Claude Code through hz system skill export
+amends-0050: skills are SkillLets; a turn gets an index and loads bodies on demand
 related: 0019, 0037, 0040, 0044, 0045, 0047, 0049, 0057
+implemented-by: 140
 ---
 
 # 0061: Plugins ship skills every AI path can use: `module.skill(...)`, read-only tools, an explicit export
