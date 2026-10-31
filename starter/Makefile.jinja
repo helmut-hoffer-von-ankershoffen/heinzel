@@ -6,7 +6,7 @@ export PLUGIN_CORE := $(value CORE)
 export PLUGIN_TAG := $(value TAG)
 export PLUGIN_REGISTRY := $(value REGISTRY)
 MAKEOVERRIDES =
-PLUGIN := uv run --quiet --no-project --no-build --python 3.14 python scripts/plugin_tooling.py --toolkit "$$HZ_PLUGIN_TOOLING" hz-plugin
+PLUGIN := uv run --quiet --no-project --frozen --no-build --python 3.14 python scripts/plugin_tooling.py --toolkit "$$HZ_PLUGIN_TOOLING" hz-plugin
 
 .PHONY: help setup fix check-fast check test lock preview build acceptance audit release preflight publish
 help:

@@ -32,7 +32,7 @@ WORKFLOWS = sorted((REPO / ".github" / "workflows").glob("*.yml"))
 NOT_MAKE = {  # workflow: {start of the step's command: why}
     "*": {"uv sync": "installs what the job needs"},
     "ci.yml": {
-        "uv run --no-project --no-build --python 3.14 python scripts/check_confidentiality.py --require": (
+        "uv run --no-project --frozen --no-build --python 3.14 python scripts/check_confidentiality.py --require": (
             "the secret must be configured in this repo"
         ),
         "unzip -l ": "asserts what the built wheel contains",
@@ -50,11 +50,13 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
     },
     "publish.yml": {
         'test "v$(uv version --short)" = "$TAG"': "refuses a tag that doesn't match the project version",
-        "uv run --no-project --no-build --python 3.14 python scripts/check_confidentiality.py": (
+        "uv run --no-project --frozen --no-build --python 3.14 python scripts/check_confidentiality.py": (
             "scans the tagged tree with the term list from the secret"
         ),
         'name="$(uv version': "exports the release's CycloneDX bill of materials",
-        "uv run --no-project --no-build --python 3.14 python scripts/release_notes.py": "writes the release notes",
+        "uv run --no-project --frozen --no-build --python 3.14 python scripts/release_notes.py": (
+            "writes the release notes"
+        ),
         'cp "$BUNDLE"': "attaches the provenance attestation and creates the GitHub release",
         "tar -czf notifier.tar.gz": "packs the app the macOS job built, with its executable bit, for the build job",
         "tar -xzf notifier.tar.gz": "unpacks Heinzel Notifier into the package before the wheel is built",
@@ -63,13 +65,13 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
     "pypi.yml": {
         '[[ "$TAG" =~': "binds publishing to the exact tag and main ancestry before build tooling",
         "gh api ": "verifies the published GitHub release and exports its exact source commit",
-        "uv run --no-project --no-build --python 3.14 python scripts/check_confidentiality.py --require": (
+        "uv run --no-project --frozen --no-build --python 3.14 python scripts/check_confidentiality.py --require": (
             "requires the configured release term list"
         ),
         "tar -czf notifier.tar.gz": "preserves the notifier executable bits and signature across runners",
         "tar -xzf notifier.tar.gz": "restores the notifier from the same validated tag",
         "uv build --package heinzel": "builds only the registered core project, never unpublished workspace plugins",
-        "uv run --no-project --no-build --python 3.14 python scripts/pypi_release.py artifacts": (
+        "uv run --no-project --frozen --no-build --python 3.14 python scripts/pypi_release.py artifacts": (
             "checks core metadata and complete packaged payloads"
         ),
         "python3 - <<'PY'": "rechecks hashes without checking out or running project code in the OIDC job",
@@ -79,7 +81,7 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
         'test "$PUBLISH" != true || test "$REF" = refs/heads/main': (
             "runs the owning Make commands' same toolkit checks, build, audit and acceptance without core work"
         ),
-        'uv run --no-project --no-build --python 3.14 python scripts/plugin_tooling.py --toolkit "$TOOLING" '
+        'uv run --no-project --frozen --no-build --python 3.14 python scripts/plugin_tooling.py --toolkit "$TOOLING" '
         "python -m heinzel_plugin_tools.publishing": (
             "publishes the original verified plugin bytes through its protected generic host workflow"
         ),
@@ -125,7 +127,7 @@ def not_through_make(workflow: Path) -> list[str]:
 
 def test_finds_commands_not_run_through_make(tmp_path):
     workflow = tmp_path / "publish.yml"
-    unreviewed = "uv run --no-project --no-build --python 3.14 python scripts/unreviewed.py"
+    unreviewed = "uv run --no-project --frozen --no-build --python 3.14 python scripts/unreviewed.py"
     steps = [
         {"run": "make build"},
         {"run": "uv sync"},

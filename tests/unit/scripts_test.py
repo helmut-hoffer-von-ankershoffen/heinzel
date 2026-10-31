@@ -148,7 +148,7 @@ def test_callers_run_scripts_the_way_they_declare(caller):
 
 @pytest.mark.parametrize(
     "launcher",
-    ["uv run --no-project --no-build --python 3.14 python", "uv run --frozen --no-sync --no-build python"],
+    ["uv run --no-project --frozen --no-build --python 3.14 python", "uv run --frozen --no-sync --no-build python"],
 )
 def test_hardened_python_launchers_only_bypass_script_resolution_for_stdlib(launcher):
     standalone = {"plain.py", "dependency.py"}

@@ -129,7 +129,7 @@ jobs:
         if: github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork
         env:
           CONFIDENTIAL_TERMS: ${{ secrets.CONFIDENTIAL_TERMS }}
-        run: uv run --no-project --no-build --python 3.14 python scripts/check_confidentiality.py --require --text ""
+        run: uv run --no-project --frozen --no-build --python 3.14 python scripts/check_confidentiality.py --require --text ""
       - run: make lint
         env:
           CONFIDENTIAL_TERMS: ${{ secrets.CONFIDENTIAL_TERMS }}
@@ -520,7 +520,7 @@ jobs:
           if compgen -G 'candidate/heinzel-*.whl' >/dev/null; then
             echo "wheel=$(realpath candidate/heinzel-*.whl)" >> "$GITHUB_OUTPUT"
           else
-            uv run --no-project --no-build --python 3.14 python .plugin-tooling/scripts/core_artifact.py
+            uv run --no-project --frozen --no-build --python 3.14 python .plugin-tooling/scripts/core_artifact.py
           fi
       - name: Check, audit, build and accept only this plugin
         env:
