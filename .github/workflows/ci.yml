@@ -45,7 +45,17 @@ jobs:
           BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: |
           changed="$(git diff --name-only "$BASE...HEAD" || true)"
-          if [ "$EVENT" = schedule ] || [ "$EVENT" = workflow_dispatch ] \
+          # A push to main of prose alone: the pull request already ran everything on the same content. docs/ also
+          # holds the install scripts, and release commits change CHANGELOG.md, so neither counts.
+          prose_push=false
+          if [ "$EVENT" = push ] && [ -n "$changed" ] && ! grep -qvE '^(docs/.*|.*\.md)$' <<< "$changed" \
+            && ! grep -qE '(^|/)CHANGELOG\.md$|^docs/.*\.sh$' <<< "$changed"; then
+            prose_push=true
+          fi
+          if [ "$prose_push" = true ]; then
+            echo "core=false" >> "$GITHUB_OUTPUT"
+            core_work=false
+          elif [ "$EVENT" = schedule ] || [ "$EVENT" = workflow_dispatch ] \
             || [ -z "$changed" ] || grep -qvE '^plugins/' <<< "$changed"; then
             echo "core=true" >> "$GITHUB_OUTPUT"
             core_work=true
