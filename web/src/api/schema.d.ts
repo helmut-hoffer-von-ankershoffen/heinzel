@@ -2253,6 +2253,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/system/notify/clean": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * End leftover Heinzel Notifier processes (it should end by itself within a minute of each notification).
+         * @description End leftover Heinzel Notifier processes (it should end by itself within a minute of each notification).
+         */
+        post: operations["system_notify_clean"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/system/notify/list": {
         parameters: {
             query?: never;
@@ -4863,6 +4883,27 @@ export interface components {
              * @description Files and directories left alone.
              */
             skipped: number;
+        };
+        /**
+         * Cleaned
+         * @description What `clean` did to leftover Heinzel Notifier processes.
+         */
+        Cleaned: {
+            /**
+             * Ended
+             * @description How many leftover Heinzel Notifier processes were ended.
+             */
+            ended: number;
+            /**
+             * Running
+             * @description How many are still running; a notification being posted is seconds old.
+             */
+            running: number;
+            /**
+             * Unregistered
+             * @description How many other copies of the app macOS no longer lists in System Settings > Notifications.
+             */
+            unregistered: number;
         };
         /**
          * ColourDoc
@@ -13818,6 +13859,7 @@ export type SchemaCheck = components['schemas']['Check'];
 export type SchemaCheckReport = components['schemas']['CheckReport'];
 export type SchemaClaudeScan = components['schemas']['ClaudeScan'];
 export type SchemaClaudeSummary = components['schemas']['ClaudeSummary'];
+export type SchemaCleaned = components['schemas']['Cleaned'];
 export type SchemaColourDoc = components['schemas']['ColourDoc'];
 export type SchemaCompiledContract = components['schemas']['CompiledContract'];
 export type SchemaConfigFileInfo = components['schemas']['ConfigFileInfo'];
@@ -17363,6 +17405,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_notify_clean: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Cleaned"];
                 };
             };
         };

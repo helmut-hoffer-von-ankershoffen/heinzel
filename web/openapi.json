@@ -2667,6 +2667,33 @@
         "title": "ClaudeSummary",
         "type": "object"
       },
+      "Cleaned": {
+        "description": "What `clean` did to leftover Heinzel Notifier processes.",
+        "properties": {
+          "ended": {
+            "description": "How many leftover Heinzel Notifier processes were ended.",
+            "title": "Ended",
+            "type": "integer"
+          },
+          "running": {
+            "description": "How many are still running; a notification being posted is seconds old.",
+            "title": "Running",
+            "type": "integer"
+          },
+          "unregistered": {
+            "description": "How many other copies of the app macOS no longer lists in System Settings > Notifications.",
+            "title": "Unregistered",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "ended",
+          "running",
+          "unregistered"
+        ],
+        "title": "Cleaned",
+        "type": "object"
+      },
       "ColourDoc": {
         "description": "One colour token of a theme, in both modes.",
         "properties": {
@@ -22916,6 +22943,28 @@
           }
         },
         "summary": "Mark notices as shown, so the daemon doesn't pop them up again.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/notify/clean": {
+      "post": {
+        "description": "End leftover Heinzel Notifier processes (it should end by itself within a minute of each notification).",
+        "operationId": "system_notify_clean",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Cleaned"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "End leftover Heinzel Notifier processes (it should end by itself within a minute of each notification).",
         "tags": [
           "system"
         ]

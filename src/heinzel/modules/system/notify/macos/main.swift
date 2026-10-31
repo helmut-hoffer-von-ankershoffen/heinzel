@@ -10,6 +10,8 @@
 import AppKit
 import UserNotifications
 
+let messageLifetime = 80.0
+let shortLifetime = 20.0
 let titleLimit = 80
 let bodyLimit = 240
 
@@ -31,14 +33,27 @@ func appURL(_ text: String?) -> URL? {
     return url
 }
 
+/// Leave at once. `exit` runs atexit handlers and can wait on a lock the main thread holds (macOS asking for
+/// permission, a click being handled); an instance stuck there lives on and is never counted as done. `_exit` cannot.
+func leave(_ code: Int32) -> Never {
+    fflush(stdout)
+    _exit(code)
+}
+
 func finish(_ result: String, _ code: Int32) -> Never {
     print(result)
-    fflush(stdout)
-    exit(code)
+    leave(code)
+}
+
+/// The longest an instance lives: macOS's question (60 s) and a margin to post, or a click's few seconds. A timer on
+/// its own thread, not the main run loop, which is what may be stuck. Nothing, however it hangs, outlives it.
+func exitAfter(_ seconds: Double) {
+    DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + seconds) { leave(3) }
 }
 
 final class Notifier: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
+        exitAfter(CommandLine.arguments.contains("--message") ? messageLifetime : shortLifetime)
         let center = UNUserNotificationCenter.current()
         center.delegate = self
         if CommandLine.arguments.contains("--status") {
@@ -55,7 +70,7 @@ final class Notifier: NSObject, NSApplicationDelegate, UNUserNotificationCenterD
         }
         guard let message = argument("--message") else {
             // Launched by a click: the response arrives through the delegate; quit if it never does.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 10) { NSApp.terminate(nil) }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 10) { leave(0) }
             return
         }
         // macOS asks the person once; nobody may answer for a long time (at night, from the daemon).
@@ -83,7 +98,7 @@ final class Notifier: NSObject, NSApplicationDelegate, UNUserNotificationCenterD
             NSWorkspace.shared.open(url)
         }
         done()
-        NSApp.terminate(nil)
+        leave(0)
     }
 
     func userNotificationCenter(

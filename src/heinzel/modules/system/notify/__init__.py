@@ -13,6 +13,7 @@ from pydantic import Field
 from heinzel import Check, Module, Notifications
 from heinzel.modules.system.notify._models import (
     Channel,
+    Cleaned,
     Delivered,
     Installed,
     NoticeList,
@@ -102,6 +103,13 @@ def install(service: NotifyService) -> Installed:
     return service.install()
 
 
+# Ends processes on this machine: for the person at the terminal, never an agent.
+@module.operation(read_only=False, heads={"cli", "web"})
+def clean(service: NotifyService) -> Cleaned:
+    """End leftover Heinzel Notifier processes (it should end by itself within a minute of each notification)."""
+    return service.clean()
+
+
 # Opens a window on the machine hz runs on, for the person who clicked: the CLI and the web app, not agents.
 @module.operation(name="settings", read_only=False, heads={"cli", "web"})
 def open_settings(service: NotifyService) -> Opened:
@@ -117,6 +125,7 @@ def health(service: NotifyService) -> list[Check]:
 
 __all__ = [
     "Channel",
+    "Cleaned",
     "Delivered",
     "Installed",
     "NoticeList",
