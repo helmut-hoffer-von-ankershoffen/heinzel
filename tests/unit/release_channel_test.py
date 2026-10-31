@@ -161,3 +161,11 @@ def test_edge_never_checks_out_the_triggering_ref():
         for step in job["steps"]:
             if "actions/checkout" in step.get("uses", ""):
                 assert "ref" not in step["with"]
+
+
+def test_a_dispatch_publishes_only_from_main():
+    workflow = _edge()
+    assert workflow[True]["workflow_dispatch"] is None  # no input can select what is published
+    assert (
+        "github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'" in workflow["jobs"]["plan"]["if"]
+    )

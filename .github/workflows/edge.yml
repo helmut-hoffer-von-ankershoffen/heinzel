@@ -11,6 +11,7 @@ on:
     workflows: [CI]
     types: [completed]
     branches: [main]
+  workflow_dispatch: # publishes one edge release of main's tip, to prove the channel before it is activated
   pull_request:
     paths:
       - .github/workflows/edge.yml
@@ -26,7 +27,8 @@ jobs:
   plan:
     name: Decide whether this commit is an edge release
     if: >-
-      github.event_name == 'pull_request' || (
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') || (
       github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.event == 'push' &&
       github.event.workflow_run.head_repository.full_name == github.repository &&
@@ -69,8 +71,8 @@ jobs:
           git diff --name-only "$base" HEAD > changed-paths.txt
           subject="$(git log -1 --format=%s)"
           releasable="$(uv run --script scripts/release_channel.py releasable changed-paths.txt)"
-          if [ "$EVENT" = pull_request ]; then
-            releasable=true # a dry run of the pipeline itself, whatever the pull request changes
+          if [ "$EVENT" = pull_request ] || [ "$EVENT" = workflow_dispatch ]; then
+            releasable=true # a dry run or a deliberate proof of the pipeline, whatever changed
           elif [[ "$subject" == "chore(release): v"* ]]; then
             releasable=false # stable's own commit carries the version and changelog, and no new behaviour
           fi
@@ -87,7 +89,7 @@ jobs:
             exit 0
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
-          if [ "$EVENT" = workflow_run ] && { [ "$CHANNELS" = edge ] || [ "$CHANNELS" = stable ]; }; then
+          if [ "$EVENT" = workflow_dispatch ] || { [ "$EVENT" = workflow_run ] && { [ "$CHANNELS" = edge ] || [ "$CHANNELS" = stable ]; }; }; then
             echo "publish=true" >> "$GITHUB_OUTPUT"
           fi
           echo "Edge $version from $commit; activation '${CHANNELS:-off}'."
