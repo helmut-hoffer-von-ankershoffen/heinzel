@@ -8939,6 +8939,11 @@ export interface components {
              */
             name: string | null;
             /**
+             * Retired Role
+             * @description A role you chose once that is no longer offered; choose a new one. None otherwise.
+             */
+            retired_role: string | null;
+            /**
              * Role
              * @description Your role, e.g. engineering-manager.
              */
