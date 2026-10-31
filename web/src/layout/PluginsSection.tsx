@@ -17,7 +17,7 @@ import {
   Trash2,
   Users,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import type { SchemaPluginCandidate, SchemaPluginChange, SchemaPluginInfo } from "@/api/client";
 import {
   type PluginChangeRequest,
@@ -276,21 +276,50 @@ function CandidateDetails({ candidate }: { candidate: SchemaPluginCandidate }) {
   return (
     <div className="mt-2 text-xs">
       {candidate.summary && <p className="mb-1 text-muted-foreground">{candidate.summary}</p>}
-      <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5">
-        {rows.map(([label, value]) => (
-          <div key={label} className="contents">
-            <dt className="text-muted-foreground">{label}</dt>
-            <dd className="break-all">{value}</dd>
-          </div>
-        ))}
-      </dl>
-      {candidate.url && <RepositoryLine url={candidate.url} />}
-      <code className="mt-1 block font-mono break-all text-muted-foreground">{candidate.requirement}</code>
+      <p className="break-words">
+        {[
+          candidate.distribution ?? t("plugins.unknown"),
+          candidate.version ?? t("plugins.unknown"),
+          candidate.publisher ?? t("plugins.unknown"),
+          sourceLabel({ source_url: candidate.url }, candidate.private),
+        ].join(" · ")}
+      </p>
+      <details className="mt-1">
+        <summary className="cursor-pointer text-muted-foreground">{t("plugins.sourceDetails")}</summary>
+        <dl className="mt-1 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5">
+          {rows.map(([label, value]) => (
+            <div key={label} className="contents">
+              <dt className="text-muted-foreground">{label}</dt>
+              <dd className="break-all">{value}</dd>
+            </div>
+          ))}
+        </dl>
+        {candidate.url && <RepositoryLine url={candidate.url} />}
+        <code className="mt-1 block font-mono break-all text-muted-foreground">{candidate.requirement}</code>
+      </details>
       {candidate.warnings.map((warning) => (
         <p key={warning} className="mt-1 text-warn">
           {warning}
         </p>
       ))}
+    </div>
+  );
+}
+
+/** Where a plugin's confirmation opens: under its own row, focused and scrolled into view when it appears. */
+type Slot = { key: string; node: ReactNode };
+
+function InlineSlot({ children }: { children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const element = ref.current;
+    if (!element) return;
+    element.focus({ preventScroll: true });
+    element.scrollIntoView?.({ block: "nearest" });
+  }, []);
+  return (
+    <div ref={ref} tabIndex={-1} data-plugin-confirm className="pb-3 outline-none">
+      {children}
     </div>
   );
 }
@@ -301,6 +330,7 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
   const [adding, setAdding] = useState(false);
   const [spec, setSpec] = useState("");
   const [pending, setPending] = useState<Pending | null>(null);
+  const [anchor, setAnchor] = useState<string | null>(null);
   const [pluginProgress, setPluginProgress] = useState<string | null>(null);
   const [restored] = useState(restoredPluginFlow);
   const [receiptId, setReceiptId] = useState<string | null>(restored.receiptId);
@@ -345,7 +375,7 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
       "rounded-lg px-3 py-1 text-sm transition-colors hover:bg-accent/70",
       active ? "bg-accent text-foreground" : "text-muted-foreground",
     );
-  const show = (value: string) => {
+  const show = (value: string, rowKey: string | null = null) => {
     if (change.isPending) return;
     if (restartObservation || restartBlocked) return;
     if (receiptId && operation.data?.status !== "previewed") return;
@@ -361,6 +391,7 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
     }
     setReceiptId(null);
     setRestartObservation(null);
+    setAnchor(rowKey);
     preview.mutate(value, {
       onSuccess: (answer) => {
         if (answer.candidate && answer.operation_id) {
@@ -370,8 +401,9 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
       },
     });
   };
-  const ask = (value: Pending) => {
+  const ask = (value: Pending, rowKey: string | null = null) => {
     if (change.isPending) return;
+    setAnchor(rowKey);
     change.reset();
     completed.current = null;
     attempted.current = false;
@@ -409,7 +441,6 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
     if (!answer.done) throw new Error(t("plugins.notCompleted"));
     completed.current = answer;
     pluginRestartRequired.current = answer.restart_required;
-    if (pending.action === "add") setTab("yours");
     return answer.restart_required;
   };
   const confirmText = () => {
@@ -432,6 +463,104 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
       enable: t("plugins.enable"),
       disable: t("plugins.disable"),
     })[action];
+  const card = pending ? (
+    <InlineSlot>
+      <fieldset className="mb-4 rounded-xl border border-warn/50 bg-warn/5 p-3 text-sm">
+        <legend className="font-medium">{confirmText()}</legend>
+        {pending.action === "add" && <CandidateDetails candidate={pending.candidate} />}
+        <p className="mt-1 text-xs text-muted-foreground">{t("plugins.restartNote")}</p>
+        {change.error && (
+          <p role="alert" className="mt-1 text-xs text-bad">
+            {change.error.message}
+          </p>
+        )}
+        {change.isPending && pluginProgress && (
+          <p role="status" className="mt-1 text-xs text-muted-foreground">
+            {pluginProgress}
+          </p>
+        )}
+        <div className="mt-2">
+          {pending.action === "add" && operation.data?.status === "running" ? (
+            <p role="status" className="mt-2 text-xs text-muted-foreground">
+              {t("plugins.operationRunning")}
+            </p>
+          ) : pending.action === "add" && operation.data?.status === "unknown" ? (
+            <div className="mt-2 space-y-2">
+              <p role="alert" className="text-xs text-bad">
+                {t("plugins.operationUnknown")}
+              </p>
+              <p className="text-xs text-muted-foreground">{t("plugins.operationUnknownHelp")}</p>
+              <Button size="sm" variant="outline" onClick={resolveReceipt}>
+                {resolveArmed ? t("plugins.operationResolveConfirm") : t("plugins.operationResolve")}
+              </Button>
+            </div>
+          ) : (
+            <>
+              <RestartAndApply
+                target={t("plugins.title")}
+                changes={[
+                  `${actionText(pending.action)}: ${pending.action === "add" ? (pending.candidate.distribution ?? pending.candidate.spec) : pending.name}`,
+                ]}
+                preserve={confirm}
+                initialObservation={pending.action === "add" ? (restartObservation ?? undefined) : undefined}
+                onApplied={() => {
+                  if (pending.action === "add") {
+                    try {
+                      window.sessionStorage.removeItem(RECEIPT_STORAGE_KEY);
+                      window.sessionStorage.removeItem(RESTART_STORAGE_KEY);
+                      setReceiptId(null);
+                      setRestartObservation(null);
+                      setRestartBlocked(false);
+                    } catch {
+                      // Keeping the receipt is safe; the next visit will read the completed result.
+                    }
+                  }
+                  setPending(null);
+                  if (pending.action === "add") setTab("yours");
+                  setAdding(false);
+                  setSpec("");
+                  if (pluginRestartRequired.current) (reload ?? (() => window.location.reload()))();
+                }}
+                options={{
+                  ...(pending.action === "add" || pending.action === "remove" ? { preserveTimeout: 20 * 60_000 } : {}),
+                  ...(restartInterval ? { interval: restartInterval } : {}),
+                  ...(pending.action === "add"
+                    ? {
+                        onObservation: (observation: RestartObservation) => {
+                          window.sessionStorage.setItem(
+                            RESTART_STORAGE_KEY,
+                            JSON.stringify({ operation_id: pending.operationId, observation }),
+                          );
+                          setRestartObservation(observation);
+                        },
+                      }
+                    : {}),
+                }}
+              />
+              {(pending.action !== "add" || operation.data?.status === "previewed") && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    if (pending.action === "add") {
+                      setReceiptId(null);
+                      setRestartObservation(null);
+                    }
+                    setPending(null);
+                  }}
+                  disabled={change.isPending}
+                >
+                  {t("plugins.cancel")}
+                </Button>
+              )}
+            </>
+          )}
+        </div>
+      </fieldset>
+    </InlineSlot>
+  ) : null;
+  const slot: Slot | null = pending && anchor ? { key: anchor, node: card } : null;
+  const frozen = pending !== null || preview.isPending;
   return (
     <>
       {restartBlocked && (
@@ -451,6 +580,7 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
             role="tab"
             aria-selected={tab === "yours"}
             className={tabClass(tab === "yours")}
+            disabled={frozen}
             onClick={() => setTab("yours")}
           >
             {t("plugins.yours")}
@@ -460,6 +590,7 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
             role="tab"
             aria-selected={tab === "discover"}
             className={tabClass(tab === "discover")}
+            disabled={frozen}
             onClick={() => setTab("discover")}
           >
             {t("plugins.discover")}
@@ -469,6 +600,7 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
           label={t("plugins.search")}
           value={query}
           onChange={(event) => setQuery(event.target.value)}
+          disabled={frozen}
           placeholder={t("search.open")}
           className="ml-auto py-1"
           inputClassName="w-36 text-sm"
@@ -520,108 +652,24 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
           </Button>
         </div>
       )}
-      {pending && (
-        <fieldset className="mb-4 rounded-xl border border-warn/50 bg-warn/5 p-3 text-sm">
-          <legend className="font-medium">{confirmText()}</legend>
-          {pending.action === "add" && <CandidateDetails candidate={pending.candidate} />}
-          <p className="mt-1 text-xs text-muted-foreground">{t("plugins.restartNote")}</p>
-          {change.error && (
-            <p role="alert" className="mt-1 text-xs text-bad">
-              {change.error.message}
-            </p>
-          )}
-          {change.isPending && pluginProgress && (
-            <p role="status" className="mt-1 text-xs text-muted-foreground">
-              {pluginProgress}
-            </p>
-          )}
-          <div className="mt-2">
-            {pending.action === "add" && operation.data?.status === "running" ? (
-              <p role="status" className="mt-2 text-xs text-muted-foreground">
-                {t("plugins.operationRunning")}
-              </p>
-            ) : pending.action === "add" && operation.data?.status === "unknown" ? (
-              <div className="mt-2 space-y-2">
-                <p role="alert" className="text-xs text-bad">
-                  {t("plugins.operationUnknown")}
-                </p>
-                <p className="text-xs text-muted-foreground">{t("plugins.operationUnknownHelp")}</p>
-                <Button size="sm" variant="outline" onClick={resolveReceipt}>
-                  {resolveArmed ? t("plugins.operationResolveConfirm") : t("plugins.operationResolve")}
-                </Button>
-              </div>
-            ) : (
-              <>
-                <RestartAndApply
-                  target={t("plugins.title")}
-                  changes={[
-                    `${actionText(pending.action)}: ${pending.action === "add" ? (pending.candidate.distribution ?? pending.candidate.spec) : pending.name}`,
-                  ]}
-                  preserve={confirm}
-                  initialObservation={pending.action === "add" ? (restartObservation ?? undefined) : undefined}
-                  onApplied={() => {
-                    if (pending.action === "add") {
-                      try {
-                        window.sessionStorage.removeItem(RECEIPT_STORAGE_KEY);
-                        window.sessionStorage.removeItem(RESTART_STORAGE_KEY);
-                        setReceiptId(null);
-                        setRestartObservation(null);
-                        setRestartBlocked(false);
-                      } catch {
-                        // Keeping the receipt is safe; the next visit will read the completed result.
-                      }
-                    }
-                    setPending(null);
-                    setAdding(false);
-                    setSpec("");
-                    if (pluginRestartRequired.current) (reload ?? (() => window.location.reload()))();
-                  }}
-                  options={{
-                    ...(pending.action === "add" || pending.action === "remove"
-                      ? { preserveTimeout: 20 * 60_000 }
-                      : {}),
-                    ...(restartInterval ? { interval: restartInterval } : {}),
-                    ...(pending.action === "add"
-                      ? {
-                          onObservation: (observation: RestartObservation) => {
-                            window.sessionStorage.setItem(
-                              RESTART_STORAGE_KEY,
-                              JSON.stringify({ operation_id: pending.operationId, observation }),
-                            );
-                            setRestartObservation(observation);
-                          },
-                        }
-                      : {}),
-                  }}
-                />
-                {(pending.action !== "add" || operation.data?.status === "previewed") && (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => {
-                      if (pending.action === "add") {
-                        setReceiptId(null);
-                        setRestartObservation(null);
-                      }
-                      setPending(null);
-                    }}
-                    disabled={change.isPending}
-                  >
-                    {t("plugins.cancel")}
-                  </Button>
-                )}
-              </>
-            )}
-          </div>
-        </fieldset>
-      )}
-      {tab === "yours" ? <Yours query={query} onChange={ask} /> : null}
-      {tab === "discover" ? <Discover query={query} onInstall={show} /> : null}
+      {pending && !slot && card}
+      {tab === "yours" ? <Yours query={query} onChange={ask} slot={slot} /> : null}
+      {tab === "discover" ? (
+        <Discover query={query} onInstall={show} slot={slot} checking={preview.isPending ? anchor : null} />
+      ) : null}
     </>
   );
 }
 
-function Yours({ query, onChange }: { query: string; onChange: (pending: Pending) => void }) {
+function Yours({
+  query,
+  onChange,
+  slot,
+}: {
+  query: string;
+  onChange: (pending: Pending, rowKey: string) => void;
+  slot: Slot | null;
+}) {
   const plugins = usePlugins();
   const catalog = usePluginSearch("");
   const [kind, setKind] = useState<PluginKind | null>(null);
@@ -643,74 +691,78 @@ function Yours({ query, onChange }: { query: string; onChange: (pending: Pending
               </p>
             ) : (
               <ul className="@container">
+                {slot && !shown.some((plugin) => `yours:${plugin.distribution}` === slot.key) && <li>{slot.node}</li>}
                 {shown.map((plugin) => {
+                  const rowKey = `yours:${plugin.distribution}`;
                   const entry = known.get(plugin.distribution);
                   const url = plugin.source_url ?? plugin.homepage ?? null;
                   const source = sourceLabel(plugin, plugin.private_repository, url);
                   const enabled = plugin.enabled ?? true;
                   return (
-                    <li
-                      key={plugin.distribution}
-                      className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-3 border-b border-border/70 py-3 last:border-b-0 @md:flex"
-                    >
-                      <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted">
-                        <Package aria-hidden className="size-(--icon) text-icon" />
-                      </span>
-                      <span className="min-w-0 flex-1">
-                        <span className="flex min-w-0 flex-wrap items-center gap-2 text-ui [overflow-wrap:anywhere]">
-                          {displayName(
-                            plugin.name ?? plugin.distribution.replace(/^heinzel-/, ""),
-                            plugin.summary || entry?.description,
-                          )}
-                          <KindBadges plugin={plugin} />
+                    <li key={plugin.distribution} className="border-b border-border/70 last:border-b-0">
+                      <div className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-3 py-3 @md:flex">
+                        <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted">
+                          <Package aria-hidden className="size-(--icon) text-icon" />
                         </span>
-                        <span className="block truncate text-sm text-muted-foreground">
-                          {plugin.error ??
-                            (plugin.summary ||
-                              entry?.description ||
-                              t("plugins.modules", { modules: plugin.modules.join(", ") || "—" }))}
-                        </span>
-                        <RepositoryLine url={url} />
-                      </span>
-                      {/* Narrow settings panels keep provenance and controls below the name instead of clipping. */}
-                      <div className="col-span-2 flex min-w-0 flex-wrap items-center justify-end gap-2 @md:contents">
-                        <span className="mr-auto flex min-w-0 flex-wrap items-center gap-2 @md:mr-0 @md:shrink-0">
-                          {!enabled && (
-                            <span className="rounded-md border border-warn/50 px-1.5 text-[11px] text-muted-foreground">
-                              {t("plugins.disabled")}
-                            </span>
-                          )}
-                          <span className="rounded-md border border-border px-1.5 text-[11px] text-muted-foreground">
-                            {source}
+                        <span className="min-w-0 flex-1">
+                          <span className="flex min-w-0 flex-wrap items-center gap-2 text-ui [overflow-wrap:anywhere]">
+                            {displayName(
+                              plugin.name ?? plugin.distribution.replace(/^heinzel-/, ""),
+                              plugin.summary || entry?.description,
+                            )}
+                            <KindBadges plugin={plugin} />
                           </span>
-                          <span className={VERSION}>v{plugin.version}</span>
+                          <span className="block truncate text-sm text-muted-foreground">
+                            {plugin.error ??
+                              (plugin.summary ||
+                                entry?.description ||
+                                t("plugins.modules", { modules: plugin.modules.join(", ") || "—" }))}
+                          </span>
+                          <RepositoryLine url={url} />
                         </span>
-                        {sourceLink(url, plugin.distribution)}
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() =>
-                            onChange({ action: enabled ? "disable" : "enable", name: plugin.distribution })
-                          }
-                          aria-label={t(enabled ? "plugins.disableName" : "plugins.enableName", {
-                            name: plugin.distribution,
-                          })}
-                          title={enabled ? t("plugins.disable") : t("plugins.enable")}
-                          className="text-icon"
-                        >
-                          {enabled ? <PowerOff aria-hidden /> : <Power aria-hidden />}
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => onChange({ action: "remove", name: plugin.distribution })}
-                          aria-label={t("plugins.removeName", { name: plugin.distribution })}
-                          title={t("plugins.remove")}
-                          className="text-icon"
-                        >
-                          <Trash2 aria-hidden />
-                        </Button>
+                        {/* Narrow settings panels keep provenance and controls below the name instead of clipping. */}
+                        <div className="col-span-2 flex min-w-0 flex-wrap items-center justify-end gap-2 @md:contents">
+                          <span className="mr-auto flex min-w-0 flex-wrap items-center gap-2 @md:mr-0 @md:shrink-0">
+                            {!enabled && (
+                              <span className="rounded-md border border-warn/50 px-1.5 text-[11px] text-muted-foreground">
+                                {t("plugins.disabled")}
+                              </span>
+                            )}
+                            <span className="rounded-md border border-border px-1.5 text-[11px] text-muted-foreground">
+                              {source}
+                            </span>
+                            <span className={VERSION}>v{plugin.version}</span>
+                          </span>
+                          {sourceLink(url, plugin.distribution)}
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() =>
+                              onChange({ action: enabled ? "disable" : "enable", name: plugin.distribution }, rowKey)
+                            }
+                            aria-expanded={slot?.key === rowKey}
+                            aria-label={t(enabled ? "plugins.disableName" : "plugins.enableName", {
+                              name: plugin.distribution,
+                            })}
+                            title={enabled ? t("plugins.disable") : t("plugins.enable")}
+                            className="text-icon"
+                          >
+                            {enabled ? <PowerOff aria-hidden /> : <Power aria-hidden />}
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => onChange({ action: "remove", name: plugin.distribution }, rowKey)}
+                            aria-expanded={slot?.key === rowKey}
+                            aria-label={t("plugins.removeName", { name: plugin.distribution })}
+                            title={t("plugins.remove")}
+                            className="text-icon"
+                          >
+                            <Trash2 aria-hidden />
+                          </Button>
+                        </div>
                       </div>
+                      {slot?.key === rowKey && slot.node}
                     </li>
                   );
                 })}
@@ -803,7 +855,17 @@ function KindFilter({ kind, onKind }: { kind: PluginKind | null; onKind: (kind: 
   );
 }
 
-function Discover({ query, onInstall }: { query: string; onInstall: (spec: string) => void }) {
+function Discover({
+  query,
+  onInstall,
+  slot,
+  checking,
+}: {
+  query: string;
+  onInstall: (spec: string, rowKey: string) => void;
+  slot: Slot | null;
+  checking: string | null;
+}) {
   const search = usePluginSearch(query);
   const installed = usePlugins();
   return (
@@ -821,32 +883,42 @@ function Discover({ query, onInstall }: { query: string; onInstall: (spec: strin
           </p>
         ) : (
           <ul>
+            {slot && !available.some((plugin) => `discover:${plugin.name}` === slot.key) && <li>{slot.node}</li>}
             {available.map((plugin) => (
-              <li key={plugin.name} className="flex items-center gap-3 border-b border-border/70 py-3 last:border-b-0">
-                <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted">
-                  {plugin.community ? (
-                    <Users aria-hidden className="size-(--icon) text-icon" />
-                  ) : (
-                    <ShieldCheck aria-hidden className="size-(--icon) text-icon" />
-                  )}
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="flex items-center gap-2 text-ui">
-                    {displayName(plugin.short_name, plugin.description)}
+              <li key={plugin.name} className="border-b border-border/70 last:border-b-0">
+                <div className="flex items-center gap-3 py-3">
+                  <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted">
+                    {plugin.community ? (
+                      <Users aria-hidden className="size-(--icon) text-icon" />
+                    ) : (
+                      <ShieldCheck aria-hidden className="size-(--icon) text-icon" />
+                    )}
                   </span>
-                  <span className="block truncate text-sm text-muted-foreground">{plugin.description}</span>
-                  <RepositoryLine url={repositoryOfEntry(plugin)} />
-                </span>
-                <span className="flex shrink-0 items-center gap-2">
-                  <span className="rounded-md border border-border px-1.5 text-[11px] text-muted-foreground">
-                    {sourceLabel({ source_url: repositoryOfEntry(plugin) }, plugin.private_repository)}
+                  <span className="min-w-0 flex-1">
+                    <span className="flex items-center gap-2 text-ui">
+                      {displayName(plugin.short_name, plugin.description)}
+                    </span>
+                    <span className="block truncate text-sm text-muted-foreground">{plugin.description}</span>
+                    <RepositoryLine url={repositoryOfEntry(plugin)} />
                   </span>
-                  <span aria-hidden className={VERSION} />
-                </span>
-                {sourceLink(repositoryOfEntry(plugin), plugin.name)}
-                <Button size="sm" variant="outline" onClick={() => onInstall(plugin.install_spec)}>
-                  {t("plugins.install")}
-                </Button>
+                  <span className="flex shrink-0 items-center gap-2">
+                    <span className="rounded-md border border-border px-1.5 text-[11px] text-muted-foreground">
+                      {sourceLabel({ source_url: repositoryOfEntry(plugin) }, plugin.private_repository)}
+                    </span>
+                    <span aria-hidden className={VERSION} />
+                  </span>
+                  {sourceLink(repositoryOfEntry(plugin), plugin.name)}
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={checking === `discover:${plugin.name}`}
+                    aria-expanded={slot?.key === `discover:${plugin.name}`}
+                    onClick={() => onInstall(plugin.install_spec, `discover:${plugin.name}`)}
+                  >
+                    {checking === `discover:${plugin.name}` ? t("plugins.checking") : t("plugins.install")}
+                  </Button>
+                </div>
+                {slot?.key === `discover:${plugin.name}` && slot.node}
               </li>
             ))}
           </ul>
