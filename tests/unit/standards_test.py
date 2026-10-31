@@ -92,6 +92,7 @@ CORE_ONLY = {  # path: why plugins don't get it
     "scripts/adr_index.py": "renders the core ADR index and pages; plugins have no ADRs",
     "scripts/site_pages.py": "renders the product's public ecosystem catalog, not plugin-owned docs (ADR 0098)",
     "scripts/site_check.py": "accepts the core product website with its locked web axe tooling (ADR 0098)",
+    "scripts/check_docs.py": "checks the core's documents and UI copy; plugins keep their own docs tooling",
     ".github/workflows/pypi.yml": "publishes only the registered core project with its trusted publisher (ADR 0079)",
     "scripts/pypi_release.py": "verifies core-only PyPI identity and browser/notifier payloads (ADR 0079)",
     ".github/workflows/fuzz.yml": "fuzzes Heinzelmännchen's contract parser (fuzz/); plugins have no fuzz targets",
