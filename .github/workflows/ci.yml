@@ -80,7 +80,9 @@ jobs:
           else
             echo "contracts=false" >> "$GITHUB_OUTPUT"
           fi
-          if [ "$core_work" = true ] && [ -f desktop/package.json ] && { [ "$EVENT" != pull_request ] \
+          # A push to main needs Electron only for the paths a pull request needs it for; an unknown diff runs it.
+          if [ "$core_work" = true ] && [ -f desktop/package.json ] && { [ "$EVENT" = schedule ] \
+            || [ "$EVENT" = workflow_dispatch ] || [ -z "$changed" ] \
             || grep -qE '^(desktop/|Makefile$|scripts/sync_template\.py$|\.github/workflows/ci\.yml$)' <<< "$changed"; }; then
             echo "electron=true" >> "$GITHUB_OUTPUT"
           else
