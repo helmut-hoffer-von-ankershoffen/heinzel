@@ -25,7 +25,9 @@ describe("a command beside a button", () => {
     window.addEventListener(OPEN_TERMINAL, opened);
     render(<CopyCommand command="hz team join https://example.test/team.git" />);
     expect(sent).toEqual([]);
-    await userEvent.setup().click(screen.getByRole("button", { name: /Run hz team join .* in the terminal/ }));
+    await userEvent
+      .setup()
+      .click(screen.getByRole("button", { name: "Run in terminal: hz team join https://example.test/team.git" }));
     expect(screen.getByText("Run in terminal")).toBeInTheDocument();
     expect(sent).toHaveLength(1);
     window.removeEventListener(OPEN_TERMINAL, opened);

@@ -788,6 +788,7 @@ const en = {
   "status.editZones": "Edit time zones and working hours…",
   "run.label": "Run in the terminal",
   "run.terminal": "Run in terminal",
+  "run.terminalAria": "Run in terminal: {command}",
   "run.here": "Run it here, with the steps shown",
   "run.hereAria": "Run {command} here",
   "run.dialogTitle": "This is run in a terminal",

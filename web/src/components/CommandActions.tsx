@@ -24,7 +24,7 @@ export function RunCommandButton({ command }: Readonly<{ command: string }>) {
       size="sm"
       className="h-6 px-1.5"
       onClick={() => runCommand(command)}
-      aria-label={here ? t("run.hereAria", { command }) : t("run.aria", { command })}
+      aria-label={here ? t("run.hereAria", { command }) : t("run.terminalAria", { command })}
       title={here ? t("run.here") : t("run.label")}
     >
       <Play aria-hidden />
