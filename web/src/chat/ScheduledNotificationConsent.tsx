@@ -12,6 +12,7 @@ export const ITEM_SCOPE =
   "Only current-turn items count; deduplication is scoped to the approved source and contract." as const;
 
 export function notificationPolicy(maxPer24h: number, cooldown: number, mode: NotificationMode = "topic"): Policy {
+  // The server fills in the channels this form doesn't choose.
   return {
     max_per_24h: maxPer24h,
     topic_cooldown_seconds: cooldown,
@@ -19,7 +20,7 @@ export function notificationPolicy(maxPer24h: number, cooldown: number, mode: No
     delivery: "local-notification",
     disclosure: mode === "topic" ? NOTIFICATION_DISCLOSURE : ITEM_DISCLOSURE,
     ...(mode === "topic" ? {} : { item_evidence: { deduplicate_by: mode, disclosure: ITEM_SCOPE } }),
-  };
+  } as Policy;
 }
 
 export function validNotificationPolicy(value: unknown): value is Policy {

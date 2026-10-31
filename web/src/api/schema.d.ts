@@ -10535,6 +10535,12 @@ export interface components {
          */
         ScheduledNotificationPolicy: {
             /**
+             * Channels
+             * @description Other channels, by name, that also carry each notice; the owner reviews this list.
+             * @default []
+             */
+            channels: string[];
+            /**
              * Delivery
              * @description Only the owner's local in-app or native notification policy.
              * @default local-notification
@@ -11948,6 +11954,11 @@ export interface components {
          * @description Suggested local notice limits for scheduled turns; the owner reviews them, and they grant nothing alone.
          */
         SuggestedNotices: {
+            /**
+             * Channels
+             * @description Other channels, by name, when the person asked to be reached there too.
+             */
+            channels?: string[];
             /**
              * Deduplicate By
              * @description With an approved source: one notice per observed item, or per item revision so a moved item can notify again. Null when the notice is not about a source item.

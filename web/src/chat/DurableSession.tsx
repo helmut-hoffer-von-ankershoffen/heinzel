@@ -10,6 +10,7 @@ import { AgentProposal } from "@/chat/AgentProposal";
 import { AgentProposalSummary } from "@/chat/AgentProposalSummary";
 import { AgentSchedules } from "@/chat/AgentSchedules";
 import { AgentSetupCard, DocumentDrafts } from "@/chat/AgentSetupCard";
+import { CapturedWriteActivity } from "@/chat/CapturedWriteActivity";
 import { CapturedWriteReview } from "@/chat/CapturedWriteReview";
 import { ConnectedReadReview } from "@/chat/ConnectedReadReview";
 import { ConnectedReadSetReview } from "@/chat/ConnectedReadSetReview";
@@ -786,6 +787,9 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
               sessionId={sessionId}
               compact
             />
+          )}
+          {query.data?.session_id === sessionId && (
+            <CapturedWriteActivity key={`write-activity:${sessionId}:${writeActivityVersion}`} sessionId={sessionId} />
           )}
           {query.data?.session_id === sessionId && <AgentProposalSummary sessionId={sessionId} />}
           {query.data?.session_id === sessionId && (

@@ -37,7 +37,9 @@ from heinzel.kernel._channels import (
     ChannelApprovalRequest,
     ChannelNotice,
     ChannelReceipt,
+    ChannelReplySource,
     NotificationChannel,
+    VerifiedChannelReply,
 )
 from heinzel.kernel._chat import ActionGate, ProposedCall
 from heinzel.kernel._chat_services import (
@@ -377,6 +379,7 @@ __all__ = [
     "ChannelApprovalRequest",
     "ChannelNotice",
     "ChannelReceipt",
+    "ChannelReplySource",
     "Chat",
     "ChatDraftTemplate",
     "Check",
@@ -596,6 +599,7 @@ __all__ = [
     "UsageEntry",
     "UsageLog",
     "Verb",
+    "VerifiedChannelReply",
     "ViewLet",
     "ViewSlot",
     "Weather",

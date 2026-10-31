@@ -12079,6 +12079,16 @@
         "additionalProperties": false,
         "description": "Explicit bounded notification scope; it grants no external messaging or data access.",
         "properties": {
+          "channels": {
+            "default": [],
+            "description": "Other channels, by name, that also carry each notice; the owner reviews this list.",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 8,
+            "title": "Channels",
+            "type": "array"
+          },
           "delivery": {
             "const": "local-notification",
             "default": "local-notification",
@@ -14458,6 +14468,15 @@
         "additionalProperties": false,
         "description": "Suggested local notice limits for scheduled turns; the owner reviews them, and they grant nothing alone.",
         "properties": {
+          "channels": {
+            "description": "Other channels, by name, when the person asked to be reached there too.",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 8,
+            "title": "Channels",
+            "type": "array"
+          },
           "deduplicate_by": {
             "anyOf": [
               {

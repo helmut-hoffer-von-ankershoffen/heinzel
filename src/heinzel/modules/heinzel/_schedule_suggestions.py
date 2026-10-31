@@ -109,6 +109,11 @@ class SuggestedNotices(BaseModel):
         description="With an approved source: one notice per observed item, or per item revision so a moved item "
         "can notify again. Null when the notice is not about a source item.",
     )
+    channels: list[str] = Field(
+        default_factory=list[str],
+        max_length=8,
+        description="Other channels, by name, when the person asked to be reached there too.",
+    )
 
 
 class ScheduleSuggestionRequest(BaseModel):

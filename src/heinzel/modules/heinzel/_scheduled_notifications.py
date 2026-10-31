@@ -3,13 +3,22 @@
 import contextlib
 import hashlib
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from datetime import UTC, datetime, timedelta
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, model_validator
 
-from heinzel import CurrentUser, HeinzelError, NoticeKind, Notifications, SessionEvent, SessionWriter
+from heinzel import (
+    ChannelNotice,
+    CurrentUser,
+    HeinzelError,
+    NoticeKind,
+    NotificationChannel,
+    Notifications,
+    SessionEvent,
+    SessionWriter,
+)
 from heinzel.kernel._approval import arguments_hash
 from heinzel.modules.heinzel._connected_grants import ConnectedReadGrants
 from heinzel.modules.heinzel._input_receipts import existing_input_receipt_key
@@ -50,6 +59,13 @@ class ScheduledNotificationPolicy(BaseModel):
         default=None,
         exclude_if=lambda value: value is None,
         description="Separately reviewed observed-item policy; absent retains model-chosen topics.",
+    )
+    channels: tuple[str, ...] = Field(
+        default=(),
+        max_length=8,
+        strict=False,
+        exclude_if=lambda value: not value,
+        description="Other channels, by name, that also carry each notice; the owner reviews this list.",
     )
     per_turn: Literal[1] = Field(default=1, description="At most one local queue attempt per scheduled turn.")
     delivery: Literal["local-notification"] = Field(
@@ -127,6 +143,7 @@ class ScheduledNotifications:
         policy: ScheduledNotificationPolicy,
         verify: Callable[[], None],
         connected: ConnectedReadGrants | None = None,
+        channels: Sequence[NotificationChannel] = (),
     ) -> None:
         self.crud, self.current, self.notifications = crud, current, notifications
         self.session, self.turn, self.contract_sha256, self.policy, self.verify = (
@@ -139,6 +156,33 @@ class ScheduledNotifications:
         self.schedule_request, self.schedule_sha256 = schedule_request, schedule_sha256
         self.owner = crud.repository.principal_id
         self.connected = connected
+        self.channels = channels
+
+    def _fan_out(self, request: ScheduledNotificationRequest, request_id: str) -> None:
+        """Offer the notice to each reviewed channel; a receipt says what it saw, and no failure undoes the notice."""
+        helper = self.crud.snapshot(self.session).name
+        notice = ChannelNotice(
+            key=request_id[:128],
+            helper=helper,
+            title=request.title,
+            body=request.body,
+            route=f"/heinzel?chat={self.session}",
+        )
+        for channel in self.channels:
+            if channel.name not in self.policy.channels:
+                continue
+            try:
+                receipt = channel.deliver(notice)
+                status, reference = receipt.status, receipt.reference
+            except Exception:  # noqa: BLE001 - provider diagnostics stay out of the journal
+                status, reference = "unknown", None
+            with contextlib.suppress(Exception), self.crud.repository.control_writer(self.session) as control:
+                control.append(
+                    "scheduled-notification.delivered",
+                    turn=self.turn,
+                    key=f"{request_id}-{channel.name}",
+                    data={"channel": channel.name, "status": status, "reference": reference},
+                )
 
     def schema(self) -> dict[str, JsonValue]:
         """Expose only the user's bounded local notification scope, not provider credentials or authority."""
@@ -239,6 +283,7 @@ class ScheduledNotifications:
                 return "uncertain", "The notification outcome is uncertain and will not be retried automatically."
             with contextlib.suppress(Exception):
                 self.notifications.forget_completed({key})
+            self._fan_out(request, request_id)
             return "recorded", "The local notification was queued; it may be held and is not confirmed shown."
         return "uncertain", "The notification outcome is uncertain and will not be retried automatically."
 

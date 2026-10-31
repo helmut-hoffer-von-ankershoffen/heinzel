@@ -326,11 +326,14 @@ export function AgentSetupCard({ snapshot }: { snapshot: Snapshot }) {
               timeout_seconds: Math.min(terms.timeout_seconds, MAX_TIMEOUT),
               connected_request_id: sourceReview?.request_id ?? undefined,
               notification_policy: schedule.notices
-                ? notificationPolicy(
-                    schedule.notices.max_per_24h,
-                    60,
-                    noticeMode(schedule.notices.deduplicate_by, sourceReview),
-                  )
+                ? {
+                    ...notificationPolicy(
+                      schedule.notices.max_per_24h,
+                      60,
+                      noticeMode(schedule.notices.deduplicate_by, sourceReview),
+                    ),
+                    channels: schedule.notices.channels ?? [],
+                  }
                 : undefined,
               quiet_hours: schedule.quiet_hours ?? undefined,
               wake_on_new_items: schedule.wake_on_new_items ?? undefined,
@@ -409,7 +412,9 @@ export function AgentSetupCard({ snapshot }: { snapshot: Snapshot }) {
             <dt className="text-muted-foreground">May do</dt>
             <dd>
               {schedule?.notices
-                ? `Notify you on this device, at most ${schedule.notices.max_per_24h} a day. Nothing else.`
+                ? `Notify you on this device${
+                    schedule.notices.channels?.length ? ` and on ${schedule.notices.channels.join(", ")}` : ""
+                  }, at most ${schedule.notices.max_per_24h} a day. Nothing else.`
                 : "Write in this chat. Nothing else."}
             </dd>
             <dt className="text-muted-foreground">Cost</dt>

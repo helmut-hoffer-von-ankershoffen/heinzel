@@ -24,6 +24,8 @@ from heinzel import (
     AgentResult,
     AgentRunner,
     Budget,
+    ChannelReplySource,
+    CurrentUser,
     HeinzelError,
     Kernel,
     McpServer,
@@ -421,6 +423,32 @@ class ChatService:
                 )
             )
             return self._store.load(personal_chat.id)
+
+    def apply_channel_replies(self) -> int:
+        """Act on verified replies from the owner's other channels, as if they pressed the button in the app.
+
+        The channel's sign-in identified the owner and the digest named the exact draft; that is why this one job may
+        confirm under the owner's local identity. Each reply is settled first, so a crash can't act on it twice.
+        """
+        if not self._kernel.provides(ChannelReplySource) or not self._kernel.provides(CurrentUser):
+            return 0
+        source = self._kernel.resolve(ChannelReplySource)  # type: ignore[type-abstract]
+        acted = 0
+        with self._kernel.resolve(CurrentUser).local("cli"):
+            for reply in source.verified():
+                source.settled(reply, "approved" if reply.decision == "approve" else "declined")
+                if reply.decision == "approve":
+                    chat = self.propose_captured_write(reply.session, reply.request_id)
+                    action = next(
+                        item
+                        for item in chat.actions
+                        if item.operation == "execute-captured-write"
+                        and item.arguments.get("request_id") == reply.request_id
+                        and item.status == "pending"
+                    )
+                    self.confirm(chat.id, action.id)
+                acted += 1
+        return acted
 
     def propose_captured_write(self, durable_session: str, request_id: str) -> ChatSession:
         """Stage the exact owner-private captured write for a human decision, without granting it.

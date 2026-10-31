@@ -4,12 +4,13 @@ from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, SecretStr
 
-from heinzel import CurrentUser, Module
+from heinzel import ChannelReplySource, CurrentUser, Module
 from heinzel.kernel import CapturedWriteDraft, CapturedWriteService, Kernel
 from heinzel.kernel._approval import ApprovalConfirmation
 from heinzel.modules.heinzel._captured_write_activity import CapturedWriteActivityPage, captured_write_activity
 from heinzel.modules.heinzel._captured_write_binding import SelectedWriteService
 from heinzel.modules.heinzel._captured_write_host import CapturedWriteHost, CapturedWriteStatus
+from heinzel.modules.heinzel._channel_approvals import ChannelApprovals
 from heinzel.modules.heinzel._session_crud import SessionCrud
 from heinzel.modules.heinzel._session_models import RequestId, SessionId
 
@@ -34,9 +35,15 @@ def _selected(kernel: Kernel) -> SelectedWriteService:
     return SelectedWriteService(kernel)
 
 
+def _replies(approvals: ChannelApprovals) -> ChannelReplySource:
+    return approvals
+
+
 def register_captured_write_operations(module: Module) -> None:
     """Register only exact owner-private proposal and trusted confirmation actions."""
     module.service(SelectedWriteService, _selected)
+    module.service(ChannelApprovals)
+    module.service(ChannelReplySource, _replies)  # type: ignore[type-abstract]
 
     @module.operation(private=True, read_only=False, heads={"web", "api-private"}, audience="everyday")
     def propose_captured_write(

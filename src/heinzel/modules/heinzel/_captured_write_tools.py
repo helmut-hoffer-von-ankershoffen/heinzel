@@ -4,6 +4,7 @@ Text the model read is data. A document's text asking for a write elsewhere name
 host refuses it here, whatever the model chooses to call.
 """
 
+import contextlib
 import hashlib
 import json
 from collections.abc import Callable
@@ -49,9 +50,10 @@ class DocumentDraftTools:
         session: str,
         turn: str,
         approved_reference: Callable[[], str | None],
+        on_draft: Callable[[CapturedWriteDraft], None] | None = None,
     ) -> None:
         self._crud, self._current, self._selected = crud, current, selected
-        self._session, self._turn, self._reference = session, turn, approved_reference
+        self._session, self._turn, self._reference, self._on_draft = session, turn, approved_reference, on_draft
 
     def dispatch(self, arguments: dict[str, JsonValue], call: int) -> str:
         """Record an inert draft against the document's current revision.
@@ -82,4 +84,7 @@ class DocumentDraftTools:
             content=SecretStr(f"{DRAFT_MARK}\n{request.content}"),
         )
         CapturedWriteHost(self._crud, self._current, self._selected).draft_in_turn(draft, self._turn)
+        if self._on_draft is not None:
+            with contextlib.suppress(Exception):  # another place to answer; the draft stands without it
+                self._on_draft(draft)
         return json.dumps({"request_id": draft.request_id, "status": "waiting for your owner"}, separators=(",", ":"))

@@ -14,12 +14,13 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, JsonValue, TypeAdapter
 
-from heinzel import Config, CurrentUser, HeinzelError, Kernel, Notifications
+from heinzel import Config, CurrentUser, HeinzelError, Kernel, NotificationChannel, Notifications
 from heinzel.kernel import PRIVATE_WRITE, CapabilitySettings, RunnerSnapshot, RunnerSnapshotProvider
 from heinzel.kernel import ProcessOutcome as Outcome
 from heinzel.kernel import run_bounded_process as run_bounded
 from heinzel.modules.heinzel._captured_write_binding import SelectedWriteService
 from heinzel.modules.heinzel._captured_write_tools import DocumentDraftTools
+from heinzel.modules.heinzel._channel_approvals import ChannelApprovals
 from heinzel.modules.heinzel._claude_subscription_model import (
     COMMAND_FLAGS,
     VERSION,
@@ -303,6 +304,7 @@ class UserChatService:
                 policy=notification_policy,
                 verify=verify,
                 connected=self.connected_grants() if notification_policy.item_evidence is not None else None,
+                channels=self._notification_channels(),
             )
         connected = self._connected() if (user_proposals or connected_allowed) and self._connected else None
         connected_set = (
@@ -328,6 +330,11 @@ class UserChatService:
         )
         return UserChatAnswer(session_id=session, request_id=request, message=message)
 
+    def _notification_channels(self) -> list[NotificationChannel]:
+        if self._playbook_kernel is None:
+            return []
+        return self._playbook_kernel.implementations(NotificationChannel)  # type: ignore[type-abstract]
+
     def _document_drafts(
         self, session: str, turn: str, connected: ConnectedReadGrants | None
     ) -> DocumentDraftTools | None:
@@ -350,7 +357,13 @@ class UserChatService:
         except HeinzelError:
             return None
         return DocumentDraftTools(
-            self._crud, self.current, selected, session=session, turn=turn, approved_reference=approved_reference
+            self._crud,
+            self.current,
+            selected,
+            session=session,
+            turn=turn,
+            approved_reference=approved_reference,
+            on_draft=self._playbook_kernel.resolve(ChannelApprovals).post,
         )
 
     def turn_state(self, session: str, request: str) -> UserTurnState:
