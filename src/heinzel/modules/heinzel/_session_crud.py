@@ -58,6 +58,7 @@ from heinzel.modules.heinzel._session_models import (
 )
 from heinzel.modules.heinzel._session_protocol import SessionRepository
 
+_VISIBLE_KINDS = {"message.accepted", "message.replied", "agent.schedule-failed"}
 _ORIGIN = TypeAdapter(MessageOrigin)
 _REQUEST = TypeAdapter(RequestId)
 _SESSION_ID = TypeAdapter(SessionId)
@@ -263,6 +264,41 @@ class _Cursor(BaseModel):
     v: int = Field(ge=1, le=1)
     session_id: str
     after: int = Field(ge=0)
+
+
+class _SearchJumpCursor(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
+    v: Literal[2] = 2
+    session_id: str
+    owner: str
+    storage: str
+    target: int = Field(gt=0)
+    high: int = Field(gt=0)
+    high_hash: str
+
+
+def history_cursor_before(service: "SessionCrud", session_id: str, seq: int, high: int, high_hash: str | None) -> str:
+    """Bind a search navigation hint to the owner, storage, session and observed journal prefix.
+
+    Raises:
+        HeinzelError: If the search anchor or target is invalid.
+    """
+    if type(seq) is not int or seq < 1 or seq > high or not high_hash:
+        msg = "The search message position is invalid"
+        raise HeinzelError(msg)
+    payload = (
+        _SearchJumpCursor(
+            session_id=session_id,
+            owner=service.repository.principal_id,
+            storage=hashlib.sha256(service.repository.search_storage_id.encode()).hexdigest(),
+            target=seq,
+            high=high,
+            high_hash=high_hash,
+        )
+        .model_dump_json()
+        .encode()
+    )
+    return base64.urlsafe_b64encode(payload).decode().rstrip("=")
 
 
 class _CheckInIntent(BaseModel):
@@ -1607,21 +1643,37 @@ class SessionCrud(ApprovalIssuer):
                 events,
             )
 
-    @staticmethod
-    def _after(session_id: str, cursor: str | None) -> int:
+    def _after(
+        self, session_id: str, cursor: str | None, events: list[SessionEvent], hashes: list[str]
+    ) -> tuple[int, bool]:
         if cursor is None:
-            return 0
+            return 0, False
         msg = "This message cursor belongs to a different conversation or is invalid; reopen the session"
         if len(cursor) > MAX_CURSOR:
             raise HeinzelError(msg)
         try:
             raw = base64.b64decode(cursor + "=" * (-len(cursor) % 4), altchars=b"-_", validate=True)
-            parsed = _Cursor.model_validate_json(raw)
+            parsed = TypeAdapter(_Cursor | _SearchJumpCursor).validate_json(raw)
         except (ValueError, ValidationError):
             raise HeinzelError(msg) from None
+        if isinstance(parsed, _SearchJumpCursor):
+            storage = hashlib.sha256(self.repository.search_storage_id.encode()).hexdigest()
+            if (
+                parsed.session_id != session_id
+                or parsed.owner != self.repository.principal_id
+                or parsed.storage != storage
+                or parsed.target > parsed.high
+                or parsed.high > len(events)
+                or len(hashes) != len(events)
+                or hashes[parsed.high - 1] != parsed.high_hash
+                or events[parsed.target - 1].seq != parsed.target
+                or events[parsed.target - 1].kind not in {"message.accepted", "message.replied"}
+            ):
+                raise HeinzelError(msg)
+            return parsed.target - 1, True
         if parsed.session_id != session_id:
             raise HeinzelError(msg)
-        return parsed.after
+        return parsed.after, False
 
     def read_message(self, session_id: str, event: SessionEvent) -> SessionMessage:
         """Project an authoritative message event, including its verified private body and origin.
@@ -1641,6 +1693,16 @@ class SessionCrud(ApprovalIssuer):
             except ValidationError:
                 msg = "This message checkpoint has invalid acceptance provenance"
                 raise HeinzelError(msg) from None
+        if event.kind == "agent.schedule-failed":
+            return SessionMessage(
+                id=message_id,
+                seq=event.seq,
+                role="system",
+                origin="daemon",
+                at=event.ts,
+                status="failed",
+                text=f"A scheduled turn did not run: {event.data.get('reason')}",
+            )
         try:
             value = self.read_body(session_id, event)
         except FileNotFoundError:
@@ -1683,8 +1745,9 @@ class SessionCrud(ApprovalIssuer):
         if type(limit) is not int or not 1 <= limit <= MAX_PAGE:
             msg = "Choose between 1 and 200 messages per page"
             raise HeinzelError(msg)
-        after = self._after(session_id, cursor)
-        events = self.repository.control_read(session_id).events
+        journal = self.repository.control_read(session_id)
+        events = journal.events
+        after, search_jump = self._after(session_id, cursor, events, journal.hashes)
         if after > (events[-1].seq if events else 0):
             msg = "This message cursor is ahead of the committed conversation; reopen the session"
             raise HeinzelError(msg)
@@ -1692,15 +1755,17 @@ class SessionCrud(ApprovalIssuer):
         contracts = self._contracts(session_id, events)
         schedule = self._schedule_view(session_id, events)
         approved = next((item.version for item in reversed(contracts) if item.status == "approved"), None)
-        messages = [
-            event for event in events if event.seq > after and event.kind in {"message.accepted", "message.replied"}
-        ]
+        messages = [event for event in events if event.seq > after and event.kind in _VISIBLE_KINDS]
         page = messages[:limit]
         more = len(messages) > limit
         next_cursor = None
         if more:
             encoded = _Cursor(v=1, session_id=session_id, after=page[-1].seq).model_dump_json().encode()
             next_cursor = base64.urlsafe_b64encode(encoded).decode().rstrip("=")
+        projected = [self.read_message(session_id, event) for event in page]
+        if search_jump and (not projected or projected[0].status == "expired"):
+            msg = "This search result is no longer retained; run the search again"
+            raise HeinzelError(msg)
         costs = self.costs()
         return SessionSnapshot(
             session_id=session_id,
@@ -1713,7 +1778,7 @@ class SessionCrud(ApprovalIssuer):
             contracts=contracts,
             schedule=schedule,
             last_seq=events[-1].seq if events else 0,
-            messages=[self.read_message(session_id, event) for event in page],
+            messages=projected,
             costs=costs.model_copy(
                 update={
                     "unknown_turns": costs.unknown_turns
@@ -1737,12 +1802,8 @@ class SessionCrud(ApprovalIssuer):
             msg = f"Choose between 1 and {MAX_RECENT_HISTORY} recent messages"
             raise HeinzelError(msg)
         events = self.repository.control_read(session_id).events
-        messages = [
-            self.read_message(session_id, event)
-            for event in events
-            if event.kind in {"message.accepted", "message.replied"}
-        ]
-        return messages[-limit:]
+        messages = [event for event in events if event.kind in _VISIBLE_KINDS]
+        return [self.read_message(session_id, event) for event in messages[-limit:]]
 
     def listing(self) -> SessionList:
         """Include new uncontracted chats; catalog/control journals never become phantom agents.

@@ -76,6 +76,7 @@ Plugins add their own tables.
 
 | Key | Environment variable | Default | Description |
 | --- | --- | --- | --- |
+| `approval_channels` | `HZ_HEINZEL__APPROVAL_CHANNELS` | platform-specific | Other channels, by name, where you also want to read and answer your helpers' drafts. Only your own answer there counts. |
 | `user_dir` | `HZ_HEINZEL__USER_DIR` | platform-specific | The folder of your own contracts; those with a schedule run on your daemon. Never read from a project's hz.toml. |
 | `team_repository` | `HZ_HEINZEL__TEAM_REPOSITORY` | `None` | Deprecated: `hz team join` or `hz team adopt` sets your team's checkout in `[team]` instead. A checkout of your team's state repository, used when `[team]` names none; its contracts are in `workflows/`. Never read from a project's hz.toml. |
 | `schedule_team` | `HZ_HEINZEL__SCHEDULE_TEAM` | platform-specific | Team contracts your daemon runs on their schedule, by name; add @sha256: and a hash to run only the version you approved. The others run only when started by hand, so a team's contracts don't run on everyone's daemon. Never read from a project's hz.toml. |

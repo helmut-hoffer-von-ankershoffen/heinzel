@@ -6,6 +6,8 @@ const token = url.hash.match(/(?:^#|&)token=([^&]+)/)?.[1] ?? "";
 url.pathname = "/doctor";
 const browser = await (process.argv[3] === "webkit" ? webkit : chromium).launch({ headless: true });
 const context = await browser.newContext({ serviceWorkers: "block", viewport: { width: 390, height: 844 } });
+await context.addInitScript(() => localStorage.setItem("hz.chat.more", "1"));
+await context.addInitScript(() => localStorage.setItem("hz.chat.autosend", "0"));
 const page = await context.newPage();
 const trace = [];
 const watched = new Set([
@@ -55,7 +57,10 @@ try {
   await terms.getByRole("button", { name: "Review these terms" }).click();
   await terms.getByRole("button", { name: "Confirm" }).click();
   await terms.getByText("These exact terms were accepted.").waitFor();
-  const schedules = page.locator("details").filter({ has: page.getByText("Recurring agent turns", { exact: true }) });
+  const schedules = page
+    .locator("details")
+    .filter({ has: page.getByText("Recurring agent turns", { exact: true }) })
+    .last();
   await schedules.locator("summary").first().click();
   await schedules.getByRole("button", { name: "Propose recurring turns" }).click();
   await schedules.getByRole("button", { name: "Review this schedule" }).click();

@@ -1,27 +1,45 @@
 // A durable personal session has a different id and service from the legacy runner chat.
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { chatKey, sendChat } from "@/api/chat";
 import { ApiError, api, problem, type SchemaChatSession, type SchemaSessionSnapshot } from "@/api/client";
 import { useDaemonStatus } from "@/api/daemon";
+import { token } from "@/api/token";
 import { AgentProposal } from "@/chat/AgentProposal";
 import { AgentProposalSummary } from "@/chat/AgentProposalSummary";
 import { AgentSchedules } from "@/chat/AgentSchedules";
+import { AgentSetupCard, DocumentDrafts } from "@/chat/AgentSetupCard";
+import { CapturedWriteActivity } from "@/chat/CapturedWriteActivity";
+import { CapturedWriteReview } from "@/chat/CapturedWriteReview";
 import { ConnectedReadReview } from "@/chat/ConnectedReadReview";
 import { ConnectedReadSetReview } from "@/chat/ConnectedReadSetReview";
 import { ContractHistory } from "@/chat/ContractHistory";
 import { ActionCard } from "@/chat/Conversation";
+import { ConversationSearch } from "@/chat/ConversationSearch";
 import { useDurableDraft } from "@/chat/durableDraft";
 import { ModelPolicyReviewCard, supportedPolicy } from "@/chat/ModelPolicyReviewCard";
 import { NotificationPanel } from "@/chat/NotificationPanel";
+import { OwnerConversationSearch } from "@/chat/OwnerConversationSearch";
 import { SkillDraftPanel } from "@/chat/SkillDraftPanel";
 import { ToolEvents } from "@/chat/ToolEvents";
 import { UncertainTurnRecovery } from "@/chat/UncertainTurnRecovery";
+import { HeinzelAvatar } from "@/components/HeinzelAvatar";
 import { Button } from "@/components/ui/button";
 import { ProfileEditor } from "@/heinzel/PersonalHeinzels";
 import { t } from "@/i18n";
 import { PersonalArtifactLinks } from "@/pages/PersonalArtifacts";
+
+const MORE_KEY = "hz.chat.more";
+
+/** A browser may keep the first sentence in the composer until its person presses send. */
+function preferExplicitSend(): boolean {
+  try {
+    return localStorage.getItem("hz.chat.autosend") === "0";
+  } catch {
+    return false;
+  }
+}
 
 async function result<T>(call: Promise<{ data?: T; error?: unknown; response: Response }>): Promise<T> {
   const { data, error, response } = await call;
@@ -84,8 +102,33 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
   const [scheduleErrorMessage, setScheduleErrorMessage] = useState<string | null>(null);
   const [intentNotice, setIntentNotice] = useState(false);
   const [activityLimit, setActivityLimit] = useState(20);
-  const [historyCursors, setHistoryCursors] = useState<Array<string | null>>([null]);
+  const [writeActivityVersion, setWriteActivityVersion] = useState(0);
+  const writeView = useRef({ sessionId, mounted: true });
+  writeView.current.sessionId = sessionId;
+  useEffect(() => {
+    writeView.current.mounted = true;
+    return () => {
+      writeView.current.mounted = false;
+    };
+  }, []);
+  const [historyCursors, setHistoryCursors] = useState<Array<string | null>>(() => {
+    const cursor = params.get("history");
+    return cursor ? [null, cursor] : [null];
+  });
   const historyCursor = historyCursors.at(-1) ?? null;
+  const [searchJump, setSearchJump] = useState(() => params.has("history"));
+  const searchTarget = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!params.has("history")) return;
+    setParams(
+      (current) => {
+        const next = new URLSearchParams(current);
+        next.delete("history");
+        return next;
+      },
+      { replace: true },
+    );
+  }, [params, setParams]);
   const clearScheduleError = () => {
     setScheduleError(false);
     setScheduleErrorMessage(null);
@@ -111,6 +154,11 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
     retry: false,
     placeholderData: (previous) => previous,
   });
+  useEffect(() => {
+    if (searchJump && query.data?.messages?.length && !query.isFetching && !query.isPlaceholderData && !query.isError)
+      searchTarget.current?.scrollIntoView?.({ block: "center" });
+  }, [searchJump, query.data, query.isFetching, query.isPlaceholderData, query.isError]);
+
   const profileProposal = useQuery({
     queryKey: ["heinzel", "profile-proposal", sessionId],
     queryFn: async () => {
@@ -241,6 +289,17 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
         action.arguments?.action === "resume") &&
       !Object.hasOwn(action.arguments ?? {}, "approval_proof"),
   );
+  // The sentence a helper was created from is sent once, so nobody has to say it twice.
+  const autoSent = useRef(false);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: send reads the current composer when this first runs
+  useEffect(() => {
+    const key = `hz.durable.autosend.${sessionId}`;
+    if (autoSent.current || !query.data || !text.trim() || sessionStorage.getItem(key) !== text) return;
+    if (preferExplicitSend()) return;
+    autoSent.current = true;
+    sessionStorage.removeItem(key);
+    void send();
+  }, [query.data, sessionId, text]);
   const matchesCurrentSchedule = (action: (typeof approvalActions)[number]) => {
     const schedule = query.data?.schedule;
     const args = action.arguments;
@@ -672,7 +731,18 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
   return (
     <div className="flex h-full flex-col">
       <div className="flex h-12 shrink-0 items-center justify-between gap-2 border-b border-border px-3">
-        <h2 className="min-w-0 truncate font-medium">{query.data?.name ?? t("durable.title")}</h2>
+        <h2 className="flex min-w-0 items-center gap-2 truncate font-medium">
+          {query.data?.appearance && (
+            <HeinzelAvatar
+              {...query.data.appearance}
+              beard={query.data.appearance.beard ?? undefined}
+              hat={query.data.appearance.hat ?? undefined}
+              shirt={query.data.appearance.shirt ?? undefined}
+              className="h-10 w-7 shrink-0"
+            />
+          )}
+          <span className="truncate">{query.data?.name ?? t("durable.title")}</span>
+        </h2>
         <Button type="button" variant="ghost" size="sm" disabled={busy || profileLocked} onClick={onClose}>
           {t("durable.close")}
         </Button>
@@ -694,36 +764,73 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
             />
           </details>
         )}
-        {query.data && (
-          <details
-            className="rounded-lg border border-border p-3"
-            onToggle={(event) => {
-              if (event.currentTarget.open) setShowProposal(true);
-            }}
-          >
-            <summary className="cursor-pointer text-sm font-medium">Scheduled agent terms</summary>
-            {showProposal && <AgentProposal sessionId={sessionId} />}
-          </details>
-        )}
-        {query.data?.session_id === sessionId && (
-          <PersonalArtifactLinks key={`artifacts:${sessionId}`} sessionId={sessionId} compact />
-        )}
-        {query.data?.session_id === sessionId && <AgentProposalSummary sessionId={sessionId} />}
-        {query.data?.session_id === sessionId && (
-          <NotificationPanel key={`notification:${sessionId}`} sessionId={sessionId} />
-        )}
-        {query.data?.session_id === sessionId && (
-          <>
-            <ConnectedReadReview key={`connected:${sessionId}`} sessionId={sessionId} />
-            <ConnectedReadSetReview
-              key={`connected-set:${sessionId}`}
+        <ConversationSearch
+          key={`search:${sessionId}`}
+          sessionId={sessionId}
+          onJump={(cursor) => {
+            setSearchJump(true);
+            setHistoryCursors([null, cursor]);
+          }}
+        />
+        <OwnerConversationSearch
+          key={`owner-search:${sessionId}`}
+          onJump={(target, cursor) => {
+            if (target === sessionId) {
+              setSearchJump(true);
+              setHistoryCursors([null, cursor]);
+            } else
+              setParams((current) => {
+                const next = new URLSearchParams(current);
+                for (const key of ["agent-chat", "approval-chat", "approval-request", "agent-open-request"])
+                  next.delete(key);
+                next.set("chat", target);
+                next.set("history", cursor);
+                return next;
+              });
+          }}
+        />
+        <MorePanel label="Terms, sources and skills">
+          {query.data && (
+            <details
+              className="rounded-lg border border-border p-3"
+              onToggle={(event) => {
+                if (event.currentTarget.open) setShowProposal(true);
+              }}
+            >
+              <summary className="cursor-pointer text-sm font-medium">Scheduled agent terms</summary>
+              {showProposal && <AgentProposal sessionId={sessionId} />}
+            </details>
+          )}
+          {query.data?.session_id === sessionId && (
+            <PersonalArtifactLinks
+              key={`artifacts:${sessionId}:${writeActivityVersion}`}
               sessionId={sessionId}
-              onAsk={() => composerInput.current?.focus()}
+              compact
             />
-          </>
-        )}
-        {query.data?.session_id === sessionId && <ContractHistory contracts={query.data.contracts ?? []} />}
-        {query.data?.session_id === sessionId && <SkillDraftPanel key={`skills:${sessionId}`} sessionId={sessionId} />}
+          )}
+          {query.data?.session_id === sessionId && (
+            <CapturedWriteActivity key={`write-activity:${sessionId}:${writeActivityVersion}`} sessionId={sessionId} />
+          )}
+          {query.data?.session_id === sessionId && <AgentProposalSummary sessionId={sessionId} />}
+          {query.data?.session_id === sessionId && (
+            <NotificationPanel key={`notification:${sessionId}`} sessionId={sessionId} />
+          )}
+          {query.data?.session_id === sessionId && (
+            <>
+              <ConnectedReadReview key={`connected:${sessionId}`} sessionId={sessionId} />
+              <ConnectedReadSetReview
+                key={`connected-set:${sessionId}`}
+                sessionId={sessionId}
+                onAsk={() => composerInput.current?.focus()}
+              />
+            </>
+          )}
+          {query.data?.session_id === sessionId && <ContractHistory contracts={query.data.contracts ?? []} />}
+          {query.data?.session_id === sessionId && (
+            <SkillDraftPanel key={`skills:${sessionId}`} sessionId={sessionId} />
+          )}
+          <AgentSchedules key={sessionId} sessionId={sessionId} />
+        </MorePanel>
         {(historyCursors.length > 1 || query.data?.has_more) && (
           <nav aria-label="Conversation history" className="space-y-2 rounded border border-border p-2 text-sm">
             {query.isFetching || query.isPlaceholderData ? (
@@ -749,7 +856,10 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
                   size="sm"
                   variant="outline"
                   disabled={query.isFetching || busy || profileLocked}
-                  onClick={() => setHistoryCursors((cursors) => cursors.slice(0, -1))}
+                  onClick={() => {
+                    setSearchJump(false);
+                    setHistoryCursors((cursors) => cursors.slice(0, -1));
+                  }}
                 >
                   Earlier messages
                 </Button>
@@ -764,8 +874,10 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
                   }
                   onClick={() => {
                     const next = query.data?.next_cursor;
-                    if (typeof next === "string" && next && !historyCursors.includes(next))
+                    if (typeof next === "string" && next && !historyCursors.includes(next)) {
+                      setSearchJump(false);
                       setHistoryCursors((cursors) => [...cursors, next]);
+                    }
                   }}
                 >
                   Newer messages
@@ -774,20 +886,45 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
             </div>
           </nav>
         )}
-        <AgentSchedules key={sessionId} sessionId={sessionId} />
-        {query.data?.messages?.map((message) => {
+        {query.data?.messages?.map((message, index, all) => {
           const turnItems =
             message.role === "assistant" && message.turn_id
               ? (activity.data?.items ?? []).filter((item) => item.turn_id === message.turn_id)
               : [];
           return (
-            <div key={`${message.seq}-${message.id}`} className="space-y-1 text-sm">
+            <div
+              key={`${message.seq}-${message.id}`}
+              ref={
+                searchJump && index === 0 && !query.isFetching && !query.isPlaceholderData ? searchTarget : undefined
+              }
+              className={
+                searchJump && index === 0 && !query.isFetching && !query.isPlaceholderData
+                  ? "space-y-1 rounded border border-primary p-2 text-sm"
+                  : "space-y-1 text-sm"
+              }
+            >
+              {searchJump && index === 0 && !query.isFetching && !query.isPlaceholderData && (
+                <span className="text-xs font-medium">Search result</span>
+              )}
               <p className="whitespace-pre-wrap break-words">
-                <strong>
-                  {message.role === "tool" ? "Tool activity" : message.origin === "daemon" ? "Daemon" : message.role}:
+                <strong data-speaker={message.role}>
+                  {message.role === "tool"
+                    ? "Tool activity"
+                    : message.origin === "daemon"
+                      ? "Woke on schedule"
+                      : message.role === "assistant"
+                        ? (query.data?.name ?? "assistant")
+                        : "You"}
+                  {message.role === "user" && message.origin === "daemon" ? "." : ":"}
                 </strong>{" "}
-                {message.role === "tool" ? "A tool event was recorded." : message.text}
-                {message.status && message.status !== "completed" && <span> ({message.status})</span>}
+                {message.role === "tool"
+                  ? "A tool event was recorded."
+                  : message.role === "user" && message.origin === "daemon"
+                    ? ""
+                    : message.text}
+                {message.status && message.status !== "completed" && index === all.length - 1 && (
+                  <span> ({message.status})</span>
+                )}
                 {message.billing === "plan" && (
                   <span className="block text-xs text-muted-foreground">Subscription usage · cost unknown</span>
                 )}
@@ -817,6 +954,12 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
             </div>
           );
         })}
+        {query.data?.session_id === sessionId && (
+          <>
+            <DocumentDrafts snapshot={query.data} />
+            <AgentSetupCard snapshot={query.data} />
+          </>
+        )}
         {activity.isError && (
           <p role="status" className="text-sm">
             Recorded tool activity is unavailable.
@@ -848,7 +991,9 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
             );
           })()}
         {activity.data?.session_id === sessionId &&
-          activity.data.items.length > 0 &&
+          activity.data.items.some(
+            (item) => !(query.data?.messages ?? []).some((message) => message.turn_id === item.turn_id),
+          ) &&
           (() => {
             const visibleTurns = new Set(
               (query.data?.messages ?? [])
@@ -911,6 +1056,81 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
               </span>
             )}
           </p>
+        ))}
+        {agentChat?.actions?.map((action) => (
+          <CapturedWriteReview
+            key={`captured-write-${agentChat.id}-${action.id}`}
+            action={action}
+            sessionId={sessionId}
+            chatId={agentChat.id}
+            onConfirm={async () => {
+              let originalToken: string | null;
+              try {
+                originalToken = token();
+              } catch {
+                return;
+              }
+              const currentView = () => {
+                try {
+                  const currentToken = token();
+                  return (
+                    writeView.current.mounted &&
+                    writeView.current.sessionId === sessionId &&
+                    currentToken === originalToken
+                  );
+                } catch {
+                  return false;
+                }
+              };
+              if (!currentView()) return;
+              try {
+                const updated = requirePersonalChat(
+                  await result(
+                    api.POST("/system/runner/chat/confirm", {
+                      params: { query: { session: agentChat.id, action: action.id } },
+                    }),
+                  ),
+                  sessionId,
+                  agentChat.id,
+                );
+                if (!currentView()) return;
+                const found = updated.actions?.find((item) => item.id === action.id);
+                if (
+                  !found ||
+                  found.module !== action.module ||
+                  found.operation !== action.operation ||
+                  canonical(found.arguments) !== canonical(action.arguments) ||
+                  !["done", "uncertain", "failed"].includes(found.status)
+                )
+                  throw new Error("Uncertain write result");
+                rememberChat(updated, agentChat.id);
+              } catch {
+                if (!currentView()) return;
+                setError(true);
+                try {
+                  const current = await result(
+                    api.GET("/system/runner/chat/show", {
+                      params: { query: { session: agentChat.id } },
+                    }),
+                  );
+                  if (!currentView()) return;
+                  const found = current.actions?.find((item) => item.id === action.id);
+                  if (
+                    !found ||
+                    found.module !== action.module ||
+                    found.operation !== action.operation ||
+                    canonical(found.arguments) !== canonical(action.arguments)
+                  )
+                    throw new Error("Changed write review");
+                  rememberChat(current, agentChat.id);
+                } catch {
+                  /* Keep the persistent fence until the outcome can be inspected. */
+                }
+              } finally {
+                if (currentView()) setWriteActivityVersion((version) => version + 1);
+              }
+            }}
+          />
         ))}
         {[agentChat, approvalChat]
           .filter((chat, index, all) => chat && all.findIndex((item) => item?.id === chat.id) === index)
@@ -1027,129 +1247,136 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
           </p>
         ))}
         {query.data && (
-          <section aria-label={t("durable.schedule")} className="space-y-2 rounded-lg border border-border p-3">
-            <h3 className="font-medium">{t("durable.schedule")}</h3>
-            {query.data.schedule ? (
-              <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
-                <dt>{t("durable.scheduleStatus")}</dt>
-                <dd>{query.data.schedule.status}</dd>
-                <dt>{t("durable.scheduleCadence")}</dt>
-                <dd>
-                  {query.data.schedule.cron} · {query.data.schedule.timezone}
-                </dd>
-                <dt>{t("durable.schedulePreview")}</dt>
-                <dd className="break-all font-mono text-xs">{query.data.schedule.preview_hash}</dd>
-              </dl>
-            ) : (
-              <p className="text-sm text-muted-foreground">{t("durable.scheduleEmpty")}</p>
-            )}
-            {daemonReadinessMessage && (
-              <p className="text-sm text-warn" role="status">
-                {daemonReadinessMessage}{" "}
-                <Link className="underline" to="/?settings=daemon">
-                  {t("durable.daemonSettings")}
-                </Link>
-              </p>
-            )}
-            {query.data.schedule?.status === "active" && daemonStatus.isError && (
-              <p className="text-sm text-warn" role="status">
-                {t("durable.daemonStatusUnavailable")}{" "}
-                <Link className="underline" to="/?settings=daemon">
-                  {t("durable.daemonSettings")}
-                </Link>
-              </p>
-            )}
-            {query.data.schedule && !scheduleApprovalNeedsAttention && uncertainApprovalActions.length === 0 ? (
-              <Button type="button" size="sm" disabled={scheduleBusy} onClick={() => void reviewSchedule()}>
-                {scheduleBusy
-                  ? t("durable.scheduleWorking")
-                  : query.data.schedule.status === "active"
-                    ? t("durable.schedulePauseReview")
-                    : query.data.schedule.status === "paused"
-                      ? t("durable.scheduleResumeReview")
-                      : t("durable.scheduleReview")}
-              </Button>
-            ) : !query.data.schedule ? (
-              <Button
-                type="button"
-                size="sm"
-                disabled={
-                  scheduleBusy ||
-                  recoveryBlocked ||
-                  storageError ||
-                  agentPending !== null ||
-                  pendingAgentActions.length > 0 ||
-                  runningAgentActions.length > 0 ||
-                  uncertainAgentActions.length > 0
-                }
-                onClick={() => void proposeCheckIn()}
-              >
-                {scheduleBusy ? t("durable.scheduleWorking") : t("durable.schedulePropose")}
-              </Button>
-            ) : null}
-            {approvalChat && pendingApprovalActions.length > 0 && (
-              <ol className="space-y-2">
-                {pendingApprovalActions.map((action) => (
-                  <ActionCard
-                    key={`${approvalChat.id}-${action.id}`}
-                    action={action}
-                    busy={scheduleBusy}
-                    proposalTitle={
-                      action.arguments?.action === "pause"
-                        ? t("durable.pauseActionTitle")
-                        : action.arguments?.action === "resume"
-                          ? t("durable.resumeActionTitle")
-                          : t("durable.scheduleActionTitle")
-                    }
-                    onDecide={(confirm) => void decideSchedule(action.id, confirm)}
-                    onAuthorizeMcp={
-                      action.arguments?.action === "pause" ? undefined : () => void authorizeScheduleForMcp(action.id)
-                    }
-                  />
-                ))}
-              </ol>
-            )}
-            {staleApprovalActions.map((action) => (
-              <div key={action.id} className="space-y-2 rounded border border-warn p-3 text-sm" role="alert">
-                <p>{t("durable.scheduleReviewStale")}</p>
+          <MorePanel label="Older check-in schedule">
+            <section aria-label={t("durable.schedule")} className="space-y-2 rounded-lg border border-border p-3">
+              <h3 className="font-medium">{t("durable.schedule")}</h3>
+              {query.data.schedule ? (
+                <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
+                  <dt>{t("durable.scheduleStatus")}</dt>
+                  <dd>{query.data.schedule.status}</dd>
+                  <dt>{t("durable.scheduleCadence")}</dt>
+                  <dd>
+                    {query.data.schedule.cron} · {query.data.schedule.timezone}
+                  </dd>
+                  <dt>{t("durable.schedulePreview")}</dt>
+                  <dd className="break-all font-mono text-xs">{query.data.schedule.preview_hash}</dd>
+                </dl>
+              ) : (
+                <p className="text-sm text-muted-foreground">{t("durable.scheduleEmpty")}</p>
+              )}
+              {daemonReadinessMessage && (
+                <p className="text-sm text-warn" role="status">
+                  {daemonReadinessMessage}{" "}
+                  <Link className="underline" to="/?settings=daemon">
+                    {t("durable.daemonSettings")}
+                  </Link>
+                </p>
+              )}
+              {query.data.schedule?.status === "active" && daemonStatus.isError && (
+                <p className="text-sm text-warn" role="status">
+                  {t("durable.daemonStatusUnavailable")}{" "}
+                  <Link className="underline" to="/?settings=daemon">
+                    {t("durable.daemonSettings")}
+                  </Link>
+                </p>
+              )}
+              {query.data.schedule && !scheduleApprovalNeedsAttention && uncertainApprovalActions.length === 0 ? (
+                <Button type="button" size="sm" disabled={scheduleBusy} onClick={() => void reviewSchedule()}>
+                  {scheduleBusy
+                    ? t("durable.scheduleWorking")
+                    : query.data.schedule.status === "active"
+                      ? t("durable.schedulePauseReview")
+                      : query.data.schedule.status === "paused"
+                        ? t("durable.scheduleResumeReview")
+                        : t("durable.scheduleReview")}
+                </Button>
+              ) : !query.data.schedule ? (
                 <Button
                   type="button"
                   size="sm"
-                  variant="outline"
-                  disabled={scheduleBusy}
-                  onClick={() => void decideSchedule(action.id, false)}
+                  disabled={
+                    scheduleBusy ||
+                    recoveryBlocked ||
+                    storageError ||
+                    agentPending !== null ||
+                    pendingAgentActions.length > 0 ||
+                    runningAgentActions.length > 0 ||
+                    uncertainAgentActions.length > 0
+                  }
+                  onClick={() => void proposeCheckIn()}
                 >
-                  {t("durable.scheduleDiscardStale")}
+                  {scheduleBusy ? t("durable.scheduleWorking") : t("durable.schedulePropose")}
                 </Button>
-              </div>
-            ))}
-            {runningApprovalActions.map((action) => (
-              <div key={action.id} className="space-y-2 rounded border border-warn p-3 text-sm" role="status">
-                <p>{t("durable.scheduleApprovalInterrupted")}</p>
-                <Button type="button" size="sm" disabled={scheduleBusy} onClick={() => void recoverSchedule(action.id)}>
-                  {scheduleBusy ? t("durable.scheduleWorking") : t("durable.scheduleCheckOutcome")}
-                </Button>
-              </div>
-            ))}
-            {uncertainApprovalActions.length > 0 && (
-              <div className="space-y-2" role="alert">
-                {uncertainApprovalActions.map((action) => (
-                  <p key={action.id} className="text-sm text-bad">
-                    {action.result || t("durable.scheduleOutcomeUnknown")}
-                  </p>
-                ))}
-                <Button type="button" size="sm" variant="outline" onClick={forgetApprovalChat}>
-                  {t("durable.scheduleRecoveryAcknowledged")}
-                </Button>
-              </div>
-            )}
-            {approvalChatId && approvalQuery.isPending && <p role="status">{t("durable.scheduleLoadingReview")}</p>}
-            {approvalChatId && !approvalQuery.isPending && !approvalChat && (
-              <p role="alert">{t("durable.scheduleReviewFailed")}</p>
-            )}
-            {intentNotice && <p role="status">{t("durable.scheduleIntentPrepared")}</p>}
-            {scheduleError && <p role="alert">{scheduleErrorMessage || t("durable.scheduleFailed")}</p>}
-          </section>
+              ) : null}
+              {approvalChat && pendingApprovalActions.length > 0 && (
+                <ol className="space-y-2">
+                  {pendingApprovalActions.map((action) => (
+                    <ActionCard
+                      key={`${approvalChat.id}-${action.id}`}
+                      action={action}
+                      busy={scheduleBusy}
+                      proposalTitle={
+                        action.arguments?.action === "pause"
+                          ? t("durable.pauseActionTitle")
+                          : action.arguments?.action === "resume"
+                            ? t("durable.resumeActionTitle")
+                            : t("durable.scheduleActionTitle")
+                      }
+                      onDecide={(confirm) => void decideSchedule(action.id, confirm)}
+                      onAuthorizeMcp={
+                        action.arguments?.action === "pause" ? undefined : () => void authorizeScheduleForMcp(action.id)
+                      }
+                    />
+                  ))}
+                </ol>
+              )}
+              {staleApprovalActions.map((action) => (
+                <div key={action.id} className="space-y-2 rounded border border-warn p-3 text-sm" role="alert">
+                  <p>{t("durable.scheduleReviewStale")}</p>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={scheduleBusy}
+                    onClick={() => void decideSchedule(action.id, false)}
+                  >
+                    {t("durable.scheduleDiscardStale")}
+                  </Button>
+                </div>
+              ))}
+              {runningApprovalActions.map((action) => (
+                <div key={action.id} className="space-y-2 rounded border border-warn p-3 text-sm" role="status">
+                  <p>{t("durable.scheduleApprovalInterrupted")}</p>
+                  <Button
+                    type="button"
+                    size="sm"
+                    disabled={scheduleBusy}
+                    onClick={() => void recoverSchedule(action.id)}
+                  >
+                    {scheduleBusy ? t("durable.scheduleWorking") : t("durable.scheduleCheckOutcome")}
+                  </Button>
+                </div>
+              ))}
+              {uncertainApprovalActions.length > 0 && (
+                <div className="space-y-2" role="alert">
+                  {uncertainApprovalActions.map((action) => (
+                    <p key={action.id} className="text-sm text-bad">
+                      {action.result || t("durable.scheduleOutcomeUnknown")}
+                    </p>
+                  ))}
+                  <Button type="button" size="sm" variant="outline" onClick={forgetApprovalChat}>
+                    {t("durable.scheduleRecoveryAcknowledged")}
+                  </Button>
+                </div>
+              )}
+              {approvalChatId && approvalQuery.isPending && <p role="status">{t("durable.scheduleLoadingReview")}</p>}
+              {approvalChatId && !approvalQuery.isPending && !approvalChat && (
+                <p role="alert">{t("durable.scheduleReviewFailed")}</p>
+              )}
+              {intentNotice && <p role="status">{t("durable.scheduleIntentPrepared")}</p>}
+              {scheduleError && <p role="alert">{scheduleErrorMessage || t("durable.scheduleFailed")}</p>}
+            </section>
+          </MorePanel>
         )}
       </div>
       <form
@@ -1188,6 +1415,12 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
             maxLength={4000}
             disabled={busy || pending !== null || agentPending !== null || !query.data || recoveryBlocked}
             onChange={(event) => updateComposer({ text: event.target.value })}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing && text.trim()) {
+                event.preventDefault();
+                void send();
+              }
+            }}
           />
         </label>
         {error && pending?.outcome !== "subscription_usage_limit" && <p role="alert">{t("durable.failed")}</p>}
@@ -1260,5 +1493,34 @@ function DaemonTurnInspection({
         <UncertainTurnRecovery sessionId={sessionId} requestId={requestId} allowPendingDaemon onResolved={onResolved} />
       )}
     </div>
+  );
+}
+
+/** What the conversation doesn't need in view: closed by default, and each browser remembers its choice. */
+function MorePanel({ label, children }: { label: string; children: ReactNode }) {
+  const [open, setOpen] = useState(() => {
+    try {
+      return localStorage.getItem(MORE_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
+  return (
+    <details
+      className="rounded-lg border border-border p-3"
+      open={open}
+      onToggle={(event) => {
+        const next = event.currentTarget.open;
+        setOpen(next);
+        try {
+          localStorage.setItem(MORE_KEY, next ? "1" : "0");
+        } catch {
+          // Only a remembered preference.
+        }
+      }}
+    >
+      <summary className="cursor-pointer text-sm font-medium">{label}</summary>
+      <div className="mt-2 space-y-3">{children}</div>
+    </details>
   );
 }

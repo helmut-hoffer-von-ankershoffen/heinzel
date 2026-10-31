@@ -14,10 +14,13 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, JsonValue, TypeAdapter
 
-from heinzel import Config, CurrentUser, HeinzelError, Kernel, Notifications
+from heinzel import Config, CurrentUser, HeinzelError, Kernel, NotificationChannel, Notifications
 from heinzel.kernel import PRIVATE_WRITE, CapabilitySettings, RunnerSnapshot, RunnerSnapshotProvider
 from heinzel.kernel import ProcessOutcome as Outcome
 from heinzel.kernel import run_bounded_process as run_bounded
+from heinzel.modules.heinzel._captured_write_binding import SelectedWriteService
+from heinzel.modules.heinzel._captured_write_tools import DocumentDraftTools
+from heinzel.modules.heinzel._channel_approvals import ChannelApprovals
 from heinzel.modules.heinzel._claude_subscription_model import (
     COMMAND_FLAGS,
     VERSION,
@@ -39,7 +42,8 @@ from heinzel.modules.heinzel._session_models import BackendBinding, RequestId, S
 from heinzel.modules.heinzel._subscription_slots import SubscriptionSlots
 
 _HEADS = frozenset({"cli", "api-bearer", "web-session", "web-device"})
-_MAX_REQUESTS = 4
+# A turn that creates an agent reads and proposes its contract, identity, schedule and sources, then reports.
+_MAX_REQUESTS = 12
 MAX_TURN_SECONDS = 120
 _MAX_OUTPUT = 128 * 1024
 
@@ -176,7 +180,7 @@ class UserChatService:
                     input=None,
                     cwd=Path(directory),
                     env=env,
-                    timeout=10,
+                    timeout=30,  # a busy machine must not read as signed out
                     limit=16_384,
                 )
             data = TypeAdapter(dict[str, JsonValue]).validate_json(result.stdout, strict=True)
@@ -300,6 +304,7 @@ class UserChatService:
                 policy=notification_policy,
                 verify=verify,
                 connected=self.connected_grants() if notification_policy.item_evidence is not None else None,
+                channels=self._notification_channels(),
             )
         connected = self._connected() if (user_proposals or connected_allowed) and self._connected else None
         connected_set = (
@@ -307,6 +312,7 @@ class UserChatService:
             if user_proposals and connected is not None
             else None
         )
+        document_drafts = self._document_drafts(session, turn, connected)
         message = await InteractiveTurn(self._crud).run(
             session,
             request,
@@ -319,9 +325,45 @@ class UserChatService:
             connected=connected,
             connected_set=connected_set,
             scheduled_notifications=scheduled_notice,
+            document_drafts=document_drafts,
             backend_binding=BackendBinding(backend="claude-code", mode="cli-model", revision=1),
         )
         return UserChatAnswer(session_id=session, request_id=request, message=message)
+
+    def _notification_channels(self) -> list[NotificationChannel]:
+        if self._playbook_kernel is None:
+            return []
+        return self._playbook_kernel.implementations(NotificationChannel)  # type: ignore[type-abstract]
+
+    def _document_drafts(
+        self, session: str, turn: str, connected: ConnectedReadGrants | None
+    ) -> DocumentDraftTools | None:
+        """Offer proposing a write where a provider can; drafting in a file also needs its read approved."""
+        if connected is None or self._playbook_kernel is None:
+            return None
+
+        def approved_reference() -> str | None:
+            try:
+                grant = connected.approved(session)
+            except HeinzelError:
+                return None
+            ref = grant.review.fixed_arguments.get("ref")
+            return ref if grant.capability == "documents" and isinstance(ref, str) else None
+
+        try:
+            selected = self._playbook_kernel.resolve(SelectedWriteService)
+            selected.check_available()
+        except HeinzelError:
+            return None
+        return DocumentDraftTools(
+            self._crud,
+            self.current,
+            selected,
+            session=session,
+            turn=turn,
+            approved_reference=approved_reference,
+            on_draft=self._playbook_kernel.resolve(ChannelApprovals).post,
+        )
 
     def turn_state(self, session: str, request: str) -> UserTurnState:
         """Read the exact turn state without retrying or claiming an unresolved process has stopped.
@@ -352,7 +394,10 @@ class UserChatService:
                 )
                 or event.data.get("message_id") != request
                 or event.data.get("owner") != repo.principal_id
-                or event.data.get("origin") not in _HEADS
+                or not (
+                    event.data.get("origin") in _HEADS
+                    or (event.data.get("origin") == "daemon" and event.data.get("interrupted") is True)
+                )
             ):
                 msg = "This turn has an invalid resolution record"
                 raise HeinzelError(msg)

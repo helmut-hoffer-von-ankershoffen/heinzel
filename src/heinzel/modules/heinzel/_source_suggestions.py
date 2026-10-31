@@ -20,6 +20,15 @@ def _invalid() -> Never:
     raise ValueError
 
 
+class SuggestedWindow(BaseModel):
+    """A time window that follows each read, for a source that changes: elapsed seconds around that moment."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+    lookback_seconds: int = Field(ge=0, le=2678400, description="Seconds before each read to include.")
+    lookahead_seconds: int = Field(ge=0, le=2678400, description="Seconds after each read to include.")
+    timezone: str = Field(min_length=1, max_length=128, description="IANA timezone the person sees times in.")
+
+
 class SourceSuggestionRequest(BaseModel):
     """Exact chat-suggested terms; this has no activation or access authority."""
 
@@ -30,6 +39,10 @@ class SourceSuggestionRequest(BaseModel):
     )
     method: str = Field(pattern=r"^[a-z][a-z0-9_]*$", max_length=64, description="Unverified read method.")
     fixed_arguments: dict[str, JsonValue] = Field(description="Exact suggested arguments; no access is granted.")
+    window: SuggestedWindow | None = Field(
+        default=None,
+        description="For a method with a time window: the window follows each read. Leave it out of fixed_arguments.",
+    )
 
 
 class SourceSuggestion(BaseModel):
@@ -43,6 +56,11 @@ class SourceSuggestion(BaseModel):
     capability: str = Field(description="Unverified suggested capability.")
     method: str = Field(description="Unverified suggested method.")
     fixed_arguments: dict[str, JsonValue] = Field(description="Exact suggested arguments, not provider-verified.")
+    window: SuggestedWindow | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+        description="Suggested window that follows each read, not yet approved.",
+    )
     status: Literal["suggested"] = Field(default="suggested", description="Inert suggestion, without authority.")
 
 
@@ -148,6 +166,7 @@ class SourceSuggestionTools:
                         capability=draft.capability,
                         method=draft.method,
                         fixed_arguments=draft.fixed_arguments,
+                        window=draft.window,
                     )
                     if arguments_hash(previous.model_dump(mode="json")) != arguments_hash(
                         expected.model_dump(mode="json")
@@ -167,6 +186,7 @@ class SourceSuggestionTools:
                         capability=draft.capability,
                         method=draft.method,
                         fixed_arguments=draft.fixed_arguments,
+                        window=draft.window,
                     )
                     body = immutable_body(writer, "source-suggestion", result.model_dump(mode="json"), control=True)
                     writer.append(

@@ -101,7 +101,7 @@ class ContractReview:
             body = immutable_body(writer, "accepted-agent-contract", proposal.model_dump(mode="json"), control=True)
             return body.model_dump(mode="json")
 
-        with self.crud.repository.main_writer(session):
+        with self.crud.repository.main_writer(session, wait=True):
             consume_approval(
                 self.crud.repository,
                 session,
