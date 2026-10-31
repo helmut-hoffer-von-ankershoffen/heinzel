@@ -85,7 +85,7 @@ check-fast: ## Seconds-fast feedback for the edit loop: format, lint, contracts,
 		"&demo=uv run --script scripts/demo_tape.py --check" \
 		"&attributions=uv run --quiet --script scripts/attributions.py --check" \
 		$(WEB_LINT) $(WEB_TYPES) \
-		"unit=uv run pytest -m 'unit and not perf' -n auto -x -q --session-timeout=120" "web-tests=$(WEB) exec vitest run" $(MANAGED_CHECK)
+		"unit=uv run pytest -m 'unit and not perf' -n auto -x -q --session-timeout=120" $(subst &web-tests,web-tests,$(WEB_TESTS)) $(MANAGED_CHECK)
 
 preflight: ## What CI checks, before you push: check with coverage, template, build, commits (PREFLIGHT=full adds e2e, audit)
 	@$(WEB) prepare
