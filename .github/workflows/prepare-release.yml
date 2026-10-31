@@ -58,9 +58,9 @@ jobs:
           : "prepare dispatch validation"
           set -euo pipefail
           case "$MODE" in
-            release) test "$GITHUB_REF" != refs/heads/private/independent-source-review-310-r2 ;;
+            release) test "$GITHUB_REF" != refs/heads/private/independent-source-review-310-r3 ;;
             source_review|diagnostic_unit315|diagnostic_e2e)
-              test "$GITHUB_REF" = refs/heads/private/independent-source-review-310-r2
+              test "$GITHUB_REF" = refs/heads/private/independent-source-review-310-r3
               test "$ACTOR" = "$OWNER"
               test "$GITHUB_SHA" = "$TRUSTED_COMMIT" ;;
             *) echo "Unsupported dispatch mode" >&2; exit 1 ;;
@@ -85,7 +85,7 @@ jobs:
             echo "error: intro is required: summarize what changed for users." >&2
             exit 1
           fi
-          if [[ "$GITHUB_REF" == refs/heads/private/independent-source-review-310-r2 ]]; then
+          if [[ "$GITHUB_REF" == refs/heads/private/independent-source-review-310-r3 ]]; then
             echo "error: the source review ref cannot prepare a release." >&2
             exit 1
           fi
@@ -143,7 +143,7 @@ jobs:
         shell: bash
         run: |
           : "source-review dispatch authority"
-          test "$GITHUB_REF" = refs/heads/private/independent-source-review-310-r2
+          test "$GITHUB_REF" = refs/heads/private/independent-source-review-310-r3
           test "$ACTOR" = "$OWNER"
           test "$GITHUB_SHA" = "$TRUSTED_COMMIT"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -183,7 +183,7 @@ jobs:
         run: |
           : "diagnostic approved target"
           set -euo pipefail
-          test "$GITHUB_REF" = refs/heads/private/independent-source-review-310-r2
+          test "$GITHUB_REF" = refs/heads/private/independent-source-review-310-r3
           test "$ACTOR" = "$OWNER"
           test "$GITHUB_SHA" = "$TRUSTED_COMMIT"
           test "$REVIEW_HEAD" = 216c0500e9045ec2615e44abd0dec56a598f35e3
@@ -248,7 +248,7 @@ jobs:
         run: |
           : "diagnostic final identity"
           set -euo pipefail
-          test "$GITHUB_REF" = refs/heads/private/independent-source-review-310-r2
+          test "$GITHUB_REF" = refs/heads/private/independent-source-review-310-r3
           test "$GITHUB_SHA" = "$TRUSTED_COMMIT"
           test "$ACTOR" = "$OWNER"
           test "$REVIEW_HEAD" = 216c0500e9045ec2615e44abd0dec56a598f35e3

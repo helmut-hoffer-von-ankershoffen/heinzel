@@ -699,7 +699,7 @@ def current_pr() -> None:
     Raises:
         RuntimeError: If its identity is no longer current.
     """
-    if HEAD != "c7da3140d8c7b550c22f8639fd05b897c9bb395a" or BASE != "3190096a8765fc25e44dd800ee2d8d13de3a3e66":
+    if HEAD != "fa9fbc36bfcdb82ea6367952ca5b0cd9d64f8a18" or BASE != "e6c2e707726741e28ecc9360a3683fc00e968dfb":
         msg = "PR identity changed"
         raise RuntimeError(msg)
     repo = os.environ["GITHUB_REPOSITORY"]
@@ -734,7 +734,7 @@ def github_review(root: Path) -> None:
     Raises:
         RuntimeError: If authority, source, or CLI verification fails.
     """
-    if os.environ.get("GITHUB_REF") != "refs/heads/private/independent-source-review-310-r2" or os.environ.get(
+    if os.environ.get("GITHUB_REF") != "refs/heads/private/independent-source-review-310-r3" or os.environ.get(
         "GITHUB_ACTOR"
     ) != os.environ.get("GITHUB_REPOSITORY_OWNER"):
         msg = "Unapproved dispatch authority"
