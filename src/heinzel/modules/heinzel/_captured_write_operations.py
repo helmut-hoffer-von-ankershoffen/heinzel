@@ -88,7 +88,7 @@ def register_captured_write_operations(module: Module) -> None:
     def pending_captured_writes(
         crud: SessionCrud, current: CurrentUser, session_id: SessionId
     ) -> list[dict[str, JsonValue]]:
-        """Drafts waiting for their owner's decision, with their exact terms; nothing is written by reading them."""
+        """Drafts waiting for your decision, with their exact terms; reading them writes nothing."""
         return CapturedWriteHost(crud, current, CapturedWriteService()).pending(session_id)
 
     @module.operation(private=True, read_only=False, heads={"web", "api-private"}, audience="everyday")

@@ -198,8 +198,8 @@ def test_a_module_cannot_require_write_for_all_its_functions():
         Module("announcer", "x", requires=["chat:write"])
 
 
-def test_only_calendar_chat_documents_and_mail_have_a_write_mode_to_declare():
-    for capability in ("code-host", "directory", "meetings", "tracker"):
+def test_only_calendar_chat_documents_mail_and_tracker_have_a_write_mode_to_declare():
+    for capability in ("code-host", "directory", "meetings"):
         with pytest.raises(ValueError, match=f"{capability} has no write mode"):
             Module("x", "x", requires=[f"{capability}:write"])
 
@@ -344,7 +344,7 @@ def test_provides_records_an_adapter_named_after_the_module_by_default():
     ("capability", "modes", "name", "problem"),
     [
         ("spreadsheets", {"read"}, None, "Unknown capability 'spreadsheets'"),
-        ("tracker", {"write"}, None, "must serve some of"),
+        ("team-graph", {"write"}, None, "must serve some of"),
         ("documents", set(), None, "must serve some of"),
         ("tracker", {"read"}, "Acme", "Adapter name 'Acme'"),
     ],

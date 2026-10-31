@@ -21370,7 +21370,7 @@
     },
     "/heinzel/pending-captured-writes": {
       "get": {
-        "description": "Drafts waiting for their owner's decision, with their exact terms; nothing is written by reading them.",
+        "description": "Drafts waiting for your decision, with their exact terms; reading them writes nothing.",
         "operationId": "heinzel_pending_captured_writes",
         "parameters": [
           {
@@ -21412,7 +21412,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Drafts waiting for their owner's decision, with their exact terms; nothing is written by reading them.",
+        "summary": "Drafts waiting for your decision, with their exact terms; reading them writes nothing.",
         "tags": [
           "heinzel"
         ]

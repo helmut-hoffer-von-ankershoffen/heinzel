@@ -982,8 +982,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Drafts waiting for their owner's decision, with their exact terms; nothing is written by reading them.
-         * @description Drafts waiting for their owner's decision, with their exact terms; nothing is written by reading them.
+         * Drafts waiting for your decision, with their exact terms; reading them writes nothing.
+         * @description Drafts waiting for your decision, with their exact terms; reading them writes nothing.
          */
         get: operations["heinzel_pending_captured_writes"];
         put?: never;
