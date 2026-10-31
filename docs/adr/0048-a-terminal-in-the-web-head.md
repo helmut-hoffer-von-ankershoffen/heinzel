@@ -3,8 +3,10 @@ status: proposed
 date: 2026-10-24
 decision-makers: maintainer
 amends: 0039
+amends-0039: a terminal over a WebSocket; inline styles allowed
 amended-by: 0084, 0089
 related: 0019, 0029
+implemented-by: 68
 ---
 
 # 0048: A terminal in the web head
