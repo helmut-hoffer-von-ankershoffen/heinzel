@@ -208,9 +208,66 @@ def media_flow(page: "Page", base: str, snapshot: dict[str, Any]) -> None:
             media.close()
 
 
+def helper_layout(browser: "Browser", base: str, snapshot: dict[str, Any]) -> None:
+    """Keep character margins clear of the article, navigation and footer at every supported width."""
+    project = next((item for item in snapshot["plugins"] if item["name"] == "heinzel-resource"), snapshot["plugins"][0])
+    page = browser.new_page()
+    errors = []
+    page.on("pageerror", lambda error: errors.append(str(error)))
+    try:
+        for width in (1440, 1920, 390):
+            page.set_viewport_size({"width": width, "height": 960})
+            page.goto(base + f"catalog/{project['id']}/")
+            page.locator(".hz-page-helper img").first.evaluate("image => image.decode()")
+            for position in ("top", "middle", "navigation", "bottom"):
+                page.evaluate(
+                    """async position => {
+                    document.querySelectorAll('.md-sidebar__inner > .md-nav').forEach(nav => {
+                        if (position === 'navigation') nav.style.minHeight = '500px';
+                        else nav.style.removeProperty('min-height');
+                    });
+                    const y = ['top', 'navigation'].includes(position) ? 0 : position === 'middle'
+                        ? document.body.scrollHeight / 2 : document.body.scrollHeight;
+                    window.scrollTo(0, y);
+                    await document.fonts.ready;
+                    await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+                    }""",
+                    position,
+                )
+                require(page.evaluate(FITS_VIEWPORT), f"Character layout overflows at {width}/{position}")
+                if width in (1440, 1920) and position == "top" and project["name"] == "heinzel-resource":
+                    require(
+                        page.locator("[data-heinzel-helper][data-gutter]").count()
+                        == page.locator("[data-heinzel-helper]").count(),
+                        f"Available desktop gutters must show both characters at {width}",
+                    )
+                require(
+                    page.evaluate("""() => {
+                    const overlap = (a,b) => a.left < b.right && a.right > b.left
+                        && a.top < b.bottom && a.bottom > b.top;
+                    const obstacles = [...document.querySelectorAll(
+                        '.md-content,.md-sidebar__inner > .md-nav,.md-header,.md-tabs,.md-footer')]
+                        .map(el => el.getBoundingClientRect()).filter(r => r.width && r.height);
+                    return [...document.querySelectorAll('[data-heinzel-helper]')].every(el => {
+                        if (!el.hasAttribute('data-gutter')) return getComputedStyle(el).position !== 'fixed';
+                        if (innerWidth < 1100) return false;
+                        const r = el.getBoundingClientRect();
+                        return r.left >= 0 && r.right <= innerWidth && r.top >= 0 && r.bottom <= innerHeight
+                            && !obstacles.some(obstacle => overlap(r, obstacle));
+                    });
+                    }"""),
+                    f"Character overlaps page content at {width}/{position}",
+                )
+                require(not errors, f"Character layout script errors at {width}/{position}")
+                page.screenshot(path=str(REPORTS / f"helpers-{width}-{position}.png"))
+    finally:
+        page.close()
+
+
 def sweep(browser: "Browser", engine: str, base: str, axe: Path, snapshot: dict[str, Any]) -> None:
     """Exercise desktop/phone and light/dark combinations with real rendered artifacts."""
     total = len(snapshot["plugins"])
+    helper_layout(browser, base, snapshot)
     for width in (1440, 390):
         for mode in ("light", "dark"):
             context = browser.new_context(viewport={"width": width, "height": 960}, color_scheme=mode)

@@ -88,6 +88,8 @@ def checked_source(source: Object) -> Object:
 
 MAX_DECLARATIONS = 24
 MAX_IMAGES = 8
+HELPER_WORDS = 9
+HELPER_CHARACTERS = 80
 
 
 def validate_presentation(project: Object) -> None:
@@ -488,62 +490,56 @@ def on_files(files: Any, config: Any) -> Any:  # noqa: ANN401 - MkDocs owns the 
 
 
 def page_helpers(path: str, page_url: str, project: Object | None = None) -> list[Object]:
-    """Give every documentation/plugin page one or two contextual fictional character explainers."""
+    """Give each page a brief contextual voice and a useful next step."""
     reviewer = {
         "art": "reviewer",
-        "name": "Otto, your review partner",
-        "quote": "Take a look first. You decide what belongs in your workspace.",
-        "detail": "Check the screenshots, source and declared compatibility before installing a plugin.",
+        "name": "Otto",
+        "quote": "Look around before inviting a helper in.",
         "link": href("CATALOG/", page_url),
-        "action": "Explore the plugin catalog",
+        "action": "Browse plugins",
     }
     if project is not None:
-        themes = project.get("themes", [])
+        feature = project["highlights"][0] if project.get("highlights") else project["summary"]
+        words = str(feature).split()
+        brief = " ".join(words[:HELPER_WORDS])
+        if len(brief) > HELPER_CHARACTERS:
+            brief = brief[: HELPER_CHARACTERS - 1].rstrip() + "…"
+        elif len(words) > HELPER_WORDS:
+            brief += "…"
         guide = {
-            "art": "timekeeper" if not themes else "draftkeeper",
-            "name": "Pip, your feature guide" if not themes else "Ada, your workspace guide",
-            "quote": "Let me show you what this plugin brings."
-            if not themes
-            else "Make this workspace feel like yours.",
-            "detail": project["highlights"][0] if project.get("highlights") else project["summary"],
+            "art": "draftkeeper" if project.get("themes") else "timekeeper",
+            "name": "Ada" if project.get("themes") else "Pip",
+            "quote": brief,
             "link": "#screenshots",
-            "action": "See the UI and CLI",
+            "action": "See it working",
         }
         return [guide, reviewer]
     guide = {
         "art": "draftkeeper",
-        "name": "Ada, the draftkeeper",
-        "quote": "Give each helper a clear job, and keep its work easy to inspect.",
-        "detail": "A contract names the inputs, limits and expected draft. People remain in control.",
+        "name": "Ada",
+        "quote": "Give your helpers a clear, useful job.",
         "link": href("WORKFLOWS/", page_url),
         "action": "Explore contracts",
     }
     if path.startswith(("guides/install", "guides/first-steps")):
         guide.update(
             art="timekeeper",
-            name="Pip, your getting-started guide",
-            quote="Let's get you to your first useful screen.",
-            detail="Install Heinzel, open the workspace, then explore a plugin that helps with your day.",
+            name="Pip",
+            quote="Let's find your first useful screen together.",
             link=href("guides/first-steps/", page_url),
-            action="Take your first steps",
+            action="First steps",
         )
     elif "ARCHITECTURE" in path or "architecture" in path or path.startswith("adr/"):
         guide.update(
-            quote="Small pieces can do useful work together.",
-            detail=(
-                "The kernel discovers modules; heads expose typed operations; plugins bring specific tools and views."
-            ),
-            link=href("PLUGINS/", page_url),
-            action="Explore extension contracts",
+            quote="Small pieces can do useful work together.", link=href("PLUGINS/", page_url), action="Explore plugins"
         )
     elif path in {"CLI_REFERENCE.md", "CONFIGURATION.md", "MODULES.md"}:
         guide.update(
             art="reviewer",
-            name="Otto, your reference guide",
-            quote="Need the exact command or setting? You're in the right place.",
-            detail="Typed operation definitions supply the CLI, tool schemas and reference documentation.",
+            name="Otto",
+            quote="Find the command for your next step.",
             link=href("CLI_REFERENCE/", page_url),
-            action="Open the command reference",
+            action="Command reference",
         )
     return [guide]
 

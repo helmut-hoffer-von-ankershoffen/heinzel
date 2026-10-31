@@ -2,11 +2,10 @@
 <aside class="hz-page-helpers" aria-label="A little help from the Heinzelmännchen">
   {% for helper in hz_helpers %}
   <article class="hz-page-helper" data-heinzel-helper>
-    <img src="{{ ('assets/website/helper-' ~ helper.art ~ '.svg') | url }}" alt="" width="72" height="120" loading="lazy">
+    <img src="{{ ('assets/website/helper-' ~ helper.art ~ '.svg') | url }}" alt="" width="140" height="232" loading="lazy">
     <div>
       <p class="hz-helper-name">{{ helper.name | e }}</p>
       <p class="hz-helper-quote">“{{ helper.quote | e }}”</p>
-      <p>{{ helper.detail | e }}</p>
       <a href="{{ helper.link | e }}">{{ helper.action | e }} →</a>
     </div>
   </article>

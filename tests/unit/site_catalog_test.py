@@ -615,7 +615,9 @@ def test_repository_discovery_carries_soundscape_toml_into_public_records(layout
 def test_every_page_gets_a_small_contextual_character_group(path):
     helpers = pages.page_helpers(path, "reference/")
     assert 1 <= len(helpers) <= 5
-    assert all(helper["quote"] and helper["detail"] and helper["link"] for helper in helpers)
+    assert all(helper["quote"] and helper["link"] for helper in helpers)
+    assert all(helper["name"] in {"Pip", "Ada", "Otto"} for helper in helpers)
+    assert all(len(helper["quote"].split()) <= 10 and "detail" not in helper for helper in helpers)
 
 
 def test_future_plugin_pages_get_feature_specific_explainers_without_registration():
@@ -623,9 +625,9 @@ def test_future_plugin_pages_get_feature_specific_explainers_without_registratio
     plugin["highlights"] = ["A fictional harbor's next useful action"]
     helpers = pages.page_helpers("catalog/new-plugin/index.md", "catalog/new-plugin/", plugin)
     assert len(helpers) == 2
-    assert helpers[0]["detail"] == plugin["highlights"][0]
+    assert helpers[0]["quote"] == plugin["highlights"][0]
     assert helpers[0]["link"] == "#screenshots"
-    assert "before installing" in helpers[1]["detail"]
+    assert helpers[1]["action"] == "Browse plugins"
 
 
 def test_swipe_gallery_preserves_every_owner_scene_in_order_with_accessible_controls():
@@ -654,3 +656,13 @@ def test_gallery_empty_state_does_not_offer_nonfunctional_carousel_controls():
     rendered = pages.screenshot_gallery(project)
     assert "No screenshots published yet" in rendered
     assert "data-gallery-track" not in rendered
+
+
+def test_future_plugin_helper_bounds_metadata_without_inventing_features():
+    plugin = record()
+    plugin["highlights"] = [" ".join(["Useful"] * 40)]
+    guide = pages.page_helpers("catalog/new/index.md", "catalog/new/", plugin)[0]
+    assert len(guide["quote"].split()) <= 10
+    assert len(guide["quote"]) <= 80
+    assert guide["quote"].startswith("Useful Useful")
+    assert "detail" not in guide

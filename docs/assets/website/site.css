@@ -153,13 +153,17 @@ body { font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFon
 @media(max-width:700px) { .md-typeset .hz-product-scene { grid-template-columns:1fr; gap:1rem; } }
 @media(max-width:400px) { .hz-helper { flex-direction:column; align-items:center; } }
 
-.hz-page-helpers { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,330px),1fr)); gap:1rem; margin-top:3rem; padding-top:1.5rem; border-top:1px solid var(--hz-line); }
-.hz-page-helper { display:flex; align-items:flex-start; gap:1rem; min-width:0; padding:1rem; background:var(--hz-panel); border:1px solid var(--hz-line); border-radius:14px; }
-.hz-page-helper > img { flex:0 0 72px; width:72px; height:120px; object-fit:contain; }
-.md-typeset .hz-page-helper p { margin:0 0 .5rem; font-size:.72rem; }
-.md-typeset .hz-page-helper .hz-helper-name { color:var(--hz-muted); font-weight:650; font-size:.64rem; }
-.md-typeset .hz-page-helper .hz-helper-quote { font-size:.85rem; line-height:1.45; font-weight:550; }
-.hz-page-helper a { display:inline-flex; align-items:center; min-height:44px; font-size:.7rem; }
+.hz-page-helpers { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr)); gap:1.5rem; margin-top:2.5rem; }
+.hz-page-helper { display:flex; align-items:center; gap:1rem; min-width:0; }
+.hz-page-helper > img { flex:0 0 140px; width:140px; height:232px; object-fit:contain; }
+.md-typeset .hz-page-helper p { margin:0 0 .35rem; font-size:.76rem; line-height:1.4; }
+.md-typeset .hz-page-helper .hz-helper-name { font-weight:700; }
+.hz-page-helper a { display:inline-flex; align-items:center; min-height:44px; font-size:.72rem; }
+.hz-page-helper[data-gutter] { position:fixed; z-index:1; flex-direction:column; gap:.5rem; text-align:center; }
+.hz-page-helper[data-gutter] > img { flex:0 0 auto; width:160px; height:264px; max-width:100%; }
+.hz-page-helper[data-gutter] > div { background:var(--hz-paper); border-radius:12px; padding:.5rem; }
+@media(max-width:600px) { .hz-page-helper > img { flex-basis:96px; width:96px; height:160px; } }
+
 
 
 /* Native touch/trackpad scrolling works without JavaScript; controls progressively enhance it. */

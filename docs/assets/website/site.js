@@ -1,6 +1,71 @@
 /* Progressive enhancement: every catalog entry and command is useful without JavaScript. */
 (() => {
+  function placeHelpers(group) {
+    const helpers = [...group.querySelectorAll('[data-heinzel-helper]')];
+    const reset = () => helpers.forEach(helper => {
+      helper.removeAttribute('data-gutter');
+      helper.style.removeProperty('width');
+      helper.style.removeProperty('left');
+      helper.style.removeProperty('top');
+    });
+    reset();
+    const content = document.querySelector('.md-content');
+    if (!content || innerWidth < 1100 || group.getBoundingClientRect().top < innerHeight + 200) return;
+    const bounds = content.getBoundingClientRect();
+    const navigation = [...document.querySelectorAll('.md-sidebar__inner > .md-nav')]
+      .map(node => node.getBoundingClientRect()).filter(rect => rect.width && rect.height);
+    const header = [...document.querySelectorAll('.md-header, .md-tabs')]
+      .map(node => node.getBoundingClientRect()).filter(rect => rect.width && rect.height);
+    const footer = document.querySelector('.md-footer')?.getBoundingClientRect();
+    const top = Math.max(150, ...header.map(rect => rect.bottom + 24));
+    const bottom = Math.min(innerHeight - 24, footer ? footer.top - 24 : innerHeight - 24);
+    const bands = [[16, bounds.left - 24], [bounds.right + 24, innerWidth - 16]];
+    const lanes = bands.map(([left, right]) => {
+      // Prefer the outside of navigation; use its lower empty space only when needed.
+      const neighbors = navigation.filter(rect => rect.left < right && rect.right > left);
+      const outer = left < bounds.left ? [left, Math.min(right, ...neighbors.map(rect => rect.left - 16))]
+        : [Math.max(left, ...neighbors.map(rect => rect.right + 16)), right];
+      const band = outer[1] - outer[0] >= 150 ? outer : [left, right];
+      const width = Math.min(200, band[1] - band[0]);
+      const x = (band[0] + band[1] - width) / 2;
+      let y = top;
+      navigation.forEach(rect => {
+        if (rect.left < x + width && rect.right > x && rect.bottom > top) y = Math.max(y, rect.bottom + 24);
+      });
+      return { x, y, width };
+    }).filter(lane => lane.width >= 150);
+    for (const helper of helpers) {
+      const lane = lanes.sort((a, b) => a.y - b.y)[0];
+      if (!lane) { reset(); return; }
+      helper.dataset.gutter = 'true';
+      helper.style.width = `${lane.width}px`;
+      const height = helper.getBoundingClientRect().height;
+      if (lane.y + height > bottom) { reset(); return; }
+      helper.style.left = `${lane.x}px`;
+      helper.style.top = `${lane.y}px`;
+      lane.y += height + 24;
+    }
+  }
+
   function initialize() {
+    const helpers = document.querySelector('.hz-page-helpers');
+    if (helpers && !helpers.dataset.ready) {
+      helpers.dataset.ready = 'true';
+      let scheduled = false;
+      const update = () => {
+        if (scheduled) return;
+        scheduled = true;
+        requestAnimationFrame(() => { scheduled = false; placeHelpers(helpers); });
+      };
+      window.addEventListener('resize', update, { passive: true });
+      window.addEventListener('scroll', update, { passive: true });
+      const layoutObserver = new ResizeObserver(update);
+      document.querySelectorAll('.md-content, .md-sidebar__inner > .md-nav, .md-header, .md-tabs, .md-footer')
+        .forEach(element => layoutObserver.observe(element));
+      document.fonts.ready.then(update);
+      helpers.querySelectorAll('img').forEach(img => img.addEventListener('load', update, { once: true }));
+      update();
+    }
     const hero = document.querySelector('.hz-hero-art picture source');
     if (hero && !hero.dataset.ready) {
       hero.dataset.ready = 'true';
