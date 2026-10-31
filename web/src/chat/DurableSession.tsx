@@ -32,6 +32,15 @@ import { PersonalArtifactLinks } from "@/pages/PersonalArtifacts";
 
 const MORE_KEY = "hz.chat.more";
 
+/** A browser may keep the first sentence in the composer until its person presses send. */
+function preferExplicitSend(): boolean {
+  try {
+    return localStorage.getItem("hz.chat.autosend") === "0";
+  } catch {
+    return false;
+  }
+}
+
 async function result<T>(call: Promise<{ data?: T; error?: unknown; response: Response }>): Promise<T> {
   const { data, error, response } = await call;
   if (response.ok && data !== undefined) return data;
@@ -286,6 +295,7 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
   useEffect(() => {
     const key = `hz.durable.autosend.${sessionId}`;
     if (autoSent.current || !query.data || !text.trim() || sessionStorage.getItem(key) !== text) return;
+    if (preferExplicitSend()) return;
     autoSent.current = true;
     sessionStorage.removeItem(key);
     void send();

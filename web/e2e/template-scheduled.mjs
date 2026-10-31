@@ -9,6 +9,7 @@ url.pathname = "/doctor";
 const browser = await chromium.launch({ headless: true });
 const context = await browser.newContext({ serviceWorkers: "block", viewport: { width: 1280, height: 900 } });
 await context.addInitScript(() => localStorage.setItem("hz.chat.more", "1"));
+await context.addInitScript(() => localStorage.setItem("hz.chat.autosend", "0"));
 const page = await context.newPage();
 const observed = [];
 page.on("response", (response) => {
@@ -29,6 +30,8 @@ try {
   await page.getByRole("button", { name: "Create Heinzel and take this message" }).click();
   const message = page.getByLabel("Message your Heinzel");
   await message.waitFor();
+  assert.equal(await message.inputValue(), sentence);
+  await page.getByRole("button", { name: "Queue message" }).click();
   const assistantReply = page.locator("p").filter({
     has: page.locator('strong[data-speaker="assistant"]'),
     hasText: "Done",
@@ -63,7 +66,10 @@ try {
   await panel.getByRole("heading", { name: "Review connected read" }).waitFor();
   await panel.getByRole("button", { name: "Confirm", exact: true }).click();
   await panel.getByText(/Recorded state: approved/).waitFor();
-  const schedule = page.locator("details").filter({ has: page.getByText("Recurring agent turns", { exact: true }) });
+  const schedule = page
+    .locator("details")
+    .filter({ has: page.getByText("Recurring agent turns", { exact: true }) })
+    .last();
   await schedule.getByText("Recurring agent turns", { exact: true }).click();
   const consent = schedule.getByRole("checkbox", { name: /Allow the separately approved calendar.events/ });
   assert.equal(await consent.isChecked(), false);
@@ -115,7 +121,7 @@ try {
   assert.match(result.first_turn_id, /^interactive-/);
   const replies = page
     .locator("p")
-    .filter({ has: page.locator("strong").filter({ hasText: /^(assistant|Daemon):$/ }) });
+    .filter({ has: page.locator('strong[data-speaker="assistant"], strong:text-is("Woke on schedule.")') });
   const firstWakeReply = replies.nth(result.first_reply_index).locator("..");
   await firstWakeReply
     .locator("summary")

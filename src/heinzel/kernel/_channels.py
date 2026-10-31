@@ -124,3 +124,11 @@ class ChannelReplySource(ABC):
         self, reply: VerifiedChannelReply, outcome: Literal["approved", "declined", "expired", "superseded"]
     ) -> None:
         """Record what became of a reply, and tell the channel, so it is never acted on twice."""
+
+
+class ChannelReplyConsumer(ABC):
+    """The trusted confirmation boundary, which acts on verified replies; implemented by the host's chat service."""
+
+    @abstractmethod
+    def apply_channel_replies(self) -> int:
+        """Act on verified replies; how many were settled."""

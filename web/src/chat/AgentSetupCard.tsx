@@ -207,28 +207,8 @@ export function AgentSetupCard({ snapshot }: { snapshot: Snapshot }) {
         result(api.GET("/heinzel/latest-source-suggestion-view", query)),
         result(api.GET("/heinzel/connected-read-state", query)),
       ]);
-      // Looking at the account a source would use reads no data and approves nothing; the card shows what it found.
-      let sourceReview = null;
-      let sourceProblem = null;
-      if (source) {
-        const request = `source-${source.request_id.slice(5, 69)}`;
-        if (reads.proposal?.request_id === request) sourceReview = reads.proposal;
-        else
-          try {
-            sourceReview = await result(
-              api.POST("/heinzel/prepare-suggested-source", {
-                body: {
-                  session_id: sessionId,
-                  request_id: request,
-                  suggestion_request: source.request_id,
-                  suggestion_revision: source.revision,
-                },
-              }),
-            );
-          } catch (reason) {
-            sourceProblem = reason instanceof Error ? reason.message : "This source could not be checked.";
-          }
-      }
+      const sourceRequest = source ? `source-${source.request_id.slice(5, 69)}` : null;
+      const sourceReview = reads.proposal?.request_id === sourceRequest ? reads.proposal : null;
       const review = terms
         ? await result(
             api.GET("/heinzel/agent-contract-review", {
@@ -244,7 +224,7 @@ export function AgentSetupCard({ snapshot }: { snapshot: Snapshot }) {
         accepted: review?.accepted ?? false,
         source,
         sourceReview,
-        sourceProblem,
+        sourceRequest,
         sourceApproved:
           !!sourceReview && reads.status === "approved" && reads.proposal?.request_id === sourceReview.request_id,
       };
@@ -259,7 +239,7 @@ export function AgentSetupCard({ snapshot }: { snapshot: Snapshot }) {
       </p>
     );
   if (!data) return null;
-  const { terms, schedule, look, schedules, accepted, source, sourceReview, sourceProblem, sourceApproved } = data;
+  const { terms, schedule, look, schedules, accepted, source, sourceReview, sourceRequest, sourceApproved } = data;
   const interval = schedule && "kind" in schedule.trigger ? schedule.trigger : null;
   const requestId = terms && schedule ? `setup-${schedule.request_id.slice(5, 37)}-${terms.revision}` : null;
   const active = schedules.find((item) => item.status === "approved");
@@ -285,6 +265,30 @@ export function AgentSetupCard({ snapshot }: { snapshot: Snapshot }) {
       </section>
     );
   }
+  const checkSource = async () => {
+    if (busy || !source || !sourceRequest) return;
+    setBusy(true);
+    setProblemText(null);
+    try {
+      await result(
+        api.POST("/heinzel/prepare-suggested-source", {
+          body: {
+            session_id: sessionId,
+            request_id: sourceRequest,
+            suggestion_request: source.request_id,
+            suggestion_revision: source.revision,
+          },
+        }),
+      );
+    } catch (reason) {
+      setProblemText(
+        `This source isn't ready: ${reason instanceof Error ? reason.message : "it could not be checked."}`,
+      );
+    } finally {
+      setBusy(false);
+      await client.invalidateQueries({ queryKey: ["heinzel", "agent-setup", sessionId] });
+    }
+  };
   const start = async () => {
     if (busy) return;
     setBusy(true);
@@ -433,19 +437,20 @@ export function AgentSetupCard({ snapshot }: { snapshot: Snapshot }) {
           </>
         )}
       </dl>
-      {sourceProblem && (
-        <p role="alert" className="text-bad">
-          This source isn't ready: {sourceProblem}
-        </p>
-      )}
       {problemText && (
         <p role="alert" className="text-bad">
           {problemText}
         </p>
       )}
-      <Button type="button" size="sm" disabled={busy || (sourcePending && !sourceReview)} onClick={() => void start()}>
-        {busy ? "Starting…" : running || accepted ? "Apply" : "Start"}
-      </Button>
+      {sourcePending && !sourceReview ? (
+        <Button type="button" size="sm" disabled={busy} onClick={() => void checkSource()}>
+          {busy ? "Checking…" : "Check this source"}
+        </Button>
+      ) : (
+        <Button type="button" size="sm" disabled={busy} onClick={() => void start()}>
+          {busy ? "Starting…" : running || accepted ? "Apply" : "Start"}
+        </Button>
+      )}
       <p className="text-xs text-muted-foreground">Not quite right? Say what to change, and I will propose it again.</p>
     </section>
   );

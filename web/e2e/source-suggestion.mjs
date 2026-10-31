@@ -11,6 +11,7 @@ url.pathname = "/doctor";
 const browser = await (process.argv[3] === "webkit" ? webkit : chromium).launch({ headless: true });
 const context = await browser.newContext({ serviceWorkers: "block", viewport: { width: 390, height: 844 } });
 await context.addInitScript(() => localStorage.setItem("hz.chat.more", "1"));
+await context.addInitScript(() => localStorage.setItem("hz.chat.autosend", "0"));
 const page = await context.newPage();
 let reviewRequests = 0;
 page.on("request", (request) => {
@@ -27,6 +28,7 @@ try {
   await page.getByLabel("Your message").fill("Read my selected source.");
   await page.getByRole("button", { name: "Create Heinzel and take this message" }).click();
   const panel = page.getByRole("region", { name: "Connected read review" });
+  await page.getByRole("button", { name: "Queue message" }).click();
   await page.getByText("Suggestion recorded.").waitFor({ timeout: 30000 });
   await panel.getByText(/has not contacted a provider/).waitFor();
   await panel.getByText("documents.read", { exact: true }).waitFor();
