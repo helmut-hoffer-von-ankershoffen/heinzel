@@ -376,13 +376,10 @@ def test_bulk_inventory_linear_validation_and_inconsistent_outcomes(tmp_path, mo
         monkeypatch.setattr(crud, "read_body", read_body)
         recovery = ScheduledNotificationRecovery(crud, current, notice)
         journal = CountedEvents(attempts + outcomes)
-        views = recovery.validated_inventory(session, journal)
-        assert len(views) == 200
-        assert all(view.status == "recorded" for view in views)
+        assert recovery.unresolved_attempts(journal) == []
         assert journal.scans == 1
-        assert len(reads) == 200
-        assert len(set(reads)) == 200
-        assert recovery.validated_inventory(session, attempts + outcomes[:-1])[-1].status == "unresolved"
+        assert reads == []  # a resolved attempt's expired body can never block a later turn
+        assert recovery.unresolved_attempts(attempts + outcomes[:-1]) == attempts[-1:]
         forged = outcomes[0].model_copy(
             update={"kind": "scheduled-notification.abandoned", "data": {"acknowledged": True}}
         )
@@ -394,4 +391,40 @@ def test_bulk_inventory_linear_validation_and_inconsistent_outcomes(tmp_path, mo
             ([*attempts, forged], "invalid"),
         ):
             with pytest.raises(HeinzelError, match=refusal):
-                recovery.validated_inventory(session, events)
+                recovery.unresolved_attempts(events)
+
+
+def test_an_expired_body_blocks_but_its_owner_can_still_set_it_aside(tmp_path, monkeypatch):
+    current = CurrentUser(tmp_path / "identity")
+    with current.local("cli"):
+        repo = PersonalSessionRepository(current)
+        crud = SessionCrud(repo, lambda: SessionCosts(session_max_usd=2, message_max_usd=0.2))
+        session = crud.new_chat("new").session_id
+        provider = FakeNotifications(result=False)
+        notice = ScheduledNotifications(
+            crud,
+            current,
+            provider,
+            session=session,
+            turn="turn",
+            contract_sha256="a" * 64,
+            schedule_request="schedule",
+            schedule_sha256="b" * 64,
+            policy=ScheduledNotificationPolicy(max_per_24h=2, topic_cooldown_seconds=60),
+            verify=lambda: None,
+        )
+        with current.local("daemon"), repo.main_writer(session) as writer:
+            assert notice.send({"topic": "example", "title": "Title", "body": "Private"}, writer)[0] == "uncertain"
+
+        def expired(_session, _event):
+            raise FileNotFoundError
+
+        monkeypatch.setattr(crud, "read_body", expired)
+        recovery = ScheduledNotificationRecovery(crud, current, provider)
+        assert len(recovery.unresolved_attempts(repo.control_read(session).events)) == 1
+        view = recovery.list(session).items[0]
+        assert (view.status, view.proposal.topic, view.proposal.body) == ("unresolved", "unavailable", "")
+        assert "Private" not in view.model_dump_json()
+        resolved = recovery.resolve(session, view.proposal.request_id, acknowledge_uncertain=True)
+        assert resolved.status == "abandoned"
+        assert recovery.unresolved_attempts(repo.control_read(session).events) == []

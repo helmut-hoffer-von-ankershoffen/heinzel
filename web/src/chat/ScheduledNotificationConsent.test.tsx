@@ -299,3 +299,22 @@ it("sends at most one acknowledgment for simultaneous clicks", async () => {
     await waiting;
   });
 });
+
+it("names the cause of a stalled agent when the unresolved attempt is on a later page", async () => {
+  mockApi({
+    "/api/heinzel/scheduled-notification-attempts": (request: Request) => {
+      const cursor = new URL(request.url).searchParams.get("cursor");
+      return cursor === "0"
+        ? { session_id: session, items: [{ proposal: draft, seq: 1, status: "recorded" }], next_cursor: 1 }
+        : {
+            session_id: session,
+            items: [{ proposal: { ...draft, request_id: "notice-2" }, seq: 2, status: "unresolved" }],
+            next_cursor: null,
+          };
+    },
+  });
+  show(<ScheduledNotificationAttempts sessionId={session} />);
+  const panel = await screen.findByRole("region", { name: "Scheduled notification activity" });
+  expect(await within(panel).findByRole("alert")).toHaveTextContent("scheduled turns are blocked");
+  expect(within(panel).getByRole("button", { name: "Inspect or set aside outcome" })).toBeDisabled();
+});

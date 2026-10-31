@@ -125,6 +125,9 @@ def test_approved_schedule_survives_process_exit_and_revocation(make_kernel, tmp
                 == 1
             )
         with current.local("cli"):
+            failures = [m.text for m in crud.snapshot(session).messages if m.role == "system"]
+            assert len(failures) == 1
+            assert "requires owner review" in failures[0]
             kernel.resolve(UserChatService).abandon(session, occurrence)
         after_abandon = worker(now + timedelta(minutes=10))
         owned.append(after_abandon)
