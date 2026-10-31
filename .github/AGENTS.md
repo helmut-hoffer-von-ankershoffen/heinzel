@@ -9,6 +9,7 @@
 | `publish.yml` | tags `v*`, called | builds, attests provenance, creates the GitHub release |
 | `pypi.yml` | manual dispatch on a final version tag | validates a published core GitHub release, builds without OIDC, verifies artifacts, then uploads only core with trusted publishing in environment `pypi` |
 | `release.yml` | manual dispatch for one optional source plugin | owning checks, wheel acceptance and protected publication through the versioned toolkit; never builds or tests core |
+| `source-review.yml` | dispatch on the protected ref `trusted/source-review` only (`make review PR=<n>`) | paid, tool-free model review of one pull request's source; fails closed unless the live head, base and protected ref equal the dispatch, before and after the run; core only |
 | `codeql.yml`, `scorecard.yml` | `main`, PRs, weekly | code scanning and supply-chain checks |
 | `fuzz.yml` | PRs touching the contract parser, weekly, dispatch | fuzzes the workflow contract parser with atheris (`make fuzz`, core only) |
 | `claude-review.yml` | PRs, opt-in (`vars.CLAUDE_REVIEW`) | reviewer agents comment GO / NO-GO |

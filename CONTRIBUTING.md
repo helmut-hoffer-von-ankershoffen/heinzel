@@ -221,6 +221,13 @@ survive the regeneration; hand edits to their entries don't, because entries com
 `CI OK` is green; that tags the commit, and **Publish** builds wheel and sdist, attests their provenance and creates the GitHub
 release with the changelog section as notes.
 
+**Source review** of a pull request by an independent, tool-free model: `make review PR=<n>` (needs `REVIEW_TRUSTED`,
+the commit of the protected ref `trusted/source-review` that you have read). It chooses a tier from the changed paths
+([scripts/review_tier.py](scripts/review_tier.py): full for installer, authentication, approvals, release and workflow
+code; light for other code; none for documentation, tests and Markdown, which costs nothing), dispatches
+[Source review](.github/workflows/source-review.yml) on that ref and prints the run URL. The run fails closed unless
+the live pull request still has the dispatched head and base, before and after the model; it never runs the target's code.
+
 **Pinned tools** live in [scripts/tools.toml](scripts/tools.toml); to bump one, change its version and run
 `uv run --script scripts/tools.py pin <name>`.
 

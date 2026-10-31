@@ -79,6 +79,11 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
         "gh workflow run ci.yml": "starts CI on the release pull request, which the bot's token doesn't",
         "gh pr merge": "enables squash auto-merge on the release pull request once CI OK is green",
     },
+    "source-review.yml": {
+        ': "source-review dispatch authority"': "refuses any other ref, actor or commit, before checkout",
+        "uv run --script scripts/source_review.py": "the guard and the tool-free review, from the protected commit",
+        ': "source-review final identity"': "rechecks the pull request and the protected ref on a fresh runner",
+    },
     "release-tag.yml": {'tag="v$(uv version --short)"': "tags a merged release commit"},
     "claude-review.yml": {'files="$(git diff': "picks the review tier from the changed files"},
     "update-prs.yml": {

@@ -1,0 +1,118 @@
+name: Source review
+
+# An independent, paid model review of one pull request's source, started with `make review PR=<n>`. The model has no
+# tools and the target's code never runs: the job reads Git objects as data.
+#
+# Where the trust comes from. GitHub only lists a dispatchable workflow that exists on the default branch, so this file
+# is on main; but a run takes the workflow file, and the scripts it checks out, from the ref it is dispatched on. The
+# only ref that may run it is the protected, read-only `trusted/source-review`, whose commit a maintainer has read
+# (docs: CONTRIBUTING.md, "Source review"). Dispatched on any other ref, including main, the first step fails before
+# checkout and before the secret is used; the secret itself lives in the `source-review` environment, which only that
+# ref may deploy to. The guard in scripts/source_review.py therefore comes from the protected commit, not from the
+# pull request under review and not from whatever main later became.
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: Pull request number
+        type: string
+        required: true
+      target_head:
+        description: Exact head commit of the pull request
+        type: string
+        required: true
+      target_base:
+        description: Exact base commit (current main)
+        type: string
+        required: true
+      trusted_commit:
+        description: Commit of the protected ref that a maintainer has read
+        type: string
+        required: true
+      tier:
+        description: Review tier chosen by make review
+        type: choice
+        options: [full, light]
+        required: true
+
+permissions: {}
+
+concurrency:
+  group: source-review-${{ inputs.pr }}
+  cancel-in-progress: false
+
+jobs:
+  review:
+    name: Review the pull request's source
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: source-review
+    permissions:
+      contents: read
+      pull-requests: read
+    env:
+      REVIEW_PR: ${{ inputs.pr }}
+      REVIEW_HEAD: ${{ inputs.target_head }}
+      REVIEW_BASE: ${{ inputs.target_base }}
+      REVIEW_TIER: ${{ inputs.tier }}
+      TRUSTED_COMMIT: ${{ inputs.trusted_commit }}
+    steps:
+      - name: Check the dispatch authority before checkout
+        env:
+          ACTOR: ${{ github.actor }}
+          OWNER: ${{ github.repository_owner }}
+        shell: bash
+        run: |
+          : "source-review dispatch authority"
+          set -euo pipefail
+          test "$GITHUB_EVENT_NAME" = workflow_dispatch
+          test "$GITHUB_REF" = refs/heads/trusted/source-review
+          test "$GITHUB_WORKFLOW_REF" = "$GITHUB_REPOSITORY/.github/workflows/source-review.yml@refs/heads/trusted/source-review"
+          test "$ACTOR" = "$OWNER"
+          test "$GITHUB_SHA" = "$TRUSTED_COMMIT"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - name: Guard, review and guard again
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: uv run --script scripts/source_review.py
+
+  identity:
+    needs: review
+    if: always()
+    name: Recheck the pull request on a fresh runner
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Compare the live pull request and the protected ref with the dispatch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REVIEW_PR: ${{ inputs.pr }}
+          REVIEW_HEAD: ${{ inputs.target_head }}
+          REVIEW_BASE: ${{ inputs.target_base }}
+          TRUSTED_COMMIT: ${{ inputs.trusted_commit }}
+          REVIEW_RESULT: ${{ needs.review.result }}
+        shell: bash
+        run: |
+          : "source-review final identity"
+          set -euo pipefail
+          current="$(gh api "repos/$GITHUB_REPOSITORY/pulls/$REVIEW_PR" --jq '[.state,.draft,.merged,.base.ref,.head.sha,.base.sha,.head.repo.full_name,.base.repo.full_name]|join(" ")')"
+          trusted="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/trusted/source-review" --jq .object.sha)"
+          {
+            echo "### Final identity"
+            echo "- pull request: \`$current\`"
+            echo "- protected ref: \`$trusted\`"
+            echo "- review job: $REVIEW_RESULT"
+          } >> "$GITHUB_STEP_SUMMARY"
+          test "$current" = "open false false main $REVIEW_HEAD $REVIEW_BASE $GITHUB_REPOSITORY $GITHUB_REPOSITORY"
+          test "$trusted" = "$TRUSTED_COMMIT"
+          test "$REVIEW_RESULT" = success

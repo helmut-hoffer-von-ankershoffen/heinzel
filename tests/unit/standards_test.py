@@ -109,6 +109,10 @@ CORE_ONLY = {  # path: why plugins don't get it
     "scripts/starter-test.py": "core SDK compatibility job exercises fresh standalone and collection authors",
     "scripts/scoped_checks.py": "routes Core-root checks; owning and governed plugins already check their own project",
     "scripts/template_pyproject_head.toml.tmpl": "input of sync_template.py",
+    "scripts/review_tier.py": "picks the source review tier of a core change from its paths; plugins have none",
+    "scripts/review.sh": "dispatches the core's protected source review (`make review`); plugins have none",
+    "scripts/source_review.py": "guard and runner of the core's protected source review workflow; plugins have none",
+    ".github/workflows/source-review.yml": "runs only on the core's protected review ref, with its own secret",
     "scripts/web.py": "the web head's typed client and dev server (web/, ADR 0039); plugins bring no UI",
     "scripts/web_build.py": "runs and builds the web head's app (web/, ADR 0039); plugins bring no UI",
 }
