@@ -3,7 +3,7 @@
 # content: every page is a file in docs/ or at the root, so GitHub and the site show the same thing.
 site_name: Heinzelmännchen
 site_description: Open-source helpers that keep product development teams running.
-site_url: https://helmut.hoffer-von-ankershoffen.me/heinzel/
+site_url: https://heinzel.team/
 repo_url: https://github.com/helmut-hoffer-von-ankershoffen/heinzel
 repo_name: heinzel
 edit_uri: edit/main/docs/

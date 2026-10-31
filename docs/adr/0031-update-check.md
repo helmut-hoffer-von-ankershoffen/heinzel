@@ -46,7 +46,11 @@ waits and nothing about the user is sent.
 
 - What is sent: one GET to the latest-release endpoint of the package source the installation came from, today the
   GitHub releases API of the repository in the uv tool receipt (the default repository otherwise), with only a
-  `heinzel/<version>` User-Agent: no token, no identifier. The system module provides it to the kernel as a
+  `heinzel/<version>` User-Agent: no token, no identifier.
+  The check asks first `github.com/<repository>/releases/latest` with a HEAD that is never followed: GitHub answers it
+  with a redirect to the latest release's tag page, which spends none of the REST API's 60 unauthenticated requests an
+  hour per address (a shared network exhausts them, and the check then never learns of a newer release). Only if that
+  answer is unusable does it ask the releases API; both carry nothing but the User-Agent. The system module provides it to the kernel as a
   `ReleaseSource`; heads never import GitHub code.
 - When: the `hz` entry point starts the check on a daemon thread when the release cache (`ReleaseCache` in the
   kernel, in the cache directory) was last asked an hour ago or longer. The cache is stamped *before* asking, so a
