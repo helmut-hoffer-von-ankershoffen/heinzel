@@ -70,6 +70,16 @@ class SelectedWriteService(CapturedWriteService):
             msg = "The selected document provider or write binding changed"
             raise HeinzelError(msg)
 
+    def check_available(self) -> None:
+        """Whether the selected provider can write at all.
+
+        Raises:
+            HeinzelError: If it has no write service.
+        """
+        if type(self._resolved()).target is CapturedWriteService.target:
+            msg = "This provider does not support reviewed conditional writes"
+            raise HeinzelError(msg)
+
     def target(self, reference: str) -> CapturedWriteTarget:
         """Observe where a draft would go; this writes nothing and needs no approval."""
         return self._resolved().target(reference)

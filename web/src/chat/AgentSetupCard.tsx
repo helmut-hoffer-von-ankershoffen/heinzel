@@ -107,14 +107,20 @@ function DraftReview({ sessionId, draft, onDone }: { sessionId: string; draft: P
   return (
     <section aria-label="Review this edit" className="space-y-2 rounded-lg border border-border p-3 text-sm">
       <h3 className="font-medium">Review this edit</h3>
-      <p>
-        Into{" "}
-        <a className="underline" href={draft.reference} target="_blank" rel="noreferrer">
-          this document
-        </a>
-        , {draft.section === "end" ? "at its end" : `after “${draft.section}”`}, as {draft.account}. If the document
-        changes before you decide, Google refuses the edit and nothing is written.
-      </p>
+      {draft.reference.startsWith("new:") ? (
+        <p>
+          A new private {draft.reference.split(":")[1]} in your Drive, “{draft.section}”, as {draft.account}.
+        </p>
+      ) : (
+        <p>
+          Into{" "}
+          <a className="underline" href={draft.reference} target="_blank" rel="noreferrer">
+            this file
+          </a>
+          , {draft.section === "end" ? "at its end" : `after “${draft.section}”`}, as {draft.account}. If it changes
+          before you decide, nothing is written.
+        </p>
+      )}
       <pre className="whitespace-pre-wrap break-words rounded bg-background p-2 text-xs">{draft.content}</pre>
       {failed && (
         <p role="alert" className="text-bad">

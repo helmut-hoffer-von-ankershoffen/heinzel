@@ -17,7 +17,7 @@ from pydantic_ai.models import Model
 
 from heinzel import ConfiguredApiAccess, CurrentUser, HeinzelError, Kernel, SessionEvent
 from heinzel.modules.heinzel._budget_reservation import initialize_budget
-from heinzel.modules.heinzel._captured_write_tools import DocumentDraftTools, document_draft_schema
+from heinzel.modules.heinzel._captured_write_tools import DocumentDraftTools, document_draft_schema, new_file_schema
 from heinzel.modules.heinzel._claude_subscription_model import ClaudeSubscriptionModel
 from heinzel.modules.heinzel._connected_grants import ConnectedReadFailedError, ConnectedReadGrants
 from heinzel.modules.heinzel._connected_read_set_approvals import ConnectedReadSetApprovals
@@ -121,7 +121,8 @@ def _turn_guidance(*, scheduled: bool) -> str:
         "notices.deduplicate_by revision when a changed item should notify again. When the work should react to new "
         "items, such as a new mail, set wake_on_new_items so a turn runs only when one arrives. Choose the slowest "
         "schedule that keeps the promise, at most every five minutes unless asked. To change a document, propose it "
-        "as a source first; once that read is approved, document:draft proposes text for that document alone. Then "
+        "as a source first; once that read is approved, document:draft proposes text for that file alone. To make a "
+        "new one, document:create proposes it. Then "
         "reply in one or two plain sentences saying what you propose, as you would to a friend, with no revisions, "
         "field names or seconds; the person reviews and starts it with a button in this chat, and nothing runs "
         "before that. When they ask to change the look, the name or how it works, propose the new terms the same "
@@ -591,7 +592,7 @@ class InteractiveTurn:
                         return "The scheduled notification was not authorized or its bounds were reached."
                     self._event(session_id, turn, calls, name, "completed" if outcome == "recorded" else "failed")
                     return text
-                if name == "document:draft":
+                if name in {"document:draft", "document:create"}:
                     self._check_owner()
                     calls += 1
                     self._event(session_id, turn, calls, name, "requested")
@@ -599,7 +600,10 @@ class InteractiveTurn:
                         if document_drafts is None:
                             msg = "Drafting is unavailable"
                             raise HeinzelError(msg)  # noqa: TRY301
-                        text = document_drafts.dispatch(_JSON.validate_python(arguments, strict=True), calls)
+                        args = _JSON.validate_python(arguments, strict=True)
+                        text = (document_drafts.dispatch if name == "document:draft" else document_drafts.create)(
+                            args, calls
+                        )
                     except Exception:  # noqa: BLE001 - provider and private argument errors never reach the model
                         self._event(session_id, turn, calls, name, "denied")
                         return "The draft was not recorded; only the approved document can be drafted in."
@@ -686,7 +690,12 @@ class InteractiveTurn:
                         + ([connected_schema] if connected_schema is not None else [])
                         + ([set_schema] if set_schema is not None else [])
                         + ([scheduled_notifications.schema()] if scheduled_notifications is not None else [])
-                        + ([document_draft_schema()] if document_drafts is not None else []),
+                        + ([new_file_schema()] if document_drafts is not None else [])
+                        + (
+                            [document_draft_schema()]
+                            if document_drafts is not None and document_drafts.has_document
+                            else []
+                        ),
                         ensure_ascii=True,
                     )
                 ),

@@ -338,7 +338,7 @@ class UserChatService:
     def _document_drafts(
         self, session: str, turn: str, connected: ConnectedReadGrants | None
     ) -> DocumentDraftTools | None:
-        """Offer drafting only where a provider can write and a document read is approved for this helper."""
+        """Offer proposing a write where a provider can; drafting in a file also needs its read approved."""
         if connected is None or self._playbook_kernel is None:
             return None
 
@@ -350,10 +350,9 @@ class UserChatService:
             ref = grant.review.fixed_arguments.get("ref")
             return ref if grant.capability == "documents" and isinstance(ref, str) else None
 
-        if approved_reference() is None:
-            return None
         try:
             selected = self._playbook_kernel.resolve(SelectedWriteService)
+            selected.check_available()
         except HeinzelError:
             return None
         return DocumentDraftTools(
