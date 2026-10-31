@@ -10,9 +10,7 @@ docs/ARCHITECTURE.md:paragraph
 docs/CODING_STANDARDS.md:paragraph
 docs/DESKTOP_RUNTIME_AUTHORITY.md:paragraph
 docs/DURABLE_TURNS.md:paragraph
-docs/HEINZELMAENNCHEN.md:command
 docs/HEINZELMAENNCHEN.md:paragraph
-docs/HEINZELMAENNCHEN.md:residue
 docs/PLAYBOOKS.md:filler
 docs/PLUGINS.md:paragraph
 docs/PLUGIN_AUTHORING.md:command
@@ -24,7 +22,6 @@ docs/SCREENSHOT_PLAYBOOK.md:paragraph
 docs/SESSIONS.md:paragraph
 docs/SONAR_SECURITY.md:paragraph
 docs/SONAR_SECURITY.md:residue
-docs/TEAMS.md:paragraph
 docs/THEMES.md:paragraph
 docs/adr/0017-first-party-plugins-in-the-core-repository.md:date
 docs/adr/0018-one-administrative-namespace.md:command
@@ -90,15 +87,17 @@ docs/adr/0108-record-owned-installation-continuity-after-verified-changes.md:par
 docs/adr/0109-adopt-plugin-playbook-terms-as-inert-chat-drafts.md:filler
 docs/adr/0109-adopt-plugin-playbook-terms-as-inert-chat-drafts.md:paragraph
 docs/adr/0110-one-versionless-launcher-installs-and-opens-the-standard-app.md:filler
-docs/adr/README.md:command
 docs/guides/catalog.md:paragraph
 docs/guides/contribute.md:claims
 docs/guides/first-steps.md:filler
 docs/guides/install.md:claims
-docs/guides/manager.md:command
 src/heinzel/kernel/_settings.py:claims
 src/heinzel/kernel/_settings.py:filler
 src/heinzel/modules/ai/access/_models.py:claims
 web/src/i18n.ts:claims
 adr/index.html:pipes
 research/daemon-head/index.html:pipes
+CONTRIBUTING.md:paragraph
+docs/adr/0114-green-main-releases-to-edge-and-acceptance-promotes-to-stable.md:filler
+docs/adr/0114-green-main-releases-to-edge-and-acceptance-promotes-to-stable.md:paragraph
+docs/adr/0114-green-main-releases-to-edge-and-acceptance-promotes-to-stable.md:command
