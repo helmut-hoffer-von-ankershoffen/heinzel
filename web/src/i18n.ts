@@ -594,6 +594,7 @@ const en = {
   "plugins.restart": "Restart hz ui",
   "plugins.restarting": "Restarting…",
   "plugins.checking": "Checking…",
+  "plugins.sourceDetails": "Source and details",
   "plugins.enable": "Enable",
   "plugins.disable": "Disable",
   "plugins.enableName": "Enable {name}",

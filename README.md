@@ -13,7 +13,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-44bb00)](LICENSE)
 <!-- badges:end -->
 
-[**Install & explore →**](https://helmut.hoffer-von-ankershoffen.me/heinzel/) · [Plugin catalog](https://helmut.hoffer-von-ankershoffen.me/heinzel/CATALOG/) · [Build a plugin](docs/PLUGIN_AUTHORING.md)
+[**Install & explore →**](https://heinzel.team/) · [Plugin catalog](https://heinzel.team/CATALOG/) · [Build a plugin](docs/PLUGIN_AUTHORING.md)
 
 <p align="center">
   <picture>
@@ -50,22 +50,22 @@ live provider, and helpers do not yet work with each other. Drafts are saved on 
 Real screens of the web app, captured from the installed plugins with a fictional team and demonstration data.
 Every image was inspected for private data before it was published.
 
-<a href="https://helmut.hoffer-von-ankershoffen.me/heinzel/catalog/heinzel-acme-aa9ce1cf07/">
+<a href="https://heinzel.team/catalog/heinzel-acme-aa9ce1cf07/">
   <img src="https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-acme/7b8c4c1d114d37342d1229ba97aa972ec08de8c3/docs/assets/screenshots/company-workflow.png" alt="The workflow view of the web app: connected systems, the assets a playbook keeps, and the weekly-report contract they feed, drawn as a graph" width="100%">
 </a>
 
 **The team's real process, drawn from what is connected.** Systems, assets and contracts appear as a graph, so you
-can see what feeds the Friday report. [Explore the ACME team stack →](https://helmut.hoffer-von-ankershoffen.me/heinzel/catalog/heinzel-acme-aa9ce1cf07/)
+can see what feeds the Friday report. [Explore the ACME team stack →](https://heinzel.team/catalog/heinzel-acme-aa9ce1cf07/)
 
-<a href="https://helmut.hoffer-von-ankershoffen.me/heinzel/catalog/heinzel-acme-payments-checkout-8a7d294621/"><img src="https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-acme/7b8c4c1d114d37342d1229ba97aa972ec08de8c3/plugins/heinzel-acme-payments-checkout/docs/assets/screenshots/draft-in-terminal.png" alt="A locally saved weekly-report draft, listed with hz heinzel drafts in the web app's terminal, ending: fictional local demonstration, review before sharing" width="100%"></a>
+<a href="https://heinzel.team/catalog/heinzel-acme-payments-checkout-8a7d294621/"><img src="https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-acme/7b8c4c1d114d37342d1229ba97aa972ec08de8c3/plugins/heinzel-acme-payments-checkout/docs/assets/screenshots/draft-in-terminal.png" alt="A locally saved weekly-report draft, listed with hz heinzel drafts in the web app's terminal, ending: fictional local demonstration, review before sharing" width="100%"></a>
 
 **A first draft you can edit.** Saved locally by a deterministic demo runner, ready to review.
 
-<a href="https://helmut.hoffer-von-ankershoffen.me/heinzel/catalog/heinzel-clock-a8638667a9/"><img src="https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/57a26d579b1989febfc9b642d3e6f23097baa8fb/plugins/heinzel-clock/docs/assets/screenshots/world-clock.png" alt="Today and the World Clock: a globe with Berlin, New York and Los Angeles, and who is at work now" width="100%"></a>
+<a href="https://heinzel.team/catalog/heinzel-clock-a8638667a9/"><img src="https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/57a26d579b1989febfc9b642d3e6f23097baa8fb/plugins/heinzel-clock/docs/assets/screenshots/world-clock.png" alt="Today and the World Clock: a globe with Berlin, New York and Los Angeles, and who is at work now" width="100%"></a>
 
 **A time that works for everyone.** The Clock plugin shows who is at work, in demonstration time.
 
-[See every screen in the plugin catalog →](https://helmut.hoffer-von-ankershoffen.me/heinzel/CATALOG/) · [Install it yourself](#install)
+[See every screen in the plugin catalog →](https://heinzel.team/CATALOG/) · [Install it yourself](#install)
 
 <img src="docs/assets/meet.svg" alt="Seven Heinzelmännchen, each showing a state: at rest, working, thinking, waiting for you, asleep, blocked and done" width="100%">
 
@@ -111,7 +111,7 @@ uvx heinzel@latest
 
 <!-- install-script:start -->
 ```sh
-curl -LsSf https://helmut.hoffer-von-ankershoffen.me/heinzel/install.sh | sh
+curl -LsSf https://heinzel.team/install.sh | sh
 ```
 <!-- install-script:end -->
 

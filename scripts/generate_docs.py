@@ -19,6 +19,7 @@ Usage: uv run python scripts/generate_docs.py [--check]
 # Project-bound: runs in the project environment (`uv run python`), not as an inline-metadata script, because it
 # imports heinzel and its modules to read their operations, settings and schemas.
 
+import importlib.util
 import json
 import re
 import subprocess
@@ -54,6 +55,7 @@ BADGES_START, BADGES_END = "<!-- badges:start -->", "<!-- badges:end -->"
 #: (instructions every agent session loads), not CHANGELOG.md (the release process writes it).
 BADGE_PAGES = ("README.md", "CONTRIBUTING.md", "SECURITY.md", "CODE_OF_CONDUCT.md", "INTENT.md")
 OWNER, REPOSITORY = "helmut-hoffer-von-ankershoffen", "heinzel"
+REPO_URL = f"https://github.com/{OWNER}/{REPOSITORY}"
 BEST_PRACTICES = 15863  # the OpenSSF Best Practices project id of this repository
 TEMPLATE = ROOT / "template"
 PLUGINS = DOCS / "plugins"
@@ -404,6 +406,21 @@ def model_schema(model: type[BaseModel], urn: str, title: str) -> str:
     return json.dumps(schema, indent=2, ensure_ascii=False) + "\n"
 
 
+def adr_index() -> str:
+    """The ADR index table of docs/adr/README.md, rendered from the records' front matter by scripts/adr_index.py.
+
+    Raises:
+        RuntimeError: If the hooks script cannot be loaded.
+    """
+    spec = importlib.util.spec_from_file_location("adr_index", ROOT / "scripts" / "adr_index.py")
+    if spec is None or spec.loader is None:
+        msg = "scripts/adr_index.py cannot be loaded"
+        raise RuntimeError(msg)
+    hooks = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(hooks)
+    return hooks.adr_index_block(DOCS / "adr", REPO_URL)
+
+
 def main() -> int:
     """Write the references, or with --check only compare them."""
     check = "--check" in sys.argv
@@ -435,6 +452,10 @@ def main() -> int:
         outputs[path] = with_block(
             outputs[path], "<!-- install-script:start -->", "<!-- install-script:end -->", f"```sh\n{guided}\n```"
         )
+    adr_readme = DOCS / "adr" / "README.md"
+    outputs[adr_readme] = with_block(
+        adr_readme.read_text(encoding="utf-8"), "<!-- adr-index:start -->", "<!-- adr-index:end -->", adr_index()
+    )
     readme = TEMPLATE / "README.md.jinja"
     outputs[readme] = with_block(readme.read_text(encoding="utf-8"), BADGES_START, BADGES_END, template_badges())
     outputs[TEMPLATE / "SECURITY.md.jinja"] = template_security()

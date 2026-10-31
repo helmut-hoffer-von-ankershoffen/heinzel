@@ -96,7 +96,8 @@ body { font-family:var(--font-sans); }
 .md-typeset a { text-decoration:underline; text-underline-offset:3px; }
 .md-typeset .hz-button,.md-typeset .hz-plugin-art,.md-typeset .hz-plugin h3 a { text-decoration:none; }
 .md-typeset .highlight .nb { color:var(--color-primary); }
-[hidden] { display:none !important; }
+/* Material hides a page's navigation with `hidden` on desktop but still shows it as the phone drawer; leave that to Material. */
+[hidden]:not(.md-sidebar) { display:none !important; }
 
 .md-footer-meta { background:var(--color-muted); color:var(--color-foreground); }
 .md-copyright { color:var(--color-muted-foreground); }
@@ -210,3 +211,20 @@ body { font-family:var(--font-sans); }
 .hz-product-story figure img { display:block; width:100%; height:auto; border:1px solid var(--color-border); border-radius:var(--radius-xl); }
 .md-typeset .hz-product-story figcaption { max-width:none; margin:.6rem 0 0; text-align:left; font-size:.68rem; color:var(--color-muted-foreground); }
 @media(max-width:700px) { .hz-story-intro { gap:1rem; align-items:flex-start; } .hz-story-intro > img { flex-basis:90px; width:90px; height:150px; } .md-typeset .hz-story-quote { font-size:.85rem; } .hz-product-stories { gap:2rem; } }
+/* ADR index: the title column takes the width, the narrow columns never break; it scrolls sideways before it crushes. */
+.md-typeset .adr-index { overflow-x:auto; }
+.md-typeset .adr-index table { display:table; width:100%; font-size:.72rem; line-height:1.45; }
+.md-typeset .adr-index td, .md-typeset .adr-index th { padding:.5em .7em; vertical-align:top; }
+.md-typeset .adr-index td:first-child { min-width:14rem; }
+.md-typeset .adr-index td:nth-child(2), .md-typeset .adr-index td:nth-child(3) { white-space:nowrap; }
+.md-typeset .adr-index td:last-child { min-width:9rem; }
+.md-typeset .adr-relations ul { margin:.4rem 0 1rem; font-size:.8rem; }
+@media (max-width:600px) {
+  .md-typeset .adr-index table, .md-typeset .adr-index tbody, .md-typeset .adr-index tr, .md-typeset .adr-index td { display:block; }
+  .md-typeset .adr-index thead { display:none; }
+  .md-typeset .adr-index tr { padding:.55rem 0; border-bottom:1px solid var(--hz-line); }
+  .md-typeset .adr-index td, .md-typeset .adr-index td:first-child, .md-typeset .adr-index td:last-child { min-width:0; padding:.1em 0; border:0; white-space:normal; }
+  .md-typeset .adr-index td:empty { display:none; }
+  .md-typeset .adr-index td:nth-child(2), .md-typeset .adr-index td:nth-child(3) { display:inline-block; margin-right:1rem; padding:.1em 0; border:0; color:var(--hz-muted); }
+  .md-typeset .adr-index td:nth-child(3):not(:empty)::before { content:"PR "; }
+}
