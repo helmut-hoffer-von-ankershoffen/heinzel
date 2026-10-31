@@ -21,6 +21,7 @@ def _tracked_text_files() -> list[Path]:
         check=True,
         capture_output=True,
         text=True,
+        timeout=30,
     ).stdout
     return [REPO / name for name in listed.split("\0") if name and (REPO / name).is_file()]
 
