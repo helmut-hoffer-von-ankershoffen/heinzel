@@ -171,14 +171,6 @@ def test_chrome_runs_without_its_sandbox_only_when_asked():
     assert harness.parse_args([*base, "--chrome-no-sandbox", "true"]).chrome_no_sandbox is True
 
 
-def test_the_proof_root_does_not_assume_private_tmp(monkeypatch, tmp_path):
-    monkeypatch.setattr(harness.sys, "platform", "linux")
-    monkeypatch.setenv("RUNNER_TEMP", str(tmp_path))
-    assert harness.default_root_parent() == tmp_path
-    monkeypatch.delenv("RUNNER_TEMP")
-    assert harness.default_root_parent() == Path(harness.tempfile.gettempdir())
-
-
 def test_nothing_refuses_merely_because_it_runs_in_ci(monkeypatch):
     """A hosted runner sets CI variables; none of them may make the harness refuse or change what it asserts."""
     source = (HARNESS / "run_acceptance.py").read_text(encoding="utf-8")
@@ -224,3 +216,12 @@ def test_only_the_named_edge_core_counts_and_public_runs_name_none(monkeypatch):
     assert harness.is_accepted_core("1.2.4.dev5")
     assert not harness.is_accepted_core("1.2.4.dev6")
     assert harness.is_accepted_core("1.2.3")
+
+
+@pytest.mark.parametrize(
+    "url",
+    ["http://github.com/x", "https://example.org/x", "https://github.com.example.org/x", "file:///etc/passwd"],
+)
+def test_the_harness_fetches_only_from_official_release_hosts(url):
+    with pytest.raises(BaseException, match="official release hosts"):
+        harness.fetch(url)

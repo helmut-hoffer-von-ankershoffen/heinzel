@@ -5,6 +5,9 @@ import sys
 from pathlib import Path
 
 
+RECEIPT = Path("reports/acceptance/result.json")
+
+
 def summarize(result):
     """The verdict, what the run was, and one line per case."""
     host = result.get("host", {})
@@ -29,4 +32,4 @@ def summarize(result):
 
 
 if __name__ == "__main__":
-    sys.stdout.write(summarize(json.loads(Path(sys.argv[1]).read_text())))
+    sys.stdout.write(summarize(json.loads(RECEIPT.read_text())))

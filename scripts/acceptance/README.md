@@ -16,7 +16,7 @@ Exit: 0 for ACCEPTED, ACCEPTED_EXCEPT_UNPROVABLE, PARTIAL_PASS and the CANDIDATE
 CANDIDATE_REJECTED and anything else unknown; 2 PREFLIGHT_FAILED; 3 REFUSED. A case can also end SKIPPED (nothing to
 run in this configuration) or UNPROVABLE (the evidence cannot be produced here; the reason is the result). Neither fails
 a run, and neither is a pass. Result: `<root>/result.json`, under a fresh `hz-acceptance-*` directory (mode 0700) in
-`--root-parent` (default: `/private/tmp` on macOS, else `$RUNNER_TEMP` or the system temp directory). Roots are kept for
+the system temp directory (set `TMPDIR` to choose; CI uses the runner's). A copy goes to `reports/acceptance/result.json`, never overwriting one that exists. Roots are kept for
 inspection and never reused. Each full case downloads and installs about 300 MB.
 
 | Case | What it does |

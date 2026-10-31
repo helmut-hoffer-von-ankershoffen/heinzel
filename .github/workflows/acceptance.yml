@@ -100,6 +100,8 @@ jobs:
         with:
           enable-cache: false
       - name: Run the acceptance harness
+        env:
+          TMPDIR: ${{ runner.temp }} # a short private path, for the sockets the app opens under it
         run: >-
           uv run --no-build --no-project --python 3.13 python -I scripts/acceptance/run_acceptance.py
           --expect-version "$EXPECTED_VERSION"
@@ -108,16 +110,14 @@ jobs:
           --candidate-wheel-sha256 "$CANDIDATE_WHEEL_SHA256"
           --candidate-profile-url "$CANDIDATE_PROFILE_URL"
           --chrome-no-sandbox "$NO_SANDBOX"
-          --root-parent "$RUNNER_TEMP/proof"
-          --out "$RUNNER_TEMP/receipt/result.json"
       - name: Summarize the result
         if: always()
         run: >-
-          uv run --no-build --no-project --python 3.13 python -I scripts/acceptance/summary.py "$RUNNER_TEMP/receipt/result.json" >> "$GITHUB_STEP_SUMMARY"
+          uv run --no-build --no-project --python 3.13 python -I scripts/acceptance/summary.py >> "$GITHUB_STEP_SUMMARY"
       - name: Upload the receipt
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: acceptance-result-${{ runner.os }}
-          path: ${{ runner.temp }}/receipt/result.json
+          path: reports/acceptance/result.json
           if-no-files-found: error

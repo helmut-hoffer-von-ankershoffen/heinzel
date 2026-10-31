@@ -23,12 +23,15 @@ import tempfile
 import time
 import tomllib
 import urllib.error
+import urllib.parse
 import urllib.request
 import zipfile
 from email.parser import BytesParser
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
+RECEIPT = Path("reports/acceptance/result.json")
+"""Where every run leaves its receipt, relative to the checkout it runs from."""
 GUARDIAN_SHA256 = "1881539e7ebde1eac201741beb78135bb2b2c9165a0e2c61253060c228674c72"
 PROVENANCE_SHA256 = "c4ceede1a1b8313a0c12154e7acbb4b71a59b6325ab445e25daf8ebf92c0b6c8"
 LABEL = "io.github.helmut-hoffer-von-ankershoffen.heinzel.daemon"
@@ -58,6 +61,7 @@ READ_ONLY_MANAGER = {
 ANNOUNCE = re.compile(r"(http://[^\s/]+)/#token=([A-Za-z0-9_-]+)")
 SYSTEMD_UNITS = ("hz-daemon.service", "hz-daemon.timer")
 FINAL_VERSION = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+")
+FETCH_HOSTS = {"github.com", "pypi.org", "files.pythonhosted.org", "api.github.com"}
 RELEASE_WHEEL_URL = re.compile(
     r"https://github\.com/helmut-hoffer-von-ankershoffen/heinzel/releases/download/"
     r"(?:v(?=[0-9.]+/)|edge-v(?=[0-9.]+\.dev))(?P<version>[0-9]+\.[0-9]+\.[0-9]+(?:\.dev[0-9]+)?)"
@@ -204,6 +208,10 @@ def tail(text, lines=6, chars=700):
 
 
 def fetch(url, limit=MAX_DOWNLOAD, timeout=60):
+    parts = urllib.parse.urlsplit(url)
+    host = parts.hostname or ""
+    if parts.scheme != "https" or not (host in FETCH_HOSTS or host.endswith(".githubusercontent.com")):
+        fail("Refusing to fetch from anywhere but the official release hosts")
     request = urllib.request.Request(url, headers={"User-Agent": "heinzel-acceptance"})
     with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310 - fixed HTTPS URLs
         if not response.url.startswith("https://"):
@@ -2068,12 +2076,10 @@ def write_result(path, result, secrets):
     partial.replace(path)
 
 
-def copy_result(args, path):
-    """Copy the finished result.json to --out (never overwriting), also after a failed preflight."""
-    if not args.out:
-        return
-    args.out.parent.mkdir(parents=True, exist_ok=True)
-    descriptor = os.open(args.out, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+def copy_result(path):
+    """Copy the finished result.json to the receipt path (never overwriting), also after a failed preflight."""
+    RECEIPT.parent.mkdir(parents=True, exist_ok=True)
+    descriptor = os.open(RECEIPT, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
     with os.fdopen(descriptor, "w") as stream:
         stream.write(path.read_text())
 
@@ -2084,13 +2090,6 @@ def secrets_in_logs(root, secrets):
         content = log.read_text(errors="replace")
         count += any(secret in content for secret in secrets)
     return count
-
-
-def default_root_parent():
-    """A private proof root's parent: /private/tmp on macOS, the runner's or system temp directory elsewhere."""
-    if sys.platform == "darwin" and Path("/private/tmp").is_dir():
-        return Path("/private/tmp")
-    return Path(os.environ.get("RUNNER_TEMP") or tempfile.gettempdir())
 
 
 def default_chrome():
@@ -2283,13 +2282,6 @@ def parse_args(argv=None):
     parser.add_argument(
         "--case", action="append", choices=sorted(CASES, key=int), help="Repeatable; default all, serially"
     )
-    parser.add_argument("--out", type=Path, help="Also copy the JSON result here (no overwrite)")
-    parser.add_argument(
-        "--root-parent",
-        type=Path,
-        default=None,
-        help="Where the private proof root is made (default: the runner's or system temp)",
-    )
     parser.add_argument("--accept-wheel-sha256", help="Independently accepted Core wheel hash")
     parser.add_argument("--accept-profile-sha256", help="Independently accepted standard.json hash")
     parser.add_argument("--accept-install-sh-sha256", help="Accepted live install.sh hash if main moved past the tag")
@@ -2363,9 +2355,7 @@ def main():
     guardian = load_vendor("guardian.py", GUARDIAN_SHA256)
     provenance = load_vendor("artifact_provenance.py", PROVENANCE_SHA256)
     release_run = bool(args.candidate_wheel_url)
-    root_parent = args.root_parent or default_root_parent()
-    root_parent.mkdir(parents=True, exist_ok=True)
-    parent = Path(tempfile.mkdtemp(prefix="hz-acceptance-", dir=root_parent)).resolve(strict=True)
+    parent = Path(tempfile.mkdtemp(prefix="hz-acceptance-")).resolve(strict=True)  # TMPDIR chooses where
     info = parent.stat()
     if info.st_uid != os.getuid() or stat.S_IMODE(info.st_mode) != 0o700:
         sys.exit("The proof root is not private.")
@@ -2430,7 +2420,7 @@ def main():
         result["preflight_failure"] = redact(f"{type(error).__name__}: {error}")[:500]
         result["verdict"] = "PREFLIGHT_FAILED"
         write_result(path, result, secrets)
-        copy_result(args, path)
+        copy_result(path)
         print(json.dumps({"verdict": result["verdict"], "why": result["preflight_failure"], "result": str(path)}))
         return exit_code(result["verdict"])
     result["published" if not release_run else "candidate_release"] = report
@@ -2503,7 +2493,7 @@ def main():
         )
     result["finished"] = time.strftime("%Y-%m-%dT%H:%M:%S%z")
     write_result(path, result, secrets)
-    copy_result(args, path)
+    copy_result(path)
     print(json.dumps({"verdict": result["verdict"], "result": str(path)}))
     return exit_code(result["verdict"])
 
