@@ -25,18 +25,29 @@ else
     esac
     uv_bin=$install_dir/uv
     if [ ! -x "$uv_bin" ]; then
-        if ! command -v curl >/dev/null 2>&1 && ! command -v wget >/dev/null 2>&1; then
-            printf '%s\n' 'Install curl or wget, then run this installer again.' >&2
+        # Plain HTTP must never deliver the script that is executed below: no redirect may leave HTTPS.
+        # BusyBox wget cannot enforce that (no --https-only), so it does not count as a downloader.
+        downloader=
+        if command -v curl >/dev/null 2>&1; then
+            downloader=curl
+        elif command -v wget >/dev/null 2>&1; then
+            case "$(wget --help 2>&1 || true)" in
+                *--https-only*) downloader=wget ;;
+            esac
+        fi
+        if [ -z "$downloader" ]; then
+            printf '%s\n' 'Install curl (or GNU wget), then run this installer again.' >&2
             exit 1
         fi
         temporary=$(mktemp -d "${TMPDIR:-/tmp}/heinzel-install.XXXXXX")
         trap 'rm -f "$temporary/uv-install.sh"; rmdir "$temporary"' 0
         trap 'exit 1' 1 2 15
         printf '%s\n' 'Installing uv using Astral’s official installer…' >&2
-        if command -v curl >/dev/null 2>&1; then
-            curl -LsSf https://astral.sh/uv/install.sh -o "$temporary/uv-install.sh"
+        if [ "$downloader" = curl ]; then
+            curl --proto '=https' --proto-redir '=https' --tlsv1.2 -LsSf \
+                https://astral.sh/uv/install.sh -o "$temporary/uv-install.sh"
         else
-            wget -q https://astral.sh/uv/install.sh -O "$temporary/uv-install.sh"
+            wget -q --https-only https://astral.sh/uv/install.sh -O "$temporary/uv-install.sh"
         fi
         UV_INSTALL_DIR="$install_dir" sh "$temporary/uv-install.sh" >&2
         if [ ! -x "$uv_bin" ]; then
