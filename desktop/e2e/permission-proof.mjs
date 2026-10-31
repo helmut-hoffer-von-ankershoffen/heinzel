@@ -7,6 +7,7 @@ import { isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { _electron as electron } from '../../web/node_modules/playwright-core/index.mjs';
 import { withTimeout } from './harness-cleanup.mjs';
+import { diagnosePermissionClick } from './permission-diagnostics.mjs';
 
 const directory = process.env.HZ_TEST_ELECTRON_DIR ?? fileURLToPath(new URL('../node_modules/electron/', import.meta.url));
 if (!isAbsolute(directory)) throw new Error('Electron directory must be absolute');
@@ -29,7 +30,8 @@ try {
   child = instance.process();
   const page = await instance.firstWindow({ timeout: 10000 });
   for (const id of ['notification', 'microphone']) {
-    await page.click(`#${id}`, { timeout: 5000 });
+    try { await page.click(`#${id}`, { timeout: 5000 }); }
+    catch (error) { await diagnosePermissionClick(page, instance, id, error); }
     await page.waitForFunction(() => document.title !== '', null, {timeout: 10000});
     const events = await instance.evaluate(() => globalThis.permissionEvents);
     console.log(JSON.stringify({ id, title: await page.title(), events }));
