@@ -133,6 +133,8 @@ jobs:
       - run: make lint
         env:
           CONFIDENTIAL_TERMS: ${{ secrets.CONFIDENTIAL_TERMS }}
+      - name: Check the style of hand-written docs and user-visible copy
+        run: uv run --script scripts/check_docs.py
       - run: make managed-backend-setup managed-backend-check # private Node process owner; core only
       - run: make typecheck
       - run: make test-web # the web app's component tests (Vitest with axe); core only

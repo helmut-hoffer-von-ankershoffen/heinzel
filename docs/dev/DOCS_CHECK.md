@@ -2,7 +2,7 @@
 
 `scripts/check_docs.py` checks what a machine can about hand-written Markdown (the root documents and `docs/`, without
 generated references, plugin pages, the catalog, research and the changelog), the strings of `web/src/i18n.ts` and the
-`description=` of settings fields. It runs in `make lint` and therefore in `make check` and CI.
+`description=` of settings fields. It runs in `CI (the lint job)` and therefore in `make check` and CI.
 
 | Rule | Fails on |
 | --- | --- |
