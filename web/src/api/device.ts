@@ -81,6 +81,7 @@ export async function dropStaleSession(fetcher: typeof fetch = (request) => glob
     const response = await fetcher(
       new Request(`${window.location.origin}/api/system/ui/navigation`, {
         headers: { Authorization: `Bearer ${session}` },
+        signal: AbortSignal.timeout(5000), // a server that never answers must not keep the app from opening
       }),
     );
     if (response.status === 401) dropSessionToken();
