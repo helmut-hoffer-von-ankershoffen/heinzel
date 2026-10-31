@@ -23,6 +23,33 @@ HEAD = os.environ["REVIEW_HEAD"]
 BASE = os.environ["REVIEW_BASE"]
 CLI = Path(os.environ["RUNNER_TEMP"]) / "claude-2.1.312"
 CONTEXT = (
+    "src/heinzel/modules/system/daemon/_units.py",
+    "src/heinzel/kernel/_daemon_attestation.py",
+    "src/heinzel/heads/_tool_install.py",
+    "src/heinzel/heads/install.py",
+    "src/heinzel/modules/system/daemon/__init__.py",
+    "src/heinzel/modules/system/daemon/_process_birth.py",
+    "src/heinzel/modules/system/daemon/_runtime.py",
+    "src/heinzel/modules/system/daemon/_schedule.py",
+    "tests/unit/heads/install_test.py",
+    "tests/unit/modules/daemon_service_test.py",
+    "docs/adr/0110-one-versionless-launcher-installs-and-opens-the-standard-app.md",
+    "web/e2e/contributed-panel.mjs",
+    "web/e2e/media-diagnostics.mjs",
+    "web/src/App.tsx",
+    "scripts/web_build.py",
+    "scripts/sync_template.py",
+    "docs/adr/0013-pull-request-based-development-and-releases.md",
+    "scripts/scoped_checks.py",
+    "scripts/check_confidentiality.py",
+    "scripts/release.sh",
+    "scripts/changelog_intros.py",
+    "scripts/release_notes.py",
+    ".github/workflows/ci.yml",
+    ".github/workflows/update-prs.yml",
+    "tests/e2e/web_ui_test.py",
+    "tests/e2e/_mobile_server_output.py",
+    "web/e2e/mobile-responsive.mjs",
     "scripts/steps.py",
     "tests/e2e/docs_test.py",
     "src/heinzel/modules/heinzel/_contract_review.py",
@@ -662,7 +689,7 @@ def current_pr() -> None:
     Raises:
         RuntimeError: If its identity is no longer current.
     """
-    if HEAD != "5d387340fcebaa34259fe058f2940392cdee6ffd" or BASE != "85a87a109426bce05c50ef8a277152120c7f1fd6":
+    if HEAD != "e51a824d0feb3fda52034eabe6b01910f2f8fcff" or BASE != "3e719e8abfdd207c7103f486af05fd2c578b2508":
         msg = "PR identity changed"
         raise RuntimeError(msg)
     repo = os.environ["GITHUB_REPOSITORY"]
@@ -679,7 +706,7 @@ def current_pr() -> None:
         [
             "/usr/bin/gh",
             "api",
-            f"repos/{repo}/pulls/307",
+            f"repos/{repo}/pulls/310",
             "--jq",
             '[.state,.base.ref,.head.sha,.base.sha,.head.repo.full_name,.base.repo.full_name]|join(" ")',
         ],
@@ -697,7 +724,7 @@ def github_review(root: Path) -> None:
     Raises:
         RuntimeError: If authority, source, or CLI verification fails.
     """
-    if os.environ.get("GITHUB_REF") != "refs/heads/private/independent-source-review-307-r2" or os.environ.get(
+    if os.environ.get("GITHUB_REF") != "refs/heads/private/independent-source-review-310" or os.environ.get(
         "GITHUB_ACTOR"
     ) != os.environ.get("GITHUB_REPOSITORY_OWNER"):
         msg = "Unapproved dispatch authority"
@@ -719,7 +746,7 @@ def github_review(root: Path) -> None:
             "fetch",
             "--no-tags",
             "origin",
-            "refs/pull/307/head:refs/review/target",
+            "refs/pull/310/head:refs/review/target",
         ],
         limit=8192,
         timeout=60,
