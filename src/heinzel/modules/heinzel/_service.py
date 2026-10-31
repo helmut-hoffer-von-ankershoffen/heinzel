@@ -30,6 +30,7 @@ from pydantic_core import to_jsonable_python
 from heinzel import (
     AgentRunner,
     CatchUp,
+    ChannelReplyConsumer,
     Check,
     Config,
     ConfigEditor,
@@ -549,6 +550,7 @@ class HeinzelService:
             jobs.extend(self._check_in_jobs(sessions))
             if schedules is not None:
                 jobs.extend(self._autonomous_jobs(sessions, schedules))
+            jobs.extend(self._channel_jobs())
         return CompiledJobs(jobs=tuple(jobs))
 
     def _autonomous_jobs(self, sessions: SessionCrud, schedules: AutonomousSchedules) -> list[JobLet]:
@@ -600,6 +602,30 @@ class HeinzelService:
             retries=0,
             catch_up=CatchUp.LATEST,
         )
+
+    def _channel_jobs(self) -> list[JobLet]:
+        """Read the owner's answers on other channels, only once the owner chose such a channel."""
+        if not self._settings_channels():
+            return []
+
+        def run() -> JsonValue:
+            consumers = self._kernel.implementations(ChannelReplyConsumer)  # type: ignore[type-abstract]
+            return {"settled": sum(consumer.apply_channel_replies() for consumer in consumers)}
+
+        return [
+            JobLet(
+                name="channel-replies",
+                func=run,
+                summary="Act on your answers from your other channels",
+                schedule="* * * * *",
+                timeout=timedelta(minutes=2),
+                retries=0,
+                catch_up=CatchUp.LATEST,
+            )
+        ]
+
+    def _settings_channels(self) -> list[str]:
+        return Config.load(Path.home()).settings(HeinzelSettings, "heinzel").approval_channels
 
     def _check_in_jobs(self, sessions: SessionCrud) -> list[JobLet]:
         """Compile only the current owner's approved five-minute notification records."""

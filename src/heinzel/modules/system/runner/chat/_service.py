@@ -24,6 +24,7 @@ from heinzel import (
     AgentResult,
     AgentRunner,
     Budget,
+    ChannelReplyConsumer,
     ChannelReplySource,
     CurrentUser,
     HeinzelError,
@@ -220,7 +221,7 @@ def parameters(kernel: Kernel, operation: OperationLet) -> set[str]:
     }
 
 
-class ChatService:
+class ChatService(ChannelReplyConsumer):
     """Opens, answers and acts on chat sessions."""
 
     def __init__(self, store: ChatStore, kernel: Kernel) -> None:

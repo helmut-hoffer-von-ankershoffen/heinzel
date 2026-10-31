@@ -66,11 +66,25 @@ class Issue(BaseModel):
     updated_at: datetime = Field(description="When it last changed.")
     assignee: str | None = Field(default=None, description="Who it is assigned to; none if unassigned.")
     labels: list[str] = Field(default_factory=list, description="Labels, tags or components.")
-    issue_type: str | None = Field(default=None, description="Type in the tracker's words, e.g. `Task`, `Epic`.")
-    parent: str | None = Field(default=None, description="Key of the issue it belongs under, such as its epic.")
-    due: date | None = Field(default=None, description="Due date; none if none or the tracker has no such field.")
+    issue_type: str | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+        description="Type in the tracker's words, e.g. `Task`, `Epic`.",
+    )
+    parent: str | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+        description="Key of the issue it belongs under, such as its epic.",
+    )
+    due: date | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+        description="Due date; none if none or the tracker has no such field.",
+    )
     comments: list[IssueComment] = Field(
-        default_factory=list[IssueComment], description="Recent comments the read included; may be fewer than exist."
+        default_factory=list[IssueComment],
+        exclude_if=lambda value: not value,
+        description="Recent comments the read included; may be fewer than exist.",
     )
 
 

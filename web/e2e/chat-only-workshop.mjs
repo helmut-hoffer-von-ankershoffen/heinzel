@@ -12,6 +12,7 @@ const axe = readFileSync(createRequire(import.meta.url).resolve("axe-core/axe.mi
 const browser = await { chromium, webkit }[engine].launch({ headless: true });
 const context = await browser.newContext({ serviceWorkers: "block", viewport: { width: 390, height: 844 } });
 await context.addInitScript(() => localStorage.setItem("hz.chat.more", "1"));
+await context.addInitScript(() => localStorage.setItem("hz.chat.autosend", "0"));
 const page = await context.newPage();
 try {
   await page.goto(url.href);
@@ -26,6 +27,8 @@ try {
   await page.getByRole("button", { name: "Create Heinzel and take this message" }).click();
   const message = page.getByLabel("Message your Heinzel");
   await message.waitFor();
+  assert.equal(await message.inputValue(), sentence);
+  await page.getByRole("button", { name: "Queue message" }).click();
   await page.getByText("Which information and output should I use?").waitFor({ timeout: 30000 });
   await message.fill("Use the example information and prepare a private summary");
   await page.getByRole("button", { name: "Queue message" }).click();

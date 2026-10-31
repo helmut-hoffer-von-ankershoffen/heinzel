@@ -13,6 +13,7 @@ url.pathname = "/doctor";
 const browser = await (process.argv[3] === "webkit" ? webkit : chromium).launch({ headless: true });
 const context = await browser.newContext({ serviceWorkers: "block", viewport: { width: 390, height: 844 } });
 await context.addInitScript(() => localStorage.setItem("hz.chat.more", "1"));
+await context.addInitScript(() => localStorage.setItem("hz.chat.autosend", "0"));
 const page = await context.newPage();
 try {
   await page.goto(url.href);
@@ -24,6 +25,7 @@ try {
     await page.getByRole("tab", { name: "Chat", exact: true }).click();
   await page.getByLabel("Your message").fill("Read my selected source.");
   await page.getByRole("button", { name: "Create Heinzel and take this message" }).click();
+  await page.getByRole("button", { name: "Queue message" }).click();
   await page.getByText("Read complete.").waitFor({ timeout: 30000 });
   const terms = page.getByRole("region", { name: "Proposed agent terms" });
   await terms.getByRole("button", { name: "Review these terms" }).click();
@@ -43,7 +45,10 @@ try {
   assert.deepEqual(violations, []);
   await panel.getByRole("button", { name: "Confirm" }).click();
   await panel.getByText(/Recorded state: approved/).waitFor();
-  const schedule = page.locator("details").filter({ has: page.getByText("Recurring agent turns", { exact: true }) });
+  const schedule = page
+    .locator("details")
+    .filter({ has: page.getByText("Recurring agent turns", { exact: true }) })
+    .last();
   await schedule.getByText("Recurring agent turns", { exact: true }).click();
   const consent = await schedule.getByRole("checkbox", { name: /Allow the separately approved calendar.events/ });
   assert.equal(await consent.isChecked(), false);

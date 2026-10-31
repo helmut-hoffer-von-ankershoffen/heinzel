@@ -399,9 +399,3 @@ __all__ = [
     "Effort",
     "module",
 ]
-
-
-@module.job(schedule="* * * * *", name="channel-replies", timeout="2m")
-def channel_replies(service: ChatService) -> int:
-    """Act on the owner's verified answers from their other channels."""
-    return service.apply_channel_replies()

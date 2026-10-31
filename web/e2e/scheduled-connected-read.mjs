@@ -13,6 +13,7 @@ url.pathname = "/doctor";
 const browser = await (process.argv[3] === "webkit" ? webkit : chromium).launch({ headless: true });
 const context = await browser.newContext({ serviceWorkers: "block", viewport: { width: 390, height: 844 } });
 await context.addInitScript(() => localStorage.setItem("hz.chat.more", "1"));
+await context.addInitScript(() => localStorage.setItem("hz.chat.autosend", "0"));
 const page = await context.newPage();
 /** A reload can render tabs before startup releases the app's inert interaction guard. */
 async function revealChat() {
@@ -35,6 +36,7 @@ try {
   if (!(await page.getByLabel("Your message").isVisible())) await revealChat();
   await page.getByLabel("Your message").fill("Read my selected source.");
   await page.getByRole("button", { name: "Create Heinzel and take this message" }).click();
+  await page.getByRole("button", { name: "Queue message" }).click();
   await page.getByText("Read complete.").waitFor({ timeout: 30000 });
   const terms = page.getByRole("region", { name: "Proposed agent terms" });
   await terms.getByRole("button", { name: "Review these terms" }).click();
@@ -67,7 +69,10 @@ try {
   assert.deepEqual(violations, []);
   await panel.getByRole("button", { name: "Confirm" }).click();
   await panel.getByText(/Recorded state: approved/).waitFor();
-  const schedule = page.locator("details").filter({ has: page.getByText("Recurring agent turns", { exact: true }) });
+  const schedule = page
+    .locator("details")
+    .filter({ has: page.getByText("Recurring agent turns", { exact: true }) })
+    .last();
   await schedule.getByText("Recurring agent turns", { exact: true }).click();
   await schedule.getByText(/Suggested interval: every 7 minutes/).waitFor();
   assert.equal(await schedule.getByLabel("Every (minutes)").inputValue(), "5");
