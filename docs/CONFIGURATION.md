@@ -157,7 +157,7 @@ Plugins add their own tables.
 | Key | Environment variable | Default | Description |
 | --- | --- | --- | --- |
 | `catalog_sources` | `HZ_SYSTEM_PLUGIN__CATALOG_SOURCES` | `['helmut-hoffer-von-ankershoffen/heinzel-plugins', 'helmut-hoffer-von-ankershoffen/heinzel']` | GitHub repositories scanned for plugin projects, in addition to topic discovery. |
-| `catalog_feed` | `HZ_SYSTEM_PLUGIN__CATALOG_FEED` | `'https://helmut.hoffer-von-ankershoffen.me/heinzel/catalog.json'` | The static catalog of first-party plugins, read before GitHub so that Discover and screenshot previews need no GitHub API request. Empty turns it off. Never read from a project's hz.toml. |
+| `catalog_feed` | `HZ_SYSTEM_PLUGIN__CATALOG_FEED` | `'https://heinzel.team/catalog.json'` | The static catalog of first-party plugins, read before GitHub so that Discover and screenshot previews need no GitHub API request. Empty turns it off. Never read from a project's hz.toml. |
 | `github_token` | `HZ_SYSTEM_PLUGIN__GITHUB_TOKEN` | `None` | A GitHub token for searching plugins and reading a repository before adding a plugin from it, when the GitHub CLI isn't installed; both work without one at a lower rate limit. Also read from GH_TOKEN or GITHUB_TOKEN, and sent to GitHub only. Never read from a project's hz.toml. |
 
 ## `[system.runner]`

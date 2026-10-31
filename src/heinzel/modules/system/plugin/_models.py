@@ -35,7 +35,7 @@ class PluginSettings(ModuleSettings):
     )
 
     catalog_feed: str = Field(
-        default="https://helmut.hoffer-von-ankershoffen.me/heinzel/catalog.json",
+        default="https://heinzel.team/catalog.json",
         pattern=r"^(https://[^\s]+)?$",
         title="Published plugin catalog",
         description="The static catalog of first-party plugins, read before GitHub so that Discover and "
