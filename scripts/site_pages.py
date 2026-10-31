@@ -460,7 +460,83 @@ def on_files(files: Any, config: Any) -> Any:  # noqa: ANN401 - MkDocs owns the 
                 )
     files.append(File.generated(config, "catalog.json", content=json.dumps(snapshot, ensure_ascii=False)))
     config.extra["hz_release"] = snapshot["release"]
+    config.extra["hz_plugin_pages"] = {f"catalog/{item['id']}/index.md": item for item in snapshot["plugins"]}
     return files
+
+
+def page_helpers(path: str, page_url: str, project: Object | None = None) -> list[Object]:
+    """Give every documentation/plugin page one or two contextual fictional character explainers."""
+    reviewer = {
+        "art": "reviewer",
+        "name": "Otto, your review partner",
+        "quote": "Take a look first. You decide what belongs in your workspace.",
+        "detail": "Check the screenshots, source and declared compatibility before installing a plugin.",
+        "link": href("CATALOG/", page_url),
+        "action": "Explore the plugin catalog",
+    }
+    if project is not None:
+        themes = project.get("themes", [])
+        guide = {
+            "art": "timekeeper" if not themes else "draftkeeper",
+            "name": "Pip, your feature guide" if not themes else "Ada, your workspace guide",
+            "quote": "Let me show you what this plugin brings."
+            if not themes
+            else "Make this workspace feel like yours.",
+            "detail": project["highlights"][0] if project.get("highlights") else project["summary"],
+            "link": "#screenshots",
+            "action": "See the UI and CLI",
+        }
+        return [guide, reviewer]
+    guide = {
+        "art": "draftkeeper",
+        "name": "Ada, the draftkeeper",
+        "quote": "Give each helper a clear job, and keep its work easy to inspect.",
+        "detail": "A contract names the inputs, limits and expected draft. People remain in control.",
+        "link": href("WORKFLOWS/", page_url),
+        "action": "Explore contracts",
+    }
+    if path.startswith(("guides/install", "guides/first-steps")):
+        guide.update(
+            art="timekeeper",
+            name="Pip, your getting-started guide",
+            quote="Let's get you to your first useful screen.",
+            detail="Install Heinzel, open the workspace, then explore a plugin that helps with your day.",
+            link=href("guides/first-steps/", page_url),
+            action="Take your first steps",
+        )
+    elif "ARCHITECTURE" in path or "architecture" in path or path.startswith("adr/"):
+        guide.update(
+            quote="Small pieces can do useful work together.",
+            detail=(
+                "The kernel discovers modules; heads expose typed operations; plugins bring specific tools and views."
+            ),
+            link=href("PLUGINS/", page_url),
+            action="Explore extension contracts",
+        )
+    elif path in {"CLI_REFERENCE.md", "CONFIGURATION.md", "MODULES.md"}:
+        guide.update(
+            art="reviewer",
+            name="Otto, your reference guide",
+            quote="Need the exact command or setting? You're in the right place.",
+            detail="Typed operation definitions supply the CLI, tool schemas and reference documentation.",
+            link=href("CLI_REFERENCE/", page_url),
+            action="Open the command reference",
+        )
+    return [guide]
+
+
+def on_page_context(
+    context: Object,
+    *,
+    page: Any,  # noqa: ANN401 - MkDocs owns event objects
+    config: Any,  # noqa: ANN401 - MkDocs owns event objects
+    **_: Any,  # noqa: ANN401 - MkDocs owns event objects
+) -> Object:
+    """Attach explainers in the shared layout, including automatically discovered future plugin pages."""
+    path = page.file.src_uri
+    project = config.extra.get("hz_plugin_pages", {}).get(path)
+    context["hz_helpers"] = page_helpers(path, page.url, project)
+    return context
 
 
 def on_page_markdown(markdown: str, *, page: Any, config: Any, **_: Any) -> str:  # noqa: ANN401 - MkDocs owns event objects

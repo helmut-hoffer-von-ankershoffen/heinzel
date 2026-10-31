@@ -21,7 +21,6 @@ hide:
 </div>
 <p class="hz-caption">MIT licensed · macOS and Linux · CLI, MCP, REST and a web workspace</p>
 
-[No uv yet? The guided installer sets up prerequisites for you.](guides/install.md)
 </div>
 <div class="hz-hero-art">
 <picture><source media="(prefers-color-scheme: dark)" srcset="assets/hero-dark.svg"><img src="assets/hero-light.svg" alt="A small crowd of Heinzelmännchen helpers walking together" width="1000" height="360"></picture>
@@ -64,6 +63,56 @@ Plugins own their operations, views, widgets and notifications. Themes bring pal
 
 [Create your first plugin →](PLUGIN_AUTHORING.md)
 </div>
+</div>
+</section>
+
+<section class="hz-section" markdown>
+<p class="hz-eyebrow">Small helpers. Clear jobs.</p>
+
+## Meet a few of your next helpers.
+
+Imagine your team's helpers like this. Each has a small job, and you stay in charge.
+
+<div class="hz-helpers" markdown>
+<article class="hz-helper" data-heinzel-helper markdown>
+<img src="assets/website/helper-timekeeper.svg" alt="" width="110" height="185" loading="lazy">
+<div markdown>
+
+### Pip, the timekeeper
+
+“I keep the team's time zones in view, so you can find a good moment to talk.”
+
+World Clock brings local times and working hours to Today, the sidebar and the footer. Open its globe for the whole picture.
+
+[Meet World Clock →](https://helmut.hoffer-von-ankershoffen.me/heinzel/catalog/heinzel-clock-a8638667a9/)
+</div>
+</article>
+<article class="hz-helper" data-heinzel-helper markdown>
+<img src="assets/website/helper-draftkeeper.svg" alt="" width="110" height="185" loading="lazy">
+<div markdown>
+
+### Ada, the draftkeeper
+
+“Give me a weekly-report contract. I'll gather its inputs and prepare a draft for your review.”
+
+ACME's example playbook shows how a team's report can draw on merged changes, tracker updates and existing documents.
+
+[Explore the reference team →](https://helmut.hoffer-von-ankershoffen.me/heinzel/catalog/heinzel-acme-payments-checkout-8a7d294621/)
+</div>
+</article>
+<article class="hz-helper" data-heinzel-helper markdown>
+<img src="assets/website/helper-reviewer.svg" alt="" width="110" height="185" loading="lazy">
+<div markdown>
+
+### Otto, your review partner
+
+“I've done the drafting. You decide what happens next.”
+
+Drafts stay local for you to inspect, edit and share. Clear states show when a helper is working, blocked or waiting for you.
+
+[See how contracts work →](WORKFLOWS.md)
+</div>
+</article>
 </div>
 </section>
 

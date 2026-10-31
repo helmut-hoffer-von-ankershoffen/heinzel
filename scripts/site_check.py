@@ -21,6 +21,7 @@ if TYPE_CHECKING:
 
 ROOT = Path(__file__).resolve().parents[1]
 REPORTS = ROOT / "reports" / "site"
+MAX_HELPERS = 5
 
 
 class SiteError(Exception):
@@ -147,6 +148,10 @@ def media_flow(page: "Page", base: str, snapshot: dict[str, Any]) -> None:
                 media.evaluate("document.documentElement.scrollWidth <= innerWidth + 1"),
                 "Plugin media must fit desktop and phone layouts",
             )
+            require(
+                1 <= media.locator("[data-heinzel-helper]").count() <= MAX_HELPERS,
+                "Every generated plugin page needs contextual character explainers",
+            )
             images = media.locator(".hz-screenshots img")
             require(images.count() == len(project.get("screenshots", [])), "Every declared capture must be visible")
             for image in images.all():
@@ -202,6 +207,10 @@ def sweep(browser: "Browser", engine: str, base: str, axe: Path, snapshot: dict[
                 require(
                     page.locator("img").evaluate_all("els => els.every(e => !e.complete || e.naturalWidth > 0)"),
                     f"Broken image: {name}",
+                )
+                require(
+                    1 <= page.locator("[data-heinzel-helper]").count() <= MAX_HELPERS,
+                    f"Every page needs one to five character explainers: {name}",
                 )
                 identity = f"{engine}-{width}-{mode}-{name}"
                 audit(page, axe, identity)

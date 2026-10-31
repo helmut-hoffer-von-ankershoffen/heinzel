@@ -598,3 +598,30 @@ def test_repository_discovery_carries_soundscape_toml_into_public_records(layout
         }
     ]
     assert "never_imported" not in sys.modules
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "README.md",
+        "guides/install.md",
+        "CLI_REFERENCE.md",
+        "adr/0001-record.md",
+        "ARCHITECTURE.md",
+        "some-future-page.md",
+    ],
+)
+def test_every_page_gets_a_small_contextual_character_group(path):
+    helpers = pages.page_helpers(path, "reference/")
+    assert 1 <= len(helpers) <= 5
+    assert all(helper["quote"] and helper["detail"] and helper["link"] for helper in helpers)
+
+
+def test_future_plugin_pages_get_feature_specific_explainers_without_registration():
+    plugin = record()
+    plugin["highlights"] = ["A fictional harbor's next useful action"]
+    helpers = pages.page_helpers("catalog/new-plugin/index.md", "catalog/new-plugin/", plugin)
+    assert len(helpers) == 2
+    assert helpers[0]["detail"] == plugin["highlights"][0]
+    assert helpers[0]["link"] == "#screenshots"
+    assert "before installing" in helpers[1]["detail"]
