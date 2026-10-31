@@ -1,7 +1,7 @@
 name: Prepare release
 
 # Step 1 of a release: open the release pull request. Derives the next version from conventional commits (or a forced
-# bump), updates versions and CHANGELOG.md on `release/vX.Y.Z`, opens the pull request, enables squash auto-merge and
+# bump), updates versions and CHANGELOG.md on `release/vX.Y.Z`, opens the pull request and
 # starts CI on it (`make release` dispatches this workflow; `make release-local` runs the same script on a laptop).
 # Step 2 happens when the pull request is merged: see release-tag.yml. ADR 0008 and 0013 explain the flow.
 
@@ -69,9 +69,3 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.release.outputs.tag }}
         run: gh workflow run ci.yml --ref "release/$TAG"
-      - name: Merge when CI is green
-        # The required check "CI OK" comes from the run dispatched above, which reports on the branch's head commit.
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ steps.release.outputs.tag }}
-        run: gh pr merge "release/$TAG" --squash --auto
