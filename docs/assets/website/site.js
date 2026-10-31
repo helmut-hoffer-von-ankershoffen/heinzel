@@ -147,17 +147,19 @@
       const resize = new ResizeObserver(update);
       slides.forEach(slide => {
         resize.observe(slide);
-        const link = slide.querySelector('a');
-        const image = link.querySelector('img');
-        image.addEventListener('load', update);
-        link.addEventListener('click', event => {
-          if (event.button || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-          if (!HTMLDialogElement.prototype.showModal) return;
-          event.preventDefault();
-          openImage(image, link.href);
-        });
+        slide.querySelector('img').addEventListener('load', update);
       });
       update();
+    });
+    document.querySelectorAll('.hz-screenshots figure > a, .hz-product-story figure > a').forEach(link => {
+      if (link.dataset.zoomReady) return;
+      link.dataset.zoomReady = 'true';
+      link.addEventListener('click', event => {
+        if (event.button || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+        if (!HTMLDialogElement.prototype.showModal) return;
+        event.preventDefault();
+        openImage(link.querySelector('img'), link.href);
+      });
     });
     document.querySelectorAll('[data-play-soundscape]').forEach(button => {
       if (button.dataset.ready) return;

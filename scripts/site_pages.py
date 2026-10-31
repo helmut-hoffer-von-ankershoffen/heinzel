@@ -313,6 +313,67 @@ def owner_art(project: Object) -> str:
     return f'<div class="hz-owner-art">{images}</div>' if images else ""
 
 
+def home_gallery(data: Object, page_url: str) -> str:
+    """Pair three real owner screenshots with imagined helpers and useful first outcomes."""
+    stories = (
+        {
+            "plugin": "heinzel-clock",
+            "scene": "world-clock",
+            "art": "timekeeper",
+            "name": "Pip, the timekeeper",
+            "title": "Find a moment for the whole team.",
+            "quote": "I keep the team's time zones in view, so you can find a good moment to talk.",
+            "detail": "Local times, working hours and a globe, with compact clocks close at hand.",
+        },
+        {
+            "plugin": "heinzel-acme",
+            "scene": "company-workflow",
+            "art": "draftkeeper",
+            "name": "Ada, the draftkeeper",
+            "title": "See how the work connects.",
+            "quote": "Give me a clear contract. I'll gather its inputs and prepare a draft for your review.",
+            "detail": "ACME's example connects code changes, tracker updates and documents to a weekly report.",
+        },
+        {
+            "plugin": "heinzel-acme-payments-checkout",
+            "scene": "draft-in-terminal",
+            "art": "reviewer",
+            "name": "Otto, your review partner",
+            "title": "A draft you can make your own.",
+            "quote": "I've done the drafting. You decide what happens next.",
+            "detail": (
+                "Inspect the saved local draft, edit it and share it yourself. "
+                "This report uses a fictional demo runner."
+            ),
+        },
+    )
+    result = []
+    for story in stories:
+        project = next((item for item in data["plugins"] if item["name"] == story["plugin"]), None)
+        if project is None:
+            continue
+        shots = project.get("screenshots", [])
+        image = next((shot for shot in shots if shot["url"].endswith(f"/{story['scene']}.png")), None)
+        if image is None:
+            continue
+        image_url = escape(image["url"])
+        target = href(f"catalog/{project['id']}/", page_url)
+        art = href(f"assets/website/helper-{story['art']}.svg", page_url)
+        result.append(
+            '<article class="hz-product-story" data-heinzel-helper>'
+            '<div class="hz-story-intro">'
+            f'<img src="{art}" alt="" width="90" height="150" loading="lazy">'
+            f'<div><p class="hz-story-name">{escape(story["name"])}</p>'
+            f'<h3>{escape(story["title"])}</h3><p class="hz-story-quote">“{escape(story["quote"])}”</p>'
+            f'<p>{escape(story["detail"])}</p><a href="{target}">Explore the full gallery →</a></div></div>'
+            f'<figure><a href="{image_url}" aria-label="Open full-size {escape(story["title"])}">'
+            f'<img src="{image_url}" alt="{escape(image["caption"])}" loading="lazy" referrerpolicy="no-referrer">'
+            f"</a><figcaption>{escape(image['caption'])}</figcaption></figure></article>"
+        )
+    # Markdown's HTML parser needs block boundaries on separate lines for nested DIVs.
+    return ('<div class="hz-product-stories" markdown="0">' + "".join(result) + "</div>").replace("><", ">\n<")
+
+
 def screenshot_gallery(project: Object) -> str:
     """A native swipeable UI/CLI gallery, enhanced with explicit keyboard/button navigation."""
     shots = project.get("screenshots", [])
@@ -573,6 +634,7 @@ def on_page_markdown(markdown: str, *, page: Any, config: Any, **_: Any) -> str:
     renderers = {
         "catalog": lambda: cards(snapshot, page.url),
         "featured": lambda: cards(snapshot, page.url, featured=True),
+        "home-gallery": lambda: home_gallery(snapshot, page.url),
         "themes": lambda: theme_gallery(snapshot, page.url),
         "install": lambda: command(snapshot["release"]["install"], "app-install"),
         "install-script": lambda: command(snapshot["release"]["install_script"], "app-install-script"),

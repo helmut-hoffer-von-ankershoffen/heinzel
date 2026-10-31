@@ -654,3 +654,82 @@ def test_gallery_empty_state_does_not_offer_nonfunctional_carousel_controls():
     rendered = pages.screenshot_gallery(project)
     assert "No screenshots published yet" in rendered
     assert "data-gallery-track" not in rendered
+
+
+def test_homepage_product_tour_uses_three_real_owners_with_escaped_captions():
+    plugins = []
+    for name, scene in (
+        ("heinzel-clock", "world-clock"),
+        ("heinzel-acme", "company-workflow"),
+        ("heinzel-acme-payments-checkout", "draft-in-terminal"),
+    ):
+        data = copy.deepcopy(PROJECT)
+        data["project"]["name"] = name
+        project = record(data)
+        project["screenshots"] = [
+            {"url": f"https://example.com/{scene}.png", "surface": "ui", "caption": 'Demo <team> & "review"'}
+        ]
+        plugins.append(project)
+    rendered = pages.home_gallery({"plugins": plugins}, "")
+    assert rendered.count("data-heinzel-helper") == 3
+    assert rendered.count("<figure>") == 3
+    assert "&lt;team&gt; &amp; &quot;review&quot;" in rendered
+    assert all(f"/{name}.png" in rendered for name in ("world-clock", "company-workflow", "draft-in-terminal"))
+    assert "fictional demo runner" in rendered
+    assert 'referrerpolicy="no-referrer"' in rendered
+    assert "aspect-ratio" not in rendered
+
+
+def test_homepage_does_not_substitute_settings_for_a_missing_feature_scene():
+    project = record()
+    project["name"] = "heinzel-clock"
+    project["screenshots"] = [{"url": "https://example.com/settings.png", "surface": "ui", "caption": "Settings"}]
+    assert "settings.png" not in pages.home_gallery({"plugins": [project]}, "")
+
+
+def test_homepage_product_tour_survives_markdown_section_rendering():
+    from html.parser import HTMLParser
+
+    import markdown
+
+    plugins = []
+    for name, scene in (
+        ("heinzel-clock", "world-clock"),
+        ("heinzel-acme", "company-workflow"),
+        ("heinzel-acme-payments-checkout", "draft-in-terminal"),
+    ):
+        project = record()
+        project["name"] = name
+        project["screenshots"] = [
+            {"url": f"https://example.com/{scene}.png", "surface": "ui", "caption": "Fictional demonstration"}
+        ]
+        plugins.append(project)
+    content = pages.home_gallery({"plugins": plugins}, "")
+    rendered = markdown.markdown(f'<section markdown="1">\n\n{content}\n\n</section>', extensions=["md_in_html"])
+
+    class Stories(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.stack = []
+            self.articles = []
+            self.figures = []
+
+        def handle_starttag(self, tag, attrs):
+            classes = dict(attrs).get("class", "")
+            if tag == "article" and classes == "hz-product-story":
+                self.articles.append(self.stack[-1])
+            if tag == "figure":
+                self.figures.append(self.stack[-1])
+            if tag not in {"img", "br", "hr", "input", "source"}:
+                self.stack.append((tag, classes))
+
+        def handle_endtag(self, tag):
+            for index in range(len(self.stack) - 1, -1, -1):
+                if self.stack[index][0] == tag:
+                    del self.stack[index:]
+                    break
+
+    parser = Stories()
+    parser.feed(rendered)
+    assert parser.articles == [("div", "hz-product-stories")] * 3
+    assert parser.figures == [("article", "hz-product-story")] * 3
