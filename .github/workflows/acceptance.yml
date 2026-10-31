@@ -1,0 +1,123 @@
+name: Acceptance
+
+# Public installer acceptance on hosted macOS and Linux runners (scripts/acceptance/). It installs what is published
+# today with the literal public commands, in private homes, with no credentials, and publishes nothing. Its only output
+# is result.json, uploaded as an artifact: the receipt that a promotion to stable can read. A pull request that changes
+# the harness or this workflow is a real dry run against what is published now.
+#
+# A candidate run takes a held release's wheel URL and sha256 plus the app profile URL. It proves those bytes, never the
+# public path, and its verdict says so.
+
+on:
+  workflow_dispatch:
+    inputs:
+      expected_version:
+        description: "Core version PyPI latest must be (X.Y.Z)"
+        required: true
+        type: string
+      expected_app_version:
+        description: "App version the collection must designate (X.Y.Z)"
+        required: true
+        type: string
+      candidate_wheel_url:
+        description: "Candidate run: the held release's Core wheel URL (empty for the public path)"
+        required: false
+        default: ""
+        type: string
+      candidate_wheel_sha256:
+        description: "Candidate run: the sha256 of that wheel"
+        required: false
+        default: ""
+        type: string
+      candidate_profile_url:
+        description: "Candidate run: the app release's standard.json that selects it"
+        required: false
+        default: ""
+        type: string
+  workflow_call:
+    inputs:
+      expected_version:
+        description: "Core version PyPI latest must be (X.Y.Z)"
+        required: true
+        type: string
+      expected_app_version:
+        description: "App version the collection must designate (X.Y.Z)"
+        required: true
+        type: string
+      candidate_wheel_url:
+        description: "Candidate run: the held release's Core wheel URL (empty for the public path)"
+        required: false
+        default: ""
+        type: string
+      candidate_wheel_sha256:
+        description: "Candidate run: the sha256 of that wheel"
+        required: false
+        default: ""
+        type: string
+      candidate_profile_url:
+        description: "Candidate run: the app release's standard.json that selects it"
+        required: false
+        default: ""
+        type: string
+  pull_request:
+    paths:
+      - ".github/workflows/acceptance.yml"
+      - "scripts/acceptance/**"
+      - "tests/unit/acceptance_test.py"
+
+permissions: {}
+
+jobs:
+  acceptance:
+    name: Acceptance (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 240
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            no_sandbox: "false"
+          - os: ubuntu-latest
+            no_sandbox: "true" # a disposable hosted VM; Chrome's sandbox needs user namespaces the image restricts
+    env:
+      # A pull request has no inputs: it takes whatever is published now, and the receipt records that.
+      EXPECTED_VERSION: ${{ inputs.expected_version || 'published' }}
+      EXPECTED_APP_VERSION: ${{ inputs.expected_app_version || 'published' }}
+      CANDIDATE_WHEEL_URL: ${{ inputs.candidate_wheel_url || '' }}
+      CANDIDATE_WHEEL_SHA256: ${{ inputs.candidate_wheel_sha256 || '' }}
+      CANDIDATE_PROFILE_URL: ${{ inputs.candidate_profile_url || '' }}
+      NO_SANDBOX: ${{ matrix.no_sandbox }}
+      RESULT: ${{ runner.temp }}/receipt/result.json
+      PROOF_PARENT: ${{ runner.temp }}/proof
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          enable-cache: false
+      - name: Run the acceptance harness
+        run: >-
+          uv run --no-project --python 3.13 python -I scripts/acceptance/run_acceptance.py
+          --expect-version "$EXPECTED_VERSION"
+          --expect-app-version "$EXPECTED_APP_VERSION"
+          --candidate-wheel-url "$CANDIDATE_WHEEL_URL"
+          --candidate-wheel-sha256 "$CANDIDATE_WHEEL_SHA256"
+          --candidate-profile-url "$CANDIDATE_PROFILE_URL"
+          --chrome-no-sandbox "$NO_SANDBOX"
+          --root-parent "$PROOF_PARENT"
+          --out "$RESULT"
+      - name: Summarize the result
+        if: always()
+        run: >-
+          uv run --no-project --python 3.13 python -I scripts/acceptance/summary.py "$RESULT" >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload the receipt
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: acceptance-result-${{ runner.os }}
+          path: ${{ runner.temp }}/receipt/result.json
+          if-no-files-found: error
