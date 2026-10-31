@@ -5,17 +5,16 @@ description: Find your way around Heinzel, inspect its operations, and choose yo
 
 # A useful first session.
 
-[Install the standard app](install.md), then run `hz ui` and open the local address it prints. Keep the terminal
-open while you explore. There is no team repository or cloud service required just to inspect the workspace.
+[Install the standard app](install.md), run `hz ui` and open the address it prints. Keep the terminal open. You
+need no team repository or cloud service.
 
 ## Orient yourself
 
-Start with **Today** and inspect the current state. Open settings to choose the theme and configure the modules
-you want. The standard profile includes a world clock and system resource views. Available widgets and menu
-entries follow enabled contributions; plugins own those features.
+Open **Today**. In settings, pick a theme and enable modules. The standard app has a world clock and resource
+views; plugins own every other widget and menu entry.
 
-Heinzelmännchen communicate states such as working, waiting for you and blocked. Treat the accompanying words
-as the explanation. Motion and playful decoration can be disabled in settings.
+Helpers show a state: working, waiting for you, blocked. The words explain it. Turn off motion and decoration in
+settings.
 
 ## Learn one capability from every angle
 
@@ -25,9 +24,8 @@ hz system doctor
 hz system plugin search --text clock --json
 ```
 
-Operations have typed inputs and output. The same operation can be accessible from CLI, MCP and REST, subject to its privacy and head restrictions,
-so learning it in the terminal also teaches you what an agent or application can call. Explore the
-[generated CLI reference](../CLI_REFERENCE.md) and [module reference](../MODULES.md).
+An operation has typed inputs and output, and usually works in the CLI, MCP and REST alike. What you learn in the
+terminal is what an agent can call. See the [CLI reference](../CLI_REFERENCE.md) and [modules](../MODULES.md).
 
 ## Choose your next step
 
@@ -39,5 +37,5 @@ so learning it in the terminal also teaches you what an agent or application can
 | Build your own capability | [Create a plugin](../PLUGIN_AUTHORING.md): start with one operation and one test. |
 | Understand the design | [Architecture tour](architecture.md) and [vision](../VISION.md). |
 
-This release establishes the extensible foundation. Richer end-to-end team workflows remain work in progress;
-use the owning module's documentation and health checks to assess each integration you enable.
+This release is the foundation. Autonomous team workflows are not built yet; check each integration's docs and
+health before you rely on it.
