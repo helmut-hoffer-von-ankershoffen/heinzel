@@ -60,3 +60,17 @@ def test_the_scoped_commands_are_the_ones_make_check_fast_runs():
 
 def test_the_document_tests_exist():
     assert [path for path in scoped.MARKDOWN_TESTS if not (REPO / path).is_file()] == []
+
+
+@pytest.mark.parametrize(
+    ("changed", "web"),
+    [
+        (["src/heinzel/kernel/_kernel.py", "tests/unit/x_test.py", "scripts/ship.py", "AGENTS.md"], False),
+        (["web/src/components/A.tsx"], True),
+        (["desktop/main.ts", "scripts/x.py"], True),
+        (["pyproject.toml"], True),
+        (["uv.lock", "src/heinzel/a.py"], True),
+    ],
+)
+def test_only_changes_that_touch_the_web_app_run_its_tests(changed, web):
+    assert scoped.touches_web(changed) is web

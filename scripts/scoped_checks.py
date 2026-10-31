@@ -5,8 +5,10 @@
 """Keep Core-root PR and agent checks within the owning projects for plugin-only changes.
 
 `push` is the pre-push hook: the fast checks scoped to what the branch changes against main. Only Markdown and site
-templates run the documentation checks and the tests that read documents; only `web/` runs the web checks; anything
-else runs `make check-fast` in full. CI always runs the full gate, so nothing goes unchecked, only later.
+templates run the documentation checks and the tests that read documents; only `web/` runs the web checks; changes
+that touch neither `web/` nor `desktop/` nor the root build files run `make check-fast` without the web app's tests
+and the managed backend's check; anything else runs `make check-fast` in full. CI always runs the full gate, so
+nothing goes unchecked, only later.
 """
 
 import argparse
@@ -82,6 +84,15 @@ def scoped_steps(changed: list[str]) -> list[str] | None:
     return steps
 
 
+WEB_INPUTS = ("web/", "desktop/")
+WEB_ROOT_FILES = {"pyproject.toml", "uv.lock", "Makefile", "mkdocs.yml"}
+
+
+def touches_web(changed: list[str]) -> bool:
+    """Whether a change can break the web app's tests or the managed backend check: files they read."""
+    return any(path.startswith(WEB_INPUTS) or path in WEB_ROOT_FILES for path in changed)
+
+
 def main() -> None:
     """Preserve core checks and common policies while selecting independent owning plugin work."""
     parser = argparse.ArgumentParser(description=__doc__)
@@ -96,6 +107,11 @@ def main() -> None:
             command = ["uv", "run", "--quiet", "--script", "scripts/steps.py", *steps]
             done = subprocess.run(command, check=False, timeout=600)  # noqa: S603 - fixed steps, no shell
             sys.exit(done.returncode)
+        if changed and not touches_web(changed) and not all(path.startswith("plugins/") for path in changed):
+            # Python, scripts, tests and documents: everything of the fast gate but the web app's tests and the managed
+            # backend's check, which read nothing of it (the generated client is still checked by web-lint).
+            command = ["make", "check-fast", "WEB_TESTS=", "MANAGED_CHECK=", f"BASE={args.base}"]
+            sys.exit(subprocess.run(command, check=False, timeout=1800).returncode)  # noqa: S603 - fixed arguments
         args.mode = "fast"  # everything else is the full fast gate
     if not changed or not all(path.startswith("plugins/") for path in changed):
         subprocess.run(  # noqa: S603 - explicit owning commands, no shell
