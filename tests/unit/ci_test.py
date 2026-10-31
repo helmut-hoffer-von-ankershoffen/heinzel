@@ -70,7 +70,7 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
     "promote.yml": {
         'latest_tag="$(': "gathers the facts promotion decides from",
         "uv run --no-build --frozen --script scripts/release_promotion.py": "decides the one next step",
-        'if [[ "$STEP"': "takes that step through the reviewed workflows",
+        'echo "$STEP: $REASON"': "takes the one step through the reviewed workflows",
     },
     "pypi.yml": {
         'passed="$(gh run list': "refuses an upload without passing acceptance once promotion is active",
