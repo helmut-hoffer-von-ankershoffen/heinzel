@@ -3,7 +3,7 @@
 Your **Heinzelmännchen** are what hz is: one helper for each contract you have. `hz heinzel list` shows them, and so
 does the web app's Heinzelmännchen page.
 
-A **contract** keeps one thing true. It is a `<name>.prose.md` file: YAML frontmatter says what it reads and when i
+A **contract** keeps one thing true. It is a `<name>.prose.md` file: YAML frontmatter says what it reads and when it
 runs, and the Markdown body says what the asset must be. You write it, `hz heinzel check` checks it, `hz heinzel wake`
 drafts it, and your daemon drafts it on its schedule. Drafts stay on your machine; nothing is published by itself.
 
@@ -14,7 +14,7 @@ This page walks from nothing to a scheduled helper, then lists the reference. Ev
 [CLI_REFERENCE.md](CLI_REFERENCE.md#hz-heinzel), every setting in [CONFIGURATION.md](CONFIGURATION.md#heinzel). The
 reasoning is in the [workflow contracts decision](adr/0021-workflow-contracts.md).
 
-## What is buil
+## What is built
 
 Released: contracts, daemon schedules, named helpers with their own chat, a reviewed check-in that posts a local
 notice, and a reviewed schedule that the daemon runs. Proven only with fakes: the scheduled model turn. The rest is
@@ -25,14 +25,14 @@ under [Not built yet](#not-built-yet).
 ### 1. See what exists
 
 ```bash
-hz heinzel list      # your contracts, the directories searched, what to run nex
+hz heinzel list      # your contracts, the directories searched, what to run next
 hz heinzel check     # every problem by file and line
 ```
 
-### 2. Write your first contrac
+### 2. Write your first contract
 
 ```bash
-hz heinzel new weekly-diges
+hz heinzel new weekly-digest
 ```
 
 This writes `weekly-digest.prose.md` into your workflows directory. The starter is valid, commented and has no inputs,
@@ -44,7 +44,7 @@ For a complete contract, use a plugin's **playbook**: `hz heinzel playbooks` lis
 Edit it, then:
 
 ```bash
-hz heinzel check --path ~/path/to/weekly-digest.prose.md   # after each edi
+hz heinzel check --path ~/path/to/weekly-digest.prose.md   # after each edit
 hz heinzel show weekly-digest                              # is it ready? what does it require?
 ```
 
@@ -75,13 +75,13 @@ hz heinzel wake weekly-digest        # drafts it now; costs at most `[heinzel] m
 
 ```bash
 hz heinzel drafts                                  # every draft, newest first, with its path and record
-hz heinzel drafts --name weekly-digest --latest    # the newest draft of one contract, as tex
+hz heinzel drafts --name weekly-digest --latest    # the newest draft of one contract, as text
 ```
 
 A manual run leaves a record. A daemon run also leaves a receipt with hashes and the runner's report, not the draft's
 text.
 
-### 6. Schedule i
+### 6. Schedule it
 
 Uncomment `schedule:` in the frontmatter: five cron fields in local time, such as `"0 7 * * MON"`. `hz heinzel show`
 then names the daemon job, `workflow:me-<name>`.
@@ -89,7 +89,7 @@ then names the daemon job, `workflow:me-<name>`.
 ```bash
 hz system daemon status                                # is the daemon installed? If not:
 hz system daemon install                               # launchd or systemd runs `hz system daemon tick` every 5 minutes
-hz system daemon tick --job workflow:me-weekly-digest  # run it now as the daemon would, with a receip
+hz system daemon tick --job workflow:me-weekly-digest  # run it now as the daemon would, with a receipt
 ```
 
 An edit counts at the next tick. A contract without a schedule runs only by hand. [SECURITY.md](../SECURITY.md) says
@@ -101,7 +101,7 @@ Drafts and records are deleted 90 days after rendering. Receipts stay.
 
 ```bash
 hz heinzel prune --dry-run                          # what would be deleted now, deleting nothing
-hz heinzel prune                                    # delete i
+hz heinzel prune                                    # delete it
 hz system config set heinzel.retention_days 30      # keep them 30 days; 0 keeps them forever
 ```
 
@@ -112,10 +112,10 @@ With the daemon installed, the daily job `heinzel:prune` does this for you.
 ```bash
 hz heinzel sent weekly-digest --file ~/sent/digest.md --edit-minutes 5   # how much of the newest draft you changed
 hz heinzel sent weekly-digest --ref <document>        # or the approved version where it lives, through `documents`
-hz heinzel show weekly-digest                         # drafting time, cost and share changed per draf
+hz heinzel show weekly-digest                         # drafting time, cost and share changed per draft
 ```
 
-`sent` compares what you sent with the draft and saves the share of words changed, both word counts and the sen
+`sent` compares what you sent with the draft and saves the share of words changed, both word counts and the sent
 text's hash, not the text. It stays local and is about the draft, never about people.
 
 ### 9. Link contracts into a workflow
@@ -132,7 +132,7 @@ hz:
 
 ```bash
 hz heinzel graph            # each contract, what it maintains and what it reads
-hz heinzel graph --mermaid  # the same as a Mermaid flowchart, for a document or a pull reques
+hz heinzel graph --mermaid  # the same as a Mermaid flowchart, for a document or a pull request
 hz heinzel graph --json     # nodes, edges, cycles and inputs nobody maintains
 ```
 
@@ -142,7 +142,7 @@ its runs fail until someone writes it. A team contract cannot read a personal on
 ### 10. Share a contract with your team
 
 ```bash
-hz team join https://github.com/acme-example/hz-team-payments.git --yes   # or: hz team adopt /path/to/checkou
+hz team join https://github.com/acme-example/hz-team-payments.git --yes   # or: hz team adopt /path/to/checkout
 hz heinzel new retro-agenda --team      # writes <checkout>/workflows/retro-agenda.prose.md
 ```
 
@@ -153,7 +153,7 @@ and can run it by hand. It runs on your daemon only when you say so:
 ```bash
 hz heinzel show team:retro-agenda      # prints the SHA-256 and the approval entry
 hz system config set heinzel.schedule_team '["retro-agenda"]'                  # run whatever the file says
-hz system config set heinzel.schedule_team '["retro-agenda@sha256:<hex>"]'     # run exactly this conten
+hz system config set heinzel.schedule_team '["retro-agenda@sha256:<hex>"]'     # run exactly this content
 ```
 
 A pinned contract whose file changed does not run until you approve the new content.
@@ -171,10 +171,10 @@ hz heinzel profile <session-id> change-look 1 --appearance '{"hat":"teal","acces
 ```
 
 A profile change names the revision you saw; if another change arrived first, reload before saving. Repeating a
-request id with the same payload returns the first result; a different payload is refused. An empty appearance objec
+request id with the same payload returns the first result; a different payload is refused. An empty appearance object
 restores the defaults. The web app's Heinzelmännchen page does the same, with a preview.
 
-### 12. Chat with i
+### 12. Chat with it
 
 ```bash
 hz heinzel chat <session-id> <request-id> <message> --json
@@ -222,7 +222,7 @@ hz heinzel amend-scheduled-agent <session-id> <request-id> <expected-revision> <
 A proposal changes nothing by itself, and amending it asks for a new review. The budget in a proposal is not enforced
 yet. The scheduled model turn is proven only with fakes: no live provider has run one end to end.
 
-## What happens to a contrac
+## What happens to a contract
 
 ```mermaid
 flowchart LR
@@ -288,8 +288,7 @@ Everything Heinzelmännchen reads is under `hz:`.
 | `hz.scope` | no | `personal` (the only value) |
 
 Keys such as `owner`, `tags`, `freshness`, `on`, `concurrency` and `scope: team` are not built yet; `HZC023` refuses
-them. The runner and
-model are configuration, never part of a contract (`[capabilities] agent_runner`, `[system.runner]`).
+them. The runner and model are configuration, never part of a contract (`[capabilities] agent_runner`, `[system.runner]`).
 
 ### Body
 
@@ -322,7 +321,7 @@ for `me:` or `team:`.
 Local CLI, stdio MCP, paired web and the authenticated private API. The unauthenticated REST API and network MCP do
 not expose them. A failed check-in notice is retried twice within its tick, then recorded as failed.
 
-### Not built ye
+### Not built yet
 
 - Approval in place, where the draft lives.
 - Writes into shared documents, and publishing a draft.
