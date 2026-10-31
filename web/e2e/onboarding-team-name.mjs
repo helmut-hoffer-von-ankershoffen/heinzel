@@ -14,7 +14,8 @@ async function toTeamStep() {
   await page.locator("#splash").waitFor({ state: "hidden", timeout: 30000 });
   const wizard = page.getByRole("dialog", { name: "Set up hz" });
   await wizard.waitFor({ timeout: 15000 });
-  for (let i = 0; i < 4 && !(await wizard.getByRole("heading", { name: "Your team" }).isVisible()); i++)
+  // The Team step follows "Who you are"; after a reload the wizard comes back to the step it left.
+  if (!(await wizard.getByRole("heading", { name: "Your team" }).isVisible()))
     await wizard.getByRole("button", { name: "Next" }).click();
   await wizard.getByRole("heading", { name: "Your team" }).waitFor();
   return wizard;

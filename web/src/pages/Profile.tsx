@@ -41,9 +41,9 @@ export function Profile() {
                 ))}
               </dl>
               {me.retired_role && (
-                <p role="status" className="mt-3 text-sm text-warn">
+                <output className="mt-3 block text-sm text-warn">
                   {t("profile.retiredRole", { role: me.retired_role })}
-                </p>
+                </output>
               )}
               <div className="mt-4">
                 <CopyCommand command={me.fix} />

@@ -306,9 +306,7 @@ function YouForm({ me }: { me: SchemaProfile }) {
           ))}
         </select>
         {me.retired_role && (
-          <p role="status" className="text-xs text-warn">
-            {t("profile.retiredRole", { role: me.retired_role })}
-          </p>
+          <output className="block text-xs text-warn">{t("profile.retiredRole", { role: me.retired_role })}</output>
         )}
       </div>
       <div className="flex flex-col gap-1">
