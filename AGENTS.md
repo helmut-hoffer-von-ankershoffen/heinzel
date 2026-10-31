@@ -36,6 +36,7 @@ Heinzelmännchen (`hz`): a kernel plus modules, each operation exposed as a CLI 
 | Render, test and audit the plugin template (`AUDIT=0`: offline, no audit) | `make template-test` |
 | Open the pull request: preflight, push, PR to `main`, auto-merge (`DRAFT=1`: a draft, no auto-merge; `BODY="..."` or `BODY_FILE=path`: a new one's description) | `make pr TITLE="feat(scope): ..."` |
 | What failed in CI (waits for the running build) | `make ci-logs` |
+| A small copy, docs or web UI fix, start to validated pull request, safe for a small model ([docs/SHIP_SMALL.md](docs/SHIP_SMALL.md), skill `ship-small`) | `uv run --script scripts/ship.py start SLUG` |
 | Rebase onto the latest `main` | `make sync` |
 
 Make targets print one line per passing step and the tail of a failing one; don't pipe them through `tail` or `grep`
@@ -59,7 +60,10 @@ options are in [docs/CLI_REFERENCE.md](docs/CLI_REFERENCE.md).
 - A failing check: `gh run view <run> --log-failed` works only after the whole run has finished. Rerun a job that
   failed for reasons outside the diff (a runner timeout) with `gh run rerun <run> --failed`; fix everything else.
 - Core-root PR preflight, agent completion and pre-push hooks select owning checks for plugin-only changes.
-  Mixed/core changes retain core checks. On a heavily loaded machine the unit step can hit the session
+  Mixed/core changes retain core checks. The pre-push hook also scopes by path (`scripts/scoped_checks.py push`):
+  Markdown and site templates alone run the documentation checks and the tests that read documents, `web/` alone the
+  web checks, everything else `make check-fast` in full; `make check-fast` itself stays the full run, and CI always
+  runs the full gate. On a heavily loaded machine the unit step can hit the session
   timeout; wait for the load to drop and push again. `NO_PREFLIGHT=1 make pr` skips only the preflight, never a
   hook, and is for timeouts in tests you didn't touch, after review.
 - UI changes must follow [Mobile UI](docs/CODING_STANDARDS.md#mobile-ui): use the shared viewport primitives and

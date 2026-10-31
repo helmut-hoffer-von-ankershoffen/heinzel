@@ -30,14 +30,15 @@ hide:
 
 <section class="hz-trust" aria-labelledby="hz-trust-title">
 <h2 id="hz-trust-title">Open code. Visible checks.</h2>
-<p>Inspect the license, project practices and latest core analysis before you install.</p>
+<p>Check the license, practices and analysis before you install.</p>
 <div class="hz-trust-links">
-<a href="https://github.com/helmut-hoffer-von-ankershoffen/heinzel/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="MIT license" height="20" loading="lazy"></a>
-<a href="https://www.bestpractices.dev/en/projects/15863"><img src="https://www.bestpractices.dev/projects/15863/badge" alt="OpenSSF Best Practices: view the project's criteria" height="20" loading="lazy"></a>
-<a href="https://sonarcloud.io/summary/new_code?id=helmut-hoffer-von-ankershoffen_heinzel"><img src="https://sonarcloud.io/api/project_badges/measure?project=helmut-hoffer-von-ankershoffen_heinzel&amp;metric=alert_status" alt="Quality gate: new core code" height="20" loading="lazy"></a>
+<a href="https://github.com/helmut-hoffer-von-ankershoffen/heinzel/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-brightgreen" alt="MIT license" height="20" loading="lazy"></a>
+<a href="https://www.bestpractices.dev/en/projects/15863"><img src="https://img.shields.io/cii/level/15863?label=OpenSSF%20Best%20Practices" alt="OpenSSF Best Practices: view the project's criteria" height="20" loading="lazy"></a>
+<a href="https://github.com/helmut-hoffer-von-ankershoffen/heinzel/actions/workflows/codeql.yml?query=branch%3Amain"><img src="https://img.shields.io/github/actions/workflow/status/helmut-hoffer-von-ankershoffen/heinzel/codeql.yml?branch=main&amp;label=CodeQL" alt="CodeQL analysis on main: view the workflow runs" height="20" loading="lazy"></a>
+<a href="https://sonarcloud.io/summary/new_code?id=helmut-hoffer-von-ankershoffen_heinzel"><img src="https://img.shields.io/sonar/quality_gate/helmut-hoffer-von-ankershoffen_heinzel?server=https://sonarcloud.io&amp;label=Quality%20Gate%20Status" alt="Quality gate: new core code" height="20" loading="lazy"></a>
 <a href="https://sonarcloud.io/summary/overall?id=helmut-hoffer-von-ankershoffen_heinzel"><img src="https://sonarcloud.io/api/project_badges/measure?project=helmut-hoffer-von-ankershoffen_heinzel&amp;metric=security_rating" alt="Security rating: overall core code" height="20" loading="lazy"></a>
 </div>
-<p class="hz-trust-note">The quality gate checks new code. The security rating covers all analyzed core code.</p>
+<p class="hz-trust-note">The gate checks new code; the security rating covers all analyzed core code.</p>
 </section>
 
 <div class="hz-strip"><span>For people who build products.</span><span>For agents that help them.</span><span>For teams that want control.</span></div>
@@ -88,6 +89,7 @@ Imagined helpers. Real product screens with fictional demonstration data. Select
 <!-- hz:home-gallery -->
 
 [Try Heinzel →](guides/install.md){ .hz-button }
+[Take the product tour](guides/tour.md){ .hz-button .hz-button-quiet }
 </section>
 
 <section class="hz-section" markdown>
@@ -154,7 +156,7 @@ they are out of date, so they can't drift.
 | **Pick a plugin**: the gallery, one page per plugin with what it brings in every head, its settings, themes and recordings | [Public plugin catalog](CATALOG.md), with immutable source revisions and theme previews · `hz system plugin search` discovers available plugins automatically |
 | **Extend** it with modules and plugins | [Plugin extension guide](PLUGINS.md) · [README: Extend](../README.md#extend) · [ARCHITECTURE: Plugins](ARCHITECTURE.md#plugins) · [writing a playbook](PLAYBOOKS.md#writing-a-playbook) · [themes, and how to make a weather theme](THEMES.md) · [settings that need no explaining](SETTINGS_UX.md) · [screenshot playbook](SCREENSHOT_PLAYBOOK.md) · the template's AGENTS.md (`hz system plugin new`) |
 | **Publish and verify a release** | [Publishing acceptance](PUBLISHING.md) |
-| **Contribute** to the core | [CONTRIBUTING](../CONTRIBUTING.md) · [CODING_STANDARDS](CODING_STANDARDS.md) · [Sonar security lessons](SONAR_SECURITY.md) · [durable session storage](SESSIONS.md) · [CHANGELOG](../CHANGELOG.md) *(generated at release)* |
+| **Contribute** to the core | [CONTRIBUTING](../CONTRIBUTING.md) · [CODING_STANDARDS](CODING_STANDARDS.md) · [Sonar security lessons](SONAR_SECURITY.md) · [durable session storage](SESSIONS.md) · [shipping small changes with a small model](SHIP_SMALL.md) · [CHANGELOG](../CHANGELOG.md) *(generated at release)* |
 | Work on it **as a coding agent** | [AGENTS](../AGENTS.md) and the scoped AGENTS.md files it lists |
 | Report a **vulnerability** | [SECURITY](../SECURITY.md) |
 
@@ -172,7 +174,7 @@ How drift is prevented:
 - [Private HTTPS web sharing](PRIVATE_WEB_SHARING.md): exact proxy origins, pairing and terminal security.
 
 
-Site guides: [Install](guides/install.md) · [First steps](guides/first-steps.md) · [Contribute](guides/contribute.md) · [Architecture tour](guides/architecture.md) · [Catalog metadata and automation](guides/catalog.md) · [Vision](VISION.md) · [Catalog](CATALOG.md).
+Site guides: [Install](guides/install.md) · [First steps](guides/first-steps.md) · [Product tour](guides/tour.md) · [Contribute](guides/contribute.md) · [Architecture tour](guides/architecture.md) · [Catalog metadata and automation](guides/catalog.md) · [Vision](VISION.md) · [Catalog](CATALOG.md).
 
 Legacy generated recordings (historical; current sources are in the catalog): [Atlassian](plugins/heinzel-atlassian/index.md) · [Clock](plugins/heinzel-clock/index.md) · [GitHub](plugins/heinzel-github/index.md) · [Google](plugins/heinzel-google/index.md) · [Tailscale](plugins/heinzel-tailscale/index.md) · [Zoom](plugins/heinzel-zoom/index.md).
 

@@ -6,6 +6,8 @@ related: 0020, 0021
 
 # 0022: Workflows embedded in documents are discovered by connectors and run only once registered
 
+*Not implemented at 0.9.9; embedded workflows are not built.*
+
 ## Context and Problem Statement
 
 Teams want to describe how a document is kept up to date inside the document itself: a "🧝 Heinzel" tab in a Google

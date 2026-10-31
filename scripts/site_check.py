@@ -26,6 +26,8 @@ ROOT = Path(__file__).resolve().parents[1]
 REPORTS = ROOT / "reports" / "site"
 MAX_HELPERS = 5
 HOME_STORIES = 3
+TOUR_STORIES = 3
+TOUR_SLIDES = 3
 FITS_VIEWPORT = "document.documentElement.scrollWidth <= innerWidth + 1"
 
 
@@ -44,7 +46,7 @@ def require(condition: bool, message: str) -> None:
 
 
 class Handler(SimpleHTTPRequestHandler):
-    """Serve only built artifacts under the production project's path prefix."""
+    """Serve the built artifacts from the root, as the production domain does."""
 
     def handle(self) -> None:
         """Treat a browser closing its keepalive connection as normal teardown."""
@@ -54,11 +56,7 @@ class Handler(SimpleHTTPRequestHandler):
             return
 
     def do_GET(self) -> None:
-        """Map the deployed project prefix to the build root."""
-        if not self.path.startswith("/heinzel/"):
-            self.send_error(404)
-            return
-        self.path = self.path.removeprefix("/heinzel")
+        """Serve the build root; the production site lives at the root of its own domain."""
         super().do_GET()
 
     def log_message(self, format: str, *args: object) -> None:  # noqa: A002 - standard library callback
@@ -223,11 +221,34 @@ def zoom_flow(page: "Page", axe: Path, identity: str, selector: str = ".hz-scree
         ),
         "Fit must reveal the whole screenshot",
     )
-    expect(viewer.get_by_role("link", name="Open original")).to_have_attribute("href", link.get_attribute("href"))
+    expect(viewer.get_by_role("link", name="Open original")).to_have_attribute(
+        "href", link.evaluate("link => link.href")
+    )
     audit(page, axe, identity + "-zoom")
     page.keyboard.press("Escape")
     expect(viewer).to_have_count(0)
     require(link.evaluate("link => link === document.activeElement"), "Closing zoom must return focus")
+
+
+def tour_flow(page: "Page", axe: Path, identity: str) -> None:
+    """Each tour story keeps one guide and an independent, keyboard-navigable lead-plus-zoom gallery."""
+    stories = page.locator(".hz-tour-story")
+    require(stories.count() == TOUR_STORIES, "The product tour must show three stories")
+    for index in range(TOUR_STORIES):
+        story = stories.nth(index)
+        story.scroll_into_view_if_needed()
+        slides = story.locator(".hz-screenshots figure")
+        require(slides.count() == TOUR_SLIDES, "Each story needs a lead, a zoomed detail and a dark view")
+        counter = story.locator("[data-gallery-count]")
+        expect(counter).to_have_text(f"1 of {TOUR_SLIDES}")
+        story.get_by_role("button", name=re.compile("^Next .* screenshot$")).click()
+        expect(counter).to_have_text(f"2 of {TOUR_SLIDES}")
+    require(
+        page.locator(".hz-tour-story[data-heinzel-helper]").count() == TOUR_STORIES,
+        "Every story carries exactly one character guide",
+    )
+    zoom_flow(page, axe, identity, ".hz-tour-story .hz-screenshots figure a")
+    require(page.evaluate(FITS_VIEWPORT), "The tour must not overflow the viewport")
 
 
 def gallery_shape_flow(page: "Page") -> None:
@@ -514,6 +535,7 @@ def sweep(browser: "Browser", engine: str, base: str, axe: Path, snapshot: dict[
                 ("", "home"),
                 ("CATALOG/", "catalog"),
                 ("guides/install/", "install"),
+                ("guides/tour/", "tour"),
                 ("guides/architecture/", "architecture"),
                 ("guides/contribute/", "contribute"),
                 ("PLUGIN_AUTHORING/", "authoring"),
@@ -528,10 +550,10 @@ def sweep(browser: "Browser", engine: str, base: str, axe: Path, snapshot: dict[
                     page.evaluate(FITS_VIEWPORT),
                     f"Horizontal overflow: {engine}/{width}/{mode}/{name}",
                 )
-                require(
-                    page.locator("img").evaluate_all("els => els.every(e => !e.complete || e.naturalWidth > 0)"),
-                    f"Broken image: {name}",
+                broken = page.evaluate(
+                    "() => [...document.images].filter(e => e.complete && e.naturalWidth === 0).map(e => e.currentSrc)"
                 )
+                require(not broken, f"Broken image: {engine}/{width}/{mode}/{name}: {broken}")
                 require(
                     1 <= page.locator("[data-heinzel-helper]").count() <= MAX_HELPERS,
                     f"Every page needs one to five character explainers: {name}",
@@ -553,8 +575,12 @@ def sweep(browser: "Browser", engine: str, base: str, axe: Path, snapshot: dict[
                 if name == "catalog":
                     catalog_flow(page, total)
                     audit(page, axe, identity + "-detail")
-                if name == "install":
-                    copy_command(page, "app-install")
+                follow_up = {
+                    "install": partial(copy_command, page, "app-install"),
+                    "tour": partial(tour_flow, page, axe, identity),
+                }.get(name)
+                if follow_up:
+                    follow_up()
             media_flow(page, base, snapshot, axe, f"{engine}-{width}-{mode}")
             require(not errors, f"Uncaught browser errors: {errors}")
             context.close()
@@ -587,7 +613,7 @@ def main() -> None:
             for engine in ("chromium", "webkit"):
                 browser = getattr(playwright, engine).launch()
                 try:
-                    base = f"http://127.0.0.1:{server.server_port}/heinzel/"
+                    base = f"http://127.0.0.1:{server.server_port}/"
                     if "--characters" in sys.argv:  # the character guides alone: quick while iterating on them
                         helper_layout(browser, base, snapshot, candidates[0])
                         helper_hash(browser, base, snapshot)

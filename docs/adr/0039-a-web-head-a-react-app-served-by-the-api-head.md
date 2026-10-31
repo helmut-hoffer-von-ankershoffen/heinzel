@@ -9,6 +9,8 @@ related: 0003, 0020, 0021, 0023, 0024, 0027, 0029, 0036, 0037
 
 # 0039: A web head: a React app served by the API head
 
+*Since 0051 the module is `heinzel`: read `hz workflow` as `hz heinzel` and `[workflow]` as `[heinzel]`.*
+
 ## Context and Problem Statement
 
 Heinzelmännchen has four heads: the CLI, MCP, REST and the daemon ([ADR 0003](0003-heads-are-views-on-operations.md),
@@ -18,7 +20,7 @@ or for machines. What is coming is visual: drafts to read and diff and, later, a
 inventory of assets ([ADR 0023](0023-inventory.md)), an org chart and a team roster ([ADR 0024](0024-people-and-org.md)),
 a doctor report with its fixes, and every setting in one place. A manager who approves the week's report should not
 need a terminal; a browser is already open. The maintainer asked for "another head: a React application", hosted by
-FastAPI and talking to the FastAPI API, and confirmed the stack and the layout below on 2026-10-24.
+FastAPI and talking to the FastAPI API.
 
 The REST head today has no authentication; it stays safe by answering only local, same-origin requests and by not
 exposing anything that spends money or reads personal data (`workflow run`, `drafts`, `discover`, `org show`,
@@ -65,7 +67,7 @@ uv ([ADR 0036](0036-the-build-installs-its-own-tools.md)), and how it stays a vi
 Chosen option: **a Vite + React + TypeScript application, built to static assets that the API head serves on the same
 origin behind a per-session token, with a typed client generated from the OpenAPI schema**, because it adds no run
 time beyond the Python process, keeps the UI a view on operations, and reuses the REST head's security model with one
-addition, the token, that the browser can prove and another page cannot forge. Decided by the maintainer, 2026-10-24.
+addition, the token, that the browser can prove and another page cannot forge.
 
 **The head.**
 
@@ -107,7 +109,7 @@ addition, the token, that the browser can prove and another page cannot forge. D
   today, and a test lists what the web head must not expose. This amends ADR 0019's rule from "not REST endpoints at
   all" to "not endpoints of the unauthenticated REST head".
 
-**Layout and first screens** (the maintainer's, 2026-10-24).
+**Layout and first screens.**
 
 - Three columns: a left full-height sidebar with home and search on top, the navigation tree as its main content, and
   profile and settings bottom-left; the content in the middle; a right full-height sidebar with an AI chat. Both
@@ -130,7 +132,7 @@ addition, the token, that the browser can prove and another page cannot forge. D
 
 **The generated, typed client.**
 
-- `scripts/generate_openapi.py` boots a kernel and writes `web/openapi.json` from the web head's app;
+- `scripts/web.py client` boots a kernel and writes `web/openapi.json` from the web head's app;
   `openapi-typescript` turns it into `web/src/api/schema.d.ts`; `openapi-fetch` is the client (one dependency, the
   types from the schema, `fetch` underneath). Both files are committed. `make fix` regenerates them; `make check`
   (`check-fast`'s `docs` step style) regenerates to a temporary file and fails on a difference, so an operation whose
@@ -201,10 +203,6 @@ addition, the token, that the browser can prove and another page cannot forge. D
 
 ## More Information
 
-- Decided by the maintainer, 2026-10-24: a React application as a head, hosted by FastAPI and talking to its API;
-  the stack above ("ok, go for it"); the three-column layout with the AI chat on the right; the first screens
-  (settings, contract graph, org chart and roster, inventory, doctor); localhost only with a session token for now,
-  team hosting in its own ADR.
 - Settled by [ADR 0045](0045-a-chat-that-acts-through-hz-with-confirmation-in-code.md): the chat keeps sessions in
   hz (`hz chat`, `system.runner.chat`), Home is the chat, and answers stream from `/api/stream/<path>`.
 - Open (before ADR 0045): the chat operation's name and whether it keeps a session across turns (a session id in `AgentResult`, or the

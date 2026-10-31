@@ -14,6 +14,7 @@ import pytest
 from heinzel import Config, Kernel, Module, ModuleRecord, Settings
 from heinzel.kernel import Origin, discover
 from heinzel.modules.org import _discovery as discovery
+from heinzel.modules.system import _github
 
 TEST_ORIGIN = Origin(distribution="heinzel-test", version="9.9.9", builtin=False)
 
@@ -23,6 +24,18 @@ def _no_machine_profile(monkeypatch: pytest.MonkeyPatch) -> None:
     """No test finds the developer's GitHub or Google login, time zone or Claude Code (or asks gh and gws)."""
     monkeypatch.setattr(discovery, "discover", discovery.Discovered)
     monkeypatch.setattr(discovery, "_run", lambda args: None)  # and no later caller reaches the real CLIs
+
+
+@pytest.fixture(autouse=True)
+def _release_redirect_offline(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The latest-release redirect is a network call like the REST API: no test reaches it unless it fakes it."""
+
+    def offline(url: str, timeout: float) -> tuple[int, str]:
+        del timeout
+        msg = f"the suite stays offline: {url}"
+        raise OSError(msg)
+
+    monkeypatch.setattr(_github, "_head", offline)
 
 
 @pytest.fixture
