@@ -313,16 +313,20 @@ function Layout() {
       setPageHold(hold);
       setActivePanel(id);
       setTerminalFull(false);
-      setParams((current) => {
-        const next = new URLSearchParams(current);
-        if (panelViews.some((view) => view.id === id)) next.set("panel", id);
-        else if (panelViews.some((view) => view.id === next.get("panel"))) next.delete("panel");
-        ownNavigation.current = { path: location.pathname, search: next.toString() };
-        return next;
-      });
+      // Native panel selection needs no URL write unless it closes a contributed panel. A no-op
+      // navigation can overwrite a conversation selected before this router render has committed.
+      if (requestedId || panelViews.some((view) => view.id === id)) {
+        setParams((current) => {
+          const next = new URLSearchParams(current);
+          if (panelViews.some((view) => view.id === id)) next.set("panel", id);
+          else if (panelViews.some((view) => view.id === next.get("panel"))) next.delete("panel");
+          ownNavigation.current = { path: location.pathname, search: next.toString() };
+          return next;
+        });
+      }
       if (!beside) requestScroll(id);
     },
-    [beside, full, location.pathname, requestScroll, selectedPanel, setParams, panelViews],
+    [beside, full, location.pathname, requestScroll, requestedId, selectedPanel, setParams, panelViews],
   );
   const closeView = (id: string) => {
     pageScroll.current?.();
