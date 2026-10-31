@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { chromium } from "playwright-core";
 
 const url = new URL(process.argv[2]);
-const token = url.hash.match(/(?:^#|&)token=([^&]+)/)?.[1] ?? "";
+const token = /(?:^#|&)token=([^&]+)/.exec(url.hash)?.[1] ?? "";
 url.pathname = "/heinzel";
 url.searchParams.set("chat", process.argv[3]);
 const browser = await chromium.launch({ headless: true });

@@ -20,6 +20,7 @@ from heinzel.modules.heinzel._session_crud import SessionCrud
 from heinzel.modules.heinzel._session_models import SessionId
 
 _MAX_PAGE = 100
+_INCONSISTENT_OUTCOME = "The scheduled notification outcome is inconsistent"
 
 
 class ItemNotificationPolicy(BaseModel):
@@ -351,7 +352,7 @@ class ScheduledNotificationInventory:
             msg = "The scheduled notification record is inconsistent"
             raise HeinzelError(msg)
         if len(outcomes) > 1 or (outcomes and outcomes[0].seq <= event.seq):
-            msg = "The scheduled notification outcome is inconsistent"
+            msg = _INCONSISTENT_OUTCOME
             raise HeinzelError(msg)
         status: Literal["recorded", "unresolved", "abandoned"] = "unresolved"
         if outcomes:
@@ -386,11 +387,11 @@ class ScheduledNotificationInventory:
                 attempts[event.key] = event
             elif event.kind in {"scheduled-notification.recorded", "scheduled-notification.abandoned"}:
                 if event.key is None:
-                    msg = "The scheduled notification outcome is inconsistent"
+                    msg = _INCONSISTENT_OUTCOME
                     raise HeinzelError(msg)
                 outcomes.setdefault(event.key, []).append(event)
         if any(key not in attempts for key in outcomes):
-            msg = "The scheduled notification outcome is inconsistent"
+            msg = _INCONSISTENT_OUTCOME
             raise HeinzelError(msg)
         return [self._validated_view(session, event, outcomes.get(key, [])) for key, event in attempts.items()]
 

@@ -214,8 +214,9 @@ def test_an_omitted_name_only_ever_means_the_single_output_tool(tmp_path):
         ),
     ):
         refused = fixture_model(executable, policy, FixtureVerifier(), lambda: policy, execute=_answering(wire))
+        request = refused.request(prompt, None, unnamed)
         with pytest.raises(HeinzelError, match="safely admitted"):
-            asyncio.run(refused.request(prompt, None, unnamed))
+            asyncio.run(request)
 
 
 def test_history_does_not_repeat_the_instructions_of_every_request(tmp_path):

@@ -383,24 +383,15 @@ def test_bulk_inventory_linear_validation_and_inconsistent_outcomes(tmp_path, mo
         assert len(reads) == 200
         assert len(set(reads)) == 200
         assert recovery.validated_inventory(session, attempts + outcomes[:-1])[-1].status == "unresolved"
-        with pytest.raises(HeinzelError, match="inconsistent"):
-            recovery.validated_inventory(session, attempts + outcomes + [outcomes[0]])
-        with pytest.raises(HeinzelError, match="inconsistent"):
-            recovery.validated_inventory(session, [*attempts, attempts[0], *outcomes])
-        with pytest.raises(HeinzelError, match="inconsistent"):
-            recovery.validated_inventory(
-                session, attempts + outcomes + [outcomes[0].model_copy(update={"key": "orphan"})]
-            )
-
-        with pytest.raises(HeinzelError, match="inconsistent"):
-            recovery.validated_inventory(session, [*attempts, outcomes[0].model_copy(update={"seq": 1})])
-        with pytest.raises(HeinzelError, match="invalid"):
-            recovery.validated_inventory(
-                session,
-                [
-                    *attempts,
-                    outcomes[0].model_copy(
-                        update={"kind": "scheduled-notification.abandoned", "data": {"acknowledged": True}}
-                    ),
-                ],
-            )
+        forged = outcomes[0].model_copy(
+            update={"kind": "scheduled-notification.abandoned", "data": {"acknowledged": True}}
+        )
+        for events, refusal in (
+            (attempts + outcomes + [outcomes[0]], "inconsistent"),
+            ([*attempts, attempts[0], *outcomes], "inconsistent"),
+            (attempts + outcomes + [outcomes[0].model_copy(update={"key": "orphan"})], "inconsistent"),
+            ([*attempts, outcomes[0].model_copy(update={"seq": 1})], "inconsistent"),
+            ([*attempts, forged], "invalid"),
+        ):
+            with pytest.raises(HeinzelError, match=refusal):
+                recovery.validated_inventory(session, events)

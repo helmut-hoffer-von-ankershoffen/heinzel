@@ -8,11 +8,12 @@ from pathlib import Path
 import pytest
 
 from heinzel import ConnectedItemIdentity, Notifications
-from tests.integration.chat_scheduled_item_journey_test import (
-    _chat_proposal,
-    _confirm_contract,
-    _propose_schedule,
-    _write_model,
+from tests.integration._scheduled_journey import (
+    chat_proposal,
+    confirm_contract,
+    freeze_clock,
+    propose_schedule,
+    write_model,
 )
 from tests.integration.scheduled_connected_read_test import (
     _approve_read,
@@ -26,31 +27,8 @@ ROOT = Path(__file__).resolve().parents[2]
 
 @pytest.mark.timeout(150)  # four fresh worker processes, each importing the whole application
 def test_approved_schedule_survives_process_exit_and_revocation(make_kernel, tmp_path, monkeypatch, settings):  # noqa: PLR0915
-    import heinzel.kernel._ai as ai_module
-    import heinzel.kernel._session_store as store_module
-    import heinzel.modules.heinzel._autonomous_schedule as schedule_module
-    import heinzel.modules.heinzel._interactive_turn as interactive_module
-    import heinzel.modules.heinzel._service as service_module
-    import heinzel.modules.heinzel._session_crud as crud_module
-    import heinzel.modules.heinzel._session_repository as repository_module
-
     now = datetime(2026, 5, 4, 12, 2, tzinfo=UTC)
-
-    class Clock(datetime):
-        @classmethod
-        def now(cls, tz=None):
-            return now if tz is not None else now.replace(tzinfo=None)
-
-    for module in (
-        ai_module,
-        store_module,
-        schedule_module,
-        interactive_module,
-        service_module,
-        crud_module,
-        repository_module,
-    ):
-        monkeypatch.setattr(module, "datetime", Clock)
+    freeze_clock(monkeypatch, now)
     local_settings = settings.model_copy(
         update={
             "data_dir": tmp_path / "data",
@@ -71,11 +49,11 @@ def test_approved_schedule_survives_process_exit_and_revocation(make_kernel, tmp
     assert executable.resolve().is_relative_to(tmp_path.resolve())
     assert not executable.samefile(sys.executable)
     assert not executable.samefile(sys._base_executable)
-    _write_model(executable, tmp_path / "journey-calls")
-    proposal = _chat_proposal(client, session)
-    _confirm_contract(client, session, proposal)
+    write_model(executable, tmp_path / "journey-calls")
+    proposal = chat_proposal(client, session, "Propose an agent for my source")
+    confirm_contract(client, session, proposal)
     _approve_read(client, kernel, current, session, state, rolling=True)
-    schedule = _propose_schedule(client, session, proposal)
+    schedule = propose_schedule(client, session, proposal)
     assert state["reads"] == 0
     assert not (tmp_path / "notices.jsonl").exists()
 

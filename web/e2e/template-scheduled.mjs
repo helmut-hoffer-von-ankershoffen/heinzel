@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { chromium } from "playwright-core";
 
 const url = new URL(process.argv[2]);
-const token = url.hash.match(/(?:^#|&)token=([^&]+)/)?.[1] ?? "";
+const token = /(?:^#|&)token=([^&]+)/.exec(url.hash)?.[1] ?? "";
 url.pathname = "/doctor";
 const browser = await chromium.launch({ headless: true });
 const context = await browser.newContext({ serviceWorkers: "block", viewport: { width: 1280, height: 900 } });
@@ -120,7 +120,7 @@ try {
   const firstWakeReply = replies.nth(result.first_reply_index).locator("..");
   await firstWakeReply
     .locator("summary")
-    .filter({ hasText: /^Tool activity for this reply · [0-9]+ events$/ })
+    .filter({ hasText: /^Tool activity for this reply · \d+ events$/ })
     .click();
   for (const tool of ["connected_read", "notification:send"]) {
     for (const status of ["requested", "completed"])

@@ -15,7 +15,7 @@ import uvicorn
 from heinzel import ChatDraftTemplate, ConnectedItemIdentity, HeinzelError, Module, Notifications, PlaybookLet
 from heinzel.heads import web
 from tests.e2e._browser_result import check_browser, require_browser, run_browser
-from tests.integration.chat_template_scheduled_journey_test import Notices, _assert_ticks, _write_model
+from tests.integration._scheduled_journey import Notices, assert_ticks, freeze_clock, write_model
 from tests.integration.scheduled_connected_read_test import _fixture
 
 pytestmark = pytest.mark.e2e
@@ -39,32 +39,7 @@ class MountedNotices(Notices):
 
 
 def _fixed_clock(monkeypatch):
-    import heinzel.kernel._ai as ai_module
-    import heinzel.kernel._session_store as session_store
-    import heinzel.modules.heinzel._autonomous_schedule as schedule_module
-    import heinzel.modules.heinzel._interactive_turn as interactive_turn
-    import heinzel.modules.heinzel._service as service_module
-    import heinzel.modules.heinzel._session_crud as session_crud
-    import heinzel.modules.heinzel._session_repository as session_repository
-
-    now = [datetime(2026, 5, 4, 12, 2, tzinfo=UTC)]
-
-    class Clock(datetime):
-        @classmethod
-        def now(cls, tz=None):
-            return now[0] if tz is not None else now[0].replace(tzinfo=None)
-
-    for module in (
-        ai_module,
-        session_store,
-        schedule_module,
-        interactive_turn,
-        service_module,
-        session_crud,
-        session_repository,
-    ):
-        monkeypatch.setattr(module, "datetime", Clock)
-    return now
+    return freeze_clock(monkeypatch, datetime(2026, 5, 4, 12, 2, 0, tzinfo=UTC))
 
 
 def _run_browser(url, tmp_path):
@@ -113,9 +88,19 @@ def _draft_fixture(make_kernel, tmp_path, monkeypatch):
     assert executable.resolve().is_relative_to(tmp_path.resolve())
     assert not executable.samefile(sys.executable)
     assert not executable.samefile(sys._base_executable)
-    _write_model(executable, tmp_path / "journey-calls", hashlib.sha256(source.encode()).hexdigest())
+    write_model(executable, tmp_path / "journey-calls", digest=hashlib.sha256(source.encode()).hexdigest())
 
     return client, kernel, current, state, notices
+
+
+def _record_marker(tmp_path, marker, context):
+    assert marker.is_file()
+    if marker.name == "preconfirm.json":
+        assert context[4]["reads"] == 0
+        assert context[5].calls == []
+        temporary = tmp_path / "preconfirm-result.tmp"
+        temporary.write_text(json.dumps({"zero_effects": True}))
+        temporary.replace(tmp_path / "preconfirm-result.json")
 
 
 def _wake(tmp_path, stop, finished, context):
@@ -127,15 +112,9 @@ def _wake(tmp_path, stop, finished, context):
                 pass
             if stop.is_set():
                 return
-            assert marker.is_file()
-            if name == "preconfirm.json":
-                assert context[4]["reads"] == 0
-                assert context[5].calls == []
-                temporary = tmp_path / "preconfirm-result.tmp"
-                temporary.write_text(json.dumps({"zero_effects": True}))
-                temporary.replace(tmp_path / "preconfirm-result.json")
+            _record_marker(tmp_path, marker, context)
         session = json.loads(marker.read_text())["session"]
-        first_turn = _assert_ticks((*context[:3], session, *context[4:]))
+        first_turn = assert_ticks((*context[:3], session, *context[4:]))
         temporary = tmp_path / "wake-result.tmp"
         temporary.write_text(json.dumps({"ok": True, **first_turn}))
         temporary.replace(tmp_path / "wake-result.json")
