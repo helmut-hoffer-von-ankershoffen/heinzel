@@ -67,3 +67,14 @@ export async function runDaemonTurn(page, directory, session) {
   await page.reload();
   await revealChat(page);
 }
+
+/** Say what failed and what the page showed, without the session token. */
+export async function reportJourneyFailure(page, token, error) {
+  const message = error instanceof Error ? (error.stack ?? error.message) : String(error);
+  const visible = await page
+    .locator("body")
+    .innerText()
+    .catch(() => "");
+  process.stderr.write(`${`${message}\n${visible}`.replaceAll(decodeURIComponent(token), "<redacted-session>")}\n`);
+  process.exitCode = 1;
+}

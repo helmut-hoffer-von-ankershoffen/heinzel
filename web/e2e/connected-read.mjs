@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { openChatJourney, revokeAfterReload, startChatJourney } from "./chat-ready.mjs";
+import { openChatJourney, reportJourneyFailure, revokeAfterReload, startChatJourney } from "./chat-ready.mjs";
 
 const { axe, browser, context, page, token, url } = await openChatJourney();
 try {
@@ -25,13 +25,7 @@ try {
   await revokeAfterReload(page, panel);
   console.log(JSON.stringify({ accepted: true }));
 } catch (error) {
-  const message = error instanceof Error ? (error.stack ?? error.message) : String(error);
-  const visible = await page
-    .locator("body")
-    .innerText()
-    .catch(() => "");
-  process.stderr.write(`${message}\n${visible}`.replaceAll(decodeURIComponent(token), "<redacted-session>") + "\n");
-  process.exitCode = 1;
+  await reportJourneyFailure(page, token, error);
 } finally {
   await context.close();
   await browser.close();
