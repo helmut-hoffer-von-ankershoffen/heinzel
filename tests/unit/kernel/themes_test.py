@@ -1,5 +1,6 @@
 """Themes as data: every value is checked before it can become a CSS custom property (ADR 0044)."""
 
+import json
 import os
 import re
 import tomllib
@@ -47,6 +48,7 @@ def theme(**overrides: object) -> dict[str, object]:
     return data | overrides
 
 
+TOKENS = json.loads((Path(__file__).resolve().parents[3] / "design" / "tokens.json").read_text(encoding="utf-8"))
 TOML = """name = "acme"
 title = "Acme"
 font_sans = "Avenir Next, system-ui, sans-serif"
@@ -267,7 +269,9 @@ def test_a_nested_colour_set_built_without_validation_is_checked_again():
 
 
 def test_problems_in_a_theme_file_read_as_rules(tmp_path):
-    (tmp_path / "acme.toml").write_text(TOML.replace("#ffffff", "white").replace("0.75rem", "big"), encoding="utf-8")
+    (tmp_path / "acme.toml").write_text(
+        TOML.replace(COLOURS["card"], "white").replace("0.75rem", "big"), encoding="utf-8"
+    )
     with pytest.raises(ValueError, match=r"light\.card: a hex colour") as raised:
         themes_in(tmp_path / "acme.toml")
     assert "radius: a CSS length" in str(raised.value)
@@ -291,8 +295,10 @@ def test_the_default_theme_matches_the_app():
     assert (DEFAULT_THEME.font_size, DEFAULT_THEME.font_size_small) == ("15px", "13px")
     assert (DEFAULT_THEME.icon_size, DEFAULT_THEME.row_height, DEFAULT_THEME.spacing) == ("18px", "36px", "0.25rem")
     assert (DEFAULT_THEME.heading_weight, DEFAULT_THEME.heading_tracking, DEFAULT_THEME.fonts) == (600, "0", ())
-    assert (DEFAULT_THEME.dark.background, DEFAULT_THEME.dark.primary) == ("#181818", "#d97757")
-    assert (DEFAULT_THEME.light.background, DEFAULT_THEME.light.primary) == ("#ffffff", "#b4532f")
+    palette = {t["name"]: t["value"] for t in TOKENS["color"]["tokens"]}  # design/tokens.json: paper and deep green
+    for mode, colours in (("light", DEFAULT_THEME.light), ("dark", DEFAULT_THEME.dark)):
+        for field in ("background", "foreground", "primary", "primary_foreground", "card", "border", "sidebar"):
+            assert getattr(colours, field) == palette["color-" + field.replace("_", "-")][mode]
 
 
 def test_a_theme_without_the_new_fields_gets_their_defaults(tmp_path):

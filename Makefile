@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help install setup release-local doctor tools-verify check check-fast linux-user-manager-proof preflight fix lint format typecheck test test-parallel commits test-all-pythons test-unit test-integration test-perf test-e2e e2e-prepare test-browser-deps audit licenses secrets template-test template-sync docs attributions fuzz demo terminal-art notifier icons web-build web-dev test-web managed-backend-setup managed-backend-check desktop-electron-test desktop-electron-sandbox desktop-electron-native desktop-electron-package build pypi-clean-build-marker changelog ci-logs pr sync docs-plugins docs-record docs-site docs-catalog docs-site-check docs-publish-check release clean
+.PHONY: help install setup release-local doctor tools-verify check check-fast linux-user-manager-proof preflight fix lint format typecheck test test-parallel commits test-all-pythons test-unit test-integration test-perf test-e2e e2e-prepare test-browser-deps audit licenses secrets template-test template-sync docs attributions fuzz demo terminal-art notifier icons web-build web-dev test-web managed-backend-setup managed-backend-check desktop-electron-test desktop-electron-sandbox desktop-electron-native desktop-electron-package build pypi-clean-build-marker changelog ci-logs pr sync docs-plugins docs-record docs-site docs-catalog docs-site-check docs-publish-check design-check release clean
 
 # Quiet by default: one line per passing step, the tail of a failing one. VERBOSE=1 streams everything.
 # A step starting with & runs concurrently with the one before it; the first failure cancels the rest.
@@ -18,6 +18,7 @@ LINT := \
 		"contracts=uv run lint-imports" \
 		"&template=uv run --script scripts/sync_template.py --check" \
 		"&docs=env -u HZ_SYSTEM_AGENT__SKILL_DIRS uv run python scripts/generate_docs.py --check" \
+		"&design=uv run python scripts/design_tokens.py --check" \
 		"&demo=uv run --script scripts/demo_tape.py --check" \
 		"&attributions=uv run --quiet --script scripts/attributions.py --check" \
 		"&zizmor=uv run zizmor --offline --quiet .github/workflows" \
@@ -81,6 +82,7 @@ check-fast: ## Seconds-fast feedback for the edit loop: format, lint, contracts,
 		"&contracts=uv run lint-imports" \
 		"&template=uv run --script scripts/sync_template.py --check" \
 		"&docs=env -u HZ_SYSTEM_AGENT__SKILL_DIRS uv run python scripts/generate_docs.py --check" \
+		"&design=uv run python scripts/design_tokens.py --check" \
 		"&demo=uv run --script scripts/demo_tape.py --check" \
 		"&attributions=uv run --quiet --script scripts/attributions.py --check" \
 		$(WEB_LINT) $(WEB_TYPES) \
@@ -100,6 +102,7 @@ fix: ## Fix what tools can fix: lockfile, formatting, lint autofixes, generated 
 		"lock=uv lock --quiet" \
 		"template=uv run --script scripts/sync_template.py" \
 		"&docs=env -u HZ_SYSTEM_AGENT__SKILL_DIRS uv run python scripts/generate_docs.py" \
+		"&design=uv run python scripts/design_tokens.py" \
 		"&web-client=$(WEB_PROJECT_CLEAN) client" \
 		"&demo=uv run --script scripts/demo_tape.py" \
 		"&attributions=uv run --quiet --script scripts/attributions.py" \
@@ -255,6 +258,11 @@ docs-site-check: docs-site ## Check the built site's catalog, keyboard flow, mob
 	$(WEB) install
 	uv run --quiet --script scripts/site_check.py --install $(if $(CI),--with-deps)
 	uv run --quiet --script scripts/site_check.py
+
+design-check: docs-site ## Check computed styles in a browser: the built site and the running app against design/tokens.json
+	$(WEB) install
+	uv run --quiet --script scripts/site_check.py --install
+	uv run python scripts/design_check.py
 
 docs-publish-check: ## Validate publication with fresh public metadata, or build a standalone plugin's ordinary docs
 	@if [ -f docs/catalog-sources.toml ]; then \

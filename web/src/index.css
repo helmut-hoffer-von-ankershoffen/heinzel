@@ -5,22 +5,22 @@
 
 /* Colours as tokens (shadcn/ui's names), light first; `.dark` on <html> switches them. */
 @theme {
-  --color-background: #ffffff;
-  --color-foreground: #1a1a1a;
-  --color-muted: #f2f2f2;
-  --color-muted-foreground: #6b6b6b;
-  --color-card: #ffffff;
-  --color-border: #e4e4e4;
-  --color-primary: #b4532f;
-  --color-primary-foreground: #ffffff;
-  --color-accent: #ebebeb;
+  --color-background: #faf8f3;
+  --color-foreground: #263b32;
+  --color-muted: #eee8db;
+  --color-muted-foreground: #56675e;
+  --color-card: #fffdf8;
+  --color-border: #d8ddd3;
+  --color-primary: #a64028;
+  --color-primary-foreground: #fffdf8;
+  --color-accent: #eee8db;
   --color-ok: #1f7444;
   --color-warn: #8a5c00;
   --color-bad: #b4372d;
-  --color-ring: #b4532f;
-  --color-sidebar: #f3f3f3;
-  --color-popover: #ffffff;
-  --color-input: #ffffff;
+  --color-ring: #a64028;
+  --color-sidebar: #f3efe4;
+  --color-popover: #fffdf8;
+  --color-input: #fffdf8;
   --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: ui-monospace, "SF Mono", Menlo, monospace;
   /* The type scale, density and corners a theme may set (ADR 0044): `text-ui`, `text-ui-sm`, `size-(--icon)`,
@@ -41,8 +41,8 @@
   --radius-2xl: calc(var(--radius-xl) * 4 / 3);
   --radius-3xl: calc(var(--radius-xl) * 2);
   --heading-tracking: 0;
-  --color-accent-foreground: #1a1a1a;
-  --color-icon: #5c5c5c;
+  --color-accent-foreground: #263b32;
+  --color-icon: #4a5b52;
   /* A switch that is on; white knob on it in both modes. */
   --color-switch: #2f7bf6;
   /* A theme's soft tint at the top of the main area (`main_tint`, ADR 0044); none by default. */
@@ -62,17 +62,17 @@
 @property --color-background {
   syntax: "<color>";
   inherits: true;
-  initial-value: #ffffff;
+  initial-value: #faf8f3;
 }
 @property --color-foreground {
   syntax: "<color>";
   inherits: true;
-  initial-value: #1a1a1a;
+  initial-value: #263b32;
 }
 @property --color-muted-foreground {
   syntax: "<color>";
   inherits: true;
-  initial-value: #6b6b6b;
+  initial-value: #56675e;
 }
 @property --color-main-tint {
   syntax: "<color>";
@@ -82,22 +82,22 @@
 @property --color-primary {
   syntax: "<color>";
   inherits: true;
-  initial-value: #b4532f;
+  initial-value: #a64028;
 }
 @property --color-sidebar {
   syntax: "<color>";
   inherits: true;
-  initial-value: #f3f3f3;
+  initial-value: #f3efe4;
 }
 @property --color-card {
   syntax: "<color>";
   inherits: true;
-  initial-value: #ffffff;
+  initial-value: #fffdf8;
 }
 @property --color-border {
   syntax: "<color>";
   inherits: true;
-  initial-value: #e4e4e4;
+  initial-value: #d8ddd3;
 }
 
 /* Set by ThemeTokens for two seconds when the variant changes: slow enough to notice, never a flash. */
@@ -114,24 +114,24 @@ html.theme-shift {
 }
 
 .dark {
-  --color-background: #181818;
-  --color-foreground: #ececec;
-  --color-muted: #272727;
-  --color-muted-foreground: #9b9b9b;
-  --color-card: #181818;
-  --color-border: #2c2c2c;
-  --color-primary: #d97757;
-  --color-primary-foreground: #181818;
-  --color-accent: #444444;
+  --color-background: #18231e;
+  --color-foreground: #e9ede5;
+  --color-muted: #2b3b31;
+  --color-muted-foreground: #b4c3b5;
+  --color-card: #213128;
+  --color-border: #405347;
+  --color-primary: #ffb398;
+  --color-primary-foreground: #18231e;
+  --color-accent: #34463b;
   --color-ok: #7cc39a;
   --color-warn: #e0b45f;
   --color-bad: #e5806f;
-  --color-ring: #d97757;
-  --color-sidebar: #272727;
-  --color-popover: #2c2c2c;
-  --color-input: #303030;
-  --color-accent-foreground: #ececec;
-  --color-icon: #b3b3b3;
+  --color-ring: #ffb398;
+  --color-sidebar: #1e2b25;
+  --color-popover: #2b3b31;
+  --color-input: #2b3b31;
+  --color-accent-foreground: #e9ede5;
+  --color-icon: #b4c3b5;
 }
 
 html,

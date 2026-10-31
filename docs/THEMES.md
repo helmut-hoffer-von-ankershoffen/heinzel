@@ -25,6 +25,11 @@ Choosing a soundscape manually turns off **Follow my theme**, so your choice tak
 Turn **Follow my theme** on again to let your theme choose. Sound choices identify their supplying theme,
 plugin or built-in origin alongside playback and attribution details.
 
+The built-in default theme and the GitHub Pages site share one set of design tokens. `design/tokens.json` is the
+single source for the colours, corners, type scale and widths: `scripts/design_tokens.py` generates the site's
+`docs/assets/website/tokens.css` from it and `--check` (part of `make lint` and the unit tests) fails when the web app's
+CSS, `DEFAULT_THEME`, the avatar palette or the site's stylesheets drift from it.
+
 ## Themes that follow the time of day and the weather
 
 A theme can declare variants ([ADR 0060](adr/0060-themes-follow-the-time-of-day-and-the-weather.md)): colours that
