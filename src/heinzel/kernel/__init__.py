@@ -23,6 +23,14 @@ from heinzel.kernel._bounded_process import ProcessExecute, ProcessOutcome, run_
 from heinzel.kernel._capabilities import CAPABILITIES, MODES, NO_ADAPTER, Capability, Mode, Requirement
 from heinzel.kernel._capability_schema import capability_read_schema
 from heinzel.kernel._captured_source import captured_source_active
+from heinzel.kernel._captured_write import (
+    CapturedWriteAcknowledgement,
+    CapturedWriteDraft,
+    CapturedWriteLease,
+    CapturedWriteReview,
+    CapturedWriteService,
+    CapturedWriteTarget,
+)
 from heinzel.kernel._channels import (
     ApprovalChannel,
     ChannelApprovalReply,
@@ -355,6 +363,12 @@ __all__ = [
     "Capability",
     "CapabilitySettings",
     "CapabilityView",
+    "CapturedWriteAcknowledgement",
+    "CapturedWriteDraft",
+    "CapturedWriteLease",
+    "CapturedWriteReview",
+    "CapturedWriteService",
+    "CapturedWriteTarget",
     "CardWidget",
     "CatchUp",
     "ChannelApprovalReply",

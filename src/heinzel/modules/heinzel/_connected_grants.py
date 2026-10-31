@@ -48,7 +48,7 @@ from heinzel.modules.heinzel._capability_review import (
 from heinzel.modules.heinzel._session_bodies import immutable_body
 from heinzel.modules.heinzel._session_crud import SessionCrud
 from heinzel.modules.heinzel._session_models import RequestId, SessionId
-from heinzel.modules.heinzel._source_suggestions import latest_source_suggestion
+from heinzel.modules.heinzel._source_suggestions import SourceSuggestion, latest_source_suggestion
 
 if TYPE_CHECKING:
     from heinzel.modules.heinzel._connected_read_set_approvals import ConnectedReadSetApprovals
@@ -200,6 +200,24 @@ class ConnectedReadGrants:
             return rolling_window_parameter(capability, method)
         except HeinzelError:
             return None
+
+    def _propose_suggested_window(
+        self, session: str, request: str, suggestion: SourceSuggestion
+    ) -> RollingConnectedGrantProposal:
+        window = suggestion.window
+        parameter = self._window_parameter(suggestion.capability, suggestion.method)
+        if window is None or parameter is None:
+            msg = "This source has no time window to follow"
+            raise HeinzelError(msg)
+        policy = RollingWindowPolicy(
+            parameter=parameter,
+            lookback_seconds=window.lookback_seconds,
+            lookahead_seconds=window.lookahead_seconds,
+            timezone=window.timezone,
+        )
+        return self.propose_rolling(
+            session, request, suggestion.capability, suggestion.method, dict(suggestion.fixed_arguments), policy
+        )
 
     def options(self, session: str) -> list[ConnectedReadOption]:
         """List currently registered owner-selected read methods without opening a provider."""
@@ -439,7 +457,7 @@ class ConnectedReadGrants:
 
     def propose_suggestion(
         self, session: str, request: str, suggestion_request: str, suggestion_revision: int
-    ) -> ConnectedGrantProposal:
+    ) -> ConnectedGrant:
         """Prepare only the current exact chat suggestion under the owner's main-writer fence.
 
         Raises:
@@ -452,6 +470,14 @@ class ConnectedReadGrants:
         if type(suggestion_revision) is not int or suggestion_revision < 1:
             msg = "The source suggestion revision is invalid"
             raise HeinzelError(msg)
+        suggested = latest_source_suggestion(self.crud, session)
+        if (
+            suggested is not None
+            and suggested.window is not None
+            and suggested.request_id == suggestion_request
+            and suggested.revision == suggestion_revision
+        ):
+            return self._propose_suggested_window(session, request, suggested)  # takes the writer itself
         with self.crud.repository.main_writer(session):
             current = latest_source_suggestion(self.crud, session)
             if current is None or current.request_id != suggestion_request or current.revision != suggestion_revision:

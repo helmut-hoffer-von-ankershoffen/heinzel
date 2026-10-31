@@ -63,7 +63,7 @@ from heinzel.kernel import (
     toml_value,
 )
 from heinzel.modules.heinzel import _measure, _playbooks
-from heinzel.modules.heinzel._autonomous_schedule import QUIET, AutonomousSchedules, ScheduleBinding
+from heinzel.modules.heinzel._autonomous_schedule import NOTHING_NEW, QUIET, AutonomousSchedules, ScheduleBinding
 from heinzel.modules.heinzel._contracts import Contract, collect, read_contract
 from heinzel.modules.heinzel._graph import CODES as GRAPH_CODES
 from heinzel.modules.heinzel._graph import asset as asset_id
@@ -582,7 +582,7 @@ class HeinzelService:
 
         def run(slot: datetime) -> JsonValue:
             text = asyncio.run(schedules.tick(binding.session_id, binding.request_id, slot))
-            return {"status": "quiet" if text == QUIET else "completed"}
+            return {"status": "quiet" if text == QUIET else "nothing-new" if text == NOTHING_NEW else "completed"}
 
         def unavailable() -> JsonValue:
             msg = "An agent schedule requires a daemon schedule slot"

@@ -126,6 +126,10 @@ class ScheduleSuggestionRequest(BaseModel):
     quiet_hours: QuietHours | None = Field(
         default=None, description="A daily window in which no scheduled turn runs, when the person asked for one."
     )
+    wake_on_new_items: bool = Field(
+        default=False,
+        description="Check the source each slot and take a turn only when it returns an item not seen before.",
+    )
 
 
 class ScheduleSuggestion(BaseModel):
@@ -150,6 +154,7 @@ class ScheduleSuggestion(BaseModel):
         exclude_if=lambda value: value is None,
         description="Suggested quiet hours, not yet approved.",
     )
+    wake_on_new_items: bool = Field(default=False, description="Take a turn only for items not seen before.")
     status: Literal["suggested"] = Field(default="suggested", description="Inert suggestion, without authority.")
 
 
@@ -255,6 +260,7 @@ class ScheduleSuggestionTools:
                         suggested_reads=draft.suggested_reads,
                         notices=draft.notices,
                         quiet_hours=draft.quiet_hours,
+                        wake_on_new_items=draft.wake_on_new_items,
                     )
                     if arguments_hash(previous.model_dump(mode="json")) != arguments_hash(
                         expected.model_dump(mode="json")
@@ -275,6 +281,7 @@ class ScheduleSuggestionTools:
                         suggested_reads=draft.suggested_reads,
                         notices=draft.notices,
                         quiet_hours=draft.quiet_hours,
+                        wake_on_new_items=draft.wake_on_new_items,
                     )
                     body = immutable_body(writer, "schedule-suggestion", result.model_dump(mode="json"), control=True)
                     writer.append(

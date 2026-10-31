@@ -1781,6 +1781,7 @@ it("shows only owner-session associations and recorded review states in the agen
       ],
       contracts: [{ id: "contract-1", version: 1, title: "Check-in", status: "approved" }],
     },
+    "/api/heinzel/captured-write-activity-page": { session_id: sessionId, items: [], next_before: null },
     "/api/heinzel/personal-artifacts": {
       session_id: sessionId,
       artifacts: [
@@ -1799,7 +1800,8 @@ it("shows only owner-session associations and recorded review states in the agen
   const link = await screen.findByRole("link", { name: /Google Doc/ });
   expect(link).toHaveAttribute("href", ref);
   expect(screen.getByText(/agent management are unverified/)).toBeInTheDocument();
-  expect(screen.getByText(/Recent agent edits are not available/)).toBeInTheDocument();
+  expect(screen.getByText(/not a later verification of the artifact/)).toBeInTheDocument();
+  expect(await screen.findByText("No recorded write activity on this page.")).toBeInTheDocument();
   expect(screen.getByText("Weekly notes")).toBeInTheDocument();
   expect(screen.getByText("Status: Waiting for approval")).toBeInTheDocument();
   expect(screen.getByText("Draft: Proposed draft")).toBeInTheDocument();
@@ -1824,4 +1826,34 @@ it("does not display another session's action or request its associations", asyn
   expect(screen.queryByRole("heading", { name: "Personal helper" })).not.toBeInTheDocument();
   expect(screen.queryByText(/private-action/)).not.toBeInTheDocument();
   expect(calls.some((call) => new URL(call.url).pathname.endsWith("/personal-artifacts"))).toBe(false);
+});
+
+it("opens and highlights a search match beyond the loaded conversation page", async () => {
+  const { calls } = mockApi({
+    ...shell,
+    "/api/heinzel/session": (request: Request) =>
+      new URL(request.url).searchParams.get("cursor") === "anchored-jump"
+        ? { ...snapshot, messages: [{ id: "old", seq: 154, role: "user", text: "Old matching message" }] }
+        : { ...snapshot, has_more: true, next_cursor: "next" },
+    "/api/heinzel/indexed-conversation-search": () => ({
+      session_id: sessionId,
+      items: [{ id: "old", seq: 154, text: "Old matching message", at: "2026-05-04T12:00:00Z" }],
+      jump_cursors: ["anchored-jump"],
+      next_cursor: null,
+      mode: "trigram",
+      completeness: "unknown",
+    }),
+  });
+  renderAt(`/heinzel?chat=${sessionId}`);
+  const panel = within(await screen.findByRole("complementary", { name: "Chat" }));
+  await panel.findByText("Hello");
+  fireEvent.click(panel.getByText("Search conversation"));
+  const search = within(panel.getByRole("region", { name: "Search conversation" }));
+  fireEvent.change(search.getByLabelText("Text"), { target: { value: "matching" } });
+  fireEvent.click(search.getByRole("button", { name: "Search" }));
+  await search.findByText("Old matching message");
+  fireEvent.click(search.getByRole("button", { name: "Open message" }));
+  await waitFor(() => expect(panel.getByText("Search result")).toBeInTheDocument());
+  expect(panel.getByText("Search result").parentElement).toHaveTextContent("Old matching message");
+  expect(calls.some((request) => new URL(request.url).searchParams.get("cursor") === "anchored-jump")).toBe(true);
 });
