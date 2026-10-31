@@ -35,20 +35,21 @@ def test_starter_make_bootstraps_its_pinned_toolkit_without_overrides(tmp_path):
     )
     assert result.returncode == 0, result.stderr
     arguments = result.stdout.splitlines()
-    assert arguments[:8] == [
+    assert arguments[:9] == [
         "run",
         "--quiet",
         "--no-project",
+        "--frozen",
         "--no-build",
         "--python",
         "3.14",
         "python",
         "scripts/plugin_tooling.py",
     ]
-    assert arguments[8] == "--toolkit"
-    assert arguments[9].startswith("heinzel-plugin-tools @ https://github.com/")
-    assert "#sha256=" in arguments[9]
-    assert arguments[10:] == ["hz-plugin", "setup"]
+    assert arguments[9] == "--toolkit"
+    assert arguments[10].startswith("heinzel-plugin-tools @ https://github.com/")
+    assert "#sha256=" in arguments[10]
+    assert arguments[11:] == ["hz-plugin", "setup"]
 
 
 @pytest.mark.parametrize("option", ["TOOLING", "CORE", "TAG", "REGISTRY"])
