@@ -94,6 +94,8 @@ CORE_ONLY = {  # path: why plugins don't get it
     "scripts/site_check.py": "accepts the core product website with its locked web axe tooling (ADR 0098)",
     ".github/workflows/pypi.yml": "publishes only the registered core project with its trusted publisher (ADR 0079)",
     ".github/workflows/edge.yml": "releases the core's edge channel from its green main (ADR 0114)",
+    "scripts/release_channel.py.lock": "locks that script for the edge workflow (ADR 0114)",
+    "scripts/check_confidentiality.py.lock": "locks the term scan for the edge workflow (ADR 0114)",
     "scripts/release_channel.py": "decides and stamps the core's edge releases (ADR 0114)",
     "scripts/pypi_release.py": "verifies core-only PyPI identity and browser/notifier payloads (ADR 0079)",
     ".github/workflows/fuzz.yml": "fuzzes Heinzelmännchen's contract parser (fuzz/); plugins have no fuzz targets",

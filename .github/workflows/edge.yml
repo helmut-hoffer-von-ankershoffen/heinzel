@@ -70,7 +70,7 @@ jobs:
           fi
           git diff --name-only "$base" HEAD > changed-paths.txt
           subject="$(git log -1 --format=%s)"
-          releasable="$(uv run --no-build --script scripts/release_channel.py releasable < changed-paths.txt)"
+          releasable="$(uv run --no-build --frozen --script scripts/release_channel.py releasable < changed-paths.txt)"
           if [ "$EVENT" = pull_request ] || [ "$EVENT" = workflow_dispatch ]; then
             releasable=true # a dry run or a deliberate proof of the pipeline, whatever changed
           elif [[ "$subject" == "chore(release): v"* ]]; then
@@ -80,9 +80,10 @@ jobs:
             echo "Nothing releasable since $base."
             exit 0
           fi
+          uv sync --quiet --frozen --no-install-project --no-build
           current="$(uv version --short --frozen)"
-          suggested="$(uv run --frozen git-cliff --offline --bumped-version)"
-          version="$(uv run --no-build --script scripts/release_channel.py version \
+          suggested="$(.venv/bin/git-cliff --offline --bumped-version)"
+          version="$(uv run --no-build --frozen --script scripts/release_channel.py version \
             "$current" "${suggested#v}" "$(git rev-list --count HEAD)" ${newest:+"$newest"})"
           if [ -z "$version" ]; then
             echo "A newer edge release already exists."
@@ -139,7 +140,7 @@ jobs:
       - name: Check the release for confidential terms
         env:
           CONFIDENTIAL_TERMS: ${{ secrets.CONFIDENTIAL_TERMS }}
-        run: uv run --no-build --script scripts/check_confidentiality.py
+        run: uv run --no-build --frozen --script scripts/check_confidentiality.py
       - name: Check runtime license compatibility
         run: make licenses
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
@@ -148,7 +149,7 @@ jobs:
       - name: Restore the notifier
         run: tar -xzf notifier.tar.gz -C src/heinzel/modules/system/notify/macos && rm notifier.tar.gz
       - name: Stamp the edge version in this checkout only
-        run: uv run --no-build --script scripts/release_channel.py stamp "$VERSION"
+        run: uv run --no-build --frozen --script scripts/release_channel.py stamp "$VERSION"
       - name: Build the core wheel and source distribution
         run: uv build --package heinzel --out-dir dist
       - name: Remove uv's generated build helper
@@ -163,11 +164,12 @@ jobs:
         run: uv export --quiet --frozen --no-dev --format cyclonedx1.5 --output-file "dist/heinzel-$VERSION.cdx.json"
       - name: Write the release notes and the channel pointer
         run: |
-          uv run --no-build --script scripts/release_channel.py pointer "$VERSION" "$COMMIT" > edge.json
+          uv sync --quiet --frozen --no-install-project --no-build
+          uv run --no-build --frozen --script scripts/release_channel.py pointer "$VERSION" "$COMMIT" > edge.json
           {
             echo "Edge release of \`$COMMIT\`. Not the stable channel: see the install guide to opt in."
             echo
-            uv run --frozen git-cliff --offline --unreleased --strip all
+            .venv/bin/git-cliff --offline --unreleased --strip all
           } > release-notes.md
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
