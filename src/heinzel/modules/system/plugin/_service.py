@@ -1101,8 +1101,8 @@ class PluginService:
         """
         if not self._installation.is_tool or command[1:3] != ["tool", "install"]:
             return ()
-        changing = distributions_in_spec(adding) if adding else set()
-        names = []
+        changing: set[str] = distributions_in_spec(adding) if adding else set()
+        names: list[str] = []
         for index, part in enumerate(command):
             if part == "--with":
                 requirement = Requirement(command[index + 1])
