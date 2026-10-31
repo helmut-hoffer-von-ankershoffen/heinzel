@@ -13,4 +13,4 @@ Install a discovered plugin with `hz system plugin add <spec> --confirm`. `hz sy
 
 | Plugin | What it does | Repository | Documentation |
 | --- | --- | --- | --- |
-| `heinzel-weather` | Weather conditions, forecasts and themes from the community plugin collection. | <https://github.com/helmut-hoffer-von-ankershoffen/heinzel-contrib> | [README](https://github.com/helmut-hoffer-von-ankershoffen/heinzel-contrib#readme) |
+| `heinzel-weather` | Weather conditions, forecasts and themes from the community plugin collection. | <https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins> | [README](https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins#readme) |

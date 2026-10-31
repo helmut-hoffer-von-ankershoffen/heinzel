@@ -292,11 +292,19 @@ def python_versions() -> list[str]:
     return [c.removeprefix("Programming Language :: Python :: ") for c in classifiers if c.startswith(prefix)]
 
 
-def badges(owner: str, repository: str, best_practices: int | None = None, pypi_project: str | None = None) -> str:
+def badges(
+    owner: str,
+    repository: str,
+    best_practices: int | None = None,
+    pypi_project: str | None = None,
+    *,
+    sonar: bool = False,
+) -> str:
     """The badges of a repository, one per line: what it is checked with, how healthy it is, what it runs on.
 
     `best_practices` is this repository's OpenSSF registration; a new plugin has none. `pypi_project` selects the
     registry version badge only for a registered project; unpublished plugins retain their GitHub release badge.
+    Sonar badges require an imported project; scaffolding a plugin does not provision one.
     """
     github = f"https://github.com/{owner}/{repository}"
     scorecard = f"github.com/{owner}/{repository}"
@@ -332,15 +340,17 @@ def badges(owner: str, repository: str, best_practices: int | None = None, pypi_
             else ("Release", f"{shield}/github/v/release/{owner}/{repository}?sort=semver", f"{github}/releases")
         ),
         ("Python", f"{shield}/badge/python-{versions}-blue", "pyproject.toml"),
-        (
-            "Types: mypy + pyright strict",
-            f"{shield}/badge/types-mypy%20%2B%20pyright%20strict-blue",
-            "docs/CODING_STANDARDS.md#python",
-        ),
-        (
-            "Tooling: Ruff + uv",
-            f"{shield}/badge/tooling-Ruff%20%2B%20uv-261230?logo=ruff&logoColor=d7ff64",
-            "https://astral.sh",
+        *(
+            [
+                (
+                    label,
+                    f"https://sonarcloud.io/api/project_badges/measure?project={owner}_{repository}&metric={metric}",
+                    f"https://sonarcloud.io/summary/overall?id={owner}_{repository}",
+                )
+                for label, metric in (("Quality Gate Status", "alert_status"), ("Security Rating", "security_rating"))
+            ]
+            if sonar
+            else []
         ),
         ("License: MIT", f"{shield}/badge/license-MIT-green", "LICENSE"),
     ]
@@ -397,7 +407,7 @@ def main() -> int:
             TelemetryEntry, "urn:heinzel:telemetry-entry:1", "One entry of a Heinzelmännchen's telemetry log"
         ),
     }
-    ours = badges(OWNER, REPOSITORY, BEST_PRACTICES, pypi_project="heinzel")
+    ours = badges(OWNER, REPOSITORY, BEST_PRACTICES, pypi_project="heinzel", sonar=True)
     for page in BADGE_PAGES:
         text = with_block((ROOT / page).read_text(encoding="utf-8"), BADGES_START, BADGES_END, ours)
         outputs[ROOT / page] = readme_with_module_list(text) if page == README.name else text

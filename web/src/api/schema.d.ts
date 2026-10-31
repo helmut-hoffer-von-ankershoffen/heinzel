@@ -4066,7 +4066,7 @@ export interface components {
             short_name: string;
             /**
              * Source
-             * @description Its catalog route: `first-party` (core and named reference plugins), `contrib` (the heinzel-contrib monorepo) or `github` (a repository with the topic heinzel-plugin).
+             * @description Its catalog route: `first-party` (core and named reference plugins), `contrib` (a configured community catalog) or `github` (a repository with the topic heinzel-plugin).
              * @enum {string}
              */
             source: "first-party" | "contrib" | "github";

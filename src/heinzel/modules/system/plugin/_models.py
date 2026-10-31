@@ -28,7 +28,6 @@ class PluginSettings(ModuleSettings):
         default=[
             "helmut-hoffer-von-ankershoffen/heinzel-plugins",
             "helmut-hoffer-von-ankershoffen/heinzel",
-            "helmut-hoffer-von-ankershoffen/heinzel-contrib",
         ],
         title="Plugin catalogs",
         description="GitHub repositories scanned for plugin projects, in addition to topic discovery.",
@@ -123,8 +122,8 @@ class AvailablePlugin(BaseModel):
     )
     description: str = Field(description="What the plugin does, in its authors' words.")
     source: Literal["first-party", "contrib", "github"] = Field(
-        description="Its catalog route: `first-party` (core and named reference plugins), `contrib` (the "
-        "heinzel-contrib monorepo) or `github` (a repository with the topic heinzel-plugin)."
+        description="Its catalog route: `first-party` (core and named reference plugins), `contrib` (a configured "
+        "community catalog) or `github` (a repository with the topic heinzel-plugin)."
     )
     community: bool = Field(description="Whether it is a community plugin, not maintained with Heinzelmännchen.")
     install_spec: str = Field(description="What to pass to `hz system plugin add` to install it.")
