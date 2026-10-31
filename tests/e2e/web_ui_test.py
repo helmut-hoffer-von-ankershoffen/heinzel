@@ -234,6 +234,47 @@ def test_hz_ui_opens_the_app_and_it_shows_the_doctor_report(environment, tmp_pat
 
 
 @pytest.mark.timeout(600)
+def test_plugin_install_confirmation_opens_in_the_viewport_under_its_own_row(environment, tmp_path):
+    """Install on a row low in Discover shows its confirmation next to the click, focused, on desktop and phone."""
+    env, _ = environment
+    web_build.ensure_built()
+    run = [sys.executable, str(REPO / "scripts" / "web_build.py")]
+    subprocess.run(
+        [*run, "exec", "playwright-core", "install", "chromium"], cwd=REPO, check=True, timeout=600, capture_output=True
+    )
+    shots = Path(os.environ.get("HZ_SCREENSHOTS", tmp_path / "screenshots"))
+    ui = subprocess.Popen(
+        [sys.executable, "-m", "heinzel", "ui", "--port", "0", "--no-browser"],
+        cwd=REPO,
+        env=env,
+        stderr=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        assert ui.stdout is not None
+        url = ui.stdout.readline().strip()
+        assert url.startswith("http://127.0.0.1:")
+        driven = subprocess.run(
+            [*run, "exec", "node", "e2e/plugin-install-inline.mjs", url, str(shots)],
+            cwd=REPO,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=200,
+        )
+    finally:
+        ui.terminate()
+        ui.wait(30)
+        for stream in (ui.stdout, ui.stderr):
+            if stream is not None:
+                stream.close()
+    assert driven.returncode == 0, driven.stderr + driven.stdout
+    result = json.loads(driven.stdout.strip().splitlines()[-1])
+    assert [item["name"] for item in result["confirmations"]] == ["desktop", "phone"]
+
+
+@pytest.mark.timeout(600)
 def test_footer_measurement_waits_for_the_navigation_width_transition():
     """A nearly finished sidebar animation still changes the available footer width."""
     run = [sys.executable, str(REPO / "scripts" / "web_build.py")]
