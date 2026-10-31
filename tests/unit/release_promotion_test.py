@@ -31,6 +31,7 @@ IDLE = promotion.Facts(
     shipping_commits=3,
     edge_acceptance="passed",
     app_composed=True,
+    edge_app_composed=True,
     hours_since_stable=7.0,
     pypi_bytes=300 * 1024**2,
 )
@@ -60,6 +61,11 @@ def test_nothing_starts_without_every_condition(changes):
 
 def test_an_unaccepted_edge_gets_accepted_first():
     assert walk(edge_acceptance="none") == "accept_edge"
+
+
+def test_acceptance_waits_for_its_app():
+    assert walk(edge_acceptance="none", edge_app_composed=False) == "wait"
+    assert walk(on_pypi=False, release_held=True, release_final=False, acceptance="none", app_composed=False) == "wait"
 
 
 def test_the_public_check_waits_for_the_app():

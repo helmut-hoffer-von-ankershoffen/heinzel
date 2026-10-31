@@ -63,6 +63,10 @@ jobs:
           if [ -n "$edge" ]; then edge_acceptance="$(state "/$edge/")"; fi
           app_composed=false
           gh release view "app-v$version" --repo "$GH_REPO-plugins" >/dev/null 2>&1 && app_composed=true
+          edge_app_composed=false
+          if [ -n "$edge" ] && gh release view "app-v${edge#edge-v}" --repo "$GH_REPO-plugins" >/dev/null 2>&1; then
+            edge_app_composed=true
+          fi
           git diff --name-only "$latest_tag" HEAD > changed-paths.txt
           shipping=0
           if [ "$(uv run --no-build --frozen --script scripts/release_channel.py releasable < changed-paths.txt)" = true ]; then
@@ -75,7 +79,7 @@ jobs:
             --argjson release_held "$held" --argjson on_pypi "$on_pypi" --arg acceptance "$(state "/$tag/")" \
             --arg public_acceptance "$(state "Acceptance $version")" --argjson release_pr_open "$open_pr" \
             --argjson shipping_commits "$shipping" --arg edge_acceptance "$edge_acceptance" \
-            --argjson app_composed "$app_composed" --argjson hours_since_stable "$hours" \
+            --argjson app_composed "$app_composed" --argjson edge_app_composed "$edge_app_composed" --argjson hours_since_stable "$hours" \
             --argjson pypi_bytes "$pypi_bytes" '$ARGS.named' > facts.json
           cat facts.json
           {
@@ -107,7 +111,8 @@ jobs:
             gh workflow run acceptance.yml --ref main -f expected_version="${version%%-py3*}" \
               -f candidate_wheel_url="$base/$1/$wheel" \
               -f candidate_wheel_sha256="$(sha256sum "accept-$1/$wheel" | cut -d' ' -f1)" \
-              -f expected_app_version=published
+              -f candidate_profile_url="https://github.com/$GH_REPO-plugins/releases/download/app-v${version%%-py3*}/standard.json" \
+              -f expected_app_version="${version%%-py3*}"
           }
           case "$STEP" in
             accept_edge) accept "$EDGE" ;;

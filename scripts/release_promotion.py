@@ -48,7 +48,9 @@ class Facts:
     edge_acceptance: Acceptance
     """Acceptance of the newest edge release on hosted macOS and Linux."""
     app_composed: bool
-    """`app-v<main_version>` exists, so the public commands can select this version."""
+    """`app-v<main_version>` exists, so acceptance and the public commands have its profile."""
+    edge_app_composed: bool
+    """The composer has made the newest edge release's app, so acceptance has its profile."""
     hours_since_stable: float
     pypi_bytes: int
     """What the project already uses on PyPI."""
@@ -77,7 +79,9 @@ def _before_upload(facts: Facts) -> tuple[str, str]:
             "passed": ("finalize", "the held bytes passed acceptance"),
             "failed": ("stop", "acceptance rejected the held release, so it is not promoted; fix forward"),
             "running": ("wait", "acceptance of the held release is running"),
-            "none": ("accept", "the held release has no acceptance result"),
+            "none": ("accept", "the held release has no acceptance result")
+            if facts.app_composed
+            else ("wait", "the composer has not made the held release's app yet"),
         }[facts.acceptance]
     if not facts.release_final:
         return "wait", "the tag has no release yet"
@@ -92,6 +96,8 @@ def _start(facts: Facts) -> tuple[str, str]:  # noqa: PLR0911 - one line per con
     if facts.shipping_commits < 1:
         return "wait", "nothing new reaches users"
     if facts.edge_acceptance == "none":
+        if not facts.edge_app_composed:
+            return "wait", "the composer has not made the newest edge release's app yet"
         return "accept_edge", "the newest edge release has no acceptance result"
     if facts.edge_acceptance != "passed":
         return "wait", f"acceptance of the newest edge release: {facts.edge_acceptance}"
