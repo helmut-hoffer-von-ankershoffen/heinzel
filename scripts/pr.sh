@@ -99,17 +99,17 @@ uv run --quiet --script scripts/check_confidentiality.py --text "$body"
 # Existing automatic merges must be turned off by a maintainer before updating the PR.
 url="$(gh pr list --repo "$repo" --base main --head "$branch" --state open --limit 101 --json url,headRepository \
   --jq "if length > 100 then error(\"Too many matching pull requests\") elif any(.[]; (.headRepository.nameWithOwner | if type == \"string\" then (length > 201 or (test(\"^[A-Za-z0-9_-]+/[A-Za-z0-9_.-]+$\") | not)) else true end)) then error(\"Invalid head repository\") else map(select((.headRepository.nameWithOwner | ascii_downcase) == \"$(printf "%s" "$origin_repo" | tr "[:upper:]" "[:lower:]")\")) | if length == 0 then \"\" elif length == 1 then .[0].url | if type == \"string\" and length > 0 then . else error(\"Missing pull request URL\") end else error(\"Ambiguous pull requests\") end end")"
-if [ -n "$url" ]; then
+if [[ -n "$url" ]]; then
   if ! auto_merge="$(gh pr view "$url" --json autoMergeRequest --jq 'if has("autoMergeRequest") then if .autoMergeRequest == null then "disabled" else "enabled" end else "unknown" end')"; then
     echo "Cannot verify the pull request's auto-merge state; nothing was pushed." >&2
     exit 2
   fi
-  if [ "$auto_merge" != disabled ]; then
+  if [[ "$auto_merge" != disabled ]]; then
     echo "Auto-merge is enabled or unknown; disable it before updating this pull request." >&2
     exit 2
   fi
 fi
-if [ -n "$tested_head" ] && { [ "$(git rev-parse HEAD)" != "$tested_head" ] || [ -n "$(git status --porcelain)" ]; }; then
+if [[ -n "$tested_head" ]] && { [[ "$(git rev-parse HEAD)" != "$tested_head" ]] || [[ -n "$(git status --porcelain)" ]]; }; then
   echo "The working tree changed after preflight; review the changes and run make pr again." >&2
   exit 2
 fi

@@ -8,18 +8,12 @@ import ts from "typescript";
 import { contributePanel } from "./contributed-panel.mjs";
 import { reportMediaFailure, watchMedia } from "./media-diagnostics.mjs";
 
-// Fixed, credential-free checkpoints for timeout diagnosis; do not interpolate page or URL data.
-function stage(name) {
-  console.error(`MOBILE_STAGE:${name}`);
-}
-stage("launch");
 const [url, shots] = process.argv.slice(2);
 mkdirSync(shots, { recursive: true });
 const useWebKit = process.env.PLAYWRIGHT_BROWSER === "webkit";
 const browser = useWebKit
   ? await webkit.launch()
   : await chromium.launch().catch(() => chromium.launch({ channel: "chrome" }));
-stage("launched");
 const cases = [
   { name: "narrow-portrait", width: 360, height: 780 },
   { name: "wide-portrait", width: 430, height: 932 },
@@ -229,7 +223,6 @@ async function footerPane(page, id, label) {
 
 try {
   for (const spec of cases) {
-    stage(`viewport-${spec.name}-start`);
     const context = await browser.newContext({
       viewport: { width: spec.width, height: spec.height },
       screen: { width: spec.width, height: spec.height },
@@ -305,7 +298,6 @@ try {
     await page.getByRole("heading", { name: "Today" }).waitFor();
     await page.locator("#splash").waitFor({ state: "hidden", timeout: 15_000 });
     await page.waitForFunction(() => !document.getElementById("root")?.hasAttribute("inert"), null, { timeout: 5000 });
-    stage(`viewport-${spec.name}-loaded`);
     const facts = await viewportFacts(page, spec.name);
     if (facts.shellClientHeight !== undefined) {
       assert.ok(facts.shellClientHeight <= facts.height, `${spec.name}: shell exceeds the viewport height`);
@@ -362,7 +354,6 @@ try {
       .getByRole("link")
       .evaluateAll((links) => links.map((link) => link.getAttribute("href")));
     const visitedRoutes = new Set([...destinations, ...routePaths]);
-    stage(`viewport-${spec.name}-routes`);
     for (const destination of visitedRoutes) {
       await page.goto(`${new URL(destination, url).href}${new URL(url).hash}`);
       await page.locator("#splash").waitFor({ state: "hidden", timeout: 15_000 });
@@ -420,7 +411,6 @@ try {
       .locator("option")
       .evaluateAll((options) => options.map((option) => ({ id: option.value, title: option.textContent.trim() })));
     assert.ok(settingsPages.length > 5, `${spec.name}: the complete settings registry must be exercised`);
-    stage(`viewport-${spec.name}-settings`);
     for (const settingsPage of settingsPages) {
       if (spec.width < 640)
         await settingsDialog.getByLabel("Settings page", { exact: true }).selectOption(settingsPage.id);
@@ -762,12 +752,9 @@ try {
       await session.send("Emulation.setPageScaleFactor", { pageScaleFactor: 1 });
       await session.detach();
     }
-    stage(`viewport-${spec.name}-cleanup`);
     await page.unrouteAll({ behavior: "wait" });
     await context.close();
-    stage(`viewport-${spec.name}-done`);
   }
-  stage("phone-scroll");
   // Header actions navigate within the shared phone scroller, without requiring a manual swipe.
   const scrollPage = await browser.newPage({
     viewport: { width: 390, height: 844 },
@@ -959,7 +946,6 @@ try {
     hasTouch: true,
     deviceScaleFactor: 2,
   });
-  stage("phone-sound");
   await soundPage
     .context()
     .addCookies([
@@ -1110,7 +1096,6 @@ try {
     popOutTarget: popOutBox,
     popOutUsable: true,
   };
-  stage("phone-notifications");
   // A phone tests this device, even when a Mac backend reports its own notification failures.
   await soundPage.setViewportSize({ width: 390, height: 844 });
   const collapseNavigation = soundPage.getByRole("button", { name: "Collapse navigation" });
@@ -1164,7 +1149,6 @@ try {
   result.iphoneControls = { deviceVolume: true, notificationTest: true, serverActionsHidden: true };
   await soundPage.close();
 } catch (error) {
-  stage("failure-diagnostics");
   for (const context of browser.contexts())
     for (const page of context.pages()) {
       await page.screenshot({ path: join(shots, "mobile-failure.png") }).catch(() => {});
@@ -1180,11 +1164,9 @@ try {
     }
   throw error;
 } finally {
-  stage("browser-cleanup");
   for (const context of browser.contexts())
     for (const page of context.pages()) await page.unrouteAll({ behavior: "ignoreErrors" }).catch(() => {});
   await browser.close();
 }
-stage("complete");
 writeFileSync(join(shots, "mobile-responsive.json"), `${JSON.stringify(result, null, 2)}\n`);
 console.log(JSON.stringify(result));
