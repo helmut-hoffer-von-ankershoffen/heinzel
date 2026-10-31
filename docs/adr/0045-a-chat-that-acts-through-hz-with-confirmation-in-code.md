@@ -186,12 +186,10 @@ shows its cost and the session's total.
 
 ## More Information
 
-- Decided by the maintainer, 2026-10-24: notifications, proactivity and an integrated chat; the chat-first Home
-  "like a consumer assistant, but for product teams"; writes confirmed in the chat, enforced in hz's tool layer.
 - Open: an approval card for drafts (ADR 0038) as a Today card; the notify service's event operation and its id format;
   a Claude API runner plugin; whether `send` should run in the background and survive closing the tab.
 
-**Amendment 2026-10-24: one chat panel, beside or below.** Requested by the maintainer the same day: the chat is a
+**One chat panel, beside or below.** The chat is a
 right sidebar whenever the window has room, on Home too. The web app has one panel with the chat on top and the
 terminal under it (each alone when the other is closed); it sits beside the screen while the screen keeps at least
 30rem next to it, and below the screen, the same stack across the width, when the window is narrower; never both, and

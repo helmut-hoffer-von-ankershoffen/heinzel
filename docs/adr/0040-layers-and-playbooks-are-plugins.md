@@ -17,7 +17,7 @@ adapters, its org's way of reporting, its site's time zone and its own template 
 them. What hz should draft is now a plugin's playbook ([ADR 0037](0037-plugins-bring-playbooks.md)): asset types with
 discovery hints, template contracts and recommended settings; but which plugin's playbook applies to a team, and in what
 order when its company, org and site each bring one, is undecided, and a newcomer's first win ("perfect onboarding", a
-separate record) is exactly such a draft. The maintainer decided (2026-10-24):
+separate record) is exactly such a draft. The decision:
 "Playbooks as plugins. Core knows nothing about weekly reports. A plugin can bring adapters, a playbook (asset types
 with discovery hints and template contracts) and config defaults. Setup proposes assets found by those hints and offers
 the template contracts." "Layers follow org and site, untyped. Each plugin is a layer with a parent: company → org →
@@ -85,14 +85,14 @@ statements:
    check naming the plugin to install; the plugin also lists its parent and site as package dependencies, so
    installing a team installs its stack ([ADR 0006](0006-plugins-installed-through-the-uv-tool-receipt.md)).
 2. **Stacking order: general to specific.** For the layer a person is in (the plugin their team repository's `hz.yaml` names, `[team] layer` when
-   they set it, or the only team layer installed otherwise; amended 2026-10-24), the stack is the root, then each org down the parent chain, then the site, then
+   they set it, or the only team layer installed otherwise), the stack is the root, then each org down the parent chain, then the site, then
    the team: company, org + site, team. A more specific layer refines a more general one; two layers that set the same
    key resolve by stack order. **Open: precedence when the org and the site conflict** (an org binding and a site
    binding for the same capability, an org default and a site default for the same setting). Proposal recorded for the
    maintainer: the team decides: a team layer that sets the key wins; where the team is silent, the conflict is a
    `degraded` doctor check that names both layers and the key, and the person's file decides until the team sets it.
    No silent merge. Implemented as the default behind one seam, the kernel's `ORG_SITE_PRECEDENCE`
-   (`team_decides`, not public API), so the maintainer's decision changes one assignment (amended 2026-10-24).
+   (`team_decides`, not public API), so changing the decision changes one assignment.
 3. **What a layer brings.** A layer is an ordinary plugin: its adapters are `ProviderLet`s, its roles extend ADR
    0024's vocabulary, its contracts are module contracts (namespace = module, [ADR 0021](0021-workflow-contracts.md)
    §10), and its configuration defaults are the recommended settings of its playbook
@@ -111,8 +111,8 @@ statements:
 5. **Names follow the path.** A layer's module name is its path from the root, joined with `-`: `acme`,
    `acme-payments`, `acme-payments-checkout`; a site hangs off its parent the same way: `acme-lisbon`. The parent's name
    plus `-` is a prefix of the child's, so the name alone says where a plugin sits; a layer that breaks this is a hint
-   in doctor and `hz system layer list`, never refused (amended 2026-10-24 by the maintainer: a check, not enforced
-   hard). Distributions are `heinzel-<name>`
+   in doctor and `hz system layer list`, never refused: a check, not enforced
+   hard. Distributions are `heinzel-<name>`
    ([ADR 0025](0025-plugin-distributions-are-named-heinzel-name.md)): `heinzel-acme-payments-checkout`.
 6. **The word is plugin.** Every user-facing text (CLI help, doctor, documentation, the setup and join screens) says
    "plugin", never "package" or "distribution"; the latter two appear only where the Python ecosystem forces them
@@ -151,7 +151,7 @@ statements:
 
 ### Confirmation
 
-In part (the mechanism in the core, 2026-10-24): `LayerLet` declaration checks when a module is imported (one per
+In part (the mechanism in the core): `LayerLet` declaration checks when a module is imported (one per
 module, no self-parent or self-site, a site that isn't the parent; the path prefix is a hint) and when the kernel
 registers layers (installed parent and site, no cycle, one parent per layer, a plugin's top-level module, a site
 outside the layer's own line), the stack order
@@ -161,16 +161,12 @@ parent and an org–site conflict, `hz org sync` listing the stack's bindings be
 the layer that wins it, most specific first
 (`tests/integration/layer_test.py`, with made-up Acme layers in `tests/fixtures/layers`). Still to come: roles from the stack validated in the roster (today `hz system layer show` lists them); the playbook let's own tests (its record); the word
 "plugin" in CLI help and generated documentation (`tests/unit/documentation_test.py`); the reference company's
-plugins installed and the onboarding journeys run against them (`tests/e2e/reference_company_test.py`), with the
+plugins installed and the onboarding journeys run against them, with the
 reference repository's own CI running the core's `make check` on every release; the confidentiality check on the public
 repository, unchanged.
 
 ## More Information
 
-- Decided by the maintainer, 2026-10-24: playbooks as plugins with the core knowing nothing about weekly reports;
-  untyped layers following org and site with general-to-specific stacking; names by path and the word "plugin"; a
-  company's plugins in its private repository; the public reference company. Technical shape by the architect; the
-  org–site precedence is open with the proposal above.
 - Builds on [ADR 0037](0037-plugins-bring-playbooks.md) (playbooks and recommended settings; this record adds the
   stack that combines them) and [ADR 0012](0012-layered-configuration.md) (unchanged: nothing a layer brings is
   configuration until accepted), and on [ADR 0004](0004-discovery-through-packages-and-entry-points.md) and [ADR 0006](0006-plugins-installed-through-the-uv-tool-receipt.md)

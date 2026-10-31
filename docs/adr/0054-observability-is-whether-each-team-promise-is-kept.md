@@ -18,7 +18,7 @@ A team's work flows through artifacts its members' Heinzelmännchen keep: Costas
 Wednesday, Mira's weekly report every Friday from those rows. [ADR 0052](0052-the-graph-emerges-from-recorded-reads-and-writes.md)
 decided that the graph of this work emerges from what each Heinzelmännchen records, on top of the durable sessions of
 [ADR 0049](0049-heinzelmaennchen-are-durable-agents-one-session-each-owned-by-hz.md), which are not built yet. The
-maintainer decided (2026-10-24) what to build now, before them: observability means **is each promise kept**, for the
+decision is what to build now, before them: observability means **is each promise kept**, for the
 team layer only, like SLOs; a built-in module `telemetry` (after OpenTelemetry) where Heinzelmännchen log what they did
 (`hz report`, an append-only log per Heinzelmännchen, synced into the team repository); a built-in module `graph` that
 computes each promise's state from the team's contracts and those logs (`hz graph`, JSON Graph Format); and a graph
@@ -145,7 +145,7 @@ team repository, the web head) and leaves storage to ADR 0049 without changing t
 `tests/unit/kernel/telemetry_test.py` (what an entry accepts and refuses); `tests/unit/modules/telemetry_service_test.py`
 (appending under a lock, one writer per log, dates, links, sync's prefix rule, re-validating the team's copies);
 `tests/unit/modules/graph_build_test.py` (every state, deadlines from readers and from the own next run, weeks, the
-waiting list, observed and declared edges, cuts, zones); `tests/unit/modules/workflow_promises_test.py` (only valid
+waiting list, observed and declared edges, cuts, zones); `tests/unit/modules/heinzel_promises_test.py` (only valid
 team contracts promise); `tests/integration/graph_test.py` (`hz graph --json` equals
 `tests/fixtures/graph/weekly-report.jgf.json`, which equals `web/src/test/fixtures/graph.jgf.json` and validates against
 the schema; filters; report, sync and the graph through the CLI; not on REST, on the web head; the keeper template
@@ -159,5 +159,5 @@ import-linter independence contract lists `graph` and `telemetry`.
   (0052's `where`); the command is `hz report <verb>` rather than 0052's `hz heinzel report`, since the `heinzel` module
   of [ADR 0051](0051-the-workflow-module-becomes-the-heinzel-module.md) isn't built. When it is, the spine adopts this
   shape and `hz heinzel report` becomes the command, with `hz report` kept as its alias for a release.
-- 0052's open question, what team members see of each other, is answered here only as far as the maintainer decided:
+- 0052's open question, what team members see of each other, is answered here only as far as this record goes:
   states, deadlines and edges per Heinzelmännchen and artifact, never descriptions, costs or per-person counts.

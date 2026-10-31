@@ -64,7 +64,7 @@ configuration**, because the kernel gets bounded, reportable runs while the agen
 
 ### Confirmation
 
-Partly, for the part built in 0.2 (see the implementation status under More Information): the command line, the
+Partly, for the part built in the first release (see the implementation status under More Information): the command line, the
 isolation flags, the environment and the parsing of the Claude Code adapter with a recorded fake
 (`tests/unit/modules/runner_claude_test.py`); the command adapter's fail-closed checks, placeholders, environment
 allowlist and output handling (`tests/unit/modules/runner_command_test.py`) and its run against a fake agent CLI
@@ -82,16 +82,16 @@ Claude Code run.
   `any | claude-code | codex | cursor`. Under this ADR the runner is not an enum in the contract format: which
   runner executes a job is configuration, and `hz.agent` keeps hints only (model class, effort, turn limit), with
   `runner` at most an optional hint naming a configured runner. ADR 0021 is proposed and should be aligned before
-  either is accepted. Aligned for 0.2 (director's decision, 2026-10-24): the workflow module maps `hz.agent.tools`,
+  either is accepted. Aligned for the first release: the workflow module maps `hz.agent.tools`,
   `hz.agent.max_usd` and `hz.timeout` to the `ToolProfile`, `Budget` and timeout of `AgentRunner.run`, and refuses
   `runner`, `model`, `effort` and `max_turns` until a runner can honour them, since the protocol has no parameter for
   them and a hint nobody reads would mislead.
 - [ADR 0020](0020-daemon-head.md) receipts gain the runner, model, tool calls and token cost reported by the adapter.
 - Integrations follow the same pattern: [ADR 0028](0028-integrations-are-capability-adapters.md).
 
-**What 0.2 implements.** The status stays proposed: per-person and per-job runner choice, receipts carrying the
+**What the first release implements.** The status stays proposed: per-person and per-job runner choice, receipts carrying the
 result, contract hints and the shared adapter contract-test suite are not built yet. Built, with the choices made
-while building it and in review of the pull request (director's decisions, 2026-10-24):
+while building it:
 
 - **Protocol** `AgentRunner.run(prompt, *, contract, tools, timeout, budget) -> AgentResult` in the kernel
   (`heinzel.kernel._agents`, public in `heinzel`), the capability `agent-runner` with one mode, `read`: a session with
@@ -105,8 +105,8 @@ while building it and in review of the pull request (director's decisions, 2026-
   operations as tools through the MCP head (`ToolProfile.mcp_servers`), reads only, with every other call held for
   the person's confirmation; such a Claude Code run uses `--setting-sources ""` instead of `--safe-mode`, and doctor
   also asks `claude auth status`.*
-- **Tools in 0.2: inputs are pre-fetched, the agent gets no hz tools.** This settles ADR 0021's tools question for
-  0.2 (option a): a render packet holds the inputs, fetched through capability handles by the job before the session
+- **Tools in the first release: inputs are pre-fetched, the agent gets no hz tools.** This settles ADR 0021's tools question for
+  the first release (option a): a render packet holds the inputs, fetched through capability handles by the job before the session
   starts, and the agent session only reads the working directory with the runner's read-only tools. `hz.tools`
   (hz operations and MCP servers as agent tools) is deferred, and `ToolProfile` stays in the runner's naming until it
   comes.
@@ -147,6 +147,6 @@ while building it and in review of the pull request (director's decisions, 2026-
 - **Doctor** checks the bound core runner only when some module requires `agent-runner`: Claude Code on PATH; for the
   command runner a configured, existing executable, and degraded while it refuses to run. Results list the limits a
   run could not enforce (a budget the command doesn't take).
-- **Credentials**: neither runner needs a credential in 0.2 (Claude Code uses its own login; a command reads its own
+- **Credentials**: neither runner needs a credential in the first release (Claude Code uses its own login; a command reads its own
   from a variable named in `command_env`). A command runner that needs a stored token is a follow-up through
   `Credentials` ([ADR 0030](0030-credentials-live-in-the-os-keychain.md)).

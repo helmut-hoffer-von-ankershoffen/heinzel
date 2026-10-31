@@ -13,7 +13,7 @@ implemented-by: 168
 
 Current chat exposes confirmation on local CLI and paired web, withholding it from MCP and unauthenticated REST.
 This prevents the chat's own tools from confirming their proposals, but ties authorization to a transport. The
-maintainer decided that the same data operations must be available through API, CLI and MCP, and an approval
+same data operations must be available through API, CLI and MCP, and an approval
 issued by the human can be carried by any head, including MCP. The ordinary REST head has no authentication and
 must not acquire private chat or data merely to satisfy parity.
 

@@ -83,12 +83,14 @@ nav:
   - Start here:
       - Install Heinzel: guides/install.md
       - Your first session: guides/first-steps.md
+      - Product tour: guides/tour.md
       - Bootstrap a team: guides/manager.md
       - Join a team: guides/joining.md
   - Plugin catalog: CATALOG.md
   - Build with Heinzel:
       - Contribution paths: guides/contribute.md
       - Create a public or private plugin: PLUGIN_AUTHORING.md
+      - Screenshot playbook: SCREENSHOT_PLAYBOOK.md
       - Catalog metadata: guides/catalog.md
       - Extension contracts: PLUGINS.md
       - Themes and soundscapes: THEMES.md

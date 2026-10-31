@@ -11,14 +11,16 @@ amended-by: 0049, 0051, 0052, 0059
 
 # 0038: Drafts are approved in place
 
+*Not implemented at 0.9.9; today drafts stay local.*
+
 ## Context and Problem Statement
 
 Heinzelmännchen drafts, people approve (tenet 3), and every artifact records its sources, its draft and its approver
 (tenet 4). The records so far put approval in a place of its own: [ADR 0010](0010-towards-a-reactive-workflow-engine.md)
 queues every rendered draft for approval, and [ADR 0020](0020-daemon-head.md) §7 makes each proposal an issue or pull
 request in the state repository with `hz inbox list|show|approve|reject` as the one inbox. That is a second place to
-look, a second copy of the text, and a review of a draft outside the document it is meant for. The maintainer decided
-(2026-10-24): "Approval happens in place. hz writes the draft where it will live (e.g. this week's section in the
+look, a second copy of the text, and a review of a draft outside the document it is meant for. The decision:
+"Approval happens in place. hz writes the draft where it will live (e.g. this week's section in the
 rolling weekly-report document, an engineer's row in the tracker), marked with a draft tag. The person edits it in
 place and removes the tag to approve; a short chat nudge points there. hz records the approver from the document's
 revision history (lineage) and diffs draft vs approved to learn. Only after approval do downstream steps run (chat
@@ -146,18 +148,16 @@ approval.** Checkable statements:
 
 Not yet: proposed. When implemented: unit tests of the state machine with test-only adapters that replay revision
 histories (placed, approved by an allowed actor, rejected by emptying, tag removed by someone not in `approvers`, removed
-and re-added, place deleted, catch-up run), of the receipt's lineage fields and the diff, and of downstream gating
-(`tests/unit/modules/workflow_approval_test.py`); that hz never writes a place a human changed
-(`tests/unit/modules/workflow_service_test.py`); the nudge going to the approver alone and once
-(`tests/unit/kernel/capabilities_test.py` for the methods' modes, `tests/integration/approval_test.py` through the
+and re-added, place deleted, catch-up run), of the receipt's lineage fields and the diff, and of downstream gating;
+that hz never writes a place a human changed
+(`tests/unit/modules/heinzel_service_test.py`); the nudge going to the approver alone and once
+(`tests/unit/kernel/capabilities_test.py` for the methods' modes, and through the
 heads); no per-person aggregation of approvals or diffs in any operation (`tests/unit/repository_test.py`, the ADR 0024
 review rule); each shipped adapter's `place_draft` and `draft_state` against recorded vendor CLI output
-(`plugins/heinzel-<name>/tests`).
+(in heinzel-plugins: `plugins/heinzel-<name>/tests`).
 
 ## More Information
 
-- Decided by the maintainer, 2026-10-24: approval in place with a draft tag, the approver from revision history,
-  draft-versus-approved diffs to learn from, downstream only after approval. Technical shape by the architect.
 - Amends [ADR 0010](0010-towards-a-reactive-workflow-engine.md) ("every rendered draft is queued for approval": the
   queue is the set of tagged places, shown by `hz inbox`) and [ADR 0020](0020-daemon-head.md) §7 (proposals are no
   longer issues or pull requests in the state repository, except for repository files; `hz inbox` is a view over

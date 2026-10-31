@@ -12,6 +12,8 @@ implemented-by: 65
 
 # 0041: Expert mode: newcomers see the everyday commands, `hz system expert on` shows all
 
+*Since 0051 the module is `heinzel`: read `hz workflow` as `hz heinzel` and `[workflow]` as `[heinzel]`.*
+
 ## Context and Problem Statement
 
 `hz --help` lists eleven groups and about sixty commands: configuration, credentials, capability bindings, the
@@ -102,7 +104,5 @@ operation, every head reads the same field, and nothing stops working.
 
 ## More Information
 
-- Requested by the maintainer, 2026-10-24; the interpretation (most operations hidden by default, expert mode shows
-  everything) was stated to the maintainer, who may correct it.
 - Open: whether `hz system expert` should move to the top level as `hz expert`; whether a plugin may set a default
   audience for all its operations at once.

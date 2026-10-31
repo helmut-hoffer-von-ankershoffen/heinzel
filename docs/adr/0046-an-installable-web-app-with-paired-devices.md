@@ -19,7 +19,7 @@ per process, kept in `sessionStorage`. That makes every `hz ui` a new origin and
 can't be installed: a progressive web app is bound to its origin, and an icon in the Dock that reopens to "open the link
 `hz ui` printed" is no app. Notifications ([ADR 0043](0043-desktop-notifications-one-policy-shown-once.md)) need the
 web app to show them while it is open, and the native notifier needs a stable address for a click to open. The
-maintainer asked for an installable app with notifications (2026-10-24) and decided the points below.
+maintainer asked for an installable app with notifications.
 
 ## Decision Drivers
 
@@ -42,8 +42,7 @@ maintainer asked for an installable app with notifications (2026-10-24) and deci
 ## Decision Outcome
 
 Chosen option: **a fixed port, paired devices, a service worker**, because the installed app keeps its origin and its
-credential, each device can be revoked on its own, and nothing new crosses the machine's boundary. Decided by the
-maintainer, 2026-10-24.
+credential, each device can be revoked on its own, and nothing new crosses the machine's boundary.
 
 - **The port.** `hz ui` listens on `[hz] ui_port` (8737), on 127.0.0.1 only, user scope (a project's `hz.toml` can't
   set it); `--port 0` still picks a free one for a throwaway session. The Host, Origin and `Sec-Fetch-Site` checks are
@@ -107,12 +106,9 @@ maintainer, 2026-10-24.
 
 ## More Information
 
-- Decided by the maintainer, 2026-10-24: a fixed port, a persistent device token kept by the app and revocable, a
-  manifest and service worker, "Install app", notifications through the service worker and the native click opening
-  the app.
 - Later: `hz ui` started at login by the daemon's unit, so the Dock icon always finds it.
 
-**Amendment 2026-10-24: a splash screen while hz starts.** Requested by the maintainer: the app shows a splash from
+**A splash screen while hz starts.** The app shows a splash from
 the first paint until it is ready, in the person's last theme and mode, and the fix instead of a spinner when hz
 doesn't answer.
 

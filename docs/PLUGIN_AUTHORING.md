@@ -67,6 +67,11 @@ No unrelated plugin or core tests run. Write a test for the new behavior and mar
 level: `unit`, `integration` or `e2e`. Installed acceptance belongs in `tests/acceptance/`. A richer frontend declares
 its own build and tests; a small static view needs no JavaScript build system.
 
+## Show the useful feature
+
+Use the [screenshot playbook](SCREENSHOT_PLAYBOOK.md) to plan real UI and CLI scenes with fictional data, review
+privacy and legibility, and verify the rendered gallery before publication.
+
 ## Add dependencies
 
 Add ordinary libraries and shared contract packages to `project.dependencies` in this plugin's `pyproject.toml`.
