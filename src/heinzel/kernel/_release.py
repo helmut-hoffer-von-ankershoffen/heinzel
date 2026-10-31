@@ -106,11 +106,17 @@ class ReleaseCache:
         checked_at, now = self.checked_at, now or datetime.now(UTC)
         return checked_at is not None and now - max_age < checked_at <= now
 
-    def newer_than(self, current: str) -> str | None:
-        """The latest release last seen if it is newer than `current`, else None."""
+    def newer_than(self, current: str, channel: str = "stable") -> str | None:
+        """The latest release last seen if it is newer than `current`, else None.
+
+        An edge version is only ever news on the edge channel: right after someone goes back to stable, the cache can
+        still hold one (ADR 0114).
+        """
         latest = self.latest
         try:
-            return latest if latest is not None and Version(latest) > Version(current) else None
+            if latest is None or (Version(latest).is_devrelease and channel != "edge"):
+                return None
+            return latest if Version(latest) > Version(current) else None
         except InvalidVersion:
             return None
 

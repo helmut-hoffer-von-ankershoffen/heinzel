@@ -172,7 +172,7 @@ def add_updates(app: FastAPI, kernel: Kernel, static: Path | None, *, restartabl
             current=__version__,
             latest=cache.latest if enabled else None,
             installed_at=installed_at,
-            available=enabled and cache.newer_than(__version__) is not None,
+            available=enabled and cache.newer_than(__version__, kernel.settings.update_channel) is not None,
             supported=reason is None,
             reason=reason,
         )

@@ -117,7 +117,7 @@ def channel(
     """
     selected = kernel.settings.update_channel
     if to is None:
-        return ChannelReport(channel=selected, changed=False, statement=f"You are on {selected}.")
+        return ChannelReport(channel=selected, changed=False, statement=service.channel_summary(selected))
     statement = service.channel_statement(selected, to)
     if to == selected or not yes:
         return ChannelReport(channel=selected, changed=False, statement=statement)

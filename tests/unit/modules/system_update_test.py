@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import pytest
 
 from heinzel import HeinzelError, Progress
-from heinzel.kernel import CorePin, EdgeRelease, Installation, ReleaseSource, Settings
+from heinzel.kernel import CorePin, EdgeRelease, Installation, ReleaseCache, ReleaseSource, Settings
 from heinzel.modules.system._github import asset_host
 from heinzel.modules.system._service import _edge_release, _published_version
 from heinzel.modules.system._update import UpdateService, blocking_plugins
@@ -1506,6 +1506,23 @@ def test_the_statement_says_what_switching_changes_first(selected, target, curre
     if selected not in {target, "release"}:
         assert "Nothing is installed until you run hz system update" in statement
         assert "settings, plugins and data stay" in statement
+
+
+def test_the_summary_says_where_the_next_update_goes():
+    service = _channels(CorePin("index", "heinzel"), FakeChannels())
+    assert service.channel_summary("edge", "0.4.0").startswith(
+        "You are on edge. The next update moves hz 0.4.0 to edge"
+    )
+    assert service.channel_summary("release", "0.3.0").startswith(
+        "You are on stable. The next update moves hz 0.3.0 to"
+    )
+
+
+@pytest.mark.parametrize(("channel", "expected"), [("stable", None), ("edge", "0.5.0.dev7")])
+def test_a_cached_edge_version_is_only_news_on_edge(tmp_path, channel, expected):
+    cache = ReleaseCache(tmp_path)
+    cache.remember("0.5.0.dev7")
+    assert cache.newer_than("0.4.0", channel) == expected
 
 
 def test_the_old_release_setting_still_means_stable():

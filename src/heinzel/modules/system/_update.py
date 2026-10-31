@@ -338,6 +338,13 @@ class UpdateService:
             generation=generation,
         )
 
+    def channel_summary(self, selected: UpdateChannel, current: str = __version__) -> str:
+        """Where the next update goes on the chosen channel; asks the network and changes nothing."""
+        chosen = "stable" if selected == "release" else selected
+        return (
+            f"You are on {chosen}. {self._channel_effect(chosen, current).replace('That update', 'The next update', 1)}"
+        )
+
     def channel_statement(self, selected: UpdateChannel, target: UpdateChannel, current: str = __version__) -> str:
         """What choosing `target` changes, said before it happens; asks the network and changes nothing."""
         chosen = "stable" if target == "release" else target

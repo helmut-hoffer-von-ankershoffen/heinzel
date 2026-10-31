@@ -82,9 +82,10 @@ class GitHubReleases(ReleaseSource):
     User-Agent. `newer_than`, asked for by someone, sends their GitHub token if given one, to api.github.com only.
     """
 
-    def __init__(self, repository: str) -> None:
-        """Ask the releases of `repository` (`owner/name`)."""
+    def __init__(self, repository: str, channel: str = "stable") -> None:
+        """Ask the releases of `repository` (`owner/name`); on the edge channel the check asks for edge instead."""
         self.repository = repository
+        self.channel = channel
 
     @property
     def latest_url(self) -> str:
@@ -105,6 +106,8 @@ class GitHubReleases(ReleaseSource):
             return str(Version(url.rsplit("/", 1)[1].removeprefix("v"))), _github_link(url)
         except (OSError, ValueError):
             pass  # whatever is wrong there, the REST API answers or says why not
+        if self.channel == "edge":
+            return self.edge_release(timeout).version, None
         answer = _github.get_json(self.latest_url, None, timeout)
         return str(Version(str(answer["tag_name"]).removeprefix("v"))), _github_link(answer["html_url"])
 
@@ -274,10 +277,15 @@ def _release_notes(item: object, repository: str) -> ReleaseNotes | None:
     return ReleaseNotes(version=str(version), date=day, notes=notes, url=url)
 
 
-def github_releases(installation: Installation) -> GitHubReleases:
+def github_releases(installation: Installation, kernel: Kernel) -> GitHubReleases:
+    """The releases of the repository in the uv tool receipt, or of the default repository, on the chosen channel."""
+    return installed_releases(installation, kernel.settings.update_channel)
+
+
+def installed_releases(installation: Installation, channel: str = "stable") -> GitHubReleases:
     """The releases of the repository in the uv tool receipt, or of the default repository."""
     requirements = installation.requirements()
-    return GitHubReleases(repository_of(requirements[0] if requirements else None))
+    return GitHubReleases(repository_of(requirements[0] if requirements else None), channel)
 
 
 class SystemService:
