@@ -183,6 +183,15 @@ def test_doctor_is_up_for_a_usable_tool_and_degraded_with_the_install_command_fo
     assert missing[0].fix == "hz system prerequisite install --owner example --confirm"
 
 
+def test_doctor_finds_tools_without_starting_them(make_kernel):
+    machine = Machine(present={"/usr/bin/tool": "tool 1.0"})
+
+    [check] = health(kernel_on(machine, make_kernel))
+
+    assert (check.status, check.detail) == (Status.UP, "Tool: /usr/bin/tool")
+    assert not [c for c in machine.commands if c[0] == "/usr/bin/tool"]
+
+
 def test_doctor_gives_manual_instructions_when_nothing_can_be_automatic(make_kernel):
     [check] = health(kernel_on(Machine("linux"), make_kernel))
 

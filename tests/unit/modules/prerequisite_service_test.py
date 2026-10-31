@@ -45,6 +45,24 @@ def test_a_working_executable_on_the_path_is_available_with_its_version(make_ker
     assert machine.commands == [["xcode-select", "-p"], ["/usr/bin/tool", "--version"]]
 
 
+def test_looking_without_a_probe_starts_nothing_and_knows_no_version(make_kernel):
+    machine = Machine("linux", present={"/usr/bin/tool": "tool 1.0"})
+
+    [check] = engine(machine, make_kernel, example=owner(tool(minimum_version="2.0"))).check(probe=False).checks
+
+    assert (check.status, check.path, check.version) == ("available", "/usr/bin/tool", None)
+    assert machine.commands == []
+
+
+def test_looking_without_a_probe_still_reports_a_missing_tool_and_skips_apple_stubs(make_kernel):
+    machine = Machine(present={"/usr/bin/tool": "tool 1.0"})
+    machine.developer_tools = False
+
+    [check] = engine(machine, make_kernel, example=owner(tool())).check(probe=False).checks
+
+    assert check.status == "missing"
+
+
 def test_a_probe_gets_the_owners_arguments_and_no_credentials(make_kernel):
     machine = Machine(present={"/usr/bin/tool": "1.2"})
     machine.environment["HZ_CREDENTIAL_SERVICE_TOKEN"] = "secret"
@@ -160,7 +178,7 @@ def test_missing_on_macos_without_homebrew_points_to_homebrew_and_is_not_automat
     [check] = engine(machine, make_kernel, example=owner(tool())).check().checks
 
     assert (check.status, check.automatic) == ("missing", False)
-    assert "https://brew.sh" in check.detail
+    assert "Install Homebrew first" in check.detail
     assert "hz system prerequisite install --confirm" in check.detail
 
 

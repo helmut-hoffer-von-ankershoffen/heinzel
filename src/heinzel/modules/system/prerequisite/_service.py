@@ -148,11 +148,21 @@ class ToolPrerequisites(PrerequisiteService):
         except InvalidVersion:
             return None
 
-    def _probe(self, record: ModuleRecord, let: PrerequisiteLet) -> PrerequisiteCheck:
+    def _probe(self, record: ModuleRecord, let: PrerequisiteLet, *, run: bool) -> PrerequisiteCheck:
         definition = definition_of(record, let)
         too_old: PrerequisiteCheck | None = None
         for candidate in self._candidates(let):
-            if not self.host.is_executable(candidate) or (version := self._version(let, candidate)) is None:
+            if not self.host.is_executable(candidate):
+                continue
+            if not run:
+                self.host.add_to_path(str(Path(candidate).parent))
+                return PrerequisiteCheck(
+                    requirement=definition,
+                    status="available",
+                    path=candidate,
+                    detail="Found; `hz system prerequisite check` verifies its version.",
+                )
+            if (version := self._version(let, candidate)) is None:
                 continue
             if let.minimum_version is not None and version < Version(let.minimum_version):
                 too_old = too_old or PrerequisiteCheck(
@@ -200,7 +210,9 @@ class ToolPrerequisites(PrerequisiteService):
                 check.detail = "Modules declare conflicting Homebrew packages for this tool; none was selected."
         return checks
 
-    def check(self, module: str | None = None, *, context: PrerequisiteContext = "setup") -> PrerequisiteReport:
+    def check(
+        self, module: str | None = None, *, context: PrerequisiteContext = "setup", probe: bool = True
+    ) -> PrerequisiteReport:
         """Check applicable executables without running an installer or signing into any account.
 
         Raises:
@@ -209,7 +221,10 @@ class ToolPrerequisites(PrerequisiteService):
         if context not in PREREQUISITE_CONTEXTS:
             msg = "Choose the install, setup or feature prerequisite context."
             raise HeinzelError(msg)
-        checks = [self._skip(record, let, context) or self._probe(record, let) for record, let in self._entries(module)]
+        checks = [
+            self._skip(record, let, context) or self._probe(record, let, run=probe)
+            for record, let in self._entries(module)
+        ]
         return report_of(self._without_conflicts(checks))
 
     # Installing ------------------------------------------------------------------------------------------------------

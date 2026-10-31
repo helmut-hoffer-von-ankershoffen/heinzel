@@ -8,7 +8,7 @@ from typing import Literal
 from urllib.parse import urlsplit
 
 from packaging.version import InvalidVersion, Version
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from heinzel.kernel._lets import Let
 from heinzel.kernel._services import ServiceContract
@@ -149,6 +149,8 @@ def _check_condition(let: PrerequisiteLet) -> None:
 class PrerequisiteDefinition(BaseModel):
     """Portable metadata for people, setup and catalogs; it contains no executable condition callback."""
 
+    model_config = ConfigDict(extra="forbid", frozen=True, revalidate_instances="always")
+
     module: str = Field(description="The qualified module that owns this requirement.")
     plugin: str | None = Field(default=None, description="Owning plugin distribution; none for Core.")
     name: str = Field(description="Executable name.")
@@ -164,6 +166,8 @@ class PrerequisiteDefinition(BaseModel):
 class PrerequisiteCheck(BaseModel):
     """An observed tool state, separate from Python package installation and account authentication."""
 
+    model_config = ConfigDict(extra="forbid", revalidate_instances="always")
+
     requirement: PrerequisiteDefinition = Field(description="The selected module-owned declaration.")
     status: PrerequisiteStatus = Field(description="Observed readiness or the outcome of an explicit action.")
     path: str | None = Field(default=None, description="Resolved usable executable, when present.")
@@ -176,6 +180,8 @@ class PrerequisiteCheck(BaseModel):
 
 class PrerequisiteReport(BaseModel):
     """One context's actual readiness; instructions and installer exit codes do not establish success."""
+
+    model_config = ConfigDict(extra="forbid", revalidate_instances="always")
 
     ready: bool = Field(description="Whether every selected requirement has a verified compatible executable.")
     checks: list[PrerequisiteCheck] = Field(description="Per-owner results, including pending manual work.")
@@ -193,8 +199,13 @@ class PrerequisiteService(ServiceContract):
         """Export owner metadata without probing tools or evaluating activation predicates."""
         raise NotImplementedError
 
-    def check(self, module: str | None = None, *, context: PrerequisiteContext = "setup") -> PrerequisiteReport:
-        """Check applicable tools locally without installation or authentication."""
+    def check(
+        self, module: str | None = None, *, context: PrerequisiteContext = "setup", probe: bool = True
+    ) -> PrerequisiteReport:
+        """Check applicable tools locally without installation or authentication.
+
+        With `probe` false nothing is started: a tool counts when an executable file is found, without its version.
+        """
         raise NotImplementedError
 
     def install(self, module: str | None = None, *, context: PrerequisiteContext = "setup") -> PrerequisiteReport:

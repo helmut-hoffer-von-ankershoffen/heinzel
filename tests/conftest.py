@@ -15,7 +15,6 @@ from heinzel import Config, Kernel, Module, ModuleRecord, Settings
 from heinzel.kernel import Origin, discover
 from heinzel.modules.org import _discovery as discovery
 from heinzel.modules.system.prerequisite._host import ToolHost
-from tests._prerequisite_machine import ready_everywhere
 
 TEST_ORIGIN = Origin(distribution="heinzel-test", version="9.9.9", builtin=False)
 
@@ -35,6 +34,10 @@ def _no_real_homebrew(monkeypatch: pytest.MonkeyPatch) -> None:
     results do not depend on what the developer installed and nothing is ever installed. Tests about the engine, the
     installer or setup describe their own machine (`tests/_prerequisite_machine.py`).
     """
+    try:
+        from tests._prerequisite_machine import ready_everywhere
+    except ImportError:  # a test that runs a copy of this file elsewhere (e2e scheduling) has no `tests` package
+        return
     monkeypatch.setattr(ToolHost, "system", classmethod(lambda cls: ready_everywhere()))
 
 

@@ -85,14 +85,16 @@ def install(
 
 @module.health
 def prerequisites(manager: PrerequisiteService) -> list[Check]:
-    """The external tools the selected features need; looking never installs or signs in."""
+    """The external tools the selected features need, found without starting them; nothing is installed."""
     return [
         Check(
             name=f"{item.requirement.module}: {item.requirement.name}",
             status=Status.UP if item.status in PREREQUISITE_READY else Status.DEGRADED,
-            detail=item.detail or f"{item.requirement.title} {item.version or ''}".strip(),
+            detail=f"{item.requirement.title}: {item.path}"
+            if item.status in PREREQUISITE_READY and item.path
+            else item.detail,
             fix="" if item.status in PREREQUISITE_READY else _fix(item),
         )
-        for item in manager.check().checks
+        for item in manager.check(probe=False).checks
         if item.status != "skipped"
     ]

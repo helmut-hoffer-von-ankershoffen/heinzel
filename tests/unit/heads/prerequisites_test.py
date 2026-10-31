@@ -85,7 +85,7 @@ def test_macos_without_homebrew_does_not_install_a_package_manager(settings, mon
     pending = prepare(settings, install=True, write=written.append)
 
     assert len(pending) == 1
-    assert "https://brew.sh" in pending[0]
+    assert "Install Homebrew first" in pending[0]
     assert all(c[0] != "curl" and c[0] != "sh" for c in machine.commands)
 
 
