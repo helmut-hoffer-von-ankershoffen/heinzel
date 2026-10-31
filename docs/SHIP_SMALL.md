@@ -52,7 +52,7 @@ The pre-push hook is scoped too (`scripts/scoped_checks.py push`): Markdown and 
 
 - Heavy commands queue behind `hz-gate`; `make pr` runs with `NO_PREFLIGHT=1` and hosted CI does the rest.
 - `pr` opens a draft, labels it `risk: low`, marks it ready and verifies auto-merge is off. The review-policy work on
-  `make pr` and the release workflow stays authoritative: if `make pr` stops arming auto-merge itself, `pr` simply
+  `make pr` and the release workflow stays authoritative: if `make pr` stops arming auto-merge itself, `pr`
   finds nothing to disarm. The label is the hook for risk tiers in review.
 - `merge` accepts only a PR whose label and whole diff both say low and whose checks are green at the exact head;
   everything else stays with the orchestrator and `hz-merge-train`.
