@@ -9473,6 +9473,38 @@
         "title": "PluginPage",
         "type": "object"
       },
+      "PluginScreenshot": {
+        "description": "An owning public project's immutable raster screenshot.",
+        "properties": {
+          "caption": {
+            "description": "The owner's description of the actual capture.",
+            "maxLength": 180,
+            "title": "Caption",
+            "type": "string"
+          },
+          "surface": {
+            "description": "Whether the image shows the interface or command line.",
+            "enum": [
+              "ui",
+              "cli"
+            ],
+            "title": "Surface",
+            "type": "string"
+          },
+          "url": {
+            "description": "A checked immutable public GitHub raster asset URL.",
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url",
+          "surface",
+          "caption"
+        ],
+        "title": "PluginScreenshot",
+        "type": "object"
+      },
       "PluginSearch": {
         "description": "Plugins one can install, and what kept the search from being complete.",
         "properties": {
@@ -9498,6 +9530,77 @@
           "warnings"
         ],
         "title": "PluginSearch",
+        "type": "object"
+      },
+      "PluginShowcase": {
+        "description": "Media preview of one public source, read without installing its implementation.",
+        "properties": {
+          "notice": {
+            "default": "",
+            "description": "Why previews are unavailable or how to interpret declared media.",
+            "title": "Notice",
+            "type": "string"
+          },
+          "revision": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The immutable public source revision, when available.",
+            "title": "Revision"
+          },
+          "screenshots": {
+            "description": "UI and CLI previews before installation.",
+            "items": {
+              "$ref": "#/components/schemas/PluginScreenshot"
+            },
+            "title": "Screenshots",
+            "type": "array"
+          },
+          "soundscapes": {
+            "description": "Explicit links; nothing plays automatically.",
+            "items": {
+              "$ref": "#/components/schemas/PluginSoundscape"
+            },
+            "title": "Soundscapes",
+            "type": "array"
+          },
+          "title": {
+            "description": "The owning project's display title.",
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title"
+        ],
+        "title": "PluginShowcase",
+        "type": "object"
+      },
+      "PluginSoundscape": {
+        "description": "A public plugin's declared YouTube soundscape.",
+        "properties": {
+          "title": {
+            "description": "The soundscape's declared title.",
+            "maxLength": 100,
+            "title": "Title",
+            "type": "string"
+          },
+          "url": {
+            "description": "A YouTube watch link constructed from a checked video identity.",
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "url"
+        ],
+        "title": "PluginSoundscape",
         "type": "object"
       },
       "PluginUpdate": {
@@ -23512,6 +23615,51 @@
           }
         },
         "summary": "Find plugins to install: first-party ones, and community ones by querying the GitHub API.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/plugin/showcase": {
+      "get": {
+        "description": "Preview an owning public plugin's UI and CLI screenshots without installing it.\n\nRaises:\n    HeinzelError: If the specification or public media is unsafe.\n    OSError: If public source metadata cannot be read.\n    ValueError: If public metadata is malformed.",
+        "operationId": "system_plugin_showcase",
+        "parameters": [
+          {
+            "description": "The selected catalog plugin's install specification.",
+            "in": "query",
+            "name": "spec",
+            "required": true,
+            "schema": {
+              "description": "The selected catalog plugin's install specification.",
+              "title": "Spec",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginShowcase"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Preview an owning public plugin's UI and CLI screenshots without installing it.",
         "tags": [
           "system"
         ]

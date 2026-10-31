@@ -111,6 +111,7 @@ def test_every_response_carries_the_csp_and_the_other_security_headers(client):
     assert "style-src 'self' 'unsafe-inline';" in web.CSP
     assert web.CSP.count("unsafe-inline") == 1
     assert "unsafe-eval" not in web.CSP
+    assert "img-src 'self' data: https://raw.githubusercontent.com;" in web.CSP
 
 
 class InlineScripts(HTMLParser):

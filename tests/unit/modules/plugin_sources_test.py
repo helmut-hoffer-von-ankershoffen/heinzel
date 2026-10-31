@@ -242,7 +242,15 @@ def test_gh_reads_the_api_with_your_login(monkeypatch):
     monkeypatch.setattr(_sources.subprocess, "run", run)
     get = _sources.github_getter(None)
     assert get("repos/o/x") == {"ok": True}
-    assert calls[0] == ["/opt/bin/gh", "api", "-H", "Accept: application/vnd.github+json", "repos/o/x"]
+    assert calls[0] == [
+        "/opt/bin/gh",
+        "api",
+        "--cache",
+        "10m",
+        "-H",
+        "Accept: application/vnd.github+json",
+        "repos/o/x",
+    ]
     with pytest.raises(LookupError, match="Not Found"):
         get("repos/o/missing")
     with pytest.raises(OSError, match="Bad credentials"):

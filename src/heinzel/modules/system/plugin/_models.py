@@ -23,7 +23,7 @@ class PluginSettings(ModuleSettings):
     model_config = SettingsConfigDict(populate_by_name=True)
     section_title: ClassVar[str | None] = "Plugins"  # the heading in Settings
 
-    ignored_in_project: ClassVar[frozenset[str]] = frozenset({"catalog_sources", "github_token"})
+    ignored_in_project: ClassVar[frozenset[str]] = frozenset({"catalog_feed", "catalog_sources", "github_token"})
     catalog_sources: list[Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")]] = Field(
         default=[
             "helmut-hoffer-von-ankershoffen/heinzel-plugins",
@@ -32,6 +32,15 @@ class PluginSettings(ModuleSettings):
         title="Plugin catalogs",
         description="GitHub repositories scanned for plugin projects, in addition to topic discovery.",
         max_length=16,
+    )
+
+    catalog_feed: str = Field(
+        default="https://heinzel.team/catalog.json",
+        pattern=r"^(https://[^\s]+)?$",
+        title="Published plugin catalog",
+        description="The static catalog of first-party plugins, read before GitHub so that Discover and "
+        "screenshot previews need no GitHub API request. Empty turns it off.",
+        json_schema_extra={"x-expert": True},
     )
 
     github_token: SecretStr | None = Field(
@@ -137,6 +146,35 @@ class AvailablePlugin(BaseModel):
     )
     stars: int | None = Field(description="GitHub stars; none for first-party plugins.")
     installed: bool = Field(description="Whether a plugin of this name is installed.")
+
+
+class PluginScreenshot(BaseModel):
+    """An owning public project's immutable raster screenshot."""
+
+    url: str = Field(description="A checked immutable public GitHub raster asset URL.")
+    surface: Literal["ui", "cli"] = Field(description="Whether the image shows the interface or command line.")
+    caption: str = Field(max_length=180, description="The owner's description of the actual capture.")
+
+
+class PluginSoundscape(BaseModel):
+    """A public plugin's declared YouTube soundscape."""
+
+    title: str = Field(max_length=100, description="The soundscape's declared title.")
+    url: str = Field(description="A YouTube watch link constructed from a checked video identity.")
+
+
+class PluginShowcase(BaseModel):
+    """Media preview of one public source, read without installing its implementation."""
+
+    title: str = Field(description="The owning project's display title.")
+    revision: str | None = Field(default=None, description="The immutable public source revision, when available.")
+    screenshots: list[PluginScreenshot] = Field(
+        default_factory=list[PluginScreenshot], description="UI and CLI previews before installation."
+    )
+    soundscapes: list[PluginSoundscape] = Field(
+        default_factory=list[PluginSoundscape], description="Explicit links; nothing plays automatically."
+    )
+    notice: str = Field(default="", description="Why previews are unavailable or how to interpret declared media.")
 
 
 class PluginSearch(BaseModel):

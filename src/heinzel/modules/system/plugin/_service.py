@@ -16,7 +16,7 @@ import tempfile
 import threading
 import tomllib
 import urllib.error
-from collections.abc import Collection, Generator, Mapping, Sequence
+from collections.abc import Callable, Collection, Generator, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from http import HTTPStatus
@@ -48,7 +48,8 @@ from heinzel.kernel import (
     ThemeLet,
     subprocess_environment,
 )
-from heinzel.modules.system._github import GITHUB_API
+from heinzel.modules.system._github import GITHUB_API, RateLimitedError
+from heinzel.modules.system.plugin._feed import feed_showcase, load_feed, raw_image_size, raw_text, soundscape_hints
 from heinzel.modules.system.plugin._models import (
     Action,
     AvailablePlugin,
@@ -61,9 +62,11 @@ from heinzel.modules.system.plugin._models import (
     PluginOperation,
     PluginSearch,
     PluginSettings,
+    PluginShowcase,
     Source,
 )
 from heinzel.modules.system.plugin._receipts import PluginReceipts
+from heinzel.modules.system.plugin._showcase import public_showcase, raw_showcase
 from heinzel.modules.system.plugin._sources import (
     PREFIX,
     JsonGetter,
@@ -83,6 +86,8 @@ from heinzel.modules.system.plugin._sources import (
 TEMPLATE = "gh:helmut-hoffer-von-ankershoffen/heinzel"
 REPOSITORY = "https://github.com/helmut-hoffer-von-ankershoffen/heinzel"
 MAINTAINERS = "Heinzelmännchen maintainers"
+_PUBLISHED_REPOSITORY = re.compile(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+")
+_PUBLISHED_DIRECTORY = re.compile(r"\.|[A-Za-z0-9_][A-Za-z0-9_./-]{0,200}")
 _CATALOG_CACHE: dict[str, list[tuple[str, str, str]]] = {}
 """Last successfully read source metadata; a transient source outage retains its catalog."""
 TOPIC = "heinzel-plugin"
@@ -164,9 +169,75 @@ class PluginService:
         """Reads the GitHub API for `add`; tests replace it."""
         self.pypi: JsonGetter = pypi_get
         """Reads PyPI's JSON API for `add`; tests replace it."""
+        self.feed: Callable[[], list[dict[str, Any]]] = self._read_feed
+        """Reads the published static catalog (no GitHub request); tests replace it."""
+        self.raw_text = raw_text
+        """Reads a small public file from raw.githubusercontent.com; tests replace it."""
+        self.raw_size = raw_image_size
+        """The size and type of a public file from raw.githubusercontent.com; tests replace it."""
         self._catalog_warnings: list[str] = []
+        self._published_repositories: set[str] = set()
         self.distributions: Mapping[str, Distribution] | None = None
         """Installed plugin distributions by canonical name; read from the entry points when None (tests set it)."""
+
+    def showcase(self, spec: str) -> PluginShowcase:
+        """Read a public plugin's immutable screenshots before installation.
+
+        Raises:
+            HeinzelError: If the specification or public media is unsafe.
+            OSError: If public source metadata cannot be read.
+            ValueError: If public metadata is malformed.
+        """
+        spec = spec.strip()
+        resolved = spec
+        if spec.replace("-", "").isalnum():
+            wanted = canonicalize_name(spec if spec.startswith(PREFIX) else PREFIX + spec)
+            matches = [entry for entry in self.search(spec.removeprefix(PREFIX)).plugins if entry.name == wanted]
+            if len(matches) > 1:
+                message = "Several plugins have that name; preview an exact catalog specification"
+                raise HeinzelError(message)
+            if matches:
+                resolved = matches[0].install_spec
+        try:
+            return self._preview(parse(resolved))
+        except RateLimitedError as error:
+            raise HeinzelError(error.message()) from error
+        except (OSError, ValueError, KeyError, TypeError) as error:
+            message = "The plugin's public previews could not be read. Try again or open its owning repository."
+            raise HeinzelError(message) from error
+
+    def _preview(self, source: PluginSource) -> PluginShowcase:
+        """Preview a source, spending a GitHub API request only when nothing cheaper can answer.
+
+        Order: the published catalog (if it describes this very revision), then the pinned revision's own files on
+        raw.githubusercontent.com, then the GitHub API (to resolve a branch, or to list undeclared soundscapes).
+        """
+        hints: list[str] = []
+        try:
+            catalog = self.feed()
+            published = feed_showcase(source, catalog)
+            hints = soundscape_hints(source, catalog)
+        except (OSError, ValueError):
+            published = None  # the catalog is an optimisation; GitHub can still answer
+        if published is not None:
+            return published
+        pinned = raw_showcase(source, self.raw_text, self.raw_size, hints)
+        if pinned is None:
+            return public_showcase(source, self.github_api)
+        gallery, discover = pinned
+        if not discover:
+            return gallery
+        try:
+            return public_showcase(source, self.github_api)
+        except (OSError, ValueError, KeyError, TypeError):
+            note = " Soundscape links could not be listed right now."
+            return gallery.model_copy(update={"notice": gallery.notice + note})
+
+    def _read_feed(self) -> list[dict[str, Any]]:
+        url = self._settings.catalog_feed
+        if not url:
+            return []
+        return load_feed(url, self._kernel.settings.cache_dir)
 
     # Listing.
 
@@ -666,10 +737,16 @@ class PluginService:
         ]
         try:
             sources.extend(self._github_repositories(text))
+        except RateLimitedError as error:
+            warnings.append(f"Community search is paused. {error.message()}")
         except (OSError, ValueError, KeyError, TypeError):
             warnings.append("Topic search is unavailable; showing configured catalogs and cached metadata.")
         found: dict[tuple[str, str], AvailablePlugin] = {}
         seen: set[str] = set()
+        for entry in self._published_plugins(installed):
+            if all(word in f"{entry.name} {entry.description}".casefold() for word in words):
+                found.setdefault((entry.name, entry.install_spec), entry)
+        seen.update(self._published_repositories)
         for repository in sources:
             identity = str(repository.get("full_name", ""))
             if identity in seen or repository.get("archived"):
@@ -682,6 +759,49 @@ class PluginService:
             plugins=sorted(found.values(), key=lambda entry: (entry.community, -(entry.stars or 0), entry.name)),
             warnings=warnings + self._catalog_warnings,
         )
+
+    def _published_plugins(self, installed: Collection[str]) -> list[AvailablePlugin]:
+        """First-party plugins from the published static catalog: no GitHub request, and public sources only."""
+        self._published_repositories = set()
+        try:
+            entries = self.feed()
+        except (OSError, ValueError):
+            return []  # GitHub answers instead
+        plugins: list[AvailablePlugin] = []
+        for entry in entries:
+            source = entry.get("source")
+            if not isinstance(source, dict) or source.get("visibility") != "public":
+                continue
+            repository, name = source.get("repository"), entry.get("name")
+            directory = entry.get("directory")
+            if (
+                not isinstance(repository, str)
+                or not isinstance(name, str)
+                or not isinstance(directory, str)
+                or not name.startswith(PREFIX)
+                or not _PUBLISHED_REPOSITORY.fullmatch(repository)
+                or not _PUBLISHED_DIRECTORY.fullmatch(directory)
+            ):
+                continue
+            url = f"https://github.com/{repository}"
+            path = "" if directory == "." else directory
+            self._published_repositories.add(repository)
+            plugins.append(
+                AvailablePlugin(
+                    name=name,
+                    short_name=name.removeprefix(PREFIX),
+                    description=str(entry.get("summary") or "")[:300],
+                    source="first-party" if _is_first_party(url) else "github",
+                    community=not _is_first_party(url),
+                    install_spec=f"{name} @ git+{url}" + (f"#subdirectory={path}" if path else ""),
+                    url=f"{url}/tree/main/{path}" if path else url,
+                    repository_url=repository_url(f"git+{url}"),
+                    private_repository=False,
+                    stars=0,
+                    installed=canonicalize_name(name) in installed,
+                )
+            )
+        return plugins
 
     def _github_repositories(self, text: str) -> list[dict[str, Any]]:
         """Repositories with the topic heinzel-plugin that match `text`.
