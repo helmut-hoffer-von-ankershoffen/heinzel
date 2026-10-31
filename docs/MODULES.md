@@ -30,6 +30,7 @@ mode (`hz system expert on`); every one runs either way, and MCP and REST list t
 | [`system.notify`](#systemnotify) | Pop up what deserves your attention: in the web app while it is open, else natively. |
 | [`system.plugin`](#systemplugin) | Find, add, remove, enable, disable, list and scaffold plugins. |
 | [`system.plugin.docs`](#systemplugindocs) | Document installed plugins: what each brings, as a model and as Markdown pages. |
+| [`system.prerequisite`](#systemprerequisite) | Inspect and prepare the external tools modules need. |
 | [`system.runner`](#systemrunner) | Run bounded agent sessions with Claude Code or a configured command. |
 | [`system.runner.chat`](#systemrunnerchat) | Chat with the agent runner about where you are; it acts through hz once you confirm. |
 | [`system.skill`](#systemskill) | List the skills plugins ship for AI, and hand chosen ones to Claude Code. |
@@ -342,6 +343,18 @@ Document installed plugins: what each brings, as a model and as Markdown pages.
 | --- | --- | --- | --- | --- | --- | --- |
 | Show what each installed plugin brings; `--json` is the full model its page is built from. | `hz system plugin docs show` | `system_plugin_docs_show` | — | `GET /api/system/plugin/docs/show` |  | expert |
 | Write a Markdown page per installed plugin, with theme swatches and its recordings when they exist. | `hz system plugin docs build` | `system_plugin_docs_build` | — | — | yes | expert |
+
+## `system.prerequisite`
+
+Inspect and prepare the external tools modules need.
+
+| Operation | CLI | MCP tool | REST | Web | Changes state | Expert |
+| --- | --- | --- | --- | --- | --- | --- |
+| List the external tools modules declare and how each is installed, without checking this machine. | `hz system prerequisite list` | `system_prerequisite_list` | `GET /system/prerequisite/list` | `GET /api/system/prerequisite/list` |  | expert |
+| Check locally whether the declared tools are usable, without installing anything or signing in. | `hz system prerequisite check` | `system_prerequisite_check` | — | `GET /api/system/prerequisite/check` |  | expert |
+| Install missing tools with Homebrew on macOS, or show what to do by hand; nothing is signed in. | `hz system prerequisite install` | — | — | — | yes | expert |
+
+Health checks: reported by `hz system doctor`.
 
 ## `system.runner`
 

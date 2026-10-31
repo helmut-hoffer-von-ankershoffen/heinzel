@@ -34,7 +34,7 @@ _OSASCRIPT = (
     "end run",
 )
 """A fixed script: the strings are its arguments, never part of its source."""
-_SESSION = ("DBUS_SESSION_BUS_ADDRESS", "DISPLAY", "WAYLAND_DISPLAY")
+SESSION = ("DBUS_SESSION_BUS_ADDRESS", "DISPLAY", "WAYLAND_DISPLAY")
 """Without one of these there is no desktop session to show a notification in."""
 HEINZEL = "heinzel-notifier"
 BANNERS = (
@@ -187,7 +187,7 @@ def _linux(which: Callable[[str], str | None], environ: Mapping[str, str], runne
             detail="notify-send isn't on PATH, so the daemon can't pop up notifications",
             fix="install libnotify (notify-send), e.g. `sudo apt install libnotify-bin`",
         )
-    if not any(environ.get(name) for name in _SESSION):
+    if not any(environ.get(name) for name in SESSION):
         return Native(
             None,
             detail="no desktop session (headless), so the daemon can't pop up notifications; "

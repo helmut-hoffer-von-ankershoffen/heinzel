@@ -6,11 +6,13 @@ you want, quiet mode, your profile's working hours unless a notice is urgent, no
 kept on this machine only (the state directory, bounded, pruned); nothing is sent anywhere.
 """
 
+import os
+import sys
 from typing import Annotated
 
 from pydantic import Field
 
-from heinzel import Check, Module, Notifications
+from heinzel import Check, ManualInstall, Module, Notifications
 from heinzel.modules.system.notify._models import (
     Channel,
     Delivered,
@@ -20,12 +22,34 @@ from heinzel.modules.system.notify._models import (
     Opened,
     Tested,
 )
+from heinzel.modules.system.notify._native import SESSION
 from heinzel.modules.system.notify._render import render_installed, render_list, render_tested
 from heinzel.modules.system.notify._service import NotifyService
 
 module = Module("notify", "Pop up what deserves your attention: in the web app while it is open, else natively.")
 module.settings(NotifySettings)
 module.service(NotifyService, NotifyService.for_user)
+
+
+def _linux_desktop(settings: NotifySettings) -> bool:
+    return (
+        sys.platform == "linux"
+        and settings.enabled
+        and not settings.quiet
+        and any(os.environ.get(name) for name in SESSION)
+    )
+
+
+module.prerequisite(
+    "notify-send",
+    title="notify-send",
+    purpose="Pops up desktop notifications on Linux.",
+    when="feature",
+    needed=_linux_desktop,
+    condition="This is a Linux desktop session and notifications are on and not quiet.",
+    linux=ManualInstall("Install libnotify, e.g. `sudo apt install libnotify-bin` or `sudo dnf install libnotify`."),
+    version_args=("--version",),
+)
 
 
 def _notifications(service: NotifyService) -> Notifications:

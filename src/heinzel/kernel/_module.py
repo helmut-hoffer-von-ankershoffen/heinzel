@@ -63,6 +63,7 @@ from heinzel.kernel._playbooks import (
     PlaybookSetup,
     templates_in,
 )
+from heinzel.kernel._prerequisites import Homebrew, ManualInstall, PrerequisiteContext, PrerequisiteLet
 from heinzel.kernel._prompter import Prompter
 from heinzel.kernel._skills import SkillLet, skills_in
 from heinzel.kernel._soundscapes import Soundscape, SoundscapeLet, sourced_soundscapes
@@ -444,6 +445,43 @@ class Module:
             return target
 
         return decorate if func is None else decorate(func)
+
+    def prerequisite(  # noqa: PLR0913 - a declaration's complete portable metadata
+        self,
+        name: str,
+        *,
+        purpose: str,
+        linux: ManualInstall,
+        macos: Homebrew | ManualInstall | None = None,
+        title: str = "",
+        when: PrerequisiteContext = "setup",
+        version_args: tuple[str, ...] = ("--version",),
+        minimum_version: str | None = None,
+        condition: str = "",
+        needed: Callable[..., bool] | None = None,
+    ) -> PrerequisiteLet:
+        """Declare an external tool once for installation, setup, doctor and generated documentation.
+
+        `needed` is an optional injected read-only predicate; `condition` explains it without executing it when
+        exporting documentation. This declaration neither starts a program nor replaces the module's setup step.
+
+        Raises:
+            ValueError: If the declaration is invalid or this module already declares the executable.
+        """
+        prerequisite = PrerequisiteLet(
+            name=name,
+            purpose=purpose,
+            linux=linux,
+            macos=macos,
+            title=title,
+            when=when,
+            version_args=version_args,
+            minimum_version=minimum_version,
+            condition=condition,
+            needed=needed,
+        )
+        self.add(prerequisite)
+        return prerequisite
 
     def credential(self, name: str, *, purpose: str, service: str | None = None) -> CredentialLet:
         """Declare a secret the module needs; pass the returned let to `Credentials.get` to read its value.

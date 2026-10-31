@@ -20,7 +20,7 @@ from packaging.utils import canonicalize_name
 from pydantic import ValidationError
 from pydantic_core import PydanticUndefined, to_jsonable_python
 
-from heinzel import HeinzelError, Kernel, __version__
+from heinzel import HeinzelError, Homebrew, Kernel, __version__
 from heinzel.kernel import (
     CORE_DISTRIBUTION,
     CredentialLet,
@@ -32,6 +32,7 @@ from heinzel.kernel import (
     ModuleRecord,
     OperationLet,
     PlaybookLet,
+    PrerequisiteLet,
     ProviderLet,
     RequirementLet,
     ServiceLet,
@@ -61,6 +62,7 @@ from heinzel.modules.system.plugin.docs._models import (
     ParameterDoc,
     PlaybookDoc,
     PluginPage,
+    PrerequisiteDoc,
     Recording,
     Scene,
     SettingDoc,
@@ -79,6 +81,7 @@ SECTIONED_LETS = (
     OperationLet,
     SettingsLet,
     CredentialLet,
+    PrerequisiteLet,
     ProviderLet,
     RequirementLet,
     ThemeLet,
@@ -283,6 +286,7 @@ class DocsService:
             operations=operations,
             settings=[s for let in settings for s in _settings(record.qualname, let)],
             credentials=[_credential(record, let) for let in lets if isinstance(let, CredentialLet)],
+            prerequisites=[_prerequisite(record, let) for let in lets if isinstance(let, PrerequisiteLet)],
             health_checks=any(isinstance(let, HealthLet) for let in lets),
             info=any(isinstance(let, InfoLet) for let in lets),
             setup=SetupDoc(
@@ -480,6 +484,28 @@ def _credential(record: ModuleRecord, let: CredentialLet) -> CredentialDoc:
     service = let.service or record.qualname
     command = f"hz system credential set {let.name}" + (f" --service {service}" if let.service else "")
     return CredentialDoc(name=let.name, purpose=let.purpose, service=service, command=command)
+
+
+def _prerequisite(record: ModuleRecord, let: PrerequisiteLet) -> PrerequisiteDoc:
+    """The page's row, from the one declaration doctor, setup and the installer read; no predicate runs."""
+    if isinstance(let.macos, Homebrew):
+        macos = f"`brew install {'--cask ' if let.macos.cask else ''}{let.macos.package}`"
+    elif let.macos is not None:
+        macos = let.macos.text
+    else:
+        macos = "Not needed or no installer declared."
+    return PrerequisiteDoc(
+        executable=let.name,
+        title=let.title or let.name,
+        purpose=let.purpose,
+        when=let.when,
+        condition=let.condition,
+        minimum_version=let.minimum_version,
+        macos=macos,
+        linux=let.linux.text,
+        check=f"hz system prerequisite check --owner {record.qualname}"
+        + (" --context feature" if let.when == "feature" else ""),
+    )
 
 
 def _adapter(let: ProviderLet) -> AdapterDoc:

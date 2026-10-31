@@ -14,8 +14,10 @@ from heinzel import (
     Event,
     FreeBusy,
     HeinzelError,
+    Homebrew,
     Kernel,
     Let,
+    ManualInstall,
     Module,
     ModuleSettings,
     Prompter,
@@ -59,6 +61,17 @@ def weather() -> tuple[Module, Module]:
     module = Module("weather", "The weather for the team's cities.", requires=["calendar:read"])
     module.settings(WeatherSettings)
     module.credential("api-key", purpose="Read the forecast service; get one at its site.")
+    module.prerequisite(
+        "stormglass",
+        title="Storm Glass",
+        purpose="Reads the barometer | the weather station.",
+        when="feature",
+        needed=lambda: False,
+        condition="The barometer feed is selected.",
+        minimum_version="2.1",
+        macos=Homebrew("stormglass"),
+        linux=ManualInstall("Install it with your package manager.", "https://example.test/stormglass"),
+    )
 
     @module.operation(audience="everyday")
     def today(
@@ -153,6 +166,15 @@ def test_the_page_names_every_kind_of_let(documentation):
     assert module.settings[0].default == '"Cologne"'
     assert module.settings[1].type == "string or null"  # never a `|`: it sits in a Markdown table cell
     assert module.credentials[0].command == "hz system credential set api-key"
+    [prerequisite] = module.prerequisites
+    assert (prerequisite.executable, prerequisite.when, prerequisite.minimum_version) == (
+        "stormglass",
+        "feature",
+        "2.1",
+    )
+    assert prerequisite.macos == "`brew install stormglass`"
+    assert prerequisite.linux == "Install it with your package manager. https://example.test/stormglass"
+    assert prerequisite.check == "hz system prerequisite check --owner weather --context feature"
     assert module.health_checks
     assert module.info
     assert module.setup is not None
@@ -360,6 +382,7 @@ def test_the_page_renders_every_section(documentation):
         "## Themes",
         "## Operations",
         "## Settings",
+        "## Prerequisites",
         "## Credentials",
         "## Capabilities served",
         "## Playbooks",
@@ -371,6 +394,14 @@ def test_the_page_renders_every_section(documentation):
     assert f'| `city` | string | `"Cologne"` | `{env_prefix("weather")}CITY` |' in text
     assert "Not recorded yet" in text
     assert "Raises" not in text
+    row = next(line for line in text.splitlines() if line.startswith("| `stormglass`"))
+    assert row == (
+        "| `stormglass` (version 2.1 or newer) | Reads the barometer \\| the weather station. "
+        "| The barometer feed is selected. | `brew install stormglass` "
+        "| Install it with your package manager. https://example.test/stormglass "
+        "| `hz system prerequisite check --owner weather --context feature` |"
+    )
+    assert "removing the plugin keeps the program" in text
     svg = _render.swatches(page.themes[0])
     assert svg.startswith("<svg")
     assert 'aria-label="Weather: colours in light and dark mode"' in svg
@@ -556,3 +587,24 @@ def test_the_core_is_a_page_when_asked_for(kernel):
     assert core.scenes == []  # the core's scenes are declared, never derived
     assert any(module.qualname == "system.plugin.docs" for module in core.modules)
     assert Path(core.install.split()[-1].removeprefix("git+")).name == "heinzel"
+
+
+def test_a_page_without_prerequisites_has_no_such_section(make_kernel):
+    module = Module("plain", "Declares nothing external.")
+    k = make_kernel(builtins=True)
+    kernel = Kernel(
+        k.settings, [*k.modules, ModuleRecord(qualname="plain", module=module, origin=ORIGIN)], config=k.config
+    )
+
+    [page] = kernel.resolve(DocsService).documentation(plugin="weather").pages
+
+    assert "## Prerequisites" not in _render.page(page)
+
+
+def test_the_cores_own_page_lists_the_baseline_tools(kernel):
+    [page] = [p for p in kernel.resolve(DocsService).documentation(builtin=True).pages if p.builtin]
+
+    text = _render.page(page)
+    assert "| `git` |" in text
+    assert "| `gh` |" in text
+    assert "`brew install gh`" in text
