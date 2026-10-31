@@ -49,7 +49,7 @@ from heinzel.kernel import (
     subprocess_environment,
 )
 from heinzel.modules.system._github import GITHUB_API, RateLimitedError
-from heinzel.modules.system.plugin._feed import feed_showcase, load_feed, raw_image_size, raw_text
+from heinzel.modules.system.plugin._feed import feed_showcase, load_feed, raw_image_size, raw_text, soundscape_hints
 from heinzel.modules.system.plugin._models import (
     Action,
     AvailablePlugin,
@@ -212,13 +212,16 @@ class PluginService:
         Order: the published catalog (if it describes this very revision), then the pinned revision's own files on
         raw.githubusercontent.com, then the GitHub API (to resolve a branch, or to list undeclared soundscapes).
         """
+        hints: list[str] = []
         try:
-            published = feed_showcase(source, self.feed())
+            catalog = self.feed()
+            published = feed_showcase(source, catalog)
+            hints = soundscape_hints(source, catalog)
         except (OSError, ValueError):
             published = None  # the catalog is an optimisation; GitHub can still answer
         if published is not None:
             return published
-        pinned = raw_showcase(source, self.raw_text, self.raw_size)
+        pinned = raw_showcase(source, self.raw_text, self.raw_size, hints)
         if pinned is None:
             return public_showcase(source, self.github_api)
         gallery, discover = pinned

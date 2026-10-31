@@ -204,6 +204,27 @@ def test_an_installed_older_revision_uses_its_own_raw_files_not_the_catalog():
     assert OTHER in seen[0]
 
 
+def test_hinted_soundscapes_are_read_at_the_installed_revision_without_the_api():
+    sound = 'kind = "stream"\ntitle = "Tide"\n[stream]\nprovider = "youtube"\nvideo = "abcdefghijk"\n'
+
+    def text(url, limit):
+        if url.endswith("pyproject.toml"):
+            return PROJECT
+        if url.endswith("/src/h/soundscapes/tide.toml") and OTHER in url:
+            return sound
+        raise LookupError(url)  # a hinted file this revision no longer has is skipped
+
+    hinted = entry(
+        soundscapes=[
+            {"title": "Tide", "video": "abcdefghijk", "path": "plugins/heinzel-harbor/src/h/soundscapes/tide.toml"},
+            {"title": "Gone", "video": "abcdefghijl", "path": "plugins/heinzel-harbor/src/h/soundscapes/gone.toml"},
+        ]
+    )
+    gallery = service([hinted], raw_text=text, raw_size=lambda u: (5, "image/png")).showcase(OLDER)
+    assert [link.title for link in gallery.soundscapes] == ["Tide"]
+    assert "newer one may be missing" in gallery.notice
+
+
 def test_undeclared_soundscape_discovery_degrades_when_github_is_rate_limited():
     def limited(path):
         raise _github.RateLimitedError(None, authenticated=False)

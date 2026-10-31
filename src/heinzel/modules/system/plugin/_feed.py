@@ -268,3 +268,18 @@ def raw_image_size(url: str) -> tuple[int, str]:
     _, headers = _raw_request(url, "HEAD", 0)
     length = headers.get("Content-Length", "")
     return (int(length) if length.isdigit() else -1), str(headers.get("Content-Type", "")).split(";")[0].strip()
+
+
+def soundscape_hints(source: PluginSource, plugins: list[dict[str, Any]]) -> list[str]:
+    """Project-relative soundscape paths the published catalog lists for this plugin, at whatever revision it names."""
+    entry = entry_for(source, plugins)
+    if entry is None or not isinstance(entry.get("soundscapes"), list):
+        return []
+    directory = _directory(entry.get("directory"))
+    prefix = directory + "/" if directory else ""
+    hints: list[str] = []
+    for value in cast("list[object]", entry["soundscapes"])[:MAX_SOUNDS]:
+        path = _table(value).get("path")
+        if isinstance(path, str) and path.startswith(prefix) and RELATIVE.fullmatch(path[len(prefix) :]):
+            hints.append(path[len(prefix) :])
+    return hints
