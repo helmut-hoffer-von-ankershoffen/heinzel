@@ -17,11 +17,28 @@ from packaging.version import InvalidVersion, Version
 CACHE_FILENAME = "release.json"
 
 
+@dataclass(frozen=True)
+class EdgeRelease:
+    """The newest edge release (ADR 0114): an immutable wheel on GitHub, bound by its digest."""
+
+    version: str
+    wheel: str
+    sha256: str
+
+
 class ReleaseSource:
     """Where the latest release of Heinzelmännchen comes from; the system module provides a subclass (ADR 0031).
 
     A base class rather than a protocol, so that the kernel can inject it by type like any other service.
     """
+
+    def edge_release(self, timeout: float) -> EdgeRelease:
+        """The newest edge release; asked only after someone chose the edge channel.
+
+        Raises:
+            NotImplementedError: Always; subclasses ask their package source.
+        """
+        raise NotImplementedError
 
     def latest_version(self, timeout: float) -> str:
         """The version of the latest release, waiting at most `timeout` seconds per network operation.

@@ -156,7 +156,7 @@ def add_updates(app: FastAPI, kernel: Kernel, static: Path | None, *, restartabl
         enabled = kernel.settings.update_check
         pin = installation.core_pin()
         source_allowed = pin is not None and (
-            pin.kind in {"release", "default", "index"} or (pin.kind == "ref" and pin.ref == "main")
+            pin.kind in {"release", "default", "index"} or pin.is_edge or (pin.kind == "ref" and pin.ref == "main")
         )
         reason = (
             "Restart this UI with hz ui before updating."

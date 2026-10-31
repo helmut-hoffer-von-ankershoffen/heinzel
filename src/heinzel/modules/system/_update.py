@@ -46,6 +46,9 @@ from heinzel.modules.system.plugin._sources import git_credentials
 DEFAULT_BRANCH = "main"
 """The repository's default branch: a pin to it is kept in place, the way an install without a ref is."""
 
+type UpdateChannel = Literal["stable", "edge", "main", "release"]
+"""Where updates come from; `release` is the earlier name of stable, still accepted (ADR 0114)."""
+
 PLACEHOLDER_TAG = "vX.Y.Z"
 """Stands in for the latest release tag in a suggested command when the package source couldn't be asked."""
 
@@ -208,11 +211,12 @@ class UpdateService:
         return result
 
     def update(
-        self, source: str | None = None, current: str = __version__, channel: Literal["release", "main"] = "release"
+        self, source: str | None = None, current: str = __version__, channel: UpdateChannel = "stable"
     ) -> UpdateResult:
         """Update to the latest release, or reinstall from `source`; `current` is the version running now.
 
-        `channel` is where the installation follows: the releases (a pin to the newest release tag, which every later
+        `channel` is where the installation follows: `edge` (the newest edge release's wheel, verified by digest) or
+        stable, which `release` also names: the releases (a pin to the newest release tag, which every later
         update follows; an installation on `main` moves there once a release is as new as it, never as a downgrade) or
         `main` (its newest commit).
 
@@ -240,6 +244,14 @@ class UpdateService:
                 generation=generation,
             )
             return self._with_release_hint(pin, result)
+        if channel == "edge":
+            return self._to_edge(pin, plugins, current, generation)
+        return self._to_stable(pin, plugins, current, generation)
+
+    def _to_stable(self, pin: CorePin, plugins: list[CorePin], current: str, generation: str | None) -> UpdateResult:
+        """Follow stable from wherever the installation is pinned."""
+        if pin.is_edge:
+            return self._from_edge(pin, plugins, current, generation)
         if pin.kind == "release":
             return self._to_latest_release(pin, plugins, current, generation)
         if pin.kind == "ref" and pin.ref == DEFAULT_BRANCH:
@@ -256,6 +268,105 @@ class UpdateService:
         if pin.git is not None:
             return pin.at(ref)
         return f"{pin.name} @ git+https://github.com/{DEFAULT_REPOSITORY}@{ref}"
+
+    def _to_edge(self, pin: CorePin, plugins: list[CorePin], current: str, generation: str | None) -> UpdateResult:
+        """Install the newest edge release, unless that would move back or the installation is pinned on purpose.
+
+        Raises:
+            HeinzelError: If the edge pointer can't be read.
+        """
+        if pin.kind in ("commit", "local", "url") and not pin.is_edge:
+            return self._with_plugins(self._pinned(pin, current), pin, plugins, generation)
+        try:
+            edge = self._releases.edge_release(RELEASE_TIMEOUT)
+        # Isolation boundary: whatever the package source raises, the user gets one error with what to do.
+        except Exception as exc:
+            msg = f"Could not ask for the newest edge release ({exc}); hz {current} stays as it is."
+            raise HeinzelError(msg) from exc
+        if Version(edge.version) <= _version(current):
+            message = f"hz {current} is up to date (edge; the newest edge release is {edge.version})."
+            same = UpdateResult(
+                before=current,
+                after=current,
+                latest=edge.version,
+                pinned_to=pin.ref,
+                updated=False,
+                message=message,
+                next=[],
+            )
+            return self._with_plugins(same, pin, plugins, generation)
+        return self._install(
+            f"{pin.name} @ {edge.wheel}#sha256={edge.sha256}",
+            pin,
+            plugins,
+            current=current,
+            latest=edge.version,
+            target=f"edge {edge.version}",
+            channel="edge",
+            generation=generation,
+        )
+
+    def _from_edge(self, pin: CorePin, plugins: list[CorePin], current: str, generation: str | None) -> UpdateResult:
+        """Move to stable once it is at least as new; until then edge stays, because nothing ever downgrades.
+
+        Raises:
+            HeinzelError: If the highest stable release can't be asked for.
+        """
+        try:
+            stable = self._releases.highest_version(RELEASE_TIMEOUT, prereleases=False)
+        # Isolation boundary: whatever the package source raises, the user gets one error with what to do.
+        except Exception as exc:
+            msg = f"Could not ask for the newest stable release ({exc}); hz {current} stays as it is."
+            raise HeinzelError(msg) from exc
+        if Version(stable) < _version(current):
+            message = (
+                f"hz {current} (edge) is newer than stable {stable}, so it stays until stable catches up. Nothing is "
+                "downgraded and your data is unchanged.\nTo follow edge again: hz system channel --to edge --yes"
+            )
+            ahead = UpdateResult(
+                before=current, after=current, latest=stable, pinned_to=pin.ref, updated=False, message=message, next=[]
+            )
+            return self._with_plugins(ahead, pin, plugins, generation)
+        return self._install(
+            f"{pin.name}>={stable}",
+            pin,
+            plugins,
+            current=current,
+            latest=stable,
+            target=f"stable {stable}",
+            channel="stable",
+            generation=generation,
+        )
+
+    def channel_statement(self, selected: UpdateChannel, target: UpdateChannel, current: str = __version__) -> str:
+        """What choosing `target` changes, said before it happens; asks the network and changes nothing."""
+        chosen = "stable" if target == "release" else target
+        if chosen == ("stable" if selected == "release" else selected):
+            return f"You are already on {chosen}, with hz {current}. Nothing changes."
+        lines = [f"Moves from {selected} to {chosen}. Nothing is installed until you run hz system update."]
+        lines.append(self._channel_effect(chosen, current))
+        lines.append("Your settings, plugins and data stay. Switch again at any time; the choice survives updates.")
+        return "\n".join(lines)
+
+    def _channel_effect(self, chosen: str, current: str) -> str:
+        try:
+            if chosen == "edge":
+                newest = self._releases.edge_release(RELEASE_TIMEOUT).version
+                if Version(newest) <= _version(current):
+                    return f"hz {current} stays: the newest edge release, {newest}, is not newer."
+                return f"That update moves hz {current} to edge {newest}: every green change, sooner and less tested."
+            if chosen == "main":
+                return f"That update moves hz {current} to the newest commit of main."
+            stable = self._releases.highest_version(RELEASE_TIMEOUT, prereleases=False)
+        # Isolation boundary: not knowing the versions must not stop the choice; the statement says so.
+        except Exception as exc:  # noqa: BLE001
+            return f"The newest {chosen} version could not be asked for now ({exc})."
+        if Version(stable) < _version(current):
+            return (
+                f"hz {current} is newer than stable {stable}, so it stays until stable catches up. It is never "
+                "downgraded."
+            )
+        return f"That update moves hz {current} to stable {stable}, which has passed acceptance."
 
     def _switch_to_releases(
         self, pin: CorePin, plugins: list[CorePin], current: str, generation: str | None

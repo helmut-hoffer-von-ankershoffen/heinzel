@@ -2,11 +2,13 @@ import json
 import shlex
 import subprocess
 import sys
+from types import SimpleNamespace
 
 import pytest
 
 from heinzel import HeinzelError, Progress
-from heinzel.kernel import Installation, ReleaseSource
+from heinzel.kernel import CorePin, EdgeRelease, Installation, ReleaseSource, Settings
+from heinzel.modules.system._service import _edge_release, _published_version
 from heinzel.modules.system._update import UpdateService, blocking_plugins
 
 pytestmark = pytest.mark.unit
@@ -1390,3 +1392,156 @@ def test_conflicting_direct_source_is_refused_before_uv(tmp_path):
     with pytest.raises(HeinzelError, match="conflict with existing constraints"):
         UpdateService(target, FakeReleases("1.0.0")).update(source=str(other), current="0.9.6")
     assert not uv.commands
+
+
+EDGE_WHEEL = (
+    "https://github.com/helmut-hoffer-von-ankershoffen/heinzel/releases/download/"
+    "edge-v0.5.0.dev7/heinzel-0.5.0.dev7-py3-none-any.whl"
+)
+
+
+class FakeChannels(FakeReleases):
+    """Stable and edge as separate answers, recording whether edge was ever asked."""
+
+    def __init__(self, highest="0.4.0", edge="0.5.0.dev7"):
+        super().__init__(highest)
+        self.edge = edge
+        self.edge_asked = 0
+
+    def edge_release(self, timeout):
+        self.edge_asked += 1
+        return EdgeRelease(self.edge, EDGE_WHEEL, "a" * 64)
+
+
+def _edge_pin():
+    return CorePin("url", f"heinzel @ {EDGE_WHEEL}", EDGE_WHEEL)
+
+
+def _channels(pin, releases):
+    """A service seeing `pin`, whose install step is recorded instead of run."""
+    service = object.__new__(UpdateService)
+    service._installation = SimpleNamespace(
+        core_pin=lambda: pin, requirements=lambda: [pin.requirement], plugin_pins=list
+    )
+    service._releases = releases
+    service._automatic_generation = lambda _current: None
+    service._with_plugins = lambda result, *_a: result
+    service.installs = []
+
+    def record(core, *_args, **kwargs):
+        service.installs.append((core, kwargs.get("channel")))
+        return "installed"
+
+    service._install = record
+    return service
+
+
+@pytest.mark.parametrize(
+    "pin",
+    [CorePin("index", "heinzel"), CorePin("release", f"heinzel @ git+{REPO}@v0.3.0", "v0.3.0", git=REPO)],
+)
+@pytest.mark.parametrize("channel", ["stable", "release"])
+def test_the_default_channel_never_asks_for_or_installs_edge(pin, channel):
+    releases = FakeChannels()
+    service = _channels(pin, releases)
+    service.update(current="0.3.0", channel=channel)
+    assert releases.edge_asked == 0
+    assert all("edge" not in core for core, _ in service.installs)
+
+
+def test_stable_to_edge_installs_the_digest_bound_wheel():
+    service = _channels(CorePin("index", "heinzel"), FakeChannels())
+    assert service.update(current="0.4.0", channel="edge") == "installed"
+    assert service.installs == [(f"heinzel @ {EDGE_WHEEL}#sha256={'a' * 64}", "edge")]
+
+
+def test_edge_never_moves_back_to_an_older_edge():
+    service = _channels(_edge_pin(), FakeChannels(edge="0.5.0.dev7"))
+    result = service.update(current="0.5.0.dev9", channel="edge")
+    assert service.installs == []
+    assert result.updated is False
+
+
+def test_edge_to_stable_stays_until_stable_catches_up():
+    releases = FakeChannels(highest="0.4.0")
+    service = _channels(_edge_pin(), releases)
+    result = service.update(current="0.5.0.dev7", channel="stable")
+    assert service.installs == []
+    assert result.after == "0.5.0.dev7"
+    assert "stays until stable catches up" in result.message
+    assert "Nothing is downgraded" in result.message
+    assert releases.asked == [False]
+
+
+@pytest.mark.parametrize("stable", ["0.5.0", "0.5.1"])
+def test_edge_to_stable_moves_once_stable_is_as_new(stable):
+    service = _channels(_edge_pin(), FakeChannels(highest=stable))
+    assert service.update(current="0.5.0.dev7", channel="stable") == "installed"
+    assert service.installs == [(f"heinzel>={stable}", "stable")]
+
+
+def test_someone_elses_wheel_stays_pinned_on_edge():
+    other = CorePin("url", "heinzel @ https://example.org/heinzel.whl", "https://example.org/heinzel.whl")
+    releases = FakeChannels()
+    service = _channels(other, releases)
+    service._pinned = lambda *_a: "pinned"
+    assert service.update(current="0.4.0", channel="edge") == "pinned"
+    assert releases.edge_asked == 0
+
+
+@pytest.mark.parametrize(
+    ("selected", "target", "current", "says"),
+    [
+        ("stable", "edge", "0.4.0", "moves hz 0.4.0 to edge 0.5.0.dev7"),
+        ("edge", "stable", "0.5.0.dev7", "stays until stable catches up"),
+        ("edge", "stable", "0.4.0", "moves hz 0.4.0 to stable 0.4.0"),
+        ("stable", "stable", "0.4.0", "Nothing changes"),
+        ("release", "stable", "0.4.0", "Nothing changes"),
+    ],
+)
+def test_the_statement_says_what_switching_changes_first(selected, target, current, says):
+    statement = _channels(CorePin("index", "heinzel"), FakeChannels()).channel_statement(selected, target, current)
+    assert says in statement
+    if selected not in {target, "release"}:
+        assert "Nothing is installed until you run hz system update" in statement
+        assert "settings, plugins and data stay" in statement
+
+
+def test_the_old_release_setting_still_means_stable():
+    assert Settings(update_channel="release").update_channel == "stable"
+    assert Settings().update_channel == "stable"
+
+
+@pytest.mark.parametrize(
+    "release",
+    [
+        {"tag_name": "edge-v0.9.10.dev7", "prerelease": True},
+        {"tag_name": "edge-channel", "prerelease": True},
+        {"tag_name": "v0.9.10", "prerelease": True},  # held for acceptance
+    ],
+)
+@pytest.mark.parametrize("prereleases", [False, True])
+def test_edge_and_held_releases_are_never_a_stable_version(release, prereleases):
+    assert _published_version({"draft": False, **release}, prereleases=prereleases) is None
+
+
+@pytest.mark.parametrize(
+    "pointer",
+    [
+        [],
+        {"version": "0.5.0", "wheel": EDGE_WHEEL, "sha256": "a" * 64},
+        {
+            "version": "0.5.0.dev7",
+            "wheel": "https://example.org/heinzel-0.5.0.dev7-py3-none-any.whl",
+            "sha256": "a" * 64,
+        },
+        {"version": "0.5.0.dev7", "wheel": EDGE_WHEEL, "sha256": "short"},
+    ],
+)
+def test_a_wrong_edge_pointer_is_refused(pointer):
+    with pytest.raises((TypeError, ValueError), match="edge pointer"):
+        _edge_release(pointer)
+
+
+def test_a_valid_edge_pointer_is_read():
+    assert _edge_release({"version": "0.5.0.dev7", "wheel": EDGE_WHEEL, "sha256": "a" * 64}).wheel == EDGE_WHEEL

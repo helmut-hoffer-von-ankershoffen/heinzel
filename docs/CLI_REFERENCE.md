@@ -1630,6 +1630,7 @@ $ hz system [OPTIONS] COMMAND [ARGS]...
 * `agent`: (expert) Install the Heinzelmännchen...
 * `capability`: (expert) Show which adapters serve which...
 * `changelog`: (expert) Show the installed version&#x27;s...
+* `channel`: Show the update channel, or say what...
 * `claude`: (expert) See the MCP servers and skills...
 * `config`: (expert) Show, get, set and initialize...
 * `connector`: (expert) Show whether each connector is...
@@ -1767,6 +1768,24 @@ $ hz system changelog [OPTIONS]
 **Options**:
 
 * `--newer / --no-newer`: Show what the releases newer than the installed version bring instead, newest first; asks GitHub, with GH_TOKEN or GITHUB_TOKEN if set. As JSON: a list of {version, date, notes, url}.  [default: no-newer]
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz system channel`
+
+Show the update channel, or say what switching changes and, with `--yes`, switch.
+
+**Usage**:
+
+```console
+$ hz system channel [OPTIONS]
+```
+
+**Options**:
+
+* `--to <stable|edge|main>`: The channel to move to; without it, shows the current one.
+* `--yes / --no-yes`: Make the change that was described; without it, nothing changes.  [default: no-yes]
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
@@ -3459,7 +3478,7 @@ $ hz system update [OPTIONS]
 **Options**:
 
 * `--source <str>`: Install from here instead, e.g. git+https://github.com/org/heinzel@v1.2.0 or a wheel.
-* `--channel <release|main>`: Follow `release` (the default, setting `update_channel`): the newest release, also from `main` once a release is as new as it; or `main`: its newest commit.
+* `--channel <stable|edge|main|release>`: Follow `stable` (the default, setting `update_channel`; `release` is its earlier name): the newest accepted release, also from `main` or edge once it is as new; `edge`: the newest edge release; or `main`: its newest commit.
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.

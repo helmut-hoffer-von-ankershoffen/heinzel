@@ -1,10 +1,12 @@
 """Service of the system module."""
 
+import json
 import platform
 import re
 import sys
 import unicodedata
 import urllib.error
+import urllib.request
 from collections import defaultdict
 from datetime import date
 from typing import Any, cast, override
@@ -14,7 +16,7 @@ from packaging.version import InvalidVersion, Version
 from pydantic import BaseModel, SecretStr
 
 from heinzel import InfoLet, Kernel, __version__
-from heinzel.kernel import Installation, ReleaseCache, ReleaseSource
+from heinzel.kernel import EDGE_WHEEL_PREFIX, EdgeRelease, Installation, ReleaseCache, ReleaseSource
 from heinzel.modules.system import _github
 from heinzel.modules.system._models import ModuleInfo, ReleaseCheck, ReleaseNotes, SystemInfo
 
@@ -67,6 +69,11 @@ def repository_of(requirement: str | None) -> str:
 def _github_link(url: object) -> str | None:
     """`url` if it links to github.com; anything else in an answer stays out of the terminal."""
     return url if isinstance(url, str) and url.startswith("https://github.com/") else None
+
+
+EDGE_POINTER = f"https://github.com/{DEFAULT_REPOSITORY}/releases/download/edge-channel/edge.json"
+MAX_POINTER = 4096
+_SHA256 = re.compile(r"[0-9a-f]{64}")
 
 
 class GitHubReleases(ReleaseSource):
@@ -129,6 +136,22 @@ class GitHubReleases(ReleaseSource):
             raise ValueError(msg)
         return str(max(versions))
 
+    @override
+    def edge_release(self, timeout: float) -> EdgeRelease:
+        """The newest edge release from the channel pointer: a release asset, so it needs no API quota (ADR 0114).
+
+        Raises:
+            OSError: If GitHub can't be reached or answers with an error.
+            TypeError: If the pointer is no JSON object.
+            ValueError: If the pointer is too large, not JSON or names anything but an edge release.
+        """
+        request = urllib.request.Request(EDGE_POINTER, headers={"User-Agent": f"heinzel/{__version__}"})
+        body = _github._open(request, timeout)  # noqa: SLF001 - the one seam that reads from GitHub
+        if len(body) > MAX_POINTER:
+            msg = "the edge pointer is too large"
+            raise ValueError(msg)
+        return _edge_release(json.loads(body))
+
     def releases_url(self, page: int) -> str:
         """Where a page of releases, newest first, is asked for."""
         return f"{_github.GITHUB_API}/repos/{self.repository}/releases?per_page={PAGE_SIZE}&page={page}"
@@ -163,6 +186,29 @@ class GitHubReleases(ReleaseSource):
         return [found[key] for key in sorted(found, reverse=True)]
 
 
+def _edge_release(answer: object) -> EdgeRelease:
+    """The channel pointer's facts, each checked; the digest is what the installer then verifies against.
+
+    Raises:
+        TypeError: If the pointer is no JSON object.
+        ValueError: If the pointer doesn't name one edge release's wheel on the official repository.
+    """
+    if not isinstance(answer, dict):
+        msg = "the edge pointer is no JSON object"
+        raise TypeError(msg)
+    pointer = cast("dict[str, object]", answer)
+    version, wheel, digest = pointer.get("version"), pointer.get("wheel"), pointer.get("sha256")
+    if not (isinstance(version, str) and isinstance(wheel, str) and isinstance(digest, str)):
+        msg = "the edge pointer lacks its version, wheel or digest"
+        raise TypeError(msg)
+    parsed = Version(version)
+    expected = f"{EDGE_WHEEL_PREFIX}{version}/heinzel-{version}-py3-none-any.whl"
+    if str(parsed) != version or not parsed.is_devrelease or wheel != expected or not _SHA256.fullmatch(digest):
+        msg = "the edge pointer does not name an edge release"
+        raise ValueError(msg)
+    return EdgeRelease(version, wheel, digest)
+
+
 def _published_version(item: object, *, prereleases: bool) -> Version | None:
     """A published release's version from GitHub's answer; None for drafts, unwanted pre-releases and non-releases."""
     if not isinstance(item, dict):
@@ -176,6 +222,8 @@ def _published_version(item: object, *, prereleases: bool) -> Version | None:
         return None
     if (release.get("prerelease") or version.is_prerelease) and not prereleases:
         return None
+    if release.get("prerelease") and not version.is_prerelease:
+        return None  # a final version still held for acceptance (ADR 0114): not released yet, whoever asks
     return version
 
 
