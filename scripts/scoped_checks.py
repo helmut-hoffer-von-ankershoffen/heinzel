@@ -13,6 +13,7 @@ import argparse
 import json
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 TOOLKIT = (
@@ -92,8 +93,9 @@ def main() -> None:
         changed = sorted({*changed, *changed_paths("fast", args.base)})
         steps = scoped_steps(changed)
         if steps:
-            subprocess.run(["uv", "run", "--quiet", "--script", "scripts/steps.py", *steps], check=True, timeout=600)  # noqa: S603, S607 - fixed steps
-            return
+            command = ["uv", "run", "--quiet", "--script", "scripts/steps.py", *steps]
+            done = subprocess.run(command, check=False, timeout=600)  # noqa: S603 - fixed steps, no shell
+            sys.exit(done.returncode)
         args.mode = "fast"  # everything else is the full fast gate
     if not changed or not all(path.startswith("plugins/") for path in changed):
         subprocess.run(  # noqa: S603 - explicit owning commands, no shell

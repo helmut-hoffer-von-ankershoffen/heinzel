@@ -88,7 +88,8 @@ ESCALATE_PATHS: list[tuple[str, str]] = [
 # Path parts that mean sensitive code. Applied to code paths; Markdown is judged by its diff instead.
 SENSITIVE_WORDS = (
     "auth|oauth|approval|permission|security|secret|credential|password|token|keychain|crypto|sandbox|session|durable"
-    "|daemon|lifecycle|install|updat|upgrad|release|publish|bootstrap|electron|packag|sonar|private|authority|gate"
+    "|daemon|lifecycle|install|update|updating|upgrade|upgrading|release|publish|bootstrap|electron|package|packaging"
+    "|sonar|private|authority|gate"
 )
 SENSITIVE_PATH = re.compile(rf"(^|[/_.-])({SENSITIVE_WORDS})", re.IGNORECASE)
 # Where a small change may live at all. Everything else escalates as "not on the small-change list".
