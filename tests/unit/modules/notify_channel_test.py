@@ -99,9 +99,9 @@ def test_a_notice_no_helper_wrote_shows_without_a_name_or_face(tmp_path):
 
 def test_a_key_macos_cannot_hold_becomes_a_digest_and_the_same_key_the_same_identity():
     assert identity("n-1") == "n-1"
-    long = "x" * 200
-    assert identity(long) == identity(long)
-    assert len(identity(long)) == 40
+    first = identity("x" * 200)
+    assert first == identity("".join(["x"] * 200))  # the same key, built again, is the same identity
+    assert len(first) == 40
     assert identity("a b/c") != identity("a b/d")
 
 
