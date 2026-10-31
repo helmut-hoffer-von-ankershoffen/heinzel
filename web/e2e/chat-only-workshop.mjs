@@ -26,8 +26,6 @@ try {
   await page.getByRole("button", { name: "Create Heinzel and take this message" }).click();
   const message = page.getByLabel("Message your Heinzel");
   await message.waitFor();
-  assert.equal(await message.inputValue(), sentence);
-  await page.getByRole("button", { name: "Queue message" }).click();
   await page.getByText("Which information and output should I use?").waitFor({ timeout: 30000 });
   await message.fill("Use the example information and prepare a private summary");
   await page.getByRole("button", { name: "Queue message" }).click();

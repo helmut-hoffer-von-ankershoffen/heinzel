@@ -280,6 +280,16 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
         action.arguments?.action === "resume") &&
       !Object.hasOwn(action.arguments ?? {}, "approval_proof"),
   );
+  // The sentence a helper was created from is sent once, so nobody has to say it twice.
+  const autoSent = useRef(false);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: send reads the current composer when this first runs
+  useEffect(() => {
+    const key = `hz.durable.autosend.${sessionId}`;
+    if (autoSent.current || !query.data || !text.trim() || sessionStorage.getItem(key) !== text) return;
+    autoSent.current = true;
+    sessionStorage.removeItem(key);
+    void send();
+  }, [query.data, sessionId, text]);
   const matchesCurrentSchedule = (action: (typeof approvalActions)[number]) => {
     const schedule = query.data?.schedule;
     const args = action.arguments;
@@ -971,7 +981,9 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
             );
           })()}
         {activity.data?.session_id === sessionId &&
-          activity.data.items.length > 0 &&
+          activity.data.items.some(
+            (item) => !(query.data?.messages ?? []).some((message) => message.turn_id === item.turn_id),
+          ) &&
           (() => {
             const visibleTurns = new Set(
               (query.data?.messages ?? [])

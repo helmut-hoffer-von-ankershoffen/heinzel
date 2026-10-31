@@ -167,12 +167,17 @@ export function DocumentDrafts({ snapshot }: { snapshot: Snapshot }) {
         .map((item) => (
           <p key={item.seq} role="status" className="rounded-lg border border-border p-3 text-sm">
             {item.status === "acknowledged" ? "Written to " : "Outcome unknown for "}
-            <a className="underline" href={item.reference} target="_blank" rel="noreferrer">
-              the document
+            <a
+              className="underline"
+              href={item.reference.startsWith("new:") ? (item.revision ?? undefined) : item.reference}
+              target="_blank"
+              rel="noreferrer"
+            >
+              {item.reference.startsWith("new:") ? "a new file" : "the file"}
             </a>
             {item.status === "acknowledged"
-              ? ` as ${item.account}. Google confirmed this edit.`
-              : ". Check the document before asking again; it won't be repeated."}
+              ? ` as ${item.account}. Google confirmed this.`
+              : ". Check it before asking again; this won't be repeated."}
           </p>
         ))}
       {drafts.data?.pending.map((draft) => (

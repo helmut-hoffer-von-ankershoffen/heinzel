@@ -27,7 +27,6 @@ try {
   await page.getByLabel("Your message").fill("Read my selected source.");
   await page.getByRole("button", { name: "Create Heinzel and take this message" }).click();
   const panel = page.getByRole("region", { name: "Connected read review" });
-  await page.getByRole("button", { name: "Queue message" }).click();
   await page.getByText("Suggestion recorded.").waitFor({ timeout: 30000 });
   await panel.getByText(/has not contacted a provider/).waitFor();
   await panel.getByText("documents.read", { exact: true }).waitFor();

@@ -35,7 +35,6 @@ try {
   if (!(await page.getByLabel("Your message").isVisible())) await revealChat();
   await page.getByLabel("Your message").fill("Read my selected source.");
   await page.getByRole("button", { name: "Create Heinzel and take this message" }).click();
-  await page.getByRole("button", { name: "Queue message" }).click();
   await page.getByText("Read complete.").waitFor({ timeout: 30000 });
   const terms = page.getByRole("region", { name: "Proposed agent terms" });
   await terms.getByRole("button", { name: "Review these terms" }).click();

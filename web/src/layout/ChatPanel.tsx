@@ -118,6 +118,7 @@ export function ChatPanel({ onCollapse }: { onCollapse: () => void }) {
         if (raw !== null && raw !== encoded) throw new Error("This agent already has unsent work in this tab.");
         sessionStorage.setItem(draftKey, encoded);
         if (sessionStorage.getItem(draftKey) !== encoded) throw new Error("The message could not be preserved.");
+        sessionStorage.setItem(`hz.durable.autosend.${data.session_id}`, initialMessage);
       }
       localStorage.removeItem(key);
       if (initialMessage) {
