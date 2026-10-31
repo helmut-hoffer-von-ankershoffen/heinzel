@@ -74,7 +74,7 @@ def _open_lease(
 
 def _review_lease(lease: ConnectedReadLease) -> ConnectedReadReview:
     try:
-        return ConnectedReadReview.model_validate(lease.review())
+        return ConnectedReadReview.validate_detached(lease.review())
     except Exception:  # noqa: BLE001 - plugin errors may contain credentials
         msg = "The connected read provider could not be reviewed"
         raise HeinzelError(msg) from None
@@ -298,7 +298,7 @@ class ConnectedReadGrants:
             for item in claims:
                 if type(item) is not ConnectedReadMethod:
                     raise ValueError  # noqa: TRY301
-                claim = ConnectedReadMethod.model_validate(item.model_dump(mode="json"))
+                claim = ConnectedReadMethod.model_validate(item.model_dump(mode="json", warnings=False))
                 key = (claim.capability, claim.method)
                 spec = CAPABILITIES.get(claim.capability)
                 if key in seen or spec is None or spec.methods.get(claim.method) != "read":

@@ -11,6 +11,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
+from heinzel.kernel._errors import HeinzelError
 from heinzel.kernel._services import ServiceContract
 
 _MAX_SCOPE_LENGTH = 512
@@ -115,6 +116,24 @@ class ConnectedReadReview(BaseModel):
             msg = "The connected read review is invalid or too large"
             raise ValueError(msg)
         return self
+
+    @classmethod
+    def validate_detached(cls, value: object) -> "ConnectedReadReview":
+        """Detach and revalidate a provider review, including constructed model instances.
+
+        Raises:
+            HeinzelError: If the review is not bounded finite JSON matching its schema.
+        """
+        try:
+            raw = value.model_dump(mode="json", warnings=False) if isinstance(value, cls) else value
+            encoded = json.dumps(raw, ensure_ascii=True, allow_nan=False).encode()
+            if len(encoded) > _MAX_REVIEW_BYTES:
+                msg = "The connected read provider could not be reviewed"
+                raise HeinzelError(msg)  # noqa: TRY301 - sanitize provider diagnostics below
+            return cls.model_validate_json(encoded)
+        except Exception:  # noqa: BLE001 - provider diagnostics may contain private data
+            msg = "The connected read provider could not be reviewed"
+            raise HeinzelError(msg) from None
 
 
 class ConnectedReadMethod(BaseModel):

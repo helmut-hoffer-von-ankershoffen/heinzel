@@ -843,7 +843,7 @@ class SourceGuardedConnectedLease(ConnectedReadLease):
 
     def review(self) -> ConnectedReadReview:
         observed = self._lease.call(lambda lease: lease.review())
-        review = ConnectedReadReview.model_validate(observed)
+        review = ConnectedReadReview.validate_detached(observed)
         digest = hashlib.sha256((self._source + "\0" + review.source_revision).encode()).hexdigest()
         return review.model_copy(update={"source_revision": "host-source-v1:" + digest})
 

@@ -375,7 +375,7 @@ name = "Modules use only the kernel's public API, like plugins"
 type = "forbidden"
 source_modules = ["heinzel.modules"]
 forbidden_modules = [
-    "heinzel.kernel._agents", "heinzel.kernel._bindings", "heinzel.kernel._chat", "heinzel.kernel._boot", "heinzel.kernel._capabilities", "heinzel.kernel._config", "heinzel.kernel._credentials", "heinzel.kernel._discovery", "heinzel.kernel._duration", "heinzel.kernel._errors", "heinzel.kernel._installation", "heinzel.kernel._identity", "heinzel.kernel._jobs",
+    "heinzel.kernel._agents", "heinzel.kernel._bindings", "heinzel.kernel._chat", "heinzel.kernel._boot", "heinzel.kernel._capabilities", "heinzel.kernel._config", "heinzel.kernel._connected_read", "heinzel.kernel._credentials", "heinzel.kernel._discovery", "heinzel.kernel._duration", "heinzel.kernel._errors", "heinzel.kernel._installation", "heinzel.kernel._identity", "heinzel.kernel._jobs",
     "heinzel.kernel._git", "heinzel.kernel._presence",
     "heinzel.kernel._kernel", "heinzel.kernel._lets", "heinzel.kernel._module", "heinzel.kernel._notifications", "heinzel.kernel._org", "heinzel.kernel._progress", "heinzel.kernel._release", "heinzel.kernel._settings", "heinzel.kernel._session", "heinzel.kernel._session_io", "heinzel.kernel._session_store", "heinzel.kernel._skills", "heinzel.kernel._signals", "heinzel.kernel._soundscapes",
     "heinzel.kernel._protocols", "heinzel.kernel._spec", "heinzel.kernel._telemetry",
