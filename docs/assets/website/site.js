@@ -37,7 +37,7 @@
       return found;
     };
     const follow = () => {
-      // The footer pushes guides up; one that would meet the header or navigation waits unseen, never moves layout.
+      // The footer pushes guides up; one pushed above its lane is hidden, never taken out of place.
       const footer = document.querySelector('.md-footer')?.getBoundingClientRect();
       const available = lanes();
       if (!available) { reset(); return false; }
@@ -63,15 +63,25 @@
       return true;
     };
     // Layout events decide whether guides are lifted; scrolling only follows the footer. Never reset on scroll:
-    // inline waypoints sit mid-page, so toggling them would move the text being read.
+    // inline waypoints sit mid-page, so toggling them would move the text being read, which keepPlace undoes.
     // A failed attempt is not repeated until the geometry that decided it changes (lifting resizes the article).
     const geometry = () => JSON.stringify([innerWidth, innerHeight, ...rects(
       '.md-content, .md-sidebar__inner > .md-nav, .md-header, .md-tabs').map(rect => [rect.left, rect.right, rect.height])]);
+    const keepPlace = change => {
+      const marker = scrollY && [...document.querySelectorAll('.md-content h2[id], .md-content h3[id]')]
+        .find(heading => heading.getBoundingClientRect().bottom > 0);
+      const before = marker && marker.getBoundingClientRect().top;
+      change();
+      if (marker) scrollBy(0, marker.getBoundingClientRect().top - before);
+    };
+    // Only a documentation page with no fixed place for its guide waits until it is two screens long.
+    const needsLength = helpers.some(helper => helper.dataset.lane === 'any');
     let refused = '';
-    const layout = () => {
+    const relayout = () => {
       const now = geometry();
+      if (innerWidth < 1100) { if (lifted) reset(); return; }
       if (!lifted) {
-        if (now === refused || document.documentElement.scrollHeight < innerHeight * 2) return;
+        if (now === refused || (needsLength && document.documentElement.scrollHeight < innerHeight * 2)) return;
         helpers.forEach(helper => {
           const style = getComputedStyle(helper);
           helper.dataset.slot = String(helper.offsetHeight + parseFloat(style.marginTop) + parseFloat(style.marginBottom));
@@ -85,8 +95,10 @@
       }
       const slots = helpers.reduce((total, helper) => total + Number(helper.dataset.slot || 0), 0);
       // Hysteresis: lift at two screens of text, release only below one and a half.
-      if (document.documentElement.scrollHeight + slots < innerHeight * 1.5 || !follow()) { reset(); refused = now; }
+      const short = needsLength && document.documentElement.scrollHeight + slots < innerHeight * 1.5;
+      if (short || !follow()) { reset(); refused = now; }
     };
+    const layout = () => keepPlace(relayout);
     let scheduled = false;
     const later = callback => {
       if (scheduled) return;
@@ -94,7 +106,7 @@
       requestAnimationFrame(() => { scheduled = false; callback(); });
     };
     addEventListener('resize', () => later(layout), { passive: true });
-    addEventListener('scroll', () => { if (lifted) later(follow); }, { passive: true });
+    addEventListener('scroll', () => { if (lifted) later(() => keepPlace(follow)); }, { passive: true });
     const observer = new ResizeObserver(() => later(layout));
     document.querySelectorAll('.md-content, .md-sidebar__inner > .md-nav, .md-header, .md-tabs, .md-footer')
       .forEach(element => observer.observe(element));
@@ -107,7 +119,8 @@
     const guides = [...document.querySelectorAll('.hz-page-helper[data-lane]')].slice(0, 2);
     if (guides.length && !guides[0].dataset.ready) {
       guides[0].dataset.ready = 'true';
-      placeGuides(guides);
+      // The characters are decoration: if placing them fails, the rest of the page must still come alive.
+      try { placeGuides(guides); } catch (error) { setTimeout(() => { throw error; }); }
     }
     const hero = document.querySelector('.hz-hero-art picture source');
     if (hero && !hero.dataset.ready) {

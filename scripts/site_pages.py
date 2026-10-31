@@ -92,6 +92,12 @@ MAX_DECLARATIONS = 24
 MAX_IMAGES = 8
 HELPER_WORDS = 9
 HELPER_CHARACTERS = 80
+HELPER_FALLBACK = "See this helper working in the real UI."
+# A character never promises what an owner's metadata merely mentions: no autonomy, delivery or endorsement.
+BANNED_CUE = re.compile(
+    r"autonomous|automatic|while you sleep|\b(sends?|publish(es)?|delivers?)\b|customer|endors|testimonial",
+    re.IGNORECASE,
+)
 
 
 def validate_presentation(project: Object) -> None:
@@ -524,16 +530,19 @@ def plugin_helpers(project: Object, page_url: str) -> list[Object]:
         brief = brief[: HELPER_CHARACTERS - 1].rstrip() + "…"
     elif len(words) > HELPER_WORDS:
         brief += "…"
+    if BANNED_CUE.search(brief):
+        brief = HELPER_FALLBACK
     themed = bool(project.get("themes"))
+    shown = bool(project.get("screenshots"))
     guides = [
         helper(
             "draftkeeper" if themed else "timekeeper",
             "Ada" if themed else "Pip",
             brief,
-            "#screenshots",
-            "See it working",
+            "#screenshots" if shown else "#install-and-try",
+            "See it working" if shown else "Try it",
             page_url,
-            section="screenshots",
+            section="screenshots" if shown else "what-it-brings",
             lane="left",
         )
     ]
@@ -573,7 +582,7 @@ def page_helpers(path: str, page_url: str, project: Object | None = None) -> lis
             helper(
                 "timekeeper",
                 "Pip",
-                "Your first useful screen is three commands away.",
+                "Your first useful screen is one command away.",
                 href("guides/install/", page_url),
                 "Install Heinzel",
                 page_url,
@@ -634,7 +643,7 @@ def waypoint(guide: Object, *, standalone: bool = False) -> str:
     return "\n".join(
         (
             (
-                f'<aside class="hz-page-helper" data-heinzel-helper{section}{lane} '
+                f'<aside class="hz-page-helper" data-heinzel-helper data-search-exclude{section}{lane} '
                 f'aria-label="{escape(guide["name"])}: {escape(guide["action"])}"{raw}>'
             ),
             f'<p class="hz-helper-name">{escape(guide["name"])}</p>',
@@ -676,7 +685,7 @@ def place_waypoints(markdown: str, guides: list[Object]) -> str:
         else:
             inserts.setdefault(target, []).append(waypoint(guide))
     for index in sorted(inserts, reverse=True):
-        lines[index + 1 : index + 1] = ["", *inserts[index]]
+        lines[index + 1 : index + 1] = ["", *inserts[index], ""]
     return "\n".join(lines) + "".join(f"\n\n{html_block}\n" for html_block in tail)
 
 

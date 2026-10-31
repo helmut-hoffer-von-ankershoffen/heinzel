@@ -601,6 +601,14 @@ def test_repository_discovery_carries_soundscape_toml_into_public_records(layout
     assert "never_imported" not in sys.modules
 
 
+SHOT = {"url": "https://example.com/a.png", "surface": "ui", "caption": "A"}
+
+
+def shown(plugin):
+    plugin["screenshots"] = [SHOT]
+    return plugin
+
+
 DOC_PAGES = [
     "README.md",
     "guides/install.md",
@@ -634,10 +642,11 @@ def test_home_guides_sit_at_headings_the_home_page_really_has():
     assert [(guide["name"], guide["lane"]) for guide in guides] == [("Pip", "left"), ("Otto", "right")]
     assert {guide["section"] for guide in guides} <= headings
     assert guides[0]["link"] == "guides/install/"
+    assert "one command" in guides[0]["quote"]
 
 
 def test_plugin_pages_get_a_feature_cue_and_a_constant_install_cue_without_registration():
-    plugin = record()
+    plugin = shown(record())
     plugin["highlights"] = ["A fictional harbor's next useful action"]
     helpers = pages.page_helpers("catalog/new-plugin/index.md", "catalog/new-plugin/", plugin)
     assert [(h["name"], h["section"], h["lane"]) for h in helpers] == [
@@ -650,8 +659,32 @@ def test_plugin_pages_get_a_feature_cue_and_a_constant_install_cue_without_regis
     assert helpers[1]["link"] == "#install-and-try"
 
 
-def test_themes_are_guided_by_ada_and_sound_adds_a_third_inline_guide_only_when_present():
+@pytest.mark.parametrize(
+    "claim", ["Automatically publishes weekly reports", "Sends a digest to customers", "Works while you sleep"]
+)
+def test_plugin_metadata_cannot_make_a_character_promise_delivery(claim):
     plugin = record()
+    plugin["highlights"] = [claim]
+    assert pages.page_helpers("catalog/x/index.md", "catalog/x/", plugin)[0]["quote"] == pages.HELPER_FALLBACK
+
+
+def test_a_plugin_without_screenshots_gets_no_link_to_an_empty_gallery():
+    plugin = record()
+    plugin["screenshots"] = []
+    pip = pages.page_helpers("catalog/x/index.md", "catalog/x/", plugin)[0]
+    assert (pip["section"], pip["link"]) == ("what-it-brings", "#install-and-try")
+    plugin["screenshots"] = [{"url": "https://example.com/a.png", "surface": "ui", "caption": "A"}]
+    assert pages.page_helpers("catalog/x/index.md", "catalog/x/", plugin)[0]["link"] == "#screenshots"
+
+
+def test_heading_slugs_match_the_table_of_contents_extension():
+    toc = pytest.importorskip("markdown.extensions.toc")
+    for heading in ("Install and try", "What 0.2 does not do yet", "A small core. A growing world.", "Café & Tea"):
+        assert pages.slug(heading) == toc.slugify(heading, "-")
+
+
+def test_themes_are_guided_by_ada_and_sound_adds_a_third_inline_guide_only_when_present():
+    plugin = shown(record())
     plugin["themes"] = [{"title": "Harbor", "palette": {}}]
     assert pages.page_helpers("catalog/x/index.md", "catalog/x/", plugin)[0]["name"] == "Ada"
     plugin["soundscapes"] = [{"title": "Rain", "video": "abcdefghijk"}]
@@ -664,7 +697,9 @@ def test_themes_are_guided_by_ada_and_sound_adds_a_third_inline_guide_only_when_
 def test_waypoint_is_a_labelled_server_rendered_aside_with_one_link():
     guide = pages.helper("reviewer", "Otto", 'Mind the "gap" <b>', "#here", "Go <now>", "x/", section="s", lane="right")
     rendered = pages.waypoint(guide)
-    assert rendered.startswith('<aside class="hz-page-helper" data-heinzel-helper data-section="s" data-lane="right"')
+    assert rendered.startswith(
+        '<aside class="hz-page-helper" data-heinzel-helper data-search-exclude data-section="s" data-lane="right"'
+    )
     assert 'aria-label="Otto: Go &lt;now&gt;"' in rendered
     assert "&lt;b&gt;" in rendered
     assert "<b>" not in rendered
@@ -693,7 +728,7 @@ def test_waypoints_follow_their_headings_not_code_and_fall_back_to_the_first_h2_
 
 
 def test_every_plugin_page_places_all_its_guides_within_the_budget():
-    plugin = record()
+    plugin = shown(record())
     plugin["soundscapes"] = [{"title": "Rain", "video": "abcdefghijk"}]
     page = pages.place_waypoints(pages.detail(plugin), pages.page_helpers("catalog/x/index.md", "catalog/x/", plugin))
     assert page.count("data-heinzel-helper") == 3

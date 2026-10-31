@@ -7,9 +7,11 @@
 import itertools
 import json
 import re
+import struct
 import subprocess
 import sys
 import threading
+import zlib
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -235,12 +237,41 @@ SETTLE = """async position => {
 }"""
 
 
+def artwork() -> bytes:
+    """A fixed 1200x800 picture, so page height never depends on the network."""
+    width, height = 1200, 800
+    rows = b"".join(b"\x00" + b"\xee\xe8\xdb" * width for _ in range(height))
+
+    def chunk(kind: bytes, data: bytes) -> bytes:
+        return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data))
+
+    header = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
+    return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", header) + chunk(b"IDAT", zlib.compress(rows)) + chunk(b"IEND", b"")
+
+
+def offline(page: "Page", base: str) -> None:
+    """Serve only the built site; remote screenshots become a fixed picture and everything else is refused."""
+    picture = artwork()
+
+    def handle(route: Any) -> None:  # noqa: ANN401 - Playwright's route object
+        url = route.request.url
+        if url.startswith(base):
+            route.continue_()
+        elif route.request.resource_type == "image":
+            route.fulfill(status=200, content_type="image/png", body=picture)
+        else:
+            route.abort()
+
+    page.route("**/*", handle)
+
+
 def settled(page: "Page") -> None:
     """Wait (bounded) for lifted guides' artwork, which loads eagerly because it is in view."""
     page.wait_for_function(
         "[...document.querySelectorAll('[data-gutter] img')].every(image => image.complete && image.naturalWidth > 0)",
         timeout=10_000,
     )
+    page.evaluate("async () => { await document.fonts.ready; await new Promise(r => setTimeout(r, 150)); }")
 
 
 def check_characters(page: "Page", where: str, *, expect_both: bool = False) -> list[dict[str, Any]]:
@@ -260,6 +291,7 @@ def check_characters(page: "Page", where: str, *, expect_both: bool = False) -> 
     if expect_both:
         candidates = [item for item in helpers if item["lane"]]
         require(len(lifted) == len(candidates) > 0, f"Free desktop gutters must show every lane guide: {where}")
+        require(not any(item["hidden"] for item in lifted), f"Lifted guides must be visible: {where}")
     obstacles = page.evaluate(OBSTACLES)
     for item in lifted:
         r = item["rect"]
@@ -281,6 +313,7 @@ def helper_layout(browser: "Browser", base: str, snapshot: dict[str, Any], axe: 
         (item for item in snapshot["plugins"] if item["name"] == "heinzel-resource"), snapshot["plugins"][0]
     )
     page = browser.new_page()
+    offline(page, base)
     errors: list[str] = []
     page.on("pageerror", lambda error: errors.append(str(error)))
     try:
@@ -299,14 +332,29 @@ def helper_layout(browser: "Browser", base: str, snapshot: dict[str, Any], axe: 
                         )
             page.goto(base + f"catalog/{resource['id']}/")
             settled(page)
-            for position in ("top", "middle", "navigation", "bottom"):
+            for number, position in enumerate(("top", "middle", "navigation", "bottom", "top")):
                 page.evaluate(SETTLE, position)
-                check_characters(page, f"{width}/{position}", expect_both=width in (1440, 1920) and position == "top")
+                page.wait_for_timeout(150)
+                both = width in (1440, 1920) and position == "top"
+                check_characters(page, f"{width}/{position}{number}", expect_both=both)
                 require(not errors, f"Character layout script errors at {width}/{position}")
                 page.screenshot(path=str(REPORTS / f"helpers-{width}-{position}.png"))
             if width in (1440, 390):
                 audit(page, axe, f"helpers-{width}")
     finally:
+        page.close()
+
+
+def helper_hash(browser: "Browser", base: str, snapshot: dict[str, Any]) -> None:
+    """Opening a page at a section keeps that section in view when the guides lift around it."""
+    route = f"catalog/{snapshot['plugins'][0]['id']}/#install-and-try"
+    for width in (1440, 1920):
+        page = browser.new_page(viewport={"width": width, "height": 960})
+        offline(page, base)
+        page.goto(base + route)
+        page.wait_for_timeout(600)
+        top = page.evaluate("document.getElementById('install-and-try').getBoundingClientRect().top")
+        require(0 <= top < 600, f"Lifting guides must not move the section being read ({width}: {top})")  # noqa: PLR2004
         page.close()
 
 
@@ -339,6 +387,7 @@ def sweep(browser: "Browser", engine: str, base: str, axe: Path, snapshot: dict[
     """Exercise desktop/phone and light/dark combinations with real rendered artifacts."""
     total = len(snapshot["plugins"])
     helper_layout(browser, base, snapshot, axe)
+    helper_hash(browser, base, snapshot)
     helper_fallbacks(browser, base, snapshot)
     for width in (1440, 390):
         for mode in ("light", "dark"):
@@ -424,6 +473,7 @@ def main() -> None:
                     base = f"http://127.0.0.1:{server.server_port}/heinzel/"
                     if "--characters" in sys.argv:  # the character guides alone: quick while iterating on them
                         helper_layout(browser, base, snapshot, candidates[0])
+                        helper_hash(browser, base, snapshot)
                         helper_fallbacks(browser, base, snapshot)
                     else:
                         sweep(browser, engine, base, candidates[0], snapshot)
