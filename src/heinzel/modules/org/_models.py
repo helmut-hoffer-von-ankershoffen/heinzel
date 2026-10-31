@@ -6,39 +6,43 @@ from collections.abc import Callable
 from typing import Annotated, Any, ClassVar, Literal, Self, get_args
 from zoneinfo import available_timezones
 
-from pydantic import BaseModel, Field, JsonValue, ValidationInfo, WithJsonSchema, field_validator
+from pydantic import (
+    BaseModel,
+    Field,
+    JsonValue,
+    ModelWrapValidatorHandler,
+    PrivateAttr,
+    ValidationInfo,
+    WithJsonSchema,
+    field_validator,
+    model_validator,
+)
 from pydantic_settings import NoDecode
 
 from heinzel import ModuleSettings
 
 ROLES = (
     "engineer",
-    "principal",
     "engineering-manager",
-    "engineering-leadership",
     "product-manager",
-    "product-leadership",
     "program-manager",
 )
-"""The core role vocabulary (the perfect-onboarding ADR); a team's layers may add roles, never rename these."""
+"""The core role vocabulary, in the order Settings and setup list it; layers may add roles, never rename these."""
+REMOVED_ROLES = frozenset({"principal", "engineering-leadership", "product-leadership"})
+"""Roles that were choices once. A configuration that still holds one loads as no role set, so doctor and Settings ask
+for a new choice instead of failing."""
 ROLE_MEANINGS = {
     "engineer": "builds and runs the product",
-    "principal": "senior engineer who shapes how it is built",
     "engineering-manager": "leads a team of engineers",
-    "engineering-leadership": "leads engineering across teams",
     "product-manager": "decides what a team builds",
-    "product-leadership": "leads product across teams",
     "program-manager": "coordinates work across teams",
 }
 
 ROLE_LABELS: dict[str, JsonValue] = {
-    "engineer": "Engineer",
-    "principal": "Principal engineer",
-    "engineering-manager": "Engineering manager",
-    "engineering-leadership": "Engineering leadership",
-    "product-manager": "Product manager",
-    "product-leadership": "Product leadership",
-    "program-manager": "Program manager",
+    "engineer": "IC - Engineer",
+    "engineering-manager": "EM - Engineering Manager",
+    "product-manager": "PM - Product Manager",
+    "program-manager": "TPM - Program Manager",
 }
 """How Settings names each role."""
 
@@ -180,9 +184,27 @@ class OrgSettings(ModuleSettings):
         examples=["mira@example.com"],
     )
 
+    _retired_role: str | None = PrivateAttr(default=None)
+
     ignored_in_project: ClassVar[frozenset[str]] = frozenset(
         {"handle", "role", "timezone", "working_hours", "github", "coding_agent", "name", "email"}
     )
+
+    @property
+    def retired_role(self) -> str | None:
+        """A role this configuration still holds that is no longer offered; `role` then reads as not set."""
+        return self._retired_role
+
+    @model_validator(mode="wrap")
+    @classmethod
+    def _retire(cls, data: Any, handler: ModelWrapValidatorHandler[Self]) -> Self:  # noqa: ANN401 - what the sources give
+        retired = None
+        if isinstance(data, dict) and data.get("role") in REMOVED_ROLES:
+            retired = data["role"]
+            data = {**data, "role": None}
+        settings = handler(data)
+        settings._retired_role = retired  # noqa: SLF001 - the model's own validator
+        return settings
 
     @field_validator("working_hours", mode="before")
     @classmethod
@@ -216,6 +238,9 @@ class Profile(BaseModel):
 
     handle: str | None = Field(description="Your handle, e.g. mira; none until you set it.")
     role: str | None = Field(description="Your role, e.g. engineering-manager.")
+    retired_role: str | None = Field(
+        description="A role you chose once that is no longer offered; choose a new one. None otherwise."
+    )
     timezone: str | None = Field(description="Your IANA time zone, e.g. Europe/Berlin.")
     working_hours: str = Field(description="Your working hours there, e.g. 09-18.")
     working_hours_set: bool = Field(description="Whether you chose the working hours; false while the default holds.")
@@ -234,6 +259,7 @@ class Profile(BaseModel):
         return cls(
             handle=settings.handle,
             role=settings.role,
+            retired_role=settings.retired_role,
             timezone=settings.timezone,
             working_hours=format_hours(settings.working_hours),
             working_hours_set="working_hours" in settings.model_fields_set,

@@ -1,6 +1,6 @@
 // `hz org show`: your profile, and the command that completes or changes it.
 import { Link } from "react-router";
-import { useProfile } from "@/api/queries";
+import { useProfile, useSetting } from "@/api/queries";
 import { CopyCommand, Loaded, Page } from "@/components/common";
 import { ErrorScreen } from "@/components/ErrorScreen";
 import { Card } from "@/components/ui/card";
@@ -8,6 +8,7 @@ import { type MessageKey, t } from "@/i18n";
 
 export function Profile() {
   const profile = useProfile();
+  const team = useSetting("team", "name");
   return (
     <Page title={t("profile.title")} intro={t("profile.intro")}>
       <Loaded query={profile}>
@@ -15,6 +16,7 @@ export function Profile() {
           const rows: [MessageKey, string | null | undefined, string][] = [
             ["profile.handle", me.handle, "org.handle"],
             ["profile.role", me.role, "org.role"],
+            ["profile.team", team || null, "team.name"],
             ["profile.timezone", me.timezone, "org.timezone"],
             ["profile.hours", me.working_hours, "org.working_hours"],
             ["profile.github", me.github, "org.github"],
@@ -38,6 +40,11 @@ export function Profile() {
                   </div>
                 ))}
               </dl>
+              {me.retired_role && (
+                <p role="status" className="mt-3 text-sm text-warn">
+                  {t("profile.retiredRole", { role: me.retired_role })}
+                </p>
+              )}
               <div className="mt-4">
                 <CopyCommand command={me.fix} />
               </div>

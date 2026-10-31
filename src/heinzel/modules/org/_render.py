@@ -28,9 +28,12 @@ def render_profile(profile: Profile) -> RenderableType:
     }
     for name, value in rows.items():
         table.add_row(name, Text(value or "not set"))
-    if profile.complete:
-        return table
-    return Group(table, Text(f"Missing {', '.join(profile.missing)}: run `{profile.fix}`."))
+    notes = []
+    if profile.retired_role:
+        notes.append(Text(f"Your saved role {profile.retired_role!r} is no longer offered: choose a new one."))
+    if not profile.complete:
+        notes.append(Text(f"Missing {', '.join(profile.missing)}: run `{profile.fix}`."))
+    return Group(table, *notes) if notes else table
 
 
 def render_agenda(agenda: Agenda) -> RenderableType:

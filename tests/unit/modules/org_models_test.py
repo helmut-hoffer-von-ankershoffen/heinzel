@@ -4,21 +4,38 @@ import pytest
 from pydantic import ValidationError
 
 from heinzel.modules.org import ROLES, OrgSettings, Profile
-from heinzel.modules.org._models import format_hours, parse_hours
+from heinzel.modules.org._models import ROLE_LABELS, format_hours, parse_hours
 
 pytestmark = pytest.mark.unit
 
 
-def test_the_core_roles_are_the_seven_of_the_onboarding_adr():
-    assert ROLES == (
-        "engineer",
-        "principal",
-        "engineering-manager",
-        "engineering-leadership",
-        "product-manager",
-        "product-leadership",
-        "program-manager",
-    )
+def test_the_core_roles_are_four_in_this_order_with_these_labels():
+    assert ROLES == ("engineer", "engineering-manager", "product-manager", "program-manager")
+    assert [ROLE_LABELS[role] for role in ROLES] == [
+        "IC - Engineer",
+        "EM - Engineering Manager",
+        "PM - Product Manager",
+        "TPM - Program Manager",
+    ]
+    assert OrgSettings.model_json_schema()["properties"]["role"]["anyOf"][0]["enum"] == list(ROLES)
+
+
+@pytest.mark.parametrize("old", ["principal", "engineering-leadership", "product-leadership"])
+def test_a_saved_removed_role_loads_as_not_set_and_asks_for_a_new_one(old):
+    settings = OrgSettings(handle="mira", role=old, timezone="Europe/Berlin")
+    assert settings.role is None
+    assert settings.retired_role == old
+    profile = Profile.of(settings)
+    assert (profile.role, profile.retired_role, profile.complete, profile.missing) == (None, old, False, ["org.role"])
+
+
+def test_a_made_up_role_is_still_an_error():
+    with pytest.raises(ValueError, match="is not a role"):
+        OrgSettings(role="ceo")
+
+
+def test_the_retired_role_is_not_a_setting_to_edit():
+    assert "retired_role" not in OrgSettings.model_json_schema()["properties"]
 
 
 def test_a_complete_profile_names_handle_role_and_time_zone():
