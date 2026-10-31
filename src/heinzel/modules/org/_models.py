@@ -184,6 +184,8 @@ class OrgSettings(ModuleSettings):
         examples=["mira@example.com"],
     )
 
+    refused_on_write: ClassVar[dict[str, frozenset[str]]] = {"role": REMOVED_ROLES}
+
     _retired_role: str | None = PrivateAttr(default=None)
 
     ignored_in_project: ClassVar[frozenset[str]] = frozenset(

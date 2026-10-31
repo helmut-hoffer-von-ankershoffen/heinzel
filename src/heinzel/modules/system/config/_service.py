@@ -257,6 +257,14 @@ class ConfigService(ConfigEditor):
         if parsed is None:
             msg = f"TOML has no null; to let {key} take its default, run `hz system config unset {key}`."
             raise HeinzelError(msg)
+        if isinstance(parsed, str) and parsed in model.refused_on_write.get(name, frozenset()):
+            schema = model.model_json_schema()["properties"].get(name, {})
+            choices: list[str] = schema.get("enum") or next(
+                (o["enum"] for o in schema.get("anyOf", []) if "enum" in o), []
+            )
+            offered = f"; one of: {', '.join(choices)}" if choices else ""
+            msg = f"Invalid value for {key}: {parsed!r} is no longer offered{offered}.\n"
+            raise HeinzelError(msg + self._example(key, section, name, model))
         table = {**self._kernel.config.reread().section(section), name: parsed}
         try:
             Config(files=(), data=_nest(section, table)).settings(model, section)

@@ -93,3 +93,17 @@ def test_the_coding_agent_is_one_of_three():
 
 def test_a_project_file_cant_set_who_you_are():
     assert set(OrgSettings.model_fields) <= OrgSettings.ignored_in_project
+
+
+@pytest.mark.parametrize("old", ["principal", "engineering-leadership", "product-leadership"])
+def test_setting_a_removed_role_is_refused_and_names_the_four_that_are_offered(old, make_kernel):
+    from heinzel import Config, HeinzelError
+    from heinzel.modules.system.config import ConfigService
+
+    kernel = make_kernel(builtins=True, config=Config(files=(), data={}))
+    service = ConfigService(kernel)
+    with pytest.raises(
+        HeinzelError,
+        match=r"no longer offered; one of: engineer, engineering-manager, product-manager, program-manager",
+    ):
+        service._write("org.role", old)
