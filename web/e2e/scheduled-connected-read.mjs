@@ -1,19 +1,10 @@
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
-import { createRequire } from "node:module";
 import { join } from "node:path";
-import { chromium, webkit } from "playwright-core";
 import { publishJson } from "./atomic-json.mjs";
-import { revealChat } from "./chat-ready.mjs";
+import { openChatJourney, revealChat } from "./chat-ready.mjs";
 
-const require = createRequire(import.meta.url);
-const axe = readFileSync(require.resolve("axe-core/axe.min.js"), "utf8");
-const url = new URL(process.argv[2]);
-const token = url.hash.match(/(?:^#|&)token=([^&]+)/)?.[1] ?? "";
-url.pathname = "/doctor";
-const browser = await (process.argv[3] === "webkit" ? webkit : chromium).launch({ headless: true });
-const context = await browser.newContext({ serviceWorkers: "block", viewport: { width: 390, height: 844 } });
-const page = await context.newPage();
+const { axe, browser, context, page, token, url } = await openChatJourney();
 try {
   await page.goto(url.href);
   await page.locator("#splash").waitFor({ state: "hidden", timeout: 30000 });

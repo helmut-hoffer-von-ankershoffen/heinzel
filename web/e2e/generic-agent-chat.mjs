@@ -1,13 +1,7 @@
 import assert from "node:assert/strict";
-import { chromium, webkit } from "playwright-core";
-import { revealChat } from "./chat-ready.mjs";
+import { openChatJourney, revealChat } from "./chat-ready.mjs";
 
-const url = new URL(process.argv[2]);
-const token = url.hash.match(/(?:^#|&)token=([^&]+)/)?.[1] ?? "";
-url.pathname = "/doctor";
-const browser = await (process.argv[3] === "webkit" ? webkit : chromium).launch({ headless: true });
-const context = await browser.newContext({ serviceWorkers: "block", viewport: { width: 390, height: 844 } });
-const page = await context.newPage();
+const { browser, context, page, token, url } = await openChatJourney();
 const trace = [];
 const watched = new Set([
   "/api/heinzel/chat",
