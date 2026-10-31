@@ -88,6 +88,7 @@ nav:
   - Build with Heinzel:
       - Contribution paths: guides/contribute.md
       - Create a public or private plugin: PLUGIN_AUTHORING.md
+      - Screenshot playbook: SCREENSHOT_PLAYBOOK.md
       - Catalog metadata: guides/catalog.md
       - Extension contracts: PLUGINS.md
       - Themes and soundscapes: THEMES.md
