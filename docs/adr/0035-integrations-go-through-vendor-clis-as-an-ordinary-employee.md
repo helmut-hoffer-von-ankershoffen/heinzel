@@ -70,6 +70,11 @@ app; `Credentials` stays for services without such a CLI.** Checkable statements
    administrator to register an application, create an OAuth client, grant an organisation-wide scope or create a
    service account. An adapter that can only work that way is not a first-party adapter; a company's private plugin
    may ship it.
+   One case is allowed: a private workspace app that a person creates and installs for themselves, in a workspace
+   they may add apps to, so that Slack can carry two-way approvals (buttons need an app; a CLI cannot receive a
+   click). It belongs to its owner, only notifies and asks in the owner's own direct message, never acts as the person,
+   and is not a Heinzelmännchen-hosted or shared app. If the workspace requires an administrator to approve it, the
+   plugin says so and does not work around the setting.
 3. **Invocation is bounded and shell-free.** The core publishes the bounded subprocess helper the agent runners
    already use ([ADR 0029](0029-agent-runners-are-capability-adapters.md): argument lists without a shell, a process
    group, SIGTERM then SIGKILL at the timeout, capped and drained stdout and stderr) for adapters. An adapter passes
