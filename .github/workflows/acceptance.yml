@@ -102,7 +102,7 @@ jobs:
       - run: uv python install 3.13
       - name: Run the acceptance harness
         env:
-          TMPDIR: ${{ runner.temp }} # a short private path, for the sockets the app opens under it
+          TMPDIR: /tmp # short, because Chrome's socket path under it must fit the OS limit; each run's root is private
         run: >-
           "$(uv python find 3.13)" -I scripts/acceptance/run_acceptance.py
           --expect-version "$EXPECTED_VERSION"
