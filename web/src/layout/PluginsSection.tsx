@@ -17,7 +17,7 @@ import {
   Trash2,
   Users,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import type { SchemaPluginCandidate, SchemaPluginChange, SchemaPluginInfo } from "@/api/client";
 import {
   type PluginChangeRequest,
@@ -27,6 +27,7 @@ import {
   usePluginOperation,
   usePluginPreview,
   usePluginSearch,
+  usePluginShowcase,
   usePlugins,
 } from "@/api/queries";
 import { Loaded } from "@/components/common";
@@ -651,7 +652,7 @@ function Yours({ query, onChange }: { query: string; onChange: (pending: Pending
                   return (
                     <li
                       key={plugin.distribution}
-                      className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-3 border-b border-border/70 py-3 last:border-b-0 @md:flex"
+                      className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-3 border-b border-border/70 py-3 last:border-b-0 @md:flex @md:flex-wrap"
                     >
                       <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted">
                         <Package aria-hidden className="size-(--icon) text-icon" />
@@ -710,6 +711,13 @@ function Yours({ query, onChange }: { query: string; onChange: (pending: Pending
                         >
                           <Trash2 aria-hidden />
                         </Button>
+                      </div>
+                      <div className="col-span-2 min-w-0 @md:basis-full">
+                        <PluginGallery
+                          spec={installedGallerySpec(plugin) ?? entry?.install_spec ?? plugin.distribution}
+                          name={displayName(plugin.name, plugin.summary)}
+                          privateSource={plugin.private_repository === true}
+                        />
                       </div>
                     </li>
                   );
@@ -822,34 +830,187 @@ function Discover({ query, onInstall }: { query: string; onInstall: (spec: strin
         ) : (
           <ul>
             {available.map((plugin) => (
-              <li key={plugin.name} className="flex items-center gap-3 border-b border-border/70 py-3 last:border-b-0">
-                <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted">
-                  {plugin.community ? (
-                    <Users aria-hidden className="size-(--icon) text-icon" />
-                  ) : (
-                    <ShieldCheck aria-hidden className="size-(--icon) text-icon" />
-                  )}
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="flex items-center gap-2 text-ui">
-                    {displayName(plugin.short_name, plugin.description)}
+              <li key={plugin.name} className="border-b border-border/70 py-3 last:border-b-0">
+                <div className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-3">
+                  <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted">
+                    {plugin.community ? (
+                      <Users aria-hidden className="size-(--icon) text-icon" />
+                    ) : (
+                      <ShieldCheck aria-hidden className="size-(--icon) text-icon" />
+                    )}
                   </span>
-                  <span className="block truncate text-sm text-muted-foreground">{plugin.description}</span>
-                  <RepositoryLine url={repositoryOfEntry(plugin)} />
-                </span>
-                <span className="flex shrink-0 items-center gap-2">
-                  <span className="rounded-md border border-border px-1.5 text-[11px] text-muted-foreground">
-                    {sourceLabel({ source_url: repositoryOfEntry(plugin) }, plugin.private_repository)}
+                  <span className="min-w-0 flex-1">
+                    <span className="flex items-center gap-2 text-ui">
+                      {displayName(plugin.short_name, plugin.description)}
+                    </span>
+                    <span className="block truncate text-sm text-muted-foreground">{plugin.description}</span>
+                    <RepositoryLine url={repositoryOfEntry(plugin)} />
                   </span>
-                  <span aria-hidden className={VERSION} />
-                </span>
-                {sourceLink(repositoryOfEntry(plugin), plugin.name)}
-                <Button size="sm" variant="outline" onClick={() => onInstall(plugin.install_spec)}>
-                  {t("plugins.install")}
-                </Button>
+                  <div className="col-span-2 flex min-w-0 flex-wrap items-center gap-2">
+                    <span className="rounded-md border border-border px-1.5 text-[11px] text-muted-foreground">
+                      {sourceLabel({ source_url: repositoryOfEntry(plugin) }, plugin.private_repository)}
+                    </span>
+                    {sourceLink(repositoryOfEntry(plugin), plugin.name)}
+                    <Button size="sm" variant="outline" onClick={() => onInstall(plugin.install_spec)}>
+                      {t("plugins.install")}
+                    </Button>
+                  </div>
+                </div>
+                <PluginGallery
+                  spec={plugin.install_spec}
+                  name={displayName(plugin.short_name, plugin.description)}
+                  privateSource={plugin.private_repository === true}
+                />
               </li>
             ))}
           </ul>
+        );
+      }}
+    </Loaded>
+  );
+}
+
+/** Recover an installed source's immutable project path without fetching or loading the plugin. */
+export function installedGallerySpec(plugin: SchemaPluginInfo): string | null {
+  const source = plugin.source_url ?? plugin.homepage;
+  if (!source) return null;
+  try {
+    const url = new URL(source);
+    if (url.protocol !== "https:" || url.hostname !== "github.com" || url.port || url.username || url.password)
+      return null;
+    const [owner, repository, tree, revision, ...path] = url.pathname.split("/").filter(Boolean);
+    if (!owner || !repository || (tree && tree !== "tree")) return null;
+    const identity = `${plugin.distribution} @ git+https://github.com/${owner}/${repository.replace(/\.git$/, "")}`;
+    if (tree && revision) return `${identity}@${revision}${path.length ? `#subdirectory=${path.join("/")}` : ""}`;
+    return identity;
+  } catch {
+    return null;
+  }
+}
+
+/** Read owner-declared media only after a person asks to see the selected plugin. */
+export function PluginGallery({
+  spec,
+  name,
+  privateSource = false,
+}: {
+  spec: string;
+  name: string;
+  privateSource?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const galleryId = useId();
+  return (
+    <div className="mt-2 min-w-0">
+      <Button
+        size="sm"
+        variant="ghost"
+        aria-expanded={open}
+        aria-controls={open ? galleryId : undefined}
+        aria-label={t("plugins.screenshotsFor", { name })}
+        onClick={() => setOpen((value) => !value)}
+      >
+        {t("plugins.screenshots")}
+      </Button>
+      {open && (
+        <section
+          id={galleryId}
+          aria-label={t("plugins.galleryFor", { name })}
+          className="mt-2 min-w-0 rounded-lg border border-border bg-muted/30 p-3"
+        >
+          {privateSource ? (
+            <p className="text-sm text-muted-foreground">{t("plugins.privateGallery")}</p>
+          ) : (
+            <GalleryContents key={spec} spec={spec} />
+          )}
+        </section>
+      )}
+    </div>
+  );
+}
+
+function GalleryContents({ spec }: { spec: string }) {
+  const query = usePluginShowcase(spec);
+  const [selected, setSelected] = useState(0);
+  return (
+    <Loaded query={query}>
+      {(gallery) => {
+        const shots = gallery.screenshots ?? [];
+        const shot = shots[selected] ?? shots[0];
+        return (
+          <div className="min-w-0 space-y-3">
+            {shot ? (
+              <>
+                <figure className="min-w-0">
+                  <a
+                    href={shot.url}
+                    target="_blank"
+                    rel="noreferrer noopener"
+                    aria-label={t("plugins.fullSizeFor", { caption: shot.caption })}
+                  >
+                    <img
+                      src={shot.url}
+                      alt={shot.caption}
+                      referrerPolicy="no-referrer"
+                      className="max-h-96 w-full rounded-md border border-border object-contain"
+                    />
+                  </a>
+                  <figcaption className="mt-2 break-words text-sm text-muted-foreground">
+                    <span className="mr-2 font-medium">{shot.surface.toUpperCase()}</span>
+                    {shot.caption}
+                  </figcaption>
+                </figure>
+                <fieldset className="flex min-w-0 flex-wrap gap-2">
+                  <legend className="sr-only">{t("plugins.chooseScreenshot")}</legend>
+                  {shots.map((image, index) => (
+                    <button
+                      key={`${image.url}-${image.caption}-${image.surface}`}
+                      type="button"
+                      aria-pressed={selected === index}
+                      aria-label={`${image.surface.toUpperCase()}: ${image.caption}`}
+                      onClick={() => setSelected(index)}
+                      className={cn(
+                        "min-h-11 rounded-md border border-border p-1",
+                        selected === index && "ring-2 ring-ring",
+                      )}
+                    >
+                      <img
+                        src={image.url}
+                        alt=""
+                        loading="lazy"
+                        referrerPolicy="no-referrer"
+                        className="h-14 w-24 rounded-sm object-contain"
+                      />
+                      <span className="block text-xs">{image.surface.toUpperCase()}</span>
+                    </button>
+                  ))}
+                </fieldset>
+              </>
+            ) : (
+              <p className="text-sm text-muted-foreground">{gallery.notice || t("plugins.noScreenshots")}</p>
+            )}
+            {(gallery.soundscapes?.length ?? 0) > 0 && (
+              <div>
+                <h4 className="text-sm font-medium">{t("plugins.soundscapes")}</h4>
+                <p className="text-xs text-muted-foreground">{t("plugins.youtubeOnClick")}</p>
+                <ul className="space-y-1">
+                  {gallery.soundscapes?.map((sound) => (
+                    <li key={sound.url}>
+                      <a
+                        href={sound.url}
+                        target="_blank"
+                        rel="noreferrer noopener"
+                        className="inline-flex min-h-11 items-center gap-2 break-words text-sm underline underline-offset-4"
+                      >
+                        {sound.title} · {t("plugins.watchSoundscape")}
+                        <ExternalLink aria-hidden className="size-3 shrink-0" />
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
         );
       }}
     </Loaded>

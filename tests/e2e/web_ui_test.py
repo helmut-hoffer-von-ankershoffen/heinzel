@@ -452,3 +452,47 @@ def test_docked_media_stays_below_every_overlay_in_mounted_chromium(environment,
         {"width": 768, "bounded": True},
         {"width": 390, "bounded": True},
     ]
+
+
+@pytest.mark.parametrize("engine", ["chromium", "webkit"])
+@pytest.mark.timeout(300)
+def test_plugin_gallery_is_lazy_accessible_and_responsive_in_both_engines(environment, tmp_path, engine):
+    """The built Plugins screen previews actual declared media at desktop and all six phone sizes."""
+    env, _recorded = environment
+    env["PLAYWRIGHT_BROWSER"] = engine
+    web_build.ensure_built()
+    run = [sys.executable, str(REPO / "scripts" / "web_build.py")]
+    subprocess.run(
+        [*run, "exec", "playwright-core", "install", engine], cwd=REPO, check=True, timeout=600, capture_output=True
+    )
+    shots = Path(os.environ.get("HZ_SCREENSHOTS", tmp_path / "screenshots"))
+    ui = subprocess.Popen(
+        [sys.executable, "-m", "heinzel", "ui", "--port", "0"], cwd=REPO, env=env, stderr=subprocess.PIPE
+    )
+    output = MobileServerOutput(ui)
+    token = ""
+    try:
+        address = output.wait_url()
+        token = parse_qs(urlsplit(address).fragment).get("token", [""])[0]
+        driven = subprocess.run(
+            [*run, "exec", "node", "e2e/plugin-gallery-proof.mjs", address, str(shots)],
+            cwd=REPO,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=180,
+        )
+        check_driver(driven.returncode, redact(driven.stderr, token))
+        assert json.loads(driven.stdout.strip().splitlines()[-1]) == {
+            "engine": engine,
+            "viewports": 7,
+            "gallery": True,
+            "axe": True,
+        }
+    finally:
+        ui.terminate()
+        ui.wait(30)
+        output.close()
+        if ui.stderr is not None:
+            ui.stderr.close()

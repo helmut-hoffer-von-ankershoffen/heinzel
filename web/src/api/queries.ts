@@ -201,6 +201,15 @@ export const usePluginSearch = (text: string) =>
     staleTime: 5 * 60 * 1000,
   });
 
+/** Fetch inert media only after a person opens a plugin's gallery. */
+export const usePluginShowcase = (spec: string) =>
+  useQuery({
+    queryKey: ["system", "plugin", "showcase", spec],
+    queryFn: ({ signal }) => unwrap(api.GET("/system/plugin/showcase", { params: { query: { spec } }, signal })),
+    staleTime: 5 * 60 * 1000,
+    retry: false,
+  });
+
 /** `hz system plugin add` without `confirm`: what a spec would install (source, version, publisher), installing nothing. */
 export const usePluginPreview = () =>
   useMutation({

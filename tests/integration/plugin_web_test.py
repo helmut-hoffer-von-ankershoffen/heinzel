@@ -480,3 +480,49 @@ def test_a_handed_over_socket_that_isnt_a_loopback_listener_starts_a_fresh_sessi
     sock, token, resumed = web._session(f"999999:{TOKEN}", 0)
     sock.close()
     assert not resumed
+
+
+def test_public_gallery_is_lazy_authenticated_metadata_without_running_plugin_code(kernel, client):
+    project = b"""[project]
+name="heinzel-harbor"
+[[tool.heinzel.catalog.screenshots]]
+path="docs/ui.png"
+surface="ui"
+caption="Harbor in the app"
+"""
+    revision, blob = "a" * 40, "b" * 40
+    calls = []
+
+    def github(path):
+        calls.append(path)
+        if path == "repos/fictional-lab/harbor":
+            return {"private": False, "visibility": "public", "default_branch": "main"}
+        if "/commits/" in path:
+            return {"sha": revision}
+        if "/git/trees/" in path:
+            return {
+                "tree": [
+                    {"path": "pyproject.toml", "type": "blob", "mode": "100644", "size": len(project), "sha": blob},
+                    {"path": "docs/ui.png", "type": "blob", "mode": "100644", "size": 500},
+                ]
+            }
+        assert path.endswith("/git/blobs/" + blob)
+        import base64
+
+        return {"content": base64.b64encode(project).decode()}
+
+    kernel.resolve(PluginService).github_api = github
+    spec = "heinzel-harbor @ git+https://github.com/fictional-lab/harbor"
+    assert client.get("/api/system/plugin/showcase", params={"spec": spec}).status_code == 401
+    assert calls == []
+    response = client.get("/api/system/plugin/showcase", params={"spec": spec}, headers=AUTH)
+    assert response.status_code == 200
+    assert response.json()["screenshots"] == [
+        {
+            "url": f"https://raw.githubusercontent.com/fictional-lab/harbor/{revision}/docs/ui.png",
+            "surface": "ui",
+            "caption": "Harbor in the app",
+        }
+    ]
+    assert kernel.runs == []
+    assert "system_plugin_showcase" not in {operation.name for operation in exposed(kernel, "api")}

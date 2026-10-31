@@ -2519,6 +2519,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/system/plugin/showcase": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Preview an owning public plugin's UI and CLI screenshots without installing it.
+         * @description Preview an owning public plugin's UI and CLI screenshots without installing it.
+         *
+         *     Raises:
+         *         HeinzelError: If the specification or public media is unsafe.
+         *         OSError: If public source metadata cannot be read.
+         *         ValueError: If public metadata is malformed.
+         */
+        get: operations["system_plugin_showcase"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/system/release": {
         parameters: {
             query?: never;
@@ -8769,6 +8794,28 @@ export interface components {
             version: string;
         };
         /**
+         * PluginScreenshot
+         * @description An owning public project's immutable raster screenshot.
+         */
+        PluginScreenshot: {
+            /**
+             * Caption
+             * @description The owner's description of the actual capture.
+             */
+            caption: string;
+            /**
+             * Surface
+             * @description Whether the image shows the interface or command line.
+             * @enum {string}
+             */
+            surface: "ui" | "cli";
+            /**
+             * Url
+             * @description A checked immutable public GitHub raster asset URL.
+             */
+            url: string;
+        };
+        /**
          * PluginSearch
          * @description Plugins one can install, and what kept the search from being complete.
          */
@@ -8783,6 +8830,54 @@ export interface components {
              * @description Sources that could not be searched, e.g. GitHub while offline.
              */
             warnings: string[];
+        };
+        /**
+         * PluginShowcase
+         * @description Media preview of one public source, read without installing its implementation.
+         */
+        PluginShowcase: {
+            /**
+             * Notice
+             * @description Why previews are unavailable or how to interpret declared media.
+             * @default
+             */
+            notice: string;
+            /**
+             * Revision
+             * @description The immutable public source revision, when available.
+             */
+            revision?: string | null;
+            /**
+             * Screenshots
+             * @description UI and CLI previews before installation.
+             */
+            screenshots?: components["schemas"]["PluginScreenshot"][];
+            /**
+             * Soundscapes
+             * @description Explicit links; nothing plays automatically.
+             */
+            soundscapes?: components["schemas"]["PluginSoundscape"][];
+            /**
+             * Title
+             * @description The owning project's display title.
+             */
+            title: string;
+        };
+        /**
+         * PluginSoundscape
+         * @description A public plugin's declared YouTube soundscape.
+         */
+        PluginSoundscape: {
+            /**
+             * Title
+             * @description The soundscape's declared title.
+             */
+            title: string;
+            /**
+             * Url
+             * @description A YouTube watch link constructed from a checked video identity.
+             */
+            url: string;
         };
         /**
          * PluginUpdate
@@ -13931,7 +14026,10 @@ export type SchemaPluginInfo = components['schemas']['PluginInfo'];
 export type SchemaPluginLayer = components['schemas']['PluginLayer'];
 export type SchemaPluginOperation = components['schemas']['PluginOperation'];
 export type SchemaPluginPage = components['schemas']['PluginPage'];
+export type SchemaPluginScreenshot = components['schemas']['PluginScreenshot'];
 export type SchemaPluginSearch = components['schemas']['PluginSearch'];
+export type SchemaPluginShowcase = components['schemas']['PluginShowcase'];
+export type SchemaPluginSoundscape = components['schemas']['PluginSoundscape'];
 export type SchemaPluginUpdate = components['schemas']['PluginUpdate'];
 export type SchemaProfile = components['schemas']['Profile'];
 export type SchemaProfileProposal = components['schemas']['ProfileProposal'];
@@ -17733,6 +17831,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PluginSearch"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_plugin_showcase: {
+        parameters: {
+            query: {
+                /** @description The selected catalog plugin's install specification. */
+                spec: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PluginShowcase"];
                 };
             };
             /** @description Validation Error */

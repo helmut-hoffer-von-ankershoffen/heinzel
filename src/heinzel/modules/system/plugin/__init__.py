@@ -17,6 +17,7 @@ from heinzel.modules.system.plugin._models import (
     PluginOperation,
     PluginSearch,
     PluginSettings,
+    PluginShowcase,
 )
 from heinzel.modules.system.plugin._render import render_change, render_list, render_search
 from heinzel.modules.system.plugin._service import TEMPLATE, PluginService
@@ -63,6 +64,21 @@ def list_(
             message = "Refreshing the installed plugin inventory requires an authenticated head"
             raise HeinzelError(message) from error
     return service.installed(fresh=fresh)
+
+
+@module.operation(heads=CHANGES)
+def showcase(
+    service: PluginService,
+    spec: Annotated[str, Field(description="The selected catalog plugin's install specification.")],
+) -> PluginShowcase:
+    """Preview an owning public plugin's UI and CLI screenshots without installing it.
+
+    Raises:
+        HeinzelError: If the specification or public media is unsafe.
+        OSError: If public source metadata cannot be read.
+        ValueError: If public metadata is malformed.
+    """
+    return service.showcase(spec)
 
 
 @module.operation(read_only=False, heads=CHANGES, render=render_change)

@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Providers, queryClient } from "@/App";
 import { expectAccessible } from "@/test/render";
-import { ModuleHeader, PluginsSection, sourceLabel } from "./PluginsSection";
+import { installedGallerySpec, ModuleHeader, PluginGallery, PluginsSection, sourceLabel } from "./PluginsSection";
 
 const PINNED = `heinzel-crm @ git+https://github.com/acme-example/heinzel-crm@${"b".repeat(40)}`;
 
@@ -718,4 +718,174 @@ describe("PluginsSection", () => {
       }),
     ).toHaveAttribute("href", installed.source_url);
   });
+});
+
+const GALLERY = {
+  title: "Harbor",
+  revision: "a".repeat(40),
+  screenshots: [
+    {
+      surface: "ui",
+      caption: "Harbor in the app",
+      url: `https://raw.githubusercontent.com/fictional-lab/harbor/${"a".repeat(40)}/docs/ui.png`,
+    },
+    {
+      surface: "cli",
+      caption: "Harbor in the terminal",
+      url: `https://raw.githubusercontent.com/fictional-lab/harbor/${"a".repeat(40)}/docs/cli.png`,
+    },
+  ],
+  soundscapes: [{ title: "Harbor tide", url: "https://www.youtube.com/watch?v=abcdefghijk" }],
+  notice: "Owner-declared previews",
+};
+
+describe("PluginGallery", () => {
+  it("loads no metadata or images until opened, switches UI/CLI captures and keeps sound external", async () => {
+    const calls = serve((url) => (url.pathname === "/api/system/plugin/showcase" ? { body: GALLERY } : base(url)));
+    const user = userEvent.setup();
+    const { container } = render(
+      <Providers client={queryClient()}>
+        <PluginGallery spec="harbor" name="Harbor" />
+      </Providers>,
+    );
+    expect(calls).toHaveLength(0);
+    expect(screen.queryByRole("img")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Screenshots for Harbor" }));
+    const gallery = await screen.findByRole("region", { name: "Screenshot gallery: Harbor" });
+    expect(await within(gallery).findByRole("img", { name: "Harbor in the app" })).toHaveAttribute(
+      "src",
+      GALLERY.screenshots[0]?.url,
+    );
+    expect(calls).toHaveLength(1);
+    expect(new URL(calls[0]?.url ?? "").searchParams.get("spec")).toBe("harbor");
+    await user.click(within(gallery).getByRole("button", { name: "CLI: Harbor in the terminal" }));
+    expect(within(gallery).getByRole("img", { name: "Harbor in the terminal" })).toHaveAttribute(
+      "src",
+      GALLERY.screenshots[1]?.url,
+    );
+    expect(within(gallery).getByRole("link", { name: "Open full size: Harbor in the terminal" })).toHaveAttribute(
+      "href",
+      GALLERY.screenshots[1]?.url,
+    );
+    expect(within(gallery).getByRole("button", { name: "CLI: Harbor in the terminal" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(within(gallery).getByRole("link", { name: /Harbor tide/ })).toHaveAttribute(
+      "href",
+      GALLERY.soundscapes[0]?.url,
+    );
+    expect(container.querySelector("iframe")).toBeNull();
+    expect(calls.every((call) => new URL(call.url).origin === window.location.origin)).toBe(true);
+    await expectAccessible(container);
+    await user.click(screen.getByRole("button", { name: "Screenshots for Harbor" }));
+    expect(screen.queryByRole("region", { name: "Screenshot gallery: Harbor" })).not.toBeInTheDocument();
+  });
+
+  it("never fetches or displays public image URLs for a private source", async () => {
+    const calls = serve(base);
+    const user = userEvent.setup();
+    const { container } = render(
+      <Providers client={queryClient()}>
+        <PluginGallery spec="private" name="Harbor" privateSource />
+      </Providers>,
+    );
+    await user.click(screen.getByRole("button", { name: "Screenshots for Harbor" }));
+    expect(screen.getByText("Private-source previews remain in their owning repository.")).toBeInTheDocument();
+    expect(calls).toHaveLength(0);
+    expect(container.querySelectorAll("img,iframe")).toHaveLength(0);
+  });
+
+  it("offers an installed plugin's exact Git source gallery without installing or changing it", async () => {
+    const calls = serve((url) => (url.pathname === "/api/system/plugin/showcase" ? { body: GALLERY } : base(url)));
+    const user = userEvent.setup();
+    show();
+    await user.click(await screen.findByRole("button", { name: "Screenshots for Clock" }));
+    await screen.findByRole("img", { name: "Harbor in the app" });
+    const previews = calls.filter((call) => new URL(call.url).pathname.endsWith("/showcase"));
+    expect(new URL(previews[0]?.url ?? "").searchParams.get("spec")).toBe(
+      "heinzel-clock @ git+https://github.com/helmut-hoffer-von-ankershoffen/heinzel@v0.3.0#subdirectory=plugins/heinzel-clock",
+    );
+    expect(calls.some((call) => /\/(add|remove|disable|enable)$/.test(new URL(call.url).pathname))).toBe(false);
+  });
+
+  it("keeps the installed repository and pinned revision when a same-name catalog entry points elsewhere", async () => {
+    const revision = "c".repeat(40);
+    const catalogSpec = `heinzel-clock @ git+https://github.com/another-lab/plugins@${"d".repeat(40)}#subdirectory=plugins/heinzel-clock`;
+    const calls = serve((url) => {
+      if (url.pathname === "/api/system/plugin/list")
+        return {
+          body: [
+            {
+              ...installed,
+              revision,
+              source_url: `https://github.com/fictional-lab/own-clock/tree/${revision}/plugins/heinzel-clock`,
+            },
+          ],
+        };
+      if (url.pathname === "/api/system/plugin/search")
+        return {
+          body: {
+            plugins: [
+              {
+                name: "heinzel-clock",
+                short_name: "clock",
+                description: "Another clock implementation.",
+                install_spec: catalogSpec,
+                source: "github",
+                community: true,
+                installed: true,
+                repository_url: "https://github.com/another-lab/plugins",
+                private_repository: false,
+                stars: 0,
+              },
+            ],
+            warnings: [],
+          },
+        };
+      return url.pathname === "/api/system/plugin/showcase" ? { body: GALLERY } : base(url);
+    });
+    const user = userEvent.setup();
+    show();
+    await user.click(await screen.findByRole("button", { name: "Screenshots for Clock" }));
+    await screen.findByRole("img", { name: "Harbor in the app" });
+    const preview = calls.find((call) => new URL(call.url).pathname.endsWith("/showcase"));
+    expect(new URL(preview?.url ?? "").searchParams.get("spec")).toBe(
+      `heinzel-clock @ git+https://github.com/fictional-lab/own-clock@${revision}#subdirectory=plugins/heinzel-clock`,
+    );
+    expect(calls.some((call) => /\/(add|remove|disable|enable)$/.test(new URL(call.url).pathname))).toBe(false);
+  });
+
+  it("treats owner HTML captions as text", async () => {
+    const caption = '<script>alert("no")</script>';
+    serve(() => ({ body: { ...GALLERY, screenshots: [{ ...GALLERY.screenshots[0], caption }] } }));
+    const user = userEvent.setup();
+    const { container } = render(
+      <Providers client={queryClient()}>
+        <PluginGallery spec="harbor" name="Harbor" />
+      </Providers>,
+    );
+    await user.click(screen.getByRole("button", { name: "Screenshots for Harbor" }));
+    expect(await screen.findByRole("img", { name: caption })).toBeInTheDocument();
+    expect(container.querySelector("script")).toBeNull();
+  });
+
+  it("shows a useful empty gallery without blocking installation", async () => {
+    serve(() => ({ body: { ...GALLERY, screenshots: [], soundscapes: [], notice: "" } }));
+    const user = userEvent.setup();
+    render(
+      <Providers client={queryClient()}>
+        <PluginGallery spec="harbor" name="Harbor" />
+      </Providers>,
+    );
+    await user.click(screen.getByRole("button", { name: "Screenshots for Harbor" }));
+    expect(await screen.findByText("This plugin has not published screenshots yet.")).toBeInTheDocument();
+  });
+
+  it.each(["https://github.com.evil.example/a/b", "https://user:password@github.com/a/b", "https://other.example/a/b"])(
+    "does not turn %s into a public GitHub source",
+    (source_url) => {
+      expect(installedGallerySpec({ ...installed, source_url })).toBeNull();
+    },
+  );
 });
