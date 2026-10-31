@@ -8,6 +8,8 @@ related: 0007, 0017
 
 # 0025: Plugin distributions are named `heinzel-<name>`
 
+*Amended by 0094: first-party plugins now live in the heinzel-plugins repository.*
+
 ## Context and Problem Statement
 
 [ADR 0016](0016-name-heinzelmaennchen.md) named plugins `heinzel-plugin-*`. [ADR 0017](0017-first-party-plugins-in-the-core-repository.md)
@@ -68,6 +70,5 @@ external plugins alike and promotion becomes a move, not a rename.
   `heinzel-example` (github.com/helmut-hoffer-von-ankershoffen/heinzel-example) from now on. Since 2026-10-24 it
   lives in heinzel-contrib, the repository of community plugins, as `plugins/heinzel-example`; its own repository
   is archived.
-- Decided by the maintainer on 2026-10-23.
 - Open questions: who keeps a name when an external plugin collides with a later first-party one; whether the PyPI
   keyword `heinzel-plugin` in the template stays as the way to find plugins.

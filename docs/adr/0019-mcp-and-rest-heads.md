@@ -6,6 +6,8 @@ amended-by: 0039
 
 # 0019: MCP and REST heads derive everything from operations
 
+*Since 0051 the module is `heinzel`: read `hz workflow` as `hz heinzel` and `[workflow]` as `[heinzel]`.*
+
 ## Context and Problem Statement
 
 Coding agents talk MCP; other systems talk HTTP. ADR 0003 promised that operations written once would appear in
@@ -50,7 +52,7 @@ then serves both without extra code.
 
 ## More Information
 
-- **The REST head answers only local, same-origin requests** (2026-10-24, on review of the workflow contracts). It has
+- **The REST head answers only local, same-origin requests.** It has
   no authentication, and a web page in the user's browser can reach `127.0.0.1` too, directly or through DNS
   rebinding. So it refuses with `403` and a message saying why any request whose Host isn't `localhost`,
   `127.0.0.1` or `[::1]` on the port it listens on, unless the user lists the name in `[hz] api_allowed_hosts` (user
