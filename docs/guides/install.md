@@ -24,7 +24,7 @@ It then runs the same app launcher. No administrator access is needed. You can
 [inspect the script](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/blob/main/docs/install.sh) first. If you use wget:
 
 ```sh
-wget -qO- https://helmut.hoffer-von-ankershoffen.me/heinzel/install.sh | sh
+wget -qO- https://heinzel.team/install.sh | sh
 ```
 
 The first run selects the newest published standard release automatically, verifies its artifact hashes,

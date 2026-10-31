@@ -46,7 +46,7 @@ def require(condition: bool, message: str) -> None:
 
 
 class Handler(SimpleHTTPRequestHandler):
-    """Serve only built artifacts under the production project's path prefix."""
+    """Serve the built artifacts from the root, as the production domain does."""
 
     def handle(self) -> None:
         """Treat a browser closing its keepalive connection as normal teardown."""
@@ -56,11 +56,7 @@ class Handler(SimpleHTTPRequestHandler):
             return
 
     def do_GET(self) -> None:
-        """Map the deployed project prefix to the build root."""
-        if not self.path.startswith("/heinzel/"):
-            self.send_error(404)
-            return
-        self.path = self.path.removeprefix("/heinzel")
+        """Serve the build root; the production site lives at the root of its own domain."""
         super().do_GET()
 
     def log_message(self, format: str, *args: object) -> None:  # noqa: A002 - standard library callback
@@ -617,7 +613,7 @@ def main() -> None:
             for engine in ("chromium", "webkit"):
                 browser = getattr(playwright, engine).launch()
                 try:
-                    base = f"http://127.0.0.1:{server.server_port}/heinzel/"
+                    base = f"http://127.0.0.1:{server.server_port}/"
                     if "--characters" in sys.argv:  # the character guides alone: quick while iterating on them
                         helper_layout(browser, base, snapshot, candidates[0])
                         helper_hash(browser, base, snapshot)

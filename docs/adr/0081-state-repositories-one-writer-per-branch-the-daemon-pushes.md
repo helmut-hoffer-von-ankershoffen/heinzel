@@ -4,6 +4,7 @@ date: 2026-10-25
 decision-makers: maintainer (the decisions), architect (shape)
 amends: 0020, 0049, 0054
 related: 0024, 0026, 0027
+implemented-by: 134
 ---
 
 # 0081: State repositories: one writer per branch, append-only segments, the daemon pushes

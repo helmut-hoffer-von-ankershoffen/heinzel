@@ -2,6 +2,7 @@
 status: proposed
 date: 2026-10-30
 related: 0078, 0099
+implemented-by: 295
 ---
 
 # 0106: Bind connected providers to source-only loading
