@@ -276,7 +276,7 @@ class Kernel:
         return cast("T", self._instances[kind])
 
     def implementations[T](self, base: type[T]) -> list[T]:
-        """Every registered service that subclasses `base`, built once, in a stable order (ADR 0112)."""
+        """Every registered service that subclasses `base`, built once, in a stable order (ADR 0117)."""
         kinds = sorted(
             (kind for kind in self._factories if issubclass(kind, base)),
             key=lambda kind: (kind.__module__, kind.__qualname__),

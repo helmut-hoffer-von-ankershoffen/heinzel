@@ -143,6 +143,12 @@ def _time(value: datetime | None) -> str | None:
     return value.isoformat() if value is not None else None
 
 
+def _remove_doc(cache: _Cache, seq: int) -> None:
+    """Drop a document the host itself expired; older SQLite can then fail an integrity check it needs no run of."""
+    cache.db.execute("DELETE FROM docs WHERE seq = ?", (seq,))
+    cache.verified_changes = cache.db.total_changes
+
+
 def _verified(cache: _Cache) -> None:
     if cache.db.total_changes == cache.verified_changes:
         return
@@ -221,7 +227,7 @@ def _reconcile(cache: _Cache, service: SessionCrud, session: str) -> set[int]:
                 "SELECT seq, body_id, size FROM docs WHERE source = ?", (source,)
             ).fetchall():
                 if body_id not in available:
-                    cache.db.execute("DELETE FROM docs WHERE seq = ?", (seq,))
+                    _remove_doc(cache, seq)
                     cache.count -= 1
                     cache.bytes -= size
                     removed.add(seq)
@@ -249,7 +255,7 @@ def _query(
             raise HeinzelError(msg)
         message = service.read_message(request.session_id, page.events[0])
         if message.status == "expired":
-            cache.db.execute("DELETE FROM docs WHERE seq = ?", (seq,))
+            _remove_doc(cache, seq)
             cache.count -= 1
             cache.bytes -= len(indexed_text.encode("utf-8"))
         elif matches_history(message, request):

@@ -3,6 +3,7 @@
 import json
 import os
 import select
+import shutil
 import stat
 import subprocess
 import sys
@@ -31,7 +32,7 @@ from heinzel.modules.system.daemon._ledger import Ledger
 from heinzel.modules.system.daemon._models import Disposition, Wake, unit_dir
 from heinzel.modules.system.daemon._runtime import Outcome, lock, within
 from heinzel.modules.system.daemon._service import MAX_SERVICE_MANAGER_OUTPUT, _launchd_pid, _reported_pid
-from heinzel.modules.system.daemon._units import LABEL
+from heinzel.modules.system.daemon._units import LABEL, launchd_plist
 
 pytestmark = pytest.mark.unit
 
@@ -283,6 +284,16 @@ def test_health_flags_a_unit_that_is_not_loaded(make, bin_dir):
     make().install(timedelta(minutes=5))
     [check] = make(runner=Runner(bin_dir, {"print": 113})).health()
     assert (check.name, check.status) == ("daemon", Status.DEGRADED)
+
+
+def test_health_explains_a_registered_daemon_whose_program_is_gone(make, bin_dir):
+    service = make()
+    service.install(timedelta(minutes=5))
+    (bin_dir / "hz").unlink()
+    (service.state_dir / "install.json").unlink()
+    [check, *_] = service.health()
+    assert (check.name, check.status) == ("daemon", Status.DEGRADED)
+    assert check.fix == "Run `uvx --from heinzel hz system daemon uninstall`"
 
 
 def test_health_flags_a_daemon_that_stopped_ticking(make, jobs):
@@ -1859,8 +1870,19 @@ def test_quiescent_denies_ambiguous_or_present_manager_state(make, bin_dir, tmp_
         )
 
     service._quiescence_probe = probe
-    with pytest.raises(HeinzelError, match="not proven quiescent"), service.quiescence_guard(selected_bin):
+    with pytest.raises(HeinzelError, match="not proven quiescent") as refused, service.quiescence_guard(selected_bin):
         pytest.fail("ambiguous manager state must deny")
+    expected = {
+        "background": "desktop session",
+        "wrong_uid": "desktop session",
+        "changed_context": "desktop session",
+        "loaded": "did not confirm daemon absence",
+        "malformed": "did not confirm daemon absence",
+        "truncated": "inspection failed",
+        "error": "inspection failed",
+    }
+    assert expected[failure] in str(refused.value)
+    assert "uvx --from heinzel hz system daemon status" in str(refused.value)
 
 
 @pytest.mark.parametrize("kind", ["unit", "marker", "request", "pending", "symlink"])
@@ -1878,8 +1900,13 @@ def test_quiescent_refuses_any_existing_daemon_artifact(make, bin_dir, tmp_path,
         path.symlink_to(tmp_path / "missing")
     else:
         path.write_text("uncertain")
-    with pytest.raises(HeinzelError), service.quiescence_guard(selected_bin):
+    with pytest.raises(HeinzelError) as refused, service.quiescence_guard(selected_bin):
         pytest.fail("existing or uncertain daemon artifacts must deny")
+    expected = {
+        "request": "previous daemon or installation transaction",
+        "pending": "daemon lifecycle is changing",
+    }.get(kind, "retained daemon unit")
+    assert expected in str(refused.value)
 
 
 def test_quiescent_refuses_writable_unit_parent_before_manager_query(make, bin_dir, tmp_path):
@@ -1915,28 +1942,46 @@ def test_quiescence_reader_bounds_an_owned_child_output():
     assert result.returncode is None
 
 
-@pytest.mark.parametrize("paused", [False, True])
-def test_quiescence_preserves_owned_stopped_unit_and_pause_state(make, bin_dir, tmp_path, paused):
+def _record_quiescent_tool(prefix, bin_dir):
     from heinzel import Progress
-    from heinzel.kernel import Installation, ProcessOutcome
+    from heinzel.kernel import Installation
 
-    prefix = tmp_path / "tools" / "heinzel"
     (prefix / "bin").mkdir(parents=True)
     (prefix / "bin/hz").write_text("fixture")
-    (bin_dir / "hz").unlink()
+    (bin_dir / "hz").unlink(missing_ok=True)
     (bin_dir / "hz").symlink_to(prefix / "bin/hz")
     (prefix / "uv-receipt.toml").write_text(
         f'[tool]\nrequirements=[{{name="heinzel"}}]\nentrypoints=[{{name="hz",install-path={str(bin_dir / "hz")!r}}}]\n'
     )
     installation = Installation(Progress(), prefix=prefix, uv="uv")
     installation.record_startup_state(expected=installation.startup_fingerprint())
-    service = make(runner=Runner(bin_dir))
-    service._quiescence_installation = installation
+    return installation
+
+
+@pytest.fixture
+def stopped_tool_daemon(make, bin_dir, tmp_path, request):
+    service = make(runner=Runner(bin_dir), platform=getattr(request, "param", "darwin"))
+    service._quiescence_installation = _record_quiescent_tool(tmp_path / "tools" / "heinzel", bin_dir)
     service.install(timedelta(minutes=5))
+    return service
+
+
+@pytest.mark.parametrize("paused", [False, True])
+@pytest.mark.parametrize("removed", [False, True])
+def test_quiescence_preserves_owned_stopped_unit_and_pause_state(stopped_tool_daemon, bin_dir, paused, removed):
+    from heinzel.kernel import ProcessOutcome
+
+    service = stopped_tool_daemon
+    prefix = service._quiescence_installation.prefix
     if paused:
         service.pause()
     unit = service._unit_paths()[0]
     before = unit.read_bytes()
+    marker = service.state_dir / "install.json"
+    marker_before = marker.read_bytes()
+    if removed:
+        shutil.rmtree(prefix)
+        (bin_dir / "hz").unlink()
 
     def probe(command):
         output = {"managername": "Aqua\n", "manageruid": "501\n", "list": "PID\tStatus\tLabel\n"}
@@ -1945,11 +1990,129 @@ def test_quiescence_preserves_owned_stopped_unit_and_pause_state(make, bin_dir, 
     service._quiescence_probe = probe
     with service.quiescence_guard(bin_dir):
         assert unit.read_bytes() == before
+        assert marker.read_bytes() == marker_before
+        if removed:
+            _record_quiescent_tool(prefix, bin_dir)
         if paused:
             with pytest.raises(HeinzelError, match="lifecycle is changing"):
                 service.resume()
     assert service.paused == paused
     assert unit.read_bytes() == before
+    assert marker.read_bytes() == marker_before
+
+
+@pytest.mark.parametrize(
+    "artifact", ["prefix_link", "prefix_writable", "partial_prefix", "receipt", "unit", "unit_mode", "marker"]
+)
+def test_removed_tool_retained_unit_rejects_invalid_artifacts(stopped_tool_daemon, bin_dir, tmp_path, artifact):
+    service = stopped_tool_daemon
+    prefix = service._quiescence_installation.prefix
+    shutil.rmtree(prefix)
+    (bin_dir / "hz").unlink()
+    unit = service._unit_paths()[0]
+    marker = service.state_dir / "install.json"
+    if artifact == "prefix_link":
+        other = tmp_path / "other"
+        other.mkdir()
+        prefix.symlink_to(other, target_is_directory=True)
+    elif artifact in {"prefix_writable", "partial_prefix"}:
+        prefix.mkdir()
+        if artifact == "prefix_writable":
+            prefix.chmod(0o777)
+    elif artifact == "receipt":
+        _record_quiescent_tool(prefix, bin_dir)
+        (prefix / "uv-receipt.toml").write_text('[tool]\nrequirements=[{name="other"}]\n')
+    elif artifact == "unit":
+        unit.write_text(unit.read_text() + "modified")
+    elif artifact == "unit_mode":
+        unit.chmod(0o666)
+    else:
+        data = json.loads(marker.read_text())
+        data["executable"] = str(tmp_path / "other-hz")
+        marker.write_text(json.dumps(data))
+    service._quiescence_probe = lambda _command: pytest.fail("invalid artifacts must deny before manager queries")
+    with pytest.raises(HeinzelError, match="not proven quiescent"), service.quiescence_guard(bin_dir):
+        pytest.fail("invalid retained daemon artifacts must deny")
+
+
+@pytest.mark.parametrize("shim", ["hz", "heinzel", "hz-install"])
+def test_removed_tool_rejects_leftover_shims(stopped_tool_daemon, bin_dir, shim):
+    service = stopped_tool_daemon
+    prefix = service._quiescence_installation.prefix
+    shutil.rmtree(prefix)
+    (bin_dir / "hz").unlink()
+    (bin_dir / shim).symlink_to(prefix / "bin" / shim)
+    service._quiescence_probe = lambda _command: pytest.fail("leftover shims must deny before manager queries")
+    with pytest.raises(HeinzelError, match="not proven quiescent"), service.quiescence_guard(bin_dir):
+        pytest.fail("even a broken leftover shim must deny")
+
+
+@pytest.mark.parametrize("stopped_tool_daemon", ["linux"], indirect=True)
+def test_removed_tool_does_not_change_linux_retained_unit_policy(stopped_tool_daemon, bin_dir):
+    service = stopped_tool_daemon
+    assert service._quiescence_unit_state(bin_dir)
+    shutil.rmtree(service._quiescence_installation.prefix)
+    (bin_dir / "hz").unlink()
+    assert not service._quiescence_unit_state(bin_dir)
+
+
+@pytest.mark.parametrize("manager", ["loaded", "unknown", "malformed"])
+def test_removed_tool_retained_unit_still_requires_actual_manager_absence(stopped_tool_daemon, bin_dir, manager):
+    from heinzel.kernel import ProcessOutcome
+
+    service = stopped_tool_daemon
+    shutil.rmtree(service._quiescence_installation.prefix)
+    (bin_dir / "hz").unlink()
+    outputs = {"managername": "Aqua\n", "manageruid": "501\n", "list": "PID Status Label\n"}
+    if manager != "unknown":
+        outputs["list"] += f"4242 0 {LABEL}\n" if manager == "loaded" else "invalid\n"
+    service._quiescence_probe = lambda command: ProcessOutcome(
+        1 if manager == "unknown" else 0, outputs[command[1]], ""
+    )
+    with pytest.raises(HeinzelError, match="not proven quiescent"), service.quiescence_guard(bin_dir):
+        pytest.fail("retained files cannot substitute for manager absence")
+
+
+@pytest.mark.parametrize(
+    "pending",
+    ["handover-pending.json", "handover-request.json", "mutation-pending.json", "standard-install-pending.json"],
+)
+def test_removed_tool_retained_unit_denies_pending_lifecycle_state(stopped_tool_daemon, bin_dir, pending):
+    service = stopped_tool_daemon
+    shutil.rmtree(service._quiescence_installation.prefix)
+    (bin_dir / "hz").unlink()
+    (service.state_dir / pending).write_text("{}")
+    service._quiescence_probe = lambda _command: pytest.fail("pending lifecycle state must deny before manager queries")
+    with pytest.raises(HeinzelError), service.quiescence_guard(bin_dir):
+        pytest.fail("retained files must not bypass pending lifecycle state")
+
+
+@pytest.mark.parametrize("replacement", ["missing", "incomplete"])
+def test_retained_unit_reinstall_cannot_complete_without_verified_replacement(
+    stopped_tool_daemon, bin_dir, replacement
+):
+    from heinzel.kernel import ProcessOutcome
+
+    service = stopped_tool_daemon
+    prefix = service._quiescence_installation.prefix
+    shutil.rmtree(prefix)
+    (bin_dir / "hz").unlink()
+    unchanged = {path: path.read_bytes() for path in [*service._unit_paths(), service.state_dir / "install.json"]}
+    outputs = {"managername": "Aqua\n", "manageruid": "501\n", "list": "PID Status Label\n"}
+    service._quiescence_probe = lambda command: ProcessOutcome(0, outputs[command[1]], "")
+    admitted = []
+
+    def attempt():
+        with service.quiescence_guard(bin_dir):
+            admitted.append(True)
+            if replacement == "incomplete":
+                prefix.mkdir()
+
+    with pytest.raises(HeinzelError, match="Cannot verify the running uv tool"):
+        attempt()
+    assert admitted == [True]
+    assert (service.state_dir / "standard-install-pending.json").is_file()
+    assert all(path.read_bytes() == payload for path, payload in unchanged.items())
 
 
 def test_quiescence_refuses_symlinked_selected_prefix(make, tmp_path):
@@ -2260,3 +2423,153 @@ def test_a_local_cli_tick_runs_under_the_owners_daemon_identity(make_kernel, set
     with user.local("mcp-stdio"):
         service.tick()
     assert seen == ["daemon", "mcp-stdio"]
+
+
+HISTORIC_UNITS = Path(__file__).parent / "data"
+
+
+@pytest.mark.parametrize("tag", ["v0.4.0", "v0.7.30"])
+def test_units_generated_by_older_releases_are_recognized_exactly(tag):
+    from heinzel.modules.system.daemon._units import released_launchd_minutes
+
+    content = (HISTORIC_UNITS / f"launchd-{tag}.plist").read_bytes()
+    executable, logs = Path("/Users/u/.local/bin/hz"), Path("/Users/u/Library/Logs/hz")
+    assert released_launchd_minutes(content, executable, logs) == 30
+    assert released_launchd_minutes(content + b"\n", executable, logs) is None
+    assert released_launchd_minutes(content, Path("/Users/u/other/hz"), logs) is None
+
+
+@pytest.fixture
+def retained(make, bin_dir, tmp_path):
+    """A unit from a removed tool, no marker: the state a macOS user is left with; `seed` chooses the rest."""
+    from heinzel.kernel import ProcessOutcome
+
+    service = make(runner=Runner(bin_dir))
+    binary = _fresh_quiescence_target(service, tmp_path)
+    unit = service._unit_paths()[0]
+    unit.parent.mkdir(parents=True, exist_ok=True)
+    unit.write_text(launchd_plist(binary / "hz", 5, service.log_path.parent))
+    calls = []
+    state = {"pid": None, "pgrep": 1, "bootout_clears": True}
+
+    def probe(command):
+        calls.append(command)
+        if command[0] == "/usr/bin/pgrep":
+            return ProcessOutcome(state["pgrep"], "", "")
+        if command[1] == "bootout":
+            if state["bootout_clears"]:
+                state["pid"] = None
+            return ProcessOutcome(0, "", "")
+        entry = f"{state['pid']}\t78\t{LABEL}\n" if state["pid"] else ""
+        return ProcessOutcome(
+            0, {"managername": "Aqua\n", "manageruid": "501\n", "list": f"PID\tStatus\tLabel\n{entry}"}[command[1]], ""
+        )
+
+    service._quiescence_probe = probe
+    return service, binary, unit, state, calls
+
+
+def _retired(service):
+    return sorted(path.name for path in (service.state_dir / "retired-units").glob("*/*"))
+
+
+def test_stopped_released_unit_without_marker_is_moved_aside(retained):
+    service, binary, unit, _, calls = retained
+    content = unit.read_bytes()
+    with service.quiescence_guard(binary):
+        assert not unit.exists()
+        _record_quiescent_tool(service._quiescence_installation.prefix, binary)
+    assert _retired(service) == [unit.name]
+    moved = next((service.state_dir / "retired-units").glob(f"*/{unit.name}"))
+    assert moved.read_bytes() == content
+    assert not any(command[1] == "bootout" for command in calls)
+
+
+@pytest.mark.parametrize("marker", [False, True])
+def test_loaded_dead_daemon_with_missing_executable_is_booted_out_and_moved(retained, marker):
+    service, binary, unit, state, calls = retained
+    state["pid"] = "-"
+    if marker:
+        record = {"interval_minutes": 5, "executable": str(binary / "hz"), "platform": "darwin"}
+        service._write_state("install.json", record)
+    with service.quiescence_guard(binary):
+        assert not unit.exists()
+        _record_quiescent_tool(service._quiescence_installation.prefix, binary)
+    assert unit.name in _retired(service)
+    assert ("install.json" in _retired(service)) is marker
+    assert ["/bin/launchctl", "bootout", f"gui/{service._uid()}/{LABEL}"] in calls
+
+
+def test_running_daemon_is_never_unloaded_or_moved(retained):
+    service, binary, unit, state, calls = retained
+    state["pid"] = "4242"
+    with pytest.raises(HeinzelError, match="hz system daemon uninstall"), service.quiescence_guard(binary):
+        pytest.fail("a running daemon must deny")
+    assert unit.exists()
+    assert not any(command[1] == "bootout" for command in calls)
+
+
+def test_dead_daemon_with_a_matching_process_is_refused(retained):
+    service, binary, unit, state, calls = retained
+    state.update(pid="-", pgrep=0)
+    with pytest.raises(HeinzelError, match="not proven quiescent"), service.quiescence_guard(binary):
+        pytest.fail("a live tick must deny")
+    assert unit.exists()
+    assert not any(command[1] == "bootout" for command in calls)
+
+
+def test_dead_daemon_with_its_executable_present_is_refused(retained):
+    service, binary, unit, state, calls = retained
+    state["pid"] = "-"
+    (binary / "hz").write_text("fixture")
+    with pytest.raises(HeinzelError, match="not proven quiescent"), service.quiescence_guard(binary):
+        pytest.fail("a daemon that can still start must deny")
+    assert unit.exists()
+    assert not any(command[1] == "bootout" for command in calls)
+
+
+def test_bootout_that_does_not_clear_keeps_the_unit(retained):
+    service, binary, unit, state, _ = retained
+    state.update(pid="-", bootout_clears=False)
+    with pytest.raises(HeinzelError, match="not proven quiescent"), service.quiescence_guard(binary):
+        pytest.fail("an unconfirmed bootout must deny")
+    assert unit.exists()
+
+
+@pytest.mark.parametrize("edit", ["edited", "other_executable", "mode", "disagreeing_marker"])
+def test_unrecognized_unit_is_left_alone_with_the_exact_command(retained, tmp_path, edit):
+    service, binary, unit, state, calls = retained
+    state["pid"] = "-"
+    if edit == "edited":
+        unit.write_text(unit.read_text().replace("tick", "evil"))
+    elif edit == "other_executable":
+        unit.write_text(launchd_plist(tmp_path / "other/hz", 5, service.log_path.parent))
+    elif edit == "mode":
+        unit.chmod(0o666)
+    else:
+        service._write_state("install.json", {"executable": str(tmp_path / "other/hz"), "platform": "darwin"})
+    with pytest.raises(HeinzelError, match="not proven quiescent") as refused, service.quiescence_guard(binary):
+        pytest.fail("an unrecognized unit must deny")
+    message = str(refused.value)
+    assert "retained daemon unit or install receipt" in message
+    assert "plutil -p" in message
+    assert "mkdir -p ~/hz-retired && mv" in message
+    assert unit.exists()
+    assert calls == []
+
+
+def test_marker_without_a_unit_gets_the_exact_command(retained):
+    service, binary, unit, _, _ = retained
+    unit.unlink()
+    service._write_state("install.json", {"interval_minutes": 5})
+    with pytest.raises(HeinzelError, match="mkdir -p ~/hz-retired && mv"), service.quiescence_guard(binary):
+        pytest.fail("a marker without a unit must deny")
+
+
+def test_impossible_marker_interval_denies_instead_of_crashing(retained):
+    service, binary, _unit, _, _ = retained
+    service._write_state(
+        "install.json", {"interval_minutes": 7, "executable": str(binary / "hz"), "platform": "darwin"}
+    )
+    with pytest.raises(HeinzelError, match="not proven quiescent"), service.quiescence_guard(binary):
+        pytest.fail("an impossible interval must deny")

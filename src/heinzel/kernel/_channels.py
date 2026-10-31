@@ -1,4 +1,4 @@
-"""Ports other channels plug into: where a helper's notices and approval requests can reach its owner (ADR 0112).
+"""Ports other channels plug into: where a helper's notices and approval requests can reach its owner (ADR 0117).
 
 A channel is an ordinary service a plugin registers with `module.service(MyChannel)`, a subclass of
 `NotificationChannel`, `ApprovalChannel` or both; `Kernel.implementations` finds them. The core names no channel.

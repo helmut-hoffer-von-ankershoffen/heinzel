@@ -3,6 +3,7 @@ status: proposed
 date: 2026-10-24
 decision-makers: maintainer
 related: 0039, 0052
+implemented-by: 77
 ---
 
 # 0053: The team graph is drawn with React Flow and laid out by elk; Mermaid is only an export
@@ -62,7 +63,7 @@ the app's graphs in its tokens.
 - Bad: one more runtime dependency, about 1.4 MB minified (the layout engine is compiled from Java), loaded only by
   this page.
 - Bad: elkjs is `EPL-2.0 OR GPL-3.0-or-later`. We take it under EPL-2.0, weak, file-level copyleft like MPL-2.0, which
-  `.license-allowlist` now lists (approved by the maintainer, 2026-10-24); we ship elkjs unmodified, and the build
+  `.license-allowlist` now lists; we ship elkjs unmodified, and the build
   writes `licenses.md` next to the app (Vite's `build.license`, served at `/licenses.md`) with every bundled
   dependency's license and notice. The engine sits behind one function (`placeTeam` in `place-elk.ts`), so another
   one, such as the dagre option, would replace that file and nothing else.

@@ -3,6 +3,7 @@ status: proposed
 date: 2026-10-30
 decision-makers: maintainer
 related: 0037, 0106
+implemented-by: 303, 307
 ---
 
 # 0109: Adopt plugin playbook terms as inert chat drafts

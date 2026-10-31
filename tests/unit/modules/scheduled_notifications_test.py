@@ -22,7 +22,23 @@ from heinzel.modules.heinzel._user_chat import UserChatService
 from heinzel.modules.system.runner._snapshot import RunnerSnapshotService
 from tests.unit.modules.user_chat_test import FixtureConfig, fake_claude
 
-pytestmark = pytest.mark.unit
+pytestmark = pytest.mark.integration
+
+
+@pytest.fixture
+def occurrence_time(monkeypatch):
+    """A fixed time for the schedule's occurrence checks: a run across the hour would expire and be refused."""
+    import heinzel.modules.heinzel._autonomous_schedule as schedule_module
+
+    fixed = datetime.now(UTC)
+
+    class FixedClock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return fixed.astimezone(tz)
+
+    monkeypatch.setattr(schedule_module, "datetime", FixedClock)
+    return fixed
 
 
 class FakeNotifications(Notifications):
@@ -136,7 +152,7 @@ def test_rate_topic_uncertainty_and_daemon_ownership(tmp_path):
             assert runner("three").send(args, writer)[0] == "recorded"
 
 
-def test_exact_schedule_consent_dispatch_and_legacy_has_no_tool(tmp_path):
+def test_exact_schedule_consent_dispatch_and_legacy_has_no_tool(tmp_path, occurrence_time):
     current = CurrentUser(tmp_path / "identity")
     with current.local("cli"):
         repo = PersonalSessionRepository(current)
@@ -163,7 +179,7 @@ def test_exact_schedule_consent_dispatch_and_legacy_has_no_tool(tmp_path):
         binding = schedules.propose(session, "schedule", "contract", 3600, 4, 30, notification_policy=policy)
         assert binding.contract_sha256 == proposal.preview_sha256
         assert _binding_intent(binding)["notification_policy"] == policy.model_dump(mode="json")
-        now = datetime.now(UTC)
+        now = occurrence_time
         with current.local("daemon"), pytest.raises(HeinzelError):
             asyncio.run(schedules.tick(session, "schedule", now))
         assert provider.calls == []
@@ -231,7 +247,7 @@ def test_prior_receipt_reconciles_without_repeat_and_rejects_foreign_recovery(tm
         assert len(provider.compacted) == 1
 
 
-def test_legacy_schedule_rejects_hallucinated_notification_tool(tmp_path):
+def test_legacy_schedule_rejects_hallucinated_notification_tool(tmp_path, occurrence_time):
     current = CurrentUser(tmp_path / "identity")
     with current.local("cli"):
         crud = SessionCrud(
@@ -262,7 +278,7 @@ def test_legacy_schedule_rejects_hallucinated_notification_tool(tmp_path):
         with confirmation.using("heinzel", "approve-agent-schedule", params):
             schedules.approve(session, "legacy", review, proof, confirmation)
         with current.local("daemon"):
-            assert asyncio.run(schedules.tick(session, "legacy", datetime.now(UTC))) == "A real recorded reply"
+            assert asyncio.run(schedules.tick(session, "legacy", occurrence_time)) == "A real recorded reply"
         assert provider.calls == []
         assert [(event.tool, event.status) for event in chat.activity(session).items] == [
             ("notification:send", "requested"),
