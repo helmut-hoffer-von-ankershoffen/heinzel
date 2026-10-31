@@ -919,7 +919,7 @@ def test_e2e_prepares_core_build_before_suite_and_removes_owned_temp(tmp_path, f
                 'test "$FAIL_PREP" != 1\n'
             ),
         ),
-        (steps, '#!/bin/sh\nprintf "suite:%s\\n" "$*" >> "$TRACE"\n'),
+        (steps, '#!/bin/sh\nprintf "suite:%s\\n" "$@" >> "$TRACE"\n'),
     ):
         assert not path.exists()
         assert not path.is_symlink()
@@ -951,11 +951,11 @@ def test_e2e_prepares_core_build_before_suite_and_removes_owned_temp(tmp_path, f
     assert directory.is_relative_to(tmp_path)
     assert not directory.exists()
     assert (result.returncode == 0) is not fail
-    assert any(line.startswith("suite:e2e=uv run pytest ") for line in lines) is not fail
+    assert any(line.startswith("suite:e2e-readme=uv run pytest ") for line in lines) is not fail
     if not fail:
-        [suite] = [line for line in lines if line.startswith("suite:e2e=")]
+        [first] = [line for line in lines if line.startswith("suite:e2e-readme=")]
+        [second] = [line for line in lines if line.startswith("suite:e2e=")]
         node = "tests/e2e/docs_test.py::test_readme_instructions"
-        first, second = suite.split(" && ")
         assert first.endswith(f"-x {node}")
         assert second.endswith(f"-x --deselect={node}")
         assert first.count("-n 3") == second.count("-n 3") == 1
@@ -967,7 +967,7 @@ def test_e2e_prepares_core_build_before_suite_and_removes_owned_temp(tmp_path, f
 
 @pytest.mark.parametrize("first_fails", [False, True])
 def test_e2e_sequence_stops_after_readme_failure(tmp_path, first_fails):
-    """The shared step runs the remaining nodes only after the isolated README succeeds."""
+    """Each has its own step, so its own time limit; the remaining nodes run only after the README succeeds."""
     tool_dir = tmp_path / "bin"
     tool_dir.mkdir()
     trace = tmp_path / "trace"
@@ -983,7 +983,7 @@ def test_e2e_sequence_stops_after_readme_failure(tmp_path, first_fails):
                 '*docs_test.py::test_readme_instructions*) test "$FIRST_FAIL" != 1;; esac\n'
             ),
         ),
-        (steps, '#!/bin/sh\ncommand=${1#e2e=}\nexec /bin/sh -c "$command"\n'),
+        (steps, '#!/bin/sh\nfor step; do /bin/sh -c "${step#*=}" || exit; done\n'),
     ):
         assert not path.exists()
         assert not path.is_symlink()
@@ -1046,3 +1046,39 @@ def test_only_a_prose_push_to_main_skips_the_core_jobs(tmp_path, event, changed,
         timeout=4,
     )
     assert f"core={core}" in output.read_text().splitlines()
+
+
+@pytest.mark.parametrize(
+    ("event", "changed", "electron"),
+    [
+        ("push", "src/heinzel/__init__.py\n", "false"),
+        ("push", "desktop/src/main.js\n", "true"),
+        ("push", "Makefile\n", "true"),
+        ("push", "scripts/sync_template.py\n", "true"),
+        ("push", ".github/workflows/ci.yml\n", "true"),
+        ("push", "", "true"),  # a diff git could not compute
+        ("pull_request", "src/heinzel/__init__.py\n", "false"),
+        ("pull_request", "desktop/src/main.js\n", "true"),
+        ("schedule", "src/heinzel/__init__.py\n", "true"),
+        ("workflow_dispatch", "src/heinzel/__init__.py\n", "true"),
+    ],
+)
+def test_electron_runs_for_its_paths_on_a_push_and_always_on_schedule_and_dispatch(tmp_path, event, changed, electron):
+    jobs = yaml.safe_load((REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))["jobs"]
+    script = next(step["run"] for step in jobs["changes"]["steps"] if step.get("id") == "paths")
+    stubs = tmp_path / "bin"
+    stubs.mkdir()
+    git = stubs / "git"
+    git.write_text(f"#!/bin/sh\nprintf '{changed}'\n")
+    git.chmod(0o700)
+    (tmp_path / "desktop").mkdir()
+    (tmp_path / "desktop" / "package.json").write_text("{}")
+    output = tmp_path / "output"
+    subprocess.run(
+        ["bash", "-c", script],
+        env={"PATH": f"{stubs}:/usr/bin:/bin", "EVENT": event, "BASE": "base", "GITHUB_OUTPUT": str(output)},
+        cwd=tmp_path,
+        check=True,
+        timeout=4,
+    )
+    assert f"electron={electron}" in output.read_text().splitlines()
