@@ -21,7 +21,7 @@ type Snapshot = {
   session_id: string;
   name: string;
   profile_revision?: number | null;
-  messages?: unknown[] | null;
+  messages?: { role: string }[] | null;
 };
 
 /** "Every hour", "Every 5 minutes", in the words a person would use. */
@@ -232,6 +232,8 @@ export function AgentSetupCard({ snapshot }: { snapshot: Snapshot }) {
     retry: false,
   });
   const data = setup.data;
+  // While a turn is still answering, its proposals are not finished; the card comes with the reply.
+  if (snapshot.messages?.at(-1)?.role === "user") return null;
   if (setup.isError)
     return (
       <p role="alert" className="text-sm">
