@@ -194,7 +194,17 @@ def test_cancelled_occurrence_never_relaunches_and_changed_access_refuses(tmp_pa
         assert (tmp_path / "model-calls").read_text() == "x"
 
 
-def test_amended_contract_invalidates_old_schedule_without_model_launch(tmp_path):
+def test_amended_contract_invalidates_old_schedule_without_model_launch(tmp_path, monkeypatch):
+    import heinzel.modules.heinzel._autonomous_schedule as schedule_module
+
+    fixed = datetime.now(UTC)
+
+    class FixedClock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return fixed
+
+    monkeypatch.setattr(schedule_module, "datetime", FixedClock)
     current = CurrentUser(tmp_path / "identity")
     with current.local("cli"):
         crud = SessionCrud(
@@ -217,7 +227,7 @@ def test_amended_contract_invalidates_old_schedule_without_model_launch(tmp_path
             schedules.approve(session, "schedule", review, proof, marker)
         crud.amend_scheduled_agent(session, "new-contract", 1, "Changed terms", None, 30)
         with current.local("daemon"), pytest.raises(HeinzelError, match="changed"):
-            asyncio.run(schedules.tick(session, "schedule", datetime.now(UTC)))
+            asyncio.run(schedules.tick(session, "schedule", fixed))
         assert not (tmp_path / "model-calls").exists()
 
 
