@@ -101,6 +101,11 @@ class GitHubReleases(ReleaseSource):
             KeyError: If the answer lacks a field.
             TypeError: If the answer is no JSON object.
         """
+        try:  # first from github.com's redirect, which costs none of the anonymous REST API's hourly quota
+            url = _github.latest_release_url(self.repository, timeout)
+            return str(Version(url.rsplit("/", 1)[1].removeprefix("v"))), _github_link(url)
+        except (OSError, ValueError):
+            pass  # whatever is wrong there, the REST API answers or says why not
         answer = _github.get_json(self.latest_url, None, timeout)
         return str(Version(str(answer["tag_name"]).removeprefix("v"))), _github_link(answer["html_url"])
 
