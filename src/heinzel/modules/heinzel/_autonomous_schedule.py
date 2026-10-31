@@ -4,9 +4,11 @@ An occurrence reservation alone is never authority to start a process. A future 
 recheck the owner, schedule and access fences through launch; existing fixed-notice schedules are unrelated.
 """
 
+import contextlib
 import hashlib
 import json
 import secrets
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Literal
 
@@ -507,11 +509,9 @@ class AutonomousSchedules:
 
     def _ensure_no_prior_pending(self, session: str, occurrence: str) -> None:
         events = self.crud.repository.control_read(session).events
-        recovery = ScheduledNotificationInventory(self.crud)
-        for view in recovery.validated_inventory(session, events):
-            if view.status == "unresolved":
-                msg = "An earlier notification outcome requires owner review before a scheduled turn"
-                raise HeinzelError(msg)
+        if ScheduledNotificationInventory(self.crud).unresolved_attempts(events):
+            msg = "An earlier notification outcome requires owner review before a scheduled turn"
+            raise HeinzelError(msg)
         for event in events:
             if event.kind != "message.accepted" or event.data.get("message_id") == occurrence:
                 continue
@@ -567,18 +567,51 @@ class AutonomousSchedules:
                 msg = "The scheduled occurrence has no trusted daemon origin"
                 raise HeinzelError(msg)
 
-        answer = await self.chat.dispatch(
-            session,
-            occurrence,
-            verify,
-            binding.max_requests,
-            binding.timeout_seconds,
-            user_proposals=False,
-            prepare=prepare,
-            connected_allowed=binding.connected_grant is not None,
-            notification_policy=binding.notification_policy,
-            notification_contract=binding.contract_sha256,
-            notification_schedule=binding.request_id,
-            notification_binding=arguments_hash(_binding_intent(binding)),
-        )
+        return await self._dispatch(session, occurrence, binding, verify, prepare)
+
+    async def _dispatch(
+        self,
+        session: str,
+        occurrence: str,
+        binding: ScheduleBinding,
+        verify: Callable[[], None],
+        prepare: Callable[[], None],
+    ) -> str:
+        try:
+            answer = await self.chat.dispatch(
+                session,
+                occurrence,
+                verify,
+                binding.max_requests,
+                binding.timeout_seconds,
+                user_proposals=False,
+                prepare=prepare,
+                connected_allowed=binding.connected_grant is not None,
+                notification_policy=binding.notification_policy,
+                notification_contract=binding.contract_sha256,
+                notification_schedule=binding.request_id,
+                notification_binding=arguments_hash(_binding_intent(binding)),
+            )
+        except HeinzelError as exc:
+            self._report_failed_turn(session, str(exc))
+            raise
         return answer.message.text
+
+    def _report_failed_turn(self, session: str, reason: str) -> None:
+        """Tell the owner in this agent's chat, once until something changes; the report must not mask the failure."""
+        settled = {
+            "message.replied",
+            "interactive.abandoned",
+            "scheduled-notification.recorded",
+            "scheduled-notification.abandoned",
+        }
+        text = reason[:500]
+        with contextlib.suppress(HeinzelError), self.crud.repository.control_writer(session) as writer:
+            events = self.crud.repository.control_read(session).events
+            for event in reversed(events):
+                if event.kind in settled:
+                    break
+                if event.kind == "agent.schedule-failed" and event.data.get("reason") == text:
+                    return
+            key = f"schedule-failed-{len(events) + 1}"
+            writer.append("agent.schedule-failed", key=key, data={"message_id": key, "reason": text})

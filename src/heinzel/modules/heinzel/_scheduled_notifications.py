@@ -326,7 +326,10 @@ class ScheduledNotificationInventory:
     def _validated_view(
         self, session: str, event: SessionEvent, outcomes: list[SessionEvent]
     ) -> ScheduledNotificationView:
-        proposal = NotificationProposal.model_validate(self.crud.read_body(session, event))
+        try:
+            proposal = NotificationProposal.model_validate(self.crud.read_body(session, event))
+        except FileNotFoundError:
+            return self._view_without_body(session, event, outcomes)
         expected = hashlib.sha256(
             f"{self.crud.repository.principal_id}\0{session}\0{proposal.topic}".encode()
         ).hexdigest()
@@ -351,28 +354,56 @@ class ScheduledNotificationInventory:
         ):
             msg = "The scheduled notification record is inconsistent"
             raise HeinzelError(msg)
+        return ScheduledNotificationView(proposal=proposal, seq=event.seq, status=self._status(event, outcomes))
+
+    def _view_without_body(
+        self, session: str, event: SessionEvent, outcomes: list[SessionEvent]
+    ) -> ScheduledNotificationView:
+        """Keep an attempt whose private body expired visible, so its owner can still resolve it.
+
+        Raises:
+            HeinzelError: If the attempt's own identity is invalid.
+        """
+        if event.turn is None or not re.fullmatch(r"notice-[0-9a-f]{64}", event.key or ""):
+            msg = "The scheduled notification record is inconsistent"
+            raise HeinzelError(msg)
+        proposal = NotificationProposal(
+            session_id=session,
+            request_id=str(event.key),
+            topic="unavailable",
+            title="This notice's private content is no longer retained",
+            body="",
+        )
+        return ScheduledNotificationView(proposal=proposal, seq=event.seq, status=self._status(event, outcomes))
+
+    def _status(
+        self, event: SessionEvent, outcomes: list[SessionEvent]
+    ) -> Literal["recorded", "unresolved", "abandoned"]:
+        """Derive the recorded state of one attempt.
+
+        Raises:
+            HeinzelError: If its outcomes are duplicate, out of order or not the owner's.
+        """
         if len(outcomes) > 1 or (outcomes and outcomes[0].seq <= event.seq):
             msg = _INCONSISTENT_OUTCOME
             raise HeinzelError(msg)
-        status: Literal["recorded", "unresolved", "abandoned"] = "unresolved"
-        if outcomes:
-            outcome = outcomes[0]
-            if outcome.kind == "scheduled-notification.abandoned":
-                if (
-                    outcome.data.get("owner") != self.crud.repository.principal_id
-                    or outcome.data.get("origin") not in {"cli", "api-bearer", "web-session", "web-device"}
-                    or outcome.data.get("acknowledged") is not True
-                    or outcome.data.get("attempt_seq") != event.seq
-                ):
-                    msg = "The scheduled notification acknowledgment is invalid"
-                    raise HeinzelError(msg)
-                status = "abandoned"
-            else:
-                status = "recorded"
-        return ScheduledNotificationView(proposal=proposal, seq=event.seq, status=status)
+        if not outcomes:
+            return "unresolved"
+        outcome = outcomes[0]
+        if outcome.kind != "scheduled-notification.abandoned":
+            return "recorded"
+        if (
+            outcome.data.get("owner") != self.crud.repository.principal_id
+            or outcome.data.get("origin") not in {"cli", "api-bearer", "web-session", "web-device"}
+            or outcome.data.get("acknowledged") is not True
+            or outcome.data.get("attempt_seq") != event.seq
+        ):
+            msg = "The scheduled notification acknowledgment is invalid"
+            raise HeinzelError(msg)
+        return "abandoned"
 
-    def validated_inventory(self, session: str, events: list[SessionEvent]) -> list[ScheduledNotificationView]:
-        """Validate all attempts in one journal scan, reading each attempt body once.
+    def unresolved_attempts(self, events: list[SessionEvent]) -> list[SessionEvent]:
+        """Find attempts without an outcome in one journal scan, reading no private body.
 
         Raises:
             HeinzelError: If attempts or outcomes are duplicate, orphaned, or invalid.
@@ -393,7 +424,7 @@ class ScheduledNotificationInventory:
         if any(key not in attempts for key in outcomes):
             msg = _INCONSISTENT_OUTCOME
             raise HeinzelError(msg)
-        return [self._validated_view(session, event, outcomes.get(key, [])) for key, event in attempts.items()]
+        return [event for key, event in attempts.items() if self._status(event, outcomes.get(key, [])) == "unresolved"]
 
 
 class ScheduledNotificationRecovery(ScheduledNotificationInventory):
