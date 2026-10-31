@@ -3,7 +3,7 @@
 # content: every page is a file in docs/ or at the root, so GitHub and the site show the same thing.
 site_name: Heinzelmännchen
 site_description: Open-source helpers that keep product development teams running.
-site_url: https://helmut.hoffer-von-ankershoffen.me/heinzel/
+site_url: https://heinzel.team/
 repo_url: https://github.com/helmut-hoffer-von-ankershoffen/heinzel
 repo_name: heinzel
 edit_uri: edit/main/docs/
@@ -20,8 +20,8 @@ theme:
   name: material
   custom_dir: docs/overrides
   font: false
-  logo: assets/website/mark.svg
-  favicon: assets/website/mark.svg
+  logo: assets/website/head.svg
+  favicon: assets/website/head.svg
   language: en
   icon:
     logo: material/account-group-outline
@@ -64,6 +64,9 @@ markdown_extensions:
           class: mermaid
           format: !!python/name:pymdownx.superfences.fence_code_format
 
+extra:
+  generator: false
+
 plugins:
   - search
 
@@ -76,6 +79,7 @@ extra_javascript:
 hooks:
   - scripts/site_pages.py
   - scripts/mkdocs_hooks.py # links to files outside docs/ become GitHub links
+  - scripts/adr_index.py # pull requests and amendments under each ADR title (core only)
 
 nav:
   - Home: README.md

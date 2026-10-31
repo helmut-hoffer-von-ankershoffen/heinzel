@@ -3,7 +3,10 @@ status: proposed
 date: 2026-10-24
 decision-makers: maintainer (direction), architect (evaluation and shape)
 amends: 0029, 0050
+amends-0029: an AI access option names the agent runner that serves it
+amends-0050: the heinzel model setting gives way to the ai routing
 related: 0018, 0028, 0030, 0037, 0039, 0041, 0044, 0045, 0049
+implemented-by: 92
 ---
 
 # 0057: AI access is a module: one choice like the theme, options are adapters of `ai-access`
