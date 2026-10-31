@@ -115,6 +115,73 @@
     layout();
   }
 
+
+  function openImage(source, url) {
+    const dialog = document.createElement('dialog');
+    dialog.className = 'hz-image-viewer';
+    dialog.setAttribute('aria-label', source.alt);
+    const title = document.createElement('h2');
+    title.textContent = source.alt;
+    const toolbar = document.createElement('div');
+    toolbar.className = 'hz-image-toolbar';
+    const viewport = document.createElement('div');
+    viewport.className = 'hz-image-viewport';
+    viewport.tabIndex = 0;
+    viewport.setAttribute('role', 'region');
+    viewport.setAttribute('aria-label', 'Zoomed screenshot; scroll to explore');
+    const image = document.createElement('img');
+    image.referrerPolicy = 'no-referrer';
+    image.alt = source.alt;
+    image.src = url;
+    const output = document.createElement('output');
+    output.setAttribute('aria-live', 'polite');
+    function button(label, action) {
+      const control = document.createElement('button');
+      control.type = 'button';
+      control.textContent = label;
+      control.addEventListener('click', action);
+      toolbar.append(control);
+      return control;
+    }
+    let scale = 1;
+    const minimum = () => Math.min(.1, (viewport.clientWidth - 2) / image.naturalWidth,
+      (viewport.clientHeight - 2) / image.naturalHeight);
+    function render(value) {
+      scale = Math.max(minimum(), Math.min(4, value));
+      image.style.width = `${image.naturalWidth * scale}px`;
+      output.textContent = `${Math.round(scale * 100)}%`;
+      smaller.disabled = scale <= minimum();
+      larger.disabled = scale >= 4;
+    }
+    function fit() {
+      if (!image.naturalWidth) return;
+      render(Math.min(1, (viewport.clientWidth - 2) / image.naturalWidth,
+        (viewport.clientHeight - 2) / image.naturalHeight));
+      viewport.scrollTo(0, 0);
+    }
+    const smaller = button('Zoom out', () => render(scale / 1.5));
+    const larger = button('Zoom in', () => render(scale * 1.5));
+    button('Fit', fit);
+    button('Actual size', () => render(1));
+    toolbar.append(output);
+    const original = document.createElement('a');
+    original.textContent = 'Open original';
+    original.href = url;
+    original.referrerPolicy = 'no-referrer';
+    toolbar.append(original);
+    const close = button('Close', () => dialog.close());
+    viewport.append(image);
+    dialog.append(title, toolbar, viewport);
+    dialog.addEventListener('close', () => {
+      dialog.remove();
+      source.closest('a').focus();
+    });
+    image.addEventListener('load', fit);
+    document.body.append(dialog);
+    dialog.showModal();
+    close.focus();
+    if (image.complete) fit();
+  }
   function initialize() {
     const guides = [...document.querySelectorAll('.hz-page-helper[data-lane]')].slice(0, 2);
     if (guides.length && !guides[0].dataset.ready) {
@@ -164,10 +231,19 @@
       gallery.querySelector('[data-gallery-controls]').hidden = slides.length < 2;
       const position = slide => slide.offsetLeft - slides[0].offsetLeft;
       let current = 0;
+      function fitTrack() {
+        // Slide size is the input; changing the track never changes a slide's height.
+        const style = getComputedStyle(track);
+        const padding = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom);
+        const scrollbar = track.offsetHeight - track.clientHeight;
+        const height = Math.ceil(slides[current].getBoundingClientRect().height + padding + scrollbar);
+        if (track.style.height !== `${height}px`) track.style.height = `${height}px`;
+      }
       function update() {
         current = slides.reduce((best, slide, index) =>
           Math.abs(position(slide) - track.scrollLeft) < Math.abs(position(slides[best]) - track.scrollLeft)
             ? index : best, 0);
+        fitTrack();
         previous.disabled = current === 0;
         next.disabled = current === slides.length - 1;
         const label = `${current + 1} of ${slides.length}`;
@@ -190,8 +266,22 @@
         event.preventDefault();
         go(targets[event.key]);
       });
-      new ResizeObserver(update).observe(track);
+      const resize = new ResizeObserver(update);
+      slides.forEach(slide => {
+        resize.observe(slide);
+        slide.querySelector('img').addEventListener('load', update);
+      });
       update();
+    });
+    document.querySelectorAll('.hz-screenshots figure > a, .hz-product-story figure > a').forEach(link => {
+      if (link.dataset.zoomReady) return;
+      link.dataset.zoomReady = 'true';
+      link.addEventListener('click', event => {
+        if (event.button || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+        if (!HTMLDialogElement.prototype.showModal) return;
+        event.preventDefault();
+        openImage(link.querySelector('img'), link.href);
+      });
     });
     document.querySelectorAll('[data-play-soundscape]').forEach(button => {
       if (button.dataset.ready) return;
