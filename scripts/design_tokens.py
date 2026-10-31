@@ -36,7 +36,7 @@ BRIDGE = {
     "--md-default-fg-color--light": "var(--color-muted-foreground)",
     "--md-primary-fg-color": "var(--color-primary)",
     "--md-accent-fg-color": "var(--color-primary)",
-    "--md-code-bg-color": "var(--color-muted)",
+    "--md-code-bg-color": "var(--color-card)",
     "--md-code-fg-color": "var(--color-foreground)",
     "--md-typeset-a-color": "var(--color-primary)",
 }

@@ -103,8 +103,8 @@ body { font-family:var(--font-sans); }
 .md-copyright a { color:var(--color-foreground) !important; }
 
 
-/* Strings read as success green; everything else in code follows Material. */
-:root,[data-md-color-scheme] { --md-code-hl-string-color:var(--color-ok); }
+/* Code colours come from the tokens, so they keep 4.5:1 on the code background in both modes. */
+:root,[data-md-color-scheme] { --md-code-hl-string-color:var(--color-ok); --md-code-hl-keyword-color:var(--color-primary); --md-code-hl-function-color:var(--color-foreground); --md-code-hl-number-color:var(--color-warn); --md-code-hl-constant-color:var(--color-warn); --md-code-hl-special-color:var(--color-bad); }
 
 .hz-documentation-map { margin-top:2rem; }
 .hz-documentation-map > summary { font-size:1rem; font-weight:600; cursor:pointer; padding:1rem 0; }
