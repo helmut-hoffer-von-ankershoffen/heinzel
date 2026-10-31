@@ -344,7 +344,7 @@ def test_the_authority_check_comes_first_and_names_the_ref_the_script_names():
     secret_steps = [i for i, step in enumerate(steps) if "secrets." in json.dumps(step)]
     assert secret_steps == [3]
     assert WORKFLOW["jobs"]["review"]["environment"] == "source-review"
-    assert WORKFLOW["jobs"]["review"]["permissions"] == {"contents": "read", "pull-requests": "read"}
+    assert WORKFLOW["jobs"]["review"]["permissions"] == {"contents": "read", "pull-requests": "read", "checks": "read"}
     assert source_review.PROTECTED_REF.removeprefix("refs/heads/") in json.dumps(WORKFLOW["jobs"]["identity"])
 
 
