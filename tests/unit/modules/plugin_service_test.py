@@ -1836,3 +1836,29 @@ def test_a_plugin_not_installed_yet_is_not_held(make_kernel, tool_env, monkeypat
 
 def test_only_uv_tool_installs_hold_anything(make_kernel, tool_env):
     assert service_for(make_kernel, tool_env)._holds(["uv", "pip", "install", "--with", "x"], None) == ()
+
+
+def test_a_repository_that_is_a_plugin_and_holds_more_lists_both(make_kernel, tmp_path, monkeypatch):
+    monorepo(
+        monkeypatch,
+        {
+            "pyproject.toml": plugin_project("heinzel-hub", "The hub."),
+            "plugins": [{"name": "heinzel-hub-extra", "type": "dir"}],
+            "plugins/heinzel-hub-extra/pyproject.toml": plugin_project("heinzel-hub-extra", "More."),
+        },
+    )
+    names = [p.name for p in service_for(make_kernel, tmp_path).search().plugins if p.community]
+    assert names == ["heinzel-hub", "heinzel-hub-extra"]
+
+
+def test_short_names_resolve_for_plugins_a_topic_text_search_cannot_see(make_kernel, tmp_path, github):
+    github.answer = {"items": [repository("heinzel-unforeseen", 1)]}
+    service = service_for(make_kernel, tmp_path)
+    catalog = service.github_api
+    service.github_api = lambda path: (
+        catalog(path) if "search/" in path or "/contents/" in path else raising(OSError("offline"))(path)
+    )
+    service.candidate("unforeseen")
+    topic_queries = [url for url, _token, _timeout in github.requests if "search/repositories" in url]
+    assert topic_queries
+    assert all("unforeseen" not in url for url in topic_queries)
