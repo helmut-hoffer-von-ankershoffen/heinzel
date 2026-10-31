@@ -8,20 +8,16 @@ import json
 import os
 import subprocess
 import sys
-import threading
 import time
 from pathlib import Path
-from typing import ClassVar
-from urllib.parse import parse_qs, urlsplit
 
 import pytest
-import uvicorn
 
 from heinzel import Settings
-from heinzel.heads import web
 from heinzel.modules.system.daemon import DaemonService, DaemonSettings
 from heinzel.modules.system.daemon._units import LABEL
 from tests.e2e._browser_result import check_browser, require_browser, wait_browser
+from tests.e2e._mounted import MountedServer
 from tests.e2e.docs_test import GuardedCommand
 from tests.e2e.durable_five_minute_journey_test import BROWSER_CACHE, web_build
 
@@ -101,34 +97,15 @@ def test_mounted_footer_installs_and_removes_the_daemon(make_kernel, tmp_path, m
     (tmp_path / "home").mkdir()
     kernel, launchd, release, units = _fake_service(make_kernel, tmp_path, session)
 
-    class RecordedServer(uvicorn.Server):
-        instances: ClassVar[list[uvicorn.Server]] = []
-
-        def __init__(self, config):
-            super().__init__(config)
-            self.instances.append(self)
-
-    monkeypatch.setattr(uvicorn, "Server", RecordedServer)
-    ready = threading.Event()
-    urls = []
-
-    def announce(value):
-        urls.append(value)
-        ready.set()
-
-    thread = threading.Thread(target=lambda: web.serve(kernel, port=0, browser=False, announce=announce), daemon=True)
-    thread.start()
-    try:
-        assert ready.wait(15)
-        token = parse_qs(urlsplit(urls[0]).fragment).get("token", [""])[0]
-        assert token
+    with MountedServer(kernel, monkeypatch) as server:
+        token = server.token
         command = [
             sys.executable,
             str(ROOT / "scripts/web_build.py"),
             "exec",
             "node",
             "e2e/daemon-install.mjs",
-            urls[0],
+            server.url,
             engine,
             str(tmp_path),
             session,
@@ -137,7 +114,7 @@ def test_mounted_footer_installs_and_removes_the_daemon(make_kernel, tmp_path, m
         try:
             returncode = require_browser(wait_browser(guarded, 240))
         finally:
-            release.touch()
+            release.touch()  # never leave the fake launchd holding `bootstrap`
             guarded.stop()
         stdout, stderr = guarded.capture.text("stdout"), guarded.capture.text("stderr")
         check_browser(returncode, (stderr + "\n" + stdout).replace(token, "<redacted-session>"))
@@ -149,9 +126,3 @@ def test_mounted_footer_installs_and_removes_the_daemon(make_kernel, tmp_path, m
         else:
             assert launchd.verbs == []  # the outside session changed nothing at all
             assert not units.exists()
-    finally:
-        release.touch()
-        if RecordedServer.instances:
-            RecordedServer.instances[0].should_exit = True
-        thread.join(15)
-        assert not thread.is_alive()

@@ -40,24 +40,23 @@ const TONE: Record<PhaseState, string> = {
 };
 
 /** The steps as a segmented bar, one segment per planned step: never a percentage the head did not measure. */
-function Steps({ phases, active }: { phases: Phase[]; active: boolean }) {
+function Steps({ phases, active }: Readonly<{ phases: Phase[]; active: boolean }>) {
   if (!phases.length) return null;
   const finished = phases.filter((phase) => ["done", "warn", "skipped"].includes(phase.state)).length;
-  const running = phases.find((phase) => phase.state === "running");
+  const running = phases.some((phase) => phase.state === "running");
   return (
     <div className="mt-3 space-y-2">
-      <div
-        role="progressbar"
+      <progress
+        className="sr-only"
         aria-label={t("op.steps")}
-        aria-valuemin={0}
-        aria-valuemax={phases.length}
-        aria-valuenow={finished}
+        max={phases.length}
+        value={finished}
         aria-valuetext={t("op.step", {
           done: Math.min(finished + (running ? 1 : 0), phases.length),
           total: phases.length,
         })}
-        className="flex gap-1"
-      >
+      />
+      <div aria-hidden className="flex gap-1">
         {phases.map((phase) => (
           <span
             key={phase.id}
@@ -161,9 +160,9 @@ export function OperationDialog() {
       )}
       {run.stage === "running" && (
         <>
-          <p role="status" className="mt-1 text-muted-foreground">
+          <output className="mt-1 block text-muted-foreground">
             {run.task ?? (persistent ? t(`op.daemon.${copy}.running` as MessageKey) : t("op.working"))}
-          </p>
+          </output>
           <Steps phases={run.phases} active />
           <p className="mt-3 text-xs text-muted-foreground">{t("op.noStop")}</p>
           <div className="mt-3 flex justify-end">
@@ -176,10 +175,10 @@ export function OperationDialog() {
       )}
       {run.stage === "done" && (
         <>
-          <p role="status" className="mt-1 flex items-start gap-2 text-ok">
+          <output className="mt-1 flex items-start gap-2 text-ok">
             <Check aria-hidden className="mt-0.5 size-4 shrink-0" />
             {persistent ? t(`op.daemon.${copy}.done` as MessageKey) : t("op.done")}
-          </p>
+          </output>
           <Steps phases={run.phases} active={false} />
           <div className="mt-3 flex justify-end">
             <Button size="sm" autoFocus onClick={dismissOperation}>

@@ -16,7 +16,7 @@ export function runCommand(command: string): void {
 }
 
 /** The labeled button beside a command: "Run it here" for an operation the app has, "Run in terminal" otherwise. */
-export function RunCommandButton({ command }: { command: string }) {
+export function RunCommandButton({ command }: Readonly<{ command: string }>) {
   const here = appCallFor(command) !== undefined;
   return (
     <Button

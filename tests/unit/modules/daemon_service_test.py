@@ -37,6 +37,8 @@ from heinzel.modules.system.daemon._units import LABEL, launchd_plist
 
 pytestmark = pytest.mark.unit
 
+FIVE_MINUTES = timedelta(minutes=5)
+TEN_MINUTES = timedelta(minutes=10)
 BERLIN = ZoneInfo("Europe/Berlin")
 T0 = datetime(2026, 10, 5, 10, 2, tzinfo=BERLIN)
 
@@ -294,19 +296,20 @@ def test_install_outside_the_desktop_session_changes_nothing_and_says_why(make, 
     service = make(runner=runner, session="Background")
     phased = progress_of(service)
     with pytest.raises(HeinzelError, match=r"desktop session.*'Background'.*Nothing was changed"):
-        service.install(timedelta(minutes=5))
+        service.install(FIVE_MINUTES)
     assert steps(phased) == [("session", "running"), ("session", "failed")]
     assert runner.verbs() == []
     assert not (tmp_path / "units").exists()
+    unknown = make(runner=runner, session=None)
     with pytest.raises(HeinzelError, match="doesn't say"):
-        make(runner=runner, session=None).install(timedelta(minutes=5))
+        unknown.install(FIVE_MINUTES)
 
 
 def test_a_failed_load_removes_the_unit_again_so_nothing_starts_at_login(make, bin_dir, tmp_path):
     service = make(runner=Runner(bin_dir, {"bootstrap": 5}))
     phased = progress_of(service)
     with pytest.raises(HeinzelError, match=r"bootstrap failed.*put back as it was"):
-        service.install(timedelta(minutes=5))
+        service.install(FIVE_MINUTES)
     assert not (tmp_path / "units" / f"{LABEL}.plist").exists()
     assert steps(phased)[-1] == ("load", "failed")
 
@@ -315,17 +318,18 @@ def test_a_unit_the_manager_does_not_list_as_loaded_is_a_failure(make, bin_dir, 
     service = make(runner=Runner(bin_dir, {"print": 113}))
     phased = progress_of(service)
     with pytest.raises(HeinzelError, match="does not list it as loaded"):
-        service.install(timedelta(minutes=5))
+        service.install(FIVE_MINUTES)
     assert steps(phased)[-1] == ("verify", "failed")
     assert not (tmp_path / "units" / f"{LABEL}.plist").exists()
 
 
 def test_a_failed_reinstall_puts_back_the_unit_that_was_there(make, bin_dir, tmp_path):
-    make(runner=Runner(bin_dir)).install(timedelta(minutes=5))
+    make(runner=Runner(bin_dir)).install(FIVE_MINUTES)
     plist = tmp_path / "units" / f"{LABEL}.plist"
     before = plist.read_text(encoding="utf-8")
+    failing = make(runner=Runner(bin_dir, {"bootstrap": 5}))
     with pytest.raises(HeinzelError, match="put back"):
-        make(runner=Runner(bin_dir, {"bootstrap": 5})).install(timedelta(minutes=10))
+        failing.install(TEN_MINUTES)
     assert plist.read_text(encoding="utf-8") == before
 
 

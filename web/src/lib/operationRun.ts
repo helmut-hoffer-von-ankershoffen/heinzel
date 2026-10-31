@@ -31,7 +31,9 @@ const set = (next: OperationRun) => {
 };
 const subscribe = (listener: () => void) => {
   listeners.add(listener);
-  return () => void listeners.delete(listener);
+  return () => {
+    listeners.delete(listener);
+  };
 };
 
 export const useOperationRun = (): OperationRun => useSyncExternalStore(subscribe, () => current);
@@ -120,7 +122,9 @@ export function usePrimaryHost(): boolean {
   return useSyncExternalStore(
     (listener) => {
       hostListeners.add(listener);
-      return () => void hostListeners.delete(listener);
+      return () => {
+        hostListeners.delete(listener);
+      };
     },
     () => hosts[0] === id,
   );

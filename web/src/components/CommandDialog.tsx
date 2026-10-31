@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
 
 /** What a contributed command button opens: the command to copy, and a button the person presses to run it. */
-export function CommandDialog({ command, onClose }: { command: string; onClose: () => void }) {
+export function CommandDialog({ command, onClose }: Readonly<{ command: string; onClose: () => void }>) {
   return createPortal(
     <div
       role="alertdialog"

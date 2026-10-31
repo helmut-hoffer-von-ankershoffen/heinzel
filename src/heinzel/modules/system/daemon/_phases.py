@@ -43,10 +43,14 @@ class Phases:
             HeinzelError: Whatever the step raised, after the failed step was told.
         """
         self.note(id_, label, "running")
+        state: State = "failed"
+        detail: str | None = None
         try:
             with self._progress.task(label):
                 yield
+            state = "done"
         except HeinzelError as exc:
-            self.note(id_, label, "failed", str(exc))
+            detail = str(exc)
             raise
-        self.note(id_, label, "done")
+        finally:
+            self.note(id_, label, state, detail)

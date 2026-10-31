@@ -72,7 +72,7 @@ try {
     await steps.getByText("Writing the service definition: done").waitFor();
     assert.equal(await dialog.getByRole("button", { name: "Installing the background service" }).isDisabled(), true);
     assert.equal(await dialog.getByRole("button", { name: /Cancel|Close/ }).count(), 0);
-    assert.equal(await dialog.getByRole("progressbar").getAttribute("aria-valuemax"), "5");
+    assert.equal(await dialog.getByRole("progressbar").getAttribute("max"), "5");
     await accessible(dialog);
     await noHorizontalScroll();
     await page.screenshot({ path: join(shots, `install-running-${engine}.png`) });

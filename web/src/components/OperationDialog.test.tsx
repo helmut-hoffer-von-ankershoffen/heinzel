@@ -97,11 +97,11 @@ describe("OperationDialog", () => {
     const dialog = screen.getByRole("alertdialog");
     await plan(live.phase);
     await live.phase("session", "running");
-    expect(within(dialog).getByRole("progressbar", { name: "Steps" })).toHaveAttribute("aria-valuenow", "0");
+    expect(within(dialog).getByRole("progressbar", { name: "Steps" })).toHaveAttribute("value", "0");
     expect(within(dialog).getByRole("progressbar")).toHaveAttribute("aria-valuetext", "Step 1 of 4");
     await live.phase("session", "done");
     await live.phase("unit", "running");
-    expect(within(dialog).getByRole("progressbar")).toHaveAttribute("aria-valuenow", "1");
+    expect(within(dialog).getByRole("progressbar")).toHaveAttribute("value", "1");
     expect(within(dialog).getByRole("progressbar")).toHaveAttribute("aria-valuetext", "Step 2 of 4");
     const steps = within(dialog).getByRole("list", { name: "Steps" });
     expect(
@@ -129,7 +129,7 @@ describe("OperationDialog", () => {
     }
     await live.end("result", { data: { dry_run: false } });
     expect(await screen.findByText("Installed. Its first check comes within 5 minutes.")).toBeInTheDocument();
-    expect(within(dialog).getByRole("progressbar")).toHaveAttribute("aria-valuenow", "4");
+    expect(within(dialog).getByRole("progressbar")).toHaveAttribute("value", "4");
     // The footer and the daemon controls ask again for the state, which is what they show.
     await waitFor(() => {
       const keys = invalidate.mock.calls.map(([filters]) => JSON.stringify(filters?.queryKey));
