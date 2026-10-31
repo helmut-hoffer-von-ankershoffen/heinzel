@@ -3,6 +3,7 @@ status: proposed
 date: 2026-10-24
 decision-makers: maintainer
 related: 0007, 0011, 0013
+implemented-by: 43
 ---
 
 # 0036: `make install` installs every tool the build needs, pinned and checksummed, on macOS and Linux

@@ -16,10 +16,10 @@ is the golden path for that: one command per stage, one JSON line of output, the
 | `pr "TITLE" --body WHY` | Bring the branch up to date with `main` (rebase before the first push, merge after), commit, `hz-gate make pr` (draft, so auto-merge never arms), label `risk: low`, ready, auto-merge verified off. A rejected title lists the allowed scopes |
 | `wait` | Waits for `CI OK` at the head; merges `main` in when behind; reruns a known flaky job once |
 | `verify` | After the merge: the Docs run of the merge commit is green and the published page shows the new text |
-| `merge PR` | Orchestrator only (`SHIP_ORCHESTRATOR=1`): re-classifies the PR from GitHub's data, then `hz-merge-train` |
+| `merge PR` | Merges a `risk: low` pull request without the orchestrator once `CI OK` and every check are green at its exact head and it is `CLEAN`: it re-classifies the diff from GitHub's data at that head (the label alone merges nothing) and squashes with `--match-head-commit`. Not low, not ready or red: refused (the orchestrator merges with `hz-merge-train`; with `SHIP_ORCHESTRATOR=1`, `merge` hands a not-yet-ready one to the train) |
 | `status`, `escalate "WHY"`, `reset` | Where am I; stop and hand over; the orchestrator clears a stopped change |
 
-Exit codes: 0 go on with `next`; 1 the stage failed; 2 wrong usage; 3 STOP; 4 still running (run it again). `check`
+Every stage prints its own usage, an example and the exit codes with `--help`. Exit codes: 0 go on with `next`; 1 the stage failed; 2 wrong usage; 3 STOP; 4 still running (run it again). `check`
 and `pr` run as detached jobs, so a shell timeout cannot kill a push half way; each call waits at most 100 seconds.
 
 ## What is small
@@ -42,7 +42,7 @@ the top of the script and are tested in `tests/unit/ship_test.py`; loosen them w
 
 ## Failure budget
 
-A failed stage prints what went wrong and the literal next step. The second failure of a change, or any classification
+A failed stage prints what went wrong and the literal next step. A stop for "not small" remembers the diff it judged and clears itself when the diff changes into one that classifies as small (an edit reverted); every other stop waits for the orchestrator. The second failure of a change, or any classification
 as not small, writes `stopped` into the worktree's git directory: every later stage refuses with exit 3 and prints a
 report (directory, branch, PR, failures) for the orchestrator. `SHIP_ORCHESTRATOR=1 ... reset` clears it. Pending calls name the `hz-gate` holder they queue behind: on a busy host the push, not the model, is the slow part.
 
@@ -54,7 +54,6 @@ The pre-push hook is scoped too (`scripts/scoped_checks.py push`): Markdown and 
 - `pr` opens a draft, labels it `risk: low`, marks it ready and verifies auto-merge is off. The review-policy work on
   `make pr` and the release workflow stays authoritative: if `make pr` stops arming auto-merge itself, `pr`
   finds nothing to disarm. The label is the hook for risk tiers in review.
-- Merging stays a separate decision. `merge` only accepts a PR whose label and whole diff both say low, and then uses
-  `hz-merge-train` (update, wait for `CI OK` at the exact head, squash). Until the orchestrator trusts the lane, it
-  merges by hand.
+- `merge` accepts only a PR whose label and whole diff both say low and whose checks are green at the exact head;
+  everything else stays with the orchestrator and `hz-merge-train`.
 - Releases, installer, approvals, durable sessions and the kernel never use this path.
