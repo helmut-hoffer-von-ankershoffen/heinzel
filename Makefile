@@ -208,7 +208,7 @@ test-browser-deps: ## Install Chromium and WebKit; include Linux host libraries 
 	fi
 
 test-e2e: e2e-prepare ## Run end-to-end tests (needs network), on 3 workers
-	$(STEPS) "e2e=uv run pytest -m e2e -n 3 -q --session-timeout=600 -x tests/e2e/docs_test.py::test_readme_instructions && uv run pytest -m e2e -n 3 -q --session-timeout=600 -x --deselect=tests/e2e/docs_test.py::test_readme_instructions"
+	$(STEPS) "e2e-readme=uv run pytest -m e2e -n 3 -q --session-timeout=600 -x tests/e2e/docs_test.py::test_readme_instructions" "e2e=uv run pytest -m e2e -n 3 -q --session-timeout=600 -x --deselect=tests/e2e/docs_test.py::test_readme_instructions"
 
 e2e-prepare: ## Prepare current build assets before end-to-end procedure deadlines
 	@set -eu; dir="$$(mktemp -d "$${TMPDIR:-/tmp}/heinzel-e2e.XXXXXXXX")"; trap 'rm -rf "$$dir"' EXIT; uv build --quiet --wheel --out-dir "$$dir"
