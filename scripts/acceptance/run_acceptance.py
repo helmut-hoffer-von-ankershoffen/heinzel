@@ -59,12 +59,14 @@ ANNOUNCE = re.compile(r"(http://[^\s/]+)/#token=([A-Za-z0-9_-]+)")
 SYSTEMD_UNITS = ("hz-daemon.service", "hz-daemon.timer")
 FINAL_VERSION = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+")
 RELEASE_WHEEL_URL = re.compile(
-    r"https://github\.com/helmut-hoffer-von-ankershoffen/heinzel/releases/download/v(?P<version>[0-9]+\.[0-9]+\.[0-9]+)"
+    r"https://github\.com/helmut-hoffer-von-ankershoffen/heinzel/releases/download/"
+    r"(?:v(?=[0-9.]+/)|edge-v(?=[0-9.]+\.dev))(?P<version>[0-9]+\.[0-9]+\.[0-9]+(?:\.dev[0-9]+)?)"
     r"/heinzel-(?P=version)-py3-none-any\.whl"
 )
+CANDIDATE_VERSION = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+(?:\.dev[0-9]+)?")
 RELEASE_PROFILE_URL = re.compile(
     r"https://github\.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/releases/download/"
-    r"app-v(?P<version>[0-9]+\.[0-9]+\.[0-9]+)/standard\.json"
+    r"app-v(?P<version>[0-9]+\.[0-9]+\.[0-9]+(?:\.dev[0-9]+)?)/standard\.json"
 )
 PHASE_DEADLINE = 600
 READY_DEADLINE = 600
@@ -157,6 +159,15 @@ def check(condition, message):
         fail(message)
 
 
+EDGE_CANDIDATE = None
+"""The one edge version an explicit candidate run accepts as Core; None on every public run, so no default can."""
+
+
+def is_accepted_core(version):
+    """A final version, or exactly the edge release this run was asked to prove."""
+    return is_final_version(version) or (EDGE_CANDIDATE is not None and version == EDGE_CANDIDATE)
+
+
 def is_final_version(version):
     """A release a default install may select: X.Y.Z, never a dev, pre, post or local version."""
     return isinstance(version, str) and FINAL_VERSION.fullmatch(version) is not None
@@ -216,7 +227,9 @@ def latest_app_version():
         error.close()
         match = re.fullmatch(re.escape(COLLECTION) + r"/releases/tag/app-v([0-9A-Za-z.]+)", location)
         if error.code in (301, 302, 307, 308) and match:
-            check(is_final_version(match.group(1)), f"The latest app designation is not a final version: {match.group(1)}")
+            check(
+                is_final_version(match.group(1)), f"The latest app designation is not a final version: {match.group(1)}"
+            )
             return match.group(1)
     fail("The governed latest app designation could not be read")
     return None
@@ -226,9 +239,7 @@ def wheel_version(wheel, name):
     wanted = name.replace("-", "_")
     with zipfile.ZipFile(wheel) as archive:
         found = [
-            item
-            for item in archive.namelist()
-            if re.fullmatch(rf"{re.escape(wanted)}-[^/]+\.dist-info/METADATA", item)
+            item for item in archive.namelist() if re.fullmatch(rf"{re.escape(wanted)}-[^/]+\.dist-info/METADATA", item)
         ]
         check(len(found) == 1, f"{name}: wheel metadata is missing")
         message = BytesParser().parsebytes(archive.read(found[0]))
@@ -240,7 +251,12 @@ def fetch_artifacts(profile, app, accepted_dir):
     root = f"{COLLECTION}/releases/download/app-v{app}/"
     bound = {}
     for artifact in profile["artifacts"]:
-        check(is_final_version(artifact["version"]), f"{artifact['name']}: {artifact['version']} is not a final version")
+        check(
+            is_accepted_core(artifact["version"])
+            if artifact["name"] == "heinzel"
+            else is_final_version(artifact["version"]),
+            f"{artifact['name']}: {artifact['version']} is not a final version",
+        )
         check(artifact["url"] == root + artifact["filename"], f"{artifact['name']}: URL is outside the app release")
         data = fetch(artifact["url"])
         check(sha256(data) == artifact["sha256"], f"{artifact['name']}: release asset fails its profile hash")
@@ -255,7 +271,10 @@ def preflight(args, accepted_dir):
     """Bind every published input to its release identity. Executes nothing it downloads."""
     version, app = args.expect_version, args.expect_app_version
     report = {"expect_version": version, "expect_app_version": app}
-    check(is_final_version(version) and is_final_version(app), "The expected versions must be final X.Y.Z versions")
+    check(version == app and CANDIDATE_VERSION.fullmatch(version), "A candidate names one final or edge version")
+    if not is_final_version(version):
+        global EDGE_CANDIDATE  # noqa: PLW0603 - set once, before any case runs, for this explicit run only
+        EDGE_CANDIDATE = version
     pypi = json.loads(fetch("https://pypi.org/pypi/heinzel/json", 8 * 1024 * 1024))
     report["pypi_latest"] = pypi["info"]["version"]
     check(pypi["info"]["version"] == version, f"PyPI latest is {pypi['info']['version']}, not expected {version}")
@@ -355,7 +374,9 @@ def systemd_gate():
         )
     except (OSError, subprocess.SubprocessError) as error:
         raise Refused("systemctl inspection was unavailable") from error
-    registered = sorted({line.split()[0] for line in done.stdout.splitlines() if line.split()[:1] and line.split()[0] in SYSTEMD_UNITS})
+    registered = sorted(
+        {line.split()[0] for line in done.stdout.splitlines() if line.split()[:1] and line.split()[0] in SYSTEMD_UNITS}
+    )
     if registered:
         raise Refused(f"A real Heinzel daemon unit is registered ({', '.join(registered)}); nothing was stopped")
     if done.returncode and not done.stdout.strip():
@@ -690,7 +711,8 @@ def verify_files(case, *, profile=None, accepted=None, receipt_profile=None, plu
 
     After an update, `profile`/`accepted` describe what is installed now and `receipt_profile` what the standard-app
     receipt and cached wheels still describe; `plugins=False` compares only the Core. `extra_plugins` are
-    distributions added after the installation and are not expected in the profile."""
+    distributions added after the installation and are not expected in the profile.
+    """
     ctx = case.ctx
     profile, accepted = profile or ctx["profile"], accepted or ctx["accepted"]
     receipt_profile = receipt_profile or profile
@@ -745,7 +767,9 @@ def _plugins_match(case, plugins):
     )
     for plugin in plugins:
         name, want = plugin["distribution"], expected[plugin["distribution"]]
-        check(plugin.get("enabled") is want["enabled"], f"Plugin {name} enabled={plugin.get('enabled')}, expected {want}")
+        check(
+            plugin.get("enabled") is want["enabled"], f"Plugin {name} enabled={plugin.get('enabled')}, expected {want}"
+        )
         check(not plugin.get("error"), f"Plugin {name} reports an error")
         if plugin.get("version") is not None and want.get("version"):
             check(plugin["version"] == want["version"], f"{name} runs {plugin['version']}, expected {want['version']}")
@@ -1017,7 +1041,9 @@ def case_retained(case):
             public = case.ctx["public"]
             case.env.update(public["env"])
             try:
-                _, _, err = case.run(public["command"], "uvx-malformed-refusal", READY_DEADLINE, "nonzero", (QUIESCENT,))
+                _, _, err = case.run(
+                    public["command"], "uvx-malformed-refusal", READY_DEADLINE, "nonzero", (QUIESCENT,)
+                )
             finally:
                 for key in public["env"]:
                     case.env.pop(key, None)
@@ -1210,7 +1236,11 @@ class Browser:
             "--use-mock-keychain",
             "--password-store=basic",
             "--window-size=1280,900",
-            *(["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"] if case.ctx.get("chrome_no_sandbox") else []),
+            *(
+                ["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"]
+                if case.ctx.get("chrome_no_sandbox")
+                else []
+            ),
             "about:blank",
         ]
         self.process = case.ctx["Guarded"](argv, cwd=case.root, env=env)
@@ -1317,8 +1347,12 @@ class Browser:
         self.call("Input.dispatchMouseEvent", {**base, "type": "mouseReleased"}, session=True)
 
     def type_into(self, selector, text):
-        self.wait(f"(()=>{{const e=document.querySelector({json.dumps(selector)});if(!e)return false;e.focus();"
-                  "e.select&&e.select();return document.activeElement===e})()", f"{selector} focus", 30)
+        self.wait(
+            f"(()=>{{const e=document.querySelector({json.dumps(selector)});if(!e)return false;e.focus();"
+            "e.select&&e.select();return document.activeElement===e})()",
+            f"{selector} focus",
+            30,
+        )
         self.call("Input.insertText", {"text": text}, session=True)
 
     def press(self, key, code, virtual):
@@ -1413,7 +1447,9 @@ def run_update(case, label):
     """The update the user performs: Core from PyPI when a newer release is published, else the candidate wheel."""
     target = case.ctx.get("update_target")
     check(target, "No update target: neither a newer published release nor --candidate-wheel")
-    args = ["system", "update", "--json"] + (["--source", str(target["wheel"])] if target["mode"] == "candidate" else [])
+    args = ["system", "update", "--json"] + (
+        ["--source", str(target["wheel"])] if target["mode"] == "candidate" else []
+    )
     _, out, _ = case.run([str(case.bin / "hz"), *args], label, PHASE_DEADLINE * 2)
     result = json.loads(out)
     check(result["updated"] is True, f"The update reported updated={result['updated']}: {result.get('message')}")
@@ -1468,8 +1504,11 @@ def case_update(case):
     def after():
         case.expect_version, case.core_wheel_override = target["version"], target["wheel"]
         profile = post_update_profile(case)
-        evidence = {"core_files": verify_files(case, profile=profile, accepted=target["wheel"].parent,
-                                                 receipt_profile=old["profile"], plugins=False)["wheel_files_identical"]}
+        evidence = {
+            "core_files": verify_files(
+                case, profile=profile, accepted=target["wheel"].parent, receipt_profile=old["profile"], plugins=False
+            )["wheel_files_identical"]
+        }
         receipt = json.loads((case.root / "data_dir/standard-app.json").read_bytes())
         evidence["receipt_core_version_after_update"] = receipt["core_version"]
         evidence["receipt_matches_installed_core"] = receipt["core_version"] == target["version"]
@@ -1549,7 +1588,9 @@ def case_plugin_cli(case):
     case.step("install a plugin (CLI)", lambda: add("heinzel-example", "example-add", "0.4.0"))
     case.step("inventory and checkpoint after install", lambda: verify_state(case, "installed"))
     case.step("pin an older plugin version (CLI)", lambda: add("heinzel-clock==0.9.2", "clock-older", "0.9.2"))
-    case.step("update the plugin to the newest (CLI re-add replaces)", lambda: add("heinzel-clock", "clock-update", "0.9.3"))
+    case.step(
+        "update the plugin to the newest (CLI re-add replaces)", lambda: add("heinzel-clock", "clock-update", "0.9.3")
+    )
 
     def toggle():
         hz(case, "system", "plugin", "disable", "heinzel-resource", label="resource-disable")
@@ -1596,7 +1637,8 @@ def ui_open_plugins(browser, case):
 def ui_apply(browser, what):
     """The two-step confirmation the page asks for: Restart and apply, then Restart and apply Plugins.
 
-    The caller waits for the end state it expects; the server restarts itself and the page reloads."""
+    The caller waits for the end state it expects; the server restarts itself and the page reloads.
+    """
     browser.click("button", "Restart and apply")
     browser.wait(browser.exists("button", "Restart and apply Plugins"), f"the restart confirmation of {what}", 30)
     browser.click("button", "Restart and apply Plugins")
@@ -1619,7 +1661,9 @@ def row_has(name, version):
     """A page expression: the plugin's row (the Remove button's nearest ancestor with text) shows `v<version>`."""
     return (
         "(()=>{let e=document.querySelector(" + json.dumps(f"button[aria-label='Remove {name}']") + ");"
-        "for(let i=0;i<6&&e;i++,e=e.parentElement){if(e.innerText&&e.innerText.includes('v" + version + "'))return true}"
+        "for(let i=0;i<6&&e;i++,e=e.parentElement){if(e.innerText&&e.innerText.includes('v"
+        + version
+        + "'))return true}"
         "return false})()"
     )
 
@@ -1635,8 +1679,11 @@ def case_plugin_ui(case):
         browser = Browser(case)
         holder["browser"] = browser
         browser.goto(f"{session.base}/#token={session.token}")
-        browser.wait("document.body.innerText.length>50&&" + browser.exists("button", "Profile", "suffix"),
-                     "the app to render", 120)
+        browser.wait(
+            "document.body.innerText.length>50&&" + browser.exists("button", "Profile", "suffix"),
+            "the app to render",
+            120,
+        )
         ui_open_plugins(browser, case)
         expected = sorted(
             case.plugins_expected or {a["name"] for a in case.ctx["profile"]["artifacts"] if a["name"] != "heinzel"}
@@ -1649,8 +1696,13 @@ def case_plugin_ui(case):
 
     def server_state(label):
         """The restarted server is the same process image: record its command line, once, for isolation."""
-        out = subprocess.run(["/bin/ps", "-o", "command=", "-p", str(holder["pid"])], capture_output=True,
-                             text=True, timeout=15, check=False).stdout.strip()
+        out = subprocess.run(
+            ["/bin/ps", "-o", "command=", "-p", str(holder["pid"])],
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=False,
+        ).stdout.strip()
         isolated = " -I " in f" {out} "
         case.notes.setdefault("server_isolated_after_restart", []).append({label: isolated})
         return isolated
@@ -1663,8 +1715,11 @@ def case_plugin_ui(case):
         expect_plugins(case, heinzel_example={"enabled": True, "version": "0.4.0"})
         cli = plugin_map(case, "plugins-after-ui-install")
         check(cli["heinzel-example"]["version"] == "0.4.0", "The CLI does not see the UI-installed plugin")
-        return {"screenshot": browser.shot("03-installed"), "isolated_server": server_state("after-install"),
-                "preview_has_details": "Publisher" in text}
+        return {
+            "screenshot": browser.shot("03-installed"),
+            "isolated_server": server_state("after-install"),
+            "preview_has_details": "Publisher" in text,
+        }
 
     def update():
         browser = holder["browser"]
@@ -1748,8 +1803,11 @@ def case_retention(case):
         check(inventory["heinzel-resource"]["enabled"] is False, "The disabled default came back enabled")
         check(snapshot_files(case.root / "config_home") == case.notes["kept"], "Configuration changed on reinstall")
         case.notes["example_back_after_reinstall"] = "heinzel-example" in inventory
-        return {"user_added_plugin_present_after_reinstall": "heinzel-example" in inventory,
-                "disabled_choice_kept": True, "configuration_kept": True}
+        return {
+            "user_added_plugin_present_after_reinstall": "heinzel-example" in inventory,
+            "disabled_choice_kept": True,
+            "configuration_kept": True,
+        }
 
     case.step("reinstall keeps configuration and the disabled choice", after_reinstall)
     case.step("uninstall again", lambda: uninstall(case, "uv-tool-uninstall-2"))
@@ -1840,7 +1898,7 @@ def case_active_daemon(case):
             continue
         with zipfile.ZipFile(core[0]) as archive:
             units = archive.read("heinzel/modules/system/daemon/_units.py").decode()
-        match = re.search(r'^LABEL\s*=\s*"([^"]+)"', units, re.M)
+        match = re.search(r'^LABEL\s*=\s*"([^"]+)"', units, re.MULTILINE)
         facts[label] = {
             "label_is_module_constant": bool(match),
             "label_equals_real_label": bool(match) and match.group(1) == LABEL,
@@ -1875,11 +1933,14 @@ def assert_final_install(case, where):
     receipt = json.loads((case.root / "data_dir/standard-app.json").read_bytes())
     versions = {a["name"]: a["version"] for a in receipt.get("artifacts", [])}
     check(versions, f"{where}: the receipt names no distributions")
-    check(is_final_version(receipt.get("core_version")), f"{where}: receipt Core {receipt.get('core_version')} is not final")
+    check(
+        is_accepted_core(receipt.get("core_version")),
+        f"{where}: receipt Core {receipt.get('core_version')} is not final",
+    )
     for name, version in versions.items():
         check(is_final_version(version), f"{where}: {name} {version} is not a final version")
     info = case.json_command("system", "info", label="hz-system-info-final")
-    check(is_final_version(info["version"]), f"{where}: the installed Core {info['version']} is not a final version")
+    check(is_accepted_core(info["version"]), f"{where}: the installed Core {info['version']} is not a final version")
     check(info["version"] == receipt["core_version"], f"{where}: the receipt and the installed Core differ")
     return {"core": info["version"], "distributions": versions}
 
@@ -1893,7 +1954,9 @@ def case_default_is_stable(case):
         designated = latest_app_version()
         profile = case.ctx["profile"]
         check(is_final_version(designated), f"The designated latest app {designated} is not a final version")
-        check(is_final_version(profile["core_version"]), f"The profile selects a non-final Core {profile['core_version']}")
+        check(
+            is_final_version(profile["core_version"]), f"The profile selects a non-final Core {profile['core_version']}"
+        )
         check(
             all(is_final_version(a["version"]) for a in profile["artifacts"]),
             "The profile names a non-final distribution",
@@ -1945,16 +2008,24 @@ def run_case(ident, parent, ctx):
         case.status = "FAIL"
         message = redact(f"harness {type(error).__name__}: {error}")[:500]
         case.first_failure = case.first_failure or {"step": "harness", "failure": message}
-    return {
-        "name": case.name,
-        "status": case.status,
-        "root": str(case.root),
-        "first_failure": case.first_failure,
-        "forbidden_error_hits": case.hits,
-        "notes": {k: v for k, v in case.notes.items() if isinstance(v, (str, bool, int, list, dict)) and k not in ("config_before", "kept", "history")},
-        "steps": case.steps,
-        "seconds": round(time.monotonic() - case.started, 1),
-    }, case.secrets, case.root
+    return (
+        {
+            "name": case.name,
+            "status": case.status,
+            "root": str(case.root),
+            "first_failure": case.first_failure,
+            "forbidden_error_hits": case.hits,
+            "notes": {
+                k: v
+                for k, v in case.notes.items()
+                if isinstance(v, (str, bool, int, list, dict)) and k not in ("config_before", "kept", "history")
+            },
+            "steps": case.steps,
+            "seconds": round(time.monotonic() - case.started, 1),
+        },
+        case.secrets,
+        case.root,
+    )
 
 
 def verdict(args, cases):
@@ -2025,7 +2096,9 @@ def default_root_parent():
 def default_chrome():
     if sys.platform == "darwin":
         return CHROME
-    return next((found for name in CHROME_LINUX if (found := shutil.which(name, path="/usr/bin:/bin"))), CHROME_LINUX[0])
+    return next(
+        (found for name in CHROME_LINUX if (found := shutil.which(name, path="/usr/bin:/bin"))), CHROME_LINUX[0]
+    )
 
 
 def ci_record():
@@ -2056,7 +2129,9 @@ def bind_old_app(version, dest):
     check(profile.get("format") == 2 and profile.get("core_version") == version, f"app-v{version} is not format 2")
     dest.mkdir()
     for artifact in profile["artifacts"]:
-        check(artifact["url"].startswith(f"{COLLECTION}/releases/download/app-v{version}/"), "Asset outside its release")
+        check(
+            artifact["url"].startswith(f"{COLLECTION}/releases/download/app-v{version}/"), "Asset outside its release"
+        )
         data = fetch(artifact["url"])
         check(sha256(data) == artifact["sha256"], f"{artifact['name']}: app-v{version} asset fails its profile hash")
         (dest / artifact["filename"]).write_bytes(data)
@@ -2108,10 +2183,11 @@ def candidate_app(candidate, profile, accepted, parent):
 def bind_release_candidate(args, parent):
     """Bind a held release's wheel (URL plus sha256) and the app profile that selects it. Executes nothing.
 
-    Only final versions on this project's release pages are accepted. The wheel and every profile artifact are
-    downloaded, hashed and bound before any case runs; PyPI is not consulted, because the bytes are not published yet."""
+    Only final and edge versions on this project's release pages are accepted. The wheel and every profile artifact are
+    downloaded, hashed and bound before any case runs; PyPI is not consulted, because the bytes are not published yet.
+    """
     version, app = args.expect_version, args.expect_app_version
-    check(is_final_version(version) and is_final_version(app), "The expected versions must be final X.Y.Z versions")
+    check(version == app and CANDIDATE_VERSION.fullmatch(version), "A candidate names one final or edge version")
     wheel_url, profile_url = args.candidate_wheel_url, args.candidate_profile_url
     wheel_match = RELEASE_WHEEL_URL.fullmatch(wheel_url or "")
     check(wheel_match, "--candidate-wheel-url must be this project's final release wheel")
@@ -2128,7 +2204,9 @@ def bind_release_candidate(args, parent):
     data = fetch(wheel_url)
     check(sha256(data) == wanted, "The release wheel fails the supplied SHA-256")
     wheel.write_bytes(data)
-    check(wheel_version(wheel, "heinzel") == version, "The release wheel's metadata version differs from --expect-version")
+    check(
+        wheel_version(wheel, "heinzel") == version, "The release wheel's metadata version differs from --expect-version"
+    )
 
     profile_bytes = fetch(profile_url, 1024 * 1024)
     profile = json.loads(profile_bytes)
@@ -2179,8 +2257,13 @@ def make_bootstrap(args, profile, accepted, parent, candidate):
         return {**published, "command": pinned, "env": {}}
     local, directory, path = candidate_app(candidate, profile, accepted, parent)
     return {
-        "profile": local, "accepted": directory, "version": candidate["version"], "mode": mode,
-        "command": pinned, "env": {"HZ_APP_PROFILE": str(path)}, "core_wheel": directory / candidate["wheel"].name,
+        "profile": local,
+        "accepted": directory,
+        "version": candidate["version"],
+        "mode": mode,
+        "command": pinned,
+        "env": {"HZ_APP_PROFILE": str(path)},
+        "core_wheel": directory / candidate["wheel"].name,
     }
 
 
@@ -2197,16 +2280,25 @@ def parse_args(argv=None):
         required=True,
         help="Standard app the collection must designate; `published` as for --expect-version.",
     )
-    parser.add_argument("--case", action="append", choices=sorted(CASES, key=int), help="Repeatable; default all, serially")
+    parser.add_argument(
+        "--case", action="append", choices=sorted(CASES, key=int), help="Repeatable; default all, serially"
+    )
     parser.add_argument("--out", type=Path, help="Also copy the JSON result here (no overwrite)")
     parser.add_argument(
-        "--root-parent", type=Path, default=None, help="Where the private proof root is made (default: the runner's or system temp)"
+        "--root-parent",
+        type=Path,
+        default=None,
+        help="Where the private proof root is made (default: the runner's or system temp)",
     )
     parser.add_argument("--accept-wheel-sha256", help="Independently accepted Core wheel hash")
     parser.add_argument("--accept-profile-sha256", help="Independently accepted standard.json hash")
     parser.add_argument("--accept-install-sh-sha256", help="Accepted live install.sh hash if main moved past the tag")
-    parser.add_argument("--candidate-wheel", type=Path, help="A locally built Core wheel under test (never the release)")
-    parser.add_argument("--candidate-wheel-url", help="A held final release's Core wheel on this project's release page")
+    parser.add_argument(
+        "--candidate-wheel", type=Path, help="A locally built Core wheel under test (never the release)"
+    )
+    parser.add_argument(
+        "--candidate-wheel-url", help="A held final release's Core wheel on this project's release page"
+    )
     parser.add_argument("--candidate-wheel-sha256", help="The SHA-256 that wheel must have")
     parser.add_argument("--candidate-profile-url", help="The app release's standard.json that selects that wheel")
     parser.add_argument(
@@ -2250,7 +2342,9 @@ def resolve_published(args):
     """`published` expectations become what is published now; returns whether the caller supplied them."""
     supplied = "published" not in (args.expect_version, args.expect_app_version)
     if args.expect_version == "published":
-        args.expect_version = json.loads(fetch("https://pypi.org/pypi/heinzel/json", 8 * 1024 * 1024))["info"]["version"]
+        args.expect_version = json.loads(fetch("https://pypi.org/pypi/heinzel/json", 8 * 1024 * 1024))["info"][
+            "version"
+        ]
     if args.expect_app_version == "published":
         args.expect_app_version = latest_app_version()
     return supplied
@@ -2362,11 +2456,7 @@ def main():
         "update_target": target and {"mode": target["mode"], "version": target["version"]},
     }
     bootstrap_spec = make_bootstrap(args, profile, parent / "accepted", parent, candidate)
-    public = (
-        bootstrap_spec
-        if release_run
-        else {"command": LITERAL_UVX, "env": {}, "mode": "literal"}
-    )
+    public = bootstrap_spec if release_run else {"command": LITERAL_UVX, "env": {}, "mode": "literal"}
     ctx = {
         "args": args,
         "chrome": args.chrome or default_chrome(),

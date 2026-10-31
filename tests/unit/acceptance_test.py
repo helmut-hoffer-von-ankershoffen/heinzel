@@ -127,7 +127,7 @@ def test_only_x_y_z_is_a_final_version(version, final):
     assert harness.is_final_version(version) is final
 
 
-def test_release_candidate_urls_accept_only_this_projects_final_release_assets():
+def test_release_candidate_urls_accept_only_this_projects_final_or_edge_assets():
     wheel = harness.RELEASE_WHEEL_URL
     profile = harness.RELEASE_PROFILE_URL
     base = "https://github.com/helmut-hoffer-von-ankershoffen"
@@ -135,14 +135,15 @@ def test_release_candidate_urls_accept_only_this_projects_final_release_assets()
     assert profile.fullmatch(f"{base}/heinzel-plugins/releases/download/app-v1.2.3/standard.json")
     for bad in (
         f"{base}/heinzel/releases/download/v1.2.4.dev5/heinzel-1.2.4.dev5-py3-none-any.whl",
-        f"{base}/heinzel/releases/download/edge-v1.2.4.dev5/heinzel-1.2.4.dev5-py3-none-any.whl",
+        f"{base}/heinzel/releases/download/edge-v1.2.4/heinzel-1.2.4-py3-none-any.whl",
         f"{base}/heinzel/releases/download/v1.2.3/heinzel-1.2.4-py3-none-any.whl",
         f"{base}/other/releases/download/v1.2.3/heinzel-1.2.3-py3-none-any.whl",
         f"http://github.com/{base[19:]}/heinzel/releases/download/v1.2.3/heinzel-1.2.3-py3-none-any.whl",
         "https://example.invalid/heinzel-1.2.3-py3-none-any.whl",
     ):
         assert not wheel.fullmatch(bad), bad
-    assert not profile.fullmatch(f"{base}/heinzel-plugins/releases/download/app-v1.2.3.dev1/standard.json")
+    assert wheel.fullmatch(f"{base}/heinzel/releases/download/edge-v1.2.4.dev5/heinzel-1.2.4.dev5-py3-none-any.whl")
+    assert profile.fullmatch(f"{base}/heinzel-plugins/releases/download/app-v1.2.3.dev1/standard.json")
     assert not profile.fullmatch("https://example.invalid/standard.json")
 
 
@@ -214,3 +215,12 @@ def test_the_summary_shows_the_verdict_and_every_case():
     assert "CANDIDATE_REJECTED" in text
     assert text.index("| 2 fresh_uvx") < text.index("| 10 update")
     assert "s: x" in text
+
+
+def test_only_the_named_edge_core_counts_and_public_runs_name_none(monkeypatch):
+    assert harness.EDGE_CANDIDATE is None
+    assert not harness.is_accepted_core("1.2.4.dev5")
+    monkeypatch.setattr(harness, "EDGE_CANDIDATE", "1.2.4.dev5")
+    assert harness.is_accepted_core("1.2.4.dev5")
+    assert not harness.is_accepted_core("1.2.4.dev6")
+    assert harness.is_accepted_core("1.2.3")
