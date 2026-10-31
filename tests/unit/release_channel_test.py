@@ -94,7 +94,7 @@ def test_stamp_refuses_an_ambiguous_project(tmp_path):
 def test_pointer_binds_the_immutable_wheel(tmp_path):
     wheel = tmp_path / "heinzel-0.9.10.dev57-py3-none-any.whl"
     wheel.write_bytes(b"wheel")
-    pointer = channel.pointer("0.9.10.dev57", "a" * 40, wheel)
+    pointer = channel.pointer("0.9.10.dev57", "a" * 40, tmp_path)
     assert pointer["tag"] == "edge-v0.9.10.dev57"
     assert pointer["sha256"] == hashlib.sha256(b"wheel").hexdigest()
     assert str(pointer["wheel"]).endswith("/edge-v0.9.10.dev57/heinzel-0.9.10.dev57-py3-none-any.whl")
@@ -104,7 +104,7 @@ def test_pointer_refuses_another_wheel(tmp_path):
     wheel = tmp_path / "heinzel-0.9.10-py3-none-any.whl"
     wheel.write_bytes(b"wheel")
     with pytest.raises(channel.ChannelError):
-        channel.pointer("0.9.10.dev57", "a" * 40, wheel)
+        channel.pointer("0.9.10.dev57", "a" * 40, tmp_path)
 
 
 @pytest.mark.parametrize("tag", ["edge-v0.9.10.dev57", "v0.9.10.dev57", "0.9.10.dev57"])

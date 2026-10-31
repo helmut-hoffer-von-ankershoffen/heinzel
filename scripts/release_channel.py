@@ -5,10 +5,10 @@
 """Decide and stamp an edge release: what is releasable, its version, and the channel pointer (ADR 0114).
 
 Usage:
-  uv run --script scripts/release_channel.py releasable <changed-paths-file>
+  uv run --script scripts/release_channel.py releasable < changed-paths
   uv run --script scripts/release_channel.py version <current> <suggested> <commit-count> [<newest-edge-version>]
   uv run --script scripts/release_channel.py stamp <version>
-  uv run --script scripts/release_channel.py pointer <version> <commit> <wheel>
+  uv run --script scripts/release_channel.py pointer <version> <commit>
 """
 
 import hashlib
@@ -18,14 +18,14 @@ import sys
 from pathlib import Path, PurePosixPath
 
 ROOT = Path(__file__).resolve().parents[1]
-FINAL = re.compile(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)")
-EDGE = re.compile(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.dev([1-9][0-9]*)")
+FINAL = re.compile(r"(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)", re.ASCII)
+EDGE = re.compile(r"(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)\.dev([1-9]\d*)", re.ASCII)
 COMMIT = re.compile(r"[0-9a-f]{40}")
 TAG_PREFIX = "edge-v"
 REPOSITORY = "helmut-hoffer-von-ankershoffen/heinzel"
 NON_SHIPPING_DIRECTORIES = ("docs", "tests", ".github", ".claude")
 NON_SHIPPING_FILES = ("mkdocs.yml",)
-ARGUMENTS = {"releasable": 1, "version": (3, 4), "stamp": 1, "pointer": 3}
+ARGUMENTS = {"releasable": 0, "version": (3, 4), "stamp": 1, "pointer": 2}
 
 
 class ChannelError(ValueError):
@@ -100,7 +100,7 @@ def stamp(version: str, root: Path = ROOT) -> None:
     _replace_once(root / "uv.lock", pattern, rf'\g<1>"{version}"')
 
 
-def pointer(version: str, commit: str, wheel: Path) -> dict[str, object]:
+def pointer(version: str, commit: str, directory: Path) -> dict[str, object]:
     """What the opt-in path reads to find the newest edge release; the digest binds the immutable wheel.
 
     Raises:
@@ -110,7 +110,8 @@ def pointer(version: str, commit: str, wheel: Path) -> dict[str, object]:
         msg = "The pointer needs an edge version and a full commit"
         raise ChannelError(msg)
     filename = f"heinzel-{version}-py3-none-any.whl"
-    if wheel.name != filename or wheel.is_symlink() or not wheel.is_file():
+    wheel = directory / filename
+    if wheel.is_symlink() or not wheel.is_file():
         msg = f"Expected the regular file {filename}"
         raise ChannelError(msg)
     tag = f"{TAG_PREFIX}{version}"
@@ -135,15 +136,15 @@ def main(argv: list[str]) -> int:
         return 2
     try:
         if command == "releasable":
-            paths = [line for line in Path(rest[0]).read_text(encoding="utf-8").splitlines() if line]
+            paths = [line for line in sys.stdin.read().splitlines() if line]
             print("true" if releasable(paths) else "false")
         elif command == "version":
             print(edge_version(rest[0], rest[1], int(rest[2]), rest[3] if len(rest) > 3 else None) or "")  # noqa: PLR2004
         elif command == "stamp":
             stamp(rest[0])
         else:
-            print(json.dumps(pointer(rest[0], rest[1], Path(rest[2])), indent=2))
-    except (ChannelError, ValueError, OSError) as error:
+            print(json.dumps(pointer(rest[0], rest[1], ROOT / "dist"), indent=2))
+    except (ValueError, OSError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 1
     return 0
