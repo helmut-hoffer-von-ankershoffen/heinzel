@@ -30,14 +30,15 @@ hide:
 
 <section class="hz-trust" aria-labelledby="hz-trust-title">
 <h2 id="hz-trust-title">Open code. Visible checks.</h2>
-<p>Inspect the license, project practices and latest core analysis before you install.</p>
+<p>Check the license, practices and analysis before you install.</p>
 <div class="hz-trust-links">
-<a href="https://github.com/helmut-hoffer-von-ankershoffen/heinzel/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="MIT license" height="20" loading="lazy"></a>
-<a href="https://www.bestpractices.dev/en/projects/15863"><img src="https://www.bestpractices.dev/projects/15863/badge" alt="OpenSSF Best Practices: view the project's criteria" height="20" loading="lazy"></a>
-<a href="https://sonarcloud.io/summary/new_code?id=helmut-hoffer-von-ankershoffen_heinzel"><img src="https://sonarcloud.io/api/project_badges/measure?project=helmut-hoffer-von-ankershoffen_heinzel&amp;metric=alert_status" alt="Quality gate: new core code" height="20" loading="lazy"></a>
+<a href="https://github.com/helmut-hoffer-von-ankershoffen/heinzel/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-brightgreen" alt="MIT license" height="20" loading="lazy"></a>
+<a href="https://www.bestpractices.dev/en/projects/15863"><img src="https://img.shields.io/cii/level/15863?label=OpenSSF%20Best%20Practices" alt="OpenSSF Best Practices: view the project's criteria" height="20" loading="lazy"></a>
+<a href="https://github.com/helmut-hoffer-von-ankershoffen/heinzel/actions/workflows/codeql.yml?query=branch%3Amain"><img src="https://img.shields.io/github/actions/workflow/status/helmut-hoffer-von-ankershoffen/heinzel/codeql.yml?branch=main&amp;label=CodeQL" alt="CodeQL analysis on main: view the workflow runs" height="20" loading="lazy"></a>
+<a href="https://sonarcloud.io/summary/new_code?id=helmut-hoffer-von-ankershoffen_heinzel"><img src="https://img.shields.io/sonar/quality_gate/helmut-hoffer-von-ankershoffen_heinzel?server=https://sonarcloud.io&amp;label=Quality%20Gate%20Status" alt="Quality gate: new core code" height="20" loading="lazy"></a>
 <a href="https://sonarcloud.io/summary/overall?id=helmut-hoffer-von-ankershoffen_heinzel"><img src="https://sonarcloud.io/api/project_badges/measure?project=helmut-hoffer-von-ankershoffen_heinzel&amp;metric=security_rating" alt="Security rating: overall core code" height="20" loading="lazy"></a>
 </div>
-<p class="hz-trust-note">The quality gate checks new code. The security rating covers all analyzed core code.</p>
+<p class="hz-trust-note">The gate checks new code; the security rating covers all analyzed core code.</p>
 </section>
 
 <div class="hz-strip"><span>For people who build products.</span><span>For agents that help them.</span><span>For teams that want control.</span></div>
