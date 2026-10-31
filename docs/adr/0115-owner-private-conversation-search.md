@@ -21,6 +21,8 @@ or exhaust memory. Retained message bodies can expire and search indexes can be 
 
 ## Decision Outcome
 
+.
+
 Owner-authenticated operations return bounded result pages for one conversation or traverse the owner's conversation
 catalog using continuation hints. Owner-wide search advances in bounded event steps; building a single-conversation
 index may scan its entire journal before returning. The verified journals and immutable bodies remain authoritative. A process-local
