@@ -26,7 +26,7 @@ Each agent's model and effort are set in its frontmatter; don't override them un
 
 **When implementation is delegated to subagents, pick model and effort by the feature's complexity.** Haiku, skill
 `ship-small`: copy, docs and small web UI fixes that `scripts/ship.py classify` accepts (it stops by itself on
-anything else or after two failures; the orchestrator merges). Sonnet, low
+anything else or after two failures; it merges its own `risk: low` PR once CI is green). Sonnet, low
 effort: renames, copy, small UI tweaks, config, docs-only. Sonnet, medium: most features. Escalate to Sonnet, high,
 only when an agent hits problems (repeated CI/test failures, a stuck rebase, review findings it can't resolve), and
 beyond that to Opus when it gets hairy: very complex work or problems Sonnet high can't resolve. Opus from the start
