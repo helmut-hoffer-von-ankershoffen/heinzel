@@ -117,6 +117,17 @@ def test_code_changes_flag_network_security_and_imports():
     assert lane(ok) == []
 
 
+def test_the_apps_words_may_change_but_not_its_code():
+    def words(line):
+        return ship.Change("web/src/i18n.ts", "M", added=[(5, line)], removed=[(5, '  "a.b": "old",')])
+
+    assert lane(words('  "plugins.firstParty": "First-party",')) == []
+    assert lane(words('    "Reporting lines are guessed from your calendar. Connect one in Settings.",')) == []
+    assert lane(words('  "nav.artifacts":')) == []
+    assert lane(words('  "a.b": fetch("/x"),'))
+    assert lane(words("  const x = 1;"))
+
+
 def test_size_limits():
     many = [ship.Change(f"docs/guides/g{i}.md", "M", added=[(1, "x")], removed=[(1, "y")]) for i in range(9)]
     assert any("files" in r for r in lane(*many))
@@ -160,9 +171,9 @@ def test_no_snippet_for_a_badge_only_change():
 
 
 def test_pages_of_documents_on_the_site():
-    assert ship.page_url("docs/guides/install.md") == ship.SITE + "guides/install/"
-    assert ship.page_url("docs/README.md") == ship.SITE
-    assert ship.page_url("docs/guides/README.md") == ship.SITE + "guides/"
+    assert ship.page_url("docs/guides/install.md") == ship.site_url() + "guides/install/"
+    assert ship.page_url("docs/README.md") == ship.site_url()
+    assert ship.page_url("docs/guides/README.md") == ship.site_url() + "guides/"
     assert ship.page_url("web/src/index.css") is None
 
 
