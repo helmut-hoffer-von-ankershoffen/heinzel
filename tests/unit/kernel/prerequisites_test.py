@@ -34,8 +34,10 @@ def test_the_same_executable_is_declared_once_per_module():
 
 @pytest.mark.parametrize("name", ["", "/usr/bin/tool", "tool --version", "-tool", "a;b"])
 def test_an_executable_is_a_bare_command_name(name: str):
+    module = Module("example", "An example.")
+
     with pytest.raises(ValueError, match="command name"):
-        Module("example", "An example.").prerequisite(name, purpose="Does a thing.", linux=LINUX)
+        module.prerequisite(name, purpose="Does a thing.", linux=LINUX)
 
 
 @pytest.mark.parametrize(

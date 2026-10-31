@@ -298,7 +298,9 @@ def _prerequisites(modules: Iterable[ModuleDoc]) -> list[str]:
         "| --- | --- | --- | --- | --- | --- |",
     ]
     for p in rows:
-        needed = _cell(p.condition) if p.condition else ("always" if p.when != "feature" else "when you ask for it")
+        needed = _cell(p.condition)
+        if not p.condition:
+            needed = "when you ask for it" if p.when == "feature" else "always"
         minimum = f" (version {p.minimum_version} or newer)" if p.minimum_version else ""
         lines.append(
             f"| `{p.executable}`{minimum} | {_cell(p.purpose)} | {needed} | {_cell(p.macos)} | {_cell(p.linux)} "

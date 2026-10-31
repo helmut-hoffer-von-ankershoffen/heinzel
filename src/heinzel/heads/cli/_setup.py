@@ -370,13 +370,21 @@ class Runner:
                 return Outcome.KEPT
         elif offer_skip and not let.required and not ask(f"Set up {record.qualname} now?"):
             return Outcome.SKIPPED
+        self._require_tools(record)
+        self.kernel.call(let.func)
+        return Outcome.DONE
+
+    def _require_tools(self, record: ModuleRecord) -> None:
+        """Prepare the owner's tools; its step must not run while some are unready.
+
+        Raises:
+            HeinzelError: If a tool is still not ready, naming it and what to do.
+        """
         if unmet := self._prepare(record)[1]:
             msg = "Its tools are not ready, so the step did not run: " + "; ".join(
                 f"{check.requirement.name} ({check.detail})" for check in unmet
             )
             raise HeinzelError(msg)
-        self.kernel.call(let.func)
-        return Outcome.DONE
 
 
 def invalid(exc: ValidationError) -> str:
@@ -392,7 +400,9 @@ def summary(results: list[StepResult]) -> Table:
     for column in ("Module", "Step", "Outcome", "Detail"):
         table.add_column(column, overflow="fold")
     for result in results:
-        kind = "tools" if result.prerequisites else ("required" if result.required else "optional")
+        kind = "required" if result.required else "optional"
+        if result.prerequisites:
+            kind = "tools"
         table.add_row(Text(result.module), kind, result.outcome.value, Text(result.detail))
     return table
 
@@ -548,8 +558,9 @@ class SetupCommands:
     def _tools_only(self, owners: list[ModuleRecord], *, as_json: bool) -> None:
         """No module has a step: prepare the tools of the owners that declare some, and say so when none needs it."""
         bound = self.kernel.resolve(Prompter)
-        terminal = ConsolePrompter(self.err_console if as_json else self.console)
-        prompter = bound if bound.interactive else (terminal if has_terminal() else Prompter())
+        prompter = bound
+        if not bound.interactive:
+            prompter = ConsolePrompter(self.err_console if as_json else self.console) if has_terminal() else Prompter()
         results = Runner(self.kernel, prompter).run([], offer_skip=True, owners=owners)
         if results:
             self.finish(results, as_json=as_json)

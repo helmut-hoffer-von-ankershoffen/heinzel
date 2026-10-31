@@ -34,7 +34,7 @@ BREW_FLAGS = (
 HOMEBREW_URL = "https://brew.sh"
 TAP_SLASHES = 2
 """A package named `owner/tap/name` makes Homebrew add that tap first, so the person is told."""
-_VERSION = re.compile(r"(?<![\d.])(\d+(?:\.\d+){1,3})(?![\d.])")
+_VERSION = re.compile(r"(?<![\d.])(\d++(?:\.\d++){1,3}+)(?![\d.])")
 type Entry = tuple[ModuleRecord, PrerequisiteLet]
 
 

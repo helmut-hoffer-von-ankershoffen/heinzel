@@ -90,9 +90,10 @@ def test_a_private_operation_refuses_a_caller_no_trusted_head_authenticated(make
 
 def test_install_without_confirm_changes_nothing_and_says_how_to_look_first(make_kernel):
     machine = Machine(present={BREW: ""})
+    kernel = kernel_on(machine, make_kernel)
 
     with pytest.raises(HeinzelError, match="--confirm"):
-        run(kernel_on(machine, make_kernel), "install")
+        run(kernel, "install")
 
     assert machine.commands == []
 
