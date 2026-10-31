@@ -22,6 +22,7 @@ from site_catalog import (
     REVISION,
     SNAPSHOT,
     VERSION,
+    VIDEO,
     Object,
     relative,
     text,
@@ -126,14 +127,45 @@ def validate_assets(project: Object) -> None:
         raise ValueError(msg)
     for theme in project["themes"]:
         text(theme["title"], 100)
-    for artwork in project.get("artwork", []):
+    validate_media(project)
+    screenshots = project.get("screenshots", [])
+    for artwork in [*project.get("artwork", []), *screenshots]:
         prefix = f"https://raw.githubusercontent.com/{source['repository']}/{source['revision']}/"
         if not artwork["url"].startswith(prefix):
             msg = "Artwork must come from its immutable public source"
             raise ValueError(msg)
         asset = relative(artwork["url"].removeprefix(prefix))
+        if project["directory"] != "." and not asset.startswith(project["directory"] + "/"):
+            msg = "Artwork must stay inside its owning project"
+            raise ValueError(msg)
         if Path(asset).suffix not in {".png", ".jpg", ".webp"}:
             msg = "Supplier artwork must be raster images, never executable documents"
+            raise ValueError(msg)
+
+
+def validate_media(project: Object) -> None:
+    """Validate bounded runtime capture labels and YouTube identities.
+
+    Raises:
+        ValueError: If supplied media metadata is unsafe.
+    """
+    screenshots = project.get("screenshots", [])
+    soundscapes = project.get("soundscapes", [])
+    if not isinstance(screenshots, list) or len(screenshots) > MAX_IMAGES:
+        msg = "Screenshots must be bounded"
+        raise ValueError(msg)
+    for shot in screenshots:
+        if shot.get("surface") not in {"ui", "cli"}:
+            msg = "Screenshots need a UI/CLI surface"
+            raise ValueError(msg)
+        text(shot["caption"], 180)
+    if not isinstance(soundscapes, list) or len(soundscapes) > MAX_DECLARATIONS:
+        msg = "Soundscapes must be bounded"
+        raise ValueError(msg)
+    for sound in soundscapes:
+        text(sound["title"], 100)
+        if not isinstance(sound.get("video"), str) or not VIDEO.fullmatch(sound["video"]):
+            msg = "Soundscapes require a YouTube video identity"
             raise ValueError(msg)
 
 
@@ -222,10 +254,11 @@ def cards(data: Object, page_url: str, *, featured: bool = False) -> str:
         target = href(f"catalog/{project['id']}/", page_url)
         category = project.get("category", "utilities")
         badge = "Included in the app" if project["included_version"] else "Source plugin"
-        if project.get("artwork"):
-            art = project["artwork"][0]
+        captures = [shot for shot in project.get("screenshots", []) if shot["surface"] == "ui"]
+        if captures or project.get("artwork"):
+            art = (captures or project["artwork"])[0]
             visual = (
-                f'<img src="{escape(art["url"])}" alt="{escape(art["alt"])}" '
+                f'<img src="{escape(art["url"])}" alt="{escape(art.get("caption", art.get("alt", "Plugin preview")))}" '
                 'loading="lazy" referrerpolicy="no-referrer">'
             )
         elif project["themes"]:
@@ -280,6 +313,44 @@ def owner_art(project: Object) -> str:
     return f'<div class="hz-owner-art">{images}</div>' if images else ""
 
 
+def screenshot_gallery(project: Object) -> str:
+    """Show runtime captures with their UI/CLI labels and full-size links."""
+    groups = []
+    for surface, label in (("ui", "User interface"), ("cli", "Command line")):
+        images = "".join(
+            f'<figure><a href="{escape(shot["url"])}" '
+            f'aria-label="Open full-size {escape(shot["caption"] or label + " screenshot")}">'
+            f'<img src="{escape(shot["url"])}" alt="{escape(shot["caption"] or label + " screenshot")}" '
+            'loading="lazy" referrerpolicy="no-referrer"></a>'
+            f"<figcaption>{escape(shot['caption'] or label + ' screenshot')}</figcaption></figure>"
+            for shot in project.get("screenshots", [])
+            if shot["surface"] == surface
+        )
+        content = f'<div class="hz-screenshots">{images}</div>' if images else "<p>No screenshots published yet.</p>"
+        groups.append(f"<h3>{label}</h3>{content}")
+    return "## Screenshots\n\n" + "\n".join(groups)
+
+
+def soundscape_gallery(project: Object) -> str:
+    """Offer deliberate YouTube playback and a no-JavaScript watch link."""
+    cards = []
+    for sound in project.get("soundscapes", []):
+        title, video = escape(sound["title"]), escape(sound["video"])
+        cards.append(
+            f'<article class="hz-soundscape"><h3>{title}</h3>'
+            f'<div data-soundscape="{video}" data-title="{title}">'
+            f'<button type="button" data-play-soundscape hidden>Play {title}</button></div>'
+            f'<p><a href="https://www.youtube.com/watch?v={video}">Listen on YouTube ↗</a></p></article>'
+        )
+    if not cards:
+        return ""
+    return (
+        "## Soundscapes\n\n<p>YouTube loads only when you press Play. "
+        "Playback may depend on video availability and embedding permissions.</p>"
+        '<div class="hz-soundscapes">' + "".join(cards) + "</div>"
+    )
+
+
 def theme_gallery(data: Object, page_url: str) -> str:
     """Show every declared theme in light and dark with truthful palette-preview captions."""
     result = []
@@ -329,7 +400,11 @@ description: {json.dumps(escape(project["summary"]), ensure_ascii=False)}
 <p>{status}</p>
 </div>
 
+{screenshot_gallery(project)}
+
 {owner_art(project)}
+
+{soundscape_gallery(project)}
 
 ## What it brings
 
