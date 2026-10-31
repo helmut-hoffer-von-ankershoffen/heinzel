@@ -1,8 +1,11 @@
 """Exercise the actual compiled daemon registry from the mounted browser test."""
 
 import json
+import os
+import tempfile
 import threading
 from datetime import UTC, datetime
+from pathlib import Path
 
 from heinzel import CurrentUser
 from heinzel.kernel import CompiledJobs
@@ -14,6 +17,17 @@ def _wait_for_slot(cadence_seconds, now, wait):
     remaining = cadence_seconds - now().timestamp() % cadence_seconds
     if remaining < 10:
         wait(remaining + 0.1)
+
+
+def _publish_json(directory, name, value):
+    """Expose a complete coordination document with one same-directory rename."""
+    descriptor, path = tempfile.mkstemp(prefix=".daemon-publish-", dir=directory)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+            json.dump(value, stream)
+        Path(path).replace(directory / name)
+    finally:
+        Path(path).unlink(missing_ok=True)
 
 
 def start_daemon_probe(kernel, directory, *, cadence_seconds=420):
@@ -52,14 +66,14 @@ def start_daemon_probe(kernel, directory, *, cadence_seconds=420):
         except Exception as error:  # noqa: BLE001 - test-only output contains no account secrets
             result["failure"] = str(error)
         finally:
-            (directory / "daemon-finished.json").write_text(
-                json.dumps(
-                    {
-                        "ok": result["failure"] is None,
-                        "deduplicated": result["deduplicated"],
-                        "failure": result["failure"],
-                    }
-                )
+            _publish_json(
+                directory,
+                "daemon-finished.json",
+                {
+                    "ok": result["failure"] is None,
+                    "deduplicated": result["deduplicated"],
+                    "failure": result["failure"],
+                },
             )
 
     thread = threading.Thread(target=run, daemon=True)

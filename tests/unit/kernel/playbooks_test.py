@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from heinzel import AssetType, ContractTemplate, DiscoveryHint, Module, PlaybookLet, SetupLet
+from heinzel import AssetType, ChatDraftTemplate, ContractTemplate, DiscoveryHint, Module, PlaybookLet, SetupLet
 from heinzel.kernel import PlaybookSetup
 from heinzel.kernel._playbooks import templates_in
 
@@ -80,7 +80,15 @@ def test_a_playbook_refuses_what_doesnt_fit_together():
 def test_module_playbook_declares_the_let_and_a_setup_step_that_asks_for_the_service(tmp_path):
     (tmp_path / "report.prose.md").write_text(TEXT)
     module = Module("teamwork", "Test.")
-    let = module.playbook("For tests.", assets=[AssetType(name="doc", description="d")], templates=[tmp_path])
+    draft = ChatDraftTemplate(name="chat-starter", text="Ask what the person wants.")
+    let = module.playbook(
+        "For tests.",
+        assets=[AssetType(name="doc", description="d")],
+        templates=[tmp_path],
+        chat_drafts=(item for item in [draft]),
+    )
+    assert let.chat_drafts == (draft,)
+    assert [template.name for template in let.templates] == ["report"]
     assert [type(x) for x in module.lets] == [PlaybookLet, SetupLet]
     (step,) = [x for x in module.lets if isinstance(x, SetupLet)]
     assert step.summary == "Playbook: For tests."
@@ -95,7 +103,8 @@ def test_module_playbook_declares_the_let_and_a_setup_step_that_asks_for_the_ser
     with pytest.raises(NotImplementedError):
         PlaybookSetup().run(let, None, None)  # type: ignore[arg-type]
     quiet = Module("quiet", "Test.")
-    quiet.playbook("No setup.", setup=False)
+    quiet_let = quiet.playbook("No setup.", chat_drafts=[draft], setup=False)
+    assert quiet_let.chat_drafts == (draft,)
     assert [type(x) for x in quiet.lets] == [PlaybookLet]
     with pytest.raises(ValueError, match="already has a PlaybookLet"):
         quiet.playbook("Again.", setup=False)

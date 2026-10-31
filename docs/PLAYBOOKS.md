@@ -87,7 +87,7 @@ A playbook is a few lines in a plugin's module ([ARCHITECTURE: Plugins](ARCHITEC
 ```python
 from pathlib import Path
 
-from heinzel import AssetType, DiscoveryHint, Module
+from heinzel import AssetType, ChatDraftTemplate, DiscoveryHint, Module
 
 module = Module("teamwork", "Team rituals: the weekly report.")
 module.playbook(
@@ -102,6 +102,7 @@ module.playbook(
         AssetType(name="team-project", description="The tracker project the team plans in."),
     ],
     templates=[Path(__file__).parent / "templates"],  # weekly-report.prose.md, with {{asset:...}} placeholders
+    chat_drafts=[ChatDraftTemplate(name="report-starter", text="Ask what the person wants in this report.")],
     defaults={"capabilities.tracker": "github"},  # proposals; applied only on yes
 )
 ```
@@ -112,6 +113,9 @@ module.playbook(
 - Placeholders go in double-quoted strings in the frontmatter, e.g. `args: {ref: "{{asset:weekly-report}}"}`;
   anywhere else, and a template with an active `schedule:`, is refused when the plugin is imported. Write it to a
   directory you check with `hz heinzel new x --template <module>:<template>` and `hz heinzel check`.
+- `chat_drafts` supplies bounded, untrusted starter text for the chat workshop. A person reviews the resulting
+  proposal separately; it grants no access and starts no schedule. Chat drafts are not legacy workflow templates,
+  so `hz heinzel new --template` and the legacy setup walk do not create them. Names must not overlap `templates`.
 - `defaults` may name `capabilities.<capability>` (never `agent_runner`) and your module's own `<module>.<key>`
   settings; anything else is refused.
 - `kept_by` names the template whose output keeps the asset true. Drafts are local today; writing the draft where the

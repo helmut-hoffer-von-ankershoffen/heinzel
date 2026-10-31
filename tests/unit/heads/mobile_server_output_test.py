@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.e2e._mobile_server_output import MobileServerOutput, redact, sanitize_timeout
+from tests.e2e._mobile_server_output import MobileServerOutput, redact, sanitize_timeout, timeout_stage
 
 pytestmark = pytest.mark.unit
 
@@ -69,8 +69,11 @@ def test_timeout_retains_type_and_deadline_without_command_or_output():
     sanitize_timeout(error)
     assert error.timeout == 300
     assert "secret" not in str(error)
+    assert "secret" not in repr(error)
+    assert "secret" not in repr(error.args)
     assert error.output is None
     assert error.stderr is None
+    assert error.__notes__ == ["Mobile driver last checkpoint: unavailable"]
 
 
 def test_pytest_failure_does_not_render_completed_process_secret(tmp_path):
@@ -103,3 +106,63 @@ def test_pytest_failure_does_not_render_completed_process_secret(tmp_path):
     assert result.returncode != 0
     assert marker not in result.stdout + result.stderr
     assert "<redacted>" in result.stdout
+
+
+def test_timeout_stage_is_allowlisted_and_never_echoes_private_driver_data():
+    secret = "fixture-private-token"
+    captured = (
+        f"Authorization: Bearer {secret}\nMOBILE_STAGE:viewport-wide-portrait-loaded\n"
+        f"MOBILE_STAGE:viewport-wide-portrait-loaded {secret}\n"
+    ).encode()
+    assert timeout_stage(captured) == "viewport-wide-portrait-loaded"
+    assert timeout_stage(f"MOBILE_STAGE:{secret}\n") == "unavailable"
+    assert timeout_stage(None) == "unavailable"
+
+
+def test_real_timeout_reports_only_fixed_checkpoint_in_pytest_traceback(tmp_path):
+    test = tmp_path / "test_timeout_trace.py"
+    test.write_text(
+        "import os, selectors, subprocess, sys\n"
+        "from tests.e2e._mobile_server_output import sanitize_timeout\n"
+        "def test_timeout():\n"
+        " token=os.environ['HZ_FIXTURE_SECRET']\n"
+        ' child = ("import sys,time; "\n'
+        "          \"print('MOBILE_STAGE:viewport-wide-portrait-loaded', file=sys.stderr, flush=True); \"\n"
+        '          "print(sys.argv[1], file=sys.stderr, flush=True); "\n'
+        '          "print(\\"READY\\", flush=True); time.sleep(5)")\n'
+        " real_popen = subprocess.Popen\n"
+        " class ReadyPopen(real_popen):\n"
+        "  def __init__(self, *args, **kwargs):\n"
+        "   super().__init__(*args, **kwargs)\n"
+        "   try:\n"
+        "    with selectors.DefaultSelector() as sel:\n"
+        "     sel.register(self.stdout, selectors.EVENT_READ)\n"
+        "     assert sel.select(5) and self.stdout.readline() == b'READY\\n'\n"
+        "   except BaseException:\n"
+        "    self.kill(); self.communicate(timeout=5); raise\n"
+        " subprocess.Popen = ReadyPopen\n"
+        " try:\n"
+        "  subprocess.run([sys.executable, '-c', child, token], capture_output=True, timeout=0.4)\n"
+        " except subprocess.TimeoutExpired as error:\n"
+        "  sanitize_timeout(error)\n"
+        "  raise error.with_traceback(None) from None\n"
+    )
+    marker = secrets.token_hex(16)
+    env = {
+        "PATH": os.defpath,
+        "PYTHONPATH": str(Path(__file__).resolve().parents[3]),
+        "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
+        "HZ_FIXTURE_SECRET": marker,
+        "PYTHONDONTWRITEBYTECODE": "1",
+    }
+    result = subprocess.run(
+        [sys.executable, "-m", "pytest", "-q", "--noconftest", str(test)],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=15,
+        check=False,
+    )
+    assert result.returncode != 0
+    assert marker not in result.stdout + result.stderr
+    assert "Mobile driver last checkpoint: viewport-wide-portrait-loaded" in result.stdout

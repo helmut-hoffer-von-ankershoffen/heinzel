@@ -14,6 +14,7 @@ Usage: uv run --script scripts/web_build.py COMMAND
     pnpm [ARG ...]       run pnpm in web/
     exec TOOL [ARG ...]  run one of web/'s tools (biome, tsc, vitest, ...), installing the dependencies first if stale
     install              install web/'s dependencies as locked, offline when the store has them
+    prepare              ensure the locked web dependencies are installed, if stale
     build                build the app into src/heinzel/heads/web/static, stamped with the digest of its sources
     licenses             check the licenses of what the app bundles against .license-allowlist (it ships in the wheel)
     licenses --json      print them as `pnpm licenses list --prod --json` does (scripts/attributions.py reads it)
@@ -224,6 +225,12 @@ def _install() -> int:
     return 0
 
 
+def _prepare() -> int:
+    """Prepare locked dependencies before concurrent repository checks."""
+    ensure_installed()
+    return 0
+
+
 def _build() -> int:
     print(f"✓ web app built into {build().relative_to(ROOT)}")
     return 0
@@ -241,6 +248,7 @@ def main(argv: list[str], extra: dict[str, Callable[[list[str]], int]] | None = 
         "pnpm": lambda args: pnpm(*args, check=False).returncode,
         "exec": _exec,
         "install": lambda _: _install(),
+        "prepare": lambda _: _prepare(),
         "build": lambda _: _build(),
         "ensure": lambda _: _ensure(),
         "licenses": lambda args: licenses(as_json="--json" in args),

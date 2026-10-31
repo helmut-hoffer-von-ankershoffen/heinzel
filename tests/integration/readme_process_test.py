@@ -130,9 +130,17 @@ def test_guardian_child_receives_default_sigint(tmp_path):
 
 
 def test_guardian_kills_interrupt_ignoring_command_after_timeout(tmp_path, monkeypatch):
-    code = "import signal,time; signal.signal(signal.SIGINT,signal.SIG_IGN); print('READY',flush=True); time.sleep(60)"
+    code = (
+        "import signal,time; signal.signal(signal.SIGINT,signal.SIG_IGN); "
+        "time.sleep(0.8); print('READY',flush=True); time.sleep(60)"
+    )
     command = docs_test.GuardedCommand([sys.executable, "-I", "-c", code], env=None, cwd=tmp_path)
     try:
+        deadline = time.monotonic() + 3
+        while "READY" not in command.capture.text("stdout") and time.monotonic() < deadline:
+            command.poll_command()
+            command.capture.pump(0.05)
+        assert "READY" in command.capture.text("stdout")
         with pytest.raises(subprocess.TimeoutExpired):
             command.wait(0.4)
         assert "READY" in command.capture.text("stdout")
@@ -140,6 +148,7 @@ def test_guardian_kills_interrupt_ignoring_command_after_timeout(tmp_path, monke
         original = command.wait
         monkeypatch.setattr(command, "wait", lambda seconds: original(min(seconds, 0.2)))
         command.stop()
+    assert command.process.returncode == -signal.SIGKILL
 
 
 def test_unexpected_guardian_exit_is_uncertain_and_never_signals_again(tmp_path, monkeypatch):
