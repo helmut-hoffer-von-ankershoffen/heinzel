@@ -61,7 +61,7 @@ READ_ONLY_MANAGER = {
 ANNOUNCE = re.compile(r"(http://[^\s/]+)/#token=([A-Za-z0-9_-]+)")
 SYSTEMD_UNITS = ("hz-daemon.service", "hz-daemon.timer")
 FINAL_VERSION = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+")
-FETCH_HOSTS = {"github.com", "pypi.org", "files.pythonhosted.org", "api.github.com"}
+FETCH_HOSTS = {"github.com", "heinzel.team", "astral.sh", "pypi.org", "files.pythonhosted.org", "api.github.com"}
 RELEASE_WHEEL_URL = re.compile(
     r"https://github\.com/helmut-hoffer-von-ankershoffen/heinzel/releases/download/"
     r"(?:v(?=[0-9.]+/)|edge-v(?=[0-9.]+\.dev))(?P<version>[0-9]+\.[0-9]+\.[0-9]+(?:\.dev[0-9]+)?)"
