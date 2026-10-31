@@ -39,6 +39,13 @@ _MAX_PAGE = 100
 QUIET = "Quiet hours: this slot started no turn."
 NOTHING_NEW = "Nothing new at the source: this slot started no turn."
 _MAX_SEEN = 2000
+_LATE_GRACE_SECONDS = 120
+
+
+def _is_current(slot: int, cadence: int) -> bool:
+    """Whether this slot is running or just ended: a daemon on a busy machine may start a tick a little late."""
+    now = int(datetime.now(UTC).timestamp())
+    return slot * cadence <= now < (slot + 1) * cadence + _LATE_GRACE_SECONDS
 
 
 class ScheduleBinding(BaseModel):
@@ -574,7 +581,7 @@ class AutonomousSchedules:
             raise HeinzelError(msg)
         binding = self.approved(session, request)
         slot = int(when.timestamp()) // binding.cadence_seconds
-        if slot != int(datetime.now(UTC).timestamp()) // binding.cadence_seconds:
+        if not _is_current(slot, binding.cadence_seconds):
             msg = "Only the current schedule occurrence can run"
             raise HeinzelError(msg)
         return binding, slot
@@ -588,12 +595,18 @@ class AutonomousSchedules:
         binding, slot = self._admit(session, request, when)
         if binding.quiet_hours is not None and binding.quiet_hours.covers(when):
             return QUIET
-        fresh: set[str] = set()
-        if binding.wake_on_new_items:
-            fresh = self._new_items(session, binding)
+        occurrence = "scheduled-" + hashlib.sha256(f"{session}\0{request}\0{slot}".encode()).hexdigest()
+        fresh: dict[str, str] = {}
+        already = any(
+            e.kind == "message.accepted" and e.key == f"message-{occurrence}"
+            for e in self.crud.repository.control_read(session).events
+        )
+        if binding.wake_on_new_items and not already:
+            fresh = dict(
+                list(self._new_items(session, binding).items())[:1]
+            )  # one per wake; the next slot takes the rest
             if not fresh:
                 return NOTHING_NEW
-        occurrence = "scheduled-" + hashlib.sha256(f"{session}\0{request}\0{slot}".encode()).hexdigest()
         contract = ContractReview(self.crud).current(session, binding.contract_request_id)
 
         def verify() -> None:
@@ -601,7 +614,7 @@ class AutonomousSchedules:
             if current.authentication != "daemon" or current.principal.id != binding.owner:
                 msg = "The scheduled owner identity changed"
                 raise HeinzelError(msg)
-            if int(datetime.now(UTC).timestamp()) // binding.cadence_seconds != slot:
+            if not _is_current(slot, binding.cadence_seconds):
                 msg = "The schedule occurrence expired before launch"
                 raise HeinzelError(msg)
             if not _same_binding(self.approved(session, request), binding):
@@ -611,7 +624,8 @@ class AutonomousSchedules:
         def prepare() -> None:
             verify()
             self._ensure_no_prior_pending(session, occurrence)
-            self.crud.accept(session, MessageRequest(request_id=occurrence, text=contract.contract))
+            woke_for = "".join(f"\n\nThis wake is for the new item with id {identity}." for identity in fresh.values())
+            self.crud.accept(session, MessageRequest(request_id=occurrence, text=contract.contract + woke_for))
             events = self.crud.repository.control_read(session).events
             accepted = [e for e in events if e.kind == "message.accepted" and e.key == f"message-{occurrence}"]
             if len(accepted) != 1 or accepted[0].data.get("origin") != "daemon":
@@ -620,7 +634,7 @@ class AutonomousSchedules:
 
         text = await self._dispatch(session, occurrence, binding, verify, prepare)
         if fresh:
-            self._remember_items(session, fresh)  # only now: a turn that died sees these items again next slot
+            self._remember_items(session, set(fresh))  # only now: a turn that died sees these items again next slot
         return text
 
     async def _dispatch(
@@ -680,7 +694,7 @@ class AutonomousSchedules:
         with self.crud.repository.control_writer(session) as writer:
             writer.append("source.cursor", key=secrets.token_hex(8), data={"seen": cast("JsonValue", kept)})
 
-    def _new_items(self, session: str, binding: ScheduleBinding) -> set[str]:
+    def _new_items(self, session: str, binding: ScheduleBinding) -> dict[str, str]:
         """Items of this read not seen before; the first read is the baseline, so old items never wake anyone.
 
         Raises:
@@ -700,12 +714,12 @@ class AutonomousSchedules:
             msg = "The source returned no item list"
             raise HeinzelError(msg)
         ids = {
-            hashlib.sha256(str(item[spec.identity_field]).encode()).hexdigest()
+            hashlib.sha256(str(item[spec.identity_field]).encode()).hexdigest(): str(item[spec.identity_field])
             for item in current
             if isinstance(item, dict) and spec.identity_field in item
         }
         started, seen = self._seen_items(session)
         if not started:
-            self._remember_items(session, ids)
-            return set()
-        return ids - seen
+            self._remember_items(session, set(ids))
+            return {}
+        return {digest: identity for digest, identity in ids.items() if digest not in seen}

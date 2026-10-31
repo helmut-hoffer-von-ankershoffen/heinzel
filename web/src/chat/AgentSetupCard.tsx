@@ -149,16 +149,16 @@ export function DocumentDrafts({ snapshot }: { snapshot: Snapshot }) {
       {drafts.data?.activity
         .filter((item) => item.status !== "draft")
         .map((item) => (
-        <p key={item.seq} role="status" className="rounded-lg border border-border p-3 text-sm">
-          {item.status === "acknowledged" ? "Written to " : "Outcome unknown for "}
-          <a className="underline" href={item.reference} target="_blank" rel="noreferrer">
-            the document
-          </a>
-          {item.status === "acknowledged"
-            ? ` as ${item.account}. Google confirmed this edit.`
-            : ". Check the document before asking again; it won't be repeated."}
-        </p>
-      ))}
+          <p key={item.seq} role="status" className="rounded-lg border border-border p-3 text-sm">
+            {item.status === "acknowledged" ? "Written to " : "Outcome unknown for "}
+            <a className="underline" href={item.reference} target="_blank" rel="noreferrer">
+              the document
+            </a>
+            {item.status === "acknowledged"
+              ? ` as ${item.account}. Google confirmed this edit.`
+              : ". Check the document before asking again; it won't be repeated."}
+          </p>
+        ))}
       {drafts.data?.pending.map((draft) => (
         <DraftReview key={draft.request_id} sessionId={sessionId} draft={draft} onDone={refresh} />
       ))}
@@ -252,7 +252,10 @@ export function AgentSetupCard({ snapshot }: { snapshot: Snapshot }) {
     return (
       <section aria-label="Running" className="rounded-lg border border-border p-3 text-sm">
         <p>
-          <strong>{snapshot.name}</strong> is running. {cadenceWords(active.binding.cadence_seconds)}
+          <strong>{snapshot.name}</strong> is running.{" "}
+          {active.binding.wake_on_new_items
+            ? `Only when something new arrives, checked ${cadenceWords(active.binding.cadence_seconds).toLowerCase()}`
+            : cadenceWords(active.binding.cadence_seconds)}
           {active.binding.quiet_hours
             ? `, quiet ${active.binding.quiet_hours.start} to ${active.binding.quiet_hours.end}.`
             : "."}{" "}

@@ -60,9 +60,9 @@ def _schedules(items):
 def test_first_read_is_a_baseline_and_only_new_items_wake():
     current = [{"id": "a"}, {"id": "b"}]
     schedules, binding, repository = _schedules(lambda: current)
-    assert schedules._new_items("s", binding) == set()
+    assert schedules._new_items("s", binding) == {}
     assert sum(e.kind == "source.cursor" for e in repository.events) == 1
-    assert schedules._new_items("s", binding) == set()
+    assert schedules._new_items("s", binding) == {}
     current.append({"id": "c"})
     fresh = schedules._new_items("s", binding)
     assert len(fresh) == 1
@@ -75,8 +75,8 @@ def test_a_turn_that_died_sees_the_item_again_until_it_is_remembered():
     current.append({"id": "b"})
     first = schedules._new_items("s", binding)
     assert schedules._new_items("s", binding) == first  # no turn finished, so the cursor did not move
-    schedules._remember_items("s", first)
-    assert schedules._new_items("s", binding) == set()
+    schedules._remember_items("s", set(first))
+    assert schedules._new_items("s", binding) == {}
 
 
 def test_a_source_without_identities_cannot_wake():
