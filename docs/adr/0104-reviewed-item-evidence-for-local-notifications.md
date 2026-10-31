@@ -2,6 +2,7 @@
 status: proposed
 date: 2026-10-30
 related: 0049, 0067, 0099
+implemented-by: 291
 ---
 
 # 0104: Bind notification deduplication to observed source items
