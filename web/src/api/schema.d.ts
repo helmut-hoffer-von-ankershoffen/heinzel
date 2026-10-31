@@ -8313,6 +8313,8 @@ export interface components {
              * @description Why it isn't shown as a desktop notification; none if it is.
              */
             held?: string | null;
+            /** @description The personal Heinzel it is from, with its face and reason; none for system notices. */
+            helper?: components["schemas"]["NoticeHelper"] | null;
             /**
              * Id
              * @description Identifier of the notice, unique on this machine; later notices sort after it.
@@ -8346,6 +8348,27 @@ export interface components {
              * @default false
              */
             urgent: boolean;
+        };
+        /**
+         * NoticeHelper
+         * @description Which personal Heinzel a notice is from and why it spoke, so a pop-up can show its name, face and reason.
+         */
+        NoticeHelper: {
+            /**
+             * Hat
+             * @description The helper's hat colour, which colours the face on a pop-up; none: the default.
+             */
+            hat?: ("red" | "rust" | "ochre" | "green" | "teal" | "blue" | "purple" | "slate") | null;
+            /**
+             * Name
+             * @description The helper's display name, as the person sees it in the app.
+             */
+            name: string;
+            /**
+             * Reason
+             * @description Why the helper speaks now, a short phrase: `scheduled check-in`.
+             */
+            reason: string;
         };
         /**
          * NoticeKind
@@ -14546,6 +14569,7 @@ export type SchemaNavigate = components['schemas']['Navigate'];
 export type SchemaNode = components['schemas']['Node'];
 export type SchemaNodeMetadata = components['schemas']['NodeMetadata'];
 export type SchemaNotice = components['schemas']['Notice'];
+export type SchemaNoticeHelper = components['schemas']['NoticeHelper'];
 export type SchemaNoticeKind = components['schemas']['NoticeKind'];
 export type SchemaNoticeList = components['schemas']['NoticeList'];
 export type SchemaNotificationProposal = components['schemas']['NotificationProposal'];

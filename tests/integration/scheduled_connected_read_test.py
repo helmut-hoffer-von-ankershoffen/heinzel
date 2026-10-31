@@ -277,7 +277,7 @@ def test_compiled_daemon_notification_requires_exact_read_and_schedule_consents(
             self.calls = []
 
         @override
-        def emit_once(self, _kind, title, body, *, route, command, key):
+        def emit_once(self, _kind, title, body, *, route, command, key, helper=None):
             self.calls.append((title, body, key))
             return True
 
@@ -498,7 +498,7 @@ def test_compiled_rolling_read_item_revision_notices_survive_restart_and_revoke(
             self.calls = []
 
         @override
-        def emit_once(self, _kind, title, body, *, route, command, key):
+        def emit_once(self, _kind, title, body, *, route, command, key, helper=None):
             self.calls.append((title, body, key))
             return True
 

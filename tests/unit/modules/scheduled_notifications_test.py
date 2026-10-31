@@ -48,7 +48,7 @@ class FakeNotifications(Notifications):
         self.result = result
 
     @override
-    def emit_once(self, _kind, title, body, *, route, command, key):
+    def emit_once(self, _kind, title, body, *, route, command, key, helper=None):
         self.calls.append((title, body, route, key))
         return self.result
 

@@ -6,6 +6,7 @@ A fake app bundle and a fake runner: no real app is installed and nothing is lau
 import hashlib
 import importlib.util
 import json
+import re
 import struct
 import subprocess
 import zlib
@@ -339,3 +340,29 @@ def test_icon_urls_follow_the_actual_artwork_revision(tmp_path, monkeypatch):
     assert before != after
     assert f"?v={before}" not in page.read_text("utf-8")
     assert page.read_text("utf-8").count(f"?v={after}") >= 5
+
+
+def test_what_the_person_chose_comes_back_and_only_the_status_is_compared(tmp_path, bundled):
+    app = NotifierApp(tmp_path / "home", bundled=bundled, runner=Runner("authorized banners=none sound=disabled"))
+    assert app.status() == "authorized"
+    assert app.settings() == "authorized banners=none sound=disabled"  # authorized, yet no banner: say so
+
+
+def test_the_notifications_macos_still_holds_are_listed(tmp_path, bundled):
+    assert NotifierApp(tmp_path / "home", bundled=bundled, runner=Runner("a-1,b-2")).delivered() == ["a-1", "b-2"]
+    assert NotifierApp(tmp_path / "home", bundled=bundled, runner=Runner("none")).delivered() == []
+
+
+def test_the_notifier_draws_the_helpers_face_in_its_hat_colour_from_the_web_apps_hats():
+    swift = (SOURCES / "main.swift").read_text(encoding="utf-8")
+    drawing = (ROOT / "web" / "src" / "components" / "heinzel.ts").read_text(encoding="utf-8")
+    hats = drawing.split("export const HATS = {")[1].split("}")[0]
+    web = dict(re.findall(r'^  (\w+): "(#[0-9A-Fa-f]{6})",$', hats, re.MULTILINE))
+    app = dict(re.findall(r'"(\w+)": "(#[0-9A-Fa-f]{6})"', swift.split("let hats")[1].split("let defaultHat")[0]))
+    assert web
+    assert app == web
+    assert f'let defaultHat = "{web["red"]}"' in swift
+    assert (SOURCES / "heinzel.svg").read_text(encoding="utf-8").count(web["red"]) >= 1  # what it re-colours
+    assert "content.sound = .default" in swift
+    assert 'identifier(argument("--id"))' in swift  # the same identity replaces: a repeat never stacks
+    assert "face.svg" in (ROOT / "scripts" / "notifier.py").read_text(encoding="utf-8")

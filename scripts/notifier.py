@@ -256,6 +256,7 @@ def build() -> None:
         _run("lipo", "-create", "-output", str(app / "Contents" / "MacOS" / "notifier"), *slices)
         icon = work / "icon"
         _run("swiftc", "-O", "-o", str(icon), str(SOURCES / "icon.swift"))
+        (app / "Contents" / "Resources" / "face.svg").write_bytes(ARTWORK.read_bytes())  # the helper's face, re-hatted
         iconset = work / "heinzel.iconset"
         iconset.mkdir()
         for size in ICON_SIZES:

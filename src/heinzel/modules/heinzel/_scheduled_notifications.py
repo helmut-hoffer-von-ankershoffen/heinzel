@@ -13,6 +13,7 @@ from heinzel import (
     ChannelNotice,
     CurrentUser,
     HeinzelError,
+    NoticeHelper,
     NoticeKind,
     NotificationChannel,
     Notifications,
@@ -160,13 +161,15 @@ class ScheduledNotifications:
 
     def _fan_out(self, request: ScheduledNotificationRequest, request_id: str) -> None:
         """Offer the notice to each reviewed channel; a receipt says what it saw, and no failure undoes the notice."""
-        helper = self.crud.snapshot(self.session).name
+        profile = self.crud.snapshot(self.session)
         notice = ChannelNotice(
             key=request_id[:128],
-            helper=helper,
+            helper=profile.name,
             title=request.title,
             body=request.body,
             route=f"/heinzel?chat={self.session}",
+            hat=profile.appearance.hat,
+            reason="reviewed scheduled notice",
         )
         for channel in self.channels:
             if channel.name not in self.policy.channels:
@@ -272,6 +275,7 @@ class ScheduledNotifications:
                 route=f"/heinzel?chat={self.session}",
                 command="hz heinzel sessions",
                 key=key,
+                helper=self._helper("reviewed scheduled notice"),
             )
         except Exception:  # noqa: BLE001 - never disclose provider diagnostics
             recorded = False
@@ -286,6 +290,14 @@ class ScheduledNotifications:
             self._fan_out(request, request_id)
             return "recorded", "The local notification was queued; it may be held and is not confirmed shown."
         return "uncertain", "The notification outcome is uncertain and will not be retried automatically."
+
+    def _helper(self, reason: str) -> NoticeHelper | None:
+        """Whose notice this is, for the pop-up's name and face; None if the profile cannot be read."""
+        try:
+            snapshot = self.crud.snapshot(self.session, limit=1)
+        except Exception:  # noqa: BLE001 - a pop-up without a face is better than a lost notice
+            return None
+        return NoticeHelper(name=snapshot.name[:100], hat=snapshot.appearance.hat, reason=reason)
 
     def _check_rate(self, topic: str, *, once: bool = False) -> None:
         now = self.crud.clock()

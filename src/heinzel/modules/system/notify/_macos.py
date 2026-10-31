@@ -88,6 +88,27 @@ def run(command: Sequence[str], timeout: float = TIMEOUT) -> subprocess.Complete
 
 
 @dataclass(frozen=True, slots=True)
+class Look:
+    """How one notification looks and sounds beyond its text: whose it is, its face, its sound, its identity."""
+
+    subtitle: str | None = None
+    """The helper's name and reason, under the title."""
+    hat: str | None = None
+    """The helper's hat colour; the face on the notification is drawn with it."""
+    sound: bool = False
+    """Whether macOS plays its notification sound."""
+    ident: str | None = None
+    """What macOS knows the notification by: a second post with the same one replaces it, never stacks."""
+    thread: str | None = None
+    """Notifications of one thread are grouped in Notification Center: one helper's chat."""
+
+    def arguments(self) -> list[str]:
+        """The notifier's arguments for this look; text and names only."""
+        pairs = (("--subtitle", self.subtitle), ("--hat", self.hat), ("--id", self.ident), ("--thread", self.thread))
+        return [part for flag, value in pairs if value for part in (flag, value)] + (["--sound"] if self.sound else [])
+
+
+@dataclass(frozen=True, slots=True)
 class Install:
     """Where the app is installed and whether it matches the bundled one."""
 
@@ -199,9 +220,19 @@ class NotifierApp:
 
     def status(self) -> str:
         """MacOS's answer for the app: `authorized`, `denied`, `not-determined`, `provisional`, or why unknown."""
+        return self.status_of(self.settings())
+
+    @staticmethod
+    def status_of(said: str) -> str:
+        """The status in `settings()`'s answer: its first word if macOS gave one, else the whole answer."""
+        word = said.split(maxsplit=1)[0] if said.split() else ""
+        return word if word in {"authorized", "denied", "not-determined", "provisional", "ephemeral"} else said
+
+    def settings(self) -> str:
+        """MacOS's whole answer: the status, then what the person chose (`authorized banners=banner sound=enabled`)."""
         return self._launch(["--status"])
 
-    def post(self, title: str, message: str, url: str | None, *, asking: bool = False) -> str:
+    def post(self, title: str, message: str, url: str | None, *, asking: bool = False, look: Look | None = None) -> str:
         """Post one notification through LaunchServices; `posted`, `denied`, or what went wrong.
 
         With `asking`, a person is there to answer macOS's question, so it waits longer for the app.
@@ -209,7 +240,14 @@ class NotifierApp:
         arguments = ["--title", title, "--message", message]
         if url is not None:
             arguments += ["--open", url]
+        if look is not None:
+            arguments += look.arguments()
         return self._launch(arguments, ASKING_TIMEOUT if asking else TIMEOUT)
+
+    def delivered(self) -> list[str]:
+        """The identifiers of this app's notifications macOS still holds in Notification Center, as it says."""
+        said = self._launch(["--delivered"])
+        return [] if said in {"", "none"} else said.split(",")
 
     def _launch(self, arguments: list[str], timeout: float = TIMEOUT) -> str:
         with tempfile.TemporaryDirectory(prefix="hz-notifier-") as directory:

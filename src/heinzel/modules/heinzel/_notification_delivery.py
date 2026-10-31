@@ -9,7 +9,7 @@ from typing import Literal
 
 from pydantic import JsonValue
 
-from heinzel import CurrentUser, HeinzelError, NoticeKind, Notifications, SessionEvent
+from heinzel import CurrentUser, HeinzelError, NoticeHelper, NoticeKind, Notifications, SessionEvent
 from heinzel.kernel._approval import (
     ApprovalConfirmation,
     ApprovalIntent,
@@ -145,6 +145,7 @@ class NotificationDelivery:
                     route=f"/heinzel?chat={session}",
                     command="hz heinzel sessions",
                     key=key,
+                    helper=self._helper(session),
                 )
             except Exception:  # noqa: BLE001 - no provider diagnostics or private content escape
                 recorded = False
@@ -154,6 +155,14 @@ class NotificationDelivery:
             if recorded:
                 self._compact(key)
             return status
+
+    def _helper(self, session: str) -> NoticeHelper | None:
+        """Whose notice this is, for the pop-up's name and face; None if the profile cannot be read."""
+        try:
+            snapshot = self.crud.snapshot(session, limit=1)
+        except Exception:  # noqa: BLE001 - a pop-up without a face is better than a lost notice
+            return None
+        return NoticeHelper(name=snapshot.name[:100], hat=snapshot.appearance.hat, reason="approved notice")
 
     def _compact(self, key: str) -> None:
         # The authoritative journal is already recorded; failed cleanup leaves a harmless durable receipt.

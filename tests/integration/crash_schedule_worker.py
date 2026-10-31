@@ -36,7 +36,7 @@ class Clock(datetime):
 
 
 class Notices(Notifications):
-    def emit_once(self, _kind, title, body, *, route, command, key):
+    def emit_once(self, _kind, title, body, *, route, command, key, helper=None):  # noqa: PLR0913 - the port's signature
         if (root / "block-notice").exists():
             fake_effect = """import pathlib,sys,time
 p=pathlib.Path(sys.argv[1])

@@ -11,6 +11,7 @@ from typing import Annotated
 from pydantic import Field
 
 from heinzel import Check, Module, Notifications
+from heinzel.modules.system.notify._channel import NativeChannel
 from heinzel.modules.system.notify._models import (
     Channel,
     Delivered,
@@ -119,6 +120,7 @@ __all__ = [
     "Channel",
     "Delivered",
     "Installed",
+    "NativeChannel",
     "NoticeList",
     "NotifyService",
     "NotifySettings",

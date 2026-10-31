@@ -8429,6 +8429,17 @@
             "description": "Why it isn't shown as a desktop notification; none if it is.",
             "title": "Held"
           },
+          "helper": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NoticeHelper"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The personal Heinzel it is from, with its face and reason; none for system notices."
+          },
           "id": {
             "description": "Identifier of the notice, unique on this machine; later notices sort after it.",
             "title": "Id",
@@ -8478,6 +8489,51 @@
           "popup"
         ],
         "title": "Notice",
+        "type": "object"
+      },
+      "NoticeHelper": {
+        "description": "Which personal Heinzel a notice is from and why it spoke, so a pop-up can show its name, face and reason.",
+        "properties": {
+          "hat": {
+            "anyOf": [
+              {
+                "enum": [
+                  "red",
+                  "rust",
+                  "ochre",
+                  "green",
+                  "teal",
+                  "blue",
+                  "purple",
+                  "slate"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The helper's hat colour, which colours the face on a pop-up; none: the default.",
+            "title": "Hat"
+          },
+          "name": {
+            "description": "The helper's display name, as the person sees it in the app.",
+            "maxLength": 100,
+            "title": "Name",
+            "type": "string"
+          },
+          "reason": {
+            "description": "Why the helper speaks now, a short phrase: `scheduled check-in`.",
+            "maxLength": 120,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "reason"
+        ],
+        "title": "NoticeHelper",
         "type": "object"
       },
       "NoticeKind": {
