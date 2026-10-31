@@ -28,6 +28,18 @@ hide:
 </div>
 </div>
 
+<section class="hz-trust" aria-labelledby="hz-trust-title">
+<h2 id="hz-trust-title">Open code. Visible checks.</h2>
+<p>Inspect the license, project practices and latest core analysis before you install.</p>
+<div class="hz-trust-links">
+<a href="https://github.com/helmut-hoffer-von-ankershoffen/heinzel/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="MIT license" height="20" loading="lazy"></a>
+<a href="https://www.bestpractices.dev/en/projects/15863"><img src="https://www.bestpractices.dev/projects/15863/badge" alt="OpenSSF Best Practices: view the project's criteria" height="20" loading="lazy"></a>
+<a href="https://sonarcloud.io/summary/new_code?id=helmut-hoffer-von-ankershoffen_heinzel"><img src="https://sonarcloud.io/api/project_badges/measure?project=helmut-hoffer-von-ankershoffen_heinzel&amp;metric=alert_status" alt="Quality gate: new core code" height="20" loading="lazy"></a>
+<a href="https://sonarcloud.io/summary/overall?id=helmut-hoffer-von-ankershoffen_heinzel"><img src="https://sonarcloud.io/api/project_badges/measure?project=helmut-hoffer-von-ankershoffen_heinzel&amp;metric=security_rating" alt="Security rating: overall core code" height="20" loading="lazy"></a>
+</div>
+<p class="hz-trust-note">The quality gate checks new code. The security rating covers all analyzed core code.</p>
+</section>
+
 <div class="hz-strip"><span>For people who build products.</span><span>For agents that help them.</span><span>For teams that want control.</span></div>
 
 <section class="hz-section" markdown>
@@ -67,70 +79,15 @@ Plugins own their operations, views, widgets and notifications. Themes bring pal
 </section>
 
 <section class="hz-section" markdown>
-<p class="hz-eyebrow">Small helpers. Clear jobs.</p>
+<p class="hz-eyebrow">Meet your next few helpers</p>
 
-## Meet a few of your next helpers.
+## Small jobs. A little time back.
 
-Imagine your team's helpers like this. Each has a small job, and you stay in charge.
+Imagined helpers. Real product screens with fictional demonstration data. Select an image to zoom.
 
-<div class="hz-helpers" markdown>
-<article class="hz-helper" data-heinzel-helper markdown>
-<img src="assets/website/helper-timekeeper.svg" alt="" width="110" height="185" loading="lazy">
-<div markdown>
+<!-- hz:home-gallery -->
 
-### Pip, the timekeeper
-
-“I keep the team's time zones in view, so you can find a good moment to talk.”
-
-World Clock brings local times and working hours to Today, the sidebar and the footer. Open its globe for the whole picture.
-
-[Meet World Clock →](https://helmut.hoffer-von-ankershoffen.me/heinzel/catalog/heinzel-clock-a8638667a9/)
-</div>
-</article>
-<article class="hz-helper" data-heinzel-helper markdown>
-<img src="assets/website/helper-draftkeeper.svg" alt="" width="110" height="185" loading="lazy">
-<div markdown>
-
-### Ada, the draftkeeper
-
-“Give me a weekly-report contract. I'll gather its inputs and prepare a draft for your review.”
-
-ACME's example playbook shows how a team's report can draw on merged changes, tracker updates and existing documents.
-
-[Explore the reference team →](https://helmut.hoffer-von-ankershoffen.me/heinzel/catalog/heinzel-acme-payments-checkout-8a7d294621/)
-</div>
-</article>
-<article class="hz-helper" data-heinzel-helper markdown>
-<img src="assets/website/helper-reviewer.svg" alt="" width="110" height="185" loading="lazy">
-<div markdown>
-
-### Otto, your review partner
-
-“I've done the drafting. You decide what happens next.”
-
-Drafts stay local for you to inspect, edit and share. Clear states show when a helper is working, blocked or waiting for you.
-
-[See how contracts work →](WORKFLOWS.md)
-</div>
-</article>
-</div>
-</section>
-
-<section class="hz-section hz-showcase" markdown>
-<div markdown>
-<p class="hz-eyebrow">A foundation you can use today</p>
-
-## A little personality.<br>A lot of possibility.
-
-Start with clocks, system resources, private connectivity and the Heinzelmännchen theme. Add integrations as you need them. The standard app includes its default plugins; the SDK stays independently buildable.
-
-[Choose your installation →](guides/install.md)
-
-</div>
-<figure>
-<img src="assets/website/product-workspace.jpg" alt="Team graph in the released Heinzel standard app" width="1440" loading="lazy">
-<figcaption>The standard app with fictional team data. Optional services are unconfigured.</figcaption>
-</figure>
+[Try Heinzel →](guides/install.md){ .hz-button }
 </section>
 
 <section class="hz-section" markdown>
