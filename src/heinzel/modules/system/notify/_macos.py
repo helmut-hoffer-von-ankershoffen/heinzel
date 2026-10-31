@@ -51,8 +51,6 @@ LSREGISTER = "/System/Library/Frameworks/CoreServices.framework/Frameworks/Launc
 REGISTRATION_TIMEOUT = 60
 """Seconds `lsregister -dump` may take; it prints a few hundred thousand lines."""
 _BLOCK = re.compile(r"^-{20,}$", re.MULTILINE)
-_PATH = re.compile(r"^path: +(?P<path>[^\n]+) \(0x[0-9a-f]+\) *$", re.MULTILINE)
-_IDENTIFIER = re.compile(rf"^identifier: +{re.escape(IDENTIFIER)} *$", re.MULTILINE)
 REAL_ENV = "HZ_REAL_NOTIFIER"
 """A test that must start the real app sets this; any other test that would is refused (see `_launch`)."""
 TESTS_REFUSED = "tests don't launch the real Heinzel Notifier: each copy macOS meets stays registered under its name"
@@ -274,9 +272,16 @@ class NotifierApp:
             return []
         paths: list[Path] = []
         for block in _BLOCK.split(dumped.stdout):
-            found = _PATH.search(block)
-            if found is not None and _IDENTIFIER.search(block) is not None:
-                paths.append(Path(found["path"]))
+            path: str | None = None
+            ours = False
+            for line in block.splitlines():
+                field, _, value = line.partition(":")
+                if field == "path":
+                    path = value.strip().rpartition(" (0x")[0] or None  # `<path> (0x<id>)`
+                elif field == "identifier":
+                    ours = value.strip() == IDENTIFIER
+            if path is not None and ours:
+                paths.append(Path(path))
         return paths
 
     def unregister_strays(self) -> int:
