@@ -3,7 +3,8 @@ name: Edge release
 # Every releasable green commit on main becomes an edge release (ADR 0114): a GitHub pre-release that is never latest
 # and never reaches PyPI. Dark until the repository variable RELEASE_CHANNELS is `edge` or `stable`; until then, and on
 # pull requests that change this pipeline, it only builds and verifies. The version is stamped in the build checkout;
-# nothing is committed to main.
+# nothing is committed to main. A workflow_run checks out the default branch's tip, never the triggering ref, and runs
+# only when that tip is the commit that just went green; a commit that main has passed is released with the next one.
 
 on:
   workflow_run: # zizmor: ignore[dangerous-triggers] the plan job admits only a green push to this repository's main
@@ -29,6 +30,7 @@ jobs:
       github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.event == 'push' &&
       github.event.workflow_run.head_repository.full_name == github.repository &&
+      github.event.workflow_run.head_sha == github.sha &&
       github.repository == 'helmut-hoffer-von-ankershoffen/heinzel')
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -41,7 +43,6 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
           fetch-depth: 0
           persist-credentials: false
       - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
@@ -102,7 +103,6 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ needs.plan.outputs.commit }}
           persist-credentials: false
       - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
@@ -129,7 +129,6 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ needs.plan.outputs.commit }}
           fetch-depth: 0
           persist-credentials: false
       - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2

@@ -134,6 +134,7 @@ def test_edge_only_follows_a_green_push_to_main_of_this_repository():
         "github.event.workflow_run.conclusion == 'success'",
         "github.event.workflow_run.event == 'push'",
         "github.event.workflow_run.head_repository.full_name == github.repository",
+        "github.event.workflow_run.head_sha == github.sha",
     ):
         assert required in condition
 
@@ -153,3 +154,10 @@ def test_edge_release_can_never_become_latest_or_touch_pypi():
     assert text.count("--prerelease --latest=false") == 2
     assert "pypa/gh-action-pypi-publish" not in text
     assert "pypi.yml" not in text
+
+
+def test_edge_never_checks_out_the_triggering_ref():
+    for job in _edge()["jobs"].values():
+        for step in job["steps"]:
+            if "actions/checkout" in step.get("uses", ""):
+                assert "ref" not in step["with"]
