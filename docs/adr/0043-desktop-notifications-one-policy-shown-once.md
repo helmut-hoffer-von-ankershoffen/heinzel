@@ -182,3 +182,21 @@ the open web app, the native notifier, the daemon), each with its state, the rea
 it exits 1 when nothing will pop the test up. The web app adds this browser's permission and offers one fix per blocked
 way: allow in the browser, `hz system notify settings` (opens System Settings > Notifications on macOS; CLI and web
 head only), or the install command typed into its terminal after a confirmation.
+
+**Amendment 2026-10-31: a helper's notification shows who spoke and why.** A durable personal Heinzel's notice carries
+an optional `helper` (`NoticeHelper`: its display name, its hat colour and a short reason such as `scheduled check-in`),
+passed to `emit` and `emit_once` by the module that knows the chat; a notice without one (doctor, a release) is
+unchanged. Heinzel Notifier shows the name and reason under the title and the helper's face beside it: the bundled
+drawing re-coloured with the hat (`face.svg` in the app, the hats of `web/src/components/heinzel.ts`), drawn by the app
+into a temporary PNG and attached. The notification is known to macOS by the notice's id, so a second post of the same
+notice replaces the first and never stacks, and notifications of one chat share a thread. The sound is the system's
+default when `[system.notify] sound` is on (the default). `--status` also says what the person chose in System
+Settings (`authorized banners=none sound=disabled`), so "allowed, but no banner" is told apart from a refusal, and
+`--delivered` lists what macOS still holds. A click opens `http://127.0.0.1:<ui_port>/heinzel?chat=<id>&event=<id>`, the
+exact chat. Delivery is never claimed from the API's answer alone: `posted` means macOS accepted it.
+
+The daemon hands each due notice to the native notifier as a `NativeChannel`, a `NotificationChannel` of ADR 0112
+(`ChannelNotice` carries the helper's name, hat and reason). Its receipt says what was observed: `delivered` only when
+macOS lists the notification as held in Notification Center (never that a banner was seen), `queued` when the notifier
+accepted it and nothing more can be known, `refused` (macOS doesn't allow it, hasn't asked, or the app is missing: the
+notice stays due) and `unknown` (no answer in time: never retried, doctor says so).

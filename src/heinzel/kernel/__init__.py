@@ -170,7 +170,7 @@ from heinzel.kernel._lets import (
 from heinzel.kernel._local_web import LocalWebRuntime
 from heinzel.kernel._metadata_verifier import CoreMetadataVerifier
 from heinzel.kernel._module import Module
-from heinzel.kernel._notifications import Delivery, Notice, NoticeKind, Notifications
+from heinzel.kernel._notifications import Delivery, Notice, NoticeHelper, NoticeKind, Notifications
 from heinzel.kernel._org import OrgContext, Recommendation, RecommendationKind, TeamPromise, TeamPromises
 from heinzel.kernel._paths import collapses, operation_path, owns_path, public_parameters
 from heinzel.kernel._playbooks import (
@@ -470,6 +470,7 @@ __all__ = [
     "NavSettings",
     "Navigate",
     "Notice",
+    "NoticeHelper",
     "NoticeKind",
     "NotificationChannel",
     "Notifications",

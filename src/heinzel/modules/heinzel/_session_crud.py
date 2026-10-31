@@ -21,7 +21,7 @@ from pydantic import (
     model_validator,
 )
 
-from heinzel import HeinzelError, JobInactive, NoticeKind, Notifications, SessionEvent, SessionWriter
+from heinzel import HeinzelError, JobInactive, NoticeHelper, NoticeKind, Notifications, SessionEvent, SessionWriter
 from heinzel.kernel._approval import (
     ApprovalEvidence,
     ApprovalIntent,
@@ -90,6 +90,7 @@ class _CheckInSlot:
     contract_version: int
     schedule_revision: int
     profile_name: str
+    helper: NoticeHelper
     slot: datetime
     journal_seq: int
     active_since: datetime
@@ -142,6 +143,7 @@ def _dispatch_check_in_slot(
             body="Your scheduled five-minute check-in is due.",
             route=f"/heinzel?chat={request.session_id}",
             command="hz heinzel sessions",
+            helper=request.helper,
         )
         checkpoint = checkpoint.model_copy(update={"pending": pending})
         writer.replace_checkpoint("checkin-outbox", checkpoint.model_dump(mode="json"))
@@ -158,6 +160,7 @@ def _dispatch_check_in_slot(
         route=pending.route,
         command=pending.command,
         key=pending.notice_key,
+        helper=pending.helper,
     ):
         msg = "The scheduled check-in notification could not be recorded"
         raise HeinzelError(msg)
@@ -277,6 +280,7 @@ class _CheckInIntent(BaseModel):
     body: str = Field(max_length=4096)
     route: str = Field(min_length=1, max_length=2048)
     command: str = Field(min_length=1, max_length=2048)
+    helper: NoticeHelper | None = None
 
 
 class _CheckInCheckpoint(BaseModel):
@@ -348,7 +352,11 @@ def _parse_legacy_check_in(event: SessionEvent, revision: int) -> _CheckInIntent
             slot=datetime.fromisoformat(slot),
             schedule_revision=revision,
             contract_version=contract_version,
-            **fields,
+            notice_key=fields["notice_key"],
+            title=fields["title"],
+            body=fields["body"],
+            route=fields["route"],
+            command=fields["command"],
         )
     except (TypeError, ValueError, ValidationError):
         msg = "Legacy check-in delivery history is ambiguous; inspect it before continuing"
@@ -1600,6 +1608,9 @@ class SessionCrud(ApprovalIssuer):
                     contract_version=contract_version,
                     schedule_revision=revision,
                     profile_name=profile.name,
+                    helper=NoticeHelper(
+                        name=profile.name[:100], hat=profile.appearance.hat, reason="scheduled check-in"
+                    ),
                     slot=slot,
                     journal_seq=events[-1].seq if events else 0,
                     active_since=active_since,

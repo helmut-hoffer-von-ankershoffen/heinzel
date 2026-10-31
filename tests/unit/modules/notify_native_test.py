@@ -5,7 +5,8 @@ import subprocess
 
 import pytest
 
-from heinzel.modules.system.notify._macos import NotifierApp
+from heinzel import NoticeHelper
+from heinzel.modules.system.notify._macos import Look, NotifierApp
 from heinzel.modules.system.notify._native import (
     APP,
     BODY_LIMIT,
@@ -122,3 +123,49 @@ def test_post_runs_the_command_and_reports_a_refusal():
     refused = Native("notify-send", "/usr/bin/notify-send", runner=Runner(code=1)).post("t", "b")
     assert refused == "notify-send failed: no notification server"
     assert Native(None, detail="headless").post("t", "b") == "no native notifier: headless"
+
+
+def test_heinzel_notifier_gets_the_helpers_name_face_sound_and_identity_as_arguments(tmp_path):
+    commands: list[list[str]] = []
+
+    def runner(command, timeout=None):
+        commands.append(list(command))
+        out = pathlib.Path(command[command.index("--stdout") + 1])
+        out.write_text("posted", encoding="utf-8")
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    bundle = tmp_path / "HeinzelNotifier.app"
+    (bundle / "Contents" / "MacOS").mkdir(parents=True)
+    (bundle / "Contents" / "MacOS" / "notifier").write_bytes(b"app")
+    shown = native("darwin", which(), {}, app=NotifierApp(tmp_path / "home", bundled=bundle, runner=runner))
+    helper = NoticeHelper(name="Mira \n-x", hat="blue", reason="scheduled check-in")
+    assert (
+        shown.post(
+            "Mira checked in",
+            "Due.",
+            url="http://127.0.0.1:8737/heinzel?chat=a",
+            helper=helper,
+            sound=True,
+            ident="n-1",
+            thread="/heinzel?chat=a",
+        )
+        is None
+    )
+    arguments = commands[-1][commands[-1].index("--args") + 1 :]
+    assert arguments[arguments.index("--subtitle") + 1] == "Mira -x \u00b7 scheduled check-in"
+    assert arguments[arguments.index("--hat") + 1] == "blue"
+    assert arguments[arguments.index("--id") + 1] == "n-1"
+    assert arguments[arguments.index("--thread") + 1] == "/heinzel?chat=a"
+    assert "--sound" in arguments
+
+
+def test_without_a_sound_or_helper_the_look_adds_nothing():
+    assert Look().arguments() == []
+    assert Look(sound=True).arguments() == ["--sound"]
+
+
+def test_other_notifiers_get_the_helpers_name_in_front_of_the_title():
+    runner = Runner()
+    helper = NoticeHelper(name="Mira", hat="blue", reason="scheduled check-in")
+    Native("notify-send", "/usr/bin/notify-send", runner=runner).post("checked in", "b", helper=helper)
+    assert runner.commands[0][-2] == "Mira: checked in"

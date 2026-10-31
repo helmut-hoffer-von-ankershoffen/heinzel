@@ -19,9 +19,23 @@ from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from heinzel import Check, Config, Delivery, HeinzelError, Kernel, Notice, NoticeKind, Notifications, Settings, Status
+from heinzel import (
+    ChannelNotice,
+    Check,
+    Config,
+    Delivery,
+    HeinzelError,
+    Kernel,
+    Notice,
+    NoticeHelper,
+    NoticeKind,
+    Notifications,
+    Settings,
+    Status,
+)
 from heinzel.kernel import KERNEL_SECTION
 from heinzel.modules.system.notify import _policy as policy
+from heinzel.modules.system.notify._channel import SENDER, NativeChannel
 from heinzel.modules.system.notify._channels import (
     SHOWN,
     DaemonState,
@@ -32,7 +46,18 @@ from heinzel.modules.system.notify._channels import (
 )
 from heinzel.modules.system.notify._macos import QUARANTINE, NotifierApp
 from heinzel.modules.system.notify._models import Delivered, Installed, NoticeList, NotifySettings, Opened, Tested
-from heinzel.modules.system.notify._native import ALLOW, DENIED_DETAIL, DENIED_FIX, HEINZEL, ICON_CACHE, Native, native
+from heinzel.modules.system.notify._native import (
+    ALLOW,
+    BODY_LIMIT,
+    DENIED_DETAIL,
+    DENIED_FIX,
+    HEINZEL,
+    ICON_CACHE,
+    TITLE_LIMIT,
+    Native,
+    native,
+    sanitise,
+)
 from heinzel.modules.system.notify._store import Store
 from heinzel.modules.system.notify._watch import daemon_state, watch
 
@@ -102,6 +127,15 @@ class NotifyService(Notifications):
         service.daemon = lambda: daemon_state(kernel)
         return service
 
+    def ui_url(self, route: str) -> str | None:
+        """The web app's address of a route, for a click to open; None while it has no stable address."""
+        return self._ui_url(route)
+
+    @property
+    def channel(self) -> NativeChannel:
+        """The native channel: how this machine's desktop shows a notice (ADR 0112)."""
+        return NativeChannel(self)
+
     @property
     def wanted(self) -> set[NoticeKind]:
         """The kinds of notices that are recorded."""
@@ -144,6 +178,7 @@ class NotifyService(Notifications):
         command: str,
         key: str,
         urgent: bool = False,
+        helper: NoticeHelper | None = None,
     ) -> Notice | None:
         """Record a notice under the policy; the earlier one when it repeats; None if its kind is off or it failed."""
         if not self.settings.wants(kind):
@@ -168,6 +203,7 @@ class NotifyService(Notifications):
                 due=decision.due,
                 popup=decision.popup,
                 held=decision.held,
+                helper=helper,
             )
             notices.append(notice)
             return notice
@@ -179,19 +215,44 @@ class NotifyService(Notifications):
             return None
 
     def emit_once(  # noqa: PLR0913 - the notice fields match emit
-        self, kind: NoticeKind, title: str, body: str, *, route: str, command: str, key: str
+        self,
+        kind: NoticeKind,
+        title: str,
+        body: str,
+        *,
+        route: str,
+        command: str,
+        key: str,
+        helper: NoticeHelper | None = None,
     ) -> bool:
         """Persist a notice and replay key together, independent of repeat policy and display retention."""
-        return self._emit_once(kind, title, body, route=route, command=command, key=key, timed=False)
+        return self._emit_once(kind, title, body, route=route, command=command, key=key, timed=False, helper=helper)
 
     def emit_once_now(  # noqa: PLR0913 - the notice fields match emit
-        self, kind: NoticeKind, title: str, body: str, *, route: str, command: str, key: str
+        self,
+        kind: NoticeKind,
+        title: str,
+        body: str,
+        *,
+        route: str,
+        command: str,
+        key: str,
+        helper: NoticeHelper | None = None,
     ) -> bool:
         """`emit_once` for a notice timed by a reviewed schedule; quiet mode and the rate limit still hold it."""
-        return self._emit_once(kind, title, body, route=route, command=command, key=key, timed=True)
+        return self._emit_once(kind, title, body, route=route, command=command, key=key, timed=True, helper=helper)
 
     def _emit_once(  # noqa: PLR0913 - the notice fields match emit
-        self, kind: NoticeKind, title: str, body: str, *, route: str, command: str, key: str, timed: bool
+        self,
+        kind: NoticeKind,
+        title: str,
+        body: str,
+        *,
+        route: str,
+        command: str,
+        key: str,
+        timed: bool,
+        helper: NoticeHelper | None,
     ) -> bool:
         if not self.settings.wants(kind):
             return False
@@ -212,6 +273,7 @@ class NotifyService(Notifications):
                     due=decision.due,
                     popup=decision.popup,
                     held=decision.held,
+                    helper=helper,
                 )
             )
 
@@ -296,17 +358,56 @@ class NotifyService(Notifications):
         claimed = self.deliver([notice.id for notice in self.due()], Delivery.DAEMON)
         posted = 0
         problem: str | None = None
+        channel = self.channel
         for index, notice in enumerate(claimed):
-            url = self._ui_url(event_route(notice)) if self.notifier.clicks else None
-            body = notice.body if url is not None else _with_command(notice.body, notice.command)
-            if (problem := self.notifier.post(notice.title, body, url=url)) is not None:
+            receipt = channel.deliver(self._channel_notice(notice))
+            if receipt.status == "refused":
+                problem = receipt.detail or "the native notifier refused it"
                 logger.warning("couldn't show notice %s: %s", notice.id, problem)
                 self._release(claimed[index:])  # the next would fail the same way; they wait for the next tick
                 break
+            if receipt.status == "unknown":  # it may have been shown: never shown twice, but doctor says so
+                problem = receipt.detail or "the native notifier didn't answer"
+                logger.warning("don't know whether notice %s was shown: %s", notice.id, problem)
             posted += 1
         if claimed:
             self.store.native_result(self._clock(), problem)
         return posted
+
+    def _channel_notice(self, notice: Notice) -> ChannelNotice:
+        """What the native channel is handed for a due notice: its words, its sender and the exact route to open."""
+        notifier = self.notifier
+        body = (
+            notice.body
+            if notifier.clicks and self._ui_url("/") is not None
+            else _with_command(notice.body, notice.command)
+        )
+        helper = notice.helper
+        return ChannelNotice(
+            key=notice.id,
+            helper=helper.name if helper else SENDER,
+            title=sanitise(notice.title, TITLE_LIMIT) or SENDER,
+            body=sanitise(body, BODY_LIMIT),
+            route=event_route(notice),
+            hat=helper.hat if helper else None,
+            reason=helper.reason if helper else None,
+        )
+
+    def _show(self, notice: Notice, body: str, url: str | None, *, asking: bool) -> str | None:
+        """Pop one notice up natively; None when it was shown, else why not.
+
+        It carries its helper's name, face and reason, the sound per setting, and the identity macOS dedupes by.
+        """
+        return self.notifier.post(
+            notice.title,
+            body,
+            url=url,
+            asking=asking,
+            helper=notice.helper,
+            sound=self.settings.sound,
+            ident=notice.id,
+            thread=notice.route,
+        )
 
     def _release(self, notices: Sequence[Notice]) -> None:
         """Hand claimed notices back, so they are due again."""
@@ -357,7 +458,7 @@ class NotifyService(Notifications):
             return notifier.detail
         url = self._ui_url(event_route(notice)) if notifier.clicks else None
         body = notice.body if url is not None else _with_command(notice.body, notice.command)
-        problem = notifier.post(notice.title, body, url=url, asking=True)  # someone pressed the button
+        problem = self._show(notice, body, url, asking=True)  # someone pressed the button
         self.store.native_result(self._clock(), problem)
         if problem is None:
             self.deliver([notice.id], Delivery.DAEMON)
@@ -495,7 +596,8 @@ def _app_checks(app: NotifierApp) -> list[Check]:
                 fix=f'xattr -d {QUARANTINE} "{app.path}"',
             )
         )
-    status = app.status()
+    said = app.settings()
+    status = app.status_of(said)
     if status == "denied":
         checks.append(
             Check(name="heinzel notifier permission", status=Status.DEGRADED, detail=DENIED_DETAIL, fix=DENIED_FIX)
@@ -511,6 +613,16 @@ def _app_checks(app: NotifierApp) -> list[Check]:
         )
     else:
         checks.append(Check(name="heinzel notifier permission", status=Status.UP, detail=status))
+    if "banners=none" in said.split():
+        checks.append(
+            Check(
+                name="heinzel notifier banners",
+                status=Status.DEGRADED,
+                detail="macOS allows Heinzel Notifier but its alert style is None: notices land in Notification Center "
+                "without a banner",
+                fix="System Settings > Notifications > Heinzel Notifier: choose Banners or Alerts",
+            )
+        )
     return checks
 
 

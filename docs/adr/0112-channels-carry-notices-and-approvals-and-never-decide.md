@@ -21,7 +21,7 @@ channels at once.
 
 ## Decision Outcome
 
-`NotificationChannel` delivers one notice and returns a receipt that says what was observed. `ApprovalChannel` shows
+`NotificationChannel` delivers one notice (its helper's name, hat colour and reason, for a face) and returns a receipt that says what was observed. `ApprovalChannel` shows
 one request bound to a digest and expiry, and reports the replies it saw. `Kernel.implementations(base)` finds them.
 
 A channel carries words and never decides. An `ChannelApprovalReply` is a claim: the host checks the actor against
