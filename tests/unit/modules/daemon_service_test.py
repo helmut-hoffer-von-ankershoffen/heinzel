@@ -275,6 +275,16 @@ def test_health_flags_a_unit_that_is_not_loaded(make, bin_dir):
     assert (check.name, check.status) == ("daemon", Status.DEGRADED)
 
 
+def test_health_explains_a_registered_daemon_whose_program_is_gone(make, bin_dir):
+    service = make()
+    service.install(timedelta(minutes=5))
+    (bin_dir / "hz").unlink()
+    (service.state_dir / "install.json").unlink()
+    [check, *_] = service.health()
+    assert (check.name, check.status) == ("daemon", Status.DEGRADED)
+    assert check.fix == "Run `uvx --from heinzel hz system daemon uninstall`"
+
+
 def test_health_flags_a_daemon_that_stopped_ticking(make, jobs):
     clock = Clock()
     service = make(jobs, clock=clock)
