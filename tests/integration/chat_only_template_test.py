@@ -5,7 +5,7 @@ import sys
 
 import pytest
 
-from heinzel import CallIdentity, ChatDraftTemplate, CurrentUser, HeinzelError, Module, PlaybookLet, Principal
+from heinzel import CallIdentity, ChatDraftTemplate, CurrentUser, HeinzelError, Module, Principal
 from heinzel.modules.heinzel._playbook_adoption import preview_playbook_draft
 from heinzel.modules.heinzel._playbooks import find_template
 from heinzel.modules.heinzel._session_crud import SessionCrud
@@ -73,9 +73,7 @@ def test_chat_only_template_asks_for_context_and_only_proposes_draft(make_kernel
     source = "Ask what information and output the person wants before proposing an inert draft."
     digest = hashlib.sha256(source.encode()).hexdigest()
     module = Module("fixture", "Fixture")
-    module.add(
-        PlaybookLet(name="fixture", summary="Fixture", chat_drafts=(ChatDraftTemplate(name="draft", text=source),))
-    )
+    module.playbook("Fixture", chat_drafts=[ChatDraftTemplate(name="draft", text=source)])
     kernel = make_kernel(builtins=True, fixture=module)
     preview = preview_playbook_draft(kernel, "fixture:draft")
     assert preview.text == source

@@ -13,13 +13,10 @@ pytestmark = pytest.mark.unit
 
 def test_chat_only_draft_is_discoverable_but_absent_from_legacy_workflow(make_kernel):
     plugin = Module("fixture", "Fixture")
-    plugin.add(
-        PlaybookLet(
-            name="fixture",
-            summary="Fixture",
-            templates=(ContractTemplate(name="legacy", text="A legacy workflow contract"),),
-            chat_drafts=(ChatDraftTemplate(name="draft", text="Inert chat material"),),
-        )
+    plugin.playbook(
+        "Fixture",
+        templates=[ContractTemplate(name="legacy", text="A legacy workflow contract")],
+        chat_drafts=[ChatDraftTemplate(name="draft", text="Inert chat material")],
     )
     kernel = make_kernel(fixture=plugin)
     assert preview_playbook_draft(kernel, "fixture:draft").text == "Inert chat material"

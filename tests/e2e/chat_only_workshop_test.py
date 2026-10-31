@@ -12,7 +12,7 @@ from urllib.parse import parse_qs, urlsplit
 import pytest
 import uvicorn
 
-from heinzel import ChatDraftTemplate, CurrentUser, Module, PlaybookLet
+from heinzel import ChatDraftTemplate, CurrentUser, Module
 from heinzel.heads import web
 from heinzel.modules.heinzel._session_crud import SessionCrud
 from heinzel.modules.heinzel._user_chat import UserChatService
@@ -54,9 +54,7 @@ def test_mounted_workshop_discovers_chat_draft_without_grant(make_kernel, tmp_pa
     source = "Ask what information and output the person wants before proposing an inert draft."
     digest = hashlib.sha256(source.encode()).hexdigest()
     module = Module("fixture", "Fixture")
-    module.add(
-        PlaybookLet(name="fixture", summary="Fixture", chat_drafts=(ChatDraftTemplate(name="draft", text=source),))
-    )
+    module.playbook("Fixture", chat_drafts=[ChatDraftTemplate(name="draft", text=source)])
     kernel = make_kernel(builtins=True, fixture=module)
     service = kernel.resolve(UserChatService)
     executable = tmp_path / "fake-model"

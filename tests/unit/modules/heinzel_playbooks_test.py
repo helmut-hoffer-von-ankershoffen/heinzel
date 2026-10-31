@@ -251,9 +251,7 @@ def test_setup_of_a_playbook_without_settings_or_templates_asks_nothing(make):
 
 def test_legacy_setup_does_not_offer_chat_only_draft(make, tmp_path):
     module = Module("chatonly", "Chat only")
-    module.add(
-        PlaybookLet(name="chatonly", summary="Chat only", chat_drafts=(ChatDraftTemplate(name="draft", text="Draft"),))
-    )
+    module.playbook("Chat only", chat_drafts=[ChatDraftTemplate(name="draft", text="Draft")])
     service = make(module)
     prompter = ScriptedPrompter([])
     service.setup(the_playbook(service, "chatonly"), prompter, Editor())
