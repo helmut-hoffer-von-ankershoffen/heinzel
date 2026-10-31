@@ -71,6 +71,10 @@ class ModuleSettings(BaseSettings):
     section_title: ClassVar[str | None] = None
     """What Settings in the web app calls the module's section, e.g. `Notifications`; its name when none."""
 
+    refused_on_write: ClassVar[dict[str, frozenset[str]]] = {}
+    """Values per field that an old configuration may still hold and loads without failing, but that `hz system config
+    set` refuses to write, e.g. a role that is no longer offered."""
+
     ignored_in_project: ClassVar[frozenset[str]] = frozenset()
     """Fields a project `hz.toml` may not set, because a repository someone else controls must not decide what runs
     or where data goes: they come from the site, user and `HZ_CONFIG` files and the environment only, and doctor
