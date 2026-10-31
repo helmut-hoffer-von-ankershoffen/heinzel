@@ -90,7 +90,7 @@ Plugins add their own tables.
 | Key | Environment variable | Default | Description |
 | --- | --- | --- | --- |
 | `handle` | `HZ_ORG__HANDLE` | `None` | Your short name in teams, pull requests and contracts: lowercase letters, digits and dashes. Your GitHub login is a good choice. Example: "mira". Never read from a project's hz.toml. |
-| `role` | `HZ_ORG__ROLE` | `None` | What you do on your team. Choices: engineer, principal, engineering-manager, engineering-leadership, product-manager, product-leadership, program-manager. Never read from a project's hz.toml. |
+| `role` | `HZ_ORG__ROLE` | `None` | What you do on your team. Choices: engineer, engineering-manager, product-manager, program-manager. Never read from a project's hz.toml. |
 | `timezone` | `HZ_ORG__TIMEZONE` | `None` | Your time zone. Never read from a project's hz.toml. |
 | `working_hours` | `HZ_ORG__WORKING_HOURS` | `(9, 18)` | When your working day starts and ends. In the environment, write them as 09-18. Never read from a project's hz.toml. |
 | `github` | `HZ_ORG__GITHUB` | `None` | Your GitHub login, needed to approve and own contracts in a team. Example: "mira". Never read from a project's hz.toml. |
@@ -228,6 +228,7 @@ Plugins add their own tables.
 
 | Key | Environment variable | Default | Description |
 | --- | --- | --- | --- |
+| `name` | `HZ_TEAM__NAME` | `None` | What your team is called here, e.g. Payments. Shown in the team graph and on your profile. Example: "Payments". Never read from a project's hz.toml. |
 | `repository` | `HZ_TEAM__REPOSITORY` | `None` | Your team repository's address, the invite others join with; empty for a team repository that exists only on this computer. Example: "https://github.com/example/team.git". Never read from a project's hz.toml. |
 | `checkout` | `HZ_TEAM__CHECKOUT` | `None` | The folder your team repository is checked out in; its workflows folder holds the team's contracts. Never read from a project's hz.toml. |
 | `layer` | `HZ_TEAM__LAYER` | `None` | The layer plugin your team uses, by module name, when your team repository names none or you want another. Never read from a project's hz.toml. |
