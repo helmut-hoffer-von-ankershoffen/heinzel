@@ -49,13 +49,12 @@ tools-verify: ## Download every pinned tool for every platform and check its che
 check: ## Everything CI checks that runs offline, in parallel: lint, types, tests
 	$(STEPS) $(GATE) $(LINT) $(TYPES) $(TESTS)
 
-# Unit tests take every core and have a 5 s budget each; Vitest beside them starved them into timeouts, so it runs after.
 check-fast: ## Seconds-fast feedback for the edit loop: format, lint, generated pages, unit tests
 	$(STEPS) \
 		"format=uv run ruff format --check ." \
 		"&ruff=uv run ruff check --no-fix ." \
 		"&docs-plugins=uv run --quiet hz system plugin docs build --directory docs/plugins --check" \
-		"unit=uv run pytest -m 'unit and not perf' -n auto -x -q --session-timeout=120" $(subst &web-tests,web-tests,$(WEB_TESTS))
+		"unit=uv run pytest -m 'unit and not perf' -n auto -x -q --session-timeout=120"
 
 preflight: ## What CI checks, before you push: check with coverage, build, commits (PREFLIGHT=full adds e2e, audit)
 	$(STEPS) $(GATE) $(LINT) $(TYPES) \
