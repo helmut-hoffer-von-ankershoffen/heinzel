@@ -39,6 +39,7 @@ INSTALL_URL = "https://heinzel.team/install.sh"
 LITERAL_CURL = f"curl -LsSf {INSTALL_URL} | sh"
 LITERAL_UVX = ["uvx", "heinzel@latest"]
 COLLECTION = "https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins"
+CORE_REPOSITORY = "https://github.com/helmut-hoffer-von-ankershoffen/heinzel"
 CORE_RAW = "https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel"
 LIVE_PORT = 8737
 GENERIC = "app profile or one of its artifacts could not be verified"
@@ -2235,6 +2236,10 @@ def bind_release_candidate(args, parent):
     profile_match = RELEASE_PROFILE_URL.fullmatch(profile_url or "")
     check(profile_match, "--candidate-profile-url must be a final app release's standard.json")
     check(profile_match["version"] == app, "The candidate profile's app version differs from --expect-app-version")
+    # From here on, only the validated parts go on the wire, never the given strings.
+    tag = f"v{version}" if is_final_version(version) else f"edge-v{version}"
+    wheel_url = f"{CORE_REPOSITORY}/releases/download/{tag}/heinzel-{version}-py3-none-any.whl"
+    profile_url = f"{COLLECTION}/releases/download/app-v{app}/standard.json"
     wanted = args.candidate_wheel_sha256 or ""
     check(re.fullmatch(r"[0-9a-f]{64}", wanted), "--candidate-wheel-sha256 must be a lowercase SHA-256")
 
