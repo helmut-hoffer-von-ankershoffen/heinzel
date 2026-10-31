@@ -2489,7 +2489,7 @@ $ hz system notify ack [OPTIONS] {ids}
 
 #### `hz system notify clean`
 
-(expert) End leftover Heinzel Notifier processes (it should end by itself within a minute of each notification).
+(expert) End leftover Heinzel Notifier processes and make macOS forget its stray copies.
 
 **Usage**:
 
