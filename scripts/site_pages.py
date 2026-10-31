@@ -333,9 +333,9 @@ def screenshot_gallery(project: Object) -> str:
         )
     hint = (
         f'<p class="hz-gallery-hint" id="{identity}-hint">Swipe or scroll sideways to explore. '
-        "Arrow keys work too; select an image to open it full size.</p>"
+        "Arrow keys work too; select an image to zoom and inspect it.</p>"
         if count > 1
-        else f'<p class="hz-gallery-hint" id="{identity}-hint">Select the image to open it full size.</p>'
+        else f'<p class="hz-gallery-hint" id="{identity}-hint">Select the image to zoom and inspect it.</p>'
     )
     return (
         "## Screenshots\n\n"
