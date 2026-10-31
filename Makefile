@@ -67,12 +67,14 @@ tools-verify: ## Download every pinned tool for every platform and check its che
 	@$(TOOLS) verify
 
 check: ## Everything CI checks that runs offline, in parallel: lint, import contracts, types, tests
+	@$(WEB) prepare
 	$(STEPS) $(GATE) $(LINT) $(WEB_LINT) $(TYPES) $(WEB_TYPES) $(TESTS) $(WEB_TESTS) $(MANAGED_CHECK)
 
 linux-user-manager-proof: ## Inspect an existing Linux user manager without starting services; set PROBE_PREFIX
 	uv run python tests/integration/linux_user_manager_probe.py --prefix "$${PROBE_PREFIX:?Set PROBE_PREFIX to an isolated heinzel-probe- name}"
 
 check-fast: ## Seconds-fast feedback for the edit loop: format, lint, contracts, generated files, unit tests
+	@$(WEB) prepare
 	$(STEPS) \
 		"format=uv run ruff format --check ." \
 		"&ruff=uv run ruff check --no-fix ." \
@@ -85,6 +87,7 @@ check-fast: ## Seconds-fast feedback for the edit loop: format, lint, contracts,
 		"unit=uv run pytest -m 'unit and not perf' -n auto -x -q --session-timeout=120" $(WEB_TESTS) $(MANAGED_CHECK)
 
 preflight: ## What CI checks, before you push: check with coverage, template, build, commits (PREFLIGHT=full adds e2e, audit)
+	@$(WEB) prepare
 	$(STEPS) $(GATE) $(LINT) $(WEB_LINT) $(TYPES) $(WEB_TYPES) $(WEB_TESTS) \
 		"&tests=$(COVERED) -x && uv run coverage combine --quiet && uv run coverage report --format=total --fail-under=90" \
 		"&template=TEMPLATE_AUDIT=$(if $(filter full,$(PREFLIGHT)),1) bash scripts/template-test.sh" \
@@ -106,6 +109,7 @@ fix: ## Fix what tools can fix: lockfile, formatting, lint autofixes, generated 
 	@git status --short
 
 lint: ## Check formatting, lint, architecture contracts and workflows
+	@$(WEB) prepare
 	$(STEPS) $(GATE) $(LINT) $(WEB_LINT)
 
 format: ## Format and autofix

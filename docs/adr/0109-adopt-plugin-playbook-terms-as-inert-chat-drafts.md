@@ -41,6 +41,13 @@ retrieval by the model, not proof that the person saw or approved it. The existi
 the human inspection point. The proposed text can differ from the plugin template and has no permitted tools. No
 route, activation, access grant, notification grant or source read is created by this bridge.
 
+Plugins may separately declare `ChatDraftTemplate` values in a playbook's `chat_drafts` collection. These are
+bounded untrusted text for the chat preview and proposal path only. They are never included in the legacy contract
+template collection, legacy `new --template` lookup, or setup's workflow generation. Existing `ContractTemplate`
+values retain their previous workflow and chat behavior; qualified names cannot collide between the collections.
+The owner must separately review any source, schedule and notification permissions, and future runtime behavior is
+not implied by the presence of a draft.
+
 ### Consequences
 
 - Good: people can start from installed templates while retaining control of the resulting contract and permissions.

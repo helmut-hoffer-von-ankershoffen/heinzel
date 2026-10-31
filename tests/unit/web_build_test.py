@@ -3,6 +3,7 @@
 import importlib.util
 import json
 import os
+import subprocess
 import sys
 import tomllib
 import types
@@ -113,6 +114,62 @@ def test_licenses_are_matched_against_the_allowlist_like_the_python_check():
 def test_pnpm_runs_through_tools_py_so_it_is_the_pinned_checksummed_binary():
     command = build.pnpm_command("install")
     assert command[1:] == [str(REPO / "scripts" / "tools.py"), "run", "pnpm", "install"]
+
+
+def test_prepare_installs_only_when_locked_dependencies_are_stale(tmp_path, monkeypatch):
+    monkeypatch.setattr(build, "ROOT", tmp_path)
+    installed = False
+    calls = []
+
+    def install():
+        nonlocal installed
+        calls.append("install")
+        installed = True
+
+    monkeypatch.setattr(build, "installed", lambda: installed)
+    monkeypatch.setattr(build, "install", install)
+    assert build.main(["prepare"]) == 0
+    assert build.main(["prepare"]) == 0
+    assert calls == ["install"]
+
+
+def test_prepare_refuses_when_install_fails(tmp_path, monkeypatch):
+    monkeypatch.setattr(build, "ROOT", tmp_path)
+    monkeypatch.setattr(build, "installed", lambda: False)
+
+    def fail():
+        msg = "fixture installation failed"
+        raise build.WebError(msg)
+
+    monkeypatch.setattr(build, "install", fail)
+    assert build.main(["prepare"]) == 1
+
+
+@pytest.mark.parametrize("prepare_exit", [0, 1])
+@pytest.mark.parametrize("target", ["check", "check-fast", "preflight", "lint"])
+def test_make_prepares_before_starting_parallel_checks(tmp_path, prepare_exit, target):
+    web, steps, log = tmp_path / "web", tmp_path / "steps", tmp_path / "order"
+    web.write_text('#!/bin/sh\nprintf "prepare\\n" >> "$ORDER_LOG"\nexit "$PREPARE_EXIT"\n')
+    steps.write_text('#!/bin/sh\nprintf "checks\\n" >> "$ORDER_LOG"\n')
+    web.chmod(0o700)
+    steps.chmod(0o700)
+    env = {
+        "PATH": os.defpath,
+        "ORDER_LOG": str(log),
+        "PREPARE_EXIT": str(prepare_exit),
+        "PREFLIGHT": "",
+        "MAKEFLAGS": "",
+    }
+    result = subprocess.run(
+        ["make", "--no-print-directory", target, f"WEB={web}", f"STEPS={steps}"],
+        cwd=REPO,
+        env=env,
+        capture_output=True,
+        timeout=10,
+        check=False,
+    )
+    assert (result.returncode == 0) is (prepare_exit == 0)
+    assert log.read_text().splitlines() == (["prepare", "checks"] if prepare_exit == 0 else ["prepare"])
 
 
 def test_an_unknown_command_prints_the_usage(capsys):

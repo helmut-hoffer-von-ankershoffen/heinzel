@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join } from "node:path";
 import { chromium, webkit } from "playwright-core";
+import { publishJson } from "./atomic-json.mjs";
 
 const require = createRequire(import.meta.url);
 const axe = readFileSync(require.resolve("axe-core/axe.min.js"), "utf8");
@@ -95,7 +96,7 @@ try {
   const session = new URLSearchParams(page.url().split("?")[1]).get("chat");
   assert.ok(session);
   const directory = process.argv[4];
-  writeFileSync(join(directory, "daemon-start.json"), JSON.stringify({ session }));
+  publishJson(join(directory, "daemon-start.json"), { session });
   for (let i = 0; i < 600 && !existsSync(join(directory, "daemon-finished.json")); i++)
     await new Promise((resolve) => setTimeout(resolve, 50));
   const finished = JSON.parse(readFileSync(join(directory, "daemon-finished.json"), "utf8"));

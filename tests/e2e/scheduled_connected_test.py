@@ -1,7 +1,6 @@
 """Mounted generic agent conversation using the real private head and a fake local CLI."""
 
 import json
-import subprocess
 import sys
 import threading
 from typing import ClassVar
@@ -12,6 +11,7 @@ import uvicorn
 
 from heinzel import ConnectedReadMethod, CurrentUser
 from heinzel.heads import web
+from tests.e2e._browser_result import require_browser, run_browser
 from tests.e2e.durable_five_minute_journey_test import BROWSER_CACHE, REPO, web_build
 
 pytestmark = pytest.mark.e2e
@@ -176,23 +176,24 @@ print(json.dumps({{'type':'result','subtype':'success','is_error':False,'permiss
         assert ready.wait(15)
         token = parse_qs(urlsplit(urls[0]).fragment).get("token", [""])[0]
         assert token
-        run = subprocess.run(
-            [
-                sys.executable,
-                str(REPO / "scripts/web_build.py"),
-                "exec",
-                "node",
-                "e2e/scheduled-connected-read.mjs",
-                urls[0],
-                engine,
-                str(tmp_path),
-                "rolling" if rolling else "fixed",
-            ],
-            cwd=REPO,
-            capture_output=True,
-            text=True,
-            timeout=240,
-            check=False,
+        run = require_browser(
+            run_browser(
+                [
+                    sys.executable,
+                    str(REPO / "scripts/web_build.py"),
+                    "exec",
+                    "node",
+                    "e2e/scheduled-connected-read.mjs",
+                    urls[0],
+                    engine,
+                    str(tmp_path),
+                    "rolling" if rolling else "fixed",
+                ],
+                cwd=REPO,
+                capture_output=True,
+                text=True,
+                timeout=240,
+            )
         )
         if run.returncode:
             pytest.fail((run.stderr + "\n" + run.stdout).replace(token, "<redacted-session>"))
