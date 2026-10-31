@@ -1041,3 +1041,39 @@ def test_only_a_prose_push_to_main_skips_the_core_jobs(tmp_path, event, changed,
         timeout=4,
     )
     assert f"core={core}" in output.read_text().splitlines()
+
+
+@pytest.mark.parametrize(
+    ("event", "changed", "electron"),
+    [
+        ("push", "src/heinzel/__init__.py\n", "false"),
+        ("push", "desktop/src/main.js\n", "true"),
+        ("push", "Makefile\n", "true"),
+        ("push", "scripts/sync_template.py\n", "true"),
+        ("push", ".github/workflows/ci.yml\n", "true"),
+        ("push", "", "true"),  # a diff git could not compute
+        ("pull_request", "src/heinzel/__init__.py\n", "false"),
+        ("pull_request", "desktop/src/main.js\n", "true"),
+        ("schedule", "src/heinzel/__init__.py\n", "true"),
+        ("workflow_dispatch", "src/heinzel/__init__.py\n", "true"),
+    ],
+)
+def test_electron_runs_for_its_paths_on_a_push_and_always_on_schedule_and_dispatch(tmp_path, event, changed, electron):
+    jobs = yaml.safe_load((REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))["jobs"]
+    script = next(step["run"] for step in jobs["changes"]["steps"] if step.get("id") == "paths")
+    stubs = tmp_path / "bin"
+    stubs.mkdir()
+    git = stubs / "git"
+    git.write_text(f"#!/bin/sh\nprintf '{changed}'\n")
+    git.chmod(0o700)
+    (tmp_path / "desktop").mkdir()
+    (tmp_path / "desktop" / "package.json").write_text("{}")
+    output = tmp_path / "output"
+    subprocess.run(
+        ["bash", "-c", script],
+        env={"PATH": f"{stubs}:/usr/bin:/bin", "EVENT": event, "BASE": "base", "GITHUB_OUTPUT": str(output)},
+        cwd=tmp_path,
+        check=True,
+        timeout=4,
+    )
+    assert f"electron={electron}" in output.read_text().splitlines()
