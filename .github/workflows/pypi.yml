@@ -59,6 +59,7 @@ jobs:
     timeout-minutes: 15
     permissions:
       contents: read
+      actions: read # whether acceptance passed for this tag
     env:
       TAG: ${{ github.ref_name }}
       GH_HOST: github.com
@@ -83,6 +84,14 @@ jobs:
           gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" > release.json
           uv run --script scripts/pypi_release.py source "$TAG" release.json >> "$GITHUB_OUTPUT"
           rm release.json
+      - name: Require passing acceptance of these bytes once promotion is active
+        if: vars.RELEASE_CHANNELS == 'stable'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          passed="$(gh run list --workflow acceptance.yml --limit 100 --json displayTitle,conclusion \
+            --jq "[.[] | select(.conclusion == \"success\" and (.displayTitle | contains(\"/$TAG/\")))] | length")"
+          test "$passed" -gt 0
       - name: Check the release for confidential terms
         env:
           CONFIDENTIAL_TERMS: ${{ secrets.CONFIDENTIAL_TERMS }}

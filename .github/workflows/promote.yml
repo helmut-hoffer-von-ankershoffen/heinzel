@@ -1,0 +1,139 @@
+name: Promote to stable
+
+# Moves one release towards stable, one step per run (ADR 0114). The step comes from scripts/release_promotion.py, from
+# facts read fresh each time, so a failed or interrupted run simply tries again. The only irreversible step dispatches
+# pypi.yml on a final tag whose exact bytes passed acceptance, and pypi.yml checks that again. Dark until the repository
+# variable RELEASE_CHANNELS is `stable`; a dispatch then also runs, but otherwise only reports the step.
+
+on:
+  schedule:
+    - cron: "3,13,23,33,43,53 * * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: promote
+  cancel-in-progress: false
+
+jobs:
+  step:
+    name: Take the next promotion step
+    if: github.repository == 'helmut-hoffer-von-ankershoffen/heinzel'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write # push the release branch and finalize a held release
+      pull-requests: write # open the release pull request and enable its auto-merge
+      actions: write # dispatch CI, Release tag, Acceptance and the PyPI publisher
+      issues: write # report a stop
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          enable-cache: false # this job can write and starts publishing, so no cache may reach it (zizmor)
+      - name: Gather the facts
+        id: facts
+        run: |
+          latest_tag="$(git tag --merged HEAD --list 'v[0-9]*' --sort=-v:refname | head -n 1)"
+          version="$(uv version --short --frozen)"
+          tag="v$version"
+          tag_exists=false; git rev-parse -q --verify "refs/tags/$tag" >/dev/null && tag_exists=true
+          release="$(gh release view "$tag" --json isPrerelease,isDraft 2>/dev/null || echo '{}')"
+          held="$(jq '.isPrerelease == true' <<< "$release")"
+          final="$(jq '.isPrerelease == false and .isDraft == false' <<< "$release")"
+          pypi="$(curl -fsS https://pypi.org/pypi/heinzel/json)"
+          on_pypi="$(jq --arg v "$version" '(.releases[$v] // []) | length > 0' <<< "$pypi")"
+          pypi_bytes="$(jq '[.releases[][].size] | add' <<< "$pypi")"
+          runs="$(gh run list --workflow acceptance.yml --limit 100 --json displayTitle,status,conclusion)"
+          state() {
+            jq -r --arg t "$1" '[.[] | select(.displayTitle | contains($t))] | first //
+              {status: "none"} | if .status == "none" then "none" elif .status != "completed" then "running"
+              elif .conclusion == "success" then "passed" else "failed" end' <<< "$runs"
+          }
+          edge="$(gh release list --limit 30 --json tagName --jq '[.[].tagName | select(startswith("edge-v"))] | first // ""')"
+          edge_acceptance=none
+          if [ -n "$edge" ]; then edge_acceptance="$(state "/$edge/")"; fi
+          app_composed=false
+          gh release view "app-v$version" --repo "$GH_REPO-plugins" >/dev/null 2>&1 && app_composed=true
+          git diff --name-only "$latest_tag" HEAD > changed-paths.txt
+          shipping=0
+          if [ "$(uv run --no-build --script scripts/release_channel.py releasable < changed-paths.txt)" = true ]; then
+            shipping="$(git rev-list --count "$latest_tag..HEAD")"
+          fi
+          published="$(gh release view "$latest_tag" --json publishedAt --jq .publishedAt)"
+          hours="$(( ($(date +%s) - $(date -d "$published" +%s)) / 3600 ))"
+          open_pr="$(gh pr list --state open --search 'chore(release): in:title' --json number --jq 'length > 0')"
+          jq -n --arg main_version "$version" --argjson tag_exists "$tag_exists" --argjson release_final "$final" \
+            --argjson release_held "$held" --argjson on_pypi "$on_pypi" --arg acceptance "$(state "/$tag/")" \
+            --arg public_acceptance "$(state "Acceptance $version")" --argjson release_pr_open "$open_pr" \
+            --argjson shipping_commits "$shipping" --arg edge_acceptance "$edge_acceptance" \
+            --argjson app_composed "$app_composed" --argjson hours_since_stable "$hours" \
+            --argjson pypi_bytes "$pypi_bytes" '$ARGS.named' > facts.json
+          cat facts.json
+          {
+            echo "version=$version"
+            echo "edge=$edge"
+          } >> "$GITHUB_OUTPUT"
+      - name: Decide
+        id: decide
+        run: uv run --no-build --script scripts/release_promotion.py < facts.json | tee -a "$GITHUB_OUTPUT"
+      - name: Take the step
+        env:
+          ACTIVE: ${{ vars.RELEASE_CHANNELS == 'stable' }}
+          STEP: ${{ steps.decide.outputs.step }}
+          REASON: ${{ steps.decide.outputs.reason }}
+          VERSION: ${{ steps.facts.outputs.version }}
+          EDGE: ${{ steps.facts.outputs.edge }}
+        run: |
+          echo "$STEP: $REASON" >> "$GITHUB_STEP_SUMMARY"
+          if [[ "$ACTIVE" != true || "$STEP" == wait ]]; then
+            echo "Not acting: step $STEP, active $ACTIVE."
+            exit 0
+          fi
+          tag="v$VERSION"
+          base="https://github.com/$GH_REPO/releases/download"
+          accept() {
+            gh release download "$1" --pattern "heinzel-*-py3-none-any.whl" --dir "accept-$1"
+            wheel="$(basename "accept-$1"/*.whl)"
+            gh workflow run acceptance.yml --ref main -f expected_version="${wheel#heinzel-}" \
+              -f candidate_wheel_url="$base/$1/$wheel" \
+              -f candidate_wheel_sha256="$(sha256sum "accept-$1/$wheel" | cut -d' ' -f1)" \
+              -f expected_app_version=""
+          }
+          case "$STEP" in
+            accept_edge) accept "$EDGE" ;;
+            accept) accept "$tag" ;;
+            open_pr)
+              git config user.name "github-actions[bot]"
+              git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+              git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+              git switch --quiet -C main
+              make install
+              INTRO="Automated stable release; every change below passed acceptance on edge." \
+                bash scripts/release.sh auto --open-pr | tail -n 1 > new-tag.txt
+              new="$(cat new-tag.txt)"
+              gh workflow run ci.yml --ref "release/$new"
+              gh pr merge "release/$new" --squash --auto
+              ;;
+            tag) gh workflow run release-tag.yml --ref main ;;
+            finalize) gh release edit "$tag" --prerelease=false --latest ;;
+            upload) gh workflow run pypi.yml --ref "$tag" ;;
+            verify) gh workflow run acceptance.yml --ref main -f expected_version="$VERSION" -f expected_app_version="$VERSION" ;;
+            stop)
+              title="Promotion to stable stopped at $VERSION"
+              if [ "$(gh issue list --state open --search "$title in:title" --json number --jq length)" = 0 ]; then
+                gh issue create --title "$title" --body "$REASON"
+              fi
+              echo "::error::$REASON"
+              exit 1
+              ;;
+            *) echo "Unknown step $STEP" >&2; exit 1 ;;
+          esac
