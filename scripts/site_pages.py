@@ -314,21 +314,44 @@ def owner_art(project: Object) -> str:
 
 
 def screenshot_gallery(project: Object) -> str:
-    """Show runtime captures with their UI/CLI labels and full-size links."""
-    groups = []
-    for surface, label in (("ui", "User interface"), ("cli", "Command line")):
-        images = "".join(
-            f'<figure><a href="{escape(shot["url"])}" '
-            f'aria-label="Open full-size {escape(shot["caption"] or label + " screenshot")}">'
-            f'<img src="{escape(shot["url"])}" alt="{escape(shot["caption"] or label + " screenshot")}" '
+    """A native swipeable UI/CLI gallery, enhanced with explicit keyboard/button navigation."""
+    shots = project.get("screenshots", [])
+    if not shots:
+        return "## Screenshots\n\n<p>No screenshots published yet.</p>"
+    identity = escape(project["id"] + "-screenshots")
+    count = len(shots)
+    figures = []
+    for index, shot in enumerate(shots, 1):
+        label = "User interface" if shot["surface"] == "ui" else "Command line"
+        caption = escape(shot["caption"] or label + " screenshot")
+        figures.append(
+            f'<figure role="group" aria-roledescription="slide" aria-label="{index} of {count}">'
+            f'<a href="{escape(shot["url"])}" aria-label="Open full-size {caption}">'
+            f'<img src="{escape(shot["url"])}" alt="{caption}" '
             'loading="lazy" referrerpolicy="no-referrer"></a>'
-            f"<figcaption>{escape(shot['caption'] or label + ' screenshot')}</figcaption></figure>"
-            for shot in project.get("screenshots", [])
-            if shot["surface"] == surface
+            f'<figcaption><span class="hz-gallery-surface">{label}</span>{caption}</figcaption></figure>'
         )
-        content = f'<div class="hz-screenshots">{images}</div>' if images else "<p>No screenshots published yet.</p>"
-        groups.append(f"<h3>{label}</h3>{content}")
-    return "## Screenshots\n\n" + "\n".join(groups)
+    hint = (
+        f'<p class="hz-gallery-hint" id="{identity}-hint">Swipe or scroll sideways to explore. '
+        "Arrow keys work too; select an image to open it full size.</p>"
+        if count > 1
+        else f'<p class="hz-gallery-hint" id="{identity}-hint">Select the image to open it full size.</p>'
+    )
+    return (
+        "## Screenshots\n\n"
+        f'<section class="hz-gallery" data-gallery role="region" aria-roledescription="carousel" '
+        f'aria-label="{escape(project["title"])} screenshots">'
+        '<div class="hz-gallery-controls" data-gallery-controls hidden>'
+        f'<button type="button" data-gallery-previous aria-label="Previous screenshot" aria-controls="{identity}">'
+        '← Previous</button><span data-gallery-count role="status" aria-live="polite" aria-atomic="true">'
+        f"1 of {count}</span>"
+        f'<button type="button" data-gallery-next aria-label="Next screenshot" aria-controls="{identity}">'
+        f"Next →</button></div>{hint}"
+        f'<div class="hz-screenshots" id="{identity}" data-gallery-track tabindex="0" '
+        f'role="group" aria-label="Screenshot slides" aria-describedby="{identity}-hint">'
+        + "".join(figures)
+        + "</div></section>"
+    )
 
 
 def soundscape_gallery(project: Object) -> str:
@@ -460,7 +483,83 @@ def on_files(files: Any, config: Any) -> Any:  # noqa: ANN401 - MkDocs owns the 
                 )
     files.append(File.generated(config, "catalog.json", content=json.dumps(snapshot, ensure_ascii=False)))
     config.extra["hz_release"] = snapshot["release"]
+    config.extra["hz_plugin_pages"] = {f"catalog/{item['id']}/index.md": item for item in snapshot["plugins"]}
     return files
+
+
+def page_helpers(path: str, page_url: str, project: Object | None = None) -> list[Object]:
+    """Give every documentation/plugin page one or two contextual fictional character explainers."""
+    reviewer = {
+        "art": "reviewer",
+        "name": "Otto, your review partner",
+        "quote": "Take a look first. You decide what belongs in your workspace.",
+        "detail": "Check the screenshots, source and declared compatibility before installing a plugin.",
+        "link": href("CATALOG/", page_url),
+        "action": "Explore the plugin catalog",
+    }
+    if project is not None:
+        themes = project.get("themes", [])
+        guide = {
+            "art": "timekeeper" if not themes else "draftkeeper",
+            "name": "Pip, your feature guide" if not themes else "Ada, your workspace guide",
+            "quote": "Let me show you what this plugin brings."
+            if not themes
+            else "Make this workspace feel like yours.",
+            "detail": project["highlights"][0] if project.get("highlights") else project["summary"],
+            "link": "#screenshots",
+            "action": "See the UI and CLI",
+        }
+        return [guide, reviewer]
+    guide = {
+        "art": "draftkeeper",
+        "name": "Ada, the draftkeeper",
+        "quote": "Give each helper a clear job, and keep its work easy to inspect.",
+        "detail": "A contract names the inputs, limits and expected draft. People remain in control.",
+        "link": href("WORKFLOWS/", page_url),
+        "action": "Explore contracts",
+    }
+    if path.startswith(("guides/install", "guides/first-steps")):
+        guide.update(
+            art="timekeeper",
+            name="Pip, your getting-started guide",
+            quote="Let's get you to your first useful screen.",
+            detail="Install Heinzel, open the workspace, then explore a plugin that helps with your day.",
+            link=href("guides/first-steps/", page_url),
+            action="Take your first steps",
+        )
+    elif "ARCHITECTURE" in path or "architecture" in path or path.startswith("adr/"):
+        guide.update(
+            quote="Small pieces can do useful work together.",
+            detail=(
+                "The kernel discovers modules; heads expose typed operations; plugins bring specific tools and views."
+            ),
+            link=href("PLUGINS/", page_url),
+            action="Explore extension contracts",
+        )
+    elif path in {"CLI_REFERENCE.md", "CONFIGURATION.md", "MODULES.md"}:
+        guide.update(
+            art="reviewer",
+            name="Otto, your reference guide",
+            quote="Need the exact command or setting? You're in the right place.",
+            detail="Typed operation definitions supply the CLI, tool schemas and reference documentation.",
+            link=href("CLI_REFERENCE/", page_url),
+            action="Open the command reference",
+        )
+    return [guide]
+
+
+def on_page_context(
+    context: Object,
+    *,
+    page: Any,  # noqa: ANN401 - MkDocs owns event objects
+    config: Any,  # noqa: ANN401 - MkDocs owns event objects
+    **_: Any,  # noqa: ANN401 - MkDocs owns event objects
+) -> Object:
+    """Attach explainers in the shared layout, including automatically discovered future plugin pages."""
+    path = page.file.src_uri
+    project = config.extra.get("hz_plugin_pages", {}).get(path)
+    context["hz_helpers"] = page_helpers(path, page.url, project)
+    return context
 
 
 def on_page_markdown(markdown: str, *, page: Any, config: Any, **_: Any) -> str:  # noqa: ANN401 - MkDocs owns event objects
