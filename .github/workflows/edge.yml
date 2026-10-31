@@ -80,9 +80,9 @@ jobs:
             echo "Nothing releasable since $base."
             exit 0
           fi
-          uv sync --quiet --frozen --no-install-project --no-build
+          cliff="$(sed -n '/^name = "git-cliff"$/{n;s/version = "\(.*\)"/\1/p;}' uv.lock)" # the locked version, without building
           current="$(uv version --short --frozen)"
-          suggested="$(.venv/bin/git-cliff --offline --bumped-version)"
+          suggested="$(uvx --no-build "git-cliff@$cliff" --offline --bumped-version)"
           version="$(uv run --no-build --frozen --script scripts/release_channel.py version \
             "$current" "${suggested#v}" "$(git rev-list --count HEAD)" ${newest:+"$newest"})"
           if [ -z "$version" ]; then
@@ -164,12 +164,12 @@ jobs:
         run: uv export --quiet --frozen --no-dev --format cyclonedx1.5 --output-file "dist/heinzel-$VERSION.cdx.json"
       - name: Write the release notes and the channel pointer
         run: |
-          uv sync --quiet --frozen --no-install-project --no-build
+          cliff="$(sed -n '/^name = "git-cliff"$/{n;s/version = "\(.*\)"/\1/p;}' uv.lock)" # the locked version, without building
           uv run --no-build --frozen --script scripts/release_channel.py pointer "$VERSION" "$COMMIT" > edge.json
           {
             echo "Edge release of \`$COMMIT\`. Not the stable channel: see the install guide to opt in."
             echo
-            .venv/bin/git-cliff --offline --unreleased --strip all
+            uvx --no-build "git-cliff@$cliff" --offline --unreleased --strip all
           } > release-notes.md
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
