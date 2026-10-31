@@ -2,8 +2,10 @@
 status: proposed
 date: 2026-10-23
 amends: 0024
+amends-0024: the directory is a capability
 amended-by: 0049, 0055, 0059
 related: 0012, 0017, 0021, 0022, 0023
+implemented-by: 9
 ---
 
 # 0028: Integrations are capability adapters; workflows name capabilities, never vendors
@@ -51,13 +53,13 @@ integration becomes a configuration change.
 - **Workflows name capabilities, never vendors**: a contract asks for `tracker` or `documents`, not for a product.
 - **Binding**: configuration binds capability → adapter per team and per person, in the layered configuration
   ([ADR 0012](0012-layered-configuration.md)). `hz system doctor` checks every bound adapter.
-- **Several providers per capability, configuration chooses** (maintainer's decision, 2026-10-24): any number of
+- **Several providers per capability, configuration chooses**: any number of
   installed adapters may provide one capability, and the binding names the one in use. That includes a company's
   own private plugin layer, which may provide the same capabilities through its own gateway and is then bound instead
   of the first-party plugin; nothing in the core or in workflows changes. An adapter may itself be built on another
   capability, declared like any requirement (`requires=["mail:read"]`), so a provider can read through whichever
   adapter serves that capability.
-- **The org chart is the `directory` capability** (maintainer's decision, 2026-10-24). If a plugin can discover it
+- **The org chart is the `directory` capability** If a plugin can discover it
   (an HR system, a chat tool's profile fields, an IdP such as Google Workspace's directory), hz uses it and the user
   only confirms. Otherwise setup asks, starting from a draft the core guesses from signals the user can already read
   (recurring 1:1s in their calendar), so the user corrects rather than types. A guess is marked as one, with its
@@ -76,7 +78,7 @@ integration becomes a configuration change.
     who reads and writes what, through which adapter and which hosts, which also answers "where can my data go"
     for a privacy notice ([ADR 0024](0024-people-and-org.md)).
   - Calling a capability or mode that wasn't declared fails, at runtime and in a test.
-- **Fingerprints per facet** (amended 2026-10-24 by [ADR 0049](0049-heinzelmaennchen-are-durable-agents-one-session-each-owned-by-hz.md)
+- **Fingerprints per facet** (per [ADR 0049](0049-heinzelmaennchen-are-durable-agents-one-session-each-owned-by-hz.md)
   statement 20, borrowed from [OpenProse Reactor](https://github.com/openprose/reactor)'s facets): a capability's read
   results are fingerprinted as a map `{facet: hash}`: the adapter returns each facet's canonical, normalised content,
   with what is noise (a poll timestamp, a request id, list order) left out in code, and hz computes the SHA-256 by
@@ -85,11 +87,10 @@ integration becomes a configuration change.
   heading, a tracker's row by id; an adapter that knows no facets returns the single facet `@all`. The facets an
   adapter supports are part of its capability's protocol, additive like any method, and shown in the capability
   matrix.
-- **First adapters, planned for 0.2**: GitHub (code host, tracker), Atlassian (tracker, documents), Google Workspace
+- **First adapters, planned for the first release**: GitHub (code host, tracker), Atlassian (tracker, documents), Google Workspace
   (documents, calendar, mail; spreadsheets later), Zoom (meetings, from Zoom's meeting-summary emails read through the
-  bound `mail` adapter, not from Zoom's API: maintainer's decision, 2026-10-24) and Slack (chat). All five are
-  first-party plugins in `plugins/` ([ADR 0017](0017-first-party-plugins-in-the-core-repository.md)): maintainer's
-  decision, 2026-10-24.
+  bound `mail` adapter, not from Zoom's API) and Slack (chat). All five are
+  first-party plugins in `plugins/` ([ADR 0017](0017-first-party-plugins-in-the-core-repository.md)).
 
 ### Consequences
 
@@ -102,7 +103,7 @@ integration becomes a configuration change.
 
 ### Confirmation
 
-Partly, for the part built in 0.2 (see the implementation status under More Information): a requester can't use a
+Partly, for the part built in the first release (see the implementation status under More Information): a requester can't use a
 capability or mode it didn't declare, through every head, for documents and for chat
 (`tests/unit/kernel/bindings_test.py`, `tests/integration/capability_test.py`, with test-only chat, meetings and
 calendar adapters that correlate an event with its meeting, and a meetings adapter built on a mail adapter, chosen
@@ -115,8 +116,8 @@ seam's precedence (`tests/unit/kernel/directory_test.py`, `tests/unit/kernel/cap
 directory of record (`tests/integration/directory_test.py`); handles that build their adapter on the first call and
 adapter-only modules whose needs count only while their adapters serve someone (`tests/unit/kernel/bindings_test.py`);
 contract inputs name the new methods
-(`tests/unit/modules/workflow_contracts_test.py`); the packet builder cleans every string and drops emails
-(`tests/unit/modules/workflow_service_test.py`); `clean_text` (`tests/unit/kernel/text_test.py`) and
+(`tests/unit/modules/heinzel_contracts_test.py`); the packet builder cleans every string and drops emails
+(`tests/unit/modules/heinzel_service_test.py`); `clean_text` (`tests/unit/kernel/text_test.py`) and
 `assert_adapter` (`tests/unit/testing_test.py`); declarations are checked when a module is imported
 (`tests/unit/kernel/module_test.py`); a hostile project `hz.toml` can neither bind nor configure execution, and
 doctor names the keys it tried (`tests/integration/capability_test.py`); doctor reports every unmet requirement that
@@ -128,17 +129,15 @@ bound adapters.
 
 ## More Information
 
-- The dependency model with read and write modes was proposed by the maintainer on 2026-10-23.
 - Mail as a v1 capability, meetings from summary emails, and several providers per capability chosen by
-  configuration, including a company's own plugin layer: the maintainer's decisions of 2026-10-24.
+  configuration, including a company's own plugin layer.
 - The org chart as the `directory` capability, read from a plugin when one can discover it and otherwise drafted
-  from visible signals for the user to correct: the maintainer's decision of 2026-10-24.
+  from visible signals for the user to correct.
 
-**What 0.2 implements.**
+**What the first release implements.**
 
 The status stays proposed: the generic MCP adapter, the first vendor adapters, approvals and the shared adapter
-contract-test suite are not built yet. Built, with the choices made while building it and in review of the pull
-request (director's decisions, 2026-10-24):
+contract-test suite are not built yet. Built, with the choices made while building it:
 
 - **Protocols** (`heinzel.kernel._protocols`, public in `heinzel`): only what the first workflows need. `CodeHost`
   (`merged_pull_requests` in a `Window`), `Tracker` (`issues_updated`), `Documents` (`read`; `replace_section` as the
@@ -160,10 +159,9 @@ request (director's decisions, 2026-10-24):
   when the kernel registers an adapter class and when it builds one from a factory; `heinzel.testing.assert_adapter`
   runs the same check, plus the parameter names and defaults, in a plugin's own tests (a first piece of the shared
   adapter suite).
-- **Chat, meetings and calendar** (director's decisions on the maintainer's instruction to start the Google Workspace,
-  Zoom and Slack adapters, 2026-10-24). They serve the first management workflows: a weekly digest and 1:1
+- **Chat, meetings and calendar** (the Google Workspace, Zoom and Slack adapters come first). They serve the first management workflows: a weekly digest and 1:1
   preparation from channels and threads, meeting transcripts, and the calendar that says which meetings happened and
-  are coming (revised on review of the pull request, 2026-10-24). Only reads that take a `Window` are
+  are coming. Only reads that take a `Window` are
   contract-shaped: a contract input (`{read: <capability>.<method>, args, window}`,
   [ADR 0021](0021-workflow-contracts.md)) passes fixed `args` once, so such a method takes only required `str`
   arguments and exactly one `Window`, and a unit test keeps it so. Reads that take an id (`documents.read`,
@@ -174,7 +172,7 @@ request (director's decisions, 2026-10-24):
     flag, because a silently partial digest is worse than a run that says what to change.
   - `chat` (Slack first; Teams later): `messages(channel, window)`, the messages posted in the window, top level or
     reply, oldest first (a reply whose parent was posted before the window is included, the parent isn't), `read`;
-    `post(channel, text, thread=None)` is the only `write`, reachable from publish operations alone, and in 0.2 only
+    `post(channel, text, thread=None)` is the only `write`, reachable from publish operations alone, and in the first release only
     from module operations: a contract's `publishes` names an operation, never a capability method. `text` is plain
     text or Markdown; the adapter neutralises broadcast and mention syntax (Slack `<!channel>`, `<!here>`, `<@U…>`;
     Teams `<at>`) so a draft can't page a channel, and applies the vendor's length limit as it sees fit. One channel
@@ -190,7 +188,7 @@ request (director's decisions, 2026-10-24):
     large enough as it is.
   - `calendar` (Google Calendar first; Outlook later): `events(window)`, the user's events overlapping the window as
     expanded single occurrences, with organizer, attendees and status, `read` only. Contract windows end at the run
-    in 0.2, so "meetings coming up" waits for ADR 0021's later window semantics; the method is not limited to the past.
+    in the first release, so "meetings coming up" waits for ADR 0021's later window semantics; the method is not limited to the past.
   - **Correlation.** A meeting matches an event when both have the same `conference_id` and their times overlap: the
     id recurs across occurrences, the time picks the occurrence. `Meeting.id` identifies the occurrence (a Zoom
     meeting UUID, not its number); `conference_id` is in the meeting tool's notation on both sides, so the calendar
@@ -210,10 +208,9 @@ request (director's decisions, 2026-10-24):
     every other reader (operations, `hz` output).
   - **Documents and Google Docs.** `Documents.read(ref)` and `replace_section(ref, marker, text)` fit Google Docs as
     they fit Confluence: the adapter exports the document as text and locates the marker in the document's body for
-    the write. A `search(query, window)` read is not added: no 0.2 workflow needs it, and adding a read method later
+    the write. A `search(query, window)` read is not added: no first-release workflow needs it, and adding a read method later
     goes through the deprecation cycle above, so it waits for a workflow that does.
-  - **Mail is a v1 capability** (maintainer's decision, 2026-10-24, reversing the deferral this ADR recorded
-    earlier the same day). Meetings arrive as summary emails from the meeting tool, so mail is an input after all,
+  - **Mail is a v1 capability**, reversing an earlier deferral. Meetings arrive as summary emails from the meeting tool, so mail is an input after all,
     with swappable providers like every capability (Gmail first, through the Google Workspace plugin; IMAP or a
     company gateway later). Read only: `messages(query, window)`, the messages received in the window that match
     `query`, oldest first, contract-shaped; `read(message)`, one message's text and headers, for operations that know
@@ -236,7 +233,7 @@ request (director's decisions, 2026-10-24):
       bound `mail` adapter instead of the tool's API (the Zoom plugin does), declaring `mail:read` itself: no
       credentials of the meeting tool, and the mailbox's provider stays swappable. Such a transcript is the summary,
       not a verbatim record, which the adapter documents.
-  - **The directory** (director's decisions on the maintainer's decision above, 2026-10-24). `person(person)`, a
+  - **The directory** `person(person)`, a
     login or email to a `Person` (or none): `who` (a `Participant`), `login`, `title`, `department`, `team`,
     `manager` and `reports`; `reports(person)`, the direct reports as `Person`s. Both `read`, both id reads, so
     module operations use the directory and contracts don't; such an operation must not hand the addresses to an
@@ -274,8 +271,7 @@ request (director's decisions, 2026-10-24):
       confirmed. A confirmed person already in the draft is named from it, not looked up again.
     - **A reader's handle builds its adapter on the first call**, not when injected. A requester that never calls
       it, such as a setup step that drafts only when asked, doesn't fail because what the adapter itself needs is
-      unbound. The binding is still checked when the handle is made, except for an **optional operation**
-      (2026-10-24): `@module.operation(requires=[...], optional=True)` does without its own requirements when
+      unbound. The binding is still checked when the handle is made, except for an **optional operation**: `@module.operation(requires=[...], optional=True)` does without its own requirements when
       nothing serves them. It asks `CapabilityView.serves` first and degrades, as `hz org agenda` does for the web
       app's footer, so its handle for an unserved requirement is made anyway and every method raises why, with the
       fix. While nothing is bound, an unmet one stays in the matrix but is no doctor finding (an `up` check saying
@@ -311,7 +307,7 @@ request (director's decisions, 2026-10-24):
   besides declaring a requirement. `Capabilities.handle_for(requester, capability)` is the seam for code that acts on
   a requester's behalf without being its function, such as the compiler of workflow contracts
   ([ADR 0021](0021-workflow-contracts.md)). The workflow module reaches it through `Kernel.handle_for(requester,
-  capability)` (2026-10-24), which serves only requesters of kind `job` of the enabled module providing
+  capability)`, which serves only requesters of kind `job` of the enabled module providing
   `CompiledJobs`, refuses publishing requesters and adapter pins, and so hands out read handles only; compiled jobs
   appear in the matrix like declared ones. The module check guards against mistakes (a module asking on another's
   behalf by accident), not against plugins: plugins are trusted code that runs with the user's rights
@@ -340,7 +336,7 @@ request (director's decisions, 2026-10-24):
   nobody provides and each `[capabilities]` key that names no capability. `hz system info` shows requester →
   capability:modes → adapter → hosts; hosts are what the adapter declares, `unknown (configured)` when its
   configuration decides and it doesn't say how (next bullet).
-- **Hosts that settings decide** (director's decision, 2026-10-24). An adapter whose settings decide where data goes,
+- **Hosts that settings decide** An adapter whose settings decide where data goes,
   such as a code host adapter whose `host` may name a self-hosted server, passes a function instead of a list:
   `@module.provides("code-host", modes={"read"}, hosts=github_hosts)` with
   `def github_hosts(settings: GithubSettings) -> list[str]: return [api_host(settings.host)]`. A static list stays
@@ -381,7 +377,9 @@ request (director's decisions, 2026-10-24):
   capabilities, the generic MCP adapter, and contract tests for adapters. No vendor adapter ships in the core
   distribution (`src/heinzel`); its tests use test-only adapters.
 
-**First-party adapters (maintainer's decision, 2026-10-24).** Google Workspace, Zoom, GitHub, Atlassian and Slack
+*Amended by 0094: first-party plugins now live in the heinzel-plugins repository.*
+
+**First-party adapters.** Google Workspace, Zoom, GitHub, Atlassian and Slack
 adapters are first-party plugins, not separate repositories:
 
 - They live in `plugins/heinzel-<name>/` as uv workspace members ([ADR 0017](0017-first-party-plugins-in-the-core-repository.md)),
@@ -401,7 +399,7 @@ adapters are first-party plugins, not separate repositories:
   [ADR 0042](0042-google-workspace-through-the-gws-cli.md)). Planned: Zoom and Slack.
 - Separate repositories, scaffolded from `template/`, remain the model for community and company plugins (for
   example the community plugins in heinzel-contrib, each in `plugins/heinzel-<name>/`).
-- The maintainer named the directory holding them `plugins/` ("it contains plugins"), with `heinzel-clock` moved there
+- The directory holding them is `plugins/`, with `heinzel-clock` moved there
   too; install specs use `#subdirectory=plugins/heinzel-<name>`.
 
 - [ADR 0022](0022-embedded-workflows.md) describes `DocumentConnector` plugins (`heinzel-google`,
@@ -413,7 +411,7 @@ adapters are first-party plugins, not separate repositories:
 - [ADR 0021](0021-workflow-contracts.md) contract `inputs`, `outputs` and `publishes` would name capabilities rather
   than vendors.
 - Agent runners follow the same pattern: [ADR 0029](0029-agent-runners-are-capability-adapters.md).
-- **Providers are pluggable; first-party plugins are defaults** (maintainer's decision, 2026-10-24). A first-party
+- **Providers are pluggable; first-party plugins are defaults**. A first-party
   adapter is the default provider of its capabilities for its vendor, never the only one: any other plugin that
   provides the same capabilities can be bound instead, per person or site, with the same `[capabilities]` keys, and
   workflows don't notice. `heinzel-google` is the default provider of `documents` (Docs and Sheets) and `calendar`

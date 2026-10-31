@@ -3,7 +3,12 @@ status: accepted
 date: 2026-10-24
 decision-makers: maintainer (names and direction), architect (plan)
 amends: 0021, 0038, 0041, 0045
+amends-0021: operation names
+amends-0038: hz inbox becomes hz drafts and hz approve
+amends-0041: the everyday set
+amends-0045: heinzel.* settings in the never-run policy
 related: 0002, 0003, 0018, 0019, 0020, 0026, 0037, 0039, 0049, 0050, 0052
+implemented-by: 94
 ---
 
 # 0051: The workflow module becomes the heinzel module
@@ -154,24 +159,21 @@ The first slice (the rename, the aliases, `hz heinzel list` and the web app's He
 `tests/integration/renamed_module_test.py`, `tests/integration/heinzel_test.py`, `tests/unit/kernel/config_test.py`
 and `web/src/pages/Heinzelmaennchen.test.tsx`. When the rest is implemented:
 
-- `tests/integration/heinzel_cli_test.py`: every new command through the CLI and MCP; `hz workflow <op>` runs the same
+- CLI and MCP: every new command through the CLI and MCP; `hz workflow <op>` runs the same
   operation and prints the deprecation line once; `hz drafts` and `hz approve` collapse in every head; `approve` and
-  `wake` absent from the REST head and `approve` from MCP (`tests/integration/rest_security_test.py`, `mcp_test.py`).
-- `tests/unit/modules/heinzel_settings_test.py`: `[workflow]` keys read as `[heinzel]` with doctor naming them; a
+  `wake` absent from the REST head and `approve` from MCP (`tests/integration/rest_security_test.py`).
+- Settings: `[workflow]` keys read as `[heinzel]` with doctor naming them; a
   project `hz.toml` still can't set any of them.
-- `tests/unit/modules/heinzel_migrate_test.py`: a fixture `<data dir>/workflow/drafts/` and `receipts/` from 0.3.0
+- Migration: a fixture `<data dir>/workflow/drafts/` and `receipts/` from 0.3.0
   migrates into sessions and copied chains; the chains verify; a second run changes nothing; `--dry-run` writes nothing;
   a pinned team contract whose file changed migrates `paused`.
 - `tests/unit/kernel/session_store_test.py` (ADR 0049) and the import-linter contracts: the kernel still imports no
   module; `heinzel.kernel._sessions` names no Heinzelmännchen (a grep test in `tests/unit/repository_test.py`).
 - `tests/unit/documentation_test.py`: the generated docs, the ADR index and the renamed page with its stub.
-- `tests/unit/heads/cli_help_test.py`: the everyday commands list `hz heinzel`, `hz drafts`, `hz approve`.
+- CLI help: the everyday commands list `hz heinzel`, `hz drafts`, `hz approve`.
 
 ## More Information
 
-- Decided by the maintainer, 2026-10-24: the rename to `heinzel`, a built-in module not a plugin, the kernel getting
-  only bare primitives, the command names, "CLI and MCP call the services directly; the HTTP API exists only for the
-  UI". Plan by the architect.
 - **Amends** [ADR 0021](0021-workflow-contracts.md) §12 (operation names) and §10 (the `me` directory's default path);
   [ADR 0038](0038-drafts-are-approved-in-place.md) §8 (`hz inbox list | show | approve | reject` are `hz drafts` and
   `hz approve [--reject]`); [ADR 0041](0041-expert-mode-newcomers-see-the-everyday-commands.md) (the everyday set);

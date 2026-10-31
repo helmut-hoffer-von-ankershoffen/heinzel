@@ -3,7 +3,9 @@ status: proposed
 date: 2026-10-24
 decision-makers: maintainer
 amends: 0018
+amends-0018: adds hz setup
 related: 0003, 0005, 0012, 0015, 0024, 0026, 0030
+implemented-by: 26
 ---
 
 # 0032: Modules declare interactive setup steps; `hz setup` runs them all
@@ -37,10 +39,10 @@ declare such a step, how does it ask questions without knowing about the termina
   with parameters; MCP and REST would have to be excluded by hand, and `hz setup` would have to guess which
   operations are setup steps by their name.
 - **A generic step derived from each settings model** (one question per field): asks things nobody needs to answer
-  (directories, log levels), can't search IANA names or ask "hours per zone", and the maintainer wants modules to
+  (directories, log levels), can't search IANA names or ask "hours per zone", and modules should
   declare their steps. Rejected; a module without a declared step has none.
-- **`hz system setup` instead of `hz setup`**: consistent with ADR 0018, but the maintainer decided on `hz setup`; it
-  is meant to be the first command a new user types.
+- **`hz system setup` instead of `hz setup`**: consistent with ADR 0018, but `hz setup` is
+  meant to be the first command a new user types.
 
 ## Decision Outcome
 
@@ -100,7 +102,7 @@ head**, because modules stay head-agnostic, steps write through the existing ser
 - **Names.** `setup` and `join` are reserved as module names, at every level, because `hz setup` and `hz join` are
   top-level commands (and `[join]` is the answers file's table for `hz join`'s own questions). A module's operations
   may take any name, `setup` included: the step is never one of the module's commands.
-- **Top level.** `hz setup` and `hz join` are exceptions to ADR 0018, decided by the maintainer: everything else
+- **Top level.** `hz setup` and `hz join` are exceptions to ADR 0018: everything else
   about Heinzelmännchen itself stays under `hz system`.
 - **Nothing without a yes.** Without a person, `hz join` changes nothing unless the yes was given in advance:
   `--yes` (or `[join] yes = true`) makes a team whose roster lists you yours, and `--propose` (`[join] propose =
@@ -141,7 +143,7 @@ head**, because modules stay head-agnostic, steps write through the existing ser
   collapsed module with a setup step keeps its exit codes. `tests/integration/update_notice_test.py`: exactly one
   notice after its text output and none with `--json`, the notice after `hz setup <module>`, and doctor's instead
   after `hz setup`.
-- `plugins/heinzel-clock/tests/clock_test.py`: `hz setup clock` and the migration of the old settings shape.
+- In heinzel-plugins, `plugins/heinzel-clock/tests/clock_test.py`: `hz setup clock` and the migration of the old settings shape.
 - `tests/unit/kernel/prompter_test.py` and `tests/unit/heads/cli_journey_test.py`: keyed questions and preset
   answers, defaults without a person, answers files and the record in `setup.json`;
   `tests/integration/journey_test.py`: the order with who you are first, the privacy line first, resuming and
@@ -151,17 +153,14 @@ head**, because modules stay head-agnostic, steps write through the existing ser
 
 ## More Information
 
-- Decided by the maintainer: setup steps declared by modules, required or optional, one module's step on its own
-  and a top-level `hz setup`, 2026-10-24.
-  The technical shape (let, prompter, configured heuristic, order) was delegated.
-- Amended on 2026-10-24, decided by the maintainer: adding a setup step must never change a module's command path.
+- Adding a setup step must never change a module's command path.
   The first version mounted the step as `hz <module> setup`, which turned a module that collapses into one command
   into a group; when that command took an argument it no longer collapsed (`hz echo hi` became "No such command"),
   so the CLI path differed from the MCP and REST ones, and a plugin release adding a step broke scripts that called
   the module. `hz setup [MODULE]` is now the single entry for setup, and modules keep exactly their commands.
   Command paths stay stable across heads, and scripts don't break when a plugin adds a step.
-- Amended on 2026-10-24 for onboarding (the perfect-onboarding ADR, proposed in pull request #32): steps declare a
+- For onboarding, steps declare a
   phase that orders them, the run is recorded and resumable, keyed questions can be answered from a file, and
-  `hz join` is the front door with `hz setup` as the re-runnable "what is still missing". Decided by the maintainer:
-  phases stay internal ordering, never shown; the person's story is the invite line.
+  `hz join` is the front door with `hz setup` as the re-runnable "what is still missing". Phases
+  stay internal ordering, never shown; the person's story is the invite line.
 - Possible extensions: `after=` to order steps by dependency.

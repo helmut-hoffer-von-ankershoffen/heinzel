@@ -4,6 +4,7 @@ status: proposed
 date: 2026-10-25
 decision-makers: maintainer
 related: 0003, 0018, 0056
+implemented-by: 188
 ---
 
 # 0074: Machine resource meters use bounded local sampling
@@ -45,5 +46,5 @@ by the [project](https://psutil.io/) and [release](https://pypi.org/project/psut
 
 ### Confirmation
 
-`tests/unit/modules/resources_test.py` exercises sampling, cache expiry, concurrency, missing measurements and strict
+In heinzel-plugins, `plugins/heinzel-resource/tests/unit/resources_test.py` exercises sampling, cache expiry, concurrency, missing measurements and strict
 JSON values. The web meter tests cover thresholds and accessible values, including load above twice the core count.

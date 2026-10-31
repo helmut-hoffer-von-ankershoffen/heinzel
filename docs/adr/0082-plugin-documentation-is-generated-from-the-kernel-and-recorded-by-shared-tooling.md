@@ -4,6 +4,7 @@ status: proposed
 date: 2026-10-24
 decision-makers: maintainer
 related: 0003, 0007, 0017, 0025, 0026, 0027, 0036, 0037, 0039, 0040, 0041, 0044, 0051, 0068, 0072
+implemented-by: 135
 ---
 
 # 0082: Plugin documentation is generated from the kernel and recorded by the tooling every plugin shares
@@ -191,7 +192,7 @@ from the code, no plugin writes tooling, and a private plugin gets the same page
 
 ## More Information
 
-- Requested by the maintainer on 2026-10-24: a page per plugin with animated CLI and UI, the plugin's type, its CLI
+- A page per plugin with animated CLI and UI, the plugin's type, its CLI
   reference, generated for first-party, community and private plugins with tooling and CI; the README's intro to
   show the UI too, automatically. The community weather plugin (`heinzel-contrib`) is the showcase.
 - UI contributions (footer items, Today widgets, sidebar pages) are being decided in a separate record; this one
