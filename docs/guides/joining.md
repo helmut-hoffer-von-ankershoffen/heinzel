@@ -1,48 +1,38 @@
 # Join your team
 
-For the engineer or product manager whose manager posted a line in chat. Ten minutes: run the line, answer what it
-asks, see your team's first draft. Nothing is published, sent or scheduled unless you say so; what hz keeps about you
-is listed below.
+For the engineer or product manager whose manager posted a line in chat. Run the line, answer what it asks, see your
+team's first draft. Nothing is published, sent or scheduled unless you say so.
 
-Examples use a made-up company, Acme (`acme-example` on GitHub) and its Checkout team. What is not in this release is
-marked **coming in the next release**, with what to do meanwhile.
+Examples use a made-up company, Acme, and its Checkout team.
 
 ## The one line from your manager
 
-The line names your team's repository; the repository is the invite, and the code host's permissions decide who may
-read it. You need [uv](https://docs.astral.sh/uv/) (`brew install uv`), the [GitHub CLI](https://cli.github.com)
-signed in (`brew install gh`, then `gh auth login`) and, for drafting, the
-[Claude Code](https://docs.claude.com/en/docs/claude-code) CLI signed in (the default agent runner). Then run the line
-as posted:
+The line names your team's repository, which is the invite. You need [uv](https://docs.astral.sh/uv/)
+(`brew install uv`), the [GitHub CLI](https://cli.github.com) signed in (`brew install gh`, then `gh auth login`) and,
+for drafting, the [Claude Code](https://docs.claude.com/en/docs/claude-code) CLI signed in. Run the line as posted:
 
 ```bash
 uvx heinzel@latest join https://github.com/acme-example/hz-team-checkout.git
 ```
 
-The launcher installs the standard app and its default plugins when needed, then runs `join` in that same
-managed installation. Later commands use `hz` directly; the [installation guide](install.md) covers opening and
-stopping the workspace.
+The launcher installs the standard app when needed, then runs `join`. See the [installation guide](install.md) for
+opening and stopping the workspace.
 
 ## What happens
 
-`join` does four things, and asks before anything leaves your machine ([ADR 0032](../adr/0032-modules-declare-interactive-setup-steps.md)):
+`join` asks before anything leaves your machine, and does four things:
 
-1. **Says what hz keeps about you** (below), before anything is written.
-2. **Finds out who you are.** It looks up your `gh` and `gws` logins and this machine's clock, shows what it found and
-   asks only for the rest: your handle (your GitHub login is a good one), your role and your working hours. This is
-   your profile, kept on this machine.
-3. **Joins the team.** It clones the repository with your own access (into hz's data directory, under `team/`) and
-   looks you up in the roster by your GitHub login. It asks nothing when it finds you, only "Make checkout your team?".
-   Matching by the e-mail of your Google login as well is **coming in the next release**.
-4. **Sets up what is still missing**: each plugin's step, which you may skip, then `hz system doctor`.
+1. It says what hz keeps about you (below), before anything is written.
+2. It finds out who you are from your `gh` and `gws` logins and this machine's clock, and asks only for the rest: your
+   handle, your role and your working hours.
+3. It clones the repository with your own access and looks you up in the roster by your GitHub login. When it finds
+   you, it asks only "Make checkout your team?".
+4. It sets up what is still missing, plugin by plugin, then runs `hz system doctor`.
 
-What you should see:
+You should see:
 
 ```text
-hz keeps your profile and answers on this machine only, readable by you alone. Joining a team puts your handle,
-GitHub login and role in its roster; your name and email stay off every repository, and hz records nothing about
-how much you do.
-...
+hz keeps your profile and answers on this machine only, readable by you alone. ...
 Joining checkout:
   done   clone https://github.com/acme-example/hz-team-checkout.git with your own access
   to do  make it your team in your user configuration ([team])
@@ -55,18 +45,16 @@ What happens next
   invite the next one post the same line: uvx heinzel@latest join https://github.com/acme-example/hz-team-checkout.git
 ```
 
-**If the roster doesn't list you**, you still read the team's contracts, and one question remains: who are you?
-`join` lets you pick the roster entry that is you (an entry without a login yet) or asks "Ask the owners of checkout
-to add you? This opens a pull request from your account." The proposal is never a fact: your manager, an owner,
-merges it. From a coding agent or without a terminal, every question has a flag:
+**If the roster doesn't list you**, you still read the team's contracts. `join` lets you pick the roster entry that is
+you (one without a login yet) or asks "Ask the owners of checkout to add you?", which opens a pull request an owner
+merges. From a coding agent or without a terminal, every question has a flag:
 
 ```bash
 hz join https://github.com/acme-example/hz-team-checkout.git --role engineer --yes --json
-hz join https://github.com/acme-example/hz-team-checkout.git --propose --role product-manager   # not listed: open the pull request
-hz join https://github.com/acme-example/hz-team-checkout.git --answers answers.toml             # your team's preset answers; never secrets
+hz join https://github.com/acme-example/hz-team-checkout.git --propose --role product-manager   # not listed: open the PR
 ```
 
-`join` is re-runnable: nothing is asked twice, and `hz setup` is what you run any time for whatever is still missing.
+`join` is re-runnable: nothing is asked twice, and `hz setup` finishes whatever is missing.
 
 ## What hz keeps about you, and where
 
@@ -79,60 +67,49 @@ hz join https://github.com/acme-example/hz-team-checkout.git --answers answers.t
 | Your name, title, manager, location | nowhere in Git | — |
 | What you did, how much, how fast | nowhere; drafts are your own, about your own work | — |
 
-Drafts and their records stay on your machine under `<data dir>/workflow/drafts/` and are deleted after 90 days;
-nothing is sent to the project ([ADR 0027](../adr/0027-nothing-is-sent-home.md),
-[ADR 0024](../adr/0024-people-and-org.md)). `hz org show` shows your profile; `hz setup org` changes it.
+Drafts stay on your machine under `<data dir>/workflow/drafts/` and are deleted after 90 days. Nothing is sent to the
+project. `hz org show` shows your profile; `hz setup org` changes it.
 
 ## Your first win: this week's report
 
-Your team's contracts are in the checkout's `workflows/`, as `team:<name>`; your manager put the weekly report there
-([Bootstrap your team, step 8](manager.md#8-drafts-approval-and-the-success-measure)):
+Your team's contracts are in the checkout's `workflows/`, as `team:<name>`:
 
 ```bash
 hz heinzel list                              # your contracts and your team's, with schedule and problems
 hz heinzel show team:weekly-report           # what it reads, what is bound, whether it is ready
-hz heinzel wake team:weekly-report --dry-run  # the packet the agent would get: the week's pull requests and items
+hz heinzel wake team:weekly-report --dry-run  # the packet the helper would get: the week's pull requests and items
 hz heinzel wake team:weekly-report            # draft it, within the cost cap; a local file, yours to edit or discard
 hz heinzel drafts --name weekly-report --latest
 ```
 
-What you should see: `list` names the team's contracts ("No contracts yet." means your manager hasn't added one);
-`show` lists each requirement (`code-host:read`, `tracker:read`, …) with the adapter bound to it and, for an unmet
-one, the command that fixes it; `run` reports drafting time, cost and the draft's path. The agent runner (Claude Code
-by default) must be installed; `hz system doctor` says so otherwise.
-
-A draft of your own part of the week, offered at the end of `join` from the team's playbook, is
-**coming in the next release**.
+`list` names the team's contracts ("No contracts yet." means your manager hasn't added one). `show` lists each
+requirement with its bound adapter and, for an unmet one, the command that fixes it. `hz system doctor` says if the
+agent runner (Claude Code by default) is missing.
 
 ## Daily use
 
 ```bash
 hz system doctor                              # everything healthy? each problem with the command that fixes it
 hz heinzel drafts                            # every draft, newest first
-hz heinzel show team:weekly-report           # is it ready, when does it run, what to run next
-hz org show                                   # your profile
 hz team show                                  # the team, its checkout and members
 hz ui                                         # the same in a browser, on localhost, for this session only
-hz system update                              # a newer release? update in place, keeping plugins
+hz system update                              # update in place, keeping plugins
 ```
 
-A team contract runs on **your** machine only when you say so: `hz org sync --accept contract:weekly-report`
-(below), and the daemon your manager's guide describes. Every command takes `--json`.
+A team contract runs on **your** machine only when you say so: `hz org sync --accept contract:weekly-report`, and the
+daemon the [manager guide](manager.md#6-the-first-contract-this-weeks-report) describes. Every command takes `--json`.
 
 ## `hz org sync`: what your team recommends
 
-A team's `hz.yaml` may recommend plugins, capability bindings, credential names and contracts. It only recommends:
-nothing in the repository installs, binds, stores or schedules anything on your machine.
+Your team's `hz.yaml` may recommend plugins, bindings, credential names and contracts. It never changes your machine.
 
 ```bash
 hz org sync                                   # every recommendation beside what you have; changes nothing
 hz org sync --accept all                      # bindings and contracts you have no choice for yet
-hz org sync --accept binding:documents        # one, by id; what you chose otherwise switches only when you name it
+hz org sync --accept binding:documents        # one, by id
 ```
 
-What you should see: a table "Recommended by …" (Id, Recommended, You have, State, What it does), then the next
-steps. Plugins and credentials stay commands you run yourself, which `sync` names; `hz system doctor` says when
-recommendations wait for you. Details: [TEAMS: what your team recommends](../TEAMS.md#what-your-team-recommends).
+What `sync` shows and writes is in [TEAMS: what your team recommends](../TEAMS.md#what-your-team-recommends).
 
 ## Leave, or uninstall
 
@@ -142,21 +119,25 @@ hz system daemon uninstall                                                      
 hz system agent uninstall && uv tool uninstall heinzel                            # remove hz and its plugins
 ```
 
-Your configuration files stay; `hz system config show` lists them before you uninstall. Leaving the roster is the
-owners' commit (it sets `until`; handles are never reused), and your `people/<handle>.yaml` is yours to remove by
-pull request.
+Your configuration files stay; `hz system config show` lists them. Leaving the roster is the owners' commit, and your
+`people/<handle>.yaml` is yours to remove by pull request.
 
 ## Troubleshooting
 
 | Symptom | Fix |
 | --- | --- |
-| "The roster of checkout doesn't list you yet." | Say yes to the pull request `join` offers (or `--propose`); an owner merges it. Listed without a login? Pick that entry when `join` asks, or `--handle <entry>` |
+| "The roster of checkout doesn't list you yet." | Say yes to the pull request `join` offers (or `--propose`); an owner merges it. Listed without a login? Pick that entry, or `--handle <entry>` |
 | `gh` isn't signed in, or as someone else | `gh auth login`, then run the line again; `hz team join <url> --login <your GitHub login>` says who you are without `gh` |
-| The clone fails: no access to the repository | Ask the team's owner for read access on the code host; hz adds no permission of its own |
-| "You are in the team at … already; one team for now" | One team at a time: `hz team show` names it; leave it first (above), then join |
-| A checkout from `[heinzel] team_repository` | `hz team adopt <path>` makes it your team; `hz system doctor` says so until you do |
+| The clone fails: no access | Ask the team's owner for read access |
+| "You are in the team at ... already; one team for now" | Leave it first (above), then join |
+| A checkout from `[heinzel] team_repository` | `hz team adopt <path>` makes it your team |
 | "Not joined: nothing was changed" | You answered no, or ran without a terminal: run the line again and say yes, or pass `--yes` |
-| `hz system doctor` is red | Each check names its fix, as a command to copy; `hz setup` runs the steps still missing |
-| A team contract isn't ready | `hz heinzel show team:<name>` lists the unmet requirement and the command for it |
+| `hz system doctor` is red | Each check names its fix; `hz setup` runs the steps still missing |
 
-All commands: [CLI_REFERENCE](../CLI_REFERENCE.md); for your manager: [Bootstrap your team](manager.md).
+All commands: [CLI_REFERENCE](../CLI_REFERENCE.md); for your manager: [Bootstrap your team](manager.md). The
+repository's layout: [TEAMS](../TEAMS.md).
+
+## Not built yet
+
+- Matching you in the roster by the e-mail of your Google login as well as your GitHub login.
+- A draft of your own part of the week at the end of `join`.
