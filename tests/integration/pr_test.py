@@ -473,3 +473,29 @@ def test_an_existing_pull_request_keeps_its_description_and_says_so(repo):
     assert "its description stays" in done.stderr
     assert repo.log("gh-pr-create") == []
     assert repo.log("gh-pr-edit") == ["pr", "edit", URL, "--title", "feat: add widgets"]
+
+
+def test_a_branch_behind_main_without_conflicts_goes_through(repo):
+    """Main's own CI gates a release (ADR 0114), so queued pushes must not loop on `make sync`."""
+    repo.commit("widgets")
+    repo.on_main("elsewhere")
+
+    result = repo.pr()
+
+    assert result.returncode == 0, result.stderr
+    assert "Behind" not in result.stderr
+    assert repo.remote() == repo.git("rev-parse", "HEAD")
+
+
+def test_a_branch_that_conflicts_with_main_stops_before_pushing(repo):
+    repo.commit("widgets", "ours")
+    repo.git("switch", "--quiet", "main")
+    repo.commit("widgets", "theirs")
+    repo.git("push", "--quiet", "origin", "main")
+    repo.git("switch", "--quiet", "feat")
+
+    result = repo.pr()
+
+    assert result.returncode == 2
+    assert "Conflicts with origin/main; run make sync first." in result.stderr
+    assert repo.git("ls-remote", "origin", "refs/heads/feat") == ""
