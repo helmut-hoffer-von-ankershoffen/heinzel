@@ -55,6 +55,19 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
         "tar -xzf notifier.tar.gz": "unpacks Heinzel Notifier into the package before the wheel is built",
         "unzip -l ": "asserts that the released wheel ships Heinzel Notifier",
     },
+    "edge.yml": {
+        'commit="$(git rev-parse HEAD)"': "plans the edge release from the commit and the releases so far",
+        "tar -czf notifier.tar.gz": "preserves the notifier executable bits and signature across runners",
+        "tar -xzf notifier.tar.gz": "restores the notifier built without publishing credentials",
+        "uv run --no-build --frozen --script scripts/check_confidentiality.py": "scans the tree with the term list",
+        "uv run --no-build --frozen --script scripts/release_channel.py": "stamps and describes the edge release",
+        "uv build --package heinzel": "builds only the core project",
+        'test -f "dist/heinzel-': "asserts the wheel's version and payload",
+        "uv export ": "exports the release's CycloneDX bill of materials",
+        'cliff="$(sed': "writes the release notes and the channel pointer with the locked git-cliff",
+        'cp "$BUNDLE"': "attaches the provenance attestation and creates the pre-release",
+        "gh release view edge-channel": "moves the pointer the opt-in path reads",
+    },
     "pypi.yml": {
         '[[ "$TAG" =~': "binds publishing to the exact tag and main ancestry before build tooling",
         "gh api ": "verifies the published GitHub release and exports its exact source commit",
@@ -1041,3 +1054,39 @@ def test_only_a_prose_push_to_main_skips_the_core_jobs(tmp_path, event, changed,
         timeout=4,
     )
     assert f"core={core}" in output.read_text().splitlines()
+
+
+@pytest.mark.parametrize(
+    ("event", "changed", "electron"),
+    [
+        ("push", "src/heinzel/__init__.py\n", "false"),
+        ("push", "desktop/src/main.js\n", "true"),
+        ("push", "Makefile\n", "true"),
+        ("push", "scripts/sync_template.py\n", "true"),
+        ("push", ".github/workflows/ci.yml\n", "true"),
+        ("push", "", "true"),  # a diff git could not compute
+        ("pull_request", "src/heinzel/__init__.py\n", "false"),
+        ("pull_request", "desktop/src/main.js\n", "true"),
+        ("schedule", "src/heinzel/__init__.py\n", "true"),
+        ("workflow_dispatch", "src/heinzel/__init__.py\n", "true"),
+    ],
+)
+def test_electron_runs_for_its_paths_on_a_push_and_always_on_schedule_and_dispatch(tmp_path, event, changed, electron):
+    jobs = yaml.safe_load((REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))["jobs"]
+    script = next(step["run"] for step in jobs["changes"]["steps"] if step.get("id") == "paths")
+    stubs = tmp_path / "bin"
+    stubs.mkdir()
+    git = stubs / "git"
+    git.write_text(f"#!/bin/sh\nprintf '{changed}'\n")
+    git.chmod(0o700)
+    (tmp_path / "desktop").mkdir()
+    (tmp_path / "desktop" / "package.json").write_text("{}")
+    output = tmp_path / "output"
+    subprocess.run(
+        ["bash", "-c", script],
+        env={"PATH": f"{stubs}:/usr/bin:/bin", "EVENT": event, "BASE": "base", "GITHUB_OUTPUT": str(output)},
+        cwd=tmp_path,
+        check=True,
+        timeout=4,
+    )
+    assert f"electron={electron}" in output.read_text().splitlines()
