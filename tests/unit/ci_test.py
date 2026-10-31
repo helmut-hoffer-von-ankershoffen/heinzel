@@ -89,7 +89,6 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
         'if [[ ! "$INTRO"': "rejects blank dispatch input before checkout or release work",
         "git config user.name": "opens the release pull request as the bot and hands its tag to the next step",
         "gh workflow run ci.yml": "starts CI on the release pull request, which the bot's token doesn't",
-        "gh pr merge": "enables squash auto-merge on the release pull request once CI OK is green",
     },
     "release-tag.yml": {'tag="v$(uv version --short)"': "tags a merged release commit"},
     "claude-review.yml": {'files="$(git diff': "picks the review tier from the changed files"},
@@ -750,9 +749,7 @@ def test_the_release_keeps_changelog_introductions():
     release = yaml.safe_load((REPO / ".github" / "workflows" / "prepare-release.yml").read_text(encoding="utf-8"))
     assert "intro" in release[True]["workflow_dispatch"]["inputs"]  # YAML 1.1 reads the key `on` as True
     step = next(s for s in release["jobs"]["pull-request"]["steps"] if "release.sh" in s.get("run", ""))
-    assert any(
-        "gh pr merge" in s.get("run", "") and "--auto" in s["run"] for s in release["jobs"]["pull-request"]["steps"]
-    )
+    assert not any("gh pr merge" in s.get("run", "") for s in release["jobs"]["pull-request"]["steps"])
     assert step["env"]["INTRO"] == "${{ inputs.intro }}"
     assert (REPO / "template" / "scripts" / "changelog_intros.py").resolve() == REPO / "scripts" / "changelog_intros.py"
 
