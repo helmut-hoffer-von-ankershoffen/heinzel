@@ -3,25 +3,29 @@
 import hashlib
 import json
 import os
+import platform
+import re
 import shlex
 import stat
 import subprocess
 import sys
+import zipfile
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from email.parser import BytesParser
 from importlib.metadata import distributions
 from itertools import islice
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, NoReturn, cast
 from urllib.parse import parse_qs, urlsplit
 
 from packaging.requirements import Requirement
+from packaging.specifiers import InvalidSpecifier, SpecifierSet
 from packaging.utils import canonicalize_name
-from packaging.version import Version
+from packaging.version import InvalidVersion, Version
 
 from heinzel import HeinzelError, Progress
-from heinzel.kernel import Installation, subprocess_environment
+from heinzel.kernel import Installation, run_bounded_process, subprocess_environment
 
 ENTRYPOINTS = ("hz", "hz-install", "heinzel")
 MAX_WHEEL = 128 * 1024 * 1024
@@ -30,6 +34,8 @@ MAX_METADATA_TOTAL = 16 * MAX_METADATA
 MAX_SITE_DIRS = 32
 MAX_SITE_ENTRIES = 10000
 MAX_HEADER_LENGTH = 256
+MAX_MANAGED_PYTHONS = 1024
+MAX_MANAGED_PATH = 4096
 VERSION_ERROR = "Installed app versions cannot be safely inspected; inspect or update the composition manually."
 
 
@@ -165,6 +171,150 @@ def verify_fresh_python_policy(environment: Mapping[str, str]) -> None:
         raise HeinzelError(msg)
 
 
+def _offline_python_unavailable() -> NoReturn:
+    msg = "Cannot verify installed uv-managed Python or selected wheel requirements; inspect them and retry."
+    raise HeinzelError(msg) from None
+
+
+def _wheel_python_requirement(path: Path, expected: str) -> SpecifierSet:
+    try:
+        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        with os.fdopen(descriptor, "rb") as stream:
+            before = os.fstat(stream.fileno())
+            if not stat.S_ISREG(before.st_mode) or before.st_size > MAX_WHEEL:
+                _offline_python_unavailable()
+            digest = hashlib.sha256()
+            count = 0
+            for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                count += len(chunk)
+                if count > before.st_size or count > MAX_WHEEL:
+                    _offline_python_unavailable()
+                digest.update(chunk)
+            if count != before.st_size or digest.hexdigest() != expected:
+                _offline_python_unavailable()
+            stream.seek(0)
+            with zipfile.ZipFile(stream) as wheel:
+                records = [
+                    item
+                    for item in wheel.infolist()
+                    if item.filename.count("/") == 1 and item.filename.endswith(".dist-info/METADATA")
+                ]
+                if len(records) != 1 or records[0].file_size > MAX_METADATA:
+                    _offline_python_unavailable()
+                metadata = BytesParser().parsebytes(wheel.read(records[0]))
+                values = metadata.get_all("Requires-Python", [])
+                if len(values) > 1 or any(len(value) > MAX_HEADER_LENGTH for value in values):
+                    _offline_python_unavailable()
+                requirement = SpecifierSet(values[0] if values else "")
+            after = os.fstat(stream.fileno())
+            named = path.stat(follow_symlinks=False)
+            if (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns, before.st_ctime_ns) != (
+                after.st_dev,
+                after.st_ino,
+                after.st_size,
+                after.st_mtime_ns,
+                after.st_ctime_ns,
+            ) or (named.st_dev, named.st_ino) != (before.st_dev, before.st_ino):
+                _offline_python_unavailable()
+            return requirement
+    except (OSError, RuntimeError, NotImplementedError, zipfile.BadZipFile, InvalidSpecifier):
+        _offline_python_unavailable()
+
+
+_MANAGED_KEY = re.compile(
+    r"^(?:cpython|pypy|graalpy)-(\d+\.\d+\.\d+)-(macos|linux|windows)-(aarch64|x86_64|x86)-[a-z0-9_]+$"
+)
+
+
+def _managed_root(uv: str, environment: Mapping[str, str]) -> Path:
+    selected = dict(environment)
+    selected.pop("UV_PYTHON", None)
+    selected.pop("VIRTUAL_ENV", None)
+    try:
+        outcome = run_bounded_process(
+            [uv, "python", "dir", "--offline"], input=None, cwd=None, env=selected, timeout=15, limit=MAX_METADATA
+        )
+        if outcome.returncode != 0 or outcome.truncated:
+            _offline_python_unavailable()
+        directory = outcome.stdout.strip()
+        if not directory or "\n" in directory or len(directory) > MAX_MANAGED_PATH or not Path(directory).is_absolute():
+            _offline_python_unavailable()
+        return Path(directory).resolve()
+    except (OSError, RuntimeError, subprocess.SubprocessError):
+        _offline_python_unavailable()
+
+
+def _managed_entry(entry: os.DirEntry[str], root: Path, system: str, architecture: str) -> tuple[Version | None, bool]:
+    if entry.name in {".gitignore", ".lock", ".temp"}:
+        return None, False
+    if entry.is_symlink():
+        try:
+            target = Path(entry.path).resolve(strict=True)
+        except (OSError, RuntimeError):
+            return None, True
+        return None, target.parent != root or not target.is_dir() or not _MANAGED_KEY.fullmatch(target.name)
+    if not entry.is_dir(follow_symlinks=False):
+        return None, False
+    match = _MANAGED_KEY.fullmatch(entry.name)
+    if match is None:
+        return None, True
+    version, found_system, found_arch = match.groups()
+    # The uv executable may target a different architecture from this process (for example under Rosetta).
+    return (
+        Version(version) if (found_system, found_arch) == (system, architecture) else None,
+        found_system == system and found_arch != architecture,
+    )
+
+
+def _managed_versions(root: Path, environment: Mapping[str, str]) -> tuple[list[Version], bool]:
+    system = {"darwin": "macos", "linux": "linux", "win32": "windows"}.get(sys.platform)
+    machine = platform.machine().lower()
+    machine = {"arm64": "aarch64", "amd64": "x86_64"}.get(machine, machine)
+    architecture = environment.get("UV_PYTHON_ARCH", machine)
+    if system is None or architecture not in {"aarch64", "x86_64", "x86"}:
+        return [], True
+    versions: list[Version] = []
+    uncertain = False
+    try:
+        if not root.exists():
+            return versions, uncertain
+        with os.scandir(root) as entries:
+            for count, entry in enumerate(entries, start=1):
+                if count > MAX_MANAGED_PYTHONS:
+                    _offline_python_unavailable()
+                version, unknown = _managed_entry(entry, root, system, architecture)
+                uncertain |= unknown
+                if version is not None:
+                    versions.append(version)
+    except (OSError, InvalidVersion):
+        _offline_python_unavailable()
+    return versions, uncertain
+
+
+def verify_offline_managed_python(uv: str, wheels: Mapping[Path, str], environment: Mapping[str, str]) -> None:
+    """Refuse a definitely unavailable managed Python before quiescence when downloads are disabled.
+
+    No candidate interpreter is executed. Directory names and wheel Requires-Python bounds are necessary
+    hints, not proof that uv can use a candidate or resolve transitive dependencies. Unknown layouts defer
+    to the existing installer; a later uncertain mutation still follows normal recovery policy.
+
+    Raises:
+        HeinzelError: If the managed inventory or selected wheel metadata cannot be verified.
+    """
+    if environment.get("UV_PYTHON_DOWNLOADS", "").casefold() not in {"never", "manual"}:
+        return
+    constraints = [_wheel_python_requirement(path, expected) for path, expected in wheels.items()]
+    versions, uncertain = _managed_versions(_managed_root(uv, environment), environment)
+    if not uncertain and not any(
+        all(spec.contains(version, prereleases=True) for spec in constraints) for version in versions
+    ):
+        msg = (
+            "Python downloads are disabled and no compatible uv-managed Python is installed; "
+            "install one or enable downloads and retry."
+        )
+        raise HeinzelError(msg)
+
+
 def _fresh_selection(command: list[str], target: ToolTarget) -> tuple[list[str], dict[str, str]]:
     if any(item in {"--python", "--no-managed-python"} or item.startswith(("--python=", "-p")) for item in command[3:]):
         msg = "A fresh standard installation requires a uv-managed Python."
@@ -179,7 +329,7 @@ def _fresh_selection(command: list[str], target: ToolTarget) -> tuple[list[str],
 
 def _fresh_failure(target: ToolTarget, uv: str, environment: Mapping[str, str]) -> str:
     problem = "The initial installation did not complete"
-    if environment.get("UV_PYTHON_DOWNLOADS", "").casefold() == "never":
+    if environment.get("UV_PYTHON_DOWNLOADS", "").casefold() in {"never", "manual"}:
         problem += "; Python downloads are disabled, so ensure a compatible uv-managed Python is installed"
     return inspection_guidance(target, uv, problem)
 
@@ -240,6 +390,7 @@ def run_tool(  # noqa: PLR0913, PLR0917 - explicit selected installation and ver
         msg = "The installation destination changed; retry after other installations finish."
         raise HeinzelError(msg)
     managed_command, environment = _fresh_selection(command, target)
+    verify_offline_managed_python(command[0], {path: expected[name][1] for name, path in wheels.items()}, environment)
     try:
         subprocess.run(  # noqa: S603 - verified wheel command, scoped target and no shell
             managed_command, env=environment, stdout=sys.stderr, check=True, timeout=600

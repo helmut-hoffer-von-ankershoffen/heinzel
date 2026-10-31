@@ -122,6 +122,7 @@ def test_fresh_install_refuses_system_only_preference_before_uv(target, monkeypa
 
 def test_fresh_install_explains_disabled_python_downloads_on_failure(target, monkeypatch):
     monkeypatch.setenv("UV_PYTHON_DOWNLOADS", "never")
+    monkeypatch.setattr(tool, "verify_offline_managed_python", lambda *_args: None)
 
     def fail(command, **_kwargs):
         raise subprocess.CalledProcessError(1, command)
@@ -238,7 +239,24 @@ def test_fresh_uv_noop_cannot_claim_another_artifact_was_installed(target, monke
     assert (target.prefix / "concurrent-owner").read_text() == "keep"
 
 
+def test_fresh_rechecks_download_policy_before_running_uv(target, monkeypatch):
+    monkeypatch.setenv("UV_PYTHON_DOWNLOADS", "manual")
+    monkeypatch.setattr(tool.subprocess, "run", lambda *_args, **_kwargs: pytest.fail("uv must not run"))
+
+    def unavailable(_uv, _wheels, environment):
+        assert environment["UV_PYTHON_DOWNLOADS"] == "manual"
+        msg = "managed Python unavailable"
+        raise HeinzelError(msg)
+
+    monkeypatch.setattr(tool, "verify_offline_managed_python", unavailable)
+    with pytest.raises(HeinzelError, match="managed Python unavailable"):
+        run_tool(COMMAND, target, EXPECTED)
+    assert not target.prefix.exists()
+
+
 def test_refresh_delegates_to_the_guarded_kernel_and_keeps_its_failure(target, monkeypatch):
+    monkeypatch.setenv("UV_PYTHON_DOWNLOADS", "manual")
+    monkeypatch.setattr(tool, "verify_offline_managed_python", lambda *_args: pytest.fail("refresh must not probe"))
     write_tool(target)
     calls = []
 
