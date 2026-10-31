@@ -4,6 +4,7 @@ date: 2026-10-30
 decision-makers: maintainer
 amends: 0082
 related: 0094, 0095, 0097
+implemented-by: 278
 ---
 
 # 0098: Pages showcases the product and discovers public plugin metadata

@@ -3,7 +3,11 @@ status: proposed
 date: 2026-10-24
 decision-makers: maintainer
 amends: 0028, 0038, 0042
+amends-0028: a write mode and three reads for calendar and mail
+amends-0038: no place_draft for them; a mail draft is placed in the mailbox, a calendar write is confirmed
+amends-0042: writes and their scopes
 related: 0024, 0026, 0035, 0045, 0047
+implemented-by: 140
 ---
 
 # 0059: The calendar and the mail write through hz, after a confirmation
