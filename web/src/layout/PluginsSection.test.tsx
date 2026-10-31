@@ -676,13 +676,14 @@ describe("PluginsSection", () => {
     await user.click(screen.getByRole("tab", { name: "Discover" }));
     const rows = await screen.findAllByRole("listitem");
     expect(rows).toHaveLength(3);
-    const install = within(rows[2]).getByRole("button", { name: "Install" });
+    const row = rows[2] as HTMLElement;
+    const install = within(row).getByRole("button", { name: "Install" });
     await user.click(install);
     const card = await screen.findByRole("group", { name: /Install this plugin/ });
-    expect(rows[2]).toContainElement(card);
+    expect(row).toContainElement(card);
     expect(screen.getAllByRole("group", { name: /Install this plugin/ })).toHaveLength(1);
     expect(card.closest("[data-plugin-confirm]")).toHaveFocus();
-    expect(within(rows[2]).getByRole("button", { name: "Install" })).toHaveAttribute("aria-expanded", "true");
+    expect(within(row).getByRole("button", { name: "Install" })).toHaveAttribute("aria-expanded", "true");
     expect(card.querySelector("details")).not.toHaveAttribute("open");
     expect(screen.getByRole("tab", { name: "Installed" })).toBeDisabled();
     await user.click(within(card).getByRole("button", { name: "Cancel" }));
