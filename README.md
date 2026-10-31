@@ -111,6 +111,8 @@
 | src/heinzel/modules/heinzel/\_turn\_skill\_adapter.py            |       69 |        7 |       14 |        4 |     87% |55-56, 67-68, 72-73, 85 |
 | src/heinzel/modules/heinzel/\_user\_chat.py                      |      204 |       27 |       48 |       11 |     85% |131-132, 141-142, 147-148, 190-193, 201-203, 253-254, 289-290, 340-341, 361-362, 365-366, 391-392, 403-404 |
 | src/heinzel/modules/heinzel/\_user\_proposal\_tools.py           |       84 |        5 |       20 |        2 |     93% |107-108, 137-139 |
+| src/heinzel/modules/org/\_models.py                              |      127 |        0 |       20 |        1 |     99% | 204-\>209 |
+| src/heinzel/modules/org/\_render.py                              |       36 |        1 |        8 |        1 |     95% |        33 |
 | src/heinzel/modules/org/\_sync.py                                |      180 |        0 |       54 |        1 |     99% |143-\>exit |
 | src/heinzel/modules/system/\_github.py                           |       63 |        4 |       12 |        1 |     93% | 74, 80-82 |
 | src/heinzel/modules/system/\_metadata\_identity.py               |       68 |       13 |       18 |        6 |     78% |37-40, 45, 50-51, 66-67, 73-74, 113, 117 |
@@ -123,7 +125,7 @@
 | src/heinzel/modules/system/claude/\_scan.py                      |      328 |       33 |       98 |       15 |     88% |69-70, 74-75, 170-\>169, 188, 248-251, 259, 284, 299, 305-306, 313-\>307, 320-321, 326-\>334, 329-330, 343-\>348, 346-347, 367-368, 370, 410-411, 420-421, 423, 450-\>448, 453, 461-462, 477, 480 |
 | src/heinzel/modules/system/config/\_\_init\_\_.py                |       34 |        1 |        0 |        0 |     97% |        90 |
 | src/heinzel/modules/system/config/\_render.py                    |       18 |        1 |        8 |        1 |     92% |        18 |
-| src/heinzel/modules/system/config/\_service.py                   |      287 |        4 |       80 |        3 |     98% |234-235, 356-357, 415-\>exit |
+| src/heinzel/modules/system/config/\_service.py                   |      295 |        2 |       82 |        2 |     99% |234-235, 423-\>exit |
 | src/heinzel/modules/system/connector/\_service.py                |       89 |        0 |       22 |        1 |     99% |   82-\>81 |
 | src/heinzel/modules/system/daemon/\_\_init\_\_.py                |       53 |        1 |        0 |        0 |     98% |        85 |
 | src/heinzel/modules/system/daemon/\_process\_birth.py            |      118 |       37 |       34 |        7 |     67% |38-52, 59, 72-\>77, 77-\>80, 82-89, 95, 101-102, 106-109, 118, 124, 130-131, 140, 167-168 |
@@ -172,7 +174,7 @@
 | src/heinzel/modules/system/ui/\_\_init\_\_.py                    |      115 |       34 |       40 |        6 |     64% |59-65, 70, 82, 87, 89, 91, 100-104, 114-120, 164, 187-195, 218 |
 | src/heinzel/modules/system/ui/\_service.py                       |      331 |       17 |      106 |        5 |     95% |107-108, 119-\>118, 239-240, 260-261, 323-324, 414-415, 441-442, 464-465, 511-512, 562 |
 | src/heinzel/modules/team/\_\_init\_\_.py                         |       41 |        1 |        4 |        0 |     98% |       112 |
-| src/heinzel/modules/team/\_models.py                             |      219 |        1 |       36 |        0 |     99% |       268 |
+| src/heinzel/modules/team/\_models.py                             |      232 |        1 |       40 |        0 |     99% |       284 |
 | src/heinzel/modules/team/\_render.py                             |       61 |        0 |       28 |        6 |     93% |18-\>20, 30-\>32, 32-\>34, 34-\>36, 37-\>39, 54-\>56 |
 | src/heinzel/modules/team/\_service.py                            |      575 |        4 |      150 |        2 |     99% |336-\>338, 874-876, 928 |
 | src/heinzel/modules/team/\_yaml.py                               |      103 |        2 |       36 |        0 |     99% |     81-82 |
@@ -180,9 +182,9 @@
 | src/heinzel/modules/telemetry/\_render.py                        |       15 |       10 |        2 |        0 |     29% |11-17, 22-27 |
 | src/heinzel/modules/telemetry/\_service.py                       |      236 |        8 |       70 |        3 |     96% |146-\>152, 154-\>152, 162, 219-220, 289-291, 344-345 |
 | src/heinzel/testing.py                                           |      124 |        4 |       32 |        0 |     97% |   240-244 |
-| **TOTAL**                                                        | **37547** | **2282** | **9634** |  **971** | **93%** |           |
+| **TOTAL**                                                        | **37595** | **2281** | **9648** |  **972** | **93%** |           |
 
-130 files skipped due to complete coverage.
+128 files skipped due to complete coverage.
 
 
 ## Setup coverage badge
