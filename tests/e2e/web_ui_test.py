@@ -364,7 +364,7 @@ def test_mobile_touch_viewports_keep_navigation_settings_and_chat_reachable(envi
             )
         except subprocess.TimeoutExpired as error:
             sanitize_timeout(error)
-            raise
+            raise error.with_traceback(None) from None
         check_driver(driven.returncode, redact(driven.stderr, token))
         result = json.loads(driven.stdout.strip().splitlines()[-1])
         report_mobile_time(capfd, section, begun)

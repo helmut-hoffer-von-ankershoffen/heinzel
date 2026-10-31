@@ -9,12 +9,14 @@ related: 0003, 0021, 0024, 0026, 0027, 0028, 0036, 0038
 
 # 0043: Desktop notifications: one policy in the core, shown once, by hz's own macOS app
 
+*Since 0051 the module is `heinzel`: read `hz workflow` as `hz heinzel` and `[workflow]` as `[heinzel]`.*
+
 ## Context and Problem Statement
 
 Drafts wait for a person to read and approve them in place ([ADR 0038](0038-drafts-are-approved-in-place.md)), contract
 runs on the daemon can fail ([ADR 0020](0020-daemon-head.md), [ADR 0021](0021-workflow-contracts.md)), and doctor finds
 problems no one looks for. Today a person learns of any of it only by asking. The maintainer asked for desktop
-notifications ("we want it to be proactive") and decided the design below on 2026-10-24, after live tests on macOS 27:
+notifications ("we want it to be proactive") and the design below follows live tests on macOS 27:
 one policy, events kept on the machine, shown once, by the web app while it is open and natively when it isn't.
 
 ## Decision Drivers
@@ -46,7 +48,7 @@ one policy, events kept on the machine, shown once, by the web app while it is o
 
 Chosen option: **one `Notifications` service, one policy in `system.notify`, notices kept locally, shown once; on
 macOS by Heinzel Notifier**, because every head reads the same decision, nothing leaves the machine, and macOS shows
-the notifications as hz's, with a click that can open the right screen. Decided by the maintainer, 2026-10-24.
+the notifications as hz's, with a click that can open the right screen.
 
 **The service and the events.**
 
@@ -161,23 +163,20 @@ head exposes).
 - `tests/integration/notify_test.py`: the operations through the CLI; they are web endpoints behind the token and not
   REST endpoints.
 - `tests/unit/modules/daemon_service_test.py`: every tick ends with `post_native`, and a failing notifier doesn't fail
-  it. `tests/unit/modules/workflow_service_test.py`: scheduled renders report drafts and failures, manual runs don't.
+  it. `tests/unit/modules/heinzel_service_test.py`: scheduled renders report drafts and failures, manual runs don't.
 - CI's build job and the release: the wheel ships `HeinzelNotifier.app/Contents/MacOS/notifier`.
 - Import-linter: `system.notify` is independent of the other `system` submodules; modules reach
   `heinzel.kernel._notifications` only through the public API.
 
 ## More Information
 
-- Decided by the maintainer, 2026-10-24: one policy, local events, shown once, no Web Push; hz's own notifier app on
-  macOS, built in CI and shipped in the wheel, started with `open -n`; no terminal-notifier; osascript only as the last
-  resort; doctor naming the banner settings and the quarantine flag.
 - Next, in its own pull request and record: `hz setup` gets a notifications step; the web app shows notices while it is open (a server-sent-events stream
   under `/api` read with `fetch` and the Bearer header, the browser's Notifications API from a Settings toggle, an
   in-app list feeding the Home's "Today" cards) and becomes an installable progressive web app with a fixed default
   port and per-device tokens, so a notification's click opens it at the notice's route.
 - Revisit when the profile gains working days, or when the project can notarise the app.
 
-**Amendment 2026-10-24: an honest test.** `hz system notify test` reports each way a notice can reach you (`channels`:
+**An honest test.** `hz system notify test` reports each way a notice can reach you (`channels`:
 the open web app, the native notifier, the daemon), each with its state, the reason and what fixes it, and `pops_up`;
 it exits 1 when nothing will pop the test up. The web app adds this browser's permission and offers one fix per blocked
 way: allow in the browser, `hz system notify settings` (opens System Settings > Notifications on macOS; CLI and web

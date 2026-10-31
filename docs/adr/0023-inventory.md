@@ -7,6 +7,8 @@ amended-by: 0052
 
 # 0023: The inventory is compiled from declared, discovered and plugin-contributed entries and published as graphs
 
+*Not implemented at 0.9.9; the inventory is not built.*
+
 ## Context and Problem Statement
 
 Contracts wire workflows through `Requires` and `Maintains` (ADR 0010, ADR 0021). Daemons read and maintain

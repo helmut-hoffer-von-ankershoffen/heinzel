@@ -6,3 +6,14 @@
 .hz-trust-links a { display:inline-flex; align-items:center; min-height:44px; max-width:100%; }
 .hz-trust-links img { display:block; max-width:100%; height:20px; }
 .md-typeset .hz-trust-note { font-size:.65rem; }
+
+/* Phone: tight rows. The 24px target comes from padding around each badge, not from gaps. */
+@media (max-width:600px) {
+  .hz-trust { padding:.8rem 0; }
+  .md-typeset .hz-trust h2 { margin:0 0 .2rem; }
+  .hz-trust > p { margin:.15rem 0; }
+  .hz-trust-links { gap:0 .3rem; margin:.2rem 0; }
+  .hz-trust-links a { min-height:24px; padding:2px 0; box-sizing:border-box; }
+  .hz-trust-links img { height:18px; }
+  .md-typeset .hz-trust-note { margin:.15rem 0 0; }
+}

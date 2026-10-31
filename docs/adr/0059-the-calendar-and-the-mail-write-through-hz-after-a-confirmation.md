@@ -12,7 +12,7 @@ related: 0024, 0026, 0035, 0045, 0047
 
 [ADR 0028](0028-integrations-are-capability-adapters.md) gave `calendar` and `mail` read modes only, and
 [ADR 0042](0042-google-workspace-through-the-gws-cli.md) signs `gws` in with read-only scopes. The maintainer asked
-(2026-10-24) for a calendar module and a mail module people use every day: create, move, cancel and answer events;
+for a calendar module and a mail module people use every day: create, move, cancel and answer events;
 draft, send and file mail; free/busy times and whole conversations. Which methods join the protocols, in which mode,
 how do these writes relate to [ADR 0038](0038-drafts-are-approved-in-place.md)'s approval in place and
 [ADR 0045](0045-a-chat-that-acts-through-hz-with-confirmation-in-code.md)'s confirmation, and which scopes does the
@@ -82,6 +82,6 @@ operations that declared them, and run after the person confirmed what they will
 
 `tests/unit/kernel/capabilities_test.py` (modes, contract shape, no delete, the `free_busy` check),
 `tests/unit/kernel/calendar_test.py` and `tests/unit/kernel/mail_test.py` (draft checks),
-`plugins/heinzel-google/tests/unit/{calendar,mail,gws,setup,contract}_test.py` (requests, refusals, retries, scopes)
+and, in heinzel-plugins, `plugins/heinzel-google/tests/unit/{calendar,mail,gws,setup,contract}_test.py` (requests, refusals, retries, scopes)
 and `plugins/heinzel-google/tests/integration/capability_test.py` (only a publish operation that declared
 `calendar:write` creates an event).
