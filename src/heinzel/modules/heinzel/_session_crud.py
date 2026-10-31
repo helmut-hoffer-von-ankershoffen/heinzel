@@ -31,7 +31,6 @@ from heinzel.kernel._approval import (
     arguments_hash,
     consume_approval,
 )
-from heinzel.kernel._notifications import HatColour
 from heinzel.modules.heinzel._session_bodies import BodyRef, immutable_body
 from heinzel.modules.heinzel._session_models import (
     ContractVersion,
@@ -91,7 +90,7 @@ class _CheckInSlot:
     contract_version: int
     schedule_revision: int
     profile_name: str
-    hat: HatColour | None
+    helper: NoticeHelper
     slot: datetime
     journal_seq: int
     active_since: datetime
@@ -144,7 +143,7 @@ def _dispatch_check_in_slot(
             body="Your scheduled five-minute check-in is due.",
             route=f"/heinzel?chat={request.session_id}",
             command="hz heinzel sessions",
-            helper=NoticeHelper(name=request.profile_name[:100], hat=request.hat, reason="scheduled check-in"),
+            helper=request.helper,
         )
         checkpoint = checkpoint.model_copy(update={"pending": pending})
         writer.replace_checkpoint("checkin-outbox", checkpoint.model_dump(mode="json"))
@@ -1609,7 +1608,9 @@ class SessionCrud(ApprovalIssuer):
                     contract_version=contract_version,
                     schedule_revision=revision,
                     profile_name=profile.name,
-                    hat=profile.appearance.hat,
+                    helper=NoticeHelper(
+                        name=profile.name[:100], hat=profile.appearance.hat, reason="scheduled check-in"
+                    ),
                     slot=slot,
                     journal_seq=events[-1].seq if events else 0,
                     active_since=active_since,
