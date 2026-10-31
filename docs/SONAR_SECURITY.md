@@ -101,5 +101,22 @@ The policy is scoped to these installation paths: core's all-group developer set
 watchdog source build required by macOS documentation tooling on Python 3.14. It does not have a global source-build
 ban. Recheck the actual main metrics after merging; these changes alone do not resolve unrelated runtime findings.
 
+### Core findings reviewed individually
+
+Each row below was checked against core's own callers on 2026-10-31; the Acme conclusions were not carried over.
+Sonar's trace is a taint-analysis claim, not evidence of a remote boundary. Resolve these in Sonar only with the
+finding-specific text here, never with `NOSONAR` or an exclusion.
+
+| Finding | Callers and boundary in core |
+| --- | --- |
+| `scripts/tools.py` `pin` (path traversal from file content) | `main` is the only caller and always passes the checked-in `scripts/tools.toml`; the tool name must already exist in it. The trace follows the manifest's *contents* into the data argument of `write_text`; the destination is the `manifest` parameter, never derived from contents. The written values are SHA-256 digests computed locally from downloads. A regression test shows that path-shaped manifest content cannot create or change another file. |
+| `scripts/tools.py` `run` (argument injection) | Callers are `$(TOOLS) run <name>` in the Makefiles and the gitleaks hook in `.pre-commit-config.yaml`, with fixed tool names; the developer supplies that tool's arguments. The executable is the checksummed binary in `.tools` or, when no pinned build exists for the platform, the one on `PATH`. `os.execv` takes an argument vector, no shell. No HTTP, MCP, plugin or privileged caller reaches it, and `src/` never imports `scripts/`. |
+| `scripts/check_confidentiality.py` `sources` (file read) | `--commit-msg` is the file Git hands the commit-msg hook (it can live in the shared Git directory of a linked worktree); positional files are the staged names `pre-commit` passes. The scanner only reads them and reports a term number and location, never content. It is not reachable from the application. |
+| `scripts/release_notes.py` `main` (file read) | `publish.yml` and `release.sh` pass only a release tag and read the fixed `CHANGELOG.md`; the optional second argument is a local developer interface and no caller supplies it. The tag reaches `re.escape` only. |
+
+Not reviewed in this pass, and so not resolved: runtime findings in `src/` (the install head, the launcher, the API
+and web heads' URL handling, the approval hash), `docs/install.sh`, `desktop/ci`, `scripts/docs_record.py` and
+`scripts/site_catalog.py`. Several of them cross a network or privilege boundary and need their own review.
+
 References: [Sonar metric definitions](https://docs.sonarsource.com/sonarqube-cloud/managing-your-projects/metric-definitions),
 [Acme's implementation and trust-boundary review](https://github.com/helmut-hoffer-von-ankershoffen/heinzel-acme/blob/284a4b6afed536d5368ab332b07fcc5e5a508528/docs/SECURITY_REVIEW.md).

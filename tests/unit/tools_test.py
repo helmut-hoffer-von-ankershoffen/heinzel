@@ -313,6 +313,19 @@ def test_pin_fills_in_a_new_entry_and_refuses_an_unknown_tool(tmp_path):
         tools.pin("x", manifest, Network({}).get)
 
 
+def test_pin_cannot_be_redirected_by_manifest_content(tmp_path):
+    work = tmp_path / "work"
+    work.mkdir()
+    manifest = work / "tools.toml"
+    manifest.write_text(
+        HEAD + f'url = "https://e/{{file}}"\n[x.files]\nlinux-arm64 = {{ file = "../escape", sha256 = "{ZERO}" }}\n',
+        encoding="utf-8",
+    )
+    assert tools.pin("x", manifest, Network({"https://e/../escape": b"z"}).get) == [f"linux-arm64 {sha(b'z')}"]
+    assert sorted(path.name for path in tmp_path.iterdir()) == ["work"]
+    assert [path.name for path in work.iterdir()] == ["tools.toml"]
+
+
 # Doctor
 
 
@@ -373,7 +386,8 @@ def test_make_install_installs_the_build_tools_and_puts_them_first_on_path():
     assert "export PATH := $(CURDIR)/.tools/bin:$(PATH)" in makefile
     install = re.search(r"^install:.*\n((?:\t.*\n)+)", makefile, re.MULTILINE)
     assert install
-    assert "uv sync --all-groups" in install[1]
+    assert "test -f uv.lock || uv lock --quiet" in install[1]
+    assert "uv sync --frozen --all-groups" in install[1]
     assert "$(TOOLS) install" in install[1]
     assert re.search(r"^setup: install\b", makefile, re.MULTILINE)
 
