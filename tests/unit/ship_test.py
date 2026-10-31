@@ -295,3 +295,55 @@ def test_the_second_failure_stops_the_change(tmp_path, monkeypatch, capsys):
     with pytest.raises(SystemExit) as later:
         ship.refuse_if_stopped("pr")
     assert later.value.code == 3
+
+
+def not_small_state(tmp_path, monkeypatch, changes):
+    """A change stopped as not small; `changes` is what the working tree holds afterwards."""
+    monkeypatch.setattr(ship, "state_file", lambda: tmp_path / "ship.json")
+    monkeypatch.setattr(ship, "branch", lambda: "docs/x")
+    monkeypatch.setattr(ship, "root", lambda: tmp_path)
+    monkeypatch.setattr(ship, "collect", lambda head=None: changes)
+    ship.save(
+        {"failures": [], "stopped": True, "why": "Not a small change: x.", "kind": "not-small", "stopped_at": "old"}
+    )
+
+
+def test_a_not_small_stop_clears_when_the_diff_becomes_small(tmp_path, monkeypatch):
+    small = {"docs/guides/g.md": ship.Change("docs/guides/g.md", "M", added=[(1, "x y z")], removed=[(1, "a")])}
+    not_small_state(tmp_path, monkeypatch, small)
+    ship.refuse_if_stopped("classify")  # no exit: the diff changed and is small now
+    assert ship.load()["stopped"] is False
+
+
+def test_a_not_small_stop_stays_while_the_diff_is_unchanged_or_still_not_small(tmp_path, monkeypatch):
+    big = {"src/heinzel/a.py": ship.Change("src/heinzel/a.py", "M", added=[(1, "x")])}
+    not_small_state(tmp_path, monkeypatch, big)
+    with pytest.raises(SystemExit) as stopped:
+        ship.refuse_if_stopped("classify")
+    assert stopped.value.code == 3
+    assert ship.load()["stopped"] is True
+    same = {"docs/guides/g.md": ship.Change("docs/guides/g.md", "M", added=[(1, "x y z")], removed=[(1, "a")])}
+    not_small_state(tmp_path, monkeypatch, same)
+    ship.save({**ship.load(), "stopped_at": ship.signature(same)})
+    with pytest.raises(SystemExit):
+        ship.refuse_if_stopped("classify")
+
+
+def test_a_failure_stop_never_clears_itself(tmp_path, monkeypatch):
+    small = {"docs/guides/g.md": ship.Change("docs/guides/g.md", "M", added=[(1, "x y z")], removed=[(1, "a")])}
+    not_small_state(tmp_path, monkeypatch, small)
+    ship.save({**ship.load(), "kind": "failure"})
+    with pytest.raises(SystemExit) as stopped:
+        ship.refuse_if_stopped("classify")
+    assert stopped.value.code == 3
+
+
+@pytest.mark.parametrize("stage", sorted(ship.STAGES))
+def test_every_stage_prints_its_own_usage(stage, capsys):
+    with pytest.raises(SystemExit) as helped:
+        ship.parser().parse_args([stage, "--help"])
+    assert helped.value.code == 0
+    out = capsys.readouterr().out
+    assert ship.STAGES[stage][0] in out
+    assert "Example:" in out
+    assert "Exit codes:" in out

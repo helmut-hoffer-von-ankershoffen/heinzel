@@ -19,7 +19,7 @@ is the golden path for that: one command per stage, one JSON line of output, the
 | `merge PR` | Orchestrator only (`SHIP_ORCHESTRATOR=1`): re-classifies the PR from GitHub's data, then `hz-merge-train` |
 | `status`, `escalate "WHY"`, `reset` | Where am I; stop and hand over; the orchestrator clears a stopped change |
 
-Exit codes: 0 go on with `next`; 1 the stage failed; 2 wrong usage; 3 STOP; 4 still running (run it again). `check`
+Every stage prints its own usage, an example and the exit codes with `--help`. Exit codes: 0 go on with `next`; 1 the stage failed; 2 wrong usage; 3 STOP; 4 still running (run it again). `check`
 and `pr` run as detached jobs, so a shell timeout cannot kill a push half way; each call waits at most 100 seconds.
 
 ## What is small
@@ -42,7 +42,7 @@ the top of the script and are tested in `tests/unit/ship_test.py`; loosen them w
 
 ## Failure budget
 
-A failed stage prints what went wrong and the literal next step. The second failure of a change, or any classification
+A failed stage prints what went wrong and the literal next step. A stop for "not small" remembers the diff it judged and clears itself when the diff changes into one that classifies as small (an edit reverted); every other stop waits for the orchestrator. The second failure of a change, or any classification
 as not small, writes `stopped` into the worktree's git directory: every later stage refuses with exit 3 and prints a
 report (directory, branch, PR, failures) for the orchestrator. `SHIP_ORCHESTRATOR=1 ... reset` clears it. Pending calls name the `hz-gate` holder they queue behind: on a busy host the push, not the model, is the slow part.
 

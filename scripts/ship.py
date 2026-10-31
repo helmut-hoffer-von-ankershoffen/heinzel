@@ -225,11 +225,22 @@ def report(state: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def stop(stage: str, msg: str, state: dict[str, Any]) -> NoReturn:
-    """STOP: remember it, so every later stage refuses, and print what the orchestrator needs."""
+def stop(stage: str, msg: str, state: dict[str, Any], *, not_small: bool = False) -> NoReturn:
+    """STOP: remember it, so every later stage refuses, and print what the orchestrator needs.
+
+    A stop for a change that is not small remembers the diff it judged: it clears itself when the diff changes into
+    one that is small (see `refuse_if_stopped`). Every other stop waits for the orchestrator.
+    """
     state["stopped"] = True
     state["why"] = msg
+    state["kind"] = "not-small" if not_small else "failure"
+    state["stopped_at"] = signature(collect()) if not_small else None
     save(state)
+    show_stop(stage, msg, state)
+
+
+def show_stop(stage: str, msg: str, state: dict[str, Any]) -> NoReturn:
+    """Print the stop report and leave with exit code 3."""
     emit(
         ok=False,
         stage=stage,
@@ -265,10 +276,17 @@ def ok(stage: str, msg: str, nxt: str, **extra: object) -> None:
 
 
 def refuse_if_stopped(stage: str) -> None:
-    """A stopped change runs no further stage."""
+    """A stopped change runs no further stage, unless it was stopped for not being small and no longer is."""
     state = load()
-    if state.get("stopped"):
-        stop(stage, state.get("why") or "This change was stopped.", state)
+    if not state.get("stopped"):
+        return
+    if state.get("kind") == "not-small":
+        changes = collect()
+        if changes and signature(changes) != state.get("stopped_at") and not classify_changes(changes):
+            state.update(stopped=False, why=None, kind=None, stopped_at=None)
+            save(state)
+            return
+    show_stop(stage, state.get("why") or "This change was stopped.", state)
 
 
 # --- what changed -----------------------------------------------------------------------------------------------------
@@ -522,7 +540,7 @@ def cmd_classify(args: argparse.Namespace) -> None:
     reasons = classify_changes(changes)
     state = load()
     if reasons:
-        stop("classify", NOT_SMALL + "; ".join(reasons[:4]) + ".", state)
+        stop("classify", NOT_SMALL + "; ".join(reasons[:4]) + ".", state, not_small=True)
     state["lane"] = "low"
     save(state)
     total = sum(c.lines for c in changes.values())
@@ -613,7 +631,7 @@ def stage_check() -> None:
     changes = require_changes("check")
     reasons = classify_changes(changes)
     if reasons:
-        stop("check", NOT_SMALL + "; ".join(reasons[:3]) + ".", load())
+        stop("check", NOT_SMALL + "; ".join(reasons[:3]) + ".", load(), not_small=True)
     normalize(top, sorted(changes))
     changes = collect()
     broken = [
@@ -757,7 +775,7 @@ def stage_pr(args: argparse.Namespace) -> None:
     changes = require_changes("pr")
     reasons = classify_changes(changes)
     if reasons:
-        stop("pr", NOT_SMALL + "; ".join(reasons[:3]) + ".", state)
+        stop("pr", NOT_SMALL + "; ".join(reasons[:3]) + ".", state, not_small=True)
     if state.get("checked") != signature(changes):
         emit(ok=False, stage="pr", msg="Files changed since the last check.", next=f"{RUN} check")
         sys.exit(2)
@@ -1118,7 +1136,7 @@ def cmd_reset(_: argparse.Namespace) -> None:
         )
         sys.exit(3)
     state = load()
-    state.update(failures=[], stopped=False, why=None)
+    state.update(failures=[], stopped=False, why=None, kind=None, stopped_at=None)
     save(state)
     ok("reset", "Failures cleared.", f"{RUN} status")
 
@@ -1189,30 +1207,69 @@ def cmd_job(args: argparse.Namespace) -> None:
 # --- entry ------------------------------------------------------------------------------------------------------------
 
 
+EXITS = "Exit codes: 0 go on with `next`; 1 failed, fix what detail names; 2 wrong usage; 3 STOP; 4 run it again."
+STAGES = {
+    "start": ("New worktree and branch from origin/main.", "start fix-install-typo"),
+    "classify": (
+        "Is the change small? With --files: may these files be edited? Without: reads your real diff.",
+        "classify",
+    ),
+    "check": ("Scoped checks for exactly the files you changed. Fixes whitespace and formatting itself.", "check"),
+    "pr": (
+        "Commit, push through hz-gate and open the pull request (risk: low, auto-merge off).",
+        'pr "docs(docs): fix a typo" --body "why"',
+    ),
+    "wait": ("Wait for the pull request's checks; merges main in when behind.", "wait"),
+    "verify": ("After the orchestrator merged: the Docs run is green and the live page shows your text.", "verify"),
+    "merge": (
+        "Orchestrator only (SHIP_ORCHESTRATOR=1): re-classify the pull request, then hz-merge-train.",
+        "merge 123",
+    ),
+    "status": ("Where this change is, and the next command.", "status"),
+    "reset": ("Orchestrator only (SHIP_ORCHESTRATOR=1): clear a stopped change.", "reset"),
+    "escalate": ("Stop and hand over, with one sentence why.", 'escalate "the change needs a test edit"'),
+}
+
+
 def parser() -> argparse.ArgumentParser:
-    """The command line."""
-    cli = argparse.ArgumentParser(prog="ship", description="Golden path for small changes.")
-    sub = cli.add_subparsers(dest="command", required=True)
-    start = sub.add_parser("start")
-    start.add_argument("slug")
-    start.add_argument("--kind", default="docs", choices=["docs", "fix", "feat", "chore"])
-    start.add_argument("--base", default=MAIN)
-    classify = sub.add_parser("classify")
-    classify.add_argument("--files", nargs="+")
-    for name in ("check",):
-        sub.add_parser(name).add_argument("--budget", type=int, default=BUDGET)
-    pr = sub.add_parser("pr")
-    pr.add_argument("title")
-    pr.add_argument("--body", default="")
-    pr.add_argument("--budget", type=int, default=BUDGET)
+    """The command line; every stage has its own --help."""
+    cli = argparse.ArgumentParser(
+        prog="ship",
+        description="Golden path for small changes: one command per stage, one JSON line of output.",
+        epilog=f"Run a stage with --help for its usage. {EXITS}",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    sub = cli.add_subparsers(dest="command", required=True, metavar="STAGE")
+
+    def stage_parser(name: str) -> argparse.ArgumentParser:
+        """A stage's sub-parser whose --help says what it does, an example, and the exit codes."""
+        summary, example = STAGES[name]
+        return sub.add_parser(
+            name,
+            help=summary,
+            description=summary,
+            epilog=f"Example: {RUN} {example}\n{EXITS}",
+            formatter_class=argparse.RawDescriptionHelpFormatter,
+        )
+
+    stage_parser("start").add_argument("slug", help="3 to 41 characters: lowercase letters, digits, dashes")
+    start = sub.choices["start"]
+    start.add_argument("--kind", default="docs", choices=["docs", "fix", "feat", "chore"], help="branch prefix")
+    start.add_argument("--base", default=MAIN, help="what the branch starts from")
+    stage_parser("classify").add_argument("--files", nargs="+", help="paths you are about to edit")
+    stage_parser("check").add_argument("--budget", type=int, default=BUDGET, help="seconds to wait per call")
+    pr = stage_parser("pr")
+    pr.add_argument("title", help='conventional commit title, for example "docs(docs): fix a typo"')
+    pr.add_argument("--body", default="", help="why, in a sentence or two")
+    pr.add_argument("--budget", type=int, default=BUDGET, help="seconds to wait per call")
     for name in ("wait", "verify"):
-        waiter = sub.add_parser(name)
-        waiter.add_argument("--pr", type=int)
-        waiter.add_argument("--budget", type=int, default=BUDGET)
-    sub.add_parser("merge").add_argument("pr", type=int)
-    sub.add_parser("status")
-    sub.add_parser("reset")
-    sub.add_parser("escalate").add_argument("why")
+        waiter = stage_parser(name)
+        waiter.add_argument("--pr", type=int, help="pull request number (default: the one this change opened)")
+        waiter.add_argument("--budget", type=int, default=BUDGET, help="seconds to wait per call")
+    stage_parser("merge").add_argument("pr", type=int, help="pull request number")
+    stage_parser("status")
+    stage_parser("reset")
+    stage_parser("escalate").add_argument("why", help="one sentence")
     job = sub.add_parser("_job")
     job.add_argument("name", choices=["check", "pr"])
     return cli

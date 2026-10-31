@@ -20,7 +20,7 @@ JSON line; do what its `next` field says, literally. `S` below is the `uv run --
 | 7 | `S wait` | Waits for CI; add `--budget 540` and a 600000 ms shell timeout to wait longer |
 | 8 | `S verify` | After the orchestrator merged: Docs run green and the live page shows your text |
 
-Exit codes: **0** go on with `next`. **1** this stage failed: fix exactly what `detail` names, then repeat the stage.
+`S <stage> --help` prints a stage's usage, an example and the exit codes. Exit codes: **0** go on with `next`. **1** this stage failed: fix exactly what `detail` names, then repeat the stage.
 **3** STOP: this is a correct outcome, not an error. Send the JSON line to whoever started you and run nothing else. **4** still running: run the same command
 again. **2** you used the command wrongly: read `msg`.
 
