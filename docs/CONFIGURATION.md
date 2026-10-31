@@ -156,7 +156,7 @@ Plugins add their own tables.
 
 | Key | Environment variable | Default | Description |
 | --- | --- | --- | --- |
-| `catalog_sources` | `HZ_SYSTEM_PLUGIN__CATALOG_SOURCES` | `['helmut-hoffer-von-ankershoffen/heinzel-plugins', 'helmut-hoffer-von-ankershoffen/heinzel', 'helmut-hoffer-von-ankershoffen/heinzel-contrib']` | GitHub repositories scanned for plugin projects, in addition to topic discovery. |
+| `catalog_sources` | `HZ_SYSTEM_PLUGIN__CATALOG_SOURCES` | `['helmut-hoffer-von-ankershoffen/heinzel-plugins', 'helmut-hoffer-von-ankershoffen/heinzel']` | GitHub repositories scanned for plugin projects, in addition to topic discovery. |
 | `github_token` | `HZ_SYSTEM_PLUGIN__GITHUB_TOKEN` | `None` | A GitHub token for searching plugins and reading a repository before adding a plugin from it, when the GitHub CLI isn't installed; both work without one at a lower rate limit. Also read from GH_TOKEN or GITHUB_TOKEN, and sent to GitHub only. Never read from a project's hz.toml. |
 
 ## `[system.runner]`

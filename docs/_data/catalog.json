@@ -8,11 +8,6 @@
       "visibility": "public"
     },
     {
-      "repository": "helmut-hoffer-von-ankershoffen/heinzel-contrib",
-      "revision": "17c4f4d2fe2697b7174a35027bf75b867b0887aa",
-      "visibility": "public"
-    },
-    {
       "repository": "helmut-hoffer-von-ankershoffen/heinzel-plugins",
       "revision": "9c32bf30e66b98762ec05fcc0b0f2d93606ed29c",
       "visibility": "public"

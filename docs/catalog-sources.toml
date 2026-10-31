@@ -3,6 +3,5 @@
 composition_repository = "helmut-hoffer-von-ankershoffen/heinzel-plugins"
 repositories = [
   "helmut-hoffer-von-ankershoffen/heinzel",
-  "helmut-hoffer-von-ankershoffen/heinzel-contrib",
   "helmut-hoffer-von-ankershoffen/heinzel-plugins",
 ]
