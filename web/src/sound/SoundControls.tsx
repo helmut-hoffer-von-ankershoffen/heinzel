@@ -36,7 +36,7 @@ function detail(soundscape: SchemaSoundscapeView): string | null {
  * Claude FM and the plugins' soundscapes, the configured one checked, as a group of radios. Picking one plays it at
  * once (switching from what plays) and leaves the picker where it is.
  */
-export function SoundChoices({ list }: { list: SchemaSoundList }) {
+export function SoundChoices({ list }: Readonly<{ list: SchemaSoundList }>) {
   const choose = useSetSound();
   const sound = useSound();
   const themes = useThemes().data?.themes ?? [];

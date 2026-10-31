@@ -395,10 +395,8 @@ def test_mobile_touch_viewports_keep_navigation_settings_and_chat_reachable(envi
     check_mobile_result(section, result)
 
 
-@pytest.mark.timeout(600)
-def test_docked_media_stays_below_every_overlay_in_mounted_chromium(environment, tmp_path):
-    """A focused real-browser hit test of media against menus, status popovers and Settings."""
-    env, _recorded = environment
+def drive_ui_script(env, tmp_path, script):
+    """Run one Playwright script of web/e2e against a real `hz ui` and return its last line of JSON."""
     web_build.ensure_built()
     run = [sys.executable, str(REPO / "scripts" / "web_build.py")]
     subprocess.run(
@@ -423,7 +421,7 @@ def test_docked_media_stays_below_every_overlay_in_mounted_chromium(environment,
         assert "#token=" in url
         verify_stream_fixture(url)
         driven = subprocess.run(
-            [*run, "exec", "node", "e2e/media-layers.mjs", url, str(shots)],
+            [*run, "exec", "node", f"e2e/{script}", url, str(shots)],
             cwd=REPO,
             capture_output=True,
             text=True,
@@ -431,12 +429,19 @@ def test_docked_media_stays_below_every_overlay_in_mounted_chromium(environment,
             timeout=180,
         )
         assert driven.returncode == 0, driven.stderr
-        result = json.loads(driven.stdout.strip().splitlines()[-1])
+        return json.loads(driven.stdout.strip().splitlines()[-1])
     finally:
         ui.terminate()
         ui.wait(30)
         if ui.stderr is not None:
             ui.stderr.close()
+
+
+@pytest.mark.timeout(600)
+def test_docked_media_stays_below_every_overlay_in_mounted_chromium(environment, tmp_path):
+    """A focused real-browser hit test of media against menus, status popovers and Settings."""
+    env, _recorded = environment
+    result = drive_ui_script(env, tmp_path, "media-layers.mjs")
 
     assert len(result["panes"]) == 12
     assert {
@@ -458,42 +463,6 @@ def test_docked_media_stays_below_every_overlay_in_mounted_chromium(environment,
 def test_sound_picker_stays_open_and_plays_the_pick_in_mounted_chromium(environment, tmp_path):
     """Open the picker, pick a soundscape: it plays at once and the picker stays; the old flow closed it silent."""
     env, _recorded = environment
-    web_build.ensure_built()
-    run = [sys.executable, str(REPO / "scripts" / "web_build.py")]
-    subprocess.run(
-        [*run, "exec", "playwright-core", "install", "chromium"],
-        cwd=REPO,
-        check=True,
-        timeout=600,
-        capture_output=True,
-    )
-    shots = Path(os.environ.get("HZ_SCREENSHOTS", tmp_path / "screenshots"))
-    ui = subprocess.Popen(
-        [sys.executable, "-m", "heinzel", "ui", "--port", "0"], cwd=REPO, env=env, stderr=subprocess.PIPE, text=True
-    )
-    try:
-        assert ui.stderr is not None
-        line = ""
-        for line in ui.stderr:
-            if "runs at" in line:
-                break
-        url = line.strip().rsplit(" ", 1)[-1]
-        assert url.startswith("http://127.0.0.1:")
-        verify_stream_fixture(url)
-        driven = subprocess.run(
-            [*run, "exec", "node", "e2e/sound-picker.mjs", url, str(shots)],
-            cwd=REPO,
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=180,
-        )
-        assert driven.returncode == 0, driven.stderr
-        result = json.loads(driven.stdout.strip().splitlines()[-1])
-    finally:
-        ui.terminate()
-        ui.wait(30)
-        if ui.stderr is not None:
-            ui.stderr.close()
+    result = drive_ui_script(env, tmp_path, "sound-picker.mjs")
 
     assert result == {"stayedOpen": True, "played": True, "switched": True, "closes": ["Escape", "outside"]}
