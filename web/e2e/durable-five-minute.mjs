@@ -49,17 +49,22 @@ try {
     throw new Error("Reload did not recover the committed profile without another save");
   await page.unroute("**/api/heinzel/profile");
   await page.getByRole("button", { name: "Continue to schedule setup" }).click();
+  await page.waitForURL((url) => url.searchParams.get("chat") === selected);
   await page.getByRole("tab", { name: "Chat", exact: true }).click();
+  await page.getByLabel("Message your Heinzel").waitFor();
   const readSchedule = async () =>
-    await page.evaluate(async () => {
+    await page.evaluate(async (expected) => {
       const session = new URLSearchParams(location.search).get("chat");
+      if (session !== expected) throw new Error("The selected personal conversation changed");
       const credential = sessionStorage.getItem("hz.token");
       const response = await fetch(`/api/heinzel/session?session_id=${encodeURIComponent(session ?? "")}`, {
         headers: { Authorization: `Bearer ${credential}` },
       });
       if (!response.ok) throw new Error(`Isolated schedule read failed: ${response.status}`);
-      return response.json();
-    });
+      const snapshot = await response.json();
+      if (snapshot.session_id !== expected) throw new Error("The schedule belongs to another personal conversation");
+      return snapshot;
+    }, selected);
   const beforeProposal = await readSchedule();
   if (beforeProposal.schedule !== null) throw new Error("An unverified runner changed the schedule");
   if (await page.getByRole("button", { name: "Confirm", exact: true }).count())
