@@ -1102,3 +1102,11 @@ def test_the_test_matrix_keeps_the_whole_output_of_a_failure():
     jobs = yaml.safe_load((REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))["jobs"]
     step = next(step for step in jobs["test"]["steps"] if step.get("run") == "make test-parallel")
     assert step["env"]["VERBOSE"] == "1"
+
+
+def test_release_versions_ignore_edge_tags_and_stay_under_plugin_caps():
+    """An unanchored pattern read `edge-v1.2.3.dev4` as a release; a feature must stay under plugins' `<0.10` caps."""
+    cliff = tomllib.loads((REPO / "pyproject.toml").read_text(encoding="utf-8"))["tool"]["git-cliff"]
+    assert cliff["git"]["tag_pattern"].startswith("^v")
+    assert cliff["bump"]["features_always_bump_minor"] is False
+    assert cliff["bump"]["breaking_always_bump_major"] is False
