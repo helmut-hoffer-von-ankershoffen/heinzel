@@ -78,7 +78,7 @@ def fetch(url: str, headers: dict[str, str] | None = None) -> bytes:
             return fetch(location)
         message = f"{url} answered {error.code}"
         raise UnavailableError(message) from error
-    except (urllib.error.URLError, TimeoutError, OSError) as error:
+    except OSError as error:  # URLError and TimeoutError are OSErrors
         message = f"{url} did not answer: {error}"
         raise UnavailableError(message) from error
 

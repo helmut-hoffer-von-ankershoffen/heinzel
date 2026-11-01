@@ -149,16 +149,18 @@ def test_it_waits_until_sonar_has_analysed_this_exact_head():
 def test_a_stale_analysis_fails_closed_at_the_deadline():
     world = World()
     world.pull_sha = "old"
+    gate = world.gate()
     with pytest.raises(merge_gate.UnavailableError, match="gave up waiting 30 min"):
-        world.gate().run_sonar()
+        gate.run_sonar()
     assert world.now >= merge_gate.SONAR_WAIT
 
 
 def test_main_not_yet_analysed_at_its_latest_commit_fails_closed():
     world = World()
     world.sonar_main_sha = "old"
+    gate = world.gate()
     with pytest.raises(merge_gate.UnavailableError, match="main's latest commit"):
-        world.gate().run_sonar()
+        gate.run_sonar()
 
 
 def test_an_outage_fails_closed_with_a_clear_message(monkeypatch, capsys):
@@ -182,8 +184,9 @@ def test_coverage_at_or_above_the_floor_passes_below_fails():
 def test_coverage_waits_for_the_job_then_fails_closed():
     world = World()
     world.job = None
+    gate = world.gate()
     with pytest.raises(merge_gate.UnavailableError, match="the Coverage job"):
-        world.gate().run_coverage("Coverage", 80.0)
+        gate.run_coverage("Coverage", 80.0)
     assert world.now >= merge_gate.COVERAGE_WAIT
 
 
@@ -205,15 +208,17 @@ def test_a_skipped_measurement_is_judged_by_mains_badge():
 def test_an_artifact_that_is_not_a_percentage_is_refused(text):
     world = World()
     world.total = text
+    gate = world.gate()
     with pytest.raises(merge_gate.UnavailableError):
-        world.gate().run_coverage("Coverage", 80.0)
+        gate.run_coverage("Coverage", 80.0)
 
 
 def test_a_missing_artifact_fails_closed():
     world = World()
     world.artifacts = 0
+    gate = world.gate()
     with pytest.raises(merge_gate.UnavailableError, match="no coverage-total artifact"):
-        world.gate().run_coverage("Coverage", 80.0)
+        gate.run_coverage("Coverage", 80.0)
 
 
 def test_the_floor_is_the_badges_own_threshold():
