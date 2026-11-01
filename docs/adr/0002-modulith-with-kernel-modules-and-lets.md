@@ -16,7 +16,7 @@ each other.
 
 - **One process: a small kernel, modules and typed lets** (chosen)
 - **Typer sub-apps registered by hand** (the common pattern): couples features to the CLI, no other heads.
-- **Subclass discovery by scanning for base classes** (as in the Aignostics SDK): implicit, import-order sensitive,
+- **Subclass discovery by scanning for base classes** (as in a public SDK): implicit, import-order sensitive,
   and hard to reason about for agents; explicit declarations are easier to read and to lint.
 - **Microservices**: operational overhead without benefit at this scale.
 
@@ -43,3 +43,7 @@ from any one interface.
 import-linter contracts in `pyproject.toml` (`make lint`, `contracts` step): "The kernel knows nothing about heads
 or modules" and "Modules use only the kernel's public API, like plugins". `tests/unit/kernel/kernel_test.py`
 (`test_lets_by_kind_with_owner`) and `tests/unit/kernel/module_test.py` cover lets.
+
+## More Information
+
+Amended 2026-11-01: the SDK is no longer named; the decision is unchanged.

@@ -9,7 +9,7 @@ implementation: built
 ## Context and Problem Statement
 
 People, agents and CI need one question answered quickly: is this installation healthy, and if not, what do I do?
-Every module (and plugin) knows best what healthy means for it. The Aignostics Python SDK has a similar idea: every
+Every module (and plugin) knows best what healthy means for it. A public SDK has a similar idea: every
 service implements `health()`, aggregated by a system command.
 
 ## Considered Options
@@ -39,3 +39,7 @@ aggregates them.
 
 `tests/unit/kernel/kernel_test.py::test_checks_must_explain_problems` and `tests/integration/cli_test.py`
 (`test_doctor_reports_and_exits_by_status`, `test_doctor_is_down_when_a_check_fails`).
+
+## More Information
+
+Amended 2026-11-01: the SDK is no longer named; the decision is unchanged.
