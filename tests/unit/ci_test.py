@@ -38,7 +38,7 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
         'changed="$(git diff --name-only': "decides from the changed paths whether a pull request builds the macOS app",
         "if compgen -G ": "selects the built core candidate or an independently released artifact for source plugins",
         "for result in $RESULTS": "the CI OK gate aggregates the results of the other jobs",
-        "uv run coverage report --format=total": "hands the measured total to the merge gate",
+        "uv run --no-build coverage report --format=total": "hands the measured total to the merge gate",
         "tar -czf notifier.tar.gz": "packs the app the macOS job built, with its executable bit, for the build job",
         "tar -xzf notifier.tar.gz": "unpacks Heinzel Notifier into the package before the wheel is built",
     },
