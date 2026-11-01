@@ -1,5 +1,45 @@
 {% extends "base.html" %}
-{% block content %}
+{% block htmltitle %}
+  {% if page and page.is_homepage %}
+    <title>Heinzelmännchen (Heinzel): open-source AI helpers for product teams</title>
+  {% else %}
+    {{ super() }}
+  {% endif %}
+{% endblock %}
+{% block extrahead %}
   {{ super() }}
-  {% include "partials/heinzel-helpers.html" %}
+  {% if config.extra.hz_latest_release %}<meta name="hz-latest-release" content="{{ config.extra.hz_latest_release }}">{% endif %}
+  {# Link previews: one existing brand image, always by absolute URL. #}
+  {% set hz_title = (page.meta.title or page.title) if page else "Page not found" %}
+  {% set hz_description = (page.meta.description if page else none) or config.site_description %}
+  {% set hz_image = config.site_url ~ "assets/pypi-hero.png" %}
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="{{ config.site_name }}">
+  <meta property="og:title" content="{{ hz_title }}">
+  <meta property="og:description" content="{{ hz_description }}">
+  {% if page and page.canonical_url %}<meta property="og:url" content="{{ page.canonical_url }}">{% endif %}
+  <meta property="og:image" content="{{ hz_image }}">
+  <meta property="og:image:alt" content="Five Heinzelmännchen helpers standing in a row">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="{{ hz_title }}">
+  <meta name="twitter:description" content="{{ hz_description }}">
+  <meta name="twitter:image" content="{{ hz_image }}">
+  {% if not page %}<meta name="robots" content="noindex">{% endif %}
+  {% if page and page.is_homepage %}
+  <script type="application/ld+json">
+  {{ {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": config.site_name,
+    "alternateName": "Heinzel",
+    "url": config.site_url,
+    "description": hz_description,
+    "applicationCategory": "DeveloperApplication",
+    "operatingSystem": "macOS, Linux",
+    "license": "https://opensource.org/license/mit",
+    "image": hz_image,
+    "sameAs": [config.repo_url]
+  } | tojson }}
+  </script>
+  {% endif %}
 {% endblock %}

@@ -147,7 +147,7 @@ log_level = "INFO"
 timeout = "15" # Fallback; heinzel.testing gives each test its level's timeout (unit 5 s, integration 15 s, e2e 120 s).
 session_timeout = "900" # Nothing waits longer than this for a hung suite; make test caps unit + integration lower.
 markers = [
-    # Test categories, following the Aignostics Python SDK (Martin Fowler's solitary vs. sociable distinction).
+    # Test categories, following a public SDK's taxonomy (Martin Fowler's solitary vs. sociable distinction).
     # Every test carries exactly one of them; heinzel.testing (pytest11) enforces this.
     "unit: Solitary unit tests - test one layer of a module in isolation with all collaborators mocked, except shared utils. Must pass offline. Timeout 5 s.",
     "integration: Sociable integration tests - test interactions across layers (CLI -> service -> utils) or between modules with real collaborators, real file I/O and real subprocesses. Must pass offline; external services are mocked. Timeout 15 s.",
@@ -222,10 +222,11 @@ trim = true
 
 [tool.git-cliff.bump]
 initial_tag = "v0.1.0"
-# SemVer 0.x: breaking changes and features bump the minor version, everything else the patch. git-cliff defaults
-# breaking changes to a major bump, which would jump to 1.0.0 on the next `!` commit.
+# Before 1.0, a feature is a patch and a breaking change a minor: plugins cap the core at the next minor (`heinzel<0.10`),
+# so only a real break may cross that, and an automatic release must not (ADR 0114). git-cliff defaults would send a
+# breaking change to 1.0.0.
 breaking_always_bump_major = false
-features_always_bump_minor = true
+features_always_bump_minor = false
 
 [tool.git-cliff.git]
 conventional_commits = true
@@ -254,7 +255,7 @@ commit_parsers = [
     { message = "^(chore|style)", group = "<!-- 10 -->🧹 Miscellaneous" },
 ]
 protect_breaking_commits = true
-tag_pattern = "v[0-9].*"
+tag_pattern = "^v[0-9].*"
 
 [tool.pyright]
 include = ["src"]

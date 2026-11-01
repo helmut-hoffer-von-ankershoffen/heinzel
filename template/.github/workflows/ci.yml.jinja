@@ -124,7 +124,7 @@ jobs:
       - run: make audit
 
   test:
-    name: Test (${{ matrix.os }}, Python ${{ matrix.python }})
+    name: Test (${{ matrix.os }}, Python ${{ matrix.python }}${{ matrix.levels && format(', {0}', matrix.levels) || '' }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10
     strategy:
@@ -132,8 +132,10 @@ jobs:
       matrix:
         os: [ubuntu-latest]
         python: ["3.12", "3.13", "3.14", "3.15"]
-        include: # macOS: the newest Python on a pull request, all of them elsewhere
-          ${{ fromJSON(github.event_name == 'pull_request' && '[{"os":"macos-latest","python":"3.15"}]' || '[{"os":"macos-latest","python":"3.12"},{"os":"macos-latest","python":"3.13"},{"os":"macos-latest","python":"3.14"},{"os":"macos-latest","python":"3.15"}]') }}
+        # macOS has 3 vCPU and runs the suite at the edge of the 420 s cap, so each cell is split into one shard per level
+        # under that same cap. Newest Python on a pull request, oldest and newest on main and dispatches, all on schedule.
+        include:
+          ${{ fromJSON(github.event_name == 'pull_request' && '[{"os":"macos-latest","python":"3.15","levels":"unit"},{"os":"macos-latest","python":"3.15","levels":"integration"}]' || github.event_name == 'schedule' && '[{"os":"macos-latest","python":"3.12","levels":"unit"},{"os":"macos-latest","python":"3.12","levels":"integration"},{"os":"macos-latest","python":"3.13","levels":"unit"},{"os":"macos-latest","python":"3.13","levels":"integration"},{"os":"macos-latest","python":"3.14","levels":"unit"},{"os":"macos-latest","python":"3.14","levels":"integration"},{"os":"macos-latest","python":"3.15","levels":"unit"},{"os":"macos-latest","python":"3.15","levels":"integration"}]' || '[{"os":"macos-latest","python":"3.12","levels":"unit"},{"os":"macos-latest","python":"3.12","levels":"integration"},{"os":"macos-latest","python":"3.15","levels":"unit"},{"os":"macos-latest","python":"3.15","levels":"integration"}]') }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -155,6 +157,8 @@ jobs:
       - name: Unit and integration tests (unit first, 4 workers, stop at the first failure)
         env:
           UV_NO_SYNC: "1" # use the test group just installed
+          TEST_LEVELS: ${{ matrix.levels || 'unit or integration' }}
+          VERBOSE: "1" # a worker's INTERNALERROR trace comes first, above what the step wrapper's tail keeps
         run: make test-parallel
 
   coverage:
@@ -227,6 +231,13 @@ jobs:
           enable-cache: true
           cache-dependency-glob: uv.lock
           save-cache: ${{ github.ref == 'refs/heads/main' }} # pull requests reuse main's cache
+      - name: Reuse the browsers this lockfile's Playwright installs
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/ms-playwright
+            ~/Library/Caches/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('web/pnpm-lock.yaml') }}
       # Keep the full pytest traceback in CI logs when a browser interaction flakes; the step wrapper's default tail
       # can otherwise hide the test name and the action that timed out.
       - run: make test-e2e

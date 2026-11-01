@@ -1,9 +1,11 @@
 ---
 status: proposed
 date: 2026-10-27
+implementation: built
 decision-makers: maintainer
 amends: 0048
 related: 0039, 0045, 0088
+implemented-by: 240
 ---
 
 # 0089: One selected workspace panel on every screen size

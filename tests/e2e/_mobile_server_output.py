@@ -23,9 +23,51 @@ def check_driver(returncode, safe_stderr):
         raise AssertionError(safe_stderr)
 
 
+_MOBILE_STAGES = frozenset(
+    {
+        "launch",
+        "launched",
+        "phone-scroll",
+        "phone-sound",
+        "phone-notifications",
+        "failure-diagnostics",
+        "browser-cleanup",
+        "complete",
+    }
+    | {
+        f"viewport-{view}-{phase}"
+        for view in (
+            "narrow-portrait",
+            "wide-portrait",
+            "short-portrait",
+            "narrow-landscape",
+            "wide-landscape",
+            "short-landscape",
+        )
+        for phase in ("start", "loaded", "routes", "settings", "cleanup", "done")
+    }
+)
+
+
+def timeout_stage(stderr):
+    """Extract only the last exact allowlisted checkpoint from captured driver stderr."""
+    if not isinstance(stderr, (bytes, str)):
+        return "unavailable"
+    if isinstance(stderr, bytes):
+        stderr = stderr.decode("utf-8", "replace")
+    found = "unavailable"
+    for line in stderr.splitlines():
+        if line.startswith("MOBILE_STAGE:") and line[13:] in _MOBILE_STAGES:
+            found = line[13:]
+    return found
+
+
 def sanitize_timeout(error):
     """Keep timeout type and deadline while withholding the command and captured output."""
+    stage = timeout_stage(error.stderr)
+    error.add_note(f"Mobile driver last checkpoint: {stage}")
     error.cmd = ["<mobile-browser-command>"]
+    error.args = (error.cmd, error.timeout)
     error.output = None
     error.stderr = None
 

@@ -1,8 +1,10 @@
 ---
 status: accepted
 date: 2026-10-24
+implementation: built
 decision-makers: maintainer
 related: 0018, 0020, 0027
+implemented-by: 8, 21
 ---
 
 # 0031: The CLI checks for a newer release hourly, anonymously and in the background, and says so on stderr
@@ -45,7 +47,11 @@ waits and nothing about the user is sent.
 
 - What is sent: one GET to the latest-release endpoint of the package source the installation came from, today the
   GitHub releases API of the repository in the uv tool receipt (the default repository otherwise), with only a
-  `heinzel/<version>` User-Agent: no token, no identifier. The system module provides it to the kernel as a
+  `heinzel/<version>` User-Agent: no token, no identifier.
+  The check asks first `github.com/<repository>/releases/latest` with a HEAD that is never followed: GitHub answers it
+  with a redirect to the latest release's tag page, which spends none of the REST API's 60 unauthenticated requests an
+  hour per address (a shared network exhausts them, and the check then never learns of a newer release). Only if that
+  answer is unusable does it ask the releases API; both carry nothing but the User-Agent. The system module provides it to the kernel as a
   `ReleaseSource`; heads never import GitHub code.
 - When: the `hz` entry point starts the check on a daemon thread when the release cache (`ReleaseCache` in the
   kernel, in the cache directory) was last asked an hour ago or longer. The cache is stamped *before* asking, so a
@@ -120,13 +126,13 @@ against this ADR.
 ## More Information
 
 - Answers the update-notifier question left open in [ADR 0027](0027-nothing-is-sent-home.md).
-- Amended on 2026-10-24: the maintainer decided the check is automatic, cached for an hour (failures included), with a
+- The check is automatic, cached for an hour (failures included), with a
   short timeout, shown always but never in JSON, and switched off by the `update_check` setting and in CI. The first
   version asked only on demand.
-- Amended on 2026-10-24: the maintainer decided "users should see what they get before installing a new release",
+- Users should see what they get before installing a new release,
   so `hz system changelog --newer` shows the notes of every newer release, and the notice and `hz system update` point
   to it.
-- Amended on 2026-10-24: `hz system changelog --newer` sends the user's GitHub token if one is set, to
+- `hz system changelog --newer` sends the user's GitHub token if one is set, to
   api.github.com only, because the shared runners of CI exhausted the unauthenticated rate limit and the README test
   of `--newer` failed; CI passes its read-only `GITHUB_TOKEN`. The hourly check and `hz system release` still never
   send a token.

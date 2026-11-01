@@ -58,15 +58,29 @@ def candidate_wheel(spec: str, directory: Path) -> Path:
     return wheel
 
 
+def within_interface(program: str, arguments: list[str]) -> bool:
+    """Whether the arguments start a toolkit subcommand or a toolkit module, never an interpreter or tool option."""
+    match program, arguments:
+        case "hz-plugin", [command, *_]:
+            return re.fullmatch(r"[a-z][a-z0-9-]*", command) is not None
+        case "python", ["-m", module, *_]:
+            return re.fullmatch(r"heinzel_plugin_tools(?:\.[a-z_]+)+", module) is not None
+        case _:
+            return False
+
+
 def run(program: str, arguments: list[str], requirements: Path = REQUIREMENTS, toolkit: str = TOOLKIT) -> int:
     """Install verified wheels before running the selected local developer command.
 
     Raises:
-        ValueError: If the requested executable is outside the toolkit interface.
+        ValueError: If the executable or its first argument is outside the toolkit interface.
         RuntimeError: If uv is unavailable.
     """
     if program not in {"hz-plugin", "python"}:
         msg = "Choose hz-plugin or python from the verified toolkit environment"
+        raise ValueError(msg)
+    if not within_interface(program, arguments):
+        msg = "Run a toolkit subcommand (hz-plugin <command>) or module (python -m heinzel_plugin_tools.<module>)"
         raise ValueError(msg)
     uv = shutil.which("uv")
     if uv is None:

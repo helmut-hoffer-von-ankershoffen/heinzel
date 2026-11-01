@@ -1,9 +1,12 @@
 ---
 status: proposed
 date: 2026-10-30
+implementation: built
 decision-makers: maintainer
 amends: 0094
 related: 0097, 0098
+implemented-by: 304, 310
+amended-by: 0114
 ---
 
 # 0110: One versionless launcher installs and opens the standard app
@@ -14,6 +17,8 @@ The maintainer requires installation to be a breeze: no version numbers, plugin 
 The released bootstrap SDK looked for an app profile with its own version, although SDK and app composition ship
 independently. A newer SDK therefore broke the documented installer when its matching composition was absent.
 The PyPI description also reused repository-relative artwork and links that do not resolve on PyPI.
+The published installer later failed at anonymous GitHub tag discovery when the public API quota was exhausted;
+that network failure was reported as an undifferentiated artifact-verification error.
 
 ## Considered Options
 
@@ -42,12 +47,22 @@ should choose the product rather than coordinate its distributions.
   Astral's official HTTPS installer, then invokes the same versionless launcher. It needs no administrator access
   or preinstalled Python. Windows may work independently but is unsupported. The script is served with the docs;
   README, PyPI and Pages share its command and link to its inspectable source.
-- The installer discovers app-scoped release references and skips unpublished or recognized legacy profiles. It never infers
-  plugin names from Core code. Explicit profiles remain exact; schema, identity, size and hash checks still fail closed.
+- The installer resolves GitHub's governed latest release to a canonical stable `app-v` tag without the anonymous REST API.
+  Every redirect is checked before following it. It fetches that immutable tag's profile and requires its existing
+  `core_version` identity to match the app tag, independently of the running bootstrap SDK's version.
+  The default profile's packages must belong to the same official immutable app release; their identities, sizes and hashes
+  remain checked. GitHub release downloads may redirect only to the recognized GitHub release-asset origins.
+  Explicit candidate profiles remain exact. No failure silently falls back to an older app or another authority.
+  The serialized composition workflow is the sole latest-app writer: app publication explicitly designates latest,
+  while plugin/tool publication explicitly opts out. An older composition retry cannot supersede a newer designated app;
+  an unknown current app identity blocks promotion. The comparison is not an atomic fence against writers outside this protocol.
+  This uses [GitHub's latest-release policy](https://docs.github.com/en/rest/releases/releases), which excludes drafts and prereleases.
+  Core never infers plugin names from this mechanism. Safe errors distinguish discovery, download and hash verification,
+  retaining HTTP status and quota exhaustion without exposing URLs, signed query strings, headers or credentials.
   Publication is the composition producer's completeness assertion. After a manifest is published, a missing or
   corrupt referenced wheel fails closed; it does not silently select an older app and hide damaged release state.
   App format 2 declares support for this startup-continuity lifecycle, independently of plugin ABI `sdk=1`.
-  Recognized format 1 compositions are skipped; an explicit legacy profile is refused before installation.
+  A designated legacy profile is refused before installation, just like an explicit legacy profile.
   The producer first asks the accepted SDK's existing installer to validate a format 2 profile without installing
   plugins. Before exposing a profile, it also installs the exact selected wheels in disposable uv tool directories
   and verifies offline launch, plugin add/remove/reinstall, and an update's actual runtime and startup checkpoint.
@@ -99,7 +114,9 @@ should choose the product rather than coordinate its distributions.
 
 ### Confirmation
 
-`tests/unit/heads/install_test.py` covers missing profiles, release ordering, explicit overrides and failed verification.
+`tests/unit/heads/install_test.py` covers API-free discovery, canonical redirects, immutable profile/package authority,
+explicit overrides and safe failed verification. The producer's `tests/publish_test.py` and `tests/workflow_test.py`
+cover monotonic retry promotion, unknown identity refusal and the serialized writer's explicit latest policy.
 `tests/unit/heads/bootstrap_test.py` covers first use, existing/offline use, incomplete SDK installs and CLI compatibility.
 `tests/unit/pypi_description_test.py` checks the one-command contract and portable artwork.
 `tests/integration/shell_installer_test.py` exercises prerequisite installation and failure cleanup without network.

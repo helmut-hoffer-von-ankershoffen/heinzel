@@ -59,6 +59,8 @@ from heinzel.modules.system.plugin._models import (
     PluginKind,
     PluginLayer,
     PluginOperation,
+    PluginPending,
+    PluginPendingChange,
     PluginSearch,
     PluginSettings,
     Source,
@@ -165,6 +167,8 @@ class PluginService:
         self.pypi: JsonGetter = pypi_get
         """Reads PyPI's JSON API for `add`; tests replace it."""
         self._catalog_warnings: list[str] = []
+        self._pending_signature: tuple[tuple[str, str, str | None], ...] = ()
+        self._pending_themes: dict[str, list[str]] = {}
         self.distributions: Mapping[str, Distribution] | None = None
         """Installed plugin distributions by canonical name; read from the entry points when None (tests set it)."""
 
@@ -180,6 +184,58 @@ class PluginService:
             # The child uses the default snapshot path; forwarding --fresh would recursively spawn interpreters.
             return self._fresh_list()
         return self._loaded_inventory()
+
+    def pending(self) -> PluginPending:
+        """What a restart would load: the installed plugin distributions now, against what this server loaded.
+
+        Both sides are read in this process (installed metadata and the kernel's origins), so a poll costs
+        milliseconds. Only when the difference is new does one fresh interpreter ask which themes it brings.
+        """
+        loaded = self._loaded_versions()
+        installed = {name: dist.version for name, dist in self._plugin_distributions().items()}
+        names = {name: dist.name for name, dist in self._plugin_distributions().items()}
+        found: list[tuple[str, str, str | None]] = []
+        for name, version in sorted(installed.items()):
+            if name not in loaded:
+                found.append((names[name], "installed", version))
+            elif loaded[name] not in {None, version}:
+                found.append((names[name], "updated", version))
+        found.extend((name, "removed", None) for name in sorted(loaded) if name not in installed)
+        if not found:
+            return PluginPending(changes=[], restart_required=False)
+        signature = tuple(found)
+        if signature != self._pending_signature:
+            self._pending_themes = self._themes_of_changed()
+            self._pending_signature = signature
+        changes = [
+            PluginPendingChange(
+                distribution=name,
+                change=cast("Literal['installed', 'removed', 'updated']", change),
+                version=version,
+                themes=self._pending_themes.get(canonicalize_name(name), []),
+            )
+            for name, change, version in found
+        ]
+        return PluginPending(changes=changes, restart_required=True)
+
+    def _loaded_versions(self) -> dict[str, str | None]:
+        """Distribution -> the version this server loaded (None when it failed to load: no version to compare)."""
+        loaded: dict[str, str | None] = {}
+        for record in [*self._kernel.modules, *self._kernel.blocked]:
+            if not record.origin.builtin:
+                loaded[canonicalize_name(record.origin.distribution)] = record.origin.version
+        for name in self._errors_by_distribution():
+            loaded.setdefault(name, None)
+        return loaded
+
+    def _themes_of_changed(self) -> dict[str, list[str]]:
+        """The themes of the installed plugins, from one fresh interpreter; none when it cannot be asked."""
+        try:
+            return {
+                canonicalize_name(info.distribution): list(info.themes or []) for info in self.installed(fresh=True)
+            }
+        except HeinzelError:
+            return {}
 
     def _loaded_inventory(self) -> list[PluginInfo]:
         """Describe the plugins and modules already loaded by this kernel."""
@@ -281,7 +337,8 @@ class PluginService:
         resolved: str | None = None
         if spec.strip().replace("-", "").isalnum() and not spec.strip().startswith(PREFIX):
             wanted = canonicalize_name(spec.strip().removeprefix(PREFIX))
-            matches = [entry for entry in self.search(wanted).plugins if canonicalize_name(entry.short_name) == wanted]
+            # Search without text: a topic search matches repository words, never the plugins inside a repository.
+            matches = [entry for entry in self.search().plugins if canonicalize_name(entry.short_name) == wanted]
             if len(matches) > 1:
                 msg = "Several catalog plugins have that short name; install an exact catalog specification"
                 raise HeinzelError(msg)
@@ -392,6 +449,7 @@ class PluginService:
                 f"Adding plugin {candidate.distribution or spec}",
                 self._git_environment(),
                 context=(mutation, ()),
+                adding=candidate.requirement,
             )
             installed = self._verify_added(candidate, before)
             self._verify_candidate_generation(mutation)
@@ -431,6 +489,7 @@ class PluginService:
                         f"Adding plugin {candidate.distribution or candidate.spec}",
                         self._git_environment(),
                         context=(mutation, ()),
+                        adding=candidate.requirement,
                     )
                     installed = self._verify_added(candidate, before)
                     self._verify_candidate_generation(mutation)
@@ -479,6 +538,7 @@ class PluginService:
                 f"Failed to add plugin {path}.",
                 f"Adding plugin {name}",
                 context=(mutation, ()),
+                adding=f"{name} @ {directory.as_uri()}",
             )
             self._verify_developed(directory, name, str(version) if version is not None else None)
             self._verify_candidate_generation(mutation)
@@ -715,17 +775,16 @@ class PluginService:
         private = repository.get("private")
         visibility = private if isinstance(private, bool) else None
         entries = self._monorepo_plugins(repository)
+        # A repository can be a plugin itself and hold more under plugins/ (the ACME reference company does).
+        full_name = repository.get("full_name")
+        text = self._file(f"{GITHUB_REPOS}/{full_name}/contents/pyproject.toml") if full_name else None
+        project = _table(_toml(text), "project") if text else {}
+        name = project.get("name")
+        declared = _table(_table(project, "entry-points"), ENTRY_POINT_GROUP)
+        if declared and isinstance(name, str) and name not in {entry[0] for entry in entries}:
+            entries = [(name, "", str(project.get("description") or "")), *entries]
         if not entries:
-            full_name = repository.get("full_name")
-            text = self._file(f"{GITHUB_REPOS}/{full_name}/contents/pyproject.toml") if full_name else None
-            project = _table(_toml(text), "project") if text else {}
-            points = _table(project, "entry-points")
-            if not _table(points, ENTRY_POINT_GROUP):
-                return []
-            name = project.get("name")
-            if not isinstance(name, str):
-                return []
-            entries = [(name, "", str(project.get("description") or ""))]
+            return []
         branch = repository.get("default_branch") or "HEAD"
         return [
             AvailablePlugin(
@@ -1034,7 +1093,7 @@ class PluginService:
             self._installation.record_startup_state(expected=mutation.generation)
         mutation.scope.verified_complete(mutation.generation)
 
-    def _run_package_change(
+    def _run_package_change(  # noqa: PLR0913 - what runs, how it is reported, and what it must keep
         self,
         command: list[str],
         failure: str,
@@ -1042,6 +1101,7 @@ class PluginService:
         environment: Mapping[str, str] | None = None,
         *,
         context: tuple[_PackageMutation | None, tuple[str, ...]] = (None, ()),
+        adding: str | None = None,
     ) -> str | None:
         """Capture the changed tool before independently checking its installed identity and runtime.
 
@@ -1051,13 +1111,21 @@ class PluginService:
         # A genuine SDK tool is not necessarily the standard app. Only its verified installer may seed continuity.
         mutation, forbidden = context
         managed = self._installation.is_tool and self._installation.startup_state_matches()
+        holds = self._holds(command, adding)
         if mutation is None:
-            self._installation.run(command, failure, activity, environment)
-            return self._installation.startup_fingerprint() if managed else None
+            if not holds:
+                self._installation.run(command, failure, activity, environment)
+                return self._installation.startup_fingerprint() if managed else None
+            policy = self._installation.capture_tool_constraint_policy()
+            self._installation.run(command, failure, activity, environment, additional_constraints=holds)
+            generation = self._installation.remove_transient_tool_constraint(
+                expected=self._installation.startup_fingerprint(), original=policy, added=holds
+            )
+            return generation if managed else None
         policy = self._installation.capture_tool_constraint_policy()
         version = self._installation.installed_core_version()
         guard = f"heinzel=={version}"
-        constraints = (*self._installation.tool_constraints(), guard)
+        constraints = (*self._installation.tool_constraints(), guard, *holds)
         python = command.index("--python")
         selected = [
             command[python + 2],
@@ -1067,7 +1135,7 @@ class PluginService:
         if self._installation.startup_fingerprint() != mutation.initial:
             msg = "The plugin installation changed before mutation; inspect and retry."
             raise HeinzelError(msg)
-        self._installation.run(command, failure, activity, environment, additional_constraints=(guard,))
+        self._installation.run(command, failure, activity, environment, additional_constraints=(guard, *holds))
         generation = self._installation.startup_fingerprint()
         self._installation.verify_installed_requirements(
             selected, expected_version=version, forbidden=forbidden, constraints=constraints
@@ -1076,9 +1144,29 @@ class PluginService:
             msg = "The plugin installation changed during verification; explicit recovery is required."
             raise HeinzelError(msg)
         mutation.generation = self._installation.remove_transient_tool_constraint(
-            expected=generation, original=policy, added=guard
+            expected=generation, original=policy, added=(guard, *holds)
         )
         return None
+
+    def _holds(self, command: list[str], adding: str | None) -> tuple[str, ...]:
+        """Keep the other index plugins at their installed versions while one plugin changes.
+
+        The receipt names them without a version, so a reinstall would upgrade each to the newest release as a side
+        effect. These are transient: `hz system update` still moves them. Whatever `adding` names is what the person
+        asked to change, so it stays free.
+        """
+        if not self._installation.is_tool or command[1:3] != ["tool", "install"]:
+            return ()
+        changing: set[str] = distributions_in_spec(adding) if adding else set()
+        names: list[str] = []
+        for index, part in enumerate(command):
+            if part == "--with":
+                requirement = Requirement(command[index + 1])
+                name = canonicalize_name(requirement.name)
+                if not requirement.url and not requirement.specifier and name not in changing:
+                    names.append(name)
+        versions = self._installation.installed_versions(names) if names else {}
+        return tuple(f"{name}=={versions[name]}" for name in names if name in versions)
 
     def _remember_package_change(self, generation: str | None) -> None:
         """Bind only a successfully checked and recorded package change to its original observation.

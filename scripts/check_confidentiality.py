@@ -117,6 +117,34 @@ def _git(*args: str) -> str:
     return subprocess.run([executable, *args], check=True, capture_output=True, text=True, timeout=60).stdout  # noqa: S603
 
 
+def _revision(name: str) -> str:
+    """Rebuild a revision from parts that cannot carry an option: Git's own ref names, hex digits or `HEAD` offsets.
+
+    Raises:
+        ValueError: If the input is none of these.
+    """
+    if offset := re.fullmatch(r"HEAD(?:([~^])([0-9]{1,4}))?", name):
+        return f"HEAD{offset[1]}{int(offset[2])}" if offset[1] else "HEAD"
+    if re.fullmatch(r"[0-9a-f]{7,64}", name):
+        return f"{int(name, 16):0{len(name)}x}"
+    for known in _git(
+        "for-each-ref", "--format=%(refname:short)", "refs/heads", "refs/remotes", "refs/tags"
+    ).splitlines():
+        if known == name:
+            return known
+    msg = f"Not a branch, tag, commit or HEAD offset: {name!r}"
+    raise ValueError(msg)
+
+
+def _range(text: str) -> list[str]:
+    """A revision or a `from..to` / `from...to` range, each end rebuilt by `_revision`."""
+    for separator in ("...", ".."):
+        if separator in text:
+            start, _, end = text.partition(separator)
+            return [f"{_revision(start)}{separator}{_revision(end)}"]
+    return [_revision(text)]
+
+
 def _read(path: Path) -> str | None:
     """A file's text; for a binary file its printable strings, one per line; `None` if unreadable."""
     try:
@@ -167,7 +195,7 @@ def sources(args: argparse.Namespace) -> Iterator[tuple[str, str]]:
     if args.commit_msg:
         yield "commit message", Path(args.commit_msg).read_text(encoding="utf-8")
     elif args.messages:
-        for sha in _git("rev-list", "--end-of-options", args.messages, "--").split():
+        for sha in _git("rev-list", "--end-of-options", *_range(args.messages), "--").split():
             yield f"commit {sha[:12]}", _git("log", "-1", "--format=%an <%ae>%n%cn <%ce>%n%B", sha)
     elif args.branch:
         yield "branch", _git("rev-parse", "--abbrev-ref", "HEAD")
@@ -196,8 +224,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--branch", action="store_true")
     parser.add_argument("--require", action="store_true")
     args = parser.parse_args(argv)
-    if args.messages and args.messages.startswith("-"):
-        parser.error("--messages must be a revision range, not a Git option")
+    if args.messages:
+        try:
+            _range(args.messages)
+        except (ValueError, subprocess.CalledProcessError):
+            parser.error("--messages must be a branch, tag, commit or HEAD offset, or a range of two")
 
     # Independent of the term list, which plugin developers usually don't have.
     problems = identity_problems() if args.identity else []

@@ -89,6 +89,30 @@ def test_only_documented_toolkit_programs_can_execute(monkeypatch):
         tooling.run("bash", ["-c", "exit 0"])
 
 
+@pytest.mark.parametrize(
+    ("program", "arguments"),
+    [
+        ("hz-plugin", []),
+        ("hz-plugin", ["--help"]),
+        ("hz-plugin", ["-c", "exit 0"]),
+        ("hz-plugin", ["../check"]),
+        ("python", []),
+        ("python", ["-c", "print(1)"]),
+        ("python", ["-m", "os"]),
+        ("python", ["-m", "heinzel_plugin_tools"]),
+        ("python", ["script.py"]),
+        ("python", ["-m"]),
+    ],
+)
+def test_only_toolkit_subcommands_and_modules_reach_a_subprocess(monkeypatch, program, arguments):
+    def refuse_run(*args, **kwargs):
+        pytest.fail("an argument outside the toolkit interface reached a subprocess")
+
+    monkeypatch.setattr(tooling.subprocess, "run", refuse_run)
+    with pytest.raises(ValueError, match="toolkit"):
+        tooling.run(program, arguments)
+
+
 def test_local_candidate_with_option_shaped_name_becomes_an_absolute_path(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     candidate = Path("--target=unexpected.whl")

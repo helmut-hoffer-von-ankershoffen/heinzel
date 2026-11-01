@@ -1,8 +1,10 @@
 ---
 status: accepted
 date: 2026-10-24
+implementation: built
 decision-makers: maintainer (delegated)
 related: 0005, 0012, 0015, 0018, 0020, 0027, 0028
+implemented-by: 6
 ---
 
 # 0030: Credentials live in the OS keychain behind a credentials service
@@ -113,7 +115,6 @@ consumed by a built-in module (`system.credential`: `list` and its health check)
 
 ## More Information
 
-- Decided by the maintainer (delegated: the maintainer's standing delegation for technical choices), 2026-10-24.
 - [ADR 0020](0020-daemon-head.md) §10 (secrets through `keyring`); [ADR 0028](0028-integrations-are-capability-adapters.md)
   (adapters request credentials per access mode); [SECURITY.md](../../SECURITY.md) lists the measure.
 - Known exception: `system.plugin` reads its optional GitHub token from settings (`GH_TOKEN`, `GITHUB_TOKEN`); moving it

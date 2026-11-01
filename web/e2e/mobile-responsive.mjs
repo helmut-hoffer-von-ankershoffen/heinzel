@@ -8,14 +8,21 @@ import { join } from "node:path";
 import { chromium, webkit } from "playwright-core";
 import ts from "typescript";
 import { contributePanel } from "./contributed-panel.mjs";
+import { fetchOnce, ONE_CONNECTION } from "./fetch-once.mjs";
 import { reportMediaFailure, watchMedia } from "./media-diagnostics.mjs";
 
+// Fixed, credential-free checkpoints for timeout diagnosis; do not interpolate page or URL data.
+function stage(name) {
+  console.error(`MOBILE_STAGE:${name}`);
+}
+stage("launch");
 const [url, shots] = process.argv.slice(2);
 mkdirSync(shots, { recursive: true });
 const useWebKit = process.env.PLAYWRIGHT_BROWSER === "webkit";
 const browser = useWebKit
   ? await webkit.launch()
   : await chromium.launch().catch(() => chromium.launch({ channel: "chrome" }));
+stage("launched");
 const cases = [
   { name: "narrow-portrait", width: 360, height: 780 },
   { name: "wide-portrait", width: 430, height: 932 },
@@ -222,7 +229,13 @@ async function showPage(page) {
   await tab.tap();
 }
 
-async function footerPane(page, id, label) {
+async function footerPane(page, id, label, ready) {
+  if (ready) {
+    await ready;
+    await page.waitForFunction(
+      () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve(true)))),
+    );
+  }
   const trigger = page.locator(`[data-footer-content="${id}"] button`).first();
   if (!(await trigger.isVisible())) {
     await page.locator('[data-footer-content="@more"] button').click();
@@ -233,6 +246,7 @@ async function footerPane(page, id, label) {
 
 try {
   for (const spec of cases) {
+    stage(`viewport-${spec.name}-start`);
     const context = await browser.newContext({
       viewport: { width: spec.width, height: spec.height },
       screen: { width: spec.width, height: spec.height },
@@ -248,7 +262,7 @@ try {
     await contributePanel(page);
     // Platform-specific CLI paths and provider names must wrap rather than widen their settings pane.
     await page.route("**/api/ai/access/list", async (route) => {
-      const response = await route.fetch();
+      const response = await fetchOnce(route);
       const listing = await response.json();
       listing.options.push({
         name: "mobile-overflow-probe",
@@ -269,12 +283,12 @@ try {
     });
     // Include advanced controls using the real isolated-profile operation.
     const expertResponse = await context.request.post(new URL("/api/system/expert/on", url).href, {
-      headers: { Authorization: `Bearer ${new URL(url).hash.slice("#token=".length)}` },
+      headers: { ...ONE_CONNECTION, Authorization: `Bearer ${new URL(url).hash.slice("#token=".length)}` },
     });
     assert.ok(expertResponse.ok(), "Advanced settings must be enabled in the isolated fixture");
     // Enum display labels come from providers and can exceed a native select's intrinsic phone width.
     await page.route("**/api/system/config/show", async (route) => {
-      const response = await route.fetch();
+      const response = await fetchOnce(route);
       const report = await response.json();
       const backend = report.settings.find(
         (setting) => setting.section === "system.credential" && setting.key === "backend",
@@ -308,6 +322,7 @@ try {
     await page.getByRole("heading", { name: "Today" }).waitFor();
     await page.locator("#splash").waitFor({ state: "hidden", timeout: 15_000 });
     await page.waitForFunction(() => !document.getElementById("root")?.hasAttribute("inert"), null, { timeout: 5000 });
+    stage(`viewport-${spec.name}-loaded`);
     const facts = await viewportFacts(page, spec.name);
     if (facts.shellClientHeight !== undefined) {
       assert.ok(facts.shellClientHeight <= facts.height, `${spec.name}: shell exceeds the viewport height`);
@@ -364,6 +379,7 @@ try {
       .getByRole("link")
       .evaluateAll((links) => links.map((link) => link.getAttribute("href")));
     const visitedRoutes = new Set([...destinations, ...routePaths]);
+    stage(`viewport-${spec.name}-routes`);
     for (const destination of visitedRoutes) {
       await page.goto(`${new URL(destination, url).href}${new URL(url).hash}`);
       await page.locator("#splash").waitFor({ state: "hidden", timeout: 15_000 });
@@ -421,6 +437,7 @@ try {
       .locator("option")
       .evaluateAll((options) => options.map((option) => ({ id: option.value, title: option.textContent.trim() })));
     assert.ok(settingsPages.length > 5, `${spec.name}: the complete settings registry must be exercised`);
+    stage(`viewport-${spec.name}-settings`);
     for (const settingsPage of settingsPages) {
       if (spec.width < 640)
         await settingsDialog.getByLabel("Settings page", { exact: true }).selectOption(settingsPage.id);
@@ -472,10 +489,12 @@ try {
     await page.screenshot({ path: join(shots, `mobile-${spec.name}-updates.png`) });
     await dismissFooterPane(page);
     updateAvailable = true;
+    // The footer's label and its fit depend on this answer, so tap only once the footer shows it.
+    const updateAnswered = page.waitForResponse("**/api/update-status");
     await page.goto(url);
     await page.getByRole("heading", { name: "Today" }).waitFor();
     await page.locator("#splash").waitFor({ state: "hidden", timeout: 15_000 });
-    const availablePane = await footerPane(page, "@updates", "Update available");
+    const availablePane = await footerPane(page, "@updates", "Update available", updateAnswered);
     await assertContained(page, availablePane, `${spec.name}: available update pane`);
     await availablePane.getByText(/^Last installed:/).waitFor();
     await assertTouchTarget(
@@ -765,10 +784,13 @@ try {
       await session.send("Emulation.setPageScaleFactor", { pageScaleFactor: 1 });
       await session.detach();
     }
+    stage(`viewport-${spec.name}-cleanup`);
     await page.unrouteAll({ behavior: "wait" });
     await context.close();
+    stage(`viewport-${spec.name}-done`);
   }
   if (runPhone) {
+    stage("phone-scroll");
     // Header actions navigate within the shared phone scroller, without requiring a manual swipe.
     const scrollPage = await browser.newPage({
       viewport: { width: 390, height: 844 },
@@ -962,6 +984,7 @@ try {
       hasTouch: true,
       deviceScaleFactor: 2,
     });
+    stage("phone-sound");
     await soundPage
       .context()
       .addCookies([
@@ -1021,6 +1044,10 @@ try {
     await soundPage.getByRole("button", { name: "Choose a soundscape", exact: true }).click();
     const soundDialog = soundPage.getByRole("dialog", { name: "Sound" });
     await soundDialog.getByText("Use your iPhone or iPad volume buttons to adjust YouTube audio.").waitFor();
+    // Safari's toolbars and keyboard resize the window at the same width: the navigation and this dialog stay open.
+    await soundPage.evaluate(() => window.dispatchEvent(new Event("resize")));
+    await soundPage.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve))));
+    assert.equal(await soundDialog.count(), 1, "a same-width resize keeps the sound dialog open");
     assert.equal(await soundDialog.getByRole("slider", { name: "Volume" }).count(), 0);
     assert.equal(await soundDialog.getByRole("switch", { name: "Softer while I type" }).count(), 0);
     await assertContained(soundPage, soundDialog, "iPhone sound controls");
@@ -1065,6 +1092,8 @@ try {
     await soundPage.screenshot({ path: join(shots, "mobile-compact-sound.png") });
     await soundPage.getByRole("button", { name: "Expand navigation" }).click();
     await player.waitFor();
+    // The player moves with the navigation's width transition: a tap during it can land beside the button.
+    await soundPage.waitForFunction(() => !document.getAnimations().some((run) => run instanceof CSSTransition));
     await popOut.tap();
     await soundPage.waitForFunction(() => document.querySelector('[data-dock="floating"]'));
     await soundPage.setViewportSize({ width: 360, height: 400 });
@@ -1112,6 +1141,7 @@ try {
       popOutTarget: popOutBox,
       popOutUsable: true,
     };
+    stage("phone-notifications");
     // A phone tests this device, even when a Mac backend reports its own notification failures.
     await soundPage.setViewportSize({ width: 390, height: 844 });
     const collapseNavigation = soundPage.getByRole("button", { name: "Collapse navigation" });
@@ -1166,6 +1196,7 @@ try {
     await soundPage.close();
   }
 } catch (error) {
+  stage("failure-diagnostics");
   for (const context of browser.contexts())
     for (const page of context.pages()) {
       await page.screenshot({ path: join(shots, "mobile-failure.png") }).catch(() => {});
@@ -1181,9 +1212,11 @@ try {
     }
   throw error;
 } finally {
+  stage("browser-cleanup");
   for (const context of browser.contexts())
     for (const page of context.pages()) await page.unrouteAll({ behavior: "ignoreErrors" }).catch(() => {});
   await browser.close();
 }
+stage("complete");
 writeFileSync(join(shots, "mobile-responsive.json"), `${JSON.stringify(result, null, 2)}\n`);
 console.log(JSON.stringify(result));

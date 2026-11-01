@@ -27,7 +27,7 @@ def test_revision_option_cannot_write_a_file(tmp_path):
         timeout=10,
     )
     assert result.returncode == 2
-    assert "not a Git option" in result.stderr
+    assert "must be a branch, tag, commit or HEAD offset" in result.stderr
     assert not destination.exists()
 
 
@@ -64,3 +64,58 @@ def test_commit_range_still_scans_messages(tmp_path):
     assert result.returncode == 1
     assert "confidential term #1" in result.stderr
     assert "fictional-sensitive-marker" not in result.stderr
+
+
+@pytest.mark.parametrize("range_text", ["main", "HEAD~1..HEAD", "HEAD~1...HEAD", "HEAD^1..main"])
+def test_every_revision_form_the_hooks_use_is_scanned(tmp_path, range_text):
+    def git(*arguments):
+        return subprocess.run(
+            [str(shutil.which("git")), *arguments],
+            cwd=tmp_path,
+            env={key: value for key, value in os.environ.items() if not key.startswith("GIT_")},
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=10,
+        ).stdout.strip()
+
+    git("init", "--quiet", "--initial-branch=main")
+    git("config", "user.name", "Example Author")
+    git("config", "user.email", "author@example.test")
+    git("-c", "commit.gpgsign=false", "commit", "--quiet", "--allow-empty", "-m", "Initial")
+    git("-c", "commit.gpgsign=false", "commit", "--quiet", "--allow-empty", "-m", "Contains fictional-sensitive-marker")
+    result = subprocess.run(
+        [sys.executable, str(SCRIPT), "--messages", range_text],
+        cwd=tmp_path,
+        env={
+            **{key: value for key, value in os.environ.items() if not key.startswith("GIT_")},
+            "CONFIDENTIAL_TERMS": "fictional-sensitive-marker",
+        },
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=10,
+    )
+    assert result.returncode == 1, result.stderr
+    assert "fictional-sensitive-marker" not in result.stderr
+
+
+@pytest.mark.parametrize(
+    "operand", ["--output=x", "-x..HEAD", "HEAD..--output=x", "$(touch x)", "no-such-branch", "HEAD~1;id"]
+)
+def test_anything_but_a_revision_is_refused_before_git_reads_it(tmp_path, operand):
+    subprocess.run([str(shutil.which("git")), "init", "--quiet"], cwd=tmp_path, check=True, timeout=10)
+    result = subprocess.run(
+        [sys.executable, str(SCRIPT), "--messages", operand],
+        cwd=tmp_path,
+        env={
+            **{key: value for key, value in os.environ.items() if not key.startswith("GIT_")},
+            "CONFIDENTIAL_TERMS": "fictional-sensitive-marker",
+        },
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=10,
+    )
+    assert result.returncode == 2
+    assert not (tmp_path / "x").exists()

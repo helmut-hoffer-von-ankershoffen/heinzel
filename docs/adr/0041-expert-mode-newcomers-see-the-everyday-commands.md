@@ -1,13 +1,19 @@
 ---
 status: proposed
 date: 2026-10-24
+implementation: built
 decision-makers: maintainer
 amends: 0018, 0039
+amends-0018: adds hz system expert; help lists the everyday commands
+amends-0039: the navigation lists the same everyday commands
 related: 0003, 0012, 0019, 0028, 0032
 amended-by: 0051
+implemented-by: 65
 ---
 
 # 0041: Expert mode: newcomers see the everyday commands, `hz system expert on` shows all
+
+*Since 0051 the module is `heinzel`: read `hz workflow` as `hz heinzel` and `[workflow]` as `[heinzel]`.*
 
 ## Context and Problem Statement
 
@@ -99,7 +105,5 @@ operation, every head reads the same field, and nothing stops working.
 
 ## More Information
 
-- Requested by the maintainer, 2026-10-24; the interpretation (most operations hidden by default, expert mode shows
-  everything) was stated to the maintainer, who may correct it.
 - Open: whether `hz system expert` should move to the top level as `hz expert`; whether a plugin may set a default
   audience for all its operations at once.

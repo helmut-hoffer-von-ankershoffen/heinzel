@@ -1,10 +1,14 @@
 ---
 status: proposed
 date: 2026-10-24
+implementation: built
 decision-makers: maintainer (direction), architect (evaluation and shape)
 amends: 0029, 0045
+amends-0029: Pydantic AI in the core as the turn engine; runners are the handoff
+amends-0045: the chat on the same engine
 related: 0014, 0021, 0027, 0028, 0030, 0037, 0040, 0049, 0051, 0052
 amended-by: 0057, 0061, 0067
+implemented-by: 167
 ---
 
 # 0050: Pydantic AI runs a turn; a coding agent is a handoff
@@ -48,13 +52,12 @@ what becomes of Claude Code, Codex and the other coding agents?
   through an MCP server hz must start for every turn (ADR 0045), and structured outputs only as text to parse. Its real
   advantages (the user's subscription login, a shell and files, the user's skills and plugins) are exactly what heavy
   work needs, so it is kept as the handoff.
-- **Pi Durable** (TypeScript, three weeks old; attribution amended 2026-10-24: this option first read "Earendil,
-  TypeScript", as if apart from pi, but it is the pi project's own durable harness, `@earendil-works/pi-durable` in [earendil-works/pi](https://github.com/earendil-works/pi),
+- **Pi Durable** (TypeScript, three weeks old; the pi project's own durable harness, `@earendil-works/pi-durable` in [earendil-works/pi](https://github.com/earendil-works/pi),
   beside the pi coding agent): a harness that owns conversations, documents and tasks in SQLite with checkpoints and
   idempotent submissions. It is a runtime, hz would run *inside* it, in another language, against an API that "changes
   without notice". Its rules are borrowed in ADR 0049; a `heinzel-pi` adapter can make the pi agent a handoff target
   through the command runner (statement 13).
-- **Pydantic AI durable execution** (added 2026-10-24: `TemporalDurability`, `DBOSDurability`, `PrefectDurability`
+- **Pydantic AI durable execution** (`TemporalDurability`, `DBOSDurability`, `PrefectDurability`
   in `pydantic_ai.durable_exec`, and the Restate and other integrations its
   [documentation](https://pydantic.dev/docs/ai/integrations/durable_execution/overview/) lists): each journals model
   requests and the tool calls it wraps in an engine's store. Rejected: each needs a server or a system database
@@ -64,13 +67,12 @@ what becomes of Claude Code, Codex and the other coding agents?
   the spine in a format we don't own, against tenet 8, and for hosted engines against the spirit of
   [ADR 0027](0027-nothing-is-sent-home.md); and waiting, timers and event wakes would be the engine's, while the
   daemon already has them (ADR 0049 statements 12 and 20). The spine *is* the durable layer; Pydantic AI is the loop.
-- **Pydantic AI Harness `StepPersistence` as the turn body** (added 2026-10-24,
-  [docs](https://pydantic.dev/docs/ai/harness/step-persistence/): append-only step events, a continuable snapshot at
+- **Pydantic AI Harness `StepPersistence` as the turn body** ([docs](https://pydantic.dev/docs/ai/harness/step-persistence/): append-only step events, a continuable snapshot at
   settled tool boundaries, a tool-effect ledger): rejected as a dependency, because the Harness is 0.x and changes
   between minors, its snapshots hold messages only, and it states that automatic execution recovery is not
   implemented. Its ledger states (`started`, `completed`, `failed`, `unknown_after_crash`) are borrowed as ADR 0049's
   effect ledger (statement 16).
-- **OpenProse Reactor's render step** (added 2026-10-24, [openprose/reactor](https://github.com/openprose/reactor)):
+- **OpenProse Reactor's render step** ([openprose/reactor](https://github.com/openprose/reactor)):
   it renders through a vendor agent SDK with a provider key, against
   [ADR 0035](0035-integrations-go-through-vendor-clis-as-an-ordinary-employee.md); its reconciler's rules are
   borrowed for the wake loop in ADR 0049, and the Pydantic AI engine here is the equivalent seam.
@@ -101,16 +103,15 @@ confirmed; the costs are named under Consequences. Checkable statements:
    provider-agnostic library is the smallest way to stay provider-agnostic. Facts about Pydantic AI below (typed tools
    with `RunContext` dependencies, `output_type` structured outputs, `message_history` continuation with JSON
    (de)serialisation of messages, `UsageLimits`, `Agent.iter()` for stepping, `TestModel` and `FunctionModel`) are
-   from its documentation as read on 2026-10-24 and are verified against the pinned version when step 3 of ADR 0049's
-   plan is built; a feature that isn't there is replaced by our own code, never by a prompt. *Amended 2026-10-24:*
-   re-verified against `pydantic-ai-slim` 2.61.0; what changes is statement 9.
+   from its documentation and are verified against the pinned version when step 3 of ADR 0049's
+   plan is built; a feature that isn't there is replaced by our own code, never by a prompt. Re-verified against `pydantic-ai-slim` 2.61.0; what changes is statement 9.
 2. **One `Agent` per turn, built by hz.** `heinzel.modules.heinzel._engine` builds a Pydantic AI `Agent` for each turn
    with: the instructions and messages ADR 0049 §8 fixes (the message history is hz's spine rendered into Pydantic AI's
    message models, which serialise to JSON and so into the turn body), dependencies typed as `TurnDeps` (the
    Heinzelmännchen's capability handles, its session, the cause and inputs), the tools of (3) and `output_type =
    Outcome` (4). Steps are driven with `Agent.iter()`, so hz appends a checkpoint after every model request and every
    tool call (ADR 0049 §5) and stops the run between steps when a cap is reached; the engine never runs a turn hz can't
-   checkpoint. *Amended 2026-10-24:* the message record is a `Conversation`, the checkpoint may be a capability hook,
+   checkpoint. The message record is a `Conversation`, the checkpoint may be a capability hook,
    and steering uses the run's queue (statement 10).
 3. **Tools are hz's services, read-only, typed.** A turn's tools are generated from its contract: one tool per declared
    input (`read_<name>()`: the input as fetched for this wake, from the body, never fetched again), `search_<capability>(...)`
@@ -125,7 +126,7 @@ confirmed; the costs are named under Consequences. Checkable statements:
    carry pass `clean_text` and `redact_emails` as every packet does. In the chat with a Heinzelmännchen (cause `asked`)
    the same tools apply, plus hz's read operations and the `ActionGate` of ADR 0045 as in-process tools: a read runs, a
    write becomes a proposal the user confirms; the gate's policy (what never runs from a chat) is unchanged.
-   *Amended 2026-10-24:* every tool declares `replay_safe` (statement 11), and the run pauses on a proposal through the
+   Every tool declares `replay_safe` (statement 11), and the run pauses on a proposal through the
    library's deferred tool requests (12).
 4. **The outcome is structured.** `Outcome` is one pydantic model the turn must return: `report` (one line for the
    spine), `draft: Draft | None` (text, the output name, the contract version it was made with, the `### Done when`
@@ -155,8 +156,7 @@ confirmed; the costs are named under Consequences. Checkable statements:
    `step.handoff` holds the runner, model, status, tool-call counts, cost, duration and the hashes of task and report;
    the turn body holds the task, the report and the runner's transcript as the adapter returns it (`stream-json` for
    Claude Code), expiring with the body (ADR 0049 §3). The coding agent's own session files are its own and hz never
-   depends on them. With no runner bound, `handoff` is absent from the tools and the instructions say so. *Amended
-   2026-10-24:* the pi agent is a named handoff target (statement 13); an interrupted handoff is never rerun (11).
+   depends on them. With no runner bound, `handoff` is absent from the tools and the instructions say so. The pi agent is a named handoff target (statement 13); an interrupted handoff is never rerun (11).
 7. **Skills feed the turn.** Advice for *how* is Markdown in the Agent Skills format
    ([ADR 0014](0014-agent-skills-and-the-claude-code-plugin.md)): `skills/<name>/SKILL.md` shipped by a plugin and
    listed by its playbook (`PlaybookLet.skills`, additive, [ADR 0037](0037-plugins-bring-playbooks.md)), in the team
@@ -169,14 +169,14 @@ confirmed; the costs are named under Consequences. Checkable statements:
    work as plain skills in Claude Code, Codex and Cursor, which is the point of the format.
 8. **The chat engine.** ADR 0045's chat sessions run on the same engine: hz's operations as in-process tools (reads run,
    writes are proposals through the `ActionGate`, paused through the library's deferred tool requests since the
-   amendment of 2026-10-24, 12), the same caps, the same streaming through `Progress.emitter()`. The stdio MCP server of
+   12), the same caps, the same streaming through `Progress.emitter()`. The stdio MCP server of
    ADR 0045 is no longer needed for the chat itself and stays for coding agents: a handoff's tool profile may name it so
    a coding agent can read through hz (and still can't write). `hz system runner ask` stays for one-off questions.
 
-**Amended 2026-10-24: verified against Pydantic AI 2.61.0.** The facts of (1) were checked against the released
+**Verified against Pydantic AI 2.61.0.** The facts of (1) were checked against the released
 `pydantic-ai-slim` 2.61.0 package and its documentation ([persistence](https://pydantic.dev/docs/ai/core-concepts/persistence/),
 [durable execution](https://pydantic.dev/docs/ai/integrations/durable_execution/overview/)), after research into the
-pi agent loop and durable-execution engines (ADR 0049's amendment of the same day). Statements 1–8 hold; these are
+pi agent loop and durable-execution engines (ADR 0049's durable-turns section). Statements 1–8 hold; these are
 added.
 
 9. **What 2.61.0 has.** `pydantic_ai.conversation.Conversation` holds `messages`, `usage`, `conversation_id` and
@@ -242,20 +242,20 @@ Not yet: proposed. When implemented:
   ends `failed` with the error; an unmet `### Done when` item ends `skipped` and places nothing; the cap stops a run
   between steps and the token ceiling inside one; a checkpoint follows every step; `message_history` round-trips through
   the turn body.
-- `tests/unit/modules/heinzel_tools_test.py`: the generated tools match the contract's inputs and `requires`; every
+- Tools: the generated tools match the contract's inputs and `requires`; every
   tool is read-only (a write-mode method is never exposed, checked against the capability registry); tool results pass
   `clean_text` and carry no email address; `handoff` is absent when no runner is bound.
-- `tests/unit/modules/heinzel_handoff_test.py`: a handoff runs the bound runner once with the files, share and
+- Handoff: a handoff runs the bound runner once with the files, share and
   instructions, keeps hashes and cost in the spine and the transcript in the body, and writes nothing outside its
   directory (with the fake runner of `tests/integration/runner_test.py`).
-- `tests/unit/modules/heinzel_skills_test.py`: skills resolve along the layer stack, render in order, are fingerprinted,
+- Skills: skills resolve along the layer stack, render in order, are fingerprinted,
   and `HZC051` refuses a skill that tries to grant.
 - `tests/unit/modules/runner_chat_test.py` (adapted): the chat's reads run and writes are proposals under the same
   policy; `tests/integration/chat_test.py` without a stdio server.
-- Amended 2026-10-24: the `Conversation` round-trips through the turn body with `ConversationTypeAdapter`; the
+- The `Conversation` round-trips through the turn body with `ConversationTypeAdapter`; the
   checkpoint capability appends one spine line per node; `stop` cancels and resumes from the snapshot; a steered
   message reaches the next model request; generated tools carry `replay_safe` and an interrupted `handoff` is reported,
-  not rerun (`tests/unit/modules/heinzel_engine_test.py`, `heinzel_tools_test.py`); a chat write ends the run with a
+  not rerun (`tests/unit/modules/heinzel_engine_test.py`); a chat write ends the run with a
   deferred request, `confirm` runs it through `Kernel.invoke` once and its result resumes the same `Conversation`,
   the spine holds no proposal arguments, and a crash in between loses nothing
   (`tests/unit/modules/runner_chat_test.py`).
