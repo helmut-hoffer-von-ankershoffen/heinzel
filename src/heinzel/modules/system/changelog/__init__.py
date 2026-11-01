@@ -17,7 +17,7 @@ from rich.text import Text
 from heinzel import HeinzelError, Module, ModuleSettings, __version__
 from heinzel.kernel import Installation
 from heinzel.modules.system._models import ReleaseNotes
-from heinzel.modules.system._service import RELEASE_TIMEOUT, clean, github_releases
+from heinzel.modules.system._service import RELEASE_TIMEOUT, clean, installed_releases
 
 FILENAME = "CHANGELOG.md"
 
@@ -121,7 +121,7 @@ def _newer(installation: Installation, token: SecretStr | None) -> list[ReleaseN
     except InvalidVersion as exc:
         msg = f"hz {__version__} is no release version, so no release is newer or older than it."
         raise HeinzelError(msg) from exc
-    releases = github_releases(installation)
+    releases = installed_releases(installation)
     try:
         return releases.newer_than(__version__, RELEASE_TIMEOUT, token)
     # Offline, rate-limited or an odd answer: one clear error, never a traceback.
