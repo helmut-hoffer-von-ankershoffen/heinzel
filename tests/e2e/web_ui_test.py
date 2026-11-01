@@ -257,6 +257,16 @@ def _start_ui(env: dict[str, str], port: int) -> tuple[subprocess.Popen[str], st
     return ui, url
 
 
+def _browser_ready(engine: str) -> list[str]:
+    """Build the web app, install the engine, and return the command that runs a web tool."""
+    web_build.ensure_built()
+    run = [sys.executable, str(REPO / "scripts" / "web_build.py")]
+    subprocess.run(
+        [*run, "exec", "playwright-core", "install", engine], cwd=REPO, check=True, timeout=900, capture_output=True
+    )
+    return run
+
+
 def _node(run: list[str], script: str, *args: str) -> subprocess.CompletedProcess[str]:
     """Run one browser driver of web/e2e and capture what it printed."""
     return subprocess.run(
@@ -488,11 +498,7 @@ def test_a_plugin_installed_outside_the_running_app_offers_restart_and_apply_in_
 def test_a_refused_sign_in_offers_a_paste_field_that_signs_in_with_the_printed_link(environment, tmp_path):
     """An installed app has no address bar: the sign-in page takes the printed link and rejects another address."""
     env, _ = environment
-    web_build.ensure_built()
-    run = [sys.executable, str(REPO / "scripts" / "web_build.py")]
-    subprocess.run(
-        [*run, "exec", "playwright-core", "install", "chromium"], cwd=REPO, check=True, timeout=600, capture_output=True
-    )
+    run = _browser_ready("chromium")
     ui, url = _start_ui(env, _free_port())
     try:
         driven = _node(run, "signin-paste", url, str(tmp_path))
