@@ -99,7 +99,7 @@ export async function verifyNavigation(page, url, shots) {
   if (viewport) await page.setViewportSize(viewport);
   let sent;
   page.on("request", (request) => {
-    if (new URL(request.url()).pathname === "/api/heinzel/profile") sent = request;
+    if (new URL(request.url()).pathname === "/api/stream/heinzel/profile") sent = request; // a confirmed write runs on the operation stream
   });
   await page
     .getByRole("navigation", { name: "Main", exact: true })
@@ -108,7 +108,7 @@ export async function verifyNavigation(page, url, shots) {
   const confirmation = page.getByRole("alertdialog", { name: "Save the helper profile." });
   await confirmation.waitFor();
   if (sent) throw new Error("A private mutation ran before confirmation");
-  const answer = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/heinzel/profile");
+  const answer = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/stream/heinzel/profile");
   await confirmation.getByRole("button", { name: "Run it" }).click();
   const changed = await answer;
   if (!changed.ok() || !sent || new URL(sent.url()).search || sent.postDataJSON().appearance.hat !== "blue")

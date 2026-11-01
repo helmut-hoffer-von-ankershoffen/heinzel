@@ -5715,6 +5715,11 @@ export interface components {
              */
             installed: boolean;
             /**
+             * Installed At
+             * @description When `install` last loaded the unit, from its marker; tells a daemon still waiting for its first tick from one that stopped ticking.
+             */
+            installed_at?: string | null;
+            /**
              * Installed Version
              * @description The hz version in the last install marker; a successful service-manager command is not proof that this code ran.
              */
