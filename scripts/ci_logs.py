@@ -19,7 +19,7 @@ import sys
 from collections import defaultdict
 from typing import Any
 
-ANSI = re.compile(r"(?:\x1b|\^\[)\[[0-9;?]*[A-Za-z]")  # GitHub's logs spell ESC as "^["
+ANSI = re.compile(r"(?:\x1b|\^\[)\x5b[0-9;?]*[A-Za-z]")  # GitHub's logs spell ESC as "^["
 TIMESTAMP = re.compile(r"^\d{4}-\d\d-\d\dT[\d:.]+Z ?")
 PYTEST_ERROR = re.compile(r"^\s*E ")
 ERROR = re.compile(r"FAILED|\berror\b:|Error:|##\[error\]|✗|Process completed with exit code")
