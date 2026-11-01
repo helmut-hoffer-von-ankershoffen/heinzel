@@ -17,6 +17,7 @@ from heinzel.modules.system.notify._macos import BUNDLED, REAL_ENV, NotifierApp,
 
 pytestmark = [
     pytest.mark.e2e,
+    pytest.mark.macos_specific,
     pytest.mark.skipif(sys.platform != "darwin", reason="Heinzel Notifier is a macOS app"),
     pytest.mark.skipif(tree_digest(BUNDLED) is None, reason="the app isn't built: make notifier"),
 ]

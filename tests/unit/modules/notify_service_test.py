@@ -327,6 +327,7 @@ def heinzel_service(  # noqa: PLR0913 - a test double with switches
     return NotifyService(settings, NotifySettings(), ORG, clock=clock, notifier=notifier)
 
 
+@pytest.mark.macos_specific
 def test_doctor_checks_heinzel_notifier_without_installing_it(settings, clock, tmp_path):
     service = heinzel_service(settings, clock, tmp_path, "not-determined")
     checks = {check.name: check for check in service.health()}
@@ -342,6 +343,7 @@ def test_doctor_checks_heinzel_notifier_without_installing_it(settings, clock, t
     assert "hz system notify install" in checks["native notifications"].detail
 
 
+@pytest.mark.macos_specific
 def test_once_allowed_the_daemon_pops_up_through_heinzel_notifier(settings, clock, tmp_path):
     service = heinzel_service(settings, clock, tmp_path, "authorized")
     draft(service)
@@ -359,6 +361,7 @@ def test_doctor_names_a_denial_and_a_quarantine(settings, clock, tmp_path):
     assert checks["heinzel notifier quarantine"].fix.startswith("xattr -d com.apple.quarantine")
 
 
+@pytest.mark.macos_specific
 def test_install_puts_heinzel_notifier_in_place_and_pops_up_a_test(settings, clock, tmp_path):
     service = heinzel_service(settings, clock, tmp_path, "authorized")
     installed = service.install()
@@ -372,6 +375,7 @@ def shown(service: NotifyService) -> list[str]:
     return [line.plain for line in render_installed(service.install()).renderables]
 
 
+@pytest.mark.macos_specific
 def test_install_replaces_an_outdated_notifier_and_says_so(settings, clock, tmp_path):
     service = heinzel_service(settings, clock, tmp_path, "authorized", stale=True)
     assert shown(service) == [
@@ -382,6 +386,7 @@ def test_install_replaces_an_outdated_notifier_and_says_so(settings, clock, tmp_
     assert service.notifier.app.inspect().state == "current"
 
 
+@pytest.mark.macos_specific
 def test_install_says_so_when_a_wheel_ships_no_notifier(settings, clock, tmp_path):
     service = heinzel_service(settings, clock, tmp_path, "authorized", stale=True, wheel=True)
     lines = shown(service)
@@ -396,6 +401,7 @@ def test_install_does_not_claim_an_update_when_the_rebuild_fails(settings, clock
     assert lines[0].startswith("Couldn't update Heinzel Notifier: building it failed (swiftc not found)")
 
 
+@pytest.mark.macos_specific
 def test_install_reads_the_notifiers_success_output_as_success(settings, clock, tmp_path):
     service = heinzel_service(settings, clock, tmp_path, "authorized", posted="posted error=nil")
     installed = service.install()
@@ -417,6 +423,7 @@ def test_install_golden_output_when_up_to_date_and_when_refused(settings, clock,
     ]
 
 
+@pytest.mark.macos_specific
 def test_install_without_a_notifier_says_why(make, settings, clock):
     service = NotifyService(settings, NotifySettings(), ORG, clock=clock, notifier=Native(None, detail="headless"))
     installed = service.install()
@@ -627,6 +634,7 @@ def leftover_service(settings, clock, tmp_path, ended: list[int]) -> NotifyServi
     )
 
 
+@pytest.mark.macos_specific
 def test_doctor_counts_leftover_notifier_processes_and_names_the_fix(settings, clock, tmp_path):
     ended: list[int] = []
     service = leftover_service(settings, clock, tmp_path, ended)
@@ -649,6 +657,7 @@ def test_every_daemon_tick_ends_the_leftovers_and_leaves_a_notification_being_po
     assert ended == [7001, 7001]
 
 
+@pytest.mark.macos_specific
 def test_the_tick_makes_macos_forget_stray_copies_once_a_day(settings, clock, tmp_path):
     forgotten: list[str] = []
     ended: list[int] = []
@@ -664,6 +673,7 @@ def test_the_tick_makes_macos_forget_stray_copies_once_a_day(settings, clock, tm
     assert forgotten == ["x", "x"]
 
 
+@pytest.mark.macos_specific
 def test_the_tick_installs_a_missing_notifier_without_any_command(settings, clock, tmp_path):
     service = leftover_service(settings, clock, tmp_path, [])
     assert service.notifier.app is not None
