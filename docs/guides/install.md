@@ -14,6 +14,9 @@ If you already have [uv](https://docs.astral.sh/uv/getting-started/installation/
 
 <!-- hz:install -->
 
+`@latest` asks uv for the newest release on every start; a plain `uvx heinzel` keeps reusing whatever uv cached or
+installed first, however old.
+
 **Need uv installed for you?** Use the guided installer instead:
 
 <!-- hz:install-script -->
