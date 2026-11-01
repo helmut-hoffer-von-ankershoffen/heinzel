@@ -1,8 +1,10 @@
+import { fetchOnce, ONE_CONNECTION } from "./fetch-once.mjs";
+
 // Exercise an arbitrary provider's navigation and the actual authenticated private JSON operation it invokes.
 export async function verifyNavigation(page, url, shots) {
   const base = new URL(url).origin;
   const token = new URLSearchParams(new URL(url).hash.slice(1)).get("token");
-  const headers = { Authorization: `Bearer ${token}` };
+  const headers = { ...ONE_CONNECTION, Authorization: `Bearer ${token}` };
   const create = await page.request.post(`${base}/api/heinzel/new-chat`, {
     headers,
     data: { request_id: crypto.randomUUID(), name: "Harbor helper" },
@@ -42,7 +44,7 @@ export async function verifyNavigation(page, url, shots) {
   };
   await page.route("**/api/system/ui/navigation", (route) => route.fulfill({ json: [entry] }));
   await page.route("**/api/system/config/show", async (route) => {
-    const response = await route.fetch();
+    const response = await fetchOnce(route);
     const report = await response.json();
     await route.fulfill({
       response,

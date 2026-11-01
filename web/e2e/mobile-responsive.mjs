@@ -8,6 +8,7 @@ import { join } from "node:path";
 import { chromium, webkit } from "playwright-core";
 import ts from "typescript";
 import { contributePanel } from "./contributed-panel.mjs";
+import { fetchOnce, ONE_CONNECTION } from "./fetch-once.mjs";
 import { reportMediaFailure, watchMedia } from "./media-diagnostics.mjs";
 
 // Fixed, credential-free checkpoints for timeout diagnosis; do not interpolate page or URL data.
@@ -255,7 +256,7 @@ try {
     await contributePanel(page);
     // Platform-specific CLI paths and provider names must wrap rather than widen their settings pane.
     await page.route("**/api/ai/access/list", async (route) => {
-      const response = await route.fetch();
+      const response = await fetchOnce(route);
       const listing = await response.json();
       listing.options.push({
         name: "mobile-overflow-probe",
@@ -276,12 +277,12 @@ try {
     });
     // Include advanced controls using the real isolated-profile operation.
     const expertResponse = await context.request.post(new URL("/api/system/expert/on", url).href, {
-      headers: { Authorization: `Bearer ${new URL(url).hash.slice("#token=".length)}` },
+      headers: { ...ONE_CONNECTION, Authorization: `Bearer ${new URL(url).hash.slice("#token=".length)}` },
     });
     assert.ok(expertResponse.ok(), "Advanced settings must be enabled in the isolated fixture");
     // Enum display labels come from providers and can exceed a native select's intrinsic phone width.
     await page.route("**/api/system/config/show", async (route) => {
-      const response = await route.fetch();
+      const response = await fetchOnce(route);
       const report = await response.json();
       const backend = report.settings.find(
         (setting) => setting.section === "system.credential" && setting.key === "backend",
