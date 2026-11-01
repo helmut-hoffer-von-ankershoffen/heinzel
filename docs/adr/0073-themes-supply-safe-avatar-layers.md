@@ -1,6 +1,7 @@
 ---
 status: proposed
 date: 2026-10-25
+implementation: built
 decision-makers: maintainer
 amends: 0064
 related: 0044, 0060

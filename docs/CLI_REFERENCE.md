@@ -2480,6 +2480,7 @@ $ hz system notify [OPTIONS] COMMAND [ARGS]...
 **Commands**:
 
 * `ack`: (expert) Mark notices as shown, so the...
+* `clean`: (expert) End leftover Heinzel Notifier...
 * `install`: (expert) Install the native notifier...
 * `list`: (expert) Show the latest notices, whether...
 * `settings`: (expert) Open the system&#x27;s notification...
@@ -2498,6 +2499,22 @@ $ hz system notify ack [OPTIONS] {ids}
 **Arguments**:
 
 * `ids`: Ids of the notices that were shown, from `list`, separated by commas.  [required]
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system notify clean`
+
+(expert) End leftover Heinzel Notifier processes and make macOS forget its stray copies.
+
+**Usage**:
+
+```console
+$ hz system notify clean [OPTIONS]
+```
 
 **Options**:
 
@@ -2597,6 +2614,7 @@ $ hz system plugin [OPTIONS] COMMAND [ARGS]...
 * `list`: (expert) List installed plugins, enabled...
 * `new`: (expert) Scaffold a plugin repository from...
 * `operation`: (expert) Read the status and result of a...
+* `pending`: (expert) List plugins changed on this...
 * `remove`: (expert) Remove a plugin.
 * `sdk`: (expert) Export the versioned plugin view...
 * `search`: (expert) Find plugins to install:...
@@ -2815,6 +2833,22 @@ $ hz system plugin operation [OPTIONS] {operation_id}
 **Arguments**:
 
 * `operation_id`: Receipt id from a plugin preview.  [required]
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system plugin pending`
+
+(expert) List plugins changed on this machine since this server started: what a restart would load.
+
+**Usage**:
+
+```console
+$ hz system plugin pending [OPTIONS]
+```
 
 **Options**:
 

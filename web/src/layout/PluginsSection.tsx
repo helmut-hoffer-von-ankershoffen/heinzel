@@ -325,7 +325,17 @@ function InlineSlot({ children }: { children: ReactNode }) {
 }
 
 export function PluginsSection({ reload, restartInterval }: { reload?: () => void; restartInterval?: number } = {}) {
-  const [tab, setTab] = useState<"yours" | "discover">("yours");
+  const [tab, setTabState] = useState<"yours" | "discover">(() =>
+    new URLSearchParams(window.location.search).get("plugins") === "discover" ? "discover" : "yours",
+  );
+  // The tab lives in the address too, so a reload (Restart and apply) returns to the tab the person was on.
+  const setTab = (next: "yours" | "discover") => {
+    setTabState(next);
+    const address = new URL(window.location.href);
+    if (next === "discover") address.searchParams.set("plugins", "discover");
+    else address.searchParams.delete("plugins");
+    window.history.replaceState(window.history.state, "", `${address.pathname}${address.search}${address.hash}`);
+  };
   const [query, setQuery] = useState("");
   const [adding, setAdding] = useState(false);
   const [spec, setSpec] = useState("");

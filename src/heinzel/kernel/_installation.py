@@ -278,11 +278,29 @@ def _constraint_policy(data: dict[str, Any]) -> ToolConstraintPolicy:
     )
 
 
-def _remove_transient_constraint(raw: bytes, original: ToolConstraintPolicy, added: str) -> bytes:
-    """Remove exactly the last, temporary exact-version constraint from a matching policy.
+def _transient_entry(added: str) -> str:
+    """The receipt entry one exact-version guard becomes.
 
     Raises:
-        HeinzelError: If the policy or added constraint does not match exactly.
+        HeinzelError: If `added` is anything but one plain exact-version requirement.
+    """
+    requirement = Requirement(added)
+    specifiers = list(requirement.specifier)
+    if requirement.url or requirement.marker or requirement.extras or len(specifiers) != 1:
+        raise HeinzelError(_CONSTRAINT_ERROR)
+    specifier = specifiers[0]
+    if specifier.operator != "==" or "*" in specifier.version:
+        raise HeinzelError(_CONSTRAINT_ERROR)
+    Version(specifier.version)
+    entry = {"name": canonicalize_name(requirement.name, validate=True), "specifier": str(specifier)}
+    return json.dumps(entry, sort_keys=True, separators=(",", ":"))
+
+
+def _remove_transient_constraint(raw: bytes, original: ToolConstraintPolicy, added: tuple[str, ...]) -> bytes:
+    """Remove exactly the last, temporary exact-version constraints from a matching receipt.
+
+    Raises:
+        HeinzelError: If the policy or added constraints do not match exactly.
     """
     try:
         snapshot = cast("object", original)
@@ -292,33 +310,23 @@ def _remove_transient_constraint(raw: bytes, original: ToolConstraintPolicy, add
             or not isinstance(cast("object", snapshot.entries), tuple)
             or any(not isinstance(entry, str) for entry in cast("tuple[object, ...]", snapshot.entries))
             or (not snapshot.present and snapshot.entries)
+            or not added
         ):
             raise HeinzelError(_CONSTRAINT_ERROR)
-        requirement = Requirement(added)
-        specifiers = list(requirement.specifier)
-        if requirement.url or requirement.marker or requirement.extras or len(specifiers) != 1:
-            raise HeinzelError(_CONSTRAINT_ERROR)
-        specifier = specifiers[0]
-        if specifier.operator != "==" or "*" in specifier.version:
-            raise HeinzelError(_CONSTRAINT_ERROR)
-        Version(specifier.version)
-        added_entry = {"name": canonicalize_name(requirement.name, validate=True), "specifier": str(specifier)}
+        expected = tuple(_transient_entry(item) for item in added)
         data = tomllib.loads(raw.decode("utf-8"))
         actual = _constraint_policy(data)
-        expected = json.dumps(added_entry, sort_keys=True, separators=(",", ":"))
-        if not actual.present or actual.entries != (*original.entries, expected):
+        if not actual.present or actual.entries != (*original.entries, *expected):
             raise HeinzelError(_CONSTRAINT_ERROR)
         document = tomlkit.parse(raw.decode("utf-8"))
         table = cast("MutableMapping[str, Any]", document["tool"])
-        if original.present:
-            table["constraints"].pop()
-        else:
-            del table["constraints"]
+        for current in (table, data["tool"]):
+            if original.present:
+                for _ in expected:
+                    current["constraints"].pop()
+            else:
+                del current["constraints"]
         replacement = tomlkit.dumps(document).encode("utf-8")
-        if original.present:
-            data["tool"]["constraints"].pop()
-        else:
-            del data["tool"]["constraints"]
         if tomllib.loads(replacement.decode("utf-8")) != data:
             raise HeinzelError(_CONSTRAINT_ERROR)
     except (KeyError, TypeError, ValueError, UnicodeError, InvalidRequirement, InvalidVersion) as exc:
@@ -571,8 +579,10 @@ class Installation:
             raise HeinzelError(_CONSTRAINT_ERROR)
         return result
 
-    def remove_transient_tool_constraint(self, *, expected: str, original: ToolConstraintPolicy, added: str) -> str:
-        """Remove one exact-version guard only from the independently verified post-mutation generation.
+    def remove_transient_tool_constraint(
+        self, *, expected: str, original: ToolConstraintPolicy, added: str | tuple[str, ...]
+    ) -> str:
+        """Remove exact-version guards only from the independently verified post-mutation generation.
 
         Raises:
             HeinzelError: If the receipt, policy or installation generation cannot be verified.
@@ -584,9 +594,17 @@ class Installation:
                 receipt = _read_tool_receipt_bytes(self.prefix)
             except ValueError as exc:
                 raise HeinzelError(_CONSTRAINT_ERROR) from exc
-            return _remove_transient_constraint(receipt, original, added)
+            return _remove_transient_constraint(receipt, original, (added,) if isinstance(added, str) else added)
 
         return _installation_continuity.replace_receipt(self.prefix, self._continuity_authority, expected, transform)
+
+    def installed_versions(self, names: Sequence[str]) -> dict[str, str]:
+        """The installed version of each named distribution, read without starting its interpreter.
+
+        Raises:
+            HeinzelError: If the metadata cannot be safely inspected.
+        """
+        return _installed_metadata.inspect_versions(self.prefix, names)
 
     def installed_core_version(self) -> str:
         """Inspect the currently installed core version without starting its interpreter.

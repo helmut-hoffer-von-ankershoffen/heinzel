@@ -8,6 +8,7 @@ import { join } from "node:path";
 import { chromium, webkit } from "playwright-core";
 import ts from "typescript";
 import { contributePanel } from "./contributed-panel.mjs";
+import { fetchOnce, ONE_CONNECTION } from "./fetch-once.mjs";
 import { reportMediaFailure, watchMedia } from "./media-diagnostics.mjs";
 
 // Fixed, credential-free checkpoints for timeout diagnosis; do not interpolate page or URL data.
@@ -255,7 +256,7 @@ try {
     await contributePanel(page);
     // Platform-specific CLI paths and provider names must wrap rather than widen their settings pane.
     await page.route("**/api/ai/access/list", async (route) => {
-      const response = await route.fetch();
+      const response = await fetchOnce(route);
       const listing = await response.json();
       listing.options.push({
         name: "mobile-overflow-probe",
@@ -276,12 +277,12 @@ try {
     });
     // Include advanced controls using the real isolated-profile operation.
     const expertResponse = await context.request.post(new URL("/api/system/expert/on", url).href, {
-      headers: { Authorization: `Bearer ${new URL(url).hash.slice("#token=".length)}` },
+      headers: { ...ONE_CONNECTION, Authorization: `Bearer ${new URL(url).hash.slice("#token=".length)}` },
     });
     assert.ok(expertResponse.ok(), "Advanced settings must be enabled in the isolated fixture");
     // Enum display labels come from providers and can exceed a native select's intrinsic phone width.
     await page.route("**/api/system/config/show", async (route) => {
-      const response = await route.fetch();
+      const response = await fetchOnce(route);
       const report = await response.json();
       const backend = report.settings.find(
         (setting) => setting.section === "system.credential" && setting.key === "backend",
@@ -1035,6 +1036,10 @@ try {
     await soundPage.getByRole("button", { name: "Choose a soundscape", exact: true }).click();
     const soundDialog = soundPage.getByRole("dialog", { name: "Sound" });
     await soundDialog.getByText("Use your iPhone or iPad volume buttons to adjust YouTube audio.").waitFor();
+    // Safari's toolbars and keyboard resize the window at the same width: the navigation and this dialog stay open.
+    await soundPage.evaluate(() => window.dispatchEvent(new Event("resize")));
+    await soundPage.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve))));
+    assert.equal(await soundDialog.count(), 1, "a same-width resize keeps the sound dialog open");
     assert.equal(await soundDialog.getByRole("slider", { name: "Volume" }).count(), 0);
     assert.equal(await soundDialog.getByRole("switch", { name: "Softer while I type" }).count(), 0);
     await assertContained(soundPage, soundDialog, "iPhone sound controls");
@@ -1079,6 +1084,8 @@ try {
     await soundPage.screenshot({ path: join(shots, "mobile-compact-sound.png") });
     await soundPage.getByRole("button", { name: "Expand navigation" }).click();
     await player.waitFor();
+    // The player moves with the navigation's width transition: a tap during it can land beside the button.
+    await soundPage.waitForFunction(() => !document.getAnimations().some((run) => run instanceof CSSTransition));
     await popOut.tap();
     await soundPage.waitForFunction(() => document.querySelector('[data-dock="floating"]'));
     await soundPage.setViewportSize({ width: 360, height: 400 });

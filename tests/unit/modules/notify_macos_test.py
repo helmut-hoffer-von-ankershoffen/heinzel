@@ -16,9 +16,11 @@ import pytest
 
 from heinzel.modules.system.notify._macos import (
     EXECUTABLE,
+    LIFETIME,
     SOURCES,
     NotifierApp,
     bundle_version,
+    parse_etime,
     source_version,
     tree_digest,
 )
@@ -339,3 +341,147 @@ def test_icon_urls_follow_the_actual_artwork_revision(tmp_path, monkeypatch):
     assert before != after
     assert f"?v={before}" not in page.read_text("utf-8")
     assert page.read_text("utf-8").count(f"?v={after}") >= 5
+
+
+LAUNCHCTL = (
+    "PID\tStatus\tLabel\n"
+    "501\t0\tapplication.dev.heinzel.notifier.30134912.30134919.AAAA\n"
+    "502\t0\tapplication.dev.heinzel.notifier.30134912.30134920.BBBB\n"
+    "503\t0\tapplication.dev.heinzel.notifier2.1.2.CCCC\n"
+    "504\t0\tapplication.com.example.other.1.2.DDDD\n"
+    "-\t0\tapplication.dev.heinzel.notifier.30134912.30134921.EEEE\n"
+    "505\t0\tcom.apple.Safari\n"
+)
+"""What `launchctl list` prints: two live notifiers, one dead entry, a look-alike bundle id and strangers."""
+
+
+def listing(ages: dict[int, str]):
+    commands: list[list[str]] = []
+
+    def run(command, timeout=None):
+        commands.append(list(command))
+        if command[0].endswith("launchctl"):
+            return subprocess.CompletedProcess(command, 0, LAUNCHCTL, "")
+        pid = int(command[-1])
+        return subprocess.CompletedProcess(command, 0 if pid in ages else 1, f" {ages.get(pid, '')}\n", "")
+
+    return run, commands
+
+
+@pytest.mark.parametrize(
+    ("text", "seconds"),
+    [("00:07", 7), ("12:30", 750), ("01:02:03", 3723), ("2-01:00:00", 2 * 86400 + 3600), ("", None), ("x", None)],
+)
+def test_ps_elapsed_time_is_read_in_seconds(text, seconds):
+    assert parse_etime(text) == seconds
+
+
+def test_only_live_instances_with_exactly_this_bundle_id_are_found(tmp_path, bundled):
+    run, commands = listing({501: "00:12", 502: "3-04:00:00"})
+    found = NotifierApp(tmp_path / "home", bundled=bundled, runner=run).instances()
+    assert [(item.pid, item.seconds, item.stale) for item in found] == [(501, 12, False), (502, 273600, True)]
+    asked = {command[-1] for command in commands if command[0].endswith("ps")}
+    assert asked == {"501", "502"}  # a look-alike id, a stranger and a dead entry are never even looked at
+
+
+def test_clean_ends_only_what_outlived_any_notification(tmp_path, bundled):
+    run, _ = listing({501: "00:12", 502: "3-04:00:00"})
+    ended: list[tuple[int, int]] = []
+    app = NotifierApp(tmp_path / "home", bundled=bundled, runner=run, kill=lambda pid, sig: ended.append((pid, sig)))
+    assert app.clean() == 1
+    assert [pid for pid, _ in ended] == [502]  # the one being posted right now (12 s old) lives
+    assert app.clean(older_than=0) == 2  # told that nothing may live, it ends both
+    assert [pid for pid, _ in ended][1:] == [501, 502]
+
+
+def test_an_instance_that_is_already_gone_is_not_counted(tmp_path, bundled):
+    run, _ = listing({502: "3-04:00:00"})
+
+    def gone(pid, sig):
+        raise ProcessLookupError
+
+    assert NotifierApp(tmp_path / "home", bundled=bundled, runner=run, kill=gone).clean() == 0
+
+
+def test_the_swift_app_ends_itself_whatever_hangs():
+    source = (SOURCES / "main.swift").read_text(encoding="utf-8")
+    assert "_exit(code)" in source  # `exit` can wait on a lock the main thread holds
+    assert "exit(" not in source.replace("_exit(", "").replace("leave(", "")
+    assert "NSApp.terminate" not in source
+    assert "DispatchQueue.global" in source  # the timer isn't the main run loop, which is what may be stuck
+    assert "exitAfter(CommandLine.arguments.contains" in source
+    # Before any mode returns: `--status` once had no deadline, so a notification center that never answered kept an
+    # instance alive forever, one more at every daemon tick.
+    assert source.index("exitAfter(CommandLine.arguments.contains") < source.index('contains("--status")')
+    assert LIFETIME >= 70  # macOS's question takes up to 60 s, then it posts
+
+
+def test_an_app_that_ended_before_open_could_wait_still_has_its_answer(tmp_path, bundled):
+    class Fast:
+        def __call__(self, command, timeout=None):
+            Path(command[command.index("--stdout") + 1]).write_text("authorized", encoding="utf-8")
+            failure = "Unable to block on applications (initial call to kevent() failed: No such process)"
+            return subprocess.CompletedProcess(command, 1, "", failure)
+
+    assert NotifierApp(tmp_path / "home", bundled=bundled, runner=Fast()).status() == "authorized"
+    assert NotifierApp(tmp_path / "home", bundled=bundled, runner=Runner(code=1)).status().startswith("open failed")
+
+
+DUMP = """\
+--------------------------------------------------------------------------------
+bundle id:                  Heinzel Notifier (0xeec)
+path:                       /Users/me/Applications/Heinzel Notifier.app (0x1)
+identifier:                 dev.heinzel.notifier
+--------------------------------------------------------------------------------
+bundle id:                  Heinzel Notifier (0xeed)
+path:                       /private/var/T/pytest-of-me/pytest-9/home/Applications/Heinzel Notifier.app (0x2)
+identifier:                 dev.heinzel.notifier
+--------------------------------------------------------------------------------
+bundle id:                  Heinzel Notifier (0xeee)
+path:                       /Users/me/Code/worktree/src/HeinzelNotifier.app (0x3)
+identifier:                 dev.heinzel.notifier
+--------------------------------------------------------------------------------
+bundle id:                  Look-alike (0xeef)
+path:                       /Applications/Notifier.app (0x4)
+identifier:                 dev.heinzel.notifier2
+--------------------------------------------------------------------------------
+bundle id:                  Other (0xef0)
+path:                       /Applications/Other.app (0x5)
+identifier:                 com.example.other
+"""
+
+
+def lsregister(commands: list[list[str]]):
+    def run(command, timeout=None):
+        commands.append(list(command))
+        return subprocess.CompletedProcess(command, 0, DUMP if "-dump" in command else "", "")
+
+    return run
+
+
+def test_every_copy_macos_knows_under_this_exact_bundle_id_is_listed(tmp_path, bundled):
+    app = NotifierApp(Path("/Users/me"), bundled=bundled, runner=lsregister([]))
+    assert [str(path) for path in app.registered()] == [
+        "/Users/me/Applications/Heinzel Notifier.app",
+        "/private/var/T/pytest-of-me/pytest-9/home/Applications/Heinzel Notifier.app",
+        "/Users/me/Code/worktree/src/HeinzelNotifier.app",
+    ]
+
+
+def test_strays_are_forgotten_and_the_installed_copy_and_strangers_are_left(tmp_path, bundled):
+    commands: list[list[str]] = []
+    app = NotifierApp(Path("/Users/me"), bundled=bundled, runner=lsregister(commands))
+    assert app.unregister_strays() == 2
+    forgotten = [command[-1] for command in commands if "-u" in command]
+    assert forgotten == [
+        "/private/var/T/pytest-of-me/pytest-9/home/Applications/Heinzel Notifier.app",
+        "/Users/me/Code/worktree/src/HeinzelNotifier.app",
+    ]
+
+
+def test_a_test_never_launches_the_real_app_unless_it_says_so(tmp_path, bundled, monkeypatch):
+    monkeypatch.setenv("PYTEST_CURRENT_TEST", "x")
+    monkeypatch.delenv("HZ_REAL_NOTIFIER", raising=False)
+    refused = NotifierApp(tmp_path / "home", bundled=bundled).status()  # the real runner: nothing is started
+    assert refused.startswith("open failed: tests don't launch the real Heinzel Notifier")
+    assert NotifierApp(tmp_path / "home", bundled=bundled, runner=Runner("authorized")).status() == "authorized"

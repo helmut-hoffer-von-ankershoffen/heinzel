@@ -4073,6 +4073,19 @@
             "title": "Installed",
             "type": "boolean"
           },
+          "installed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When `install` last loaded the unit, from its marker; tells a daemon still waiting for its first tick from one that stopped ticking.",
+            "title": "Installed At"
+          },
           "installed_version": {
             "anyOf": [
               {
@@ -9498,6 +9511,78 @@
           "recordings"
         ],
         "title": "PluginPage",
+        "type": "object"
+      },
+      "PluginPending": {
+        "description": "What changed in the installed plugins since this server started, however it changed.",
+        "properties": {
+          "changes": {
+            "description": "Plugins installed, removed, updated, enabled or disabled since this server started.",
+            "items": {
+              "$ref": "#/components/schemas/PluginPendingChange"
+            },
+            "title": "Changes",
+            "type": "array"
+          },
+          "restart_required": {
+            "description": "Whether this server must restart to load them.",
+            "title": "Restart Required",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "changes",
+          "restart_required"
+        ],
+        "title": "PluginPending",
+        "type": "object"
+      },
+      "PluginPendingChange": {
+        "description": "One plugin whose installed state differs from what the running server loaded.",
+        "properties": {
+          "change": {
+            "description": "How the installed environment differs from what this server loaded.",
+            "enum": [
+              "installed",
+              "removed",
+              "updated",
+              "enabled",
+              "disabled"
+            ],
+            "title": "Change",
+            "type": "string"
+          },
+          "distribution": {
+            "description": "The plugin's distribution name.",
+            "title": "Distribution",
+            "type": "string"
+          },
+          "themes": {
+            "description": "Themes it brings, to choose in Settings > Appearance after a restart.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Themes",
+            "type": "array"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The installed version, when it is still installed.",
+            "title": "Version"
+          }
+        },
+        "required": [
+          "distribution",
+          "change"
+        ],
+        "title": "PluginPendingChange",
         "type": "object"
       },
       "PluginSearch": {
@@ -23530,6 +23615,28 @@
           }
         },
         "summary": "Read the status and result of a plugin add without repeating it.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/plugin/pending": {
+      "get": {
+        "description": "List plugins changed on this machine since this server started: what a restart would load.\n\nRaises:\n    HeinzelError: If the installed environment cannot be read.",
+        "operationId": "system_plugin_pending",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginPending"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List plugins changed on this machine since this server started: what a restart would load.",
         "tags": [
           "system"
         ]

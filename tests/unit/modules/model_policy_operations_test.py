@@ -8,7 +8,7 @@ from heinzel.modules.ai.access._configured import ConfiguredApiBinding
 from heinzel.modules.ai.access._models import AccessSettings
 from heinzel.modules.heinzel._model_grants import ModelGrant, ModelGrants
 from heinzel.modules.heinzel._model_policy_operations import ModelPolicyService
-from heinzel.modules.heinzel._priced_model import MODEL
+from heinzel.modules.heinzel._priced_model import CHECKED, MODEL
 from heinzel.modules.heinzel._session_crud import SessionCrud
 from heinzel.modules.heinzel._session_models import SessionCosts
 from heinzel.modules.heinzel._session_repository import PersonalSessionRepository
@@ -40,7 +40,7 @@ def test_exact_owner_confirmation_and_stale_replay(tmp_path, monkeypatch):
         )
         payload = grant.model_dump(mode="json", exclude={"binding"})
         binding = ConfiguredApiBinding(current, fake_access(["pydantic-ai"], [AccessSettings(model=MODEL)]))
-        service = ModelPolicyService(crud, binding)
+        service = ModelPolicyService(crud, binding, now=lambda: CHECKED)
         confirmation = ApprovalConfirmation()
         with pytest.raises(HeinzelError):
             service.propose(session, "subscription", payload)
