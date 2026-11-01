@@ -957,7 +957,8 @@ def test_other_owners_and_ambiguous_names_show_the_repository_url_never_a_commit
     root["directory"] = "."
     assert pages.install_steps(root, [root])[0] == "hz system plugin add https://github.com/fictional-lab/harbor"
     twin = owned("heinzel-github")
-    assert "https://github.com/" in pages.install_steps(twin, [twin, owned("heinzel-github")])[0]
+    expected = f"hz system plugin add 'git+https://github.com/{pages.FIRST_PARTY_OWNER}/heinzel-plugins#subdirectory=plugins/x'"
+    assert pages.install_steps(twin, [twin, owned("heinzel-github")])[0] == expected
 
 
 def test_the_machine_readable_catalog_keeps_its_pinned_install_command(tmp_path):
