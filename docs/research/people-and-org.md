@@ -1,5 +1,8 @@
 # Research report: people and the organisation in Heinzelmännchen
 
+> Historical design research, not current documentation. The linked decision record and the README describe what is
+> available today.
+
 - Date: 2026-10-23
 - Scope: research only. Decision record: [ADR 0024](../adr/0024-people-and-org.md) (proposed). Not legal advice; the controller (the employer) must
   get its own legal review, data protection officer sign-off and works-council agreement.

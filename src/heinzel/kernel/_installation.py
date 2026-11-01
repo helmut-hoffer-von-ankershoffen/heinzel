@@ -392,6 +392,9 @@ def _without_verified_overrides(raw: bytes, overrides: Mapping[str, Path]) -> by
     return replacement
 
 
+EDGE_WHEEL_PREFIX = "https://github.com/helmut-hoffer-von-ankershoffen/heinzel/releases/download/edge-v"
+"""Where edge wheels live; a pin elsewhere is someone's own choice and stays theirs."""
+
 type PinKind = Literal["release", "ref", "commit", "default", "local", "url", "index"]
 """What the core requirement installs from: a release tag `vX.Y.Z`, another git ref (a branch or a tag that is no
 release), a commit, a git repository's default branch, a local directory or file, a URL, or a package index."""
@@ -424,6 +427,11 @@ class CorePin:
     git: str | None = None
     """The git repository's URL without ref, query or fragment; None if it isn't installed from git."""
     subdirectory: str | None = None
+
+    @property
+    def is_edge(self) -> bool:
+        """Whether this is an edge release's wheel, the only pin the edge channel makes (ADR 0114)."""
+        return self.kind == "url" and (self.ref or "").startswith(EDGE_WHEEL_PREFIX)
 
     @property
     def version(self) -> str | None:

@@ -1,6 +1,7 @@
 ---
 status: proposed
 date: 2026-10-24
+implementation: built
 decision-makers: maintainer (direction), architect (evaluation and shape)
 amends: 0029, 0050
 amends-0029: an AI access option names the agent runner that serves it

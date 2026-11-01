@@ -1658,6 +1658,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/system/channel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Show the update channel, or say what switching changes and, with `--yes`, switch.
+         * @description Show the update channel, or say what switching changes and, with `--yes`, switch.
+         *
+         *     Default is stable. Switching installs nothing until `hz system update`, and survives updates. Going from edge to
+         *     stable never downgrades: edge stays until stable is as new.
+         */
+        post: operations["system_channel"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/system/claude/list": {
         parameters: {
             query?: never;
@@ -4426,6 +4449,27 @@ export interface components {
             state: "shown" | "ready" | "closed" | "blocked" | "missing" | "off" | "unknown";
         };
         /**
+         * ChannelReport
+         * @description The update channel, and what a switch changes.
+         */
+        ChannelReport: {
+            /**
+             * Changed
+             * @description Whether this call switched the channel.
+             */
+            changed: boolean;
+            /**
+             * Channel
+             * @description The channel followed now: stable, edge or main.
+             */
+            channel: string;
+            /**
+             * Statement
+             * @description What the switch changes; said before anything happens.
+             */
+            statement: string;
+        };
+        /**
          * ChatAction
          * @description An operation the agent proposed; it runs only when the person confirms it, with exactly these arguments.
          */
@@ -5714,6 +5758,11 @@ export interface components {
              * @description Whether the unit files exist.
              */
             installed: boolean;
+            /**
+             * Installed At
+             * @description When `install` last loaded the unit, from its marker; tells a daemon still waiting for its first tick from one that stopped ticking.
+             */
+            installed_at?: string | null;
             /**
              * Installed Version
              * @description The hz version in the last install marker; a successful service-manager command is not proof that this code ran.
@@ -13879,6 +13928,7 @@ export type SchemaCapabilityUse = components['schemas']['CapabilityUse'];
 export type SchemaCardWidget = components['schemas']['CardWidget'];
 export type SchemaCatchUp = components['schemas']['CatchUp'];
 export type SchemaChannel = components['schemas']['Channel'];
+export type SchemaChannelReport = components['schemas']['ChannelReport'];
 export type SchemaChatAction = components['schemas']['ChatAction'];
 export type SchemaChatContext = components['schemas']['ChatContext'];
 export type SchemaChatCosts = components['schemas']['ChatCosts'];
@@ -16709,6 +16759,40 @@ export interface operations {
             };
         };
     };
+    system_channel: {
+        parameters: {
+            query?: {
+                /** @description The channel to move to; without it, shows the current one. */
+                to?: ("stable" | "edge" | "main") | null;
+                /** @description Make the change that was described; without it, nothing changes. */
+                yes?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChannelReport"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     system_claude_list: {
         parameters: {
             query?: never;
@@ -18962,8 +19046,8 @@ export interface operations {
             query?: {
                 /** @description Install from here instead, e.g. git+https://github.com/org/heinzel@v1.2.0 or a wheel. */
                 source?: string | null;
-                /** @description Follow `release` (the default, setting `update_channel`): the newest release, also from `main` once a release is as new as it; or `main`: its newest commit. */
-                channel?: ("release" | "main") | null;
+                /** @description Follow `stable` (the default, setting `update_channel`; `release` is its earlier name): the newest accepted release, also from `main` or edge once it is as new; `edge`: the newest edge release; or `main`: its newest commit. */
+                channel?: ("stable" | "edge" | "main" | "release") | null;
             };
             header?: never;
             path?: never;
