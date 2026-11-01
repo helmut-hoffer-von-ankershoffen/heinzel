@@ -909,3 +909,14 @@ def test_product_tour_markers_replace_their_github_fallback_and_reject_unknown_s
     assert rendered.endswith("\nb")
     with pytest.raises(ValueError, match="Unknown tour story"):
         pages.tour_markup("nothing", "guides/tour/")
+
+
+def test_search_summaries_come_from_the_first_plain_paragraph():
+    markdown = (
+        "<!-- generated -->\n\n# Title\n\n| a | b |\n\n"
+        "A **useful** [guide](x.md) to the `hz` tool, written for people who run it every day, with no jargon at all."
+    )
+    summary = pages.derive_description(markdown)
+    assert summary.startswith("A useful guide to the hz tool")
+    assert len(summary) <= pages.DESCRIPTION_LIMIT + 1
+    assert pages.derive_description("# Only a heading\n\n- a list\n") == ""
