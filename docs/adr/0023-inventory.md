@@ -1,6 +1,7 @@
 ---
 status: proposed
 date: 2026-10-23
+implementation: planned
 related: 0010, 0020, 0021, 0022, 0024
 amended-by: 0052
 ---

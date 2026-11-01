@@ -308,6 +308,7 @@ Pop up what deserves your attention: in the web app while it is open, else nativ
 | Mark notices as shown, so the daemon doesn't pop them up again. | `hz system notify ack` | `system_notify_ack` | — | `POST /api/system/notify/ack` | yes | expert |
 | Record a test notice, report each way it can reach you, and exit 1 if nothing pops it up. | `hz system notify test` | — | — | `POST /api/system/notify/test` | yes | expert |
 | Install the native notifier (Heinzel Notifier on macOS) and pop up a test notification now. | `hz system notify install` | — | — | — | yes | expert |
+| End leftover Heinzel Notifier processes and make macOS forget its stray copies. | `hz system notify clean` | — | — | — | yes | expert |
 | Open the system's notification settings to allow hz's pop-ups (macOS: System Settings). | `hz system notify settings` | — | — | `POST /api/system/notify/settings` | yes | expert |
 
 Settings: [`[system.notify]`](CONFIGURATION.md#systemnotify).
@@ -322,6 +323,7 @@ Find, add, remove, enable, disable, list and scaffold plugins.
 | --- | --- | --- | --- | --- | --- | --- |
 | List installed plugins, enabled or not, with their source and the modules and adapters they bring. | `hz system plugin list` | `system_plugin_list` | `GET /system/plugin/list` | `GET /api/system/plugin/list` |  | expert |
 | Show what a plugin would install, then add it with `--confirm`; adding it again replaces it. | `hz system plugin add` | `system_plugin_add` | — | `POST /api/system/plugin/add` | yes | expert |
+| List plugins changed on this machine since this server started: what a restart would load. | `hz system plugin pending` | `system_plugin_pending` | — | `GET /api/system/plugin/pending` |  | expert |
 | Read the status and result of a plugin add without repeating it. | `hz system plugin operation` | `system_plugin_operation` | — | `GET /api/system/plugin/operation` |  | expert |
 | Add the plugin in a directory on this machine, to try a plugin you are writing. | `hz system plugin develop` | — | — | — | yes | expert |
 | Remove a plugin. | `hz system plugin remove` | `system_plugin_remove` | — | `POST /api/system/plugin/remove` | yes | expert |
