@@ -25,6 +25,14 @@ self.addEventListener("activate", (event) => {
   );
 });
 
+// Keeping a copy is best effort: a full or unavailable cache must never fail the response being served.
+function remember(request, response) {
+  return caches
+    .open(SHELL)
+    .then((cache) => cache.put(request, response))
+    .catch(() => undefined);
+}
+
 self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
   if (event.request.method !== "GET" || url.origin !== self.location.origin || url.pathname.startsWith("/api/")) {
@@ -37,7 +45,7 @@ self.addEventListener("fetch", (event) => {
         .then((response) => {
           if (response.ok && response.type === "basic") {
             const copy = response.clone();
-            caches.open(SHELL).then((cache) => cache.put("/", copy));
+            event.waitUntil(remember("/", copy));
           }
           return response;
         })
@@ -59,7 +67,7 @@ self.addEventListener("fetch", (event) => {
           fetch(event.request).then((response) => {
             if (response.ok && response.type === "basic") {
               const copy = response.clone();
-              caches.open(SHELL).then((cache) => cache.put(event.request, copy));
+              event.waitUntil(remember(event.request, copy));
             }
             return response;
           }),
