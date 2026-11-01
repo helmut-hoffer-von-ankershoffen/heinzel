@@ -492,6 +492,7 @@ KERNEL = [
     "env_prefix",
     "environment_variable",
     "exposed",
+    "feature_enabled",
     "font_stack_problem",
     "format_duration",
     "free_busy_people",
