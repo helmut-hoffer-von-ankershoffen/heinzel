@@ -86,7 +86,13 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
         'cp "$BUNDLE"': "attaches the provenance attestation and creates the pre-release",
         "gh release view edge-channel": "moves the pointer the opt-in path reads",
     },
+    "promote.yml": {
+        'latest_tag="$(': "gathers the facts promotion decides from",
+        "uv run --no-build --frozen --script scripts/release_promotion.py": "decides the one next step",
+        'echo "$STEP: $REASON"': "takes the one step through the reviewed workflows",
+    },
     "pypi.yml": {
+        'passed="$(gh run list': "refuses an upload without passing acceptance once promotion is active",
         '[[ "$TAG" =~': "binds publishing to the exact tag and main ancestry before build tooling",
         "gh api ": "verifies the published GitHub release and exports its exact source commit",
         "uv run --no-project --frozen --no-build --python 3.14 python scripts/check_confidentiality.py --require": (
