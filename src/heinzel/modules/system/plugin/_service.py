@@ -167,6 +167,8 @@ class PluginService:
         self.pypi: JsonGetter = pypi_get
         """Reads PyPI's JSON API for `add`; tests replace it."""
         self._catalog_warnings: list[str] = []
+        self._pending_signature: tuple[tuple[str, str, str | None], ...] = ()
+        self._pending_themes: dict[str, list[str]] = {}
         self.distributions: Mapping[str, Distribution] | None = None
         """Installed plugin distributions by canonical name; read from the entry points when None (tests set it)."""
 
@@ -184,39 +186,56 @@ class PluginService:
         return self._loaded_inventory()
 
     def pending(self) -> PluginPending:
-        """What a restart would load: the installed environment read afresh, against what this server loaded.
+        """What a restart would load: the installed plugin distributions now, against what this server loaded.
 
-        Raises:
-            HeinzelError: If the installed environment cannot be read.
+        Both sides are read in this process (installed metadata and the kernel's origins), so a poll costs
+        milliseconds. Only when the difference is new does one fresh interpreter ask which themes it brings.
         """
-        loaded = {canonicalize_name(info.distribution): info for info in self._loaded_inventory()}
-        installed = {canonicalize_name(info.distribution): info for info in self.installed(fresh=True)}
-        changes: list[PluginPendingChange] = []
-        change: Literal["installed", "updated", "enabled", "disabled"]
-        for name, info in sorted(installed.items()):
-            before = loaded.get(name)
-            if before is None:
-                change = "installed"
-            elif before.version != info.version:
-                change = "updated"
-            elif (before.enabled is not False) != (info.enabled is not False):
-                change = "enabled" if info.enabled is not False else "disabled"
-            else:
-                continue
-            changes.append(
-                PluginPendingChange(
-                    distribution=info.distribution,
-                    change=change,
-                    version=info.version,
-                    themes=list(info.themes or []),
-                )
+        loaded = self._loaded_versions()
+        installed = {name: dist.version for name, dist in self._plugin_distributions().items()}
+        names = {name: dist.name for name, dist in self._plugin_distributions().items()}
+        found: list[tuple[str, str, str | None]] = []
+        for name, version in sorted(installed.items()):
+            if name not in loaded:
+                found.append((names[name], "installed", version))
+            elif loaded[name] not in {None, version}:
+                found.append((names[name], "updated", version))
+        found.extend((name, "removed", None) for name in sorted(loaded) if name not in installed)
+        if not found:
+            return PluginPending(changes=[], restart_required=False)
+        signature = tuple(found)
+        if signature != self._pending_signature:
+            self._pending_themes = self._themes_of_changed()
+            self._pending_signature = signature
+        changes = [
+            PluginPendingChange(
+                distribution=name,
+                change=cast("Literal['installed', 'removed', 'updated']", change),
+                version=version,
+                themes=self._pending_themes.get(canonicalize_name(name), []),
             )
-        changes.extend(
-            PluginPendingChange(distribution=info.distribution, change="removed")
-            for name, info in sorted(loaded.items())
-            if name not in installed
-        )
-        return PluginPending(changes=changes, restart_required=bool(changes))
+            for name, change, version in found
+        ]
+        return PluginPending(changes=changes, restart_required=True)
+
+    def _loaded_versions(self) -> dict[str, str | None]:
+        """Distribution -> the version this server loaded (None when it failed to load: no version to compare)."""
+        loaded: dict[str, str | None] = {}
+        for record in [*self._kernel.modules, *self._kernel.blocked]:
+            if not record.origin.builtin:
+                loaded[canonicalize_name(record.origin.distribution)] = record.origin.version
+        for name in self._errors_by_distribution():
+            loaded.setdefault(name, None)
+        return loaded
+
+    def _themes_of_changed(self) -> dict[str, list[str]]:
+        """The themes of the installed plugins, from one fresh interpreter; none when it cannot be asked."""
+        try:
+            return {
+                canonicalize_name(info.distribution): list(info.themes or []) for info in self.installed(fresh=True)
+            }
+        except HeinzelError:
+            return {}
 
     def _loaded_inventory(self) -> list[PluginInfo]:
         """Describe the plugins and modules already loaded by this kernel."""
