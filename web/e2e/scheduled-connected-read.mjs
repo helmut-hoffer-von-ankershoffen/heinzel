@@ -45,7 +45,10 @@ try {
   assert.deepEqual(violations, []);
   await panel.getByRole("button", { name: "Confirm" }).click();
   await panel.getByText(/Recorded state: approved/).waitFor();
-  const schedule = page.locator("details").filter({ has: page.getByText("Recurring agent turns", { exact: true }) }).last();
+  const schedule = page
+    .locator("details")
+    .filter({ has: page.getByText("Recurring agent turns", { exact: true }) })
+    .last();
   await schedule.getByText("Recurring agent turns", { exact: true }).click();
   await schedule.getByText(/Suggested interval: every 7 minutes/).waitFor();
   assert.equal(await schedule.getByLabel("Every (minutes)").inputValue(), "5");
