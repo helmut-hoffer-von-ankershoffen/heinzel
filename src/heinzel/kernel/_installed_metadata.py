@@ -4,6 +4,7 @@ import json
 import os
 import re
 import stat
+from collections.abc import Sequence
 from importlib.machinery import EXTENSION_SUFFIXES
 from importlib.metadata import distributions
 from pathlib import Path
@@ -131,6 +132,21 @@ def inspect_core_version(prefix: Path) -> str:
         raise HeinzelError(msg) from exc
     else:
         return version
+
+
+def inspect_versions(prefix: Path, names: Sequence[str]) -> dict[str, str]:
+    """Observe the installed version of each distribution that has exactly one, without starting its interpreter.
+
+    Raises:
+        HeinzelError: If startup paths or metadata cannot be safely inspected.
+    """
+    wanted = {str(canonicalize_name(name)) for name in names}
+    try:
+        found = _selected_metadata(_locations(prefix), wanted, set())
+        return {name: _one_core_version(matches) for name, matches in found.items() if matches}
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        msg = "The installed plugin versions cannot be safely observed; no code was started."
+        raise HeinzelError(msg) from exc
 
 
 def _one_core_version(matches: list[tuple[str, dict[str, object] | None]]) -> str:
