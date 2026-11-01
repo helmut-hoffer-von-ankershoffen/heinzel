@@ -171,22 +171,25 @@ class TeamService:
         _refuse_existing(checkout)
         files = _template.repository(name, creator, drafted)
         restart = f"rm -rf {_q(checkout)}"
-        steps = [
-            self._git("create a Git repository", "init", "--quiet", "--initial-branch=main", checkout),
+        first = self._git("create a Git repository", "init", "--quiet", "--initial-branch=main", checkout)
+        # Starting over undoes these; the push and the read of the origin have their own recovery or none.
+        restartable = [
             self._local(f"write the template: {', '.join(sorted(files))}", lambda: _write_files(checkout, files)),
             self._git("stage the files", "-C", checkout, "add", "--all"),
             self._git(
                 "commit them", "-C", checkout, "commit", "--quiet", "-m", f"Create the hz team repository {name}"
             ),
         ]
+        later = []
         if github is not None:
             create = ["gh", "repo", "create", github, "--private", "--source", str(checkout), "--remote", "origin"]
-            steps.append(self._remote(f"create the private repository {github} on GitHub", create))
+            restartable.append(self._remote(f"create the private repository {github} on GitHub", create))
             push = self._remote("push main to it", git("-C", checkout, "push", "--quiet", "-u", "origin", "main"))
             push.recovery = f"the repository exists on GitHub; push again: git -C {_q(checkout)} push -u origin main"
-            steps += [push, self._read_origin(checkout)]
-        for step in steps[1:5]:
+            later = [push, self._read_origin(checkout)]
+        for step in restartable:
             step.recovery = f"start over: {restart}"
+        steps = [first, *restartable, *later]
         plan = TeamPlan(
             operation="new",
             team=name,

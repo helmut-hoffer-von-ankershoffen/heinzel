@@ -1,12 +1,9 @@
 ---
 title: Imprint
-description: Provider identification under § 5 DDG for heinzel.team (English translation; the German version prevails).
+description: Provider identification under § 5 DDG for heinzel.team.
 ---
 
 # Imprint
-
-*Deutsch: [Impressum](impressum.md). The German version is the legally relevant one and prevails if the two differ;
-this page is a translation for information.*
 
 ## Information pursuant to § 5 DDG (German Digital Services Act)
 
@@ -17,7 +14,8 @@ Germany
 
 ## Contact
 
-Email: [helmut@heinzel.team](mailto:helmut@heinzel.team)
+Email: [helmut@heinzel.team](mailto:helmut@heinzel.team)<br>
+Website: [Helmut Hoffer von Ankershoffen](https://helmut.hoffer-von-ankershoffen.me)
 
 ## Licence and content
 

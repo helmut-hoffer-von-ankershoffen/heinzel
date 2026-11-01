@@ -311,14 +311,14 @@ core artifact:
 Company plugins live in their own `heinzel-*` repositories, scaffolded with `hz system plugin new`.
 
 Workflows are Markdown files, not code: a `<name>.prose.md` contract in your workflows directory (or your team's
-state repository) names the capabilities it reads, the inputs to fetch and the agent's limits, and its body says what
+state repository) names the capabilities it reads, the inputs to fetch and the helper's limits, and its body says what
 the draft must achieve. Drafts are saved locally; nothing is published by itself.
 
 ```bash
 hz heinzel new weekly-digest             # a starter contract, valid as written, with comments; creates the directory
 hz heinzel check                         # every problem by file and line
 hz heinzel show weekly-digest            # what it requires, what is bound, whether it is ready, what to run next
-hz heinzel wake weekly-digest --dry-run   # the packet the agent would get; nothing is spent
+hz heinzel wake weekly-digest --dry-run   # the packet the helper would get; nothing is spent
 hz heinzel wake weekly-digest             # draft it now; then `hz heinzel drafts`
 ```
 
@@ -427,9 +427,8 @@ security issues privately, as [SECURITY.md](SECURITY.md) describes.
 Heinzelmännchen is free and open-source software under the [MIT license](LICENSE). The packages it ships keep their
 own licenses, listed in [ATTRIBUTIONS.md](ATTRIBUTIONS.md).
 
-The website [heinzel.team](https://heinzel.team/) carries an [imprint](https://heinzel.team/imprint/)
-([Impressum](https://heinzel.team/impressum/)) and a [privacy notice](https://heinzel.team/privacy/)
-([Datenschutzerklärung](https://heinzel.team/datenschutz/)); the German texts prevail. The website sets no cookies and
+The website [heinzel.team](https://heinzel.team/) carries an [imprint](https://heinzel.team/imprint/) and a
+[privacy notice](https://heinzel.team/privacy/). The website sets no cookies and
 loads nothing from third parties, and the app sends no telemetry.
 
 Presence and adoption stay local by default. Opt in to a personal state repository with `hz system config set system.state.personal <repository>`, then inspect `hz system state status` ([state repository design](docs/adr/0081-state-repositories-one-writer-per-branch-the-daemon-pushes.md)).

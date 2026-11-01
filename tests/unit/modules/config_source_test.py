@@ -4,6 +4,7 @@ from typing import ClassVar
 
 import pytest
 from pydantic import Field
+from pydantic_core import PydanticSerializationError
 
 from heinzel import Config, Module, ModuleSettings
 from heinzel.kernel import ConfigFile
@@ -75,3 +76,12 @@ def test_the_report_reads_the_files_afresh_so_a_change_shows_at_once(make_kernel
     project.write_text('[example]\ngreeting = "Moin"\n', encoding="utf-8")
     settings = {s.key: s for s in service.report().settings if s.section == "example"}
     assert (settings["greeting"].value, settings["greeting"].source) == ("Moin", "project")
+
+
+def test_a_value_with_no_json_form_is_refused_not_written_as_text(make_kernel, tmp_path):
+    module = Module("example", "x")
+    module.settings(ExampleSettings)
+    service = ConfigService(make_kernel(example=module, config=Config.load(tmp_path)))
+    with pytest.raises(PydanticSerializationError):
+        service._write("example.greeting", object())
+    assert not (tmp_path / "hz.toml").exists()

@@ -22,7 +22,8 @@ env:
   FORCE_COLOR: "1"
 
 # GitHub-hosted macOS runners are the scarce resource, so a pull request runs macOS on the newest Python only, one
-# `make setup` and the notifier app when its sources change. The broad platform matrix runs off pull requests.
+# `make setup`, the macOS end-to-end suite on every pull request that is not site-only, and the notifier app when its
+# sources change. The broad platform matrix runs off pull requests.
 # Provider-specific integration checks live with their owning plugins.
 # TEMPORARY (owner's decision): a macOS failure must not block merges or releases while the pull request queue drains and
 # macOS is fixed step by step. Matrix jobs with a macOS cell set `continue-on-error` for those cells only, so the cell still
@@ -295,6 +296,13 @@ jobs:
           python-version: "3.14"
       - run: uv sync --frozen --no-build --no-dev --group test
       - run: make test
+      - name: Record the total for the merge gate
+        run: uv run --no-build coverage report --format=total --precision=2 > coverage-total.txt
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: coverage-total
+          path: coverage-total.txt
+          retention-days: 7
       - name: Report coverage on pull requests and publish the badge
         # The action only understands pull_request, push and schedule events; dispatched runs (release PRs) skip it.
         if: github.event_name != 'workflow_dispatch'
@@ -355,7 +363,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-24.04"]' || '["ubuntu-24.04","macos-latest"]') }}
+        os: [ubuntu-24.04, macos-latest] # macOS on pull requests too: main must not be the first place it runs
         # Two jobs per OS so the browser tests and the tool-install and CLI tests stop competing for 3 vCPUs
         suite: [cli, web]
     steps:

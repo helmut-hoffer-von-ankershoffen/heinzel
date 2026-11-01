@@ -12,6 +12,8 @@ REPO = Path(__file__).resolve().parents[2]
 SITE = "https://heinzel.team/"
 # Built from parts so this file does not contain the string it forbids.
 OLD_DOMAIN = "hoffer-von-ankershoffen" + ".me"
+# The imprint links the provider's own website on the owner's request; it is not a link to the product site.
+PERSONAL_LINK_ALLOWED = {"docs/imprint.md"}
 
 
 def _tracked_text_files() -> list[Path]:
@@ -34,8 +36,9 @@ def test_no_tracked_file_points_at_the_old_site_domain() -> None:
             text = path.read_text(encoding="utf-8")
         except (UnicodeDecodeError, OSError):
             continue  # binary files
-        if OLD_DOMAIN in text:
-            offenders.append(str(path.relative_to(REPO)))
+        name = str(path.relative_to(REPO))
+        if OLD_DOMAIN in text and name not in PERSONAL_LINK_ALLOWED:
+            offenders.append(name)
     assert not offenders, f"These files still use the old site domain; use {SITE}: {offenders}"
 
 

@@ -87,6 +87,9 @@ def repository_files() -> list[str]:
 
 SHARED = [".claude", ".github/workflows", "scripts"]
 CORE_ONLY = {  # path: why plugins don't get it
+    "scripts/merge_gate.py": "judges a public repo's SonarCloud project; a new plugin has none until it is set up",
+    "scripts/merge_gate.py.lock": "the lock of scripts/merge_gate.py, which plugins don't get by default",
+    ".github/workflows/merge-gate.yml": "runs scripts/merge_gate.py, which plugins don't get by default",
     "scripts/site_characters.mjs": "draws product-site guides from core artwork; standalone plugins own their art",
     "scripts/site_catalog.py": "public product website aggregation, never a standalone plugin build (ADR 0098)",
     "scripts/adr_index.py": "renders the core ADR index and pages; plugins have no ADRs",
@@ -119,6 +122,12 @@ CORE_ONLY = {  # path: why plugins don't get it
     "scripts/scoped_checks.py": "routes Core-root checks; owning and governed plugins already check their own project",
     "scripts/related_tests.py": "maps the core pre-push diff to its related unit tests; plugins run their own",
     "scripts/template_pyproject_head.toml.tmpl": "input of sync_template.py",
+    "scripts/review_tier.py": "picks the source review tier of a core change from its paths; plugins have none",
+    "scripts/review.sh": "dispatches the core's protected source review (`make review`); plugins have none",
+    "scripts/source_review.py.lock": "locks that script for the review workflow",
+    "scripts/review_tier.py.lock": "locks the tier decision for the review command",
+    "scripts/source_review.py": "guard and runner of the core's protected source review workflow; plugins have none",
+    ".github/workflows/source-review.yml": "runs only on the core's protected review ref, with its own secret",
     "scripts/web.py": "the web head's typed client and dev server (web/, ADR 0039); plugins bring no UI",
     "scripts/web_build.py": "runs and builds the web head's app (web/, ADR 0039); plugins bring no UI",
     ".github/workflows/acceptance.yml": "installs the published core with the public commands on hosted runners",

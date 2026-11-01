@@ -254,17 +254,27 @@ def test_project_state_override_cannot_select_owner_or_default_api_credentials(t
 
 
 def test_an_owner_is_stable_private_and_shared_across_processes(tmp_path):
+    # Each process imports first and reports ready: the budget covers owner() and exit, not interpreter startup, and
+    # all three reach the owner file together. Startup alone took over 4 s on saturated runners, with owner() done.
     script = (
         "from pathlib import Path; from heinzel import CurrentUser; import sys; "
+        "print('ready', flush=True); sys.stdin.readline(); "
         "print(CurrentUser(Path(sys.argv[1])).owner().id)"
     )
     for iteration in range(3):
         directory = tmp_path / str(iteration) / "identity"
         processes = [
-            subprocess.Popen([sys.executable, "-c", script, str(directory)], stdout=subprocess.PIPE, text=True)
+            subprocess.Popen(
+                [sys.executable, "-c", script, str(directory)], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True
+            )
             for _ in range(3)
         ]
         try:
+            assert [process.stdout.readline().strip() for process in processes] == ["ready"] * 3
+            assert not directory.exists()
+            for process in processes:
+                process.stdin.write("\n")
+                process.stdin.flush()
             owners = [process.communicate(timeout=4)[0].strip() for process in processes]
             assert all(process.returncode == 0 for process in processes)
             assert owners == [CurrentUser(directory).owner().id] * 3
