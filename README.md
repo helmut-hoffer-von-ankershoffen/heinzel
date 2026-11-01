@@ -311,14 +311,14 @@ core artifact:
 Company plugins live in their own `heinzel-*` repositories, scaffolded with `hz system plugin new`.
 
 Workflows are Markdown files, not code: a `<name>.prose.md` contract in your workflows directory (or your team's
-state repository) names the capabilities it reads, the inputs to fetch and the agent's limits, and its body says what
+state repository) names the capabilities it reads, the inputs to fetch and the helper's limits, and its body says what
 the draft must achieve. Drafts are saved locally; nothing is published by itself.
 
 ```bash
 hz heinzel new weekly-digest             # a starter contract, valid as written, with comments; creates the directory
 hz heinzel check                         # every problem by file and line
 hz heinzel show weekly-digest            # what it requires, what is bound, whether it is ready, what to run next
-hz heinzel wake weekly-digest --dry-run   # the packet the agent would get; nothing is spent
+hz heinzel wake weekly-digest --dry-run   # the packet the helper would get; nothing is spent
 hz heinzel wake weekly-digest             # draft it now; then `hz heinzel drafts`
 ```
 
