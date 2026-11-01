@@ -57,8 +57,9 @@ These cases are not blanket exemptions. HTTP, MCP, plugin data, LLM-generated ca
 
 Core's confidentiality scanner uses the same tested Git operand boundary. Its scope selector resolves a preflight
 base to a verified commit SHA before passing it to Git or Make: argv alone does not prevent Make from expanding a
-value such as `$(shell ...)`. Fast checks do not forward an unused base. Regression tests use real temporary
-repositories and exercise both option-shaped input and Make expressions.
+value such as `$(shell ...)`. Fast checks do not forward an unused base. Both scripts rebuild a revision from a ref name that Git lists, hex digits or a `HEAD` offset, and refuse anything
+else. `plugin_tooling.py` runs only an `hz-plugin` subcommand or a `heinzel_plugin_tools` module. Regression tests use
+real temporary repositories and exercise both option-shaped input and Make expressions.
 
 The released plugin toolkit remains version 0.2.1. `scripts/plugin_tooling.py` installs its complete three-package
 runtime closure from `scripts/plugin-tooling-requirements.txt` with `--require-hashes --no-build`, in a disposable
@@ -70,13 +71,14 @@ are wheel-only, but are not promised to match the released toolkit's lock.
 CI's test dependency sync is frozen and wheel-only, with the same isolated, hash-verified Python 3.15 PyYAML build
 described above. Stdlib-only publication checks select Python explicitly and load no project dependencies.
 Native actionlint replaces the source-only wrapper at the same version, including generated governed templates.
+
 The policy is scoped to these installation paths: core's all-group developer setup still permits the locked
 watchdog source build required by macOS documentation tooling on Python 3.14. It does not have a global source-build
 ban. Recheck the actual main metrics after merging; these changes alone do not resolve unrelated runtime findings.
 
 ### Core findings reviewed individually
 
-Each row below was checked against core's own callers on 2026-10-31; the Acme conclusions were not carried over.
+Each row below was checked against core's own callers against the current code; the Acme conclusions were not carried over.
 Sonar's trace is a taint-analysis claim, not evidence of a remote boundary. Resolve these in Sonar only with the
 finding-specific text here, never with `NOSONAR` or an exclusion.
 
@@ -87,7 +89,7 @@ finding-specific text here, never with `NOSONAR` or an exclusion.
 | `scripts/check_confidentiality.py` `sources` (file read) | `--commit-msg` is the file Git hands the commit-msg hook (it can live in the shared Git directory of a linked worktree); positional files are the staged names `pre-commit` passes. The scanner only reads them and reports a term number and location, never content. It is not reachable from the application. |
 | `scripts/release_notes.py` `main` (file read) | `publish.yml` and `release.sh` pass only a release tag and read the fixed `CHANGELOG.md`; the optional second argument is a local developer interface and no caller supplies it. The tag reaches `re.escape` only. |
 
-Runtime and remaining findings, reviewed by reading each caller on 2026-10-31. Nothing here was exercised against a
+Runtime and remaining findings, reviewed by reading each caller. Nothing here was exercised against a
 hostile client, and none of it is a full audit of the heads.
 
 | Finding | Evidence |
@@ -99,7 +101,7 @@ hostile client, and none of it is a full audit of the heads.
 | `heads/install.py` `S8703`, `S8705`, `S8707` | Only the `hz-install` console script and `heads.bootstrap` (which supplies its own receipt) reach it; no REST, MCP or web path does. The caller chooses the profile and so what to install; wheel paths are digest-verified, and a remote profile cannot select a local file. |
 | `scripts/docs_record.py` `S5332` | A regular expression that matches the loopback URL a child `hz ui` prints. It opens no connection. |
 | `scripts/site_catalog.py` `S8707` | `--output` comes from `make docs-catalog` (an environment variable or the fixed `docs/_data/catalog.json`), never from the fetched catalog data, which is only file content. |
-| `scripts/starter-test.py` `S8705` | Its one caller, `template-test.sh`, passes the wheel it just built; the value is an option value or a Make variable that the starter Makefile takes literally with `$(value ...)`, and no shell is involved. |
+| `scripts/starter-test.py` `S8705` | Its one caller, `template-test.sh`, passes the wheel it built; the value is an option value or a Make variable that the starter Makefile takes literally with `$(value ...)`, and no shell is involved. |
 | `desktop/ci/restore_linux_sandbox.py` `S2612` | Mode 4755 is deliberate: Chromium's setuid sandbox helper requires it. The bytes are SHA-256 pinned before the change, the descriptor is single-link and root-owned, and the mode is re-read afterwards. It is world-executable setuid root, so this is an accepted risk, not a false positive. |
 
 Workflow steps that run stdlib-only scripts use `uv run --no-project --frozen --no-build --python 3.14 python ...`.
