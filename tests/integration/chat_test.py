@@ -1700,8 +1700,11 @@ def configured_policy_binding(kernel, monkeypatch):
     from heinzel import ConfiguredApiAccess
     from heinzel.modules.ai.access._models import AccessSettings
     from heinzel.modules.ai.access._pydantic import PydanticAiAccess
-    from heinzel.modules.heinzel._priced_model import MODEL
+    from heinzel.modules.heinzel import _model_policy_operations
+    from heinzel.modules.heinzel._priced_model import CHECKED, MODEL
 
+    # A fixed clock inside the pricing snapshot window keeps these tests independent of the real date.
+    monkeypatch.setattr(_model_policy_operations, "_utc_now", lambda: CHECKED)
     monkeypatch.setenv("OPENAI_API_KEY", "test-policy-key")
     access = kernel.resolve_builtin_service(PydanticAiAccess, "ai.access")
     settings = AccessSettings(model=MODEL)
