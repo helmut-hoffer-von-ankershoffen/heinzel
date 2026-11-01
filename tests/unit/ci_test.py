@@ -781,7 +781,9 @@ def test_the_release_keeps_changelog_introductions():
     step = next(s for s in release["jobs"]["pull-request"]["steps"] if "release.sh" in s.get("run", ""))
     assert not any("gh pr merge" in s.get("run", "") for s in release["jobs"]["pull-request"]["steps"])
     assert step["env"]["INTRO"] == "${{ inputs.intro }}"
-    assert (REPO / "template" / "scripts" / "changelog_intros.py").resolve() == REPO / "scripts" / "changelog_intros.py"
+    assert (
+        REPO / "template" / "scripts" / "changelog_intros.py.jinja"
+    ).resolve() == REPO / "scripts" / "changelog_intros.py"
 
 
 def test_pushing_runs_check_fast_through_a_hook():
