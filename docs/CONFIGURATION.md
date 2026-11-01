@@ -19,8 +19,7 @@ Plugins add their own tables.
 | `playful` | `HZ_PLAYFUL` | `True` | A small Heinzelmännchen in the terminal: in the start screen, the setup, the spinner of long work and the done and error lines. Only on a colour terminal, never in JSON, a pipe or CI. |
 | `plugins_enabled` | `HZ_PLUGINS_ENABLED` | `True` | Load the modules that installed plugins bring. Turn it off only to find a broken plugin. |
 | `update_check` | `HZ_UPDATE_CHECK` | `True` | Look for a newer release at most once an hour and mention it after a command's output. The check sends nothing about you, and never runs in CI or in JSON, MCP or REST output. Never read from a project's hz.toml. |
-| `update_channel` | `HZ_UPDATE_CHANNEL` | `'release'` | What updating moves to: the newest release, or the newest commit of the main branch. An installation on main moves back to releases once one is as new as it. Choices: release, main. |
-| `features` | `HZ_FEATURES` | `frozenset()` | Unfinished work to switch on by name; it may change or break. In the environment, separate them with commas. |
+| `update_channel` | `HZ_UPDATE_CHANNEL` | `'stable'` | What updating moves to. Stable has passed acceptance. Edge is every green change, sooner and less tested. Choosing a channel installs nothing until you update. Going back to stable never downgrades: edge stays installed until stable is as new, and your data stays as it is. Choices: stable, edge, main. |
 | `disabled_modules` | `HZ_DISABLED_MODULES` | `frozenset()` | Modules Heinzelmännchen doesn't load, with their submodules. In the environment, separate them with commas. |
 | `ui_port` | `HZ_UI_PORT` | `8737` | The port the web app is served on, reachable from this computer only. It stays the same so an installed app keeps its address. Never read from a project's hz.toml. |
 | `ui_allowed_origins` | `HZ_UI_ALLOWED_ORIGINS` | `frozenset()` | Exact HTTPS origins allowed by the authenticated web app behind a private reverse proxy, such as https://workstation.example.ts.net. The listener stays on this computer. Restart and apply after changing this user-only setting. In the environment, separate origins with commas. Never read from a project's hz.toml. |
@@ -91,7 +90,7 @@ Plugins add their own tables.
 | Key | Environment variable | Default | Description |
 | --- | --- | --- | --- |
 | `handle` | `HZ_ORG__HANDLE` | `None` | Your short name in teams, pull requests and contracts: lowercase letters, digits and dashes. Your GitHub login is a good choice. Example: "mira". Never read from a project's hz.toml. |
-| `role` | `HZ_ORG__ROLE` | `None` | What you do on your team. Choices: engineer, principal, engineering-manager, engineering-leadership, product-manager, product-leadership, program-manager. Never read from a project's hz.toml. |
+| `role` | `HZ_ORG__ROLE` | `None` | What you do on your team. Choices: engineer, engineering-manager, product-manager, program-manager. Never read from a project's hz.toml. |
 | `timezone` | `HZ_ORG__TIMEZONE` | `None` | Your time zone. Never read from a project's hz.toml. |
 | `working_hours` | `HZ_ORG__WORKING_HOURS` | `(9, 18)` | When your working day starts and ends. In the environment, write them as 09-18. Never read from a project's hz.toml. |
 | `github` | `HZ_ORG__GITHUB` | `None` | Your GitHub login, needed to approve and own contracts in a team. Example: "mira". Never read from a project's hz.toml. |
@@ -229,6 +228,7 @@ Plugins add their own tables.
 
 | Key | Environment variable | Default | Description |
 | --- | --- | --- | --- |
+| `name` | `HZ_TEAM__NAME` | `None` | What your team is called here, e.g. Payments. Shown in the team graph and on your profile. Example: "Payments". Never read from a project's hz.toml. |
 | `repository` | `HZ_TEAM__REPOSITORY` | `None` | Your team repository's address, the invite others join with; empty for a team repository that exists only on this computer. Example: "https://github.com/example/team.git". Never read from a project's hz.toml. |
 | `checkout` | `HZ_TEAM__CHECKOUT` | `None` | The folder your team repository is checked out in; its workflows folder holds the team's contracts. Never read from a project's hz.toml. |
 | `layer` | `HZ_TEAM__LAYER` | `None` | The layer plugin your team uses, by module name, when your team repository names none or you want another. Never read from a project's hz.toml. |

@@ -1,0 +1,27 @@
+<footer class="hz-footer" aria-label="Site footer">
+  <div class="hz-footer__inner">
+    <div class="hz-footer__helper">
+      <img src="{{ 'assets/website/head.svg' | url }}" alt="" width="44" height="39" loading="lazy">
+      <p>Something off?<br><a href="{{ config.repo_url }}/issues">Open an issue</a></p>
+    </div>
+    <div class="hz-footer__install">
+      <span id="hz-footer-label">Try it</span>
+      <div class="hz-footer__command" role="group" aria-labelledby="hz-footer-label">
+        <code id="hz-footer-command">uvx heinzel@latest</code>
+        <button type="button" data-copy="hz-footer-command" aria-label="Copy command" hidden>Copy</button>
+      </div>
+    </div>
+    <nav class="hz-footer__links" aria-label="Footer">
+      <a href="{{ 'guides/install/' | url }}">Start here</a>
+      <a href="{{ 'CATALOG/' | url }}">Plugin catalog</a>
+      <a href="{{ config.repo_url }}">GitHub</a>
+      <a href="{{ config.repo_url }}/blob/main/CHANGELOG.md">Changelog</a>
+      <a href="{{ config.repo_url }}/security">Security</a>
+      <a href="{{ 'impressum/' | url }}" lang="de">Impressum</a>
+      <a href="{{ 'imprint/' | url }}">Imprint</a>
+      <a href="{{ 'datenschutz/' | url }}" lang="de">Datenschutz</a>
+      <a href="{{ 'privacy/' | url }}">Privacy</a>
+    </nav>
+    <p class="hz-footer__legal"><a href="{{ config.repo_url }}/releases/latest" data-hz-version>Latest release</a> · MIT license</p>
+  </div>
+</footer>

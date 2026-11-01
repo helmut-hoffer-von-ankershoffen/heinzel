@@ -1887,6 +1887,33 @@
         "title": "Channel",
         "type": "object"
       },
+      "ChannelReport": {
+        "description": "The update channel, and what a switch changes.",
+        "properties": {
+          "changed": {
+            "description": "Whether this call switched the channel.",
+            "title": "Changed",
+            "type": "boolean"
+          },
+          "channel": {
+            "description": "The channel followed now: stable, edge or main.",
+            "title": "Channel",
+            "type": "string"
+          },
+          "statement": {
+            "description": "What the switch changes; said before anything happens.",
+            "title": "Statement",
+            "type": "string"
+          }
+        },
+        "required": [
+          "channel",
+          "changed",
+          "statement"
+        ],
+        "title": "ChannelReport",
+        "type": "object"
+      },
       "ChatAction": {
         "description": "An operation the agent proposed; it runs only when the person confirms it, with exactly these arguments.",
         "properties": {
@@ -4045,6 +4072,19 @@
             "description": "Whether the unit files exist.",
             "title": "Installed",
             "type": "boolean"
+          },
+          "installed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When `install` last loaded the unit, from its marker; tells a daemon still waiting for its first tick from one that stopped ticking.",
+            "title": "Installed At"
           },
           "installed_version": {
             "anyOf": [
@@ -9473,6 +9513,78 @@
         "title": "PluginPage",
         "type": "object"
       },
+      "PluginPending": {
+        "description": "What changed in the installed plugins since this server started, however it changed.",
+        "properties": {
+          "changes": {
+            "description": "Plugins installed, removed, updated, enabled or disabled since this server started.",
+            "items": {
+              "$ref": "#/components/schemas/PluginPendingChange"
+            },
+            "title": "Changes",
+            "type": "array"
+          },
+          "restart_required": {
+            "description": "Whether this server must restart to load them.",
+            "title": "Restart Required",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "changes",
+          "restart_required"
+        ],
+        "title": "PluginPending",
+        "type": "object"
+      },
+      "PluginPendingChange": {
+        "description": "One plugin whose installed state differs from what the running server loaded.",
+        "properties": {
+          "change": {
+            "description": "How the installed environment differs from what this server loaded.",
+            "enum": [
+              "installed",
+              "removed",
+              "updated",
+              "enabled",
+              "disabled"
+            ],
+            "title": "Change",
+            "type": "string"
+          },
+          "distribution": {
+            "description": "The plugin's distribution name.",
+            "title": "Distribution",
+            "type": "string"
+          },
+          "themes": {
+            "description": "Themes it brings, to choose in Settings > Appearance after a restart.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Themes",
+            "type": "array"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The installed version, when it is still installed.",
+            "title": "Version"
+          }
+        },
+        "required": [
+          "distribution",
+          "change"
+        ],
+        "title": "PluginPendingChange",
+        "type": "object"
+      },
       "PluginSearch": {
         "description": "Plugins one can install, and what kept the search from being complete.",
         "properties": {
@@ -9664,6 +9776,18 @@
             "description": "Your name; on this machine only.",
             "title": "Name"
           },
+          "retired_role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A role you chose once that is no longer offered; choose a new one. None otherwise.",
+            "title": "Retired Role"
+          },
           "role": {
             "anyOf": [
               {
@@ -9702,6 +9826,7 @@
         "required": [
           "handle",
           "role",
+          "retired_role",
           "timezone",
           "working_hours",
           "working_hours_set",
@@ -21909,6 +22034,75 @@
         ]
       }
     },
+    "/system/channel": {
+      "post": {
+        "description": "Show the update channel, or say what switching changes and, with `--yes`, switch.\n\nDefault is stable. Switching installs nothing until `hz system update`, and survives updates. Going from edge to\nstable never downgrades: edge stays until stable is as new.",
+        "operationId": "system_channel",
+        "parameters": [
+          {
+            "description": "The channel to move to; without it, shows the current one.",
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "stable",
+                    "edge",
+                    "main"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The channel to move to; without it, shows the current one.",
+              "title": "To"
+            }
+          },
+          {
+            "description": "Make the change that was described; without it, nothing changes.",
+            "in": "query",
+            "name": "yes",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Make the change that was described; without it, nothing changes.",
+              "title": "Yes",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChannelReport"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Show the update channel, or say what switching changes and, with `--yes`, switch.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
     "/system/claude/list": {
       "get": {
         "description": "List the MCP servers and skills Claude Code and Claude Desktop have; nothing is switched on.",
@@ -23421,6 +23615,28 @@
           }
         },
         "summary": "Read the status and result of a plugin add without repeating it.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/plugin/pending": {
+      "get": {
+        "description": "List plugins changed on this machine since this server started: what a restart would load.\n\nRaises:\n    HeinzelError: If the installed environment cannot be read.",
+        "operationId": "system_plugin_pending",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginPending"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List plugins changed on this machine since this server started: what a restart would load.",
         "tags": [
           "system"
         ]
@@ -25393,7 +25609,7 @@
             }
           },
           {
-            "description": "Follow `release` (the default, setting `update_channel`): the newest release, also from `main` once a release is as new as it; or `main`: its newest commit.",
+            "description": "Follow `stable` (the default, setting `update_channel`; `release` is its earlier name): the newest accepted release, also from `main` or edge once it is as new; `edge`: the newest edge release; or `main`: its newest commit.",
             "in": "query",
             "name": "channel",
             "required": false,
@@ -25401,8 +25617,10 @@
               "anyOf": [
                 {
                   "enum": [
-                    "release",
-                    "main"
+                    "stable",
+                    "edge",
+                    "main",
+                    "release"
                   ],
                   "type": "string"
                 },
@@ -25410,7 +25628,7 @@
                   "type": "null"
                 }
               ],
-              "description": "Follow `release` (the default, setting `update_channel`): the newest release, also from `main` once a release is as new as it; or `main`: its newest commit.",
+              "description": "Follow `stable` (the default, setting `update_channel`; `release` is its earlier name): the newest accepted release, also from `main` or edge once it is as new; `edge`: the newest edge release; or `main`: its newest commit.",
               "title": "Channel"
             }
           }

@@ -563,6 +563,7 @@ def test_commands_are_sorted(app):
         "agent",
         "capability",
         "changelog",
+        "channel",
         "claude",
         "config",
         "connector",

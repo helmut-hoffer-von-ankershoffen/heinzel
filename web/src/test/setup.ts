@@ -1,13 +1,19 @@
 import "@testing-library/jest-dom/vitest";
-import { cleanup } from "@testing-library/react";
+import { cleanup, configure } from "@testing-library/react";
 import { afterEach, vi } from "vitest";
+import { resetOperationRun } from "@/lib/operationRun";
 import { splash } from "@/splash/store";
+
+// The API is mocked and answers at once, so a findBy or waitFor only waits for this process's CPU. At Testing Library's
+// default of 1 s a full-route render failed 4 of 6 runs at CPU stress; no test measures speed with it.
+configure({ asyncUtilTimeout: 10_000 });
 
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
   sessionStorage.clear();
   localStorage.clear();
+  resetOperationRun();
   splash.reset(); // the page's splash store, which the query cache, the theme and a restart report to
 });
 

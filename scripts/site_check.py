@@ -16,11 +16,13 @@ from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
+from urllib.parse import urlsplit
 
 from playwright.sync_api import expect, sync_playwright
+from site_privacy import LEGAL_PAGES, legal_pages_name_hosts, static_privacy, unlisted
 
 if TYPE_CHECKING:
-    from playwright.sync_api import Browser, Page
+    from playwright.sync_api import Browser, BrowserContext, Page, Route
 
 ROOT = Path(__file__).resolve().parents[1]
 REPORTS = ROOT / "reports" / "site"
@@ -28,7 +30,9 @@ MAX_HELPERS = 5
 HOME_STORIES = 3
 TOUR_STORIES = 3
 TOUR_SLIDES = 3
+PHONE_WIDTH = 390
 FITS_VIEWPORT = "document.documentElement.scrollWidth <= innerWidth + 1"
+SITE_URL = urlsplit(re.search(r"^site_url:\s*(\S+)", (ROOT / "mkdocs.yml").read_text(), re.MULTILINE)[1])
 
 
 class SiteError(Exception):
@@ -61,6 +65,66 @@ class Handler(SimpleHTTPRequestHandler):
 
     def log_message(self, format: str, *args: object) -> None:  # noqa: A002 - standard library callback
         """Keep passing checks quiet; failures are reported by the browser assertions."""
+
+
+def serve_site_url_locally(context: "BrowserContext", base: str) -> None:
+    """Answer requests to the production URL from the local build.
+
+    The privacy plugin gives Material's script loader the absolute production URL of the mermaid script it copied into
+    assets/external/, so the browser asks the production host. Served from the build instead, the check also proves
+    that file is part of the site.
+    """
+    local = urlsplit(base)
+
+    def fulfill(route: "Route") -> None:
+        route.fulfill(response=route.fetch(url=f"{local.scheme}://{local.netloc}{urlsplit(route.request.url).path}"))
+
+    context.route(f"{SITE_URL.scheme}://{SITE_URL.netloc}/**", fulfill)
+
+
+def privacy_flow(browser: "Browser", base: str, snapshot: dict[str, Any]) -> None:
+    """Visit pages in a real browser: no request leaves the site's origin unless listed, and nothing sets a cookie.
+
+    The browser's own network log decides, so a request made by a script, a stylesheet, a font or an image counts as
+    much as one written into the HTML. Pages cover the home page, catalog, tour, plugin pages with screenshots and
+    soundscapes, the search and both legal pages in both languages.
+    """
+    own = urlsplit(base).netloc
+    context = browser.new_context(viewport={"width": 1280, "height": 900})
+    serve_site_url_locally(context, base)
+    page = context.new_page()
+    hosts: dict[str, str] = {}
+    page.on("request", lambda request: hosts.setdefault(urlsplit(request.url).netloc, request.url))
+    plugins = [
+        project["id"] for project in snapshot["plugins"] if project.get("screenshots") or project.get("soundscapes")
+    ]
+    paths = [
+        "",
+        "CATALOG/",
+        "guides/tour/",
+        "guides/install/",
+        *(f"catalog/{identity}/" for identity in plugins),
+        *(f"{name}/" for name in LEGAL_PAGES),
+    ]
+    for path in paths:
+        page.goto(base + path, wait_until="networkidle")
+        page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+        page.wait_for_load_state("networkidle")
+    page.goto(base, wait_until="networkidle")
+    page.locator('[data-md-toggle="search"] ~ * [name="query"], input.md-search__input').first.fill(
+        "plugin", force=True
+    )
+    page.wait_for_load_state("networkidle")
+    bad = unlisted({host for host in hosts if host not in {own, SITE_URL.netloc}})
+    require(not bad, "A page view contacted hosts other than the site: " + "; ".join(f"{h} ({hosts[h]})" for h in bad))
+    require(not context.cookies(), f"The site must not set cookies: {context.cookies()}")
+    context.close()
+
+
+class BuiltSite(ThreadingHTTPServer):
+    """The build's server; pages now fetch all their images from it at once, so it queues more than five connections."""
+
+    request_queue_size = 128
 
 
 def audit(page: "Page", axe: Path, name: str) -> None:
@@ -128,11 +192,12 @@ def catalog_flow(page: "Page", total: int) -> None:
     page.get_by_role("checkbox", name="Included in the app").check()
     require(page.locator("[data-plugin]:visible").count() > 0, "Included plugins must remain discoverable")
     page.get_by_role("button", name="Reset filters").click()
-    search.fill(page.locator("[data-plugin] h3 a").first.inner_text())
+    # An included plugin has nothing to install, so the install flow needs one that is optional.
+    search.fill(page.locator('[data-plugin][data-included="false"] h3 a').first.inner_text())
     search.press("Tab")
     require(page.locator("#plugin-category").evaluate("e => e === document.activeElement"), "Keyboard order")
     page.locator("[data-plugin]:visible h3 a").first.click()
-    require(page.get_by_role("heading", name="Install and try").is_visible(), "Detail page must load")
+    expect(page.get_by_role("heading", name="Install and try")).to_be_visible()  # the detail page may still be loading
     copy_command(page, "plugin-install")
 
 
@@ -284,14 +349,13 @@ def gallery_shape_flow(page: "Page") -> None:
 
 
 def media_flow(page: "Page", base: str, snapshot: dict[str, Any], axe: Path, identity: str) -> None:
-    """Check gallery images and explicit playback without contacting YouTube."""
+    """Check gallery images and that soundscapes are plain links: YouTube is never contacted by the page itself."""
     for project in snapshot["plugins"]:
         if not project.get("screenshots") and not project.get("soundscapes"):
             continue
         media = page.context.new_page()
         try:
             requests = []
-            media.route("https://*.youtube-nocookie.com/**", lambda route: route.abort())
             media.on("request", lambda request, found=requests: found.append(request.url))
             media.goto(base + f"catalog/{project['id']}/")
             require(
@@ -311,15 +375,13 @@ def media_flow(page: "Page", base: str, snapshot: dict[str, Any], axe: Path, ide
             if images.count():
                 zoom_flow(media, axe, identity + "-" + project["id"])
                 gallery_shape_flow(media)
-            require(not any("youtube" in url for url in requests), "YouTube must not load before Play")
+            require(not any("youtube" in url for url in requests), "YouTube must be reached by a link only")
             sounds = project.get("soundscapes", [])
             if sounds:
-                media.get_by_role("button", name=f"Play {sounds[0]['title']}", exact=True).click()
-                player = media.locator(".hz-soundscape iframe")
-                expect(player).to_have_attribute(
-                    "src", f"https://www.youtube-nocookie.com/embed/{sounds[0]['video']}?autoplay=1"
+                expect(media.get_by_role("link", name="Listen on YouTube ↗").first).to_be_visible()
+                require(
+                    media.locator("iframe, [data-play-soundscape]").count() == 0, "Soundscapes are links, not players"
                 )
-                expect(player).to_have_attribute("title", sounds[0]["title"])
         finally:
             media.close()
 
@@ -512,15 +574,51 @@ def helper_fallbacks(browser: "Browser", base: str, snapshot: dict[str, Any]) ->
     calm.close()
 
 
+def drawer_flow(page: "Page", identity: str) -> None:
+    """On a phone, the burger must open a navigation drawer that is visible, on screen and on top, and close again."""
+    if page.viewport_size["width"] > PHONE_WIDTH:  # desktop shows the navigation inline, without a burger
+        return
+    toggle = page.locator("#__drawer")
+    page.locator("label.md-header__button[for=__drawer]").click()
+    require(toggle.is_checked(), f"The burger must open the drawer: {identity}")
+    page.wait_for_function(
+        """() => {
+            const box = document.querySelector('.md-sidebar--primary').getBoundingClientRect();
+            const hit = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
+            return box.width > 100 && box.x >= 0 && box.right <= innerWidth && !!hit?.closest('.md-sidebar--primary');
+        }""",
+        timeout=3_000,
+    )
+    drawer = page.locator(".md-sidebar--primary")
+    require(
+        drawer.get_by_text("Plugin catalog", exact=True).first.is_visible(),
+        f"The drawer must list its pages: {identity}",
+    )
+    page.locator("label.md-overlay").click(position={"x": PHONE_WIDTH - 10, "y": 400})  # tap the dimmed page
+    require(not toggle.is_checked(), f"Tapping outside must close the drawer: {identity}")
+
+
+def static_install_flow(page: "Page", base: str) -> None:
+    """Without JavaScript an optional plugin shows its install command and an included one says it needs none."""
+    page.locator('[data-plugin][data-included="false"] h3 a').first.click()
+    require(page.locator("#plugin-install").is_visible(), "Static plugin detail must work without JS")
+    page.goto(base + "CATALOG/")
+    page.locator('[data-plugin][data-included="true"] h3 a').first.click()
+    require("nothing to install" in page.inner_text("main"), "An included plugin must say it needs no install")
+    require(page.locator("#plugin-install").count() == 0, "An included plugin shows no install command")
+
+
 def sweep(browser: "Browser", engine: str, base: str, axe: Path, snapshot: dict[str, Any]) -> None:
     """Exercise desktop/phone and light/dark combinations with real rendered artifacts."""
     total = len(snapshot["plugins"])
+    privacy_flow(browser, base, snapshot)
     helper_layout(browser, base, snapshot, axe)
     helper_hash(browser, base, snapshot)
     helper_fallbacks(browser, base, snapshot)
-    for width in (1440, 390):
+    for width in (1440, PHONE_WIDTH):
         for mode in ("light", "dark"):
             context = browser.new_context(viewport={"width": width, "height": 960}, color_scheme=mode)
+            serve_site_url_locally(context, base)
             context.add_init_script("""(() => {
                 if (!navigator.clipboard?.writeText) return;
                 const write = navigator.clipboard.writeText.bind(navigator.clipboard);
@@ -530,7 +628,7 @@ def sweep(browser: "Browser", engine: str, base: str, axe: Path, snapshot: dict[
             })()""")
             page = context.new_page()
             errors = []
-            page.on("pageerror", lambda error, found=errors: found.append(str(error)))
+            page.on("pageerror", lambda error, found=errors, tab=page: found.append(f"{tab.url}: {error}"))
             for route, name in (
                 ("", "home"),
                 ("CATALOG/", "catalog"),
@@ -539,6 +637,7 @@ def sweep(browser: "Browser", engine: str, base: str, axe: Path, snapshot: dict[
                 ("guides/architecture/", "architecture"),
                 ("guides/contribute/", "contribute"),
                 ("PLUGIN_AUTHORING/", "authoring"),
+                *((f"{legal}/", legal) for legal in LEGAL_PAGES),
             ):
                 response = page.goto(base + route)
                 require(response is not None and response.ok, f"Route must resolve: {route}")
@@ -555,7 +654,7 @@ def sweep(browser: "Browser", engine: str, base: str, axe: Path, snapshot: dict[
                 )
                 require(not broken, f"Broken image: {engine}/{width}/{mode}/{name}: {broken}")
                 require(
-                    1 <= page.locator("[data-heinzel-helper]").count() <= MAX_HELPERS,
+                    name in LEGAL_PAGES or 1 <= page.locator("[data-heinzel-helper]").count() <= MAX_HELPERS,
                     f"Every page needs one to five character explainers: {name}",
                 )
                 identity = f"{engine}-{width}-{mode}-{name}"
@@ -572,6 +671,7 @@ def sweep(browser: "Browser", engine: str, base: str, axe: Path, snapshot: dict[
                     manual_theme_flow(page, mode, axe, identity)
                     zoom_flow(page, axe, identity, ".hz-product-story figure a")
                 page.screenshot(path=str(REPORTS / f"{identity}.png"), full_page=True)
+                drawer_flow(page, identity)
                 if name == "catalog":
                     catalog_flow(page, total)
                     audit(page, axe, identity + "-detail")
@@ -588,13 +688,12 @@ def sweep(browser: "Browser", engine: str, base: str, axe: Path, snapshot: dict[
     page = context.new_page()
     page.goto(base + "CATALOG/")
     require(page.locator("[data-plugin]:visible").count() == total, "Every plugin must be reachable without JS")
-    page.locator("[data-plugin] h3 a").first.click()
-    require(page.locator("#plugin-install").is_visible(), "Static plugin detail must work without JS")
+    static_install_flow(page, base)
     for project in snapshot["plugins"]:
         for _sound in project.get("soundscapes", []):
             page.goto(base + f"catalog/{project['id']}/")
             expect(page.get_by_role("link", name="Listen on YouTube ↗").first).to_be_visible()
-            require(page.locator("iframe").count() == 0, "No-JS media must retain links without loading players")
+            require(page.locator("iframe").count() == 0, "Media must stay links without loading players")
             break
     context.close()
 
@@ -605,7 +704,9 @@ def main() -> None:
     require(bool(candidates), "Install locked web dependencies first: uv run --script scripts/web_build.py install")
     REPORTS.mkdir(parents=True, exist_ok=True)
     snapshot = json.loads((ROOT / "site/catalog.json").read_text())
-    server = ThreadingHTTPServer(("127.0.0.1", 0), partial(Handler, directory=str(ROOT / "site")))
+    static_privacy(ROOT / "site", SITE_URL.netloc)
+    legal_pages_name_hosts(ROOT / "site")
+    server = BuiltSite(("127.0.0.1", 0), partial(Handler, directory=str(ROOT / "site")))
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:

@@ -122,7 +122,7 @@ Only the latest release receives security fixes while the project is on 0.x; upd
 Verify a release artifact:
 
 ```bash
-gh attestation verify heinzel-0.1.0-py3-none-any.whl --repo helmut-hoffer-von-ankershoffen/heinzel
+gh attestation verify heinzel-<version>-py3-none-any.whl --repo helmut-hoffer-von-ankershoffen/heinzel
 ```
 
 Plugins created from the template inherit the same hooks, checks and release workflow.

@@ -9,13 +9,25 @@ import subprocess
 import sys
 import threading
 import time
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import pytest
 
-from heinzel import Check, CompiledJobs, HeinzelError, JobLet, Kernel, Module, Notifications, Status, __version__
+from heinzel import (
+    Check,
+    CompiledJobs,
+    HeinzelError,
+    JobLet,
+    Kernel,
+    Module,
+    Notifications,
+    Progress,
+    Status,
+    __version__,
+)
 from heinzel.modules.system.daemon import DaemonService, DaemonSettings
 from heinzel.modules.system.daemon._ledger import Ledger
 from heinzel.modules.system.daemon._models import Disposition, Wake, unit_dir
@@ -25,6 +37,8 @@ from heinzel.modules.system.daemon._units import LABEL, launchd_plist
 
 pytestmark = pytest.mark.unit
 
+FIVE_MINUTES = timedelta(minutes=5)
+TEN_MINUTES = timedelta(minutes=10)
 BERLIN = ZoneInfo("Europe/Berlin")
 T0 = datetime(2026, 10, 5, 10, 2, tzinfo=BERLIN)
 
@@ -111,8 +125,15 @@ def bin_dir(tmp_path) -> Path:
 
 @pytest.fixture
 def make(make_kernel, settings, tmp_path, bin_dir):
-    def build(
-        *modules: Module, platform="darwin", runner=None, clock=None, time_limit=within, notifier=True
+    def build(  # noqa: PLR0913 - the seams a test turns, all by keyword
+        *modules: Module,
+        platform="darwin",
+        runner=None,
+        clock=None,
+        time_limit=within,
+        notifier=True,
+        session="Aqua",
+        install_notifier=None,
     ) -> DaemonService:
         return DaemonService(
             make_kernel(**{m.name: m for m in modules}),
@@ -126,6 +147,8 @@ def make(make_kernel, settings, tmp_path, bin_dir):
             time_limit=time_limit,
             zone=BERLIN,
             notifier_installed=lambda: notifier,
+            desktop_session=lambda: session,
+            install_notifier=install_notifier,
             birth_fence=lambda: None,
             process_birth=lambda: None,
         )
@@ -142,7 +165,7 @@ def test_install_on_macos_writes_and_bootstraps_the_launch_agent(make, bin_dir, 
     plist = tmp_path / "units" / f"{LABEL}.plist"
     assert result.files == {plist: plist.read_text(encoding="utf-8")}
     assert f"<string>{bin_dir / 'hz'}</string>" in plist.read_text(encoding="utf-8")
-    assert runner.verbs() == [f"bootout gui/501/{LABEL}", f"bootstrap gui/501 {plist}"]
+    assert runner.verbs() == [f"bootout gui/501/{LABEL}", f"bootstrap gui/501 {plist}", f"print gui/501/{LABEL}"]
     assert result.commands == [["/bin/launchctl", "bootstrap", "gui/501", str(plist)]]
     assert (result.interval_minutes, result.dry_run) == (10, False)
 
@@ -160,7 +183,11 @@ def test_install_on_linux_writes_and_enables_the_timer(make, bin_dir, tmp_path):
     make(platform="linux", runner=runner).install(timedelta(minutes=5))
     assert (tmp_path / "units" / "hz-daemon.service").is_file()
     assert "OnCalendar=*:0/5" in (tmp_path / "units" / "hz-daemon.timer").read_text(encoding="utf-8")
-    assert runner.verbs() == ["--user daemon-reload", "--user enable --now hz-daemon.timer"]
+    assert runner.verbs() == [
+        "--user daemon-reload",
+        "--user enable --now hz-daemon.timer",
+        "--user is-active --quiet hz-daemon.timer",
+    ]
 
 
 def test_install_dry_run_writes_and_loads_nothing(make, bin_dir, tmp_path):
@@ -192,6 +219,126 @@ def test_install_reports_failures_of_uv_and_launchctl(make, bin_dir):
         make(runner=Runner(bin_dir, {"uv": 2})).install(timedelta(minutes=5))
     with pytest.raises(HeinzelError, match="bootstrap failed"):
         make(runner=Runner(bin_dir, {"bootstrap": 5})).install(timedelta(minutes=5))
+
+
+class Phased:
+    """A `Progress` that remembers the steps a head would show, as (id, state) pairs."""
+
+    def __init__(self):
+        self.events: list[dict] = []
+
+    def emitter(self):
+        return lambda kind, data: self.events.append(dict(data)) if kind == "phase" else None
+
+    @contextmanager
+    def task(self, description, total=None):
+        yield lambda _amount: None
+
+
+def progress_of(service) -> Phased:
+    phased = Phased()
+    service._kernel.bind(Progress, phased)
+    return phased
+
+
+def steps(phased: Phased) -> list[tuple[str, str]]:
+    return [(event["id"], event["state"]) for event in phased.events if event["state"] != "pending"]
+
+
+def test_the_plan_is_told_first_so_a_head_can_count_steps(make, bin_dir):
+    service = make(runner=Runner(bin_dir), install_notifier=lambda: None)
+    phased = progress_of(service)
+    service.install(timedelta(minutes=5))
+    assert [event["id"] for event in phased.events[:5]] == ["session", "unit", "load", "verify", "notifier"]
+    assert {event["state"] for event in phased.events[:5]} == {"pending"}
+
+
+def test_install_tells_each_real_step_in_order(make, bin_dir):
+    service = make(runner=Runner(bin_dir), install_notifier=lambda: None)
+    phased = progress_of(service)
+    service.install(timedelta(minutes=5))
+    assert steps(phased) == [
+        ("session", "running"),
+        ("session", "done"),
+        ("unit", "running"),
+        ("unit", "done"),
+        ("load", "running"),
+        ("load", "done"),
+        ("verify", "running"),
+        ("verify", "done"),
+        ("notifier", "running"),
+        ("notifier", "done"),
+    ]
+
+
+def test_install_leaves_out_the_notifier_step_without_one_and_off_macos(make, bin_dir):
+    mac = make(runner=Runner(bin_dir))
+    phased = progress_of(mac)
+    mac.install(timedelta(minutes=5))
+    assert "notifier" not in {event["id"] for event in phased.events}
+    linux = make(platform="linux", runner=Runner(bin_dir), install_notifier=lambda: pytest.fail("macOS only"))
+    phased = progress_of(linux)
+    linux.install(timedelta(minutes=5))
+    assert {event["id"] for event in phased.events} == {"unit", "load", "verify"}
+
+
+def test_a_notifier_problem_is_a_warning_and_the_daemon_stays_installed(make, bin_dir, tmp_path):
+    service = make(runner=Runner(bin_dir), install_notifier=lambda: "Xcode tools are missing")
+    phased = progress_of(service)
+    service.install(timedelta(minutes=5))
+    assert steps(phased)[-1] == ("notifier", "warn")
+    assert phased.events[-1]["detail"] == "Xcode tools are missing"
+    assert (tmp_path / "units" / f"{LABEL}.plist").exists()
+
+
+def test_install_outside_the_desktop_session_changes_nothing_and_says_why(make, bin_dir, tmp_path):
+    runner = Runner(bin_dir)
+    service = make(runner=runner, session="Background")
+    phased = progress_of(service)
+    with pytest.raises(HeinzelError, match=r"desktop session.*'Background'.*Nothing was changed"):
+        service.install(FIVE_MINUTES)
+    assert steps(phased) == [("session", "running"), ("session", "failed")]
+    assert runner.verbs() == []
+    assert not (tmp_path / "units").exists()
+    unknown = make(runner=runner, session=None)
+    with pytest.raises(HeinzelError, match="doesn't say"):
+        unknown.install(FIVE_MINUTES)
+
+
+def test_a_failed_load_removes_the_unit_again_so_nothing_starts_at_login(make, bin_dir, tmp_path):
+    service = make(runner=Runner(bin_dir, {"bootstrap": 5}))
+    phased = progress_of(service)
+    with pytest.raises(HeinzelError, match=r"bootstrap failed.*put back as it was"):
+        service.install(FIVE_MINUTES)
+    assert not (tmp_path / "units" / f"{LABEL}.plist").exists()
+    assert steps(phased)[-1] == ("load", "failed")
+
+
+def test_a_unit_the_manager_does_not_list_as_loaded_is_a_failure(make, bin_dir, tmp_path):
+    service = make(runner=Runner(bin_dir, {"print": 113}))
+    phased = progress_of(service)
+    with pytest.raises(HeinzelError, match="does not list it as loaded"):
+        service.install(FIVE_MINUTES)
+    assert steps(phased)[-1] == ("verify", "failed")
+    assert not (tmp_path / "units" / f"{LABEL}.plist").exists()
+
+
+def test_a_failed_reinstall_puts_back_the_unit_that_was_there(make, bin_dir, tmp_path):
+    make(runner=Runner(bin_dir)).install(FIVE_MINUTES)
+    plist = tmp_path / "units" / f"{LABEL}.plist"
+    before = plist.read_text(encoding="utf-8")
+    failing = make(runner=Runner(bin_dir, {"bootstrap": 5}))
+    with pytest.raises(HeinzelError, match="put back"):
+        failing.install(TEN_MINUTES)
+    assert plist.read_text(encoding="utf-8") == before
+
+
+def test_uninstall_tells_its_steps(make, bin_dir):
+    service = make(runner=Runner(bin_dir))
+    service.install(timedelta(minutes=5))
+    phased = progress_of(service)
+    service.uninstall()
+    assert steps(phased) == [("unload", "running"), ("unload", "done"), ("remove", "running"), ("remove", "done")]
 
 
 def test_install_needs_a_supported_platform_and_its_tools(make, make_kernel, settings, tmp_path, bin_dir):
@@ -273,6 +420,16 @@ def test_health_flags_a_unit_that_is_not_loaded(make, bin_dir):
     make().install(timedelta(minutes=5))
     [check] = make(runner=Runner(bin_dir, {"print": 113})).health()
     assert (check.name, check.status) == ("daemon", Status.DEGRADED)
+
+
+def test_health_explains_a_registered_daemon_whose_program_is_gone(make, bin_dir):
+    service = make()
+    service.install(timedelta(minutes=5))
+    (bin_dir / "hz").unlink()
+    (service.state_dir / "install.json").unlink()
+    [check, *_] = service.health()
+    assert (check.name, check.status) == ("daemon", Status.DEGRADED)
+    assert check.fix == "Run `uvx --from heinzel hz system daemon uninstall`"
 
 
 def test_health_flags_a_daemon_that_stopped_ticking(make, jobs):
