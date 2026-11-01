@@ -357,7 +357,7 @@ try {
       `${spec.name}: footer moved while scrolling`,
     );
     assert.ok(afterScroll.top.y >= 0 && afterScroll.bottom.y + afterScroll.bottom.height <= spec.height + 1);
-    await page.getByRole("button", { name: "Home", exact: true }).click();
+    await page.getByRole("button", { name: "Today", exact: true }).click();
     assert.ok(await page.getByRole("menu").isVisible(), `${spec.name}: header menu is unreachable`);
     await page.keyboard.press("Escape");
     await page.screenshot({ path: join(shots, `mobile-${spec.name}-sticky-scroll.png`) });
@@ -529,7 +529,7 @@ try {
       `${spec.name}: expanded left navigation`,
     );
     await page.getByRole("button", { name: "Collapse navigation" }).click();
-    await page.getByRole("button", { name: "Home", exact: true }).click();
+    await page.getByRole("button", { name: "Today", exact: true }).click();
     await assertContained(page, page.getByRole("menu"), `${spec.name}: screen menu`);
     await page.keyboard.press("Escape");
     const initialChatTab = page.getByRole("tab", { name: "Chat", exact: true });
@@ -544,7 +544,7 @@ try {
     await page.getByRole("textbox", { name: "Your message" }).fill("A draft to keep.");
     await assertContained(
       page,
-      page.getByRole("button", { name: "Create Heinzel and take this message" }),
+      page.getByRole("button", { name: "Create a helper and take this message" }),
       `${spec.name}: workshop agent handoff`,
     );
     await page.screenshot({ path: join(shots, `mobile-${spec.name}-agent-handoff.png`) });
@@ -765,7 +765,7 @@ try {
       });
     });
     await page.getByRole("textbox", { name: "Your message" }).fill("Keep my notes current.");
-    await page.getByRole("button", { name: "Create Heinzel and take this message" }).click();
+    await page.getByRole("button", { name: "Create a helper and take this message" }).click();
     await page.getByLabel("Message your Heinzel").waitFor();
     await page.getByText(/Customize.*suggested look/).click();
     const useSuggestion = page.getByRole("button", { name: "Use suggested identity" });
