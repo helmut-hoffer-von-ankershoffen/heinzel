@@ -2473,6 +2473,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/system/plugin/pending": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List plugins changed on this machine since this server started: what a restart would load.
+         * @description List plugins changed on this machine since this server started: what a restart would load.
+         *
+         *     Raises:
+         *         HeinzelError: If the installed environment cannot be read.
+         */
+        get: operations["system_plugin_pending"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/system/plugin/remove": {
         parameters: {
             query?: never;
@@ -8769,6 +8792,49 @@ export interface components {
             version: string;
         };
         /**
+         * PluginPending
+         * @description What changed in the installed plugins since this server started, however it changed.
+         */
+        PluginPending: {
+            /**
+             * Changes
+             * @description Plugins installed, removed, updated, enabled or disabled since this server started.
+             */
+            changes: components["schemas"]["PluginPendingChange"][];
+            /**
+             * Restart Required
+             * @description Whether this server must restart to load them.
+             */
+            restart_required: boolean;
+        };
+        /**
+         * PluginPendingChange
+         * @description One plugin whose installed state differs from what the running server loaded.
+         */
+        PluginPendingChange: {
+            /**
+             * Change
+             * @description How the installed environment differs from what this server loaded.
+             * @enum {string}
+             */
+            change: "installed" | "removed" | "updated" | "enabled" | "disabled";
+            /**
+             * Distribution
+             * @description The plugin's distribution name.
+             */
+            distribution: string;
+            /**
+             * Themes
+             * @description Themes it brings, to choose in Settings > Appearance after a restart.
+             */
+            themes?: string[];
+            /**
+             * Version
+             * @description The installed version, when it is still installed.
+             */
+            version?: string | null;
+        };
+        /**
          * PluginSearch
          * @description Plugins one can install, and what kept the search from being complete.
          */
@@ -13936,6 +14002,8 @@ export type SchemaPluginInfo = components['schemas']['PluginInfo'];
 export type SchemaPluginLayer = components['schemas']['PluginLayer'];
 export type SchemaPluginOperation = components['schemas']['PluginOperation'];
 export type SchemaPluginPage = components['schemas']['PluginPage'];
+export type SchemaPluginPending = components['schemas']['PluginPending'];
+export type SchemaPluginPendingChange = components['schemas']['PluginPendingChange'];
 export type SchemaPluginSearch = components['schemas']['PluginSearch'];
 export type SchemaPluginUpdate = components['schemas']['PluginUpdate'];
 export type SchemaProfile = components['schemas']['Profile'];
@@ -17683,6 +17751,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_plugin_pending: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PluginPending"];
                 };
             };
         };

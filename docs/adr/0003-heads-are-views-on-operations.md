@@ -1,6 +1,7 @@
 ---
 status: accepted
 date: 2026-10-23
+implementation: built
 ---
 
 # 0003: Heads are views on head-agnostic operations

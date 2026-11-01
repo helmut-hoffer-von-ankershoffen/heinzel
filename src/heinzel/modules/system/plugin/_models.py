@@ -170,6 +170,28 @@ class PluginCandidate(BaseModel):
     warnings: list[str] = Field(description="What could not be checked, e.g. metadata of a host other than GitHub.")
 
 
+class PluginPendingChange(BaseModel):
+    """One plugin whose installed state differs from what the running server loaded."""
+
+    distribution: str = Field(description="The plugin's distribution name.")
+    change: Literal["installed", "removed", "updated", "enabled", "disabled"] = Field(
+        description="How the installed environment differs from what this server loaded."
+    )
+    version: str | None = Field(default=None, description="The installed version, when it is still installed.")
+    themes: list[str] = Field(
+        default_factory=list[str], description="Themes it brings, to choose in Settings > Appearance after a restart."
+    )
+
+
+class PluginPending(BaseModel):
+    """What changed in the installed plugins since this server started, however it changed."""
+
+    changes: list[PluginPendingChange] = Field(
+        description="Plugins installed, removed, updated, enabled or disabled since this server started."
+    )
+    restart_required: bool = Field(description="Whether this server must restart to load them.")
+
+
 class PluginChange(BaseModel):
     """What a plugin change would do or did, and whether running servers must restart to see it."""
 
