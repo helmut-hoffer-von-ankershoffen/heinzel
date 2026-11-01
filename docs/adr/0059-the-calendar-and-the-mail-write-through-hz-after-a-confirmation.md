@@ -1,6 +1,7 @@
 ---
 status: proposed
 date: 2026-10-24
+implementation: built
 decision-makers: maintainer
 amends: 0028, 0038, 0042
 amends-0028: a write mode and three reads for calendar and mail
