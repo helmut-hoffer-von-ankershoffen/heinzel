@@ -14,8 +14,15 @@ from pydantic import BaseModel, Field, JsonValue, ValidationError
 from pydantic_core import to_jsonable_python
 
 from heinzel import HeinzelError, Kernel, SetupLet, clean_text
-from heinzel.kernel import ContractTemplate, DiscoveryHint, PlaybookLet, Requester, Requirement, toml_value
-from heinzel.modules.heinzel._jsonable import jsonable
+from heinzel.kernel import (
+    ContractTemplate,
+    DiscoveryHint,
+    PlaybookLet,
+    Requester,
+    Requirement,
+    jsonable,
+    toml_value,
+)
 from heinzel.modules.heinzel._models import Input, Step
 
 MAX_CANDIDATES = 20

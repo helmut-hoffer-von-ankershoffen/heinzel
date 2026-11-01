@@ -59,6 +59,7 @@ from heinzel.kernel import (
     Requirement,
     ToolProfile,
     UsageEntry,
+    jsonable,
     record_usage,
     toml_value,
 )
@@ -69,7 +70,6 @@ from heinzel.modules.heinzel._graph import CODES as GRAPH_CODES
 from heinzel.modules.heinzel._graph import asset as asset_id
 from heinzel.modules.heinzel._graph import build as build_graph
 from heinzel.modules.heinzel._graph import problems as graph_problems
-from heinzel.modules.heinzel._jsonable import jsonable
 from heinzel.modules.heinzel._measure import Sent
 from heinzel.modules.heinzel._models import (
     DRAFT_NAME,

@@ -18,7 +18,7 @@ from typing import Any, cast
 
 from packaging.utils import canonicalize_name
 from pydantic import ValidationError
-from pydantic_core import PydanticSerializationError, PydanticUndefined, to_jsonable_python
+from pydantic_core import PydanticUndefined, to_jsonable_python
 
 from heinzel import HeinzelError, Kernel, __version__
 from heinzel.kernel import (
@@ -42,6 +42,7 @@ from heinzel.kernel import (
     exposed,
     format_duration,
     input_schema,
+    jsonable,
 )
 from heinzel.modules.system.plugin._models import PluginInfo
 from heinzel.modules.system.plugin._service import REPOSITORY, PluginService, short_name
@@ -95,16 +96,6 @@ SECTIONED_LETS = (
 TYPE_WORDS = {"string": "TEXT", "integer": "INTEGER", "number": "FLOAT", "boolean": "BOOLEAN", "array": "TEXT"}
 CLI_WORDS = {"system.runner.chat": ("chat",)}
 """Modules the CLI mounts elsewhere than their path says: the chat is `hz chat` (ADR 0045)."""
-
-
-def _refuse(value: object) -> object:
-    """Fail on a value with no JSON form, as `to_jsonable_python` does by default, rather than stringify it.
-
-    Raises:
-        PydanticSerializationError: Always.
-    """
-    msg = f"Unable to serialize unknown type: {type(value)}"
-    raise PydanticSerializationError(msg)
 
 
 class DocsService:
@@ -536,7 +527,7 @@ def _playbook(record: ModuleRecord, let: PlaybookLet) -> PlaybookDoc:
             for asset in let.assets
         ],
         templates=[template.name for template in let.templates],
-        defaults=dict(to_jsonable_python(dict(let.defaults), fallback=_refuse)),
+        defaults=dict(jsonable(dict(let.defaults))),
     )
 
 

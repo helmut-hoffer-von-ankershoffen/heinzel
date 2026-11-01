@@ -16,11 +16,11 @@ from typing import Any, Literal, TypeGuard, cast
 import tomlkit
 from pydantic import ValidationError
 from pydantic.fields import FieldInfo
-from pydantic_core import PydanticSerializationError, to_jsonable_python
+from pydantic_core import to_jsonable_python
 from tomlkit.exceptions import ParseError
 
 from heinzel import Config, ConfigEditor, ConfigListChange, CurrentUser, HeinzelError, Kernel, ModuleSettings
-from heinzel.kernel import FILENAME, PROJECT_FILENAME, ConfigFile, env_prefix, toml_value, user_config_dir
+from heinzel.kernel import FILENAME, PROJECT_FILENAME, ConfigFile, env_prefix, jsonable, toml_value, user_config_dir
 from heinzel.modules.system.config._models import (
     ConfigFileInfo,
     ConfigReport,
@@ -40,16 +40,6 @@ HEADER = """\
 
 Scope = Literal["user", "project"]
 PLACEHOLDER_LIST: list[str] = ["first", "second"]  # the example for a list setting that is empty
-
-
-def _refuse(value: object) -> object:
-    """Fail on a value with no JSON form, as `to_jsonable_python` does by default, rather than stringify it.
-
-    Raises:
-        PydanticSerializationError: Always.
-    """
-    msg = f"Unable to serialize unknown type: {type(value)}"
-    raise PydanticSerializationError(msg)
 
 
 def _default(field: FieldInfo) -> Any:  # noqa: ANN401 - a setting's default is any JSON value
@@ -263,7 +253,7 @@ class ConfigService(ConfigEditor):
         """
         section, name, model = self._locate(key)
         self._require(model.model_fields[name], write=True)
-        parsed = _without_none(to_jsonable_python(value, fallback=_refuse))
+        parsed = _without_none(jsonable(value))
         if parsed is None:
             msg = f"TOML has no null; to let {key} take its default, run `hz system config unset {key}`."
             raise HeinzelError(msg)

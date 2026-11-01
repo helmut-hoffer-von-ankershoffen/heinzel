@@ -11,6 +11,7 @@ change like a library release: an ADR for a new concept, unit tests for every br
   `draft_reporting_lines`, the seam setup steps and roster drafting call (fallback adapter:
   `system.directory`); `_text.py` — `clean_text`, which adapters apply to every string they return, and
   `redact_emails`, which keeps addresses out of prompts;
+  `_json.py` — `jsonable`, a value's JSON form that refuses what has none instead of stringifying it;
   `_agents.py` — the `AgentRunner` protocol, `AgentResult` and `McpServer` (ADR 0029; adapters live in
   `system.runner`); `_chat.py` — `ActionGate` and `ProposedCall`, where a chat's agent proposes what only the person's
   confirmation runs (ADR 0045; provided by `system.runner.chat`, asked for by the MCP head);

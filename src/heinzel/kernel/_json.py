@@ -1,6 +1,4 @@
-"""JSON-ready forms of values that must be serialisable: a value that isn't fails, it is never turned into text."""
-
-from __future__ import annotations
+"""JSON-ready forms of values that must be serialisable."""
 
 from typing import Any
 
@@ -18,9 +16,12 @@ def _refuse(value: object) -> object:
 
 
 def jsonable(value: Any) -> Any:  # noqa: ANN401 - any value in, its JSON form out
-    """`value` as JSON-ready data.
+    """`value` as JSON-ready data (dates as ISO text, models as dicts, tuples and sets as lists).
+
+    A value with no JSON form fails; it is never turned into text in its place, so a bug can't leak a repr into a
+    document, a digest or a config file.
 
     Raises:
-        PydanticSerializationError: If it holds a value with no JSON form; nothing is stringified in its place.
+        PydanticSerializationError: If `value` holds a value with no JSON form.
     """
     return to_jsonable_python(value, fallback=_refuse)
