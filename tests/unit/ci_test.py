@@ -792,7 +792,7 @@ def test_pushing_runs_check_fast_through_a_hook():
     assert hooks["check-fast"]["stages"] == ["pre-push"]
     assert "pre-push" in config["default_install_hook_types"]
     assert "--hook-type pre-push" in (REPO / "Makefile").read_text(encoding="utf-8")
-    assert (REPO / "template" / ".pre-commit-config.yaml").resolve() == REPO / ".pre-commit-config.yaml"
+    assert (REPO / "template" / ".pre-commit-config.yaml.jinja").resolve() == REPO / ".pre-commit-config.yaml"
 
 
 def test_the_template_audit_runs_in_template_test_ci_and_full_preflight():
