@@ -160,6 +160,7 @@ they are out of date, so they can't drift.
 | Check the **names, taglines and claims** | [BRANDING](BRANDING.md) |
 | Work on it **as a coding agent** | [AGENTS](../AGENTS.md) and the scoped AGENTS.md files it lists |
 | Report a **vulnerability** | [SECURITY](../SECURITY.md) |
+| Read the **legal notices** of the website (German texts prevail) | [Impressum](impressum.md) · [Imprint](imprint.md) · [Datenschutzerklärung](datenschutz.md) · [Privacy notice](privacy.md) |
 
 How drift is prevented:
 

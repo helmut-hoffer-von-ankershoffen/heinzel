@@ -83,6 +83,6 @@ soundscapes = ["src/heinzel_harbor/soundscapes/tide.toml"]
 ```
 
 It displays soundscapes declaring `kind = "stream"`, `[stream] provider = "youtube"` and an eleven-character
-`video` identity. A **Listen on YouTube** link works without JavaScript;
-**Play** loads the privacy-enhanced YouTube player only after a click. No video, thumbnail or player is requested
-before that click. YouTube and the video owner control availability.
+`video` identity. The page shows a **Listen on YouTube** link, nothing more: no video, thumbnail or player is
+requested from YouTube, and the visitor reaches YouTube only by following the link. YouTube and the video owner
+control availability.
