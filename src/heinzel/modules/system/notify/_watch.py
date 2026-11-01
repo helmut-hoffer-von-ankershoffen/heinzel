@@ -16,7 +16,7 @@ def watch(kernel: Kernel, notifications: Notifications, wants: "set[NoticeKind]"
     reported = 0
     if NoticeKind.DOCTOR in wants:
         reported += _doctor(kernel, notifications)
-    latest = ReleaseCache(kernel.settings.cache_dir).newer_than(__version__)
+    latest = ReleaseCache(kernel.settings.cache_dir).newer_than(__version__, kernel.settings.update_channel)
     if NoticeKind.RELEASE in wants and latest is not None:
         notice = notifications.emit(
             NoticeKind.RELEASE,

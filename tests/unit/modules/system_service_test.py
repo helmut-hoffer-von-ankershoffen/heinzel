@@ -1,6 +1,7 @@
 import io
 import json
 import urllib.error
+from types import SimpleNamespace
 
 import pytest
 from pydantic import BaseModel
@@ -297,7 +298,13 @@ def test_the_kernel_release_source_has_no_answer_of_its_own():
 
 
 def test_the_release_source_reads_the_repository_from_the_installation(tmp_path):
-    assert github_releases(Installation(Progress(), prefix=tmp_path, uv="uv")).repository == DEFAULT_REPOSITORY
+    assert (
+        github_releases(
+            Installation(Progress(), prefix=tmp_path, uv="uv"),
+            SimpleNamespace(settings=SimpleNamespace(update_channel="stable")),
+        ).repository
+        == DEFAULT_REPOSITORY
+    )
 
 
 @pytest.mark.parametrize(
