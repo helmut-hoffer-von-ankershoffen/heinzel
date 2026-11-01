@@ -236,6 +236,7 @@ function show(props: Parameters<typeof PluginsSection>[0] = {}) {
 }
 
 beforeEach(() => {
+  window.history.replaceState(null, "", "/");
   sessionStorage.clear();
   receiptCount = 0;
   confirmedStreamDelay = 0;
@@ -689,6 +690,22 @@ describe("PluginsSection", () => {
     await user.click(within(card).getByRole("button", { name: "Cancel" }));
     expect(screen.queryByRole("group", { name: /Install this plugin/ })).not.toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Installed" })).toBeEnabled();
+  });
+
+  it("keeps the tab in the address so a reload returns to it", async () => {
+    window.history.replaceState(null, "", "/");
+    serve((url) =>
+      url.pathname === "/api/system/plugin/search" ? { body: { plugins: [], warnings: [] } } : base(url),
+    );
+    const user = userEvent.setup();
+    const first = show({ restartInterval: 1 });
+    await user.click(screen.getByRole("tab", { name: "Discover" }));
+    expect(window.location.search).toBe("?plugins=discover");
+    first.unmount();
+    show({ restartInterval: 1 });
+    expect(screen.getByRole("tab", { name: "Discover" })).toHaveAttribute("aria-selected", "true");
+    await user.click(screen.getByRole("tab", { name: "Installed" }));
+    expect(window.location.search).toBe("");
   });
 
   it("says why a source is refused and installs nothing", async () => {

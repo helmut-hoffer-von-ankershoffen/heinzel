@@ -59,6 +59,8 @@ from heinzel.modules.system.plugin._models import (
     PluginKind,
     PluginLayer,
     PluginOperation,
+    PluginPending,
+    PluginPendingChange,
     PluginSearch,
     PluginSettings,
     Source,
@@ -180,6 +182,41 @@ class PluginService:
             # The child uses the default snapshot path; forwarding --fresh would recursively spawn interpreters.
             return self._fresh_list()
         return self._loaded_inventory()
+
+    def pending(self) -> PluginPending:
+        """What a restart would load: the installed environment read afresh, against what this server loaded.
+
+        Raises:
+            HeinzelError: If the installed environment cannot be read.
+        """
+        loaded = {canonicalize_name(info.distribution): info for info in self._loaded_inventory()}
+        installed = {canonicalize_name(info.distribution): info for info in self.installed(fresh=True)}
+        changes: list[PluginPendingChange] = []
+        change: Literal["installed", "updated", "enabled", "disabled"]
+        for name, info in sorted(installed.items()):
+            before = loaded.get(name)
+            if before is None:
+                change = "installed"
+            elif before.version != info.version:
+                change = "updated"
+            elif (before.enabled is not False) != (info.enabled is not False):
+                change = "enabled" if info.enabled is not False else "disabled"
+            else:
+                continue
+            changes.append(
+                PluginPendingChange(
+                    distribution=info.distribution,
+                    change=change,
+                    version=info.version,
+                    themes=list(info.themes or []),
+                )
+            )
+        changes.extend(
+            PluginPendingChange(distribution=info.distribution, change="removed")
+            for name, info in sorted(loaded.items())
+            if name not in installed
+        )
+        return PluginPending(changes=changes, restart_required=bool(changes))
 
     def _loaded_inventory(self) -> list[PluginInfo]:
         """Describe the plugins and modules already loaded by this kernel."""
