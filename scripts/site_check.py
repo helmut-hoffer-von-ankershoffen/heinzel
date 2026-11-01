@@ -196,7 +196,7 @@ def catalog_flow(page: "Page", total: int) -> None:
     search.press("Tab")
     require(page.locator("#plugin-category").evaluate("e => e === document.activeElement"), "Keyboard order")
     page.locator("[data-plugin]:visible h3 a").first.click()
-    require(page.get_by_role("heading", name="Install and try").is_visible(), "Detail page must load")
+    expect(page.get_by_role("heading", name="Install and try")).to_be_visible()  # the detail page may still be loading
     copy_command(page, "plugin-install")
 
 
