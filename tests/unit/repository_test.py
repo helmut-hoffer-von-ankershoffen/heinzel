@@ -5,6 +5,7 @@ import json
 import os
 import re
 import tomllib
+import unicodedata
 from importlib import metadata
 from pathlib import Path
 
@@ -157,12 +158,23 @@ def test_core_imports_no_concrete_plugin_implementation():
     assert _forbidden_plugin_imports(REPO, providers) == []
 
 
+def _candidate_sources(repo, needles):
+    """Yield (path, text) of source files that spell a needle; a forbidden import must, so the rest aren't parsed.
+
+    Text is NFKC-normalised for the check, as Python normalises identifiers.
+    """
+    for source in (repo / "src/heinzel").rglob("*.py"):
+        text = source.read_text()
+        if any(needle in unicodedata.normalize("NFKC", text) for needle in needles):
+            yield source, text
+
+
 def _forbidden_plugin_imports(repo, providers):
     """Check every import; only inspect installed package names when a candidate needs them."""
     packages = None
     forbidden = []
-    for source in (repo / "src/heinzel").rglob("*.py"):
-        for node in ast.walk(ast.parse(source.read_text())):
+    for source, text in _candidate_sources(repo, ("heinzel_", *providers)):
+        for node in ast.walk(ast.parse(text)):
             imported = []
             if isinstance(node, ast.Import):
                 imported = [alias.name for alias in node.names]
@@ -211,4 +223,11 @@ def test_plugin_import_scan_avoids_package_map_without_candidates(tmp_path, monk
     source.parent.mkdir(parents=True)
     source.write_text("import ordinary, vendor_plugin\n", encoding="utf-8")
     monkeypatch.setattr(metadata, "packages_distributions", lambda: pytest.fail("unneeded package lookup"))
+    assert _forbidden_plugin_imports(tmp_path, {"vendor_plugin"}) == ["src/heinzel/example.py:1: vendor_plugin"]
+
+
+def test_plugin_import_scan_sees_imports_spelled_with_compatibility_characters(tmp_path):
+    source = tmp_path / "src/heinzel/example.py"
+    source.parent.mkdir(parents=True)
+    source.write_text("import \uff56endor_plugin\n", encoding="utf-8")  # fullwidth v: Python reads `vendor_plugin`
     assert _forbidden_plugin_imports(tmp_path, {"vendor_plugin"}) == ["src/heinzel/example.py:1: vendor_plugin"]
