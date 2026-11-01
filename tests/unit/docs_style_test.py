@@ -55,6 +55,12 @@ def test_dates_ignore_front_matter_and_code(tmp_path):
     ) == ["date"]
 
 
+def test_an_adr_may_carry_a_dated_amendment_note(tmp_path):
+    note = "## More Information\n\nAmended 2026-01-02: what changed.\n\nOn 2026-01-02 it ran.\n"
+    assert rules(tmp_path, "docs/adr/0042-x.md", note) == ["date"]
+    assert rules(tmp_path, "docs/A.md", "Amended 2026-01-02: what changed.\n") == ["date"]
+
+
 def test_versions_in_scope_only(tmp_path):
     assert rules(
         tmp_path, "docs/guides/a.md", "Install 0.1.0 now; not 10.0.0.1.\n```sh\nuv tool install x==0.2.0\n```\n"

@@ -1,6 +1,7 @@
 ---
 status: proposed
 date: 2026-10-24
+implementation: built
 decision-makers: maintainer (the decisions), architect (shape)
 amends: 0037, 0052
 amends-0037: the core graph module ships the graph keeper playbook
