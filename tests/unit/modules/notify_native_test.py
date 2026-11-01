@@ -46,6 +46,7 @@ def test_sanitise_flattens_cleans_bounds_and_never_starts_like_an_option():
     assert long.endswith("…")
 
 
+@pytest.mark.macos_specific
 def test_osascript_gets_a_fixed_script_and_the_text_as_its_arguments():
     command = Native("osascript", "/usr/bin/osascript").argv(INJECTION, "body")
     scripts = [command[i + 1] for i, arg in enumerate(command) if arg == "-e"]
@@ -84,6 +85,7 @@ def app(tmp_path, *, bundled: bool, said: str = "posted") -> NotifierApp:
     return NotifierApp(tmp_path / "home", bundled=bundle, runner=runner)
 
 
+@pytest.mark.macos_specific
 def test_on_macos_heinzel_notifier_comes_first_and_osascript_last(tmp_path):
     first = native("darwin", which("osascript"), {}, app=app(tmp_path, bundled=True))
     assert (first.name, first.clicks) == (HEINZEL, True)
@@ -94,6 +96,7 @@ def test_on_macos_heinzel_notifier_comes_first_and_osascript_last(tmp_path):
     assert native("darwin", which(), {}, app=app(tmp_path / "none", bundled=False)).name is None
 
 
+@pytest.mark.macos_specific
 def test_heinzel_notifier_installs_itself_on_first_use_and_reports_a_refusal(tmp_path):
     shown = native("darwin", which(), {}, app=app(tmp_path, bundled=True))
     assert shown.post("Draft ready", "Read it.", url="http://127.0.0.1:8737/") is None

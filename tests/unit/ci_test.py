@@ -1178,3 +1178,14 @@ def test_release_versions_ignore_edge_tags_and_stay_under_plugin_caps():
     assert cliff["git"]["tag_pattern"].startswith("^v")
     assert cliff["bump"]["features_always_bump_minor"] is False
     assert cliff["bump"]["breaking_always_bump_major"] is False
+
+
+def test_macos_specific_tests_are_a_required_serial_job_on_macos():
+    jobs = yaml.safe_load((REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))["jobs"]
+    job = jobs["macos-specific"]
+    assert (job["name"], job["runs-on"]) == ("macOS-specific tests", "macos-latest")
+    assert "macos-specific" in jobs["ci-ok"]["needs"]
+    recipe = (REPO / "Makefile").read_text(encoding="utf-8").split("\ntest-macos-specific:", 1)[1].split("\n\n", 1)[0]
+    assert "-m macos_specific" in recipe
+    assert " -n " not in recipe  # serial: no worker contention for the machine-wide notifier tests
+    assert any(step.get("run") == "make test-macos-specific" for step in job["steps"])

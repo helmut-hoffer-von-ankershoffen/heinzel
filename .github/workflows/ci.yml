@@ -413,6 +413,31 @@ jobs:
           name: notifier
           path: notifier.tar.gz
 
+  macos-specific:
+    name: macOS-specific tests
+    needs: changes
+    if: needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true'
+    runs-on: macos-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+          save-cache: ${{ github.ref == 'refs/heads/main' }} # pull requests reuse main's cache
+      - name: Install what the tests need, and no more
+        run: uv sync --no-dev --group test # UV_FROZEN: exactly the lockfile
+      - run: make notifier # the real-launch tests skip without the built app
+      # Serial on purpose (no -n): the notifier tests share one machine-wide bundle id, and contention must not hit them.
+      - name: Tests that only exercise macOS behaviour (marker macos_specific)
+        env:
+          UV_NO_SYNC: "1"
+          VERBOSE: "1"
+        run: make test-macos-specific
+
   electron:
     name: Electron (${{ matrix.os }})
     needs: changes
@@ -646,7 +671,7 @@ jobs:
   ci-ok:
     name: CI OK
     if: always()
-    needs: [dependency-review, commits, changes, lint, secrets, setup, audit, test, coverage, perf, site-tests, e2e, template, notifier, electron, build, core-wheel, local-plugin-plan, local-plugin-check, consumer-plan, consumer-check]
+    needs: [dependency-review, commits, changes, lint, secrets, setup, audit, test, coverage, perf, site-tests, e2e, template, notifier, macos-specific, electron, build, core-wheel, local-plugin-plan, local-plugin-check, consumer-plan, consumer-check]
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     steps:

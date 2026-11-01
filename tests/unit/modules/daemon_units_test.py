@@ -18,6 +18,7 @@ pytestmark = pytest.mark.unit
 GOLDEN = Path(__file__).resolve().parents[2] / "fixtures" / "daemon"
 
 
+@pytest.mark.macos_specific
 def test_launchd_plist_matches_the_golden_file():
     plist = launchd_plist(Path("/Users/ada/.local/bin/hz"), 5, Path("/Users/ada/Library/Logs/hz"))
     assert plist == (GOLDEN / "launchd.plist").read_text(encoding="utf-8")
@@ -30,6 +31,7 @@ def test_systemd_units_match_the_golden_files():
     assert systemd_timer(5) == (GOLDEN / "hz-daemon.timer").read_text(encoding="utf-8")
 
 
+@pytest.mark.macos_specific
 def test_launchd_fires_at_every_slot_of_the_hour():
     agent = plistlib.loads(launchd_plist(Path("/x/hz"), 15, Path("/logs")).encode())
     assert agent["StartCalendarInterval"] == [{"Minute": 0}, {"Minute": 15}, {"Minute": 30}, {"Minute": 45}]
