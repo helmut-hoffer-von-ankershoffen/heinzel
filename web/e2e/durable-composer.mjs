@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { chromium } from "playwright-core";
+import { fetchOnce } from "./fetch-once.mjs";
 
 const [sessionUrl] = process.argv.slice(2);
 if (!sessionUrl) throw new Error("Usage: node e2e/durable-composer.mjs SESSION_URL");
@@ -101,7 +102,7 @@ await page.route("**/api/lifecycle/verify", (route) =>
   route.fulfill({ json: { instance: "fixture-new-instance", version: updateVersion, matches: true, mismatched: [] } }),
 );
 await page.route("**/api/frontend", async (route) => {
-  const response = await route.fetch();
+  const response = await fetchOnce(route);
   const frontend = await response.json();
   return route.fulfill({ response, json: { ...frontend, version: updateVersion } });
 });

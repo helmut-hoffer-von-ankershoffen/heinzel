@@ -36,10 +36,11 @@ def makefile() -> str:
         .replace(" test-e2e e2e-prepare ", " test-e2e ")
         .replace("test-e2e: e2e-prepare", "test-e2e:")
         .replace(
-            "uv run pytest -m e2e -n 3 -q --session-timeout=600 -x tests/e2e/docs_test.py::test_readme_instructions && "
-            "uv run pytest -m e2e -n 3 -q --session-timeout=600 -x "
-            "--deselect=tests/e2e/docs_test.py::test_readme_instructions",
-            "uv run pytest -m e2e -n 3 -q --session-timeout=600 -x",
+            '"e2e-readme=uv run pytest -m e2e -n 3 -q --session-timeout=600 -x '
+            'tests/e2e/docs_test.py::test_readme_instructions" '
+            '"e2e=uv run pytest -m e2e -n 3 -q --session-timeout=600 -x '
+            '--deselect=tests/e2e/docs_test.py::test_readme_instructions"',
+            '"e2e=uv run pytest -m e2e -n 3 -q --session-timeout=600 -x"',
         )
     )
     # The core's generate_docs.py writes the plugin pages with everything else; a plugin runs the builder (ADR 0082).
@@ -63,7 +64,7 @@ def makefile() -> str:
     text = text.replace(", and the README's intro; PLUGIN=name", "; PLUGIN=name")
     text = text.replace("scripts/docs_record.py --intro $(if", "scripts/docs_record.py $(if")
     # Steps only Heinzelmännchen has: import contracts, the template, demo tape, ATTRIBUTIONS.md (never a last step).
-    text = re.sub(r'\n\t\t"&?(contracts|template|demo|attributions)=[^\n]*', "", text)
+    text = re.sub(r'\n\t\t"&?(contracts|template|demo|attributions|docs-check)=[^\n]*', "", text)
     text = text.replace("uv build --all-packages", "uv build")
     text = text.replace("lint, import contracts, types, tests", "lint, types, tests")
     text = text.replace(
@@ -75,11 +76,17 @@ def makefile() -> str:
     text = text.replace(" docs-catalog docs-site-check", "")
     text = re.sub(r"\n(docs-catalog|docs-site-check):.*?\n(?:\t.*\n)+", "\n", text)
     # The web head's app (web/, ADR 0039): plugins bring operations, not UI.
-    text = text.replace(" web-build web-dev test-web", "").replace(" test-browser-deps", "")
+    text = text.replace(" web-build web-dev test-web test-site", "").replace(" test-browser-deps", "")
     text = re.sub(r"\n# The web head's app in web/.*?\nWEB_TESTS := [^\n]*", "", text, flags=re.DOTALL)
-    text = re.sub(r"\n(web-build|web-dev|test-web|test-browser-deps):.*?\n(?:\t.*\n)+", "\n", text)
+    text = re.sub(r"\n(web-build|web-dev|test-web|test-site|test-browser-deps):.*?\n(?:\t.*\n)+", "\n", text)
     text = re.sub(r"\n\t\t\$\(WEB_LINT\) \$\(WEB_TYPES\) \\", "", text)
-    text = re.sub(r" \$\(WEB_(LINT|TYPES|TESTS)\)", "", text)
+    text = re.sub(
+        r" \$\(WEB_(LINT|TYPES|TESTS)\)"
+        r"| \$\(subst &web-tests,web-tests,\$\(WEB_TESTS\)\)"
+        r"|\n# Unit tests take every core[^\n]*",
+        "",
+        text,
+    )
     text = re.sub(r'\n\t\t"&web-client=[^\n]*', "", text)
     text = re.sub(r"\n\t@\$\(WEB(_PROJECT)?\) [^\n]*", "", text)
     text = re.sub(r' "&web-vulnerabilities=[^"]*"', "", text)
@@ -163,6 +170,7 @@ def ci_workflow() -> str:
     text = re.sub(r"\n  notifier:\n.*?(?=\n  build:)", "\n", text, flags=re.DOTALL)
     # The Electron window and its native runtime are core-only; plugins carry no desktop app.
     text = re.sub(r"\n  electron:\n.*?(?=\n  build:)", "\n", text, flags=re.DOTALL)
+    text = text[: text.index("  site-tests:\n")] + text[text.index("  e2e:\n") :]
     text = re.sub(r"\n  changes:\n.*?(?=\n  dependency-review:)", "", text, flags=re.DOTALL)
     # The template has no changed-path job; keep its original E2E matrix policy without core-only gating.
     text = text.replace("    needs: changes\n", "")
@@ -192,6 +200,7 @@ def ci_workflow() -> str:
     # Removed jobs must also disappear from the stable required aggregate, irrespective of list order.
     removed = {
         "changes",
+        "site-tests",
         "template",
         "notifier",
         "electron",
@@ -251,7 +260,7 @@ def pyproject() -> str:
         'no deadline or selection change.",\n',
         "",
     )
-    tools = re.sub(r'\nextend-exclude = \["template", "plugins"\][^\n]*', "", tools)
+    tools = re.sub(r'\nextend-exclude = \["template", "plugins"[^\]]*\][^\n]*', "", tools)
     tools = tools.replace(
         'extend-exclude = ["ATTRIBUTIONS.md", "site", "plugins"]', 'extend-exclude = ["ATTRIBUTIONS.md", "site"]'
     )

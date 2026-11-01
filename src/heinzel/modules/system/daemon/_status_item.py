@@ -1,23 +1,23 @@
-"""The daemon in the web app's status bar: running, paused, failing, stale or not installed (ADR 0056).
+"""The daemon in the web app's status bar: starting, running, paused, failing, stale or not installed (ADR 0056).
 
-A view over `hz system daemon status`. Installing and uninstalling change what runs at every login, so they open the
-terminal with the command and the person presses Enter (the CLI is the only head that installs, ADR 0020); pausing and
-resuming are operations the app runs only after the person confirms the exact call.
+A view over `hz system daemon status`, in plain words: a daemon that was just installed says it is starting and when its
+first check comes, and only a real version mismatch asks for a restart. Installing and uninstalling change what runs at
+every login, so they are operations the app runs after the person confirms the exact call, with the steps shown as
+they happen (the CLI and the web app are the heads that install, ADR 0020); pausing, resuming and restarting are
+operations the same way.
 """
 
 from datetime import UTC, datetime, timedelta
 
 from heinzel import DetailLine, LiveTime, RunCommand, RunOperation, StatusItem, WidgetAction, __version__
 from heinzel.modules.system.daemon._models import DaemonStatus
-from heinzel.modules.system.daemon._service import PLATFORMS
+from heinzel.modules.system.daemon._service import DEFAULT_INTERVAL, PLATFORMS
 
 STALE_INTERVALS = 2
 """A last tick older than this many intervals means the daemon isn't ticking."""
 
-INSTALL = WidgetAction(label="Install", icon="play", effect=RunCommand(command="hz system daemon install"))
-UNINSTALL = WidgetAction(
-    label="Uninstall", icon="circle-alert", effect=RunCommand(command="hz system daemon uninstall")
-)
+INSTALL = WidgetAction(label="Install", icon="play", effect=RunOperation(operation="install"))
+UNINSTALL = WidgetAction(label="Uninstall", icon="circle-alert", effect=RunOperation(operation="uninstall"))
 RESTART = WidgetAction(label="Restart daemon", icon="zap", effect=RunOperation(operation="restart"))
 PAUSE = WidgetAction(label="Pause", icon="timer", effect=RunOperation(operation="pause"))
 RESUME = WidgetAction(label="Resume", icon="play", effect=RunOperation(operation="resume"))
@@ -44,48 +44,41 @@ def status_item(status: DaemonStatus, now: datetime | None = None) -> StatusItem
         return StatusItem(
             text="Daemon not installed",
             icon="bot",
-            detail=[DetailLine(text=f"Jobs that would run on their schedule: {status.jobs}")],
+            detail=[
+                DetailLine(text="Keeps your Heinzelmännchen working while the app is closed"),
+                DetailLine(text=f"Jobs that would run on their schedule: {status.jobs}"),
+            ],
             actions=[INSTALL],
         )
     last = status.last_tick.astimezone(UTC) if status.last_tick else None  # a naive one is local time
+    minutes = status.interval_minutes or DEFAULT_INTERVAL
+    interval = timedelta(minutes=status.interval_minutes or 0)
+    installed = status.installed_at.astimezone(UTC) if status.installed_at else None
+    waiting = last is None and (installed is None or now - installed <= STALE_INTERVALS * timedelta(minutes=minutes))
     detail = [
+        DetailLine(text=f"Last check {_ago(last, now)}" if last else "Waiting for its first check"),
         DetailLine(text=f"Jobs: {status.jobs}"),
-        DetailLine(text=f"Last tick {_ago(last, now)}" if last else "No tick yet"),
         *(DetailLine(text=f"Failing: {job}", tone="bad") for job in status.failing[:5]),
     ]
-    detail.insert(
-        1,
-        DetailLine(
-            text=f"Last service tick ran hz {status.version}"
-            if status.version
-            else "Service tick version unknown · restart and wait for a tick to record it"
-        ),
-    )
-    detail.insert(
-        2,
-        DetailLine(
-            text=f"Unit records hz {status.installed_version}" if status.installed_version else "Unit version unknown"
-        ),
-    )
     if status.version_mismatch:
-        detail.insert(
-            3,
+        detail.append(
             DetailLine(
                 text=(
-                    f"Unit {status.installed_version or 'unknown'}; service tick {status.version or 'unknown'}; "
-                    f"current {__version__}: restart and wait for tick"
+                    f"Installed for hz {status.installed_version or 'unknown'}; the last check ran "
+                    f"{status.version or 'unknown'}; this is {__version__}"
                 ),
                 tone="bad",
-            ),
+            )
         )
-    restart = [RESTART] if status.version_mismatch or status.version is None else []
-    interval = timedelta(minutes=status.interval_minutes or 0)
+    elif status.version:
+        detail.append(DetailLine(text=f"Running hz {status.version}"))
+    restart = [RESTART] if status.version_mismatch else []
     stale = bool(last and interval and now - last > STALE_INTERVALS * interval)
     if status.paused:
         return StatusItem(
             text="Daemon paused", tone="warn", icon="bot", detail=detail, actions=[*restart, RESUME, LOGS, UNINSTALL]
         )
-    if not status.loaded or status.failing or stale:
+    if not status.loaded or status.failing or stale or (last is None and not waiting):
         text = (
             "Daemon not loaded"
             if not status.loaded
@@ -94,11 +87,18 @@ def status_item(status: DaemonStatus, now: datetime | None = None) -> StatusItem
             else "Daemon not ticking"
         )
         return StatusItem(text=text, tone="bad", icon="bot", detail=detail, actions=[*restart, LOGS, PAUSE, UNINSTALL])
-    upcoming = last + interval if last and interval else None
+    if last is None:
+        return StatusItem(
+            text=f"Daemon starting · first check within {minutes} min",
+            icon="bot",
+            detail=detail,
+            actions=[*restart, LOGS, PAUSE, UNINSTALL],
+        )
+    upcoming = last + interval if interval else None
     return StatusItem(
-        text="Daemon version mismatch · restart and wait for a tick"
+        text="Daemon needs a restart · version mismatch"
         if status.version_mismatch
-        else "Daemon running · next tick"
+        else "Daemon running · next check"
         if upcoming
         else "Daemon running",
         tone="warn" if status.version_mismatch else "ok",

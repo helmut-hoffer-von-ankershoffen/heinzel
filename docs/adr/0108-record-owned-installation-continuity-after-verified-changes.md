@@ -1,8 +1,10 @@
 ---
 status: proposed
 date: 2026-10-30
+implementation: built
 decision-makers: maintainer
 related: 0094, 0106
+implemented-by: 300
 ---
 
 # 0108: Record owned installation continuity after verified changes

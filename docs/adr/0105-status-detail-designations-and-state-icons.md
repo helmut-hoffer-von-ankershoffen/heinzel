@@ -1,7 +1,9 @@
 ---
 status: proposed
 date: 2026-10-30
+implementation: built
 related: 0056
+implemented-by: 292
 ---
 
 # 0105: Status detail rows carry provider designations and work state icons

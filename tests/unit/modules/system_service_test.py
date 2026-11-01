@@ -1,5 +1,7 @@
+import io
 import json
 import urllib.error
+from types import SimpleNamespace
 
 import pytest
 from pydantic import BaseModel
@@ -67,8 +69,30 @@ class FakeGitHub:
         return json.dumps(self.answer).encode()
 
 
+class FakeRedirect:
+    """Answers the HEAD of `github.com/<repository>/releases/latest` with a status and a Location, or raises."""
+
+    def __init__(self) -> None:
+        self.answer: tuple[int, str] | Exception = urllib.error.URLError("redirect not faked")
+        self.requests: list[tuple[str, float]] = []
+
+    def head(self, url, timeout):
+        self.requests.append((url, timeout))
+        if isinstance(self.answer, Exception):
+            raise self.answer
+        return self.answer
+
+
 @pytest.fixture
-def github(monkeypatch):
+def redirect(monkeypatch):
+    fake = FakeRedirect()
+    monkeypatch.setattr(_github, "_head", fake.head)
+    return fake
+
+
+@pytest.fixture
+def github(monkeypatch, redirect):
+    """The REST API is the fake; the redirect is unavailable unless a test gives it an answer."""
     fake = FakeGitHub()
     monkeypatch.setattr(_github, "_open", fake.open)
     return fake
@@ -167,6 +191,73 @@ def test_the_release_source_asks_the_latest_release_without_a_token(github):
     assert "Authorization" not in headers
 
 
+TAG_PAGE = "https://github.com/someone/heinzel/releases/tag/v99.1.0"
+REAL_HEAD = _github._head  # the suite's autouse fixture replaces it with an offline one
+
+
+def test_the_latest_release_comes_from_the_redirect_and_spends_no_rest_quota(github, redirect):
+    redirect.answer = (302, TAG_PAGE)
+    assert GitHubReleases("someone/heinzel").latest(2) == ("99.1.0", TAG_PAGE)
+    assert redirect.requests == [("https://github.com/someone/heinzel/releases/latest", 2)]
+    assert github.requests == []
+
+
+def test_a_rate_limited_rest_api_does_not_blind_the_release_check(make_kernel, github, redirect):
+    github.answer = urllib.error.URLError("HTTP Error 403: rate limit exceeded")
+    redirect.answer = (302, f"https://github.com/{DEFAULT_REPOSITORY}/releases/tag/v99.1.0")
+    kernel = make_kernel()
+    check = SystemService(kernel).release(None)
+    assert (check.latest, check.update_available, check.warnings) == ("99.1.0", True, [])
+    assert ReleaseCache(kernel.settings.cache_dir).latest == "99.1.0"
+    assert github.requests == []
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        urllib.error.URLError("no route to host"),
+        urllib.error.HTTPError(TAG_PAGE, 404, "Not Found", {}, io.BytesIO()),
+        TimeoutError("timed out"),
+        (200, ""),  # no redirect at all
+        (302, ""),
+        (302, "https://example.com/someone/heinzel/releases/tag/v99.1.0"),  # another host
+        (302, "https://github.com/someone/other/releases/tag/v99.1.0"),  # another repository
+        (302, "https://github.com/someone/heinzel/releases"),  # no tag
+        (302, "https://github.com/someone/heinzel/releases/tag/v99.1.0/extra"),
+        (302, "https://github.com/someone/heinzel/releases/tag/v99.1.0?x=1"),
+        (302, "https://github.com/someone/heinzel/releases/tag/nightly"),  # no version
+    ],
+)
+def test_an_unusable_redirect_falls_back_to_the_rest_api(github, redirect, answer):
+    redirect.answer = answer
+    assert GitHubReleases("someone/heinzel").latest(2) == ("99.0.0", RELEASE["html_url"])
+    assert [url for url, _, _ in github.requests] == ["https://api.github.com/repos/someone/heinzel/releases/latest"]
+
+
+def test_the_redirect_is_asked_without_a_token_and_never_followed(monkeypatch):
+    seen = []
+    monkeypatch.setattr(_github, "_head", REAL_HEAD)
+
+    class Opener:
+        def open(self, request, timeout):
+            seen.append((request.get_method(), request.full_url, dict(request.header_items()), timeout))
+            raise urllib.error.HTTPError(request.full_url, 302, "Found", {"Location": TAG_PAGE}, io.BytesIO())
+
+    monkeypatch.setattr(_github.urllib.request, "build_opener", lambda *handlers: seen.append(handlers) or Opener())
+    for variable in ("GH_TOKEN", "GITHUB_TOKEN"):
+        monkeypatch.setenv(variable, "t0ken")
+    assert _github.latest_release_url("someone/heinzel", 3) == TAG_PAGE
+    handlers, [method, url, headers, timeout] = seen
+    assert handlers == (_github._NoRedirects,)
+    assert (method, url, timeout) == ("HEAD", "https://github.com/someone/heinzel/releases/latest", 3)
+    assert headers == {"User-agent": f"heinzel/{__version__}"}
+
+
+def test_the_redirect_handler_refuses_every_redirect():
+    handler = _github._NoRedirects()
+    assert handler.redirect_request(None, None, 302, "Found", {}, TAG_PAGE) is None
+
+
 def releases(*tags, prerelease=(), draft=()):
     return [{"tag_name": tag, "prerelease": tag in prerelease, "draft": tag in draft} for tag in tags]
 
@@ -207,7 +298,13 @@ def test_the_kernel_release_source_has_no_answer_of_its_own():
 
 
 def test_the_release_source_reads_the_repository_from_the_installation(tmp_path):
-    assert github_releases(Installation(Progress(), prefix=tmp_path, uv="uv")).repository == DEFAULT_REPOSITORY
+    assert (
+        github_releases(
+            Installation(Progress(), prefix=tmp_path, uv="uv"),
+            SimpleNamespace(settings=SimpleNamespace(update_channel="stable")),
+        ).repository
+        == DEFAULT_REPOSITORY
+    )
 
 
 @pytest.mark.parametrize(

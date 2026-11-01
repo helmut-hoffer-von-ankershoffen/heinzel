@@ -1,6 +1,7 @@
 ---
 status: accepted
 date: 2026-10-23
+implementation: built
 amended-by: 0047, 0078
 ---
 
@@ -31,7 +32,7 @@ upgrades and resolves their dependencies.
   SemVer order (pre-releases only if one is installed). A core pinned to a branch, a commit or a local source is left
   alone with the `--source` that moves it; one that follows a default branch or the package index is upgraded by uv.
   If a plugin doesn't allow the new core, the error names it; uv replaces the environment only after resolving, so
-  the previous one keeps working (amended 2026-10-24).
+  the previous one keeps working.
 - Outside a tool environment (development checkouts), Heinzelmännchen falls back to `uv pip install`.
 - Plugins depend on `hz` without a source; inside the tool environment the requirement resolves to the installed
   Heinzelmännchen.

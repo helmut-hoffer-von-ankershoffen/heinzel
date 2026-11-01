@@ -1,16 +1,16 @@
 # Contributing to Heinzelmännchen
 
 <!-- badges:start -->
-[![CI](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/actions/workflows/ci.yml/badge.svg)](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/actions/workflows/ci.yml)
-[![Coverage](https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel/python-coverage-comment-action-data/badge.svg)](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/tree/python-coverage-comment-action-data)
-[![CodeQL](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/actions/workflows/codeql.yml/badge.svg)](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/actions/workflows/codeql.yml)
-[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/helmut-hoffer-von-ankershoffen/heinzel/badge)](https://scorecard.dev/viewer/?uri=github.com/helmut-hoffer-von-ankershoffen/heinzel)
-[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/15863/badge)](https://www.bestpractices.dev/en/projects/15863/passing)
+[![CI](https://img.shields.io/github/actions/workflow/status/helmut-hoffer-von-ankershoffen/heinzel/ci.yml?branch=main&label=CI)](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/actions/workflows/ci.yml)
+[![Coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel/python-coverage-comment-action-data/endpoint.json)](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/tree/python-coverage-comment-action-data)
+[![CodeQL](https://img.shields.io/github/actions/workflow/status/helmut-hoffer-von-ankershoffen/heinzel/codeql.yml?branch=main&label=CodeQL)](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/actions/workflows/codeql.yml)
+[![OpenSSF Scorecard](https://img.shields.io/ossf-scorecard/github.com/helmut-hoffer-von-ankershoffen/heinzel?label=OpenSSF%20Scorecard)](https://scorecard.dev/viewer/?uri=github.com/helmut-hoffer-von-ankershoffen/heinzel)
+[![OpenSSF Best Practices](https://img.shields.io/cii/level/15863?label=OpenSSF%20Best%20Practices)](https://www.bestpractices.dev/en/projects/15863/passing)
 [![PyPI](https://img.shields.io/pypi/v/heinzel)](https://pypi.org/project/heinzel/)
 [![Python](https://img.shields.io/badge/python-3.12%20%7C%203.13%20%7C%203.14%20%7C%203.15-blue)](pyproject.toml)
-[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=helmut-hoffer-von-ankershoffen_heinzel&metric=alert_status)](https://sonarcloud.io/summary/overall?id=helmut-hoffer-von-ankershoffen_heinzel)
+[![Quality Gate Status](https://img.shields.io/sonar/quality_gate/helmut-hoffer-von-ankershoffen_heinzel?server=https://sonarcloud.io&label=Quality%20Gate%20Status)](https://sonarcloud.io/summary/overall?id=helmut-hoffer-von-ankershoffen_heinzel)
 [![Security Rating](https://sonarcloud.io/api/project_badges/measure?project=helmut-hoffer-von-ankershoffen_heinzel&metric=security_rating)](https://sonarcloud.io/summary/overall?id=helmut-hoffer-von-ankershoffen_heinzel)
-[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/license-MIT-brightgreen)](LICENSE)
 <!-- badges:end -->
 
 Thanks for improving Heinzelmännchen. People and coding agents take the same path, and the repository enforces it
@@ -119,14 +119,16 @@ maintainer's own included:
 
 ## Review and merging
 
-- CI must pass: the `CI OK` check gates `main`. It runs lint and types, the tests on macOS and Linux for every
+- CI must pass: the `CI OK` check gates `main`. It runs lint and types, the tests on Linux for every
   Python, end-to-end tests, the plugin template, a secret scan, a dependency audit, CodeQL and `make setup` on every
-  supported platform. To spare macOS runners, a pull request runs macOS on the newest Python only, without Intel
-  and end-to-end; `main`, the daily run and dispatch (the release pull request) run everything. Pull requests get a coverage comment.
+  supported platform. Each macOS test cell is split into a unit and an integration shard under the same session cap.
+  To spare macOS runners, a pull request runs macOS on the newest Python only, without Intel and end-to-end; `main` and
+  dispatch (the release pull request) test macOS on the oldest and newest Python; the daily run tests all of them.
+  Pull requests get a coverage comment.
 - A maintainer reviews. Answer review comments in the thread and push fixes to the same branch; `main` requires
   resolved review threads and an up-to-date branch (a workflow merges `main` into auto-merging pull requests).
-- Pull requests are squash-merged. Maintainers' own pull requests merge automatically once green (`make pr` turns
-  on auto-merge); from a fork, the maintainer merges.
+- Pull requests are squash-merged after review. `make pr` opens or updates the pull request without enabling
+  auto-merge; a maintainer verifies the current head's checks and reviews before merging.
 - Structural changes (a new kind of let, a new head, a new dependency, a changed public API, or a change that
   contradicts an [ADR](docs/adr/)) need an ADR first; open an issue to discuss before writing much code. With Claude
   Code, run the `review` skill before opening the pull request.
@@ -147,7 +149,7 @@ The GIF at the top of the README is rendered by [VHS](https://github.com/charmbr
 `docs/assets/demo.tape`. That tape is generated (`make fix`, and `make check` fails while it is stale) from
 `docs/assets/demo-intro.tape` (settings, install, `hz --version`, `hz system info`) and the snippets modules contribute.
 A built-in module or a first-party plugin adds its part as a `demo.tape` next to its `__init__.py`; abridged from
-`plugins/heinzel-clock/src/heinzel_clock/demo.tape`:
+[`plugins/heinzel-clock/src/heinzel_clock/demo.tape` in heinzel-plugins](https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/blob/main/plugins/heinzel-clock/src/heinzel_clock/demo.tape):
 
 ```
 # The clock plugin in the README demo: add it, show the clocks, then the same as JSON into jq.
@@ -213,12 +215,13 @@ Be kind, assume good intent, critique code and ideas, not people ([CODE_OF_CONDU
 
 **Releases** are pull requests ([ADR 0013](docs/adr/0013-pull-request-based-development-and-releases.md)): `make release`
 (`BUMP=minor`; or Actions → **Prepare release** → Run workflow) dispatches a GitHub runner that derives the bump from
-the commits (`auto`, or force `patch`, `minor`, `major`), prepares the branch, dispatches CI on it and enables squash
-auto-merge, so nothing runs on your machine (`make release-local` is the same script locally). It opens `chore(release): vX.Y.Z` with the version and `CHANGELOG.md`
-updated. The optional **intro** (`make release INTRO="..."`) becomes the release's introduction under its heading in
-`CHANGELOG.md` and in the release notes; to change it, edit the pull request before CI turns green, or dispatch again with the intro. Introductions of earlier releases
-survive the regeneration; hand edits to their entries don't, because entries come from the commits. (If it ever doesn't tag, run **Release tag** by hand from `main`.) The pull request merges itself once
-`CI OK` is green; that tags the commit, and **Publish** builds wheel and sdist, attests their provenance and creates the GitHub
+the commits (`auto`, or force `patch`, `minor`, `major`), prepares the branch and dispatches CI on it, so nothing runs
+on your machine (`make release-local` is the same script locally). It opens `chore(release): vX.Y.Z` with the version
+and `CHANGELOG.md` updated. The required **intro** (`make release INTRO="..."`) becomes the release's introduction
+under its heading in `CHANGELOG.md` and in the release notes; edit the pull request to change it. Introductions of
+earlier releases survive regeneration; hand edits to their entries don't, because entries come from the commits.
+A maintainer reviews the release and verifies all checks on its current head before merging. The merge tags the
+commit, and **Publish** builds wheel and sdist, attests their provenance and creates the GitHub
 release with the changelog section as notes.
 
 **Pinned tools** live in [scripts/tools.toml](scripts/tools.toml); to bump one, change its version and run
@@ -229,7 +232,7 @@ release with the changelog section as notes.
 - A ruleset on `main`: pull requests only (squash), required status check `CI OK` on an up-to-date branch, linear
   history, resolved review threads, no force pushes or deletions. Version tags are created by the Release tag
   workflow; Publish refuses a tag that doesn't match the project version.
-- Merges: squash only, commit title = pull request title, delete branches after merge, auto-merge allowed.
+- Merges: squash only, commit title = pull request title, delete branches after merge; review and current-head checks precede merging.
 - Actions: workflow permissions read-only by default, "Allow GitHub Actions to create and approve pull requests" on.
 - Security: private vulnerability reporting, secret scanning with push protection, Dependabot alerts and updates.
 - Confidentiality: secret `CONFIDENTIAL_TERMS` for Actions and for Dependabot (its pull requests only see

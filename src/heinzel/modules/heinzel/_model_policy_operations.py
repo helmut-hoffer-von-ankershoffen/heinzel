@@ -1,5 +1,6 @@
 """Owner-private inert model-policy review operations; no runner is exposed here."""
 
+from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Annotated, Literal
 
@@ -24,22 +25,28 @@ class ModelPolicyReview(BaseModel):
     proposal: dict[str, JsonValue] = Field(description="Exact model, request, revision, limits and tool fingerprints.")
 
 
+def _utc_now() -> datetime:
+    return datetime.now(UTC)
+
+
 class ModelPolicyService:
     """Validate and stage a policy, or consume a trusted confirmation of its exact intent."""
 
-    def __init__(self, crud: SessionCrud, binding: ConfiguredApiAccess) -> None:
+    def __init__(
+        self, crud: SessionCrud, binding: ConfiguredApiAccess, now: Callable[[], datetime] | None = None
+    ) -> None:
         self.crud = crud
         self.binding = binding
+        self._now = now
 
-    @staticmethod
-    def _supported(grant: ModelGrant, billing: str) -> None:
+    def _supported(self, grant: ModelGrant, billing: str) -> None:
         if billing != "api-priced" or grant.access != "pydantic-ai" or grant.model != MODEL:
             msg = "This model billing policy is not supported for review"
             raise HeinzelError(msg)
         if grant.allowed_tools or grant.allowed_skill_tools:
             msg = "Tool grants require a verified catalog review that is not yet available"
             raise HeinzelError(msg)
-        resolve_pricing(MODEL, "standard", datetime.now(UTC))
+        resolve_pricing(MODEL, "standard", (self._now or _utc_now)())
 
     def propose(self, session: str, billing: str, proposal: dict[str, JsonValue]) -> ModelPolicyReview:
         """Store an inert, versioned exact proposal; never creates approval.

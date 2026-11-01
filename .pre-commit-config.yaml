@@ -35,13 +35,13 @@ repos:
         entry: uv run ruff format
         language: system
         types: [python]
-        exclude: ^plugins/
+        exclude: ^(plugins|scripts/acceptance)/
       - id: ruff-check
         name: ruff check
         entry: uv run ruff check --fix
         language: system
         types: [python]
-        exclude: ^plugins/
+        exclude: ^(plugins|scripts/acceptance)/
       - id: mypy
         name: mypy
         entry: uv run mypy
@@ -72,8 +72,8 @@ repos:
         language: system
         stages: [commit-msg]
       - id: check-fast
-        name: make check-fast (format, lint, contracts, generated files, unit tests)
-        entry: bash -c 'test -f pyproject.toml || exit 0; exec make check-fast' # prek also runs this from template/, which has no project
+        name: fast checks scoped to the branch (documents or web files alone run theirs, else make check-fast)
+        entry: bash -c '[ -f pyproject.toml ] || exit 0; [ -f scripts/scoped_checks.py ] || exec make check-fast; exec uv run --no-project --script scripts/scoped_checks.py push' # prek also runs this from template/, which has no project
         language: system
         pass_filenames: false
         exclude: ^plugins/

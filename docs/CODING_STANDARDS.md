@@ -63,7 +63,7 @@ tool where one exists, and by the `critic` agent in review otherwise.
 
 ## Architecture rules
 
-These keep the modulith a modulith. See [ARCHITECTURE.md](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/blob/main/docs/ARCHITECTURE.md) and the [ADRs](adr/).
+These keep the modulith a modulith. See [ARCHITECTURE.md](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/blob/main/docs/ARCHITECTURE.md) and the [ADRs](adr/README.md).
 
 | Layer | May import | Must not import |
 | --- | --- | --- |
@@ -79,7 +79,7 @@ These keep the modulith a modulith. See [ARCHITECTURE.md](https://github.com/hel
 
 ## Tests
 
-We follow the test taxonomy of the [Aignostics Python SDK](https://github.com/aignostics/python-sdk) (Martin
+We follow the test taxonomy of a public SDK (Martin
 Fowler's solitary vs. sociable distinction). Every test carries **exactly one** marker; the suite refuses others.
 The `heinzel.testing` pytest plugin enforces the markers and the timeouts below, in Heinzelmännchen and in plugins.
 
@@ -136,7 +136,7 @@ The `heinzel.testing` pytest plugin enforces the markers and the timeouts below,
 ## Documentation
 
 - [INTENT.md](../INTENT.md) states why Heinzelmännchen exists; change it only with the maintainers.
-- Every significant decision is an [ADR](adr/) in MADR format, numbered, never rewritten once accepted — superseded.
+- Every significant decision is an [ADR](adr/README.md) in MADR format, numbered, never rewritten once accepted — superseded.
 - README explains how to use Heinzelmännchen; AGENTS.md how to work on it; this file how to write code for it.
 - Docs are part of the change: a pull request that changes behaviour updates the docs in the same commit.
 
@@ -156,6 +156,7 @@ sweep discovers static router paths and settings sections automatically; add int
 new panel, menu or control. Right-side content uses `WorkspacePanels` descriptors with stable ids: one selected
 view, mounted state preserved while hidden, and Page available on phones; see ADR 0089. Exercise both navigation widths, chat, terminal, all settings, footer panes, safe areas,
 zoom and visual-only keyboard shrink at the six phone viewports. Inspect saved screenshots as well as assertions.
-Run `HZ_SCREENSHOTS=/tmp/hz-mobile-proof uv run pytest tests/e2e/web_ui_test.py -q`; also run the mobile test with
+Run `HZ_SCREENSHOTS=/tmp/hz-mobile-proof uv run pytest tests/e2e/web_ui_test.py -q` (each of the six viewports and the
+phone flows is its own test case with its own server and a screenshot subdirectory); also run the mobile test with
 `PLAYWRIGHT_BROWSER=webkit` after installing WebKit with `uv run --script scripts/web_build.py exec playwright-core install webkit`.
 These are browser-engine emulations; physical iPhone Safari remains a separate verification when available.

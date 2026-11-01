@@ -1,9 +1,11 @@
 ---
 status: proposed
 date: 2026-10-25
+implementation: partial
 decision-makers: maintainer, architect and security reviewer
 amends: 0006, 0020, 0043, 0046, 0047
 related: 0003, 0027, 0028, 0031, 0032, 0039, 0068
+implemented-by: 208, 211, 284
 ---
 
 # 0078: Native desktop uses the shared lifecycle service and existing daemon

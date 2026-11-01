@@ -1,114 +1,132 @@
 """A standard composition is verified before one isolated installation; minimal core stays independent."""
 
 import hashlib
+import io
 import json
 import subprocess
+from contextlib import nullcontext
+from http.client import HTTPMessage
 from pathlib import Path
+from types import SimpleNamespace
 from urllib.error import HTTPError
+from urllib.request import Request
 
 import pytest
 
+from heinzel import HeinzelError
 from heinzel.heads import install
 
 pytestmark = pytest.mark.unit
 
 
-def test_newest_complete_app_is_independent_of_bootstrap_sdk(tmp_path, monkeypatch):
+@pytest.fixture
+def latest_release(tmp_path, monkeypatch):
     profile = json.loads(profile_file(tmp_path).read_text())
     for artifact in profile["artifacts"]:
-        artifact["url"] = f"https://example.com/{artifact['filename']}"
+        artifact["url"] = f"{install.PROFILE_ROOT}/app-v0.9.0/{artifact['filename']}"
     calls = []
 
+    class Opener:
+        def open(self, request, **_kwargs):
+            calls.append((request.full_url, request.get_method()))
+            return nullcontext(SimpleNamespace(url=install.PROFILE_TAG + "0.9.0"))
+
     def read(source, _limit):
-        calls.append(source)
-        if source == install.PROFILE_REFS:
-            return json.dumps(
-                [
-                    {"ref": "refs/tags/app-v0.9.0"},
-                    {"ref": "refs/tags/app-v0.9.1"},
-                    {"ref": "refs/tags/app-v9.0.0rc1"},
-                    {"ref": "refs/tags/unrelated-v99.0.0"},
-                    {"ref": "refs/tags/app-v../invalid"},
-                    {},
-                ]
-            ).encode()
-        if source == f"{install.PROFILE_ROOT}/app-v0.9.1/standard.json":
-            raise HTTPError(source, 404, "Not published yet", {}, None)
-        if source.startswith(install.PROFILE_RELEASES):
-            return b'{"draft":false,"prerelease":false}'
+        calls.append((source, "GET"))
         assert source == f"{install.PROFILE_ROOT}/app-v0.9.0/standard.json"
         return json.dumps(profile).encode()
 
+    monkeypatch.setattr(install, "build_opener", lambda *_args: Opener())
     monkeypatch.setattr(install, "_read", read)
+    return profile, calls
+
+
+def test_latest_app_is_independent_of_bootstrap_sdk_and_uses_no_rest_api(latest_release):
+    _profile, calls = latest_release
     assert install.latest_profile().core_version == "0.9.0"
-    assert len(calls) == 5
+    assert calls == [
+        (install.PROFILE_LATEST, "HEAD"),
+        (f"{install.PROFILE_ROOT}/app-v0.9.0/standard.json", "GET"),
+    ]
 
 
-@pytest.mark.parametrize("problem", ["rate-limit", "wrong-core", "invalid-index"])
-def test_discovery_does_not_hide_corruption_or_github_errors(tmp_path, monkeypatch, problem):
-    profile = install.read_profile(str(profile_file(tmp_path)))
-
-    def read(source, _limit):
-        if problem == "invalid-index":
-            return b"{}"
-        if source == install.PROFILE_REFS:
-            return b'[{"ref":"refs/tags/app-v0.9.1"}]'
-        if problem == "wrong-core" and source.startswith(install.PROFILE_RELEASES):
-            return b'{"draft":false,"prerelease":false}'
-        raise HTTPError(source, 403, "Rate limited", {}, None)
-
-    monkeypatch.setattr(install, "_read", read)
-    if problem == "wrong-core":
-        monkeypatch.setattr(install, "read_profile", lambda _source: profile)
-    with pytest.raises((ValueError, TypeError, HTTPError), match=r"index|release|403"):
-        install.latest_profile()
+@pytest.mark.parametrize("suffix", ["0.9.1", "0.9", "0.9.0rc1", "0.9.0.dev1", "../other", "0.9.0?token=secret"])
+def test_noncanonical_or_mismatched_app_identity_is_rejected(latest_release, monkeypatch, suffix):
+    if suffix == "0.9.1":
+        monkeypatch.setattr(install, "_app_release_version", lambda _source: install.Version(suffix))
+        monkeypatch.setattr(
+            install, "read_profile", lambda _source: install.AppProfile.model_validate(latest_release[0])
+        )
+        with pytest.raises(HeinzelError, match="does not match"):
+            install.latest_profile()
+    elif suffix == "0.9":
+        assert install._app_release_version(install.PROFILE_TAG + suffix) == install.Version("0.9")
+    else:
+        with pytest.raises(HeinzelError):
+            install._app_release_version(install.PROFILE_TAG + suffix)
 
 
-def test_default_command_discovers_an_app_without_a_version_argument(tmp_path, monkeypatch, capsys):
-    profile = install.read_profile(str(profile_file(tmp_path)))
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://github.com/owner/repo/releases/tag/app-v0.9.0",
+        "https://github.com.evil.invalid/owner/repo/releases/tag/app-v0.9.0",
+        "https://github.com/other/repo/releases/tag/app-v0.9.0",
+        "https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/releases/tag/plugin/v0.9.0",
+        install.PROFILE_TAG + "0.9.0#fragment",
+    ],
+)
+def test_latest_redirect_refuses_other_authorities_before_following(url):
+    handler = install._AppRedirects()
+    with pytest.raises(HeinzelError):
+        handler.redirect_request(
+            Request(install.PROFILE_LATEST, method="HEAD"),  # noqa: S310 - inert request, no network
+            io.BytesIO(),
+            302,
+            "",
+            HTTPMessage(),
+            url,
+        )
+
+
+def test_expected_redirects_keep_method_and_drop_all_headers():
+    handler = install._AppRedirects()
+    initial = Request(install.PROFILE_LATEST, headers={"Authorization": "must-not-forward"}, method="HEAD")  # noqa: S310 - inert test request, no network
+    redirected = handler.redirect_request(initial, io.BytesIO(), 302, "", HTTPMessage(), install.PROFILE_TAG + "0.9.0")
+    assert redirected.get_method() == "HEAD"
+    assert not redirected.headers
+    asset = "https://release-assets.githubusercontent.com/github-production-release-asset/1/id?sig=private"
+    redirected = handler.redirect_request(Request(install.PROFILE_ROOT), io.BytesIO(), 302, "", HTTPMessage(), asset)  # noqa: S310 - inert test request, no network
+    assert redirected.full_url == asset
+    assert not redirected.headers
+
+
+@pytest.mark.parametrize(
+    "asset",
+    [
+        "https://evil.invalid/asset?sig=private",
+        "http://release-assets.githubusercontent.com/github-production-release-asset/1/id",
+        "https://release-assets.githubusercontent.com:443/github-production-release-asset/1/id",
+        "https://user:private@release-assets.githubusercontent.com/github-production-release-asset/1/id",
+        "https://release-assets.githubusercontent.com/other/id",
+    ],
+)
+def test_artifact_redirect_refuses_unexpected_origin_without_echoing_urls(asset):
+    request = Request(install.PROFILE_ROOT)  # noqa: S310 - inert test request, no network
+    with pytest.raises(HeinzelError, match="unexpected download authority") as failure:
+        install._AppRedirects().redirect_request(request, io.BytesIO(), 302, "", HTTPMessage(), asset)
+    assert "private" not in str(failure.value)
+
+
+def test_default_command_discovers_an_app_without_a_version_argument(latest_release, monkeypatch, capsys):
     monkeypatch.delenv("HZ_APP_PROFILE", raising=False)
-    monkeypatch.setattr(install, "latest_profile", lambda: profile)
     assert install.main(["--dry-run"]) == 0
     assert "heinzel-unforeseen" in capsys.readouterr().out
 
 
-def test_discovery_skips_legacy_lifecycles_and_still_selects_an_older_compatible_app(tmp_path, monkeypatch):
-    compatible = json.loads(profile_file(tmp_path).read_text())
-    legacy = json.loads(json.dumps(compatible))
-    legacy.update(format=1, core_version="0.9.1")
-    for artifact in legacy["artifacts"]:
-        artifact["version"] = "0.9.1"
-        artifact["filename"] = artifact["filename"].replace("0.9.0", "0.9.1")
-    for profile in (legacy, compatible):
-        for artifact in profile["artifacts"]:
-            artifact["url"] = f"https://example.com/{artifact['filename']}"
-
-    def read(source, _limit):
-        if source == install.PROFILE_REFS:
-            return b'[{"ref":"refs/tags/app-v0.9.1"},{"ref":"refs/tags/app-v0.9.0"}]'
-        if source.startswith(install.PROFILE_RELEASES):
-            return b'{"draft":false,"prerelease":false}'
-        return json.dumps(legacy if "app-v0.9.1" in source else compatible).encode()
-
-    monkeypatch.setattr(install, "_read", read)
-    assert install.latest_profile().core_version == "0.9.0"
-
-
-def test_legacy_only_discovery_cannot_install_an_app_with_the_old_update_cycle(tmp_path, monkeypatch, capsys):
-    legacy = json.loads(profile_file(tmp_path).read_text())
-    legacy["format"] = 1
-    for artifact in legacy["artifacts"]:
-        artifact["url"] = f"https://example.com/{artifact['filename']}"
-
-    def read(source, _limit):
-        if source == install.PROFILE_REFS:
-            return b'[{"ref":"refs/tags/app-v0.9.0"}]'
-        if source.startswith(install.PROFILE_RELEASES):
-            return b'{"draft":false,"prerelease":false}'
-        return json.dumps(legacy).encode()
-
-    monkeypatch.setattr(install, "_read", read)
-    monkeypatch.setattr(install, "prepare", lambda *_args: pytest.fail("Legacy profiles must not download packages"))
+def test_latest_legacy_profile_is_refused_before_any_install(latest_release, monkeypatch, capsys):
+    latest_release[0]["format"] = 1
+    monkeypatch.setattr(install, "prepare", lambda *_args: pytest.fail("No package may be installed"))
     assert install.main([]) == 1
     assert "compatible standard app release" in capsys.readouterr().err
 
@@ -123,49 +141,25 @@ def test_an_explicit_legacy_profile_is_refused_before_installation_even_for_a_dr
     assert "legacy installation lifecycle" in capsys.readouterr().err
 
 
-def test_a_published_manifest_with_a_missing_asset_fails_closed_instead_of_hiding_damage(tmp_path, monkeypatch, capsys):
-    profile = json.loads(profile_file(tmp_path).read_text())
-    profile["core_version"] = "0.9.1"
-    for artifact in profile["artifacts"]:
-        artifact["version"] = "0.9.1"
-        artifact["filename"] = artifact["filename"].replace("0.9.0", "0.9.1")
-        artifact["url"] = f"https://example.com/{artifact['filename']}"
-    calls = []
+def test_default_profile_cannot_redirect_a_package_to_another_release(latest_release):
+    latest_release[0]["artifacts"][0]["url"] = "https://example.invalid/other.whl"
+    with pytest.raises(HeinzelError, match="outside its immutable standard app release"):
+        install.latest_profile()
 
-    def read(source, _limit):
-        calls.append(source)
-        if source == install.PROFILE_REFS:
-            return b'[{"ref":"refs/tags/app-v0.9.1"},{"ref":"refs/tags/app-v0.9.0"}]'
-        if source.startswith(install.PROFILE_RELEASES):
-            return b'{"draft":false,"prerelease":false}'
-        if source.endswith("app-v0.9.1/standard.json"):
-            return json.dumps(profile).encode()
-        error = HTTPError(source, 404, "Published wheel missing", {}, None)
-        error.close()
-        raise error
 
-    monkeypatch.setattr(install, "_read", read)
+@pytest.mark.parametrize("status", [403, 404, 503])
+def test_discovery_http_error_names_phase_status_and_never_echoes_url(latest_release, monkeypatch, capsys, status):
+    class Opener:
+        def open(self, *_args, **_kwargs):
+            url = "https://example.invalid/?token=secret"
+            raise HTTPError(url, status, "secret", {"X-RateLimit-Remaining": "0"}, None)
+
+    monkeypatch.setattr(install, "build_opener", lambda *_args: Opener())
     assert install.main([]) == 1
-    assert "could not be verified" in capsys.readouterr().err
-    assert not any("app-v0.9.0" in source for source in calls)
-
-
-@pytest.mark.parametrize("flag", ["draft", "prerelease"])
-def test_default_discovery_skips_unstable_release_state_even_with_a_stable_tag(tmp_path, monkeypatch, flag):
-    profile = install.read_profile(str(profile_file(tmp_path)))
-
-    def read(source, _limit):
-        if source == install.PROFILE_REFS:
-            return b'[{"ref":"refs/tags/app-v0.9.1"},{"ref":"refs/tags/app-v0.9.0"}]'
-        return json.dumps(
-            {"draft": False, "prerelease": False} | ({flag: True} if source.endswith("app-v0.9.1") else {})
-        ).encode()
-
-    calls = []
-    monkeypatch.setattr(install, "_read", read)
-    monkeypatch.setattr(install, "read_profile", lambda source: calls.append(source) or profile)
-    assert install.latest_profile() == profile
-    assert calls == [f"{install.PROFILE_ROOT}/app-v0.9.0/standard.json"]
+    message = capsys.readouterr().err
+    assert f"App profile discovery failed (HTTP {status})" in message
+    assert "secret" not in message
+    assert "example.invalid" not in message
 
 
 def profile_file(tmp_path):
@@ -279,3 +273,34 @@ def test_verified_profile_uses_one_command_for_the_chosen_environment(tmp_path, 
 def test_unsupported_artifact_sources_are_rejected(source):
     with pytest.raises(ValueError, match="HTTPS"):
         install._read(source, 10)
+
+
+@pytest.mark.parametrize("problem", ["http", "transport", "hash"])
+def test_package_failure_names_its_phase_without_leaking_sources(tmp_path, monkeypatch, capsys, problem):
+    profile = profile_file(tmp_path)
+    original = install._read
+
+    def read(source, limit):
+        if str(source) == str(profile):
+            return original(source, limit)
+        if problem == "http":
+            url = "https://example.invalid/?sig=secret"
+            raise HTTPError(url, 404, "secret", {}, None)
+        if problem == "transport":
+            reason = "https://example.invalid/?sig=secret"
+            raise OSError(reason)
+        return b"corrupted wheel"
+
+    monkeypatch.setattr(install, "_read", read)
+    assert install.main(["--profile", str(profile)]) == 1
+    message = capsys.readouterr().err
+    assert ("package verification failed" if problem == "hash" else "package download failed") in message
+    assert "secret" not in message
+    assert "example.invalid" not in message
+
+
+@pytest.mark.parametrize("version", ["0.9.10.dev57", "0.9.10rc1", "0.9.10a1"])
+def test_default_discovery_can_never_select_an_edge_or_prerelease_app(version):
+    """Every versionless install path resolves through here, and edge is an explicit choice (ADR 0114)."""
+    with pytest.raises(HeinzelError, match="canonical stable"):
+        install._app_release_version(f"{install.PROFILE_TAG}{version}")

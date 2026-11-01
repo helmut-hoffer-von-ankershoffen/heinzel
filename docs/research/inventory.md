@@ -1,5 +1,8 @@
 # Research: the inventory, its graphs and how they are published
 
+> Historical design research, not current documentation. The linked decision record and the README describe what is
+> available today.
+
 Status: research for [ADR 0023](../adr/0023-inventory.md) (proposed). Aligns with ADR 0020 (daemon head, state repository) and with the parallel
 work on ADR 0021 (contract format), ADR 0022 (workflows embedded in Docs, Sheets and Confluence) and ADR 0024 (people
 and org model). It only *references* those three and does not define them.

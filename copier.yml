@@ -92,7 +92,7 @@ heinzel_owner:
 
 heinzel_version:
   type: str
-  default: "0.9.8" # bumped by the release process
+  default: "0.9.10" # bumped by the release process
   when: false
 
 heinzel_upper_bound:

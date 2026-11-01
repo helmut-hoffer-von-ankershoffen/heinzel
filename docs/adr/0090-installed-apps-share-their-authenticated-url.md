@@ -1,9 +1,11 @@
 ---
 status: proposed
 date: 2026-10-28
+implementation: built
 decision-makers: maintainer
 amends: 0084
 related: 0046
+implemented-by: 247
 ---
 
 # 0090: Installed apps share their authenticated URL

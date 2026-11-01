@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Annotated, ClassVar, Literal
 
 import platformdirs
-from pydantic import AnyHttpUrl, Field, field_validator
+from pydantic import AnyHttpUrl, BeforeValidator, Field, field_validator
 from pydantic_settings import NoDecode, SettingsConfigDict
 
 from heinzel.kernel._config import APP_NAME, ModuleSettings
@@ -14,6 +14,11 @@ ORIGIN_MAX_LENGTH = 512
 MAX_PORT = 65535
 MAX_HOST_LENGTH = 253
 _HOST_LABEL = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?")
+
+
+def _update_channel(value: object) -> object:
+    """Earlier configurations say `release`, which is now called stable."""
+    return "stable" if value == "release" else value
 
 
 class Settings(ModuleSettings):
@@ -96,14 +101,18 @@ class Settings(ModuleSettings):
         description="Look for a newer release at most once an hour and mention it after a command's output. The "
         "check sends nothing about you, and never runs in CI or in JSON, MCP or REST output.",
     )
-    update_channel: Literal["release", "main"] = Field(
-        default="release",
+    update_channel: Annotated[Literal["stable", "edge", "main"], BeforeValidator(_update_channel)] = Field(
+        default="stable",
         title="Update channel",
-        description="What updating moves to: the newest release, or the newest commit of the main branch. An "
-        "installation on main moves back to releases once one is as new as it.",
+        description="What updating moves to. Stable has passed acceptance. Edge is every green change, sooner and less "
+        "tested. Choosing a channel installs nothing until you update. Going back to stable never downgrades: edge "
+        "stays installed until stable is as new, and your data stays as it is.",
         json_schema_extra={
-            "x-expert": True,
-            "x-labels": {"release": "Releases", "main": "The main branch (newest commit)"},
+            "x-labels": {
+                "stable": "Stable (recommended)",
+                "edge": "Edge (every green change)",
+                "main": "The main branch (newest commit)",
+            },
         },
     )
     disabled_modules: Annotated[frozenset[str], NoDecode] = Field(

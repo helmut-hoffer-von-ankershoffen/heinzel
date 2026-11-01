@@ -1,9 +1,11 @@
 ---
 status: proposed
 date: 2026-10-25
+implementation: built
 decision-makers: maintainer
 amends: 0016
 related: 0046
+implemented-by: 170
 ---
 
 # 0071: Text branding uses the name and original artwork

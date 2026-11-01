@@ -9,6 +9,7 @@ import { ChatProvider } from "@/chat/ChatContext";
 import { isDurableSession } from "@/chat/useChat";
 import { AvatarThemeProvider } from "@/components/AvatarTheme";
 import { FOOTER_RELOCATED } from "@/components/FooterLayout";
+import { OperationDialog } from "@/components/OperationDialog";
 import { t } from "@/i18n";
 import { OPEN_CHAT } from "@/lib/chatIntent";
 import { OPEN_TERMINAL } from "@/lib/terminal";
@@ -97,9 +98,13 @@ function Layout() {
   const panelViews = useMemo(() => (views.data ?? []).filter((view) => view.slot === "panel"), [views.data]);
   const [retainedViews, setRetainedViews] = useState<string[]>([]);
   // Getting narrower folds the navigation; getting wider leaves it as the person set it. The chat moves below instead.
+  // A phone also fires resize for the browser's toolbars and keyboard, at the same width; those change nothing here.
   useEffect(() => {
+    let width = window.innerWidth;
     const fold = () => {
-      if (window.innerWidth < 1024) {
+      const narrower = window.innerWidth < width;
+      width = window.innerWidth;
+      if (narrower && width < 1024) {
         setNavOpen(false);
         if (document.activeElement?.closest("footer")) setActivePanel("page");
       }
@@ -313,16 +318,20 @@ function Layout() {
       setPageHold(hold);
       setActivePanel(id);
       setTerminalFull(false);
-      setParams((current) => {
-        const next = new URLSearchParams(current);
-        if (panelViews.some((view) => view.id === id)) next.set("panel", id);
-        else if (panelViews.some((view) => view.id === next.get("panel"))) next.delete("panel");
-        ownNavigation.current = { path: location.pathname, search: next.toString() };
-        return next;
-      });
+      // Native panel selection needs no URL write unless it closes a contributed panel. A no-op
+      // navigation can overwrite a conversation selected before this router render has committed.
+      if (requestedId || panelViews.some((view) => view.id === id)) {
+        setParams((current) => {
+          const next = new URLSearchParams(current);
+          if (panelViews.some((view) => view.id === id)) next.set("panel", id);
+          else if (panelViews.some((view) => view.id === next.get("panel"))) next.delete("panel");
+          ownNavigation.current = { path: location.pathname, search: next.toString() };
+          return next;
+        });
+      }
       if (!beside) requestScroll(id);
     },
-    [beside, full, location.pathname, requestScroll, selectedPanel, setParams, panelViews],
+    [beside, full, location.pathname, requestScroll, requestedId, selectedPanel, setParams, panelViews],
   );
   const closeView = (id: string) => {
     pageScroll.current?.();
@@ -571,6 +580,7 @@ function Layout() {
       <SoundEngine />
       <SearchPalette open={searchOpen} onOpenChange={setSearchOpen} />
       <Onboarding />
+      <OperationDialog />
       {(params.get("panel") === "changelog" || params.get("panel") === "help") && (
         <InfoDialog
           panel={params.get("panel") as Panel}

@@ -24,14 +24,6 @@ to pick models, agents or tools; ask them only for product direction, anything i
 
 Each agent's model and effort are set in its frontmatter; don't override them unless a skill says to.
 
-**When implementation is delegated to subagents, pick model and effort by the feature's complexity.** Sonnet, low
-effort: renames, copy, small UI tweaks, config, docs-only. Sonnet, medium: most features. Escalate to Sonnet, high,
-only when an agent hits problems (repeated CI/test failures, a stuck rebase, review findings it can't resolve), and
-beyond that to Opus when it gets hairy: very complex work or problems Sonnet high can't resolve. Opus from the start
-only for hard, cross-cutting work (turn engine, durable sessions, state sync, wake loop and triggers, security-sensitive
-or ADR-level-risk code). Fable for design and research. Reviewers and `ci-triage` keep their frontmatter models; CI
-log reading goes to `ci-triage`.
-
 **Parallel by default.** Before multi-part work, split it into pieces that neither depend on each other's results
 nor touch the same files, and run them concurrently in background subagents; keep the piece that needs this
 conversation. Research, measurement and review run alongside implementation. Never two writers on the same files:
