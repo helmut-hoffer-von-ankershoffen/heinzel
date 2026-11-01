@@ -25,7 +25,10 @@ def test_controller_emits_sanitized_failure_before_teardown(tmp_path):
         "import time\nimport pytest\npytestmark = pytest.mark.e2e\n"
         "@pytest.fixture\ndef stalled():\n    yield\n    time.sleep(30)\n"
         "@pytest.mark.parametrize('value', ['PARAMETER_SECRET'])\n"
-        "def test_probe(stalled, value):\n    raise ValueError('ERROR_SECRET')\n"
+        "def test_probe(stalled, value):\n"
+        "    raise ValueError('ERROR_SECRET http://127.0.0.1:1/#token=TOKEN_SECRET\\n"
+        "locator.waitFor: Timeout 30000ms exceeded.\\n"
+        "    at file:///runner/work/heinzel/heinzel/web/e2e/layers.mjs:168:13')\n"
     )
     env = {"HOME": str(tmp_path), "PATH": os.defpath, "LANG": "C", "PYTHONDONTWRITEBYTECODE": "1"}
     command = [
@@ -46,7 +49,7 @@ def test_controller_emits_sanitized_failure_before_teardown(tmp_path):
             guard.capture.pump(0.05)
             guard.poll_command()
             output = guard.capture.text("stdout") + guard.capture.text("stderr")
-            if "E2E frame tests/e2e/test_probe.py:10" in output:
+            if "E2E driver frame web/e2e/layers.mjs:168" in output:
                 break
         assert guard.returncode is None
         assert "E2E start tests/e2e/test_probe.py::test_probe" in output
@@ -54,5 +57,8 @@ def test_controller_emits_sanitized_failure_before_teardown(tmp_path):
         assert "E2E frame tests/e2e/test_probe.py:10" in output
         assert "PARAMETER_SECRET" not in output
         assert "ERROR_SECRET" not in output
+        assert "TOKEN_SECRET" not in output
+        assert "E2E driver locator.waitFor: Timeout 30000ms exceeded" in output
+        assert "E2E driver frame web/e2e/layers.mjs:168" in output
     finally:
         guard.stop()

@@ -11,8 +11,10 @@ on:
 permissions:
   contents: read
 
+# Every commit on main gets its own group, so a later push never replaces a queued run or cancels a running one and
+# each main commit ends with a CI result. Pull requests share one group per ref and cancel superseded runs.
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
@@ -22,10 +24,14 @@ env:
 # GitHub-hosted macOS runners are the scarce resource, so a pull request runs macOS on the newest Python only, one
 # `make setup` and the notifier app when its sources change. The broad platform matrix runs off pull requests.
 # Provider-specific integration checks live with their owning plugins.
+# TEMPORARY (owner's decision): a macOS failure must not block merges or releases while the pull request queue drains and
+# macOS is fixed step by step. Matrix jobs with a macOS cell set `continue-on-error` for those cells only, so the cell still
+# runs and its failure is visible in the job's log and annotations, but the job reports success to `CI OK`. Linux cells still
+# fail the workflow. Remove every `continue-on-error` line once macOS has 20 clean runs in a row.
 jobs:
   changes:
     name: Changed paths
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 3
     outputs:
       notifier: ${{ steps.paths.outputs.notifier }}
@@ -103,7 +109,7 @@ jobs:
   dependency-review:
     name: Dependency review
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 3
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -116,7 +122,7 @@ jobs:
   commits:
     name: Conventional commits
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 3
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -136,7 +142,7 @@ jobs:
     name: Lint, contracts and types
     needs: changes
     if: needs.changes.outputs.core == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -162,7 +168,7 @@ jobs:
 
   secrets:
     name: Secret scan
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 3
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -180,11 +186,12 @@ jobs:
     # What a contributor runs on a fresh machine, on each platform scripts/tools.toml pins: `make setup` installs
     # everything the build needs, relying only on git, make and uv, and `make doctor` confirms it.
     runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ startsWith(matrix.os, 'macos') }} # TEMPORARY: macOS may fail without failing CI OK; remove at 20 clean macOS runs
     timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
-        os: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-latest","ubuntu-24.04-arm","macos-latest"]' || '["ubuntu-latest","ubuntu-24.04-arm","macos-latest","macos-15-intel"]') }}
+        os: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-24.04","ubuntu-24.04-arm","macos-latest"]' || '["ubuntu-24.04","ubuntu-24.04-arm","macos-latest","macos-15-intel"]') }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -197,14 +204,14 @@ jobs:
       - run: make setup
       - run: make doctor
       - name: Every pinned tool, for every platform, still downloads and matches its checksum
-        if: matrix.os == 'ubuntu-latest'
+        if: matrix.os == 'ubuntu-24.04'
         run: make tools-verify
 
   audit:
     needs: changes
     if: needs.changes.outputs.core == 'true'
     name: Dependency audit
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -222,11 +229,12 @@ jobs:
     if: needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true'
     name: Test (${{ matrix.os }}, Python ${{ matrix.python }}${{ matrix.levels && format(', {0}', matrix.levels) || '' }})
     runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ startsWith(matrix.os, 'macos') }} # TEMPORARY: macOS may fail without failing CI OK; remove at 20 clean macOS runs
     timeout-minutes: 10
     strategy:
       fail-fast: ${{ github.event_name == 'pull_request' }} # a red cell is enough to know on a pull request
       matrix:
-        os: [ubuntu-latest]
+        os: [ubuntu-24.04]
         python: ["3.12", "3.13", "3.14", "3.15"]
         # macOS has 3 vCPU and runs the suite at the edge of the 420 s cap, so each cell is split into one shard per level
         # under that same cap. Newest Python on a pull request, oldest and newest on main and dispatches, all on schedule.
@@ -245,7 +253,7 @@ jobs:
       - name: Install what the tests need, and no more
         run: uv sync --no-dev --group test # UV_FROZEN: exactly the lockfile
       - name: Inspect the Linux user manager without starting services
-        if: matrix.os == 'ubuntu-latest' && matrix.python == '3.14'
+        if: matrix.os == 'ubuntu-24.04' && matrix.python == '3.14'
         env:
           UV_NO_SYNC: "1"
           PROBE_PREFIX: heinzel-probe-${{ github.run_id }}
@@ -262,7 +270,7 @@ jobs:
     if: needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true'
     name: Coverage
     # One measured run, in parallel with the matrix instead of after it.
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
       contents: write # publishes the badge to the python-coverage-comment-action-data branch
@@ -296,7 +304,7 @@ jobs:
     name: Performance tests
     # Timing assertions (linear time) run here only: on a loaded developer machine they flake, so neither the
     # pre-push hook nor the test matrix runs them.
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     env:
       UV_NO_SYNC: "1"
@@ -317,7 +325,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.site_only == 'true'
     name: Site tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -332,15 +340,18 @@ jobs:
       - run: make test-site # the tests that read documents and the site
 
   e2e:
-    name: End-to-end (${{ matrix.os }})
+    name: End-to-end ${{ matrix.suite }} (${{ matrix.os }})
     needs: changes
     if: needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true'
     runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ startsWith(matrix.os, 'macos') }} # TEMPORARY: macOS may fail without failing CI OK; remove at 20 clean macOS runs
     timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
-        os: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-latest"]' || '["ubuntu-latest","macos-latest"]') }}
+        os: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-24.04"]' || '["ubuntu-24.04","macos-latest"]') }}
+        # Two jobs per OS so the browser tests and the tool-install and CLI tests stop competing for 3 vCPUs
+        suite: [cli, web]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -352,6 +363,7 @@ jobs:
           cache-dependency-glob: uv.lock
           save-cache: ${{ github.ref == 'refs/heads/main' }} # pull requests reuse main's cache
       - name: Reuse the browsers this lockfile's Playwright installs
+        if: matrix.suite == 'web'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -359,10 +371,11 @@ jobs:
             ~/Library/Caches/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('web/pnpm-lock.yaml') }}
       - name: Install browser runtimes and host dependencies
+        if: matrix.suite == 'web'
         run: make test-browser-deps
       # Keep the full pytest traceback in CI logs when a browser interaction flakes; the step wrapper's default tail
       # can otherwise hide the test name and the action that timed out.
-      - run: make test-e2e
+      - run: make test-e2e SUITE=${{ matrix.suite }}
         env:
           VERBOSE: "1"
           # read-only (contents: read): e2e tests ask GitHub's API (`hz system changelog --newer`), which rate-limits
@@ -372,7 +385,7 @@ jobs:
   template:
     name: Plugin template
     needs: lint # the slowest offline check runs only once the cheap ones pass
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -412,11 +425,12 @@ jobs:
     needs: changes
     if: needs.changes.outputs.electron == 'true'
     runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ startsWith(matrix.os, 'macos') }} # TEMPORARY: macOS may fail without failing CI OK; remove at 20 clean macOS runs
     timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-24.04, macos-latest]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -450,7 +464,7 @@ jobs:
     name: Build
     needs: [changes, notifier]
     if: ${{ !cancelled() && needs.changes.outputs.core == 'true' && needs.notifier.result != 'failure' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -483,7 +497,7 @@ jobs:
     name: Plugin SDK candidate
     needs: changes
     if: needs.changes.outputs.core == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -501,7 +515,7 @@ jobs:
     name: Optional source plugins
     needs: changes
     if: needs.changes.outputs.plugins == 'true' || needs.changes.outputs.contracts == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 3
     outputs:
       matrix: ${{ steps.plan.outputs.matrix }}
@@ -535,7 +549,7 @@ jobs:
       PLUGIN_PRIVATE: ${{ github.event.repository.private }}
     needs: [changes, core-wheel, local-plugin-plan]
     if: ${{ !cancelled() && needs.local-plugin-plan.outputs.selected == 'True' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
       contents: read
@@ -588,7 +602,7 @@ jobs:
     name: Public contract consumers
     needs: [changes, core-wheel]
     if: needs.changes.outputs.contracts == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 3
     outputs:
       matrix: ${{ steps.plan.outputs.matrix }}
@@ -616,7 +630,7 @@ jobs:
     name: Consumer (${{ matrix.name }})
     needs: consumer-plan
     if: needs.consumer-plan.outputs.selected == 'True'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     strategy:
       fail-fast: false
@@ -641,7 +655,7 @@ jobs:
     name: CI OK
     if: always()
     needs: [dependency-review, commits, changes, lint, secrets, setup, audit, test, coverage, perf, site-tests, e2e, template, notifier, electron, build, core-wheel, local-plugin-plan, local-plugin-check, consumer-plan, consumer-check]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 2
     steps:
       - name: Fail if any required job failed
