@@ -1795,3 +1795,44 @@ def test_develop_core_is_refused_before_mutation(make_kernel, tool_env, monkeypa
         service.develop(checkout)
     assert runs == []
     assert service.history() == []
+
+
+INDEX_PLUGINS = [
+    "uv", "tool", "install", "--reinstall", "--python", PYTHON, "heinzel",
+    "--with", "heinzel-resource",
+    "--with", "heinzel-pinned==1.0",
+    "--with", "heinzel-git @ git+https://github.com/org/heinzel-git",
+    "--with", "heinzel-new",
+]  # fmt: skip
+
+
+def test_adding_a_plugin_holds_the_other_index_plugins_at_their_versions(make_kernel, tool_env, monkeypatch):
+    """A reinstall of unversioned requirements would upgrade them all; only what was asked for may change."""
+    service = service_for(make_kernel, tool_env)
+    asked = []
+
+    def versions(names):
+        asked.append(list(names))
+        return {"heinzel-resource": "0.1.0"}
+
+    monkeypatch.setattr(service._installation, "installed_versions", versions)
+    assert service._holds(INDEX_PLUGINS, "heinzel-new") == ("heinzel-resource==0.1.0",)
+    assert asked == [["heinzel-resource"]]
+
+
+def test_removing_a_plugin_holds_the_others_too(make_kernel, tool_env, monkeypatch):
+    service = service_for(make_kernel, tool_env)
+    monkeypatch.setattr(
+        service._installation, "installed_versions", lambda _names: {"heinzel-resource": "0.1.0", "heinzel-new": "2.0"}
+    )
+    assert service._holds(INDEX_PLUGINS, None) == ("heinzel-resource==0.1.0", "heinzel-new==2.0")
+
+
+def test_a_plugin_not_installed_yet_is_not_held(make_kernel, tool_env, monkeypatch):
+    service = service_for(make_kernel, tool_env)
+    monkeypatch.setattr(service._installation, "installed_versions", lambda _names: {})
+    assert service._holds(INDEX_PLUGINS, None) == ()
+
+
+def test_only_uv_tool_installs_hold_anything(make_kernel, tool_env):
+    assert service_for(make_kernel, tool_env)._holds(["uv", "pip", "install", "--with", "x"], None) == ()
