@@ -60,7 +60,7 @@ else
                 while IFS= read -r wget_line; do
                     wget_line=${wget_line#"${wget_line%%[! ]*}"}
                     case "$wget_line" in
-                        [Ll]ocation:\ *) wget_next=${wget_line#*: }; break ;;
+                        Location:\ *|location:\ *) wget_next=${wget_line#*: }; break ;;
                         *) ;;
                     esac
                 done <<EOF
