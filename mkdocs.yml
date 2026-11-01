@@ -11,9 +11,7 @@ docs_dir: docs
 site_dir: site
 not_in_nav: |
   imprint.md
-  impressum.md
   privacy.md
-  datenschutz.md
 exclude_docs: |
   overrides/
   _data/

@@ -427,9 +427,8 @@ security issues privately, as [SECURITY.md](SECURITY.md) describes.
 Heinzelmännchen is free and open-source software under the [MIT license](LICENSE). The packages it ships keep their
 own licenses, listed in [ATTRIBUTIONS.md](ATTRIBUTIONS.md).
 
-The website [heinzel.team](https://heinzel.team/) carries an [imprint](https://heinzel.team/imprint/)
-([Impressum](https://heinzel.team/impressum/)) and a [privacy notice](https://heinzel.team/privacy/)
-([Datenschutzerklärung](https://heinzel.team/datenschutz/)); the German texts prevail. The website sets no cookies and
+The website [heinzel.team](https://heinzel.team/) carries an [imprint](https://heinzel.team/imprint/) and a
+[privacy notice](https://heinzel.team/privacy/). The website sets no cookies and
 loads nothing from third parties, and the app sends no telemetry.
 
 Presence and adoption stay local by default. Opt in to a personal state repository with `hz system config set system.state.personal <repository>`, then inspect `hz system state status` ([state repository design](docs/adr/0081-state-repositories-one-writer-per-branch-the-daemon-pushes.md)).
