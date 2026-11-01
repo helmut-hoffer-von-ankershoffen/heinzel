@@ -246,7 +246,7 @@ afterEach(() => vi.unstubAllGlobals());
 
 describe("PluginsSection", () => {
   it("says outright which installed version a plugin replaces, without opening the details", () => {
-    render(<CandidateDetails candidate={{ ...candidate, installed_version: "0.9.3" }} />);
+    render(<CandidateDetails candidate={{ ...candidate, source: "git", installed_version: "0.9.3" }} />);
     const line = screen.getByText(/Replaces 0\.9\.3/);
     expect(line.closest("details")).toBeNull();
   });
