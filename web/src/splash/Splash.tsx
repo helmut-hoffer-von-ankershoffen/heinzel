@@ -138,12 +138,12 @@ function PasteLink() {
           aria-describedby={reason ? "splash-paste-problem" : undefined}
         />
         <Button type="submit" size="sm" disabled={!value.trim()}>
-          {t("splash.pasteSubmit")}
+          {t("splash.tokenTitle")}
         </Button>
       </div>
       {reason && (
         <p id="splash-paste-problem" role="alert" className="text-xs text-bad">
-          {t(reason === "invalid" ? "splash.pasteInvalid" : "splash.pasteElsewhere", {
+          {t("splash.pasteProblem", {
             address: window.location.origin,
           })}
         </p>
@@ -157,11 +157,7 @@ function Fix({ problem }: { problem: Problem }) {
   const installed = installState() === "installed";
   const [title, text, lead] =
     problem === "token"
-      ? ([
-          "splash.tokenTitle",
-          installed ? "splash.tokenApp" : "splash.token",
-          installed ? "splash.tokenAppCommand" : "splash.tokenCommand",
-        ] as const)
+      ? (["splash.tokenTitle", installed ? "splash.tokenApp" : "splash.token", "splash.tokenCommand"] as const)
       : (["splash.unreachableTitle", "splash.unreachable", "splash.unreachableCommand"] as const);
   return (
     <div role="alert" className="flex max-w-md flex-col items-center gap-3 text-sm">

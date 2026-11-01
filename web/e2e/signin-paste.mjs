@@ -16,10 +16,10 @@ try {
   await field.waitFor();
   await page.screenshot({ path: `${shots}/signin-paste-refused.png` });
   await field.fill(`${origin.replace("127.0.0.1", "localhost")}/#token=x`);
-  await page.getByRole("button", { name: "Sign in", exact: true }).click();
-  await page.getByText(/another address/).waitFor();
+  await page.getByRole("button", { name: "Sign in again", exact: true }).click();
+  await page.getByText(/isn't a link with a sign-in token/).waitFor();
   await field.fill(url);
-  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await page.getByRole("button", { name: "Sign in again", exact: true }).click();
   await page.getByRole("contentinfo").waitFor({ timeout: 20000 });
   await page.screenshot({ path: `${shots}/signin-paste-signed-in.png` });
   await page.getByText("Sign in again").first().waitFor({ state: "hidden", timeout: 10000 });

@@ -386,11 +386,8 @@ const en = {
     "{command} no longer accepts this page's sign-in: it started again with a new link, or this browser was unpaired. Open the link it printed.",
   "splash.tokenApp":
     "This app has no address bar. After {command} started again, or this app was unpaired, it needs the new link: paste it below.",
-  "splash.tokenAppCommand": "Run this in Terminal (Ctrl+C first if it is running), then copy the link it prints:",
   "splash.pasteLabel": "Paste the link `hz ui` printed",
-  "splash.pasteSubmit": "Sign in",
-  "splash.pasteInvalid": "That link has no sign-in token; copy the whole line.",
-  "splash.pasteElsewhere": "That link is for another address; this app only signs in at {address}.",
+  "splash.pasteProblem": "That isn't a link with a sign-in token for {address}; copy the whole line `hz ui` printed.",
   "splash.tokenCommand": "For a new link, press Ctrl+C in the terminal running it, then run:",
   "state.loading": "Loading…",
   "state.error": "Couldn't load this:",
