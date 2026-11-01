@@ -427,6 +427,61 @@ def test_the_apps_own_restart_keeps_a_paired_browser_signed_in(environment, tmp_
 
 
 @pytest.mark.timeout(900)
+@pytest.mark.parametrize("engine", ["chromium", "webkit"])
+def test_an_open_app_window_reconnects_after_hz_restarts_on_the_same_port_and_reopens_signed_in(
+    environment, tmp_path, engine
+):
+    """An installed app stays open for days: it finds the new `hz ui` by itself, and reopening asks nothing."""
+    env, _ = environment
+    run = _browser_ready(engine)
+    profile = tmp_path / "browser-profile"
+    signals = tmp_path / "signals"
+    signals.mkdir()
+    port = _free_port()
+    origin = f"http://127.0.0.1:{port}/"
+    ui, link = _start_ui(env, port)
+    window = subprocess.Popen(
+        [*run, "exec", "node", "e2e/pwa-reconnect.mjs", engine, str(profile), link, str(signals)],
+        cwd=REPO,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        for _ in range(240):  # the window signs in, then waits for the restart
+            if (signals / "paired").exists() or window.poll() is not None:
+                break
+            time.sleep(0.5)
+        assert (signals / "paired").exists(), "the window never signed in"
+        _stop_ui(ui)
+        ui, new_link = _start_ui(env, port)  # a new session token on the same port, so the same origin
+        assert new_link != link
+        (signals / "restarted").write_text("yes")
+        out, err = window.communicate(timeout=180)
+        assert window.returncode == 0, err + out
+        reconnected = json.loads(out.strip().splitlines()[-1])
+        assert reconnected["recovered"] is True, reconnected
+        assert reconnected["footerShown"] is True, reconnected
+        assert reconnected["asksToSignIn"] is False, reconnected
+        # Closed and opened again from the same profile, with no link: still signed in.
+        driven = subprocess.run(
+            [*run, "exec", "node", "e2e/device-reopen.mjs", engine, str(profile), "open", origin],
+            cwd=REPO,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=120,
+        )
+        assert driven.returncode == 0, driven.stderr + driven.stdout
+        assert json.loads(driven.stdout.strip().splitlines()[-1])["signedIn"] is True
+    finally:
+        if window.poll() is None:
+            window.kill()
+            window.communicate()
+        _stop_ui(ui)
+
+
+@pytest.mark.timeout(900)
 def test_a_plugin_installed_outside_the_running_app_offers_restart_and_apply_in_the_footer(environment, tmp_path):
     """After a terminal install while `hz ui` runs, the app itself says which plugin and offers the restart."""
     env, _ = environment
