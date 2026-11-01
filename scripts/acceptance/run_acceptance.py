@@ -1677,7 +1677,7 @@ def ui_settle(browser, case):
     )
     listed = "document.body.innerText.includes('Installed on this machine')"
     problem = None
-    for _ in range(4):
+    for attempt in range(4):
         try:
             if not browser.evaluate(listed):
                 ui_open_plugins(browser, case)
@@ -1686,7 +1686,7 @@ def ui_settle(browser, case):
                 return
         except StepFailed as error:
             problem = error
-            browser.shot("settle-settings-failed")
+            browser.shot(f"settle-settings-failed-{time.monotonic_ns()}-{attempt}")
             browser.press("Escape", "Escape", 27)
             time.sleep(5)
     fail(f"Settings -> Plugins did not stay open after the restart: {problem}")
