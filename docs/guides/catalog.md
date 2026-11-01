@@ -1,6 +1,6 @@
 ---
 title: Showcase your plugin
-description: Automatic public discovery, catalog metadata, safe theme artwork, and offline website development.
+description: Automatic public discovery, catalog metadata, screenshots and soundscapes for your plugin.
 ---
 
 # From your repository to the catalog.
@@ -19,11 +19,7 @@ imports, installs or executes the plugin to build the website.
 gh repo edit your-account/heinzel-harbor --add-topic heinzel-plugin
 ```
 
-A new public project appears after a successful scheduled refresh. GitHub schedules are best effort; the catalog
-shows its snapshot time. A broken or over-budget optional source is omitted with a generic notice. Per-source project and blob limits,
-an aggregate project cap and a refresh API budget keep one topic repository from crowding out healthy entries. An incomplete discovery or
-required-source failure keeps the previously deployed site. Publication uses a freshly checked public visibility
-for every included source. Removal or visibility changes take effect on the next successful refresh.
+A new public project appears after the next scheduled refresh, and the catalog shows its snapshot time. Removing a project or making it private takes effect on the next refresh. How the pipeline works: [site pipeline](../PUBLISHING.md#website-catalog-pipeline).
 
 Private projects are excluded even when the workflow's GitHub account can read them. They remain discoverable
 through authenticated CLI catalog access for authorized users. There is no public page or private metadata cache
@@ -52,13 +48,7 @@ Use one of `utilities`, `connectors`, `themes` or `reference`. Keep highlights f
 and `themes` if your plugin does not have them. The site bounds text and file sizes, rejects traversal and links,
 and accepts owner artwork as PNG, JPEG or WebP only. Supplier HTML, CSS, scripts and SVG do not enter the site.
 
-Theme previews read actual light and dark palette tokens from the declared TOML. For existing projects, theme
-TOML inside an explicitly declared Hatch wheel package's `themes/` directory is also recognized. The site draws
-its own inert illustration; it labels it a palette preview rather than presenting it as a runtime screenshot.
-
-The "included" badge is derived from the official standard profile and owning metadata. Declaring yourself
-standard in another repository does not grant that badge. Source versions and compatibility declarations are
-shown as metadata, not as a certification against the newest SDK.
+Theme previews are inert illustrations drawn from your declared palette tokens.
 
 ## Publish UI and CLI screenshots
 
@@ -79,10 +69,7 @@ caption = "hz harbor status in the terminal"
 ```
 
 Use at most eight PNG, JPEG or WebP screenshots, each no larger than 2 MiB. Paths are relative to the plugin,
-including collection projects. Images open at full size and captions also serve as alternative text. Include
-light and dark captures for themes. Screenshots show actual runtime behavior; theme palette illustrations and
-character artwork remain separately labeled. Missing captures are shown explicitly rather than replaced by
-illustrations. Keep examples free of personal data and credentials. Update captures when the interface changes.
+including collection projects. Captions also serve as alternative text. Include light and dark captures for themes. Keep examples free of personal data and credentials.
 
 ## Showcase YouTube soundscapes
 
@@ -96,29 +83,6 @@ soundscapes = ["src/heinzel_harbor/soundscapes/tide.toml"]
 ```
 
 It displays soundscapes declaring `kind = "stream"`, `[stream] provider = "youtube"` and an eleven-character
-`video` identity. This works for theme and regular plugins. A **Listen on YouTube** link works without JavaScript;
+`video` identity. A **Listen on YouTube** link works without JavaScript;
 **Play** loads the privacy-enhanced YouTube player only after a click. No video, thumbnail or player is requested
-before that click. Availability and embedding permissions are controlled by YouTube and the video owner.
-The catalog reads these declarations without executing a provider or checking playback during builds.
-
-## Build and verify the website
-
-```sh
-make docs-site          # deterministic build from checked-in public metadata
-make docs-site SERVE=1  # local preview with reload
-make docs-site-check    # browser behavior, phone layouts, light/dark and accessibility
-make docs-catalog       # explicit online refresh; needs gh authentication
-```
-
-`docs/_data/catalog.json` is the offline snapshot. `HZ_SITE_CATALOG=/path/to/catalog.json` selects another snapshot
-for a site build. Unit tests use synthetic unknown projects and hostile metadata; browser checks exercise the
-built site, including keyboard filtering and a JavaScript-disabled catalog.
-
-The Docs workflow refreshes public metadata on an hourly schedule, relevant changes to `main`, manual dispatch
-and release publication. It checks out current `main` for publication so an older release cannot roll back site
-code. One production deployment queue serializes publication. Provider media recording is a separate explicit
-job and is never part of metadata refresh. No cross-repository publishing credential is required.
-
-The installation CTA advances only when a complete standard profile, matching release artifact hashes and the
-published core PyPI wheel can be verified. See [ADR 0098](../adr/0098-pages-showcases-the-product-and-discovers-public-plugin-metadata.md)
-for the publishing boundary.
+before that click. YouTube and the video owner control availability.
