@@ -152,6 +152,7 @@ jobs:
         env:
           UV_NO_SYNC: "1" # use the test group just installed
           TEST_LEVELS: ${{ matrix.levels || 'unit or integration' }}
+          VERBOSE: "1" # a worker's INTERNALERROR trace comes first, above what the step wrapper's tail keeps
         run: make test-parallel
 
   coverage:

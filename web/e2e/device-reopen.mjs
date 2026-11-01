@@ -1,5 +1,5 @@
 // A paired browser reopens the app without a link: a persistent browser profile, one step per run.
-// node device-reopen.mjs ENGINE PROFILE_DIR STEP URL [stale]   STEP: pair | open
+// node device-reopen.mjs ENGINE PROFILE_DIR STEP URL [stale]   STEP: pair | open | restart
 import { chromium, webkit } from "playwright-core";
 
 const [engineName, profile, step, url, mode] = process.argv.slice(2);
@@ -34,7 +34,37 @@ try {
       .catch(() => undefined);
     stored.device = await page.evaluate(() => Boolean(localStorage.getItem("hz.device")));
   }
-  console.log(JSON.stringify({ step, signedIn, ...stored }));
+  let afterRestart;
+  if (step === "restart") {
+    // The app's own Restart: `POST /api/restart` re-executes hz in place and hands its token over. Wait until another
+    // instance answers, then open the app again from the same profile without a link.
+    const instance = await page.evaluate(async () => {
+      const headers = { Authorization: `Bearer ${localStorage.getItem("hz.device")}` };
+      const before = (await (await fetch("/api/lifecycle", { headers })).json()).instance;
+      await fetch("/api/restart", { method: "POST", headers }).catch(() => undefined);
+      return before;
+    });
+    await page.waitForFunction(
+      async (old) => {
+        try {
+          const headers = { Authorization: `Bearer ${localStorage.getItem("hz.device")}` };
+          const answer = await (await fetch("/api/lifecycle", { headers })).json();
+          return answer.instance && answer.instance !== old;
+        } catch {
+          return false;
+        }
+      },
+      instance,
+      { timeout: 60000, polling: 500 },
+    );
+    await page.goto(url);
+    await Promise.race([ready.waitFor({ timeout: 20000 }), failed.first().waitFor({ timeout: 20000 })]).catch(
+      () => undefined,
+    );
+    await page.waitForTimeout(500);
+    afterRestart = (await ready.count()) > 0 && (await failed.count()) === 0;
+  }
+  console.log(JSON.stringify({ step, signedIn, afterRestart, ...stored }));
 } finally {
   await context.close();
 }

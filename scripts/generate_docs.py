@@ -6,9 +6,6 @@
 - README.md: the module list between `<!-- modules:start -->` and `<!-- modules:end -->`.
 - The badges between `<!-- badges:start -->` and `<!-- badges:end -->`: one set on every top-level page GitHub renders
   (BADGE_PAGES), and the same set for a plugin's own repository in the template's README.md and SECURITY.md.
-- docs/plugins/<distribution>/index.md and its theme swatches: the page of every first-party plugin, written by
-  `hz system plugin docs build` from the kernel (ADR 0082), and docs/plugins/README.md, the gallery: those pages, then
-  the plugins the core knows of but doesn't ship (the reference company, docs/plugins/registry.toml).
 - docs/schemas/contract-frontmatter-1.json: the JSON Schema of workflow contract frontmatter (ADR 0021).
 - docs/schemas/team-graph-1.json and telemetry-entry-1.json: `hz graph --json` (JSON Graph Format v2, profile
   `hz-team`) and one line of a Heinzelmännchen's telemetry log (ADR 0054).
@@ -21,13 +18,11 @@ Usage: uv run python scripts/generate_docs.py [--check]
 
 import importlib.util
 import json
-import re
 import subprocess
 import sys
 import tomllib
-from html import escape
 from pathlib import Path
-from urllib.parse import quote, urlsplit
+from urllib.parse import quote
 
 from pydantic import BaseModel
 from pydantic_core import PydanticUndefined, to_jsonable_python
@@ -40,11 +35,6 @@ from heinzel.kernel import discover, env_prefix
 from heinzel.modules.graph import TeamGraphDocument
 from heinzel.modules.heinzel._models import SCHEMA_VERSION, Frontmatter
 from heinzel.modules.system.config._schema import reference_hints, setting_schemas
-from heinzel.modules.system.plugin.docs._build import rendered
-from heinzel.modules.system.plugin.docs._files import write_pages
-from heinzel.modules.system.plugin.docs._models import PluginPage
-from heinzel.modules.system.plugin.docs._render import gallery
-from heinzel.modules.system.plugin.docs._service import DocsService
 
 ROOT = Path(__file__).resolve().parents[1]
 DOCS = ROOT / "docs"
@@ -58,8 +48,6 @@ OWNER, REPOSITORY = "helmut-hoffer-von-ankershoffen", "heinzel"
 REPO_URL = f"https://github.com/{OWNER}/{REPOSITORY}"
 BEST_PRACTICES = 15863  # the OpenSSF Best Practices project id of this repository
 TEMPLATE = ROOT / "template"
-PLUGINS = DOCS / "plugins"
-REGISTRY = PLUGINS / "registry.toml"
 SCENES = DOCS / "scenes.toml"
 
 MODULES_HEADER = """\
@@ -185,89 +173,6 @@ def module_catalog() -> str:
             kind = "required" if step.required else "optional"
             lines += [f"Setup: `hz setup {record.qualname}` ({kind}), also part of `hz setup`.", ""]
     return "\n".join(lines).rstrip() + "\n"
-
-
-def plugin_pages() -> dict[Path, str]:
-    """The page of every first-party plugin and the gallery, as `hz system plugin docs build` writes them."""
-    k = kernel()
-    documentation = k.resolve(DocsService).documentation(assets=PLUGINS)
-    files = {PLUGINS / relative: text for relative, text in rendered(documentation, index=False).items()}
-    files[PLUGINS / "README.md"] = plugin_gallery(documentation.pages)
-    return files
-
-
-def plugin_gallery(pages: list[PluginPage]) -> str:
-    """The gallery: first-party pages and registered community plugins.
-
-    Raises:
-        ValueError: If a registry distribution or HTTPS link is unsafe.
-    """
-    registry = tomllib.loads(REGISTRY.read_text(encoding="utf-8")) if REGISTRY.is_file() else {}
-    lines = [
-        gallery(pages, title="Plugin gallery").rstrip(),
-        "",
-        (
-            "Every page is generated from the installed plugin by `hz system plugin docs build` (ADR 0082); CI fails "
-            "when one is out of date. A plugin's own repository documents it the same way: `make docs-plugins` there "
-            "writes the same page, `make docs-record` its recordings."
-        ),
-        "",
-        "## More plugins",
-        "",
-        (
-            "Install a discovered plugin with `hz system plugin add <spec> --confirm`. "
-            "`hz system plugin search` discovers plugin metadata in configured repository directories and external "
-            "repositories with the topic `heinzel-plugin`; no registry pull request is needed. "
-            "The optional [registry.toml](registry.toml) curates additional documentation links below."
-        ),
-        "",
-        "| Plugin | What it does | Repository | Documentation |",
-        "| --- | --- | --- | --- |",
-    ]
-    for entry in sorted(registry.get("plugin", []), key=lambda item: str(item.get("name", ""))):
-        name = entry.get("name", "")
-        if not isinstance(name, str) or re.fullmatch(r"heinzel-[a-z0-9]+(?:-[a-z0-9]+)*", name) is None:
-            msg = "Plugin registry names must be lowercase heinzel-<name> distributions"
-            raise ValueError(msg)
-        for field in ("repository", "docs"):
-            value = entry.get(field)
-            if value is None and field == "docs":
-                continue
-            if not _registry_url(value):
-                msg = f"Plugin registry {field} must be an HTTPS URL without credentials or Markdown delimiters"
-                raise ValueError(msg)
-        docs = entry.get("docs")
-        link = f"[page]({docs})" if docs else f"[README]({entry['repository']}#readme)"
-        summary = _registry_summary(entry.get("summary", ""))
-        lines.append(f"| `{name}` | {summary} | <{entry['repository']}> | {link} |")
-    return "\n".join(lines) + "\n"
-
-
-def _registry_url(value: object) -> bool:
-    if not isinstance(value, str):
-        return False
-    try:
-        url = urlsplit(value)
-        _ = url.port  # Reject malformed or out-of-range ports before publishing a broken link.
-    except ValueError:
-        return False
-    return bool(
-        url.scheme == "https"
-        and url.hostname
-        and not url.username
-        and not url.password
-        and all(
-            character.isprintable() and not character.isspace() and character not in '<>()\\|`[]"'
-            for character in value
-        )
-    )
-
-
-def _registry_summary(value: object) -> str:
-    text = escape("".join(character if character.isprintable() else " " for character in str(value)), quote=False)
-    for character in ("\\", "`", "[", "]", "*", "_", "!"):
-        text = text.replace(character, "\\" + character)
-    return text.replace("|", "&#124;")
 
 
 def with_block(text: str, start_marker: str, end_marker: str, body: str) -> str:
@@ -424,8 +329,6 @@ def adr_index() -> str:
 def main() -> int:
     """Write the references, or with --check only compare them."""
     check = "--check" in sys.argv
-    plugin_outputs = {path.relative_to(PLUGINS).as_posix(): text for path, text in plugin_pages().items()}
-    plugin_stale, _ = write_pages(plugin_outputs, PLUGINS, check=check)
     outputs = {
         DOCS / "MODULES.md": module_catalog(),
         DOCS / "CLI_REFERENCE.md": cli_reference(),
@@ -461,8 +364,8 @@ def main() -> int:
     outputs[TEMPLATE / "SECURITY.md.jinja"] = template_security()
     stale = [path for path, content in outputs.items() if not path.exists() or path.read_text("utf-8") != content]
     if check:
-        if stale or plugin_stale:
-            print("Out of date; run `make docs`:", *plugin_stale, *(p.name for p in stale), sep="\n  ", file=sys.stderr)
+        if stale:
+            print("Out of date; run `make docs`:", *(p.name for p in stale), sep="\n  ", file=sys.stderr)
             return 1
         return 0
     for path in stale:

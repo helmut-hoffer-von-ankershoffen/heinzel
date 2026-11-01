@@ -1887,6 +1887,33 @@
         "title": "Channel",
         "type": "object"
       },
+      "ChannelReport": {
+        "description": "The update channel, and what a switch changes.",
+        "properties": {
+          "changed": {
+            "description": "Whether this call switched the channel.",
+            "title": "Changed",
+            "type": "boolean"
+          },
+          "channel": {
+            "description": "The channel followed now: stable, edge or main.",
+            "title": "Channel",
+            "type": "string"
+          },
+          "statement": {
+            "description": "What the switch changes; said before anything happens.",
+            "title": "Statement",
+            "type": "string"
+          }
+        },
+        "required": [
+          "channel",
+          "changed",
+          "statement"
+        ],
+        "title": "ChannelReport",
+        "type": "object"
+      },
       "ChatAction": {
         "description": "An operation the agent proposed; it runs only when the person confirms it, with exactly these arguments.",
         "properties": {
@@ -4045,6 +4072,19 @@
             "description": "Whether the unit files exist.",
             "title": "Installed",
             "type": "boolean"
+          },
+          "installed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When `install` last loaded the unit, from its marker; tells a daemon still waiting for its first tick from one that stopped ticking.",
+            "title": "Installed At"
           },
           "installed_version": {
             "anyOf": [
@@ -21994,6 +22034,75 @@
         ]
       }
     },
+    "/system/channel": {
+      "post": {
+        "description": "Show the update channel, or say what switching changes and, with `--yes`, switch.\n\nDefault is stable. Switching installs nothing until `hz system update`, and survives updates. Going from edge to\nstable never downgrades: edge stays until stable is as new.",
+        "operationId": "system_channel",
+        "parameters": [
+          {
+            "description": "The channel to move to; without it, shows the current one.",
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "stable",
+                    "edge",
+                    "main"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The channel to move to; without it, shows the current one.",
+              "title": "To"
+            }
+          },
+          {
+            "description": "Make the change that was described; without it, nothing changes.",
+            "in": "query",
+            "name": "yes",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Make the change that was described; without it, nothing changes.",
+              "title": "Yes",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChannelReport"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Show the update channel, or say what switching changes and, with `--yes`, switch.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
     "/system/claude/list": {
       "get": {
         "description": "List the MCP servers and skills Claude Code and Claude Desktop have; nothing is switched on.",
@@ -25500,7 +25609,7 @@
             }
           },
           {
-            "description": "Follow `release` (the default, setting `update_channel`): the newest release, also from `main` once a release is as new as it; or `main`: its newest commit.",
+            "description": "Follow `stable` (the default, setting `update_channel`; `release` is its earlier name): the newest accepted release, also from `main` or edge once it is as new; `edge`: the newest edge release; or `main`: its newest commit.",
             "in": "query",
             "name": "channel",
             "required": false,
@@ -25508,8 +25617,10 @@
               "anyOf": [
                 {
                   "enum": [
-                    "release",
-                    "main"
+                    "stable",
+                    "edge",
+                    "main",
+                    "release"
                   ],
                   "type": "string"
                 },
@@ -25517,7 +25628,7 @@
                   "type": "null"
                 }
               ],
-              "description": "Follow `release` (the default, setting `update_channel`): the newest release, also from `main` once a release is as new as it; or `main`: its newest commit.",
+              "description": "Follow `stable` (the default, setting `update_channel`; `release` is its earlier name): the newest accepted release, also from `main` or edge once it is as new; `edge`: the newest edge release; or `main`: its newest commit.",
               "title": "Channel"
             }
           }

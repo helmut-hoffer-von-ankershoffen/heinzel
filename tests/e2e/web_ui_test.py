@@ -370,6 +370,41 @@ def test_plugin_install_confirmation_opens_in_the_viewport_under_its_own_row(env
 
 
 @pytest.mark.timeout(900)
+@pytest.mark.parametrize("engine", ["chromium", "webkit"])
+def test_the_apps_own_restart_keeps_a_paired_browser_signed_in(environment, tmp_path, engine):
+    """`POST /api/restart` re-executes hz in place: the app reopens signed in, with no link, from the same profile."""
+    env, _ = environment
+    web_build.ensure_built()
+    run = [sys.executable, str(REPO / "scripts" / "web_build.py")]
+    subprocess.run(
+        [*run, "exec", "playwright-core", "install", engine], cwd=REPO, check=True, timeout=900, capture_output=True
+    )
+    profile = tmp_path / "browser-profile"
+    port = _free_port()
+
+    def drive(step: str, url: str) -> dict[str, object]:
+        driven = subprocess.run(
+            [*run, "exec", "node", "e2e/device-reopen.mjs", engine, str(profile), step, url],
+            cwd=REPO,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=180,
+        )
+        assert driven.returncode == 0, driven.stderr + driven.stdout
+        return json.loads(driven.stdout.strip().splitlines()[-1])
+
+    ui, link = _start_ui(env, port)
+    try:
+        assert drive("pair", link)["device"] is True
+        restarted = drive("restart", f"http://127.0.0.1:{port}/")
+        assert restarted["signedIn"] is True, restarted
+        assert restarted["afterRestart"] is True, restarted
+    finally:
+        _stop_ui(ui)
+
+
+@pytest.mark.timeout(900)
 def test_a_plugin_installed_outside_the_running_app_offers_restart_and_apply_in_the_footer(environment, tmp_path):
     """After a terminal install while `hz ui` runs, the app itself says which plugin and offers the restart."""
     env, _ = environment
