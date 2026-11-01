@@ -170,7 +170,7 @@ def ci_workflow() -> str:
     text = re.sub(r"\n  notifier:\n.*?(?=\n  build:)", "\n", text, flags=re.DOTALL)
     # The Electron window and its native runtime are core-only; plugins carry no desktop app.
     text = re.sub(r"\n  electron:\n.*?(?=\n  build:)", "\n", text, flags=re.DOTALL)
-    text = re.sub(r"\n  site-tests:\n.*?(?=\n  e2e:)", "\n", text, flags=re.DOTALL)
+    text = text[: text.index("  site-tests:\n")] + text[text.index("  e2e:\n") :]
     text = re.sub(r"\n  changes:\n.*?(?=\n  dependency-review:)", "", text, flags=re.DOTALL)
     # The template has no changed-path job; keep its original E2E matrix policy without core-only gating.
     text = text.replace("    needs: changes\n", "")

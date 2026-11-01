@@ -207,7 +207,6 @@ jobs:
       - run: uv sync --no-dev --group test # UV_FROZEN: exactly the lockfile
       - run: make test-perf
 
-
   e2e:
     name: End-to-end (${{ matrix.os }})
     runs-on: ${{ matrix.os }}

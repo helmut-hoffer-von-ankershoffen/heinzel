@@ -319,8 +319,6 @@ jobs:
     name: Site tests
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    env:
-      UV_NO_SYNC: "1"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -331,7 +329,6 @@ jobs:
           cache-dependency-glob: uv.lock
           save-cache: false
           python-version: "3.14"
-      - run: uv sync --no-dev --group test # UV_FROZEN: exactly the lockfile
       - run: make test-site # the tests that read documents and the site
 
   e2e:
