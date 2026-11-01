@@ -57,7 +57,9 @@ These cases are not blanket exemptions. HTTP, MCP, plugin data, LLM-generated ca
 
 Core's confidentiality scanner uses the same tested Git operand boundary. Its scope selector resolves a preflight
 base to a verified commit SHA before passing it to Git or Make: argv alone does not prevent Make from expanding a
-value such as `$(shell ...)`. Fast checks do not forward an unused base. Both scripts rebuild a revision from a ref name that Git lists, hex digits or a `HEAD` offset, and refuse anything
+value such as `$(shell ...)`. Fast checks do not forward an unused base.
+
+Both scripts rebuild a revision from a ref name that Git lists, hex digits or a `HEAD` offset, and refuse anything
 else. `plugin_tooling.py` runs only an `hz-plugin` subcommand or a `heinzel_plugin_tools` module. Regression tests use
 real temporary repositories and exercise both option-shaped input and Make expressions.
 
