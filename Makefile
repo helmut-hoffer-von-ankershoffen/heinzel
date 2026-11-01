@@ -21,7 +21,7 @@ LINT := \
 		"&demo=uv run --script scripts/demo_tape.py --check" \
 		"&attributions=uv run --quiet --script scripts/attributions.py --check" \
 		"&zizmor=uv run zizmor --offline --quiet .github/workflows" \
-		"&actionlint=uv run actionlint" \
+		"&actionlint=$(TOOLS) run actionlint" \
 		"&typos=uv run typos" \
 		"&docs-check=uv run --script scripts/check_docs.py" \
 		"&confidential=uv run --script scripts/check_confidentiality.py"
@@ -52,7 +52,8 @@ help: ## Show this help
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
 
 install: ## Install what the build needs: Python with every dependency group (.venv) and the pinned tools (.tools)
-	@uv sync --all-groups --quiet && echo "✓ .venv: Python and every dependency group, as locked in uv.lock"
+	@test -f uv.lock || uv lock --quiet
+	@uv sync --frozen --all-groups --quiet && echo "✓ .venv: Python and every dependency group, as locked in uv.lock"
 	@$(TOOLS) install build web
 	@$(WEB) install
 	@$(MAKE) --no-print-directory managed-backend-setup
@@ -219,9 +220,15 @@ test-browser-deps: ## Install Chromium and WebKit; include Linux host libraries 
 		$(WEB) exec playwright-core install chromium webkit; \
 	fi
 
-test-e2e: e2e-prepare ## Run end-to-end tests (needs network), on 3 workers
+# The browser E2E files (Playwright, the mounted web app) compete with the tool-install and CLI ones for CPU, so CI runs
+# the two halves as separate jobs. A file counts as browser when it mentions Playwright or the shared browser helpers.
+E2E_WEB := $(sort $(shell grep -lE 'playwright|_browser_result|_mounted|web_build' tests/e2e/*_test.py 2>/dev/null))
+E2E_PYTEST := uv run pytest -m e2e -n 3 -q --session-timeout=600 -x
+E2E_SELECT := $(if $(filter cli,$(SUITE)),$(foreach f,$(E2E_WEB), --ignore=$(f)))$(if $(filter web,$(SUITE)),$(foreach f,$(E2E_WEB), $(f)))
+
+test-e2e: e2e-prepare ## Run end-to-end tests (needs network), on 3 workers; SUITE=cli (tool install, CLI) or SUITE=web (browser) runs half
 	@echo "Runner: $$(getconf _NPROCESSORS_ONLN) CPUs"
-	$(STEPS) "e2e-readme=uv run pytest -m e2e -n 3 -q --session-timeout=600 -x tests/e2e/docs_test.py::test_readme_instructions" "e2e=uv run pytest -m e2e -n 3 -q --session-timeout=600 -x --deselect=tests/e2e/docs_test.py::test_readme_instructions"
+	$(STEPS) $(if $(filter web,$(SUITE)),,"e2e-readme=$(E2E_PYTEST) tests/e2e/docs_test.py::test_readme_instructions") "e2e=$(E2E_PYTEST)$(E2E_SELECT) --deselect=tests/e2e/docs_test.py::test_readme_instructions"
 
 e2e-prepare: ## Prepare current build assets before end-to-end procedure deadlines
 	@set -eu; dir="$$(mktemp -d "$${TMPDIR:-/tmp}/heinzel-e2e.XXXXXXXX")"; trap 'rm -rf "$$dir"' EXIT; uv build --quiet --wheel --out-dir "$$dir"

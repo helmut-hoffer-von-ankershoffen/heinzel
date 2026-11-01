@@ -22,7 +22,7 @@
   </picture>
 </p>
 
-**An open-source crew of AI helpers that does your team's busywork and asks before anything leaves your machine.**
+**Heinzelmännchen is an open-source crew of AI helpers that drafts your team's busywork and asks before anything leaves your machine.**
 Each Heinzelmännchen keeps one promise: the Friday report, the tracker update, the meeting brief. It reads your tools
 with *your* logins, drafts the work, and waits for your yes. Nothing is published, sent or spent without it. Like the
 [Heinzelmännchen of Cologne](https://en.wikipedia.org/wiki/Heinzelm%C3%A4nnchen), who finished the town's work at
@@ -238,14 +238,14 @@ and a REST endpoint (`hz system serve api`) at once. Coding agents use whichever
 or the MCP tools. People who'd rather click run `hz ui`: a web app on localhost, for this session only, with a
 navigation tree of settings, contracts, your team, inventory and the doctor's fixes, and a chat with your agent runner
 that says what it may cost before it runs. Modules can also advertise jobs that
-`hz system daemon install` runs in the background on a schedule, under launchd or systemd, unattended and with your
+`hz system daemon install` runs in the background on a schedule, under launchd or systemd, with your
 rights; `hz system daemon pause` and `uninstall` stop them (see [SECURITY.md](SECURITY.md)). Built in today:
 
 <!-- modules:start -->
 - [`ai`](docs/MODULES.md#ai) — How hz reaches AI, and what it spends: tokens and cost per run.
 - [`ai.access`](docs/MODULES.md#aiaccess) — Pick how hz reaches AI: Claude Code, your company's gateway, or an option a plugin adds.
 - [`graph`](docs/MODULES.md#graph) — Are your team's contracts kept? Artifacts and Heinzelmännchen, and where the flow waits.
-- [`heinzel`](docs/MODULES.md#heinzel) — Your Heinzelmännchen: durable agents that keep your team's documents true.
+- [`heinzel`](docs/MODULES.md#heinzel) — Your Heinzelmännchen: durable helpers that draft your team's recurring work for your approval.
 - [`org`](docs/MODULES.md#org) — Your profile, and the team, org and company you work with.
 - [`report`](docs/MODULES.md#report) — Telemetry: log what a Heinzelmännchen did, for your team's graph (`hz report published <id> <url>`).
 - [`system`](docs/MODULES.md#system) — Inspect, configure, diagnose and update Heinzelmännchen itself.
