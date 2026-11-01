@@ -19,7 +19,7 @@ Product development teams don't drown in one big chore; they drown in the sum of
 tracker hygiene, agendas, reports, newsletters, keeping documents consistent. Managers lose the hours they need for
 people, engineers lose flow, and the people across a time zone or an org chart lose visibility.
 
-Heinzelmännchen is an **open-source, AI-driven operating system for product development teams**. It drafts the busywork of
+Heinzelmännchen is an **open-source crew of AI helpers for product development teams**. It drafts the busywork of
 running a team — status, ticket updates, agendas, reports, recognition — and people approve it. It is built for
 every role on a team: engineers, product managers, engineering managers and the leadership they report to.
 

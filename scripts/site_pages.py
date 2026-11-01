@@ -251,11 +251,25 @@ stroke-linecap="round"/>
 </g></svg>"""
 
 
+COPY_BUTTON_ICONS = (
+    '<svg class="hz-copy__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" '
+    'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="14" height="14" x="8" y="8" '
+    'rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>'
+    '<svg class="hz-copy__done" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" '
+    'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>'
+    '<span class="hz-visually-hidden" aria-live="polite"></span>'
+)
+
+
 def command(value: str, identity: str) -> str:
-    """An accessible copy control with useful static text when JavaScript is unavailable."""
+    """An accessible copy control: the command stays selectable text when JavaScript is unavailable.
+
+    The button is an icon with its name kept for assistive technology, the same as the app's copy button.
+    """
+    button = f'<button type="button" data-copy="{identity}" aria-label="Copy command" title="Copy">'
     return f"""<div class="hz-command">
 <code id="{identity}">{escape(value)}</code>
-<button type="button" data-copy="{identity}" aria-label="Copy command">Copy</button></div>"""
+{button}{COPY_BUTTON_ICONS}</button></div>"""
 
 
 def cards(data: Object, page_url: str, *, featured: bool = False) -> str:

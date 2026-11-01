@@ -1,6 +1,6 @@
 # Heinzelmännchen
 
-**Less busywork. More good work.** Open-source, local-first helpers for product teams.
+**Less busywork. More good work.** Heinzelmännchen is an open-source crew of AI helpers that drafts your team's busywork and asks before anything leaves your machine.
 Connect your tools, put repeatable work into workflows, and keep people in control.
 
 ![Heinzelmännchen helpers](https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel/main/docs/assets/pypi-hero.png)
@@ -49,10 +49,10 @@ In a headless session without one, open a user session with its service manager 
 - **Themes with personality.** Palettes, artwork and soundscapes belong to their themes.
 - **Independent development.** Build, test and release plugins against an installed SDK.
 
-![Team graph in the Heinzel workspace with fictional data](https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel/main/docs/assets/website/product-workspace.jpg)
+![Team graph in the Heinzelmännchen workspace with fictional data](https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel/main/docs/assets/website/product-workspace.jpg)
 
-This is the foundation: kernel, heads, workflows and extension points. The broader vision is an accountable,
-composable AI operating system for product teams. [See the vision and architecture](https://heinzel.team/VISION/).
+This is the foundation: kernel, heads, workflows and extension points. The broader vision is accountable,
+composable helpers that draft a product team's recurring work for a person's approval. [See the vision and architecture](https://heinzel.team/VISION/).
 
 ## Extend it
 

@@ -1,6 +1,6 @@
 ---
 title: Helpers for good work
-description: Heinzel's vision, current foundation, and the principles behind an open-source AI operating system for product teams.
+description: The vision for Heinzelmännchen, the current foundation, and the principles behind helpers that draft a product team's busywork for approval.
 ---
 
 <p class="hz-eyebrow">The direction is human</p>

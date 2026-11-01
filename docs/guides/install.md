@@ -1,6 +1,6 @@
 ---
-title: Install Heinzel
-description: Install the standard Heinzel app, start the web workspace, and verify your first session.
+title: Install Heinzelmännchen
+description: Install the standard Heinzelmännchen app, start the web workspace, and verify your first session.
 ---
 
 # Your first Heinzelmännchen.
@@ -13,6 +13,9 @@ The standard app installs the core and the default Clock, Resource, Tailscale an
 If you already have [uv](https://docs.astral.sh/uv/getting-started/installation/), run:
 
 <!-- hz:install -->
+
+`@latest` asks uv for the newest release on every start; a plain `uvx heinzel` keeps reusing whatever uv cached or
+installed first, however old.
 
 **Need uv installed for you?** Use the guided installer instead:
 
