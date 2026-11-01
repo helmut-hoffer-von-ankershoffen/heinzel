@@ -119,6 +119,12 @@ CORE_ONLY = {  # path: why plugins don't get it
     "scripts/template_pyproject_head.toml.tmpl": "input of sync_template.py",
     "scripts/web.py": "the web head's typed client and dev server (web/, ADR 0039); plugins bring no UI",
     "scripts/web_build.py": "runs and builds the web head's app (web/, ADR 0039); plugins bring no UI",
+    ".github/workflows/acceptance.yml": "installs the published core with the public commands on hosted runners",
+    "scripts/acceptance/README.md": "documents the core's public installer acceptance harness",
+    "scripts/acceptance/run_acceptance.py": "public installer acceptance of the published core; plugins have none",
+    "scripts/acceptance/summary.py": "summarizes the acceptance harness's result.json for a job summary",
+    "scripts/acceptance/vendor/artifact_provenance.py": "hash-pinned reviewed copy the acceptance harness loads",
+    "scripts/acceptance/vendor/guardian.py": "hash-pinned reviewed copy the acceptance harness loads",
 }
 
 
