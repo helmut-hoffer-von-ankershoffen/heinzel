@@ -145,6 +145,7 @@ def test_expired_matching_body_is_omitted_and_removed_from_disposable_index(make
         assert indexed_search(crud, request).items == []
         cache = _CACHES[(crud.repository.search_storage_id, crud.repository.principal_id, session)]
         assert cache.db.execute("SELECT count(*) FROM docs").fetchone()[0] == 0
+        assert cache.verified_changes == cache.db.total_changes
 
 
 def test_unicode_and_quoted_trigrams_and_nul_fallback(make_kernel):

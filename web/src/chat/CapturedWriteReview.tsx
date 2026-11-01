@@ -28,7 +28,9 @@ export function CapturedWriteReview({
     object(review) &&
     review.session === sessionId &&
     review.request_id === args.request_id &&
-    Object.keys(args).sort().join(",") === "request_id,review,session_id" &&
+    Object.keys(args)
+      .sort((left, right) => left.localeCompare(right))
+      .join(",") === "request_id,review,session_id" &&
     ["account", "source", "reference", "operation", "section", "base_revision", "write_scope", "content"].every(
       (key) => typeof review[key] === "string" && review[key] !== "",
     );

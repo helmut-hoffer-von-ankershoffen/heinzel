@@ -144,8 +144,14 @@ def _time(value: datetime | None) -> str | None:
 
 
 def _remove_doc(cache: _Cache, seq: int) -> None:
-    """Drop a document the host itself expired; older SQLite can then fail an integrity check it needs no run of."""
+    """Drop a document the host itself expired, from a verified index.
+
+    Older SQLite can then fail an integrity check on a sound index, so this trusted change alone counts as verified.
+    Committing flushes the terms and moves the change count, so only count after it.
+    """
+    _verified(cache)
     cache.db.execute("DELETE FROM docs WHERE seq = ?", (seq,))
+    cache.db.commit()
     cache.verified_changes = cache.db.total_changes
 
 
