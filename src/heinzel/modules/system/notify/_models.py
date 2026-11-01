@@ -150,6 +150,16 @@ class Tested(BaseModel):
     )
 
 
+class Cleaned(BaseModel):
+    """What `clean` did to leftover Heinzel Notifier processes."""
+
+    ended: int = Field(description="How many leftover Heinzel Notifier processes were ended.")
+    running: int = Field(description="How many are still running; a notification being posted is seconds old.")
+    unregistered: int = Field(
+        description="How many other copies of the app macOS no longer lists in System Settings > Notifications."
+    )
+
+
 class Opened(BaseModel):
     """Whether the system's notification settings were opened."""
 
