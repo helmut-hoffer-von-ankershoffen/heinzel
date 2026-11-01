@@ -1,6 +1,6 @@
 ---
 name: write-tests
-description: Write Heinzelmännchen tests at the right level - unit, integration or e2e, as defined in the coding standards (Aignostics SDK taxonomy). Use whenever adding or changing behaviour, or when asked to improve coverage.
+description: Write Heinzelmännchen tests at the right level - unit, integration or e2e, as defined in the coding standards (a public SDK's taxonomy). Use whenever adding or changing behaviour, or when asked to improve coverage.
 ---
 
 # Write tests

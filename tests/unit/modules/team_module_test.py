@@ -63,7 +63,7 @@ def test_the_base_context_has_no_checkout_of_its_own():
 
 
 def test_a_project_file_cannot_point_at_another_team():
-    assert TeamSettings.ignored_in_project == {"repository", "checkout", "layer"}
+    assert TeamSettings.ignored_in_project == {"name", "repository", "checkout", "layer"}
 
 
 def test_a_repository_url_in_the_settings_is_checked():
@@ -103,7 +103,7 @@ def test_the_roster_knows_its_owners_by_flag_and_by_role():
     roster = Roster(
         members=[
             Member(handle="mira", roles=["engineer"], owner=True, since=TODAY),
-            Member(handle="priya", roles=["engineering-leadership"], since=TODAY),
+            Member(handle="priya", roles=["product-manager"], since=TODAY),
             Member(handle="theo", roles=["engineer"], since=TODAY),
             Member(handle="old", roles=["engineering-manager"], since=TODAY, until=date(2020, 1, 1)),
         ]
@@ -297,3 +297,11 @@ def test_a_checkout_without_a_manifest_is_an_error_that_says_what_to_run(tmp_pat
 def test_a_layer_setting_is_a_layer_name():
     with pytest.raises(ValueError, match="isn't a layer name"):
         TeamSettings(layer="Acme Payments")
+
+
+def test_a_team_name_is_a_short_printable_label_kept_trimmed():
+    assert TeamSettings(name="  Payments  ").name == "Payments"
+    assert TeamSettings().name is None
+    for bad in ("", "   ", "x" * 61, "two\nlines"):
+        with pytest.raises(ValueError, match="A team name is 1 to 60 printable characters"):
+            TeamSettings(name=bad)

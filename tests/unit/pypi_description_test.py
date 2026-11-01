@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parents[2]
 def test_github_pypi_and_pages_take_their_primary_command_from_one_source():
     expected = {
         "install": "uvx heinzel@latest",
-        "install-script": "curl -LsSf https://helmut.hoffer-von-ankershoffen.me/heinzel/install.sh | sh",
+        "install-script": "curl -LsSf https://heinzel.team/install.sh | sh",
     }
     guide = (ROOT / "docs/guides/install.md").read_text()
     for marker, value in expected.items():

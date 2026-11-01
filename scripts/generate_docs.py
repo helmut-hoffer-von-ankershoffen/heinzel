@@ -19,6 +19,7 @@ Usage: uv run python scripts/generate_docs.py [--check]
 # Project-bound: runs in the project environment (`uv run python`), not as an inline-metadata script, because it
 # imports heinzel and its modules to read their operations, settings and schemas.
 
+import importlib.util
 import json
 import re
 import subprocess
@@ -54,6 +55,7 @@ BADGES_START, BADGES_END = "<!-- badges:start -->", "<!-- badges:end -->"
 #: (instructions every agent session loads), not CHANGELOG.md (the release process writes it).
 BADGE_PAGES = ("README.md", "CONTRIBUTING.md", "SECURITY.md", "CODE_OF_CONDUCT.md", "INTENT.md")
 OWNER, REPOSITORY = "helmut-hoffer-von-ankershoffen", "heinzel"
+REPO_URL = f"https://github.com/{OWNER}/{REPOSITORY}"
 BEST_PRACTICES = 15863  # the OpenSSF Best Practices project id of this repository
 TEMPLATE = ROOT / "template"
 PLUGINS = DOCS / "plugins"
@@ -310,24 +312,31 @@ def badges(
     scorecard = f"github.com/{owner}/{repository}"
     shield = "https://img.shields.io"
     versions = quote(" | ".join(python_versions()))
+    coverage_data = (
+        f"https://raw.githubusercontent.com/{owner}/{repository}/python-coverage-comment-action-data/endpoint.json"
+    )
     items = [
-        ("CI", f"{github}/actions/workflows/ci.yml/badge.svg", f"{github}/actions/workflows/ci.yml"),
         (
-            "Coverage",
-            f"https://raw.githubusercontent.com/{owner}/{repository}/python-coverage-comment-action-data/badge.svg",
-            f"{github}/tree/python-coverage-comment-action-data",
+            "CI",
+            f"{shield}/github/actions/workflow/status/{owner}/{repository}/ci.yml?branch=main&label=CI",
+            f"{github}/actions/workflows/ci.yml",
         ),
-        ("CodeQL", f"{github}/actions/workflows/codeql.yml/badge.svg", f"{github}/actions/workflows/codeql.yml"),
+        ("Coverage", f"{shield}/endpoint?url={coverage_data}", f"{github}/tree/python-coverage-comment-action-data"),
+        (
+            "CodeQL",
+            f"{shield}/github/actions/workflow/status/{owner}/{repository}/codeql.yml?branch=main&label=CodeQL",
+            f"{github}/actions/workflows/codeql.yml",
+        ),
         (
             "OpenSSF Scorecard",
-            f"https://api.scorecard.dev/projects/{scorecard}/badge",
+            f"{shield}/ossf-scorecard/{scorecard}?label=OpenSSF%20Scorecard",
             f"https://scorecard.dev/viewer/?uri={scorecard}",
         ),
         *(
             [
                 (
                     "OpenSSF Best Practices",
-                    f"https://www.bestpractices.dev/projects/{best_practices}/badge",
+                    f"{shield}/cii/level/{best_practices}?label=OpenSSF%20Best%20Practices",
                     f"https://www.bestpractices.dev/en/projects/{best_practices}/passing",
                 )
             ]
@@ -343,16 +352,21 @@ def badges(
         *(
             [
                 (
-                    label,
-                    f"https://sonarcloud.io/api/project_badges/measure?project={owner}_{repository}&metric={metric}",
+                    "Quality Gate Status",
+                    f"{shield}/sonar/quality_gate/{owner}_{repository}?server=https://sonarcloud.io&label=Quality%20Gate%20Status",
                     f"https://sonarcloud.io/summary/overall?id={owner}_{repository}",
-                )
-                for label, metric in (("Quality Gate Status", "alert_status"), ("Security Rating", "security_rating"))
+                ),
+                (
+                    # Shields shows this rating as a number; Sonar's own badge shows the letter, and its red for E.
+                    "Security Rating",
+                    f"https://sonarcloud.io/api/project_badges/measure?project={owner}_{repository}&metric=security_rating",
+                    f"https://sonarcloud.io/summary/overall?id={owner}_{repository}",
+                ),
             ]
             if sonar
             else []
         ),
-        ("License: MIT", f"{shield}/badge/license-MIT-green", "LICENSE"),
+        ("License: MIT", f"{shield}/badge/license-MIT-brightgreen", "LICENSE"),
     ]
     return "\n".join(f"[![{alt}]({image})]({link})" for alt, image, link in items)
 
@@ -390,6 +404,21 @@ def model_schema(model: type[BaseModel], urn: str, title: str) -> str:
     return json.dumps(schema, indent=2, ensure_ascii=False) + "\n"
 
 
+def adr_index() -> str:
+    """The ADR index table of docs/adr/README.md, rendered from the records' front matter by scripts/adr_index.py.
+
+    Raises:
+        RuntimeError: If the hooks script cannot be loaded.
+    """
+    spec = importlib.util.spec_from_file_location("adr_index", ROOT / "scripts" / "adr_index.py")
+    if spec is None or spec.loader is None:
+        msg = "scripts/adr_index.py cannot be loaded"
+        raise RuntimeError(msg)
+    hooks = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(hooks)
+    return hooks.adr_index_block(DOCS / "adr", REPO_URL)
+
+
 def main() -> int:
     """Write the references, or with --check only compare them."""
     check = "--check" in sys.argv
@@ -421,6 +450,10 @@ def main() -> int:
         outputs[path] = with_block(
             outputs[path], "<!-- install-script:start -->", "<!-- install-script:end -->", f"```sh\n{guided}\n```"
         )
+    adr_readme = DOCS / "adr" / "README.md"
+    outputs[adr_readme] = with_block(
+        adr_readme.read_text(encoding="utf-8"), "<!-- adr-index:start -->", "<!-- adr-index:end -->", adr_index()
+    )
     readme = TEMPLATE / "README.md.jinja"
     outputs[readme] = with_block(readme.read_text(encoding="utf-8"), BADGES_START, BADGES_END, template_badges())
     outputs[TEMPLATE / "SECURITY.md.jinja"] = template_security()

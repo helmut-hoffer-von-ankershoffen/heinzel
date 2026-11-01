@@ -9,7 +9,10 @@ import html
 import json
 import os
 import posixpath
+import re
 import shlex
+import unicodedata
+import urllib.request
 from pathlib import Path
 from typing import Any
 
@@ -20,6 +23,7 @@ from site_catalog import (
     NAME,
     REPOSITORY,
     REVISION,
+    ROOT,
     SNAPSHOT,
     VERSION,
     VIDEO,
@@ -88,6 +92,15 @@ def checked_source(source: Object) -> Object:
 
 MAX_DECLARATIONS = 24
 MAX_IMAGES = 8
+HELPER_WORDS = 9
+HEADING_LEVELS = 6
+HELPER_CHARACTERS = 80
+HELPER_FALLBACK = "See this helper working in the real UI."
+# A character never promises what an owner's metadata merely mentions: no autonomy, delivery or endorsement.
+BANNED_CUE = re.compile(
+    r"autonomous|automatic|while you sleep|\b(sends?|publish(es)?|delivers?)\b|customer|endors|testimonial",
+    re.IGNORECASE,
+)
 
 
 def validate_presentation(project: Object) -> None:
@@ -453,6 +466,148 @@ def theme_gallery(data: Object, page_url: str) -> str:
     return '<div class="hz-theme-gallery">' + "\n".join(result) + "</div>"
 
 
+TOUR_ASSETS = ROOT / "docs" / "assets" / "tour"
+TOUR_STORIES: tuple[Object, ...] = (
+    {
+        "id": "graph",
+        "label": "workflow graph",
+        "art": "draftkeeper",
+        "name": "Ada",
+        "cue": "Let me show you how these pieces connect.",
+        "link": "Read about contracts",
+        "target": "HEINZELMAENNCHEN/",
+        "images": (
+            (
+                "graph-overview",
+                "Overview",
+                "A real workflow graph, populated from fictional local sources and contract declarations.",
+            ),
+            (
+                "graph-contract-detail",
+                "Zoomed detail",
+                "Select the contract to see its connections and commands, here after zooming the graph.",
+            ),
+            ("graph-contract-detail-dark", "Dark mode", "The same contract details in dark mode."),
+        ),
+    },
+    {
+        "id": "terminal",
+        "label": "terminal",
+        "art": "reviewer",
+        "name": "Otto",
+        "cue": "Same work, another useful view.",
+        "link": "Take your first steps",
+        "target": "guides/first-steps/",
+        "images": (
+            (
+                "terminal-tabs",
+                "Overview",
+                "Two terminal tabs in the local demo: hz graph and hz drafts, beside the contract.",
+            ),
+            (
+                "terminal-draft-full",
+                "Zoomed detail",
+                "Full screen: a locally saved report from a demonstration runner, fictional data.",
+            ),
+            ("terminal-tabs-dark", "Dark mode", "The same two terminal tabs in dark mode."),
+        ),
+    },
+    {
+        "id": "chat",
+        "label": "contextual chat",
+        "art": "reviewer",
+        "name": "Otto",
+        "cue": "You can see exactly what I am asking to do.",
+        "link": "How approval works",
+        "target": "HEINZELMAENNCHEN/",
+        "images": (
+            (
+                "chat-proposal",
+                "Overview",
+                "Real contextual chat and approval flow, with a scripted local demonstration runner; no model call.",
+            ),
+            (
+                "chat-proposal-detail",
+                "Zoomed detail",
+                "The proposal shows the exact command and arguments. It runs only if you confirm.",
+            ),
+            ("chat-proposal-detail-dark", "Dark mode", "The same proposal in dark mode."),
+        ),
+    },
+)
+
+
+TOUR_FALLBACK = re.compile(r"<!-- hz:tour-story (\w+) -->.*?<!-- /hz:tour-story -->", re.DOTALL)
+
+
+def tour_markup(identity: str, page_url: str) -> str:
+    """The rendered story for a marker pair; the Markdown between the markers is the GitHub fallback.
+
+    Raises:
+        ValueError: If the marker names no tour story.
+    """
+    story = next((item for item in TOUR_STORIES if item["id"] == identity), None)
+    if story is None:
+        msg = f"Unknown tour story: {identity}"
+        raise ValueError(msg)
+    return tour_story(story, page_url).replace("><", ">\n<")
+
+
+def png_size(path: Path) -> tuple[int, int]:
+    """Read a PNG's pixel size from its header, so the page reserves space before the image loads.
+
+    Raises:
+        ValueError: If the file is not a PNG.
+    """
+    header = path.read_bytes()[:24]
+    if header[:8] != b"\x89PNG\r\n\x1a\n" or header[12:16] != b"IHDR":
+        msg = f"{path.name} is not a PNG"
+        raise ValueError(msg)
+    return int.from_bytes(header[16:20], "big"), int.from_bytes(header[20:24], "big")
+
+
+def tour_story(story: Object, page_url: str) -> str:
+    """One guide, one cue and one swipeable lead-plus-zoom gallery of real product screens."""
+    identity = f"tour-{story['id']}"
+    count = len(story["images"])
+    figures = []
+    for index, (name, label, caption) in enumerate(story["images"], 1):
+        width, height = png_size(TOUR_ASSETS / f"{name}.png")
+        url = escape(href(f"assets/tour/{name}.png", page_url))
+        alt = escape(caption)
+        figures.append(
+            f'<figure role="group" aria-roledescription="slide" aria-label="{index} of {count}">'
+            f'<a href="{url}" aria-label="Open full-size: {alt}">'
+            f'<img src="{url}" alt="{alt}" width="{width}" height="{height}" loading="lazy" '
+            'referrerpolicy="no-referrer"></a>'
+            f'<figcaption><span class="hz-gallery-surface">{escape(label)}</span>{alt}</figcaption></figure>'
+        )
+    art = href(f"assets/website/helper-{story['art']}.svg", page_url)
+    return (
+        f'<article class="hz-tour-story" id="{identity}" data-heinzel-helper>'
+        '<div class="hz-story-intro">'
+        f'<img src="{art}" alt="" width="140" height="230" loading="lazy">'
+        f'<div><p class="hz-story-name">{escape(story["name"])}</p>'
+        f'<p class="hz-story-quote">“{escape(story["cue"])}”</p>'
+        f'<a href="{href(story["target"], page_url)}">{escape(story["link"])} →</a></div></div>'
+        f'<section class="hz-gallery" data-gallery role="region" aria-roledescription="carousel" '
+        f'aria-label="{escape(story["label"].capitalize())} screenshots">'
+        '<div class="hz-gallery-controls" data-gallery-controls hidden>'
+        f'<button type="button" data-gallery-previous aria-label="Previous {escape(story["label"])} screenshot" '
+        f'aria-controls="{identity}-slides">← Previous</button>'
+        '<span data-gallery-count role="status" aria-live="polite" aria-atomic="true">'
+        f"1 of {count}</span>"
+        f'<button type="button" data-gallery-next aria-label="Next {escape(story["label"])} screenshot" '
+        f'aria-controls="{identity}-slides">Next →</button></div>'
+        f'<p class="hz-gallery-hint" id="{identity}-hint">'
+        "Swipe or scroll sideways. Select an image to zoom and inspect it.</p>"
+        f'<div class="hz-screenshots" id="{identity}-slides" data-gallery-track tabindex="0" role="group" '
+        f'aria-label="{escape(story["label"].capitalize())} slides" aria-describedby="{identity}-hint">'
+        + "".join(figures)
+        + "</div></section></article>"
+    )
+
+
 def detail(project: Object) -> str:
     """A searchable static detail page with immutable installation and source provenance."""
     source = project["source"]
@@ -525,6 +680,23 @@ not a runtime screenshot.
 """
 
 
+LATEST_RELEASE_API = "https://api.github.com/repos/helmut-hoffer-von-ankershoffen/heinzel/releases/latest"
+RELEASE_TAG = re.compile(r"v[0-9]+\.[0-9]+\.[0-9]+")
+
+
+def latest_release_tag() -> str | None:
+    """The latest published release tag from the GitHub API, or None: a failed lookup must not fail or age the build."""
+    request = urllib.request.Request(LATEST_RELEASE_API, headers={"Accept": "application/vnd.github+json"})
+    if token := os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN"):
+        request.add_header("Authorization", f"Bearer {token}")
+    try:
+        with urllib.request.urlopen(request, timeout=5) as response:  # noqa: S310 - fixed https URL
+            tag = str(json.load(response).get("tag_name", ""))
+    except (OSError, ValueError):
+        return None
+    return tag if RELEASE_TAG.fullmatch(tag) else None
+
+
 def on_files(files: Any, config: Any) -> Any:  # noqa: ANN401 - MkDocs owns the event objects
     """Generate public catalog pages and inert palette artwork from an explicit snapshot."""
     from mkdocs.structure.files import File  # noqa: PLC0415 - docs-only dependency; unit rendering needs no MkDocs
@@ -541,92 +713,236 @@ def on_files(files: Any, config: Any) -> Any:  # noqa: ANN401 - MkDocs owns the 
                 )
     files.append(File.generated(config, "catalog.json", content=json.dumps(snapshot, ensure_ascii=False)))
     config.extra["hz_release"] = snapshot["release"]
+    config.extra["hz_latest_release"] = latest_release_tag()
     config.extra["hz_plugin_pages"] = {f"catalog/{item['id']}/index.md": item for item in snapshot["plugins"]}
     return files
 
 
-def page_helpers(path: str, page_url: str, project: Object | None = None) -> list[Object]:
-    """Give every documentation/plugin page one or two contextual fictional character explainers."""
-    reviewer = {
-        "art": "reviewer",
-        "name": "Otto, your review partner",
-        "quote": "Take a look first. You decide what belongs in your workspace.",
-        "detail": "Check the screenshots, source and declared compatibility before installing a plugin.",
-        "link": href("CATALOG/", page_url),
-        "action": "Explore the plugin catalog",
-    }
-    if project is not None:
-        themes = project.get("themes", [])
-        guide = {
-            "art": "timekeeper" if not themes else "draftkeeper",
-            "name": "Pip, your feature guide" if not themes else "Ada, your workspace guide",
-            "quote": "Let me show you what this plugin brings."
-            if not themes
-            else "Make this workspace feel like yours.",
-            "detail": project["highlights"][0] if project.get("highlights") else project["summary"],
-            "link": "#screenshots",
-            "action": "See the UI and CLI",
-        }
-        return [guide, reviewer]
-    guide = {
-        "art": "draftkeeper",
-        "name": "Ada, the draftkeeper",
-        "quote": "Give each helper a clear job, and keep its work easy to inspect.",
-        "detail": "A contract names the inputs, limits and expected draft. People remain in control.",
-        "link": href("WORKFLOWS/", page_url),
-        "action": "Explore contracts",
-    }
-    if path.startswith(("guides/install", "guides/first-steps")):
-        guide.update(
-            art="timekeeper",
-            name="Pip, your getting-started guide",
-            quote="Let's get you to your first useful screen.",
-            detail="Install Heinzel, open the workspace, then explore a plugin that helps with your day.",
-            link=href("guides/first-steps/", page_url),
-            action="Take your first steps",
-        )
-    elif "ARCHITECTURE" in path or "architecture" in path or path.startswith("adr/"):
-        guide.update(
-            quote="Small pieces can do useful work together.",
-            detail=(
-                "The kernel discovers modules; heads expose typed operations; plugins bring specific tools and views."
-            ),
-            link=href("PLUGINS/", page_url),
-            action="Explore extension contracts",
-        )
-    elif path in {"CLI_REFERENCE.md", "CONFIGURATION.md", "MODULES.md"}:
-        guide.update(
-            art="reviewer",
-            name="Otto, your reference guide",
-            quote="Need the exact command or setting? You're in the right place.",
-            detail="Typed operation definitions supply the CLI, tool schemas and reference documentation.",
-            link=href("CLI_REFERENCE/", page_url),
-            action="Open the command reference",
-        )
-    return [guide]
-
-
-def on_page_context(
-    context: Object,
+def helper(  # noqa: PLR0913,PLR0917 - one flat explicit record per character cue
+    art: str,
+    name: str,
+    quote: str,
+    link: str,
+    action: str,
+    page_url: str,
     *,
-    page: Any,  # noqa: ANN401 - MkDocs owns event objects
-    config: Any,  # noqa: ANN401 - MkDocs owns event objects
-    **_: Any,  # noqa: ANN401 - MkDocs owns event objects
+    section: str | None = None,
+    lane: str | None = None,
 ) -> Object:
-    """Attach explainers in the shared layout, including automatically discovered future plugin pages."""
-    path = page.file.src_uri
-    project = config.extra.get("hz_plugin_pages", {}).get(path)
-    context["hz_helpers"] = page_helpers(path, page.url, project)
-    return context
+    """One character cue: who speaks, the cue, one link, the section it sits beside and its desktop lane."""
+    return {
+        "art": art,
+        "name": name,
+        "quote": quote,
+        "link": link,
+        "action": action,
+        "src": href(f"assets/website/helper-{art}.svg", page_url),
+        "section": section,
+        "lane": lane,
+    }
+
+
+def plugin_helpers(project: Object, page_url: str) -> list[Object]:
+    """Pip (Ada for themes) at the screenshots, Otto at the install, Ada at sound only when the plugin has any."""
+    feature = project["highlights"][0] if project.get("highlights") else project["summary"]
+    words = str(feature).split()
+    brief = " ".join(words[:HELPER_WORDS])
+    if len(brief) > HELPER_CHARACTERS:
+        brief = brief[: HELPER_CHARACTERS - 1].rstrip() + "…"
+    elif len(words) > HELPER_WORDS:
+        brief += "…"
+    if BANNED_CUE.search(brief):
+        brief = HELPER_FALLBACK
+    themed = bool(project.get("themes"))
+    shown = bool(project.get("screenshots"))
+    guides = [
+        helper(
+            "draftkeeper" if themed else "timekeeper",
+            "Ada" if themed else "Pip",
+            brief,
+            "#screenshots" if shown else "#install-and-try",
+            "See it working" if shown else "Try it",
+            page_url,
+            section="screenshots" if shown else "what-it-brings",
+            lane="left",
+        )
+    ]
+    if project.get("soundscapes"):
+        guides.append(
+            helper(
+                "draftkeeper",
+                "Ada",
+                "Sound starts only when you choose.",
+                "#soundscapes",
+                "Sound options",
+                page_url,
+                section="soundscapes",
+            )
+        )
+    guides.append(
+        helper(
+            "reviewer",
+            "Otto",
+            "Check source and fit before inviting it in.",
+            "#install-and-try",
+            "Install and try",
+            page_url,
+            section="install-and-try",
+            lane="right",
+        )
+    )
+    return guides
+
+
+def page_helpers(path: str, page_url: str, project: Object | None = None) -> list[Object]:
+    """Give each page one to five brief contextual voices, each with a useful next step."""
+    if project is not None:
+        return plugin_helpers(project, page_url)
+    if path == "README.md":
+        return [
+            helper(
+                "timekeeper",
+                "Pip",
+                "Your first useful screen is one command away.",
+                href("guides/install/", page_url),
+                "Install Heinzel",
+                page_url,
+                section="a-small-core-a-growing-world",
+                lane="left",
+            ),
+            helper(
+                "reviewer",
+                "Otto",
+                "Build a helper. Keep its work inspectable.",
+                href("PLUGIN_AUTHORING/", page_url),
+                "Build a plugin",
+                page_url,
+                section="your-first-contribution-can-be-a-plugin",
+                lane="right",
+            ),
+        ]
+    if path.startswith(("guides/install", "guides/first-steps")):
+        return [
+            helper(
+                "timekeeper",
+                "Pip",
+                "Let's find your first useful screen together.",
+                href("guides/first-steps/", page_url),
+                "First steps",
+                page_url,
+                lane="any",
+            )
+        ]
+    if path in {"CLI_REFERENCE.md", "CONFIGURATION.md", "MODULES.md"}:
+        return [
+            helper(
+                "reviewer",
+                "Otto",
+                "Find the command for your next step.",
+                href("CLI_REFERENCE/", page_url),
+                "Command reference",
+                page_url,
+                lane="any",
+            )
+        ]
+    if "ARCHITECTURE" in path or "architecture" in path or path.startswith("adr/"):
+        quote, link, action = "Small pieces can do useful work together.", href("PLUGINS/", page_url), "Explore plugins"
+    else:
+        quote, link, action = (
+            "Give your helpers a clear, useful job.",
+            href("WORKFLOWS/", page_url),
+            "Explore contracts",
+        )
+    return [helper("draftkeeper", "Ada", quote, link, action, page_url, lane="any")]
+
+
+def waypoint(guide: Object, *, standalone: bool = False) -> str:
+    """A character beside the section it explains. Server-rendered, so it works without JavaScript."""
+    section = f' data-section="{escape(guide["section"])}"' if guide.get("section") else ""
+    lane = f' data-lane="{escape(guide["lane"])}"' if guide.get("lane") else ""
+    raw = "" if standalone else ' markdown="0"'
+    return "\n".join(
+        (
+            (
+                f'<aside class="hz-page-helper" data-heinzel-helper data-search-exclude{section}{lane} '
+                f'aria-label="{escape(guide["name"])}: {escape(guide["action"])}"{raw}>'
+            ),
+            f'<p class="hz-helper-name">{escape(guide["name"])}</p>',
+            f'<img src="{escape(guide["src"])}" alt="" width="140" height="232" loading="lazy">',
+            '<div class="hz-helper-body">',
+            f'<p class="hz-helper-quote">“{escape(guide["quote"])}”</p>',
+            f'<a href="{escape(guide["link"])}">{escape(guide["action"])} →</a>',
+            "</div>",
+            "</aside>",
+        )
+    )
+
+
+def slug(heading: str) -> str:
+    """The anchor MkDocs' table-of-contents extension gives a heading (ASCII words joined by hyphens)."""
+    heading = re.sub(r"<[^>]+>", "", heading).rstrip()
+    if heading.endswith("}") and "{" in heading:  # an attr_list suffix such as {#id}
+        heading = heading[: heading.rindex("{")]
+    ascii_text = unicodedata.normalize("NFKD", heading).encode("ascii", "ignore").decode("ascii")
+    return re.sub(r"[-\s]+", "-", re.sub(r"[^\w\s-]", "", ascii_text).strip().lower())
+
+
+def headings_of(lines: list[str]) -> list[tuple[int, int, str]]:
+    """(line, level, anchor) of every ATX heading outside fenced code."""
+    found: list[tuple[int, int, str]] = []
+    fence = ""
+    for index, line in enumerate(lines):
+        marker = line.lstrip()[:3]
+        level = len(line) - len(line.lstrip("#"))
+        if marker in {"```", "~~~"}:
+            fence = "" if fence == marker else fence or marker
+        elif not fence and 1 <= level <= HEADING_LEVELS and line[level : level + 1] in {" ", "\t"}:
+            found.append((index, level, slug(line[level:].strip().rstrip("#").strip())))
+    return found
+
+
+def place_waypoints(markdown: str, guides: list[Object]) -> str:
+    """Put each waypoint after its section heading, else the page's first H2, else at the end of the page."""
+    lines = markdown.split("\n")
+    headings = headings_of(lines)
+    inserts: dict[int, list[str]] = {}
+    tail = []
+    for guide in guides:
+        wanted = guide.get("section")
+        target = next((i for i, level, name in headings if (name == wanted if wanted else level == 2)), None)  # noqa: PLR2004
+        if target is None:
+            tail.append(waypoint(guide))
+        else:
+            inserts.setdefault(target, []).append(waypoint(guide))
+    for index in sorted(inserts, reverse=True):
+        lines[index + 1 : index + 1] = ["", *inserts[index], ""]
+    return "\n".join(lines) + "".join(f"\n\n{html_block}\n" for html_block in tail)
+
+
+def on_post_page(output: str, **_: Any) -> str:  # noqa: ANN401 - MkDocs owns the event objects
+    """Drop the marker that kept Markdown out of a waypoint where no Markdown processor consumed it."""
+    return output.replace(' markdown="0"', "")
+
+
+def on_env(env: Any, **_: Any) -> Any:  # noqa: ANN401 - MkDocs owns the Jinja environment
+    """Let templates such as the 404 page render the same waypoint markup."""
+    from markupsafe import Markup  # noqa: PLC0415 - Jinja is installed only in the docs environment
+
+    env.globals["hz_waypoints"] = lambda guides: Markup("\n".join(waypoint(guide, standalone=True) for guide in guides))  # noqa: S704 - escaped in waypoint()
+    return env
 
 
 def on_page_markdown(markdown: str, *, page: Any, config: Any, **_: Any) -> str:  # noqa: ANN401 - MkDocs owns event objects
-    """Fill presentation markers while keeping the authored Markdown useful on GitHub."""
-    del config
-    if page.file.src_uri.startswith("plugins/"):
+    """Fill presentation markers and place the page's characters, keeping the authored Markdown useful on GitHub."""
+    path = page.file.src_uri
+    if path.startswith("plugins/"):
         page.meta["search"] = {"exclude": True}
+    markdown = place_waypoints(
+        markdown, page_helpers(path, page.url, config.extra.get("hz_plugin_pages", {}).get(path))
+    )
     if "<!-- hz:" not in markdown:
         return markdown
+    markdown = TOUR_FALLBACK.sub(lambda found: tour_markup(found.group(1), page.url), markdown)
     snapshot = load_snapshot(Path(os.environ.get("HZ_SITE_CATALOG", str(SNAPSHOT))))
     renderers = {
         "catalog": lambda: cards(snapshot, page.url),

@@ -1,9 +1,11 @@
 ---
 status: proposed
 date: 2026-10-25
+implementation: built
 decision-makers: maintainer
 amends: 0047
 related: 0003, 0039, 0046, 0068, 0074
+implemented-by: 188
 ---
 
 # 0083: Restart and apply verifies the replacement server

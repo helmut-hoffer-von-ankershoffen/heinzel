@@ -1,8 +1,10 @@
 ---
 status: proposed
 date: 2026-10-27
+implementation: built
 decision-makers: maintainer, architect and security reviewer
 related: 0078, 0083, 0084
+implemented-by: 221
 ---
 
 # 0087: Managed backend ownership is independent of the native window

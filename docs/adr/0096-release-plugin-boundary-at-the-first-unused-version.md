@@ -1,9 +1,11 @@
 ---
 status: accepted
 date: 2026-10-29
+implementation: built
 decision-makers: maintainer
 amends: 0094, 0095
 related: 0008, 0013, 0079
+implemented-by: 270
 ---
 
 # 0096: Release the plugin boundary at the first unused version
