@@ -2,7 +2,8 @@
 
 import pytest
 
-from heinzel.kernel import FEATURES, Settings, feature_enabled, unknown_features
+from heinzel.kernel import Settings, feature_enabled
+from heinzel.kernel._features import FEATURES, unknown_features
 
 pytestmark = pytest.mark.unit
 

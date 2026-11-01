@@ -110,7 +110,7 @@ from heinzel.kernel._discovery import BUILTIN_PACKAGE, ENTRY_POINT_GROUP, discov
 from heinzel.kernel._duration import MAX_WINDOW, WINDOW_PATTERN, Span, format_duration, parse_duration, parse_window
 from heinzel.kernel._errors import HeinzelError, SubscriptionUsageLimitError
 from heinzel.kernel._exposure import MCP_HTTP, MCP_STDIO, Exposed, exposed, input_schema, restricts
-from heinzel.kernel._features import FEATURES, feature_enabled, unknown_features
+from heinzel.kernel._features import feature_enabled
 from heinzel.kernel._git import (
     GIT_HARDENING,
     CommandFailed,
@@ -302,7 +302,6 @@ __all__ = [
     "DEFAULT_THEME",
     "EDGE_WHEEL_PREFIX",
     "ENTRY_POINT_GROUP",
-    "FEATURES",
     "FILENAME",
     "FONT_ROUTE",
     "GIT_HARDENING",
@@ -621,7 +620,6 @@ __all__ = [
     "subprocess_environment",
     "tick_interval",
     "toml_value",
-    "unknown_features",
     "user_config_dir",
     "using_tick_interval",
     "walk",
