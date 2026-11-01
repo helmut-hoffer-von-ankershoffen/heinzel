@@ -16,6 +16,7 @@ import { t } from "@/i18n";
 import { zoneTime } from "@/lib/zoneTime";
 import { DurableHeinzelStatus } from "./DurableHeinzelStatus";
 import { HealthStatus } from "./HealthStatus";
+import { PluginsPending } from "./PluginsPending";
 import { CONNECTORS } from "./settingsSections";
 import { UpdateStatus } from "./UpdateStatus";
 
@@ -177,6 +178,9 @@ export function StatusBar() {
             <ReleaseNotes version={info.data.version} />
           </FooterItem>
         )}
+      </FooterPart>
+      <FooterPart id="@plugins-pending" pinned priority={110} label={t("pluginsPending.title")}>
+        <PluginsPending />
       </FooterPart>
       <FooterPart id="@updates" pinned priority={100} label={t("updates.title")}>
         <UpdateStatus />
