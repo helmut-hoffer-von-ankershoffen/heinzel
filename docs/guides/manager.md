@@ -1,3 +1,7 @@
+---
+description: Set up Heinzelmännchen for your team: install hz, connect your tools, create the team repository and get a first draft out every Friday.
+---
+
 # Bootstrap your team
 
 For the manager who sets Heinzelmännchen up for a team: install `hz`, sign in to the tools you already use, create

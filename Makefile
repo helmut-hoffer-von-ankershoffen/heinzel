@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help install setup release-local doctor tools-verify check check-fast linux-user-manager-proof preflight fix lint format typecheck test test-parallel commits test-all-pythons test-unit test-integration test-perf test-e2e e2e-prepare test-browser-deps audit licenses secrets template-test template-sync docs attributions fuzz demo terminal-art notifier icons web-build web-dev test-web managed-backend-setup managed-backend-check desktop-electron-test desktop-electron-sandbox desktop-electron-native desktop-electron-package build pypi-clean-build-marker changelog ci-logs pr sync docs-plugins docs-record docs-site docs-catalog docs-site-check docs-publish-check release clean
+.PHONY: help install setup release-local doctor tools-verify check check-fast linux-user-manager-proof preflight fix lint format typecheck test test-parallel commits test-all-pythons test-unit test-integration test-perf test-notifier test-e2e e2e-prepare test-browser-deps audit licenses secrets template-test template-sync docs attributions fuzz demo terminal-art notifier icons web-build web-dev test-web test-site managed-backend-setup managed-backend-check desktop-electron-test desktop-electron-sandbox desktop-electron-native desktop-electron-package build pypi-clean-build-marker changelog ci-logs pr sync docs-plugins docs-record docs-site docs-catalog docs-site-check docs-publish-check release clean
 
 # Quiet by default: one line per passing step, the tail of a failing one. VERBOSE=1 streams everything.
 # A step starting with & runs concurrently with the one before it; the first failure cancels the rest.
@@ -23,6 +23,7 @@ LINT := \
 		"&zizmor=uv run zizmor --offline --quiet .github/workflows" \
 		"&actionlint=uv run actionlint" \
 		"&typos=uv run typos" \
+		"&docs-check=uv run --script scripts/check_docs.py" \
 		"&confidential=uv run --script scripts/check_confidentiality.py"
 TYPES := "&mypy=uv run mypy" "&pyright=uv run pyright"
 # Unit, then integration (the suite orders them), on 4 workers, stopping at the first failure; coverage is in make test.
@@ -203,6 +204,9 @@ test-integration: ## Run integration tests
 test-perf: ## Run the performance tests (timing assertions such as linear time); CI only, they flake on a loaded machine
 	$(STEPS) "perf=uv run pytest -m perf -q --session-timeout=120"
 
+test-notifier: ## Real Heinzel Notifier launches leave no process behind (macOS; build it first: make notifier)
+	$(STEPS) "notifier=uv run pytest tests/e2e/notifier_instances_test.py -q -p no:cacheprovider -o timeout=120"
+
 test-browser-deps: ## Install Chromium and WebKit; include Linux host libraries when needed
 	@if [ "$$(uname -s)" = Linux ]; then \
 		$(WEB) exec playwright-core install --with-deps chromium webkit; \
@@ -258,6 +262,7 @@ docs-site-check: docs-site ## Check the built site's catalog, keyboard flow, mob
 	$(WEB) install
 	uv run --quiet --script scripts/site_check.py --install $(if $(CI),--with-deps)
 	uv run --quiet --script scripts/site_check.py
+	uv run --quiet --script scripts/check_docs.py --site site/
 
 docs-publish-check: ## Validate publication with fresh public metadata, or build a standalone plugin's ordinary docs
 	@if [ -f docs/catalog-sources.toml ]; then \
@@ -273,6 +278,9 @@ web-build: ## Build the web head's app into src/heinzel/heads/web/static, which 
 
 web-dev: ## The web head with hot reload: its API on a free port, Vite in front of it at the URL printed
 	@$(WEB_PROJECT) dev
+
+test-site: ## Run the tests that read documents and the site (CI's job for a pull request of the site alone)
+	$(STEPS) "site-tests=uv run pytest -n 4 -q --session-timeout=300 tests/unit/documentation_test.py tests/unit/standards_test.py tests/unit/repository_test.py tests/unit/pypi_description_test.py tests/unit/readme_diagnostics_test.py tests/unit/docs_style_test.py tests/unit/site_catalog_test.py tests/unit/site_domain_test.py tests/integration/guides_test.py"
 
 test-web: ## Run the web app's component tests (Vitest, with axe for accessibility)
 	$(STEPS) "web-tests=$(WEB) exec vitest run"

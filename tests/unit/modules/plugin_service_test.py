@@ -12,6 +12,7 @@ import urllib.error
 from contextlib import contextmanager
 
 import pytest
+from packaging.utils import canonicalize_name
 
 from heinzel import HeinzelError, Kernel, Module, ModuleRecord, Progress, Settings, Theme
 from heinzel.kernel import DEFAULT_THEME, Installation, Origin
@@ -134,6 +135,42 @@ def test_fresh_inventory_is_explicit_and_does_not_recurse_or_change_loaded_modul
     assert service.installed(fresh=True)[0].version == "2.0.0"
     assert calls == [("system", "plugin", "list", "--json")]
     assert service.installed()[0].version == "1.0.0"
+
+
+def test_pending_compares_in_process_and_asks_a_fresh_interpreter_only_for_a_new_difference(
+    make_kernel, tmp_path, monkeypatch
+):
+    service = service_for(make_kernel, tmp_path)
+    loaded = service.installed()[0]
+    name = canonicalize_name(loaded.distribution)
+    asked = []
+
+    def hz(*args):
+        asked.append(args)
+        return json.dumps([loaded.model_dump(mode="json") | {"distribution": "heinzel-newcomer", "themes": ["dawn"]}])
+
+    monkeypatch.setattr(service._installation, "hz", hz)
+    same = types.SimpleNamespace(name=loaded.distribution, version=loaded.version)
+    service.distributions = {name: same}
+    assert service.pending().changes == []
+    assert asked == []  # nothing differs: no subprocess
+
+    service.distributions = {
+        name: types.SimpleNamespace(name=loaded.distribution, version="9.9.9"),
+        "heinzel-newcomer": types.SimpleNamespace(name="heinzel-newcomer", version="0.1.0"),
+    }
+    pending = service.pending()
+    assert pending.restart_required is True
+    assert {(c.distribution, c.change) for c in pending.changes} == {
+        (loaded.distribution, "updated"),
+        ("heinzel-newcomer", "installed"),
+    }
+    assert next(c for c in pending.changes if c.change == "installed").themes == ["dawn"]
+    service.pending()
+    assert len(asked) == 1  # the same difference is not asked about again
+
+    service.distributions = {}
+    assert [(c.distribution, c.change) for c in service.pending().changes] == [(loaded.distribution, "removed")]
 
 
 @pytest.mark.parametrize("action", ["add", "develop"])
@@ -1772,3 +1809,70 @@ def test_develop_core_is_refused_before_mutation(make_kernel, tool_env, monkeypa
         service.develop(checkout)
     assert runs == []
     assert service.history() == []
+
+
+INDEX_PLUGINS = [
+    "uv", "tool", "install", "--reinstall", "--python", PYTHON, "heinzel",
+    "--with", "heinzel-resource",
+    "--with", "heinzel-pinned==1.0",
+    "--with", "heinzel-git @ git+https://github.com/org/heinzel-git",
+    "--with", "heinzel-new",
+]  # fmt: skip
+
+
+def test_adding_a_plugin_holds_the_other_index_plugins_at_their_versions(make_kernel, tool_env, monkeypatch):
+    """A reinstall of unversioned requirements would upgrade them all; only what was asked for may change."""
+    service = service_for(make_kernel, tool_env)
+    asked = []
+
+    def versions(names):
+        asked.append(list(names))
+        return {"heinzel-resource": "0.1.0"}
+
+    monkeypatch.setattr(service._installation, "installed_versions", versions)
+    assert service._holds(INDEX_PLUGINS, "heinzel-new") == ("heinzel-resource==0.1.0",)
+    assert asked == [["heinzel-resource"]]
+
+
+def test_removing_a_plugin_holds_the_others_too(make_kernel, tool_env, monkeypatch):
+    service = service_for(make_kernel, tool_env)
+    monkeypatch.setattr(
+        service._installation, "installed_versions", lambda _names: {"heinzel-resource": "0.1.0", "heinzel-new": "2.0"}
+    )
+    assert service._holds(INDEX_PLUGINS, None) == ("heinzel-resource==0.1.0", "heinzel-new==2.0")
+
+
+def test_a_plugin_not_installed_yet_is_not_held(make_kernel, tool_env, monkeypatch):
+    service = service_for(make_kernel, tool_env)
+    monkeypatch.setattr(service._installation, "installed_versions", lambda _names: {})
+    assert service._holds(INDEX_PLUGINS, None) == ()
+
+
+def test_only_uv_tool_installs_hold_anything(make_kernel, tool_env):
+    assert service_for(make_kernel, tool_env)._holds(["uv", "pip", "install", "--with", "x"], None) == ()
+
+
+def test_a_repository_that_is_a_plugin_and_holds_more_lists_both(make_kernel, tmp_path, monkeypatch):
+    monorepo(
+        monkeypatch,
+        {
+            "pyproject.toml": plugin_project("heinzel-hub", "The hub."),
+            "plugins": [{"name": "heinzel-hub-extra", "type": "dir"}],
+            "plugins/heinzel-hub-extra/pyproject.toml": plugin_project("heinzel-hub-extra", "More."),
+        },
+    )
+    names = [p.name for p in service_for(make_kernel, tmp_path).search().plugins if p.community]
+    assert names == ["heinzel-hub", "heinzel-hub-extra"]
+
+
+def test_short_names_resolve_for_plugins_a_topic_text_search_cannot_see(make_kernel, tmp_path, github):
+    github.answer = {"items": [repository("heinzel-unforeseen", 1)]}
+    service = service_for(make_kernel, tmp_path)
+    catalog = service.github_api
+    service.github_api = lambda path: (
+        catalog(path) if "search/" in path or "/contents/" in path else raising(OSError("offline"))(path)
+    )
+    service.candidate("unforeseen")
+    topic_queries = [url for url, _token, _timeout in github.requests if "search/repositories" in url]
+    assert topic_queries
+    assert all("unforeseen" not in url for url in topic_queries)

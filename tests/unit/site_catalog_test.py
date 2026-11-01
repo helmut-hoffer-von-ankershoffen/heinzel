@@ -1,6 +1,8 @@
 """Public website discovery is metadata-only, independent of concrete provider implementations."""
 
 import copy
+import hashlib
+import html
 import importlib.util
 import json
 import sys
@@ -529,7 +531,8 @@ def test_packaged_youtube_soundscapes_are_discovered_without_execution():
     rendered = pages.detail(project)
     assert "Harbor Tide" in rendered
     assert "https://www.youtube.com/watch?v=abcdefghijk" in rendered
-    assert 'data-soundscape="abcdefghijk"' in rendered
+    assert "data-soundscape" not in rendered
+    assert "data-play-soundscape" not in rendered
     assert "<iframe" not in rendered
     assert "youtube-nocookie.com" not in rendered
 
@@ -909,3 +912,72 @@ def test_product_tour_markers_replace_their_github_fallback_and_reject_unknown_s
     assert rendered.endswith("\nb")
     with pytest.raises(ValueError, match="Unknown tour story"):
         pages.tour_markup("nothing", "guides/tour/")
+
+
+def test_search_summaries_come_from_the_first_plain_paragraph():
+    markdown = (
+        "<!-- generated -->\n\n# Title\n\n| a | b |\n\n"
+        "A **useful** [guide](x.md) to the `hz` tool, written for people who run it every day, with no jargon at all."
+    )
+    summary = pages.derive_description(markdown)
+    assert summary.startswith("A useful guide to the hz tool")
+    assert len(summary) <= pages.DESCRIPTION_LIMIT + 1
+    assert pages.derive_description("# Only a heading\n\n- a list\n") == ""
+
+
+def owned(name, directory="plugins/x", included=""):
+    source = {**SOURCE, "repository": f"{pages.FIRST_PARTY_OWNER}/heinzel-plugins"}
+    key = f"{source['repository']}:{directory}:{name}"
+    identity = name + "-" + hashlib.sha256(key.encode()).hexdigest()[:10]
+    return {
+        **record(),
+        "id": identity,
+        "name": name,
+        "source": source,
+        "directory": directory,
+        "included_version": included,
+    }
+
+
+def test_included_plugins_say_so_and_show_no_command():
+    clock = owned("heinzel-clock", included="0.9.3")
+    page = pages.detail(clock, [clock])
+    assert "nothing to install" in page
+    assert "plugin add" not in page
+
+
+def test_maintainer_plugins_show_the_short_name_and_the_confirming_command_without_a_revision():
+    github = owned("heinzel-github")
+    page = pages.detail(github, [github])
+    assert 'id="plugin-preview">hz system plugin add github<' in page
+    assert 'id="plugin-install">hz system plugin add github --confirm<' in page
+    install = page.split("Install and try")[1].split("## Compatibility")[0]
+    assert "a" * 40 not in install
+    assert "git+" not in install
+
+
+def test_other_owners_and_ambiguous_names_show_the_repository_url_never_a_commit():
+    third = record()
+    third["directory"] = "plugins/harbor"
+    page = pages.detail(third, [third])
+    assert (
+        "hz system plugin add 'git+https://github.com/fictional-lab/harbor#subdirectory=plugins/harbor'"
+        in html.unescape(page)
+    )
+    assert "a" * 40 not in page.split("## Compatibility")[0].split("Install and try")[1]
+    root = record()
+    root["directory"] = "."
+    assert pages.install_steps(root, [root])[0] == "hz system plugin add https://github.com/fictional-lab/harbor"
+    twin = owned("heinzel-github")
+    expected = f"hz system plugin add 'git+https://github.com/{pages.FIRST_PARTY_OWNER}/heinzel-plugins#subdirectory=plugins/x'"
+    assert pages.install_steps(twin, [twin, owned("heinzel-github")])[0] == expected
+
+
+def test_the_machine_readable_catalog_keeps_its_pinned_install_command(tmp_path):
+    github = owned("heinzel-github")
+    snapshot = {"format": 1, "sources": [github["source"]], "release": {"version": "0.9.2"}, "plugins": [github]}
+    path = tmp_path / "catalog.json"
+    path.write_text(json.dumps(snapshot))
+    install = pages.load_snapshot(path)["plugins"][0]["install"]
+    assert install.startswith("hz system plugin add ")
+    assert "a" * 40 in install

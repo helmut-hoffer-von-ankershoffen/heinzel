@@ -9,8 +9,12 @@ repo_name: heinzel
 edit_uri: edit/main/docs/
 docs_dir: docs
 site_dir: site
+not_in_nav: |
+  imprint.md
+  impressum.md
+  privacy.md
+  datenschutz.md
 exclude_docs: |
-  plugins/*/assets/*.md
   overrides/
   _data/
   catalog-sources.toml
@@ -20,8 +24,8 @@ theme:
   name: material
   custom_dir: docs/overrides
   font: false
-  logo: assets/website/mark.svg
-  favicon: assets/website/mark.svg
+  logo: assets/website/head.svg
+  favicon: assets/website/head.svg
   language: en
   icon:
     logo: material/account-group-outline
@@ -64,8 +68,17 @@ markdown_extensions:
           class: mermaid
           format: !!python/name:pymdownx.superfences.fence_code_format
 
+extra:
+  generator: false
+
 plugins:
   - search
+  # Visitors' browsers contact only this site: at build time the plugin downloads every external image the pages embed
+  # (the README badges, the plugin screenshots from their repositories) and serves them from assets/external/. The
+  # price is that a badge shows the status of the last build; the Docs workflow rebuilds hourly. Fonts are the
+  # system fonts (theme.font is false), the repository link carries no live GitHub facts (docs/overrides/partials/
+  # source.html), and scripts/site_check.py fails if a page requests any host not listed there with a reason.
+  - privacy
 
 extra_css:
   - assets/website/site.css

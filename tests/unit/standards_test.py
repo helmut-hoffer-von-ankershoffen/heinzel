@@ -92,6 +92,8 @@ CORE_ONLY = {  # path: why plugins don't get it
     "scripts/adr_index.py": "renders the core ADR index and pages; plugins have no ADRs",
     "scripts/site_pages.py": "renders the product's public ecosystem catalog, not plugin-owned docs (ADR 0098)",
     "scripts/site_check.py": "accepts the core product website with its locked web axe tooling (ADR 0098)",
+    "scripts/check_docs.py": "checks the core's documents and UI copy; plugins keep their own docs tooling",
+    "scripts/site_privacy.py": "lists the hosts the core product website may contact for its check (ADR 0098)",
     ".github/workflows/pypi.yml": "publishes only the registered core project with its trusted publisher (ADR 0079)",
     ".github/workflows/edge.yml": "releases the core's edge channel from its green main (ADR 0114)",
     "scripts/release_channel.py.lock": "locks that script for the edge workflow (ADR 0114)",
@@ -118,6 +120,12 @@ CORE_ONLY = {  # path: why plugins don't get it
     "scripts/template_pyproject_head.toml.tmpl": "input of sync_template.py",
     "scripts/web.py": "the web head's typed client and dev server (web/, ADR 0039); plugins bring no UI",
     "scripts/web_build.py": "runs and builds the web head's app (web/, ADR 0039); plugins bring no UI",
+    ".github/workflows/acceptance.yml": "installs the published core with the public commands on hosted runners",
+    "scripts/acceptance/README.md": "documents the core's public installer acceptance harness",
+    "scripts/acceptance/run_acceptance.py": "public installer acceptance of the published core; plugins have none",
+    "scripts/acceptance/summary.py": "summarizes the acceptance harness's result.json for a job summary",
+    "scripts/acceptance/vendor/artifact_provenance.py": "hash-pinned reviewed copy the acceptance harness loads",
+    "scripts/acceptance/vendor/guardian.py": "hash-pinned reviewed copy the acceptance harness loads",
 }
 
 
