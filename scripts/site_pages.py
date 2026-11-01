@@ -979,9 +979,34 @@ def on_env(env: Any, **_: Any) -> Any:  # noqa: ANN401 - MkDocs owns the Jinja e
     return env
 
 
+DESCRIPTION_LIMIT = 155
+MARKDOWN_SYNTAX = re.compile(r"!?\[([^\]]*)\]\([^)]*\)|[`*_]|<[^>]+>")
+
+
+def derive_description(markdown: str) -> str:
+    """The first plain paragraph as a search-result summary, or nothing when the page opens with something else."""
+    for raw in re.split(r"\n\s*\n", markdown):
+        block = raw.strip()
+        if not block or block.startswith(("#", "<", "|", "```", "-", "*", ">", "!", "[")) or block[0].isdigit():
+            continue
+        plain = " ".join(MARKDOWN_SYNTAX.sub(lambda found: found.group(1) or "", block).split())
+        if len(plain) < 40:  # noqa: PLR2004 - too short to describe a page
+            continue
+        if len(plain) <= DESCRIPTION_LIMIT:
+            return plain
+        return plain[:DESCRIPTION_LIMIT].rsplit(" ", 1)[0].rstrip(",;:") + "…"
+    return ""
+
+
 def on_page_markdown(markdown: str, *, page: Any, config: Any, **_: Any) -> str:  # noqa: ANN401 - MkDocs owns event objects
     """Fill presentation markers and place the page's characters, keeping the authored Markdown useful on GitHub."""
     path = page.file.src_uri
+    heading = re.search(r"^# (.+)$", markdown, re.MULTILINE)
+    if "title" not in page.meta and heading and page.title != heading.group(1):
+        # A generated notice above the heading hides it from MkDocs, which would call the page "Index".
+        page.title = heading.group(1).strip()
+    if not page.meta.get("description") and (derived := derive_description(markdown)):
+        page.meta["description"] = derived
     if path.startswith("plugins/"):
         page.meta["search"] = {"exclude": True}
     markdown = place_waypoints(
