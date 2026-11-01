@@ -1,6 +1,6 @@
 ---
 title: Plugins & themes
-description: Discover capabilities and themes for Heinzel, with immutable source links and compatibility metadata.
+description: Discover capabilities and themes for Heinzelmännchen, with immutable source links and compatibility metadata.
 hide:
   - navigation
   - toc
@@ -8,7 +8,7 @@ hide:
 
 <p class="hz-eyebrow">A small core. A growing world.</p>
 
-# Make Heinzel yours.
+# Make Heinzelmännchen yours.
 
 <p class="hz-lead">Clocks, connections, themes. Plugins have their own owners and releases. Build the one you need.</p>
 

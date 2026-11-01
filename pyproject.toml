@@ -1,7 +1,7 @@
 [project]
 name = "heinzel"
 version = "0.9.11"
-description = "Heinzelmännchen: an open-source, AI-driven operating system for product development teams."
+description = "An open-source crew of AI helpers that drafts your team's busywork and asks before anything leaves your machine."
 readme = "PYPI.md"
 authors = [{ name = "Helmut Hoffer von Ankershoffen", email = "helmuthva@gmail.com" }]
 license = "MIT"

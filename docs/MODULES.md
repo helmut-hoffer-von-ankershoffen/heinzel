@@ -11,7 +11,7 @@ mode (`hz system expert on`); every one runs either way, and MCP and REST list t
 | [`ai`](#ai) | How hz reaches AI, and what it spends: tokens and cost per run. |
 | [`ai.access`](#aiaccess) | Pick how hz reaches AI: Claude Code, your company's gateway, or an option a plugin adds. |
 | [`graph`](#graph) | Are your team's promises kept? Artifacts and Heinzelmännchen, and where the flow waits. |
-| [`heinzel`](#heinzel) | Your Heinzelmännchen: durable agents that keep your team's documents true. |
+| [`heinzel`](#heinzel) | Your Heinzelmännchen: durable helpers that draft your team's recurring work for your approval. |
 | [`org`](#org) | Your profile, and the team, org and company you work with. |
 | [`report`](#report) | Telemetry: log what a Heinzelmännchen did, for your team's graph (`hz report published <id> <url>`). |
 | [`system`](#system) | Inspect, configure, diagnose and update Heinzelmännchen itself. |
@@ -77,7 +77,7 @@ Settings: [`[graph]`](CONFIGURATION.md#graph).
 
 ## `heinzel`
 
-Your Heinzelmännchen: durable agents that keep your team's documents true.
+Your Heinzelmännchen: durable helpers that draft your team's recurring work for your approval.
 
 | Operation | CLI | MCP tool | REST | Web | Changes state | Expert |
 | --- | --- | --- | --- | --- | --- | --- |

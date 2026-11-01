@@ -8,7 +8,7 @@ For the manager who sets Heinzelmännchen up for a team: install `hz`, sign in t
 the team repository, get the first draft out every Friday, then invite the team with one line. Nothing is published,
 sent or scheduled unless you say so.
 
-Examples use a made-up company, Acme (GitHub organisation `acme-example`) and its Checkout team.
+Examples use a made-up company, ACME (GitHub organisation `acme-example`) and its Checkout team.
 
 ## The 10-minute path
 
@@ -187,7 +187,7 @@ hz system daemon install                     # launchd or systemd runs `hz syste
 hz system daemon tick --job workflow:me-weekly-report   # run it once as the daemon would, with a receipt
 ```
 
-`hz system daemon jobs` lists the job with its next run. The daemon runs unattended with your rights
+`hz system daemon jobs` lists the job with its next run. The daemon runs your jobs on a schedule with your rights
 ([SECURITY](../../SECURITY.md)); `hz system daemon pause` stops every job.
 
 ## 7. Send it, measure it, make it the team's
