@@ -62,15 +62,18 @@ import {
   unwrap,
 } from "@/api/client";
 import { token } from "@/api/token";
+import { CommandDialog } from "@/components/CommandDialog";
 import { ContributionToggle } from "@/components/ContributionToggle";
 import { FooterItem, stateOf } from "@/components/FooterItem";
 import { FooterPart } from "@/components/FooterLayout";
 import { HeinzelAvatar } from "@/components/HeinzelAvatar";
 import { HeinzelFace } from "@/components/HeinzelFace";
+import { OperationDialog } from "@/components/OperationDialog";
 import { Button } from "@/components/ui/button";
 import { type MessageKey, t } from "@/i18n";
 import { contributionPath } from "@/lib/navigation";
-import { runInTerminal, runsAsIs, typeInTerminal } from "@/lib/terminal";
+import { appCallFor } from "@/lib/operationCalls";
+import { requestOperation } from "@/lib/operationRun";
 import { cn } from "@/lib/utils";
 import { zoneClock, zoneTime } from "@/lib/zoneTime";
 import { restartAndApply } from "@/lifecycle/controller";
@@ -210,8 +213,8 @@ export function useEffectRunner(): { run: (effect: Effect) => void; dialog: Reac
   const navigate = useNavigate();
   const location = useLocation();
   const queries = useQueryClient();
-  const [pending, setPending] = useState<SchemaOperationCall | null>(null);
   const [outcome, setOutcome] = useState<string | null>(null);
+  const [command, setCommand] = useState<string | null>(null);
   const call = async (operation: SchemaOperationCall) => {
     const url = new URL(`/api${operation.path}`, window.location.origin);
     const json = operation.body !== null && operation.body !== undefined;
@@ -235,45 +238,18 @@ export function useEffectRunner(): { run: (effect: Effect) => void; dialog: Reac
     if (effect.kind === "navigate") void navigate(contributionPath(effect.path, location));
     else if (effect.kind === "open") window.open(effect.url, "_blank", "noopener,noreferrer");
     else if (effect.kind === "command") {
-      if (effect.runs && runsAsIs(effect.command)) runInTerminal(effect.command);
-      else typeInTerminal(effect.command);
+      const call = appCallFor(effect.command);
+      if (call) requestOperation(call);
+      else setCommand(effect.command);
     } else if (effect.call) {
       if (effect.call.read_only) void call(effect.call);
-      else setPending(effect.call);
+      else requestOperation(effect.call);
     }
   };
   const dialog = (
     <>
-      {pending && (
-        <div
-          role="alertdialog"
-          aria-modal="true"
-          aria-labelledby="contrib-confirm"
-          onKeyDown={(event) => event.key === "Escape" && setPending(null)}
-          className="confirmation-dialog fixed z-(--layer-modal) max-h-[calc(var(--hz-viewport-height,100dvh)-2rem)] w-[min(28rem,calc(var(--hz-viewport-width,100vw)-2rem))] overflow-y-auto rounded-xl border border-border bg-popover p-4 text-sm shadow-xl"
-        >
-          <p id="contrib-confirm" className="font-medium">
-            {pending.summary}
-          </p>
-          <p className="mt-1 text-muted-foreground">{t("contrib.confirm")}</p>
-          <code className="mt-2 block rounded bg-muted px-2 py-1 font-mono text-xs break-all">{pending.command}</code>
-          <div className="mt-3 flex justify-end gap-2">
-            <Button size="sm" variant="outline" autoFocus onClick={() => setPending(null)}>
-              {t("contrib.cancel")}
-            </Button>
-            <Button
-              size="sm"
-              onClick={() => {
-                const confirmed = pending;
-                setPending(null);
-                void call(confirmed);
-              }}
-            >
-              {t("contrib.run")}
-            </Button>
-          </div>
-        </div>
-      )}
+      <OperationDialog />
+      {command && <CommandDialog command={command} onClose={() => setCommand(null)} />}
       <span className="sr-only" aria-live="polite">
         {outcome}
       </span>

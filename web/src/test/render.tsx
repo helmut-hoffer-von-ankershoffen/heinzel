@@ -18,6 +18,7 @@ export function mockApi(answers: Record<string, AnswerSource>): { calls: Request
       const path = new URL(input.url).pathname;
       let answer = answers[path];
       if (typeof answer === "function") answer = await answer(input);
+      if (answer instanceof Response) return answer;
       if (answer === undefined) return Response.json({ error: `no answer for ${path}` }, { status: 404 });
       const { status, body } =
         answer && typeof answer === "object" && "body" in answer ? (answer as Answer) : { status: 200, body: answer };
@@ -25,6 +26,14 @@ export function mockApi(answers: Record<string, AnswerSource>): { calls: Request
     }),
   );
   return { calls };
+}
+
+/** A finished server-sent event stream of an operation (`POST /api/stream/...`): its events, then its result. */
+export function eventStream(events: [string, object][], result: object = {}): Response {
+  const frames = [...events, ["result", { data: result }] as [string, object]].map(
+    ([kind, data]) => `event: ${kind}\ndata: ${JSON.stringify(data)}\n\n`,
+  );
+  return new Response(frames.join(""), { headers: { "Content-Type": "text/event-stream" } });
 }
 
 export function renderAt(path: string) {

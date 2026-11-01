@@ -4046,6 +4046,19 @@
             "title": "Installed",
             "type": "boolean"
           },
+          "installed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When `install` last loaded the unit, from its marker; tells a daemon still waiting for its first tick from one that stopped ticking.",
+            "title": "Installed At"
+          },
           "installed_version": {
             "anyOf": [
               {
