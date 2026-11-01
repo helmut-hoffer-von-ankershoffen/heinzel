@@ -95,6 +95,7 @@ CORE_ONLY = {  # path: why plugins don't get it
     "scripts/design_check.py": "checks computed styles of the core app and product site against design/tokens.json",
     "scripts/site_check.py": "accepts the core product website with its locked web axe tooling (ADR 0098)",
     "scripts/check_docs.py": "checks the core's documents and UI copy; plugins keep their own docs tooling",
+    "scripts/site_privacy.py": "lists the hosts the core product website may contact for its check (ADR 0098)",
     ".github/workflows/pypi.yml": "publishes only the registered core project with its trusted publisher (ADR 0079)",
     ".github/workflows/edge.yml": "releases the core's edge channel from its green main (ADR 0114)",
     "scripts/release_channel.py.lock": "locks that script for the edge workflow (ADR 0114)",

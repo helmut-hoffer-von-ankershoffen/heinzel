@@ -126,8 +126,6 @@ body { font-family:var(--font-sans); }
 .hz-screenshots img { display:block; width:auto; height:auto; max-width:100%; max-height:min(68svh, 680px); object-fit:contain; }
 .hz-screenshots figcaption { color:var(--color-muted-foreground); font-size:.75rem; margin:.7rem 0 0; text-align:left; }
 .hz-soundscape { min-width:0; padding:1rem; border:1px solid var(--color-border); border-radius:var(--radius-lg); }
-.hz-soundscape iframe { display:block; width:100%; aspect-ratio:16/9; border:0; }
-.hz-soundscape button { cursor:pointer; min-height:var(--target); padding:.6rem 1rem; border:1px solid currentColor; border-radius:var(--radius-lg); }
 
 /* Character explainers use the same original artwork as the app. */
 .hz-helpers { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:1.5rem; margin-top:2rem; }
