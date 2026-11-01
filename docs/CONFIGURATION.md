@@ -18,11 +18,11 @@ Plugins add their own tables.
 | `expert` | `HZ_EXPERT` | `False` | List every command in help, shell completion and the web app, not just the everyday ones. Hidden commands still work, and MCP and REST always list everything. Turn it on or off with hz system expert; a project's settings can't. |
 | `playful` | `HZ_PLAYFUL` | `True` | A small Heinzelmännchen in the terminal: in the start screen, the setup, the spinner of long work and the done and error lines. Only on a colour terminal, never in JSON, a pipe or CI. |
 | `plugins_enabled` | `HZ_PLUGINS_ENABLED` | `True` | Load the modules that installed plugins bring. Turn it off only to find a broken plugin. |
-| `update_check` | `HZ_UPDATE_CHECK` | `True` | Look for a newer release at most once an hour and mention it after a command's output. The check sends nothing about you, and never runs in CI or in JSON, MCP or REST output. Never read from a project's hz.toml. |
+| `update_check` | `HZ_UPDATE_CHECK` | `True` | Look for a newer release at most once an hour and mention it after a command's output. The check uses no personal data, and never runs in CI or in JSON, MCP or REST output. Never read from a project's hz.toml. |
 | `update_channel` | `HZ_UPDATE_CHANNEL` | `'release'` | What updating moves to: the newest release, or the newest commit of the main branch. An installation on main moves back to releases once one is as new as it. Choices: release, main. |
 | `disabled_modules` | `HZ_DISABLED_MODULES` | `frozenset()` | Modules Heinzelmännchen doesn't load, with their submodules. In the environment, separate them with commas. |
 | `ui_port` | `HZ_UI_PORT` | `8737` | The port the web app is served on, reachable from this computer only. It stays the same so an installed app keeps its address. Never read from a project's hz.toml. |
-| `ui_allowed_origins` | `HZ_UI_ALLOWED_ORIGINS` | `frozenset()` | Exact HTTPS origins allowed by the authenticated web app behind a private reverse proxy, such as https://workstation.example.ts.net. The listener stays on this computer. Restart and apply after changing this user-only setting. In the environment, separate origins with commas. Never read from a project's hz.toml. |
+| `ui_allowed_origins` | `HZ_UI_ALLOWED_ORIGINS` | `frozenset()` | Exact HTTPS origins allowed by the authenticated web app behind a private reverse proxy. The listener stays on this computer. Restart and apply after changing this user-only setting. In the environment, separate origins with commas. Example: "https://workstation.example.ts.net". Never read from a project's hz.toml. |
 | `api_allowed_hosts` | `HZ_API_ALLOWED_HOSTS` | `frozenset()` | Host names the REST API answers besides this computer's own, for when it listens on another network interface. Requests naming any other host are refused. In the environment, separate them with commas. Never read from a project's hz.toml. |
 
 ## `[capabilities]`
@@ -57,7 +57,7 @@ Plugins add their own tables.
 | `gateway_test_command` | `HZ_AI_ACCESS__GATEWAY_TEST_COMMAND` | platform-specific | One cheap live call, one argument per item, run only when you test the gateway: exit code 0 when it answered, optionally with a JSON object naming ok, detail, model and cost_usd. Example: ["example", "ai", "ping"]. Never read from a project's hz.toml. |
 | `gateway_sign_in` | `HZ_AI_ACCESS__GATEWAY_SIGN_IN` | `''` | The command that signs you in, shown as the fix when you aren't. Example: "example login". Never read from a project's hz.toml. |
 | `gateway_runner` | `HZ_AI_ACCESS__GATEWAY_RUNNER` | `None` | The agent runner that serves the gateway's chat and coding, such as your own command runner set to the gateway's agent CLI. Choosing the gateway as your AI access binds it. Never read from a project's hz.toml. |
-| `gateway_hosts` | `HZ_AI_ACCESS__GATEWAY_HOSTS` | platform-specific | The hosts the gateway sends prompts to, as host names or addresses; shown wherever AI access is listed. Example: "ai.example.com". Never read from a project's hz.toml. |
+| `gateway_hosts` | `HZ_AI_ACCESS__GATEWAY_HOSTS` | platform-specific | The hosts the gateway passes prompts to, as host names or addresses; shown wherever AI access is listed. Example: "ai.example.com". Never read from a project's hz.toml. |
 | `gateway_models` | `HZ_AI_ACCESS__GATEWAY_MODELS` | platform-specific | The models the gateway offers, when its status command doesn't say. Never read from a project's hz.toml. |
 | `gateway_env` | `HZ_AI_ACCESS__GATEWAY_ENV` | platform-specific | Environment variables the gateway's commands get besides PATH, HOME, LANG, LC_* and TMPDIR. Heinzelmännchen's credential variables are never passed. Never read from a project's hz.toml. |
 | `chatgpt_model` | `HZ_AI_ACCESS__CHATGPT_MODEL` | `None` | The model used with your ChatGPT plan, one it offers through Sign in with ChatGPT; sign in first. Never read from a project's hz.toml. |
@@ -77,12 +77,12 @@ Plugins add their own tables.
 | Key | Environment variable | Default | Description |
 | --- | --- | --- | --- |
 | `user_dir` | `HZ_HEINZEL__USER_DIR` | platform-specific | The folder of your own contracts; those with a schedule run on your daemon. Never read from a project's hz.toml. |
-| `team_repository` | `HZ_HEINZEL__TEAM_REPOSITORY` | `None` | Deprecated: `hz team join` or `hz team adopt` sets your team's checkout in `[team]` instead. A checkout of your team's state repository, used when `[team]` names none; its contracts are in `workflows/`. Never read from a project's hz.toml. |
+| `team_repository` | `HZ_HEINZEL__TEAM_REPOSITORY` | `None` | Deprecated: joining or adopting a team with hz now sets your team's checkout. A checkout of your team's state repository, used when no team checkout is set; its contracts are in the workflows folder. Never read from a project's hz.toml. |
 | `schedule_team` | `HZ_HEINZEL__SCHEDULE_TEAM` | platform-specific | Team contracts your daemon runs on their schedule, by name; add @sha256: and a hash to run only the version you approved. The others run only when started by hand, so a team's contracts don't run on everyone's daemon. Never read from a project's hz.toml. |
 | `max_usd` | `HZ_HEINZEL__MAX_USD` | `1.0` | The most one run of a contract may cost in US dollars, scheduled or by hand, whatever the contract asks for. A scheduled run's retries share it. Never read from a project's hz.toml. |
-| `session_max_usd` | `HZ_HEINZEL__SESSION_MAX_USD` | `2.0` | The most one durable Heinzel conversation may cost in US dollars on direct API model turns. Never read from a project's hz.toml. |
-| `message_max_usd` | `HZ_HEINZEL__MESSAGE_MAX_USD` | `0.2` | The most one direct API model turn in a durable Heinzel conversation may cost in US dollars. Never read from a project's hz.toml. |
-| `subscription_budget_mode` | `HZ_HEINZEL__SUBSCRIPTION_BUDGET_MODE` | `'plan-unknown'` | Subscription plans use provider limits and report unknown dollar cost; USD caps govern APIs. Select usd-cap to require a dollar limit, which currently blocks subscription turns. Choices: usd-cap, plan-unknown. Never read from a project's hz.toml. |
+| `session_max_usd` | `HZ_HEINZEL__SESSION_MAX_USD` | `2.0` | The most one saved chat with a helper may cost in US dollars on direct API replies. Never read from a project's hz.toml. |
+| `message_max_usd` | `HZ_HEINZEL__MESSAGE_MAX_USD` | `0.2` | The most one direct API reply in a saved chat with a helper may cost in US dollars. Never read from a project's hz.toml. |
+| `subscription_budget_mode` | `HZ_HEINZEL__SUBSCRIPTION_BUDGET_MODE` | `'plan-unknown'` | Subscription plans use provider limits and report unknown dollar cost; USD caps govern APIs. With a dollar cap, every turn must stay under the dollar limit, so subscription turns are blocked for now. Choices: usd-cap, plan-unknown. Never read from a project's hz.toml. |
 | `retention_days` | `HZ_HEINZEL__RETENTION_DAYS` | `90` | How long drafts and the inputs they were made from are kept, counted from when they were made; 0 keeps them forever. Receipts are always kept, with a hash of the draft instead of its text. Never read from a project's hz.toml. |
 
 ## `[org]`
@@ -90,8 +90,8 @@ Plugins add their own tables.
 | Key | Environment variable | Default | Description |
 | --- | --- | --- | --- |
 | `handle` | `HZ_ORG__HANDLE` | `None` | Your short name in teams, pull requests and contracts: lowercase letters, digits and dashes. Your GitHub login is a good choice. Example: "mira". Never read from a project's hz.toml. |
-| `role` | `HZ_ORG__ROLE` | `None` | What you do on your team. Choices: engineer, engineering-manager, product-manager, program-manager. Never read from a project's hz.toml. |
-| `timezone` | `HZ_ORG__TIMEZONE` | `None` | Your time zone. Never read from a project's hz.toml. |
+| `role` | `HZ_ORG__ROLE` | `None` | What you do on your team, shown in your profile. Choices: engineer, engineering-manager, product-manager, program-manager. Never read from a project's hz.toml. |
+| `timezone` | `HZ_ORG__TIMEZONE` | `None` | Your time zone. The agenda and your default working hours use it. Never read from a project's hz.toml. |
 | `working_hours` | `HZ_ORG__WORKING_HOURS` | `(9, 18)` | When your working day starts and ends. In the environment, write them as 09-18. Never read from a project's hz.toml. |
 | `github` | `HZ_ORG__GITHUB` | `None` | Your GitHub login, needed to approve and own contracts in a team. Example: "mira". Never read from a project's hz.toml. |
 | `coding_agent` | `HZ_ORG__CODING_AGENT` | `None` | The coding agent you write drafts with. Choices: claude-code, command, none. Never read from a project's hz.toml. |
@@ -114,7 +114,7 @@ Plugins add their own tables.
 
 | Key | Environment variable | Default | Description |
 | --- | --- | --- | --- |
-| `github_token` | `HZ_SYSTEM_CHANGELOG__GITHUB_TOKEN` | `None` | A GitHub token for reading what newer releases bring, which works without one at a lower rate limit. Also read from GH_TOKEN or GITHUB_TOKEN, sent to GitHub only, and never by the hourly update check. |
+| `github_token` | `HZ_SYSTEM_CHANGELOG__GITHUB_TOKEN` | `None` | A GitHub token for reading what newer releases bring, which works without one at a lower rate limit. Also read from GH_TOKEN or GITHUB_TOKEN, used with GitHub only, and never by the hourly update check. |
 
 ## `[system.credential]`
 
@@ -141,7 +141,7 @@ Plugins add their own tables.
 | --- | --- | --- | --- |
 | `enabled` | `HZ_SYSTEM_NOTIFY__ENABLED` | `True` | Keep a list of notices at all; off turns every kind off. Never read from a project's hz.toml. |
 | `draft` | `HZ_SYSTEM_NOTIFY__DRAFT` | `True` | Notify when a draft is ready to read and approve. Never read from a project's hz.toml. |
-| `heinzel` | `HZ_SYSTEM_NOTIFY__HEINZEL` | `True` | Notify when a personal Heinzel checks in. Never read from a project's hz.toml. |
+| `heinzel` | `HZ_SYSTEM_NOTIFY__HEINZEL` | `True` | Notify when a personal helper checks in. Never read from a project's hz.toml. |
 | `failed` | `HZ_SYSTEM_NOTIFY__FAILED` | `True` | Notify when a contract run on your daemon failed. Never read from a project's hz.toml. |
 | `doctor` | `HZ_SYSTEM_NOTIFY__DOCTOR` | `True` | Notify when a health check finds something degraded or down. Never read from a project's hz.toml. |
 | `release` | `HZ_SYSTEM_NOTIFY__RELEASE` | `False` | Notify when a newer release of Heinzelmännchen is out. Never read from a project's hz.toml. |
@@ -157,7 +157,7 @@ Plugins add their own tables.
 | Key | Environment variable | Default | Description |
 | --- | --- | --- | --- |
 | `catalog_sources` | `HZ_SYSTEM_PLUGIN__CATALOG_SOURCES` | `['helmut-hoffer-von-ankershoffen/heinzel-plugins', 'helmut-hoffer-von-ankershoffen/heinzel']` | GitHub repositories scanned for plugin projects, in addition to topic discovery. |
-| `github_token` | `HZ_SYSTEM_PLUGIN__GITHUB_TOKEN` | `None` | A GitHub token for searching plugins and reading a repository before adding a plugin from it, when the GitHub CLI isn't installed; both work without one at a lower rate limit. Also read from GH_TOKEN or GITHUB_TOKEN, and sent to GitHub only. Never read from a project's hz.toml. |
+| `github_token` | `HZ_SYSTEM_PLUGIN__GITHUB_TOKEN` | `None` | A GitHub token for searching plugins and reading a repository before adding a plugin from it, when the GitHub CLI isn't installed; both work without one at a lower rate limit. Also read from GH_TOKEN or GITHUB_TOKEN, and used with GitHub only. Never read from a project's hz.toml. |
 
 ## `[system.runner]`
 
@@ -185,7 +185,7 @@ Plugins add their own tables.
 | `session_max_usd` | `HZ_SYSTEM_RUNNER_CHAT__SESSION_MAX_USD` | `2.0` | The most one chat may cost in US dollars, all its messages together. One message never costs more than the most per answer. Never read from a project's hz.toml. |
 | `keep_days` | `HZ_SYSTEM_RUNNER_CHAT__KEEP_DAYS` | `30` | How long a chat is kept after its last message, then removed. |
 | `keep_sessions` | `HZ_SYSTEM_RUNNER_CHAT__KEEP_SESSIONS` | `50` | How many chats are kept at most; the oldest beyond that are removed. |
-| `tools` | `HZ_SYSTEM_RUNNER_CHAT__TOOLS` | `'everyday'` | Which operations the chat's agent can use: the everyday ones, or all of them. Every tool is sent with every message, so fewer make each message cheaper. Choices: everyday, all. Never read from a project's hz.toml. |
+| `tools` | `HZ_SYSTEM_RUNNER_CHAT__TOOLS` | `'everyday'` | Which operations the chat's helper can use: the everyday ones, or all of them. Every tool is included with every message, so fewer make each message cheaper. Choices: everyday, all. Never read from a project's hz.toml. |
 
 ## `[system.skill]`
 
@@ -209,7 +209,7 @@ Plugins add their own tables.
 
 | Key | Environment variable | Default | Description |
 | --- | --- | --- | --- |
-| `personal` | `HZ_SYSTEM_STATE__PERSONAL` | `None` | Your own private state repository, which hz pushes this machine's presence and adoption to, on the branch hz/<your handle>/<machine>; e.g. https://github.com/mira-example/heinzel-state-mira. Unset, nothing leaves this machine. Never read from a project's hz.toml. |
+| `personal` | `HZ_SYSTEM_STATE__PERSONAL` | `None` | Your own private state repository, which hz pushes this machine's presence and adoption to, on the branch hz/<your handle>/<machine>. Unset, nothing leaves this machine. Example: "https://github.com/mira-example/heinzel-state-mira". Never read from a project's hz.toml. |
 
 ## `[system.theme]`
 

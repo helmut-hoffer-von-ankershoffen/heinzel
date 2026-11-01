@@ -10,7 +10,7 @@ mode (`hz system expert on`); every one runs either way, and MCP and REST list t
 | --- | --- |
 | [`ai`](#ai) | How hz reaches AI, and what it spends: tokens and cost per run. |
 | [`ai.access`](#aiaccess) | Pick how hz reaches AI: Claude Code, your company's gateway, or an option a plugin adds. |
-| [`graph`](#graph) | Are your team's promises kept? Artifacts and Heinzelmännchen, and where the flow waits. |
+| [`graph`](#graph) | Are your team's contracts kept? Artifacts and Heinzelmännchen, and where the flow waits. |
 | [`heinzel`](#heinzel) | Your Heinzelmännchen: durable agents that keep your team's documents true. |
 | [`org`](#org) | Your profile, and the team, org and company you work with. |
 | [`report`](#report) | Telemetry: log what a Heinzelmännchen did, for your team's graph (`hz report published <id> <url>`). |
@@ -67,11 +67,11 @@ Health checks: reported by `hz system doctor`.
 
 ## `graph`
 
-Are your team's promises kept? Artifacts and Heinzelmännchen, and where the flow waits.
+Are your team's contracts kept? Artifacts and Heinzelmännchen, and where the flow waits.
 
 | Operation | CLI | MCP tool | REST | Web | Changes state | Expert |
 | --- | --- | --- | --- | --- | --- | --- |
-| Show your team's promises: who keeps which artifact, how each promise stands, where the flow waits. | `hz graph` | `graph` | — | `GET /api/graph` |  |  |
+| Show your team's contracts: who keeps which artifact, how each contract stands, where the flow waits. | `hz graph` | `graph` | — | `GET /api/graph` |  |  |
 
 Settings: [`[graph]`](CONFIGURATION.md#graph).
 
@@ -103,9 +103,9 @@ Your Heinzelmännchen: durable agents that keep your team's documents true.
 | Pause a schedule; activation and resume require an exact-intent approval from a trusted issuer. | `hz heinzel schedule-control` | `heinzel_schedule_control` | — | `POST /api/heinzel/schedule-control` | yes |  |
 | Durably queue a message for this Heinzel; acceptance is distinct from a completed model answer. | `hz heinzel chat` | `heinzel_chat` | — | `POST /api/heinzel/chat` | yes |  |
 | List your Heinzelmännchen, one per contract: owner, schedule, state, last and next run. | `hz heinzel list` | `heinzel_list` | — | `GET /api/heinzel/list` |  |  |
-| Write a starter contract, or a playbook's template (--template), into your workflows directory. | `hz heinzel new` | `heinzel_new` | — | — | yes |  |
-| List the playbooks plugins contribute: asset types, template contracts and recommended settings. | `hz heinzel playbooks` | `heinzel_playbooks` | — | `GET /api/heinzel/playbooks` |  | expert |
-| Find candidates for each playbook's asset types through the capabilities you have bound; reads only. | `hz heinzel discover` | `heinzel_discover` | — | `GET /api/heinzel/discover` |  | expert |
+| Write a starter contract, or a playbook's template (--template), into your contracts folder. | `hz heinzel new` | `heinzel_new` | — | — | yes |  |
+| List the playbooks plugins contribute: artifact types, template contracts and recommended settings. | `hz heinzel playbooks` | `heinzel_playbooks` | — | `GET /api/heinzel/playbooks` |  | expert |
+| Find candidates for each playbook's artifact types through the capabilities you have bound; reads only. | `hz heinzel discover` | `heinzel_discover` | — | `GET /api/heinzel/discover` |  | expert |
 | Show a contract as the daemon runs it: schedule, requirements, adapters, readiness, next steps. | `hz heinzel show` | `heinzel_show` | — | `GET /api/heinzel/show` |  |  |
 | List the drafts runs saved locally, newest first, with their paths and records, or show the newest. | `hz heinzel drafts` | `heinzel_drafts` | — | — |  |  |
 | Record how much of a draft you changed before sending it; `hz heinzel show` reports it. | `hz heinzel sent` | `heinzel_sent` | — | — | yes | expert |
@@ -428,7 +428,7 @@ Pick how the web app looks: the built-in theme or one a plugin offers.
 | Operation | CLI | MCP tool | REST | Web | Changes state | Expert |
 | --- | --- | --- | --- | --- | --- | --- |
 | List the themes of the web app, with every colour, font and size, and which one is in effect. | `hz system theme list` | `system_theme_list` | `GET /system/theme/list` | `GET /api/system/theme/list` |  | expert |
-| Show the signals themes follow now: the time of day, and the weather when a plugin publishes it. | `hz system theme signals` | `system_theme_signals` | `GET /system/theme/signals` | `GET /api/system/theme/signals` |  | expert |
+| Show the signals themes follow now: the time of day, and the weather when a plugin provides it. | `hz system theme signals` | `system_theme_signals` | `GET /system/theme/signals` | `GET /api/system/theme/signals` |  | expert |
 | Use a theme in the web app: writes `[system.theme] name` to your configuration file. | `hz system theme use` | `system_theme_use` | `POST /system/theme/use` | `POST /api/system/theme/use` | yes | expert |
 
 Settings: [`[system.theme]`](CONFIGURATION.md#systemtheme).
