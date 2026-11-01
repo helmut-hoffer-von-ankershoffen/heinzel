@@ -16,6 +16,8 @@ import re
 import sys
 from pathlib import Path
 
+from heinzel.kernel._themes import DEFAULT_THEME
+
 ROOT = Path(__file__).resolve().parents[1]
 TOKENS = ROOT / "design" / "tokens.json"
 INDEX_CSS = ROOT / "web" / "src" / "index.css"
@@ -191,9 +193,6 @@ def check_scalars(data: dict, declared: dict[str, str], where: str) -> list[str]
 
 def check_default_theme(data: dict) -> list[str]:
     """The kernel's DEFAULT_THEME: every colour, both radii, sizes, density and fonts."""
-    sys.path.insert(0, str(ROOT / "src"))
-    from heinzel.kernel._themes import DEFAULT_THEME  # noqa: PLC0415 - project import, only when checking
-
     problems = []
     palette = colours(data)
     for mode, theme_colours in (("light", DEFAULT_THEME.light), ("dark", DEFAULT_THEME.dark)):
