@@ -1090,3 +1090,9 @@ def test_electron_runs_for_its_paths_on_a_push_and_always_on_schedule_and_dispat
         timeout=4,
     )
     assert f"electron={electron}" in output.read_text().splitlines()
+
+
+def test_the_test_matrix_keeps_the_whole_output_of_a_failure():
+    jobs = yaml.safe_load((REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))["jobs"]
+    step = next(step for step in jobs["test"]["steps"] if step.get("run") == "make test-parallel")
+    assert step["env"]["VERBOSE"] == "1"
