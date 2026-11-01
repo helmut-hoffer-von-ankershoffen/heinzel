@@ -1,10 +1,16 @@
 ---
 status: proposed
 date: 2026-10-24
+implementation: partial
 decision-makers: maintainer (decisions and the open design), architect (shape)
 amends: 0021, 0023, 0038, 0049
+amends-0021: observed edges beside declared ones
+amends-0023: no entity schema or single-writer rule for now
+amends-0038: repeated nudges and the fallback, proposed
+amends-0049: receipt-grade events are action entries; the report tool
 related: 0019, 0020, 0024, 0027, 0028, 0035, 0043, 0050, 0051
 amended-by: 0049, 0054
+implemented-by: 80
 ---
 
 # 0052: The graph emerges from recorded reads and writes

@@ -5,49 +5,56 @@ description: The vision for Heinzelmännchen, the current foundation, and the pr
 
 <p class="hz-eyebrow">The direction is human</p>
 
-# More time for the work that matters.
+# Busywork done. You decide.
 
-Product teams spend too much attention keeping tools and people in sync. Heinzelmännchen aims to make the
-repeatable parts of that work something small helpers can draft, organize and prepare, with people deciding
-what goes out into the world.
+Every team has work nobody chose: the tracker row, the Friday report, the customer note that should have been
+filed yesterday. Heinzelmännchen are helpers that do the drafting. People approve.
 
-The name comes from the helpers of Cologne: little people who finished the town's work at night. Our ambition
-is practical rather than magical: make the work explicit, connect the right tools, show what happened, and ask
-for a person where a person's judgment belongs.
+The name comes from the helpers of Cologne, who finished the town's work at night. Ours are less magical: a
+helper reads your tools with your own logins, writes a draft where the work lives, and asks you.
 
-## The foundation is available
+## The goal
 
-Today's Heinzelmännchen release supplies a kernel and typed operations; CLI, MCP, REST and web heads; configuration and health
-checks; workflow and team foundations; and plugins with independent build, test and release cycles. The standard
-app includes everyday utilities and a theme. Optional connectors and source examples broaden the surface.
+A crew of durable agents that take over any busywork that can be automated. Documents, sheets and tickets are
+one kind; a calendar, a mailbox or a review queue are others. Each helper keeps one promise and has a name, a
+face, one continuous conversation and a record. Eventually the helpers of a team coordinate through shared
+artifacts, so one person's approved output becomes another's input. Nobody designs that workflow; it emerges
+from the promises people made.
 
-[Install the foundation](guides/install.md) · [Explore what is available](CATALOG.md)
+Humans stay in control. Nothing is sent, published or spent without approval. Approving a kind of action
+in advance is opt-in, scoped, revocable and earned on a record.
 
-## The direction we are building toward
+## What exists today
 
-An open-source crew of AI helpers for product teams: helpers that maintain context, prepare updates, draft
-agendas and reports, and make repeatable team workflows easier to inspect and approve. Rich end-to-end team
-automation is still evolving. A connector's presence in the catalog does not mean every envisioned workflow
-is production ready.
+The foundation is released: a kernel and typed operations; CLI, MCP, REST and web heads; local drafts on a
+schedule; named helpers with their own chat; team repositories; and plugins with their own releases.
 
-## Principles that shape the design
+[Install the foundation](guides/install.md) · [Explore the catalog](CATALOG.md)
 
-| Principle | What it means in the software |
+## What does not exist yet
+
+- No scheduled job has run end to end with a live provider.
+- No helper writes into a shared artifact, and no two helpers have worked together.
+- Learning from your edits is a plan.
+
+Jobs shown on this site as helpers are imagined unless a page says otherwise. A plugin in the catalog does not
+mean a finished workflow.
+
+## Principles
+
+| Principle | In the software |
 | --- | --- |
-| People stay in control | Approval and visible states are part of the work, not an afterthought. |
-| Local by default | A local workspace is the starting point; remote access is an explicit choice. |
-| Model and agent agnostic | Typed operations and MCP let different tools use the same capabilities. |
-| Open and composable | Public contracts, independent plugins, ordinary Python dependencies and an MIT license. |
-| Useful to the whole team | Team context and workflow design matter alongside code. |
-| Small enough to improve quickly | Test core without providers; test a plugin without all of core. |
+| You stay in control | Drafts first; approval and waiting states are visible. |
+| Your identity | A helper acts with your logins, never as a bot account. |
+| Local by default | Your machine first; remote access is an explicit choice. |
+| Any model or agent | Typed operations and MCP work with different tools. |
+| Open and composable | Public contracts, independent plugins, MIT license. |
 
-The authoritative intent and longer reasoning live in [INTENT.md](../INTENT.md). The
-[architecture tour](guides/architecture.md) shows how these principles become boundaries, and the
-[ADRs](adr/README.md) record the decisions we can revisit with evidence.
+Longer reasoning: [INTENT.md](../INTENT.md), the [architecture tour](guides/architecture.md) and the
+[ADRs](adr/README.md).
 
 ## Help shape it
 
-Build a useful plugin, design a theme, improve a workflow, document a confusing step, or report a reproducible
-problem. Start with a change that has a clear outcome and a short feedback loop.
+Build a plugin, design a theme, fix a confusing step, or report a problem.
 
 [Find your contribution path →](guides/contribute.md)

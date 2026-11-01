@@ -5,9 +5,8 @@ description: Install the standard Heinzelmännchen app, start the web workspace,
 
 # Your first Heinzelmännchen.
 
-The standard app is the easiest start. It installs the core plus the default Clock, Resource, Tailscale and
-Heinzelmännchen theme plugins automatically. Supported on **macOS and Linux**.
-Windows may work, but is not supported. You do not need a separate Python installation.
+The standard app installs the core and the default Clock, Resource, Tailscale and theme plugins. It runs on
+**macOS and Linux**. Windows may work, but is not supported. You need no separate Python.
 
 ## Install the standard app
 
@@ -19,23 +18,20 @@ If you already have [uv](https://docs.astral.sh/uv/getting-started/installation/
 
 <!-- hz:install-script -->
 
-It reuses uv when available, otherwise runs [Astral's official installer](https://docs.astral.sh/uv/getting-started/installation/).
-It then runs the same app launcher. No administrator access is needed. You can
-[inspect the script](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/blob/main/docs/install.sh) first. If you use wget:
+It reuses uv, or runs [Astral's official installer](https://docs.astral.sh/uv/getting-started/installation/),
+then starts the same launcher. No administrator access. You can
+[inspect the script](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/blob/main/docs/install.sh) first. With wget:
 
 ```sh
-wget -qO- https://helmut.hoffer-von-ankershoffen.me/heinzel/install.sh | sh
+wget -qO- https://heinzel.team/install.sh | sh
 ```
 
-The first run selects the newest published standard release automatically, verifies its artifact hashes,
-installs and enables its default plugins, and opens the workspace. Later runs open the installed app.
-On Linux, standard installation needs an accessible systemd user manager in your user session.
-Tailscale sharing remains opt-in;
-installing its plugin does not make your workspace public.
+The first run picks the newest standard release, verifies its hashes, installs the default plugins and opens
+the workspace. Later runs open the installed app. On Linux you need a systemd user manager in your session.
+Tailscale sharing is opt-in; installing its plugin does not make your workspace public.
 
-Stop that session with **Ctrl-C**. Background operation is optional. Use the app's setup flow or run
-`hz setup` to choose the services and AI access you want. `hz system doctor` may report missing optional credentials;
-configure the integrations you intend to use before relying on them.
+Stop with **Ctrl-C**. Background operation is optional. Run `hz setup` to choose services and AI access.
+`hz system doctor` may report missing optional credentials; configure an integration before you rely on it.
 
 [Continue to your first session →](first-steps.md)
 
@@ -45,8 +41,8 @@ configure the integrations you intend to use before relying on them.
 uv tool install heinzel
 ```
 
-This installs the independently usable core without the standard plugin profile. You do not need a core checkout
-to [scaffold, test or publish your own plugin](../PLUGIN_AUTHORING.md).
+This installs the core without the standard plugins. You need no core checkout to
+[scaffold, test or publish a plugin](../PLUGIN_AUTHORING.md).
 
 ## Add a capability
 
@@ -56,9 +52,8 @@ hz system plugin add weather
 hz system plugin add weather --confirm
 ```
 
-The first `add` previews the installation. Review the source and compatibility before confirming it. Some optional
-plugins require credentials or a compatible provider. The [catalog](../CATALOG.md) links to each owning source and
-shows what its metadata declares; it does not certify all plugins against your configuration.
+The first `add` previews. Check the source and compatibility, then confirm. Some plugins need credentials. The
+[catalog](../CATALOG.md) links each plugin's source and declared metadata; it does not certify a plugin for your setup.
 
 ## If something is missing
 

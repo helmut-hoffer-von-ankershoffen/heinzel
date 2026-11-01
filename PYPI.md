@@ -5,9 +5,9 @@ Connect your tools, put repeatable work into workflows, and keep people in contr
 
 ![Heinzelmännchen helpers](https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel/main/docs/assets/pypi-hero.png)
 
-[Install & explore](https://helmut.hoffer-von-ankershoffen.me/heinzel/guides/install/) ·
-[Plugin catalog](https://helmut.hoffer-von-ankershoffen.me/heinzel/CATALOG/) ·
-[Build a plugin](https://helmut.hoffer-von-ankershoffen.me/heinzel/PLUGIN_AUTHORING/)
+[Install & explore](https://heinzel.team/guides/install/) ·
+[Plugin catalog](https://heinzel.team/CATALOG/) ·
+[Build a plugin](https://heinzel.team/PLUGIN_AUTHORING/)
 
 ## Install
 
@@ -25,7 +25,7 @@ uvx heinzel@latest
 
 <!-- install-script:start -->
 ```sh
-curl -LsSf https://helmut.hoffer-von-ankershoffen.me/heinzel/install.sh | sh
+curl -LsSf https://heinzel.team/install.sh | sh
 ```
 <!-- install-script:end -->
 
@@ -52,12 +52,12 @@ In a headless session without one, open a user session with its service manager 
 ![Team graph in the Heinzelmännchen workspace with fictional data](https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel/main/docs/assets/website/product-workspace.jpg)
 
 This is the foundation: kernel, heads, workflows and extension points. The broader vision is accountable,
-composable helpers that draft a product team's recurring work for a person's approval. [See the vision and architecture](https://helmut.hoffer-von-ankershoffen.me/heinzel/VISION/).
+composable helpers that draft a product team's recurring work for a person's approval. [See the vision and architecture](https://heinzel.team/VISION/).
 
 ## Extend it
 
 Plugins can live in their own public or private repositories, carry their own dependencies and release on their
-own schedule. [The authoring guide](https://helmut.hoffer-von-ankershoffen.me/heinzel/PLUGIN_AUTHORING/) covers
+own schedule. [The authoring guide](https://heinzel.team/PLUGIN_AUTHORING/) covers
 scaffolding, local preview, tests, builds, publication and catalog discovery.
 
 For a minimal SDK without the standard plugins:
@@ -66,7 +66,7 @@ For a minimal SDK without the standard plugins:
 uv tool install heinzel
 ```
 
-[Contribute](https://helmut.hoffer-von-ankershoffen.me/heinzel/guides/contribute/) ·
+[Contribute](https://heinzel.team/guides/contribute/) ·
 [Source](https://github.com/helmut-hoffer-von-ankershoffen/heinzel) ·
 [Issues](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/issues) ·
 [License](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/blob/main/LICENSE)

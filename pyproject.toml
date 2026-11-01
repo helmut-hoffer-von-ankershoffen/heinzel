@@ -38,8 +38,8 @@ heinzel = "_heinzel_launcher:main" # Isolate imports before entering the managed
 heinzel = "heinzel.testing"
 
 [project.urls]
-Homepage = "https://helmut.hoffer-von-ankershoffen.me/heinzel/"
-Documentation = "https://helmut.hoffer-von-ankershoffen.me/heinzel/guides/install/"
+Homepage = "https://heinzel.team/"
+Documentation = "https://heinzel.team/guides/install/"
 Source = "https://github.com/helmut-hoffer-von-ankershoffen/heinzel"
 Changelog = "https://github.com/helmut-hoffer-von-ankershoffen/heinzel/blob/main/CHANGELOG.md"
 Issues = "https://github.com/helmut-hoffer-von-ankershoffen/heinzel/issues"
@@ -192,7 +192,7 @@ log_level = "INFO"
 timeout = "15" # Fallback; heinzel.testing gives each test its level's timeout (unit 5 s, integration 15 s, e2e 120 s).
 session_timeout = "900" # Nothing waits longer than this for a hung suite; make test caps unit + integration lower.
 markers = [
-    # Test categories, following the Aignostics Python SDK (Martin Fowler's solitary vs. sociable distinction).
+    # Test categories, following a public SDK's taxonomy (Martin Fowler's solitary vs. sociable distinction).
     # Every test carries exactly one of them; heinzel.testing (pytest11) enforces this.
     "unit: Solitary unit tests - test one layer of a module in isolation with all collaborators mocked, except shared utils. Must pass offline. Timeout 5 s.",
     "integration: Sociable integration tests - test interactions across layers (CLI -> service -> utils) or between modules with real collaborators, real file I/O and real subprocesses. Must pass offline; external services are mocked. Timeout 15 s.",

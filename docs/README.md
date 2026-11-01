@@ -9,11 +9,11 @@ hide:
 
 <div class="hz-hero" markdown>
 <div class="hz-hero-copy" markdown>
-<p class="hz-eyebrow">Open source. Local first. Yours to extend.</p>
+<p class="hz-eyebrow">Open source. Runs on your machine.</p>
 
 # Less busywork.<br>More good work.
 
-<p class="hz-lead">Meet Heinzelmännchen: little helpers for product teams, with a serious foundation. Connect your tools, put repeatable work into workflows, and keep people in control.</p>
+<p class="hz-lead">Heinzelmännchen are small AI helpers that draft the busywork nobody chose. They work with your own accounts. You approve everything.</p>
 
 <div class="hz-actions" markdown>
 [Install Heinzelmännchen ↗](guides/install.md){ .hz-button }
@@ -24,7 +24,7 @@ hide:
 </div>
 <div class="hz-hero-art">
 <picture><source media="(prefers-color-scheme: dark)" srcset="assets/hero-dark.svg"><img src="assets/hero-light.svg" alt="A small crowd of Heinzelmännchen helpers walking together" width="1000" height="360"></picture>
-<div class="hz-art-note"><span class="hz-dot"></span> Small helpers. Shared purpose.</div>
+<div class="hz-art-note"><span class="hz-dot"></span> A crew, not a console.</div>
 </div>
 </div>
 
@@ -41,7 +41,7 @@ hide:
 <p class="hz-trust-note">The gate checks new code; the security rating covers all analyzed core code.</p>
 </section>
 
-<div class="hz-strip"><span>For people who build products.</span><span>For agents that help them.</span><span>For teams that want control.</span></div>
+<div class="hz-strip"><span>You keep the decisions.</span><span>Helpers do the drafting.</span><span>Your accounts, your machine.</span></div>
 
 <section class="hz-section" markdown>
 <p class="hz-eyebrow">One foundation. Many ways in.</p>
@@ -54,7 +54,7 @@ hide:
 
 ### See the work, together.
 
-A web workspace brings Today, contracts and team context into view. Heinzelmännchen show their state in words and character, so waiting for a person is visible.
+Each helper shows what it is doing, in words and with a face. When it waits for you, it says so.
 
 [Take your first steps →](guides/first-steps.md)
 </div>
@@ -63,7 +63,7 @@ A web workspace brings Today, contracts and team context into view. Heinzelmänn
 
 ### Write once. Reach every head.
 
-A typed Python operation can supply a CLI command, an MCP tool and a REST endpoint. Privacy and head restrictions govern access from terminals, agents and applications.
+One Python operation becomes a CLI command, an MCP tool and a REST endpoint.
 
 [Tour the architecture →](guides/architecture.md)
 </div>
@@ -72,7 +72,7 @@ A typed Python operation can supply a CLI command, an MCP tool and a REST endpoi
 
 ### Make room for your tools.
 
-Plugins own their operations, views, widgets and notifications. Themes bring palettes, artwork and soundscapes. Build, test and release each independently.
+Plugins add operations, views and notifications. Themes add colors, art and sound. Each ships on its own.
 
 [Create your first plugin →](PLUGIN_AUTHORING.md)
 </div>
@@ -84,7 +84,7 @@ Plugins own their operations, views, widgets and notifications. Themes bring pal
 
 ## Small jobs. A little time back.
 
-Imagined helpers. Real product screens with fictional demonstration data. Select an image to zoom.
+Imagined helpers. Real screens, made-up data. Select an image to zoom.
 
 <!-- hz:home-gallery -->
 
@@ -97,7 +97,7 @@ Imagined helpers. Real product screens with fictional demonstration data. Select
 
 ## A small core. A growing world.
 
-Discover capabilities without editing core. Every catalog entry shows its source, compatibility declaration and immutable revision.
+Every entry shows its source, compatibility and exact revision.
 
 <!-- hz:featured -->
 
@@ -109,7 +109,7 @@ Discover capabilities without editing core. Every catalog entry shows its source
 
 ## Let helpers do the drafting.<br>Let people make the decisions.
 
-The vision is an open-source crew of AI helpers for product teams: model agnostic, composable and accountable. Today’s release supplies the kernel, heads, workflows and extension foundation. End-to-end team automation is a journey we are building in the open.
+The goal: a crew of durable helpers that take over any busywork you can automate, while people approve. Today you get the foundation: kernel, CLI, web, MCP and REST, local drafts on a schedule, and plugins. Helpers working together across a team are not built yet.
 
 [Read the vision →](VISION.md) · [Inspect the decisions →](adr/README.md)
 </section>
@@ -119,7 +119,7 @@ The vision is an open-source crew of AI helpers for product teams: model agnosti
 
 ## Your first contribution can be a plugin.
 
-Scaffold a public or private repository, write one operation, and test it against an installed SDK. Your plugin can carry its own dependencies and release on its own schedule.
+Scaffold a repository, write one operation, test it. Your plugin has its own dependencies and releases.
 
 ```sh
 hz system plugin new heinzel-harbor --defaults --data plugin_name=harbor --data github_owner=your-account
@@ -156,7 +156,7 @@ they are out of date, so they can't drift.
 | **Pick a plugin**: the gallery, one page per plugin with what it brings in every head, its settings, themes and recordings | [Public plugin catalog](CATALOG.md), with immutable source revisions and theme previews · `hz system plugin search` discovers available plugins |
 | **Extend** it with modules and plugins | [Plugin extension guide](PLUGINS.md) · [README: Extend](../README.md#extend) · [ARCHITECTURE: Plugins](ARCHITECTURE.md#plugins) · [writing a playbook](PLAYBOOKS.md#writing-a-playbook) · [themes, and how to make a weather theme](THEMES.md) · [settings that need no explaining](SETTINGS_UX.md) · [screenshot playbook](SCREENSHOT_PLAYBOOK.md) · the template's AGENTS.md (`hz system plugin new`) |
 | **Publish and verify a release** | [Publishing acceptance](PUBLISHING.md) |
-| **Contribute** to the core | [CONTRIBUTING](../CONTRIBUTING.md) · [CODING_STANDARDS](CODING_STANDARDS.md) · [Sonar security lessons](SONAR_SECURITY.md) · [durable session storage](SESSIONS.md) · [shipping small changes with a small model](SHIP_SMALL.md) · [CHANGELOG](../CHANGELOG.md) *(generated at release)* |
+| **Contribute** to the core | [CONTRIBUTING](../CONTRIBUTING.md) · [CODING_STANDARDS](CODING_STANDARDS.md) · [Sonar security lessons](SONAR_SECURITY.md) · [docs style check](dev/DOCS_CHECK.md) · [durable session storage](SESSIONS.md) · [shipping small changes with a small model](SHIP_SMALL.md) · [CHANGELOG](../CHANGELOG.md) *(generated at release)* |
 | Check the **names, taglines and claims** | [BRANDING](BRANDING.md) |
 | Work on it **as a coding agent** | [AGENTS](../AGENTS.md) and the scoped AGENTS.md files it lists |
 | Report a **vulnerability** | [SECURITY](../SECURITY.md) |

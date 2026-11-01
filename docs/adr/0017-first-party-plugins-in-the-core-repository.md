@@ -2,6 +2,8 @@
 amended-by: 0094
 status: accepted
 date: 2026-10-23
+implementation: partial
+implemented-by: 35
 ---
 
 # 0017: First-party plugins live in the core repository as workspace packages

@@ -1,9 +1,15 @@
 ---
 status: accepted
 date: 2026-10-24
+implementation: built
 decision-makers: maintainer (names and direction), architect (plan)
 amends: 0021, 0038, 0041, 0045
+amends-0021: operation names
+amends-0038: hz inbox becomes hz drafts and hz approve
+amends-0041: the everyday set
+amends-0045: heinzel.* settings in the never-run policy
 related: 0002, 0003, 0018, 0019, 0020, 0026, 0037, 0039, 0049, 0050, 0052
+implemented-by: 94
 ---
 
 # 0051: The workflow module becomes the heinzel module

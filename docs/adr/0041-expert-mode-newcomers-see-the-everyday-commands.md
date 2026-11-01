@@ -1,10 +1,14 @@
 ---
 status: proposed
 date: 2026-10-24
+implementation: built
 decision-makers: maintainer
 amends: 0018, 0039
+amends-0018: adds hz system expert; help lists the everyday commands
+amends-0039: the navigation lists the same everyday commands
 related: 0003, 0012, 0019, 0028, 0032
 amended-by: 0051
+implemented-by: 65
 ---
 
 # 0041: Expert mode: newcomers see the everyday commands, `hz system expert on` shows all

@@ -2461,6 +2461,7 @@ $ hz system notify [OPTIONS] COMMAND [ARGS]...
 **Commands**:
 
 * `ack`: (expert) Mark notices as shown, so the...
+* `clean`: (expert) End leftover Heinzel Notifier...
 * `install`: (expert) Install the native notifier...
 * `list`: (expert) Show the latest notices, whether...
 * `settings`: (expert) Open the system&#x27;s notification...
@@ -2479,6 +2480,22 @@ $ hz system notify ack [OPTIONS] {ids}
 **Arguments**:
 
 * `ids`: Ids of the notices that were shown, from `list`, separated by commas.  [required]
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system notify clean`
+
+(expert) End leftover Heinzel Notifier processes and make macOS forget its stray copies.
+
+**Usage**:
+
+```console
+$ hz system notify clean [OPTIONS]
+```
 
 **Options**:
 
@@ -2578,6 +2595,7 @@ $ hz system plugin [OPTIONS] COMMAND [ARGS]...
 * `list`: (expert) List installed plugins, enabled...
 * `new`: (expert) Scaffold a plugin repository from...
 * `operation`: (expert) Read the status and result of a...
+* `pending`: (expert) List plugins changed on this...
 * `remove`: (expert) Remove a plugin.
 * `sdk`: (expert) Export the versioned plugin view...
 * `search`: (expert) Find plugins to install:...
@@ -2796,6 +2814,22 @@ $ hz system plugin operation [OPTIONS] {operation_id}
 **Arguments**:
 
 * `operation_id`: Receipt id from a plugin preview.  [required]
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system plugin pending`
+
+(expert) List plugins changed on this machine since this server started: what a restart would load.
+
+**Usage**:
+
+```console
+$ hz system plugin pending [OPTIONS]
+```
 
 **Options**:
 
@@ -3503,7 +3537,7 @@ $ hz team add [OPTIONS] {handle}
 **Options**:
 
 * `--login <str>`: Their GitHub login; an owner needs one.
-* `--role <str>`: Their role: one of engineer, principal, engineering-manager, engineering-leadership, product-manager, product-leadership, program-manager.  [default: engineer]
+* `--role <str>`: Their role: one of engineer, engineering-manager, product-manager, program-manager.  [default: engineer]
 * `--owner / --no-owner`: Make them an owner: they approve roster changes.  [default: no-owner]
 * `--by <str>`: Your own GitHub login, when `gh` isn&#x27;t signed in as you.
 * `--yes / --no-yes`: Carry out the steps that wait for you: remote changes, and making the team yours.  [default: no-yes]
@@ -3549,7 +3583,7 @@ $ hz team join [OPTIONS] {url}
 
 * `--propose / --no-propose`: When the roster doesn&#x27;t list you, open a pull request adding you; owners merge it.  [default: no-propose]
 * `--handle <str>`: Your handle: the roster entry that is you when it has no login yet, or the one to propose.
-* `--role <str>`: Your role when you propose to be added: one of engineer, principal, engineering-manager, engineering-leadership, product-manager, product-leadership, program-manager.  [default: engineer]
+* `--role <str>`: Your role when you propose to be added: one of engineer, engineering-manager, product-manager, program-manager.  [default: engineer]
 * `--login <str>`: Your GitHub login, when `gh` isn&#x27;t signed in; asked of `gh api user` otherwise.
 * `--yes / --no-yes`: Carry out the steps that wait for you: remote changes, and making the team yours.  [default: no-yes]
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
@@ -3574,7 +3608,7 @@ $ hz team new [OPTIONS] {name}
 
 * `--github <str>`: Create it on GitHub as this private repository, owner/name; only on this machine if none.
 * `--roster <str>`: Draft the roster from a GitHub team you can read: github:&lt;org&gt;/&lt;team&gt;, or github:&lt;org&gt;.
-* `--role <str>`: Your role: one of engineer, principal, engineering-manager, engineering-leadership, product-manager, product-leadership, program-manager.  [default: engineering-manager]
+* `--role <str>`: Your role: one of engineer, engineering-manager, product-manager, program-manager.  [default: engineering-manager]
 * `--handle <str>`: Your handle in the team; defaults to your GitHub login.
 * `--login <str>`: Your GitHub login, when `gh` isn&#x27;t signed in; asked of `gh api user` otherwise.
 * `--yes / --no-yes`: Carry out the steps that wait for you: remote changes, and making the team yours.  [default: no-yes]

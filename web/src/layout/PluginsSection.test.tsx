@@ -236,6 +236,7 @@ function show(props: Parameters<typeof PluginsSection>[0] = {}) {
 }
 
 beforeEach(() => {
+  window.history.replaceState(null, "", "/");
   sessionStorage.clear();
   receiptCount = 0;
   confirmedStreamDelay = 0;
@@ -648,6 +649,63 @@ describe("PluginsSection", () => {
     await user.click(await screen.findByRole("button", { name: "Restart and apply Plugins" }));
     await waitFor(() => expect(adds()).toHaveLength(4));
     expect(spec(3)).toBe(PINNED);
+  });
+
+  it("opens the confirmation under the clicked Discover row, focused, one at a time, with provenance collapsed", async () => {
+    const entry = (name: string) => ({
+      name: `heinzel-${name}`,
+      short_name: name,
+      description: `The ${name} plugin.`,
+      source: "github",
+      community: true,
+      install_spec: `heinzel-${name}`,
+      url: `https://example.org/${name}`,
+      repository_url: `https://github.com/acme-example/heinzel-${name}`,
+      private_repository: false,
+      stars: null,
+      installed: false,
+    });
+    serve((url) => {
+      if (url.pathname === "/api/system/plugin/search") {
+        return { body: { plugins: ["aa", "bb", "cc"].map(entry), warnings: [] } };
+      }
+      if (url.pathname === "/api/system/plugin/add") return { body: change("add", false) };
+      return base(url);
+    });
+    const user = userEvent.setup();
+    show({ restartInterval: 1 });
+    await user.click(screen.getByRole("tab", { name: "Discover" }));
+    const rows = await screen.findAllByRole("listitem");
+    expect(rows).toHaveLength(3);
+    const row = rows[2] as HTMLElement;
+    const install = within(row).getByRole("button", { name: "Install" });
+    await user.click(install);
+    const card = await screen.findByRole("group", { name: /Install this plugin/ });
+    expect(row).toContainElement(card);
+    expect(screen.getAllByRole("group", { name: /Install this plugin/ })).toHaveLength(1);
+    expect(card.closest("[data-plugin-confirm]")).toHaveFocus();
+    expect(within(row).getByRole("button", { name: "Install" })).toHaveAttribute("aria-expanded", "true");
+    expect(card.querySelector("details")).not.toHaveAttribute("open");
+    expect(screen.getByRole("tab", { name: "Installed" })).toBeDisabled();
+    await user.click(within(card).getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("group", { name: /Install this plugin/ })).not.toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Installed" })).toBeEnabled();
+  });
+
+  it("keeps the tab in the address so a reload returns to it", async () => {
+    window.history.replaceState(null, "", "/");
+    serve((url) =>
+      url.pathname === "/api/system/plugin/search" ? { body: { plugins: [], warnings: [] } } : base(url),
+    );
+    const user = userEvent.setup();
+    const first = show({ restartInterval: 1 });
+    await user.click(screen.getByRole("tab", { name: "Discover" }));
+    expect(window.location.search).toBe("?plugins=discover");
+    first.unmount();
+    show({ restartInterval: 1 });
+    expect(screen.getByRole("tab", { name: "Discover" })).toHaveAttribute("aria-selected", "true");
+    await user.click(screen.getByRole("tab", { name: "Installed" }));
+    expect(window.location.search).toBe("");
   });
 
   it("says why a source is refused and installs nothing", async () => {

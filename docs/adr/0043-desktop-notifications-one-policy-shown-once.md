@@ -1,10 +1,14 @@
 ---
 status: proposed
 date: 2026-10-24
+implementation: built
 decision-makers: maintainer
 amends: 0020, 0039
+amends-0020: every tick ends by popping up due notices
+amends-0039: the notify operations are web endpoints, not REST ones
 amended-by: 0046, 0078
 related: 0003, 0021, 0024, 0026, 0027, 0028, 0036, 0038
+implemented-by: 67
 ---
 
 # 0043: Desktop notifications: one policy in the core, shown once, by hz's own macOS app
@@ -181,3 +185,18 @@ the open web app, the native notifier, the daemon), each with its state, the rea
 it exits 1 when nothing will pop the test up. The web app adds this browser's permission and offers one fix per blocked
 way: allow in the browser, `hz system notify settings` (opens System Settings > Notifications on macOS; CLI and web
 head only), or the install command typed into its terminal after a confirmation.
+
+**Heinzel Notifier never outlives its work.** Every instance ends itself with `_exit`, never `exit`, which can wait on a
+lock the main thread holds, and with a timer on its own thread: 80 seconds when it posts (macOS's question takes up to
+60), 20 otherwise. So a notification center that never answers `--status` cannot keep one alive. A click after it has
+ended starts a fresh instance, which opens the link and ends. When `open -W` says the app ended before it could wait,
+the answer the app had already written is used.
+
+Every daemon tick, `hz system notify install` and `hz system notify clean` end instances older than five minutes. They
+are found by the exact bundle id in launchd's label with a live pid, never by name, and doctor counts them. The tick
+also installs a missing or outdated app by itself.
+
+macOS registers every path the app was launched from and lists each in System Settings > Notifications under one name.
+One Mac had 172, left by tests and worktree builds. A test that would start the real app is refused unless it sets
+`HZ_REAL_NOTIFIER` and forgets its copy. The daemon asks macOS once a day to forget every other copy under the exact
+bundle id (`lsregister -u`, the files stay), and `hz system notify clean` does it at once.

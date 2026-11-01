@@ -1,8 +1,10 @@
 ---
 status: proposed
 date: 2026-10-24
+implementation: partial
 decision-makers: maintainer
 related: 0004, 0006, 0007, 0012, 0015, 0017, 0020, 0021, 0024, 0025, 0028, 0032, 0035, 0037
+implemented-by: 61
 ---
 
 # 0040: Layers and playbooks are plugins: a plugin may be a layer with a parent and a site, and layers stack general to specific

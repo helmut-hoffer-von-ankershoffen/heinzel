@@ -1,10 +1,15 @@
 ---
 status: proposed
 date: 2026-10-24
+implementation: built
 decision-makers: maintainer
 amends: 0018, 0029, 0039
+amends-0018: adds hz chat
+amends-0029: hz operations as agent tools through the MCP head
+amends-0039: chat sessions instead of the stateless resend
 related: 0003, 0019, 0020, 0024, 0027, 0028, 0030, 0038, 0043
 amended-by: 0049, 0050, 0051, 0068
+implemented-by: 71
 ---
 
 # 0045: A chat that knows where you are and acts through hz, with every change confirmed in code

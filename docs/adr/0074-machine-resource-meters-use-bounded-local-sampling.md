@@ -2,8 +2,10 @@
 amended-by: 0094
 status: proposed
 date: 2026-10-25
+implementation: built
 decision-makers: maintainer
 related: 0003, 0018, 0056
+implemented-by: 188
 ---
 
 # 0074: Machine resource meters use bounded local sampling

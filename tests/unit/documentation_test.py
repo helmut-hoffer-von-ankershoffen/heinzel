@@ -1,5 +1,6 @@
 """Documentation can't drift: generated parts are checked by `make lint`, the rest here."""
 
+import importlib.util
 import inspect
 import re
 import tomllib
@@ -151,6 +152,7 @@ ADRS = sorted(
 )
 ADRS = [adr for adr in ADRS if not adr.name.startswith("0000-")]
 ADR_STATUSES = {"proposed", "accepted", "rejected", "deprecated", "superseded"}
+ADR_IMPLEMENTATIONS = {"built", "partial", "planned"}
 ADR_SECTIONS = [  # docs/adr/0000-template.md; optional ones may sit between these, nothing else may
     "## Context and Problem Statement",
     "## Considered Options",
@@ -173,6 +175,8 @@ def test_adrs_follow_the_template(adr):
     number = adr.name[:4]
     assert meta.get("status") in ADR_STATUSES, "front matter needs a status from the template"
     assert re.fullmatch(r"\d{4}-\d{2}-\d{2}", meta.get("date", "")), "front matter needs date: YYYY-MM-DD"
+    assert meta.get("implementation") in ADR_IMPLEMENTATIONS, "front matter needs implementation: built|partial|planned"
+    assert not ("implemented-by" in meta and meta["implementation"] == "planned"), "a built-by-PR ADR is not planned"
     assert (meta["status"] == "superseded") == ("superseded-by" in meta), "superseded goes with superseded-by"
     assert re.search(rf"^# {number}: \S", text, flags=re.MULTILINE), f"the title must be '# {number}: ...'"
     headings = re.findall(r"^#{2,3} .+$", text, flags=re.MULTILINE)
@@ -188,6 +192,8 @@ def test_adr_index_and_links_match_the_records(directory):
     for number, (adr, meta) in records.items():
         title = re.search(r"^# \d{4}: (.+)$", adr.read_text(encoding="utf-8"), flags=re.MULTILINE)
         assert title
+        if directory == REPO / "docs" / "adr":
+            continue  # the index is generated from the front matter; test_the_adr_index_is_generated_from_front_matter
         row = f"| [{number}]({adr.name}) | {title.group(1)} | {meta['status']} | {meta['date']} |"
         assert row in index, f"{directory.relative_to(REPO)}/README.md needs the row: {row}"
         assert _adr_numbers(meta.get("related", "")) <= records.keys(), f"{number} relates to a missing ADR"
@@ -198,6 +204,41 @@ def test_adr_index_and_links_match_the_records(directory):
                 )
             for other in _adr_numbers(meta.get(backward, "")):
                 assert number in _adr_numbers(records[other][1].get(forward, "")), f"{other} lacks {forward}: {number}"
+
+
+def _hooks():
+    spec = importlib.util.spec_from_file_location("adr_index_docs", REPO / "scripts" / "adr_index.py")
+    assert spec
+    assert spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_the_adr_index_is_generated_from_front_matter():
+    """`make docs` writes the table between the markers; a hand edit or a stale table fails."""
+    hooks = _hooks()
+    directory = REPO / "docs" / "adr"
+    index = (directory / "README.md").read_text(encoding="utf-8")
+    block = hooks.adr_index_block(directory, "https://github.com/helmut-hoffer-von-ankershoffen/heinzel")
+    assert f"{hooks.INDEX_START}\n{block}\n{hooks.INDEX_END}" in index, "run `make docs`"
+    assert "retrofit" not in index.lower()
+    assert "Amendments:" not in index, "amendments live in each record's front matter"
+    assert sum(line.startswith("| [") for line in index.splitlines()) == len(hooks.adr_records(directory))
+
+
+def test_adr_amendment_reasons_and_pull_requests_are_well_formed():
+    """`amends-NNNN` explains an amendment the record declares; `implemented-by` lists pull request numbers, no more."""
+    for adr in ADRS:
+        meta = parse_frontmatter(adr.read_text(encoding="utf-8"))
+        for key, reason in meta.items():
+            if re.fullmatch(r"(amends|supersedes)-\d{4}", key):
+                forward, other = key.split("-")
+                assert other in _adr_numbers(meta.get(forward, "")), f"{adr.name}: {key} without {forward}: {other}"
+                assert reason, f"{adr.name}: {key} needs the reason"
+        if "implemented-by" in meta:
+            assert re.fullmatch(r"\d+(, \d+)*", meta["implemented-by"]), f"{adr.name}: implemented-by is PR numbers"
+            assert meta["status"] != "rejected"
 
 
 def test_every_parameter_setting_and_module_is_described(make_kernel):

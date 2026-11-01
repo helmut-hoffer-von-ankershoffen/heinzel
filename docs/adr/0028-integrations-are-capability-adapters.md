@@ -1,9 +1,12 @@
 ---
 status: proposed
 date: 2026-10-23
+implementation: built
 amends: 0024
+amends-0024: the directory is a capability
 amended-by: 0049, 0055, 0059
 related: 0012, 0017, 0021, 0022, 0023
+implemented-by: 9
 ---
 
 # 0028: Integrations are capability adapters; workflows name capabilities, never vendors

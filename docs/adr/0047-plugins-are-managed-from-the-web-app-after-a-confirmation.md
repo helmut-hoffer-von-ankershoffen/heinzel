@@ -2,9 +2,13 @@
 status: proposed
 amended-by: 0078, 0083, 0091
 date: 2026-10-24
+implementation: built
 decision-makers: maintainer
 amends: 0006, 0039
+amends-0006: add shows first and installs on --confirm, from PyPI or https git only
+amends-0039: plugin changes are web endpoints, not REST ones; POST /api/restart
 related: 0017, 0019, 0025, 0027, 0033, 0035, 0040
+implemented-by: 74
 ---
 
 # 0047: Plugins are managed from the web app, and adding one shows what it installs before it is confirmed

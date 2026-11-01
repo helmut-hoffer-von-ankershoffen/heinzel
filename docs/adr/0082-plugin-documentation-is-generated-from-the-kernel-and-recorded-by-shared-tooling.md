@@ -2,8 +2,10 @@
 amended-by: 0094, 0098
 status: proposed
 date: 2026-10-24
+implementation: built
 decision-makers: maintainer
 related: 0003, 0007, 0017, 0025, 0026, 0027, 0036, 0037, 0039, 0040, 0041, 0044, 0051, 0068, 0072
+implemented-by: 135
 ---
 
 # 0082: Plugin documentation is generated from the kernel and recorded by the tooling every plugin shares
