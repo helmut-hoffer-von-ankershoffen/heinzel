@@ -192,7 +192,7 @@ wheels = [
 
 [[package]]
 name = "bump-my-version"
-version = "1.6.4"
+version = "1.6.7"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "click" },
@@ -205,9 +205,9 @@ dependencies = [
     { name = "tomlkit" },
     { name = "wcmatch" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/ab/fa/d19af795a245e5d102acee5439dc2aaec4f33b689e57952ac09be34137d1/bump_my_version-1.6.4.tar.gz", hash = "sha256:9699550488ecddddbf3ce246d764a218c0e66b79528cda620d7ff46a0d1bdd93", size = 1147338, upload-time = "2026-10-24T12:51:25.783Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/2f/ea/5ce9d814fbd532d8a5d8344bff688170c031f16ef11370b14b42fd3f8e7f/bump_my_version-1.6.7.tar.gz", hash = "sha256:ca21d720a4d951eb26354c9b62776a5481468c2319bd253c3494faf489f49c34", size = 1161983, upload-time = "2026-10-25T20:21:34.979Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/23/7b/3bd6547b88f66e1e30f82b40f92ed38d3995bf5e4405d41893db5f408067/bump_my_version-1.6.4-py3-none-any.whl", hash = "sha256:83d7442d49110272cbe9e246270b601f8207e9c83d827337d0673ae8cf9f808c", size = 67399, upload-time = "2026-10-24T12:51:24.417Z" },
+    { url = "https://files.pythonhosted.org/packages/50/b6/8a0bca33e613912312020e0a57a62e024a9fbc97a72dbc302fe7e3a6696c/bump_my_version-1.6.7-py3-none-any.whl", hash = "sha256:44e9f4fb733ff5d77f832249b7974d49a2f7acf3b566960265b5928788ab2f75", size = 68332, upload-time = "2026-10-25T20:21:33.587Z" },
 ]
 
 [[package]]
@@ -1132,7 +1132,7 @@ provides-extras = ["anthropic", "openai"]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "bump-my-version", specifier = ">=1.2.4,<2" },
+    { name = "bump-my-version", specifier = ">=1.6.7,<2" },
     { name = "commitizen", specifier = ">=4.10.0,<5" },
     { name = "copier", specifier = ">=9.19" },
     { name = "coverage", specifier = ">=7.12" },
@@ -1146,7 +1146,7 @@ dev = [
     { name = "pip-audit", specifier = ">=2.10.0,<3" },
     { name = "prek", specifier = ">=0.2" },
     { name = "pydantic-ai-slim", extras = ["openai"], specifier = "==2.61.0" },
-    { name = "pyright", extras = ["nodejs"], specifier = ">=1.1.408" },
+    { name = "pyright", extras = ["nodejs"], specifier = ">=1.1.414" },
     { name = "pytest", specifier = ">=9.0.3,<10" },
     { name = "pytest-timeout", specifier = ">=2.4.0,<3" },
     { name = "pytest-xdist", specifier = ">=3.8" },
