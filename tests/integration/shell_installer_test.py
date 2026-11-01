@@ -79,6 +79,11 @@ while [ "$#" -gt 0 ]; do
 done
 printf '%s\\n' "$url" >> "$DOWNLOADS"
 if [ "${DOWNLOAD_FAIL:-0}" = 1 ]; then exit 22; fi
+if [ -n "${REDIRECT_TO:-}" ] && [ "$url" = https://astral.sh/uv/install.sh ]; then
+    printf '%s\\n' '  HTTP/1.1 301 Moved Permanently' "  Location: $REDIRECT_TO" >&2
+    printf '%s\\n' "Location: $REDIRECT_TO [following]" >&2
+    exit 8
+fi
 cp "$UV_FAKE_INSTALLER" "$output"
 """,
     )
@@ -130,7 +135,7 @@ def test_missing_uv_uses_the_official_installer_and_runs_without_a_shell_restart
         assert {"--proto", "=https", "--proto-redir", "--tlsv1.2"} <= set(flags)
         assert flags[flags.index("--proto") + 1] == flags[flags.index("--proto-redir") + 1] == "=https"
     else:
-        assert "--https-only" in flags
+        assert {"--https-only", "--max-redirect=0"} <= set(flags)
 
 
 def test_wget_without_https_only_is_refused_before_anything_is_downloaded_or_executed(machine):
@@ -143,6 +148,33 @@ def test_wget_without_https_only_is_refused_before_anything_is_downloaded_or_exe
     assert not (root / "downloads").exists()
     assert not (root / "trace").exists()
     assert not Path(env["UV_INSTALL_DIR"]).exists()
+
+
+def test_wget_follows_a_redirect_only_by_hand_and_only_over_https(machine):
+    root, _, _, env = machine
+    env["REDIRECT_TO"] = "https://releases.example.test/uv-installer.sh"
+    downloader(machine, "wget")
+    result = invoke(machine)
+    assert result.returncode == 0, result.stderr
+    assert (root / "downloads").read_text().splitlines() == [
+        "https://astral.sh/uv/install.sh",
+        "https://releases.example.test/uv-installer.sh",
+    ]
+
+
+@pytest.mark.parametrize(
+    "target", ["http://evil.example.test/uv-installer.sh", "ftp://evil.example.test/x", "/relative"]
+)
+def test_wget_never_follows_a_redirect_off_https(machine, target):
+    root, _, _, env = machine
+    env["REDIRECT_TO"] = target
+    downloader(machine, "wget")
+    result = invoke(machine)
+    assert result.returncode == 1
+    assert "Install curl" in result.stderr
+    assert (root / "downloads").read_text().splitlines() == ["https://astral.sh/uv/install.sh"]
+    assert not (root / "trace").exists()
+    assert not list(root.glob("heinzel-install.*"))
 
 
 def test_curl_is_preferred_over_wget_when_both_exist(machine):
