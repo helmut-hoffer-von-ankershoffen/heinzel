@@ -274,7 +274,7 @@ def pyproject() -> str:
         'no deadline or selection change.",\n',
         "",
     )
-    tools = re.sub(r'    "macos_specific: [^\n]*\n', "", tools)  # the core's notifier, launchd service and Finder tests
+    tools = re.sub(r' {4}"macos_specific: [^\n]*\n', "", tools)  # the core's notifier, launchd service and Finder tests
     tools = re.sub(r'\nextend-exclude = \["template", "plugins"[^\]]*\][^\n]*', "", tools)
     tools = tools.replace(
         'extend-exclude = ["ATTRIBUTIONS.md", "site", "plugins"]', 'extend-exclude = ["ATTRIBUTIONS.md", "site"]'
