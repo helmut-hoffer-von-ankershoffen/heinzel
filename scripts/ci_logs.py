@@ -21,7 +21,8 @@ from typing import Any
 
 ANSI = re.compile(r"(?:\x1b|\^\[)\[[0-9;?]*[A-Za-z]")  # GitHub's logs spell ESC as "^["
 TIMESTAMP = re.compile(r"^\d{4}-\d\d-\d\dT[\d:.]+Z ?")
-ERROR = re.compile(r"^\s*E |FAILED|\berror\b:|Error:|##\[error\]|✗|Process completed with exit code")
+PYTEST_ERROR = re.compile(r"^\s*E ")
+ERROR = re.compile(r"FAILED|\berror\b:|Error:|##\[error\]|✗|Process completed with exit code")
 CONTEXT, LIMIT = 1, 60
 WAIT = 1800  # seconds to wait for a running build
 THREADS = """query($owner: String!, $repo: String!, $number: Int!) {
@@ -37,7 +38,12 @@ def gh(*args: str) -> str:
 def excerpt(lines: list[str]) -> list[str]:
     """Error lines with a little context, or the tail when nothing looks like an error."""
     keep = sorted(
-        {j for i, line in enumerate(lines) if ERROR.search(line) for j in range(i - CONTEXT, i + CONTEXT + 1)}
+        {
+            j
+            for i, line in enumerate(lines)
+            if ERROR.search(line) or PYTEST_ERROR.search(line)
+            for j in range(i - CONTEXT, i + CONTEXT + 1)
+        }
     )
     chosen = [lines[i] for i in keep if 0 <= i < len(lines)] or lines[-LIMIT:]
     return chosen[-LIMIT:]

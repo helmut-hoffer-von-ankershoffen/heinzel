@@ -69,6 +69,7 @@ from heinzel.modules.heinzel._graph import CODES as GRAPH_CODES
 from heinzel.modules.heinzel._graph import asset as asset_id
 from heinzel.modules.heinzel._graph import build as build_graph
 from heinzel.modules.heinzel._graph import problems as graph_problems
+from heinzel.modules.heinzel._jsonable import jsonable
 from heinzel.modules.heinzel._measure import Sent
 from heinzel.modules.heinzel._models import (
     DRAFT_NAME,
@@ -1478,7 +1479,7 @@ class HeinzelService:
                     why = clean_text(f"{type(exc).__name__}: {exc}")
                     msg = f"{contract.qualified}: input {name!r} ({spec.read}) failed: {why}"
                     raise HeinzelError(msg) from exc
-            data = cast("JsonValue", _minimised(to_jsonable_python(_without_emails(result))))
+            data = cast("JsonValue", _minimised(jsonable(_without_emails(result))))
             size = len(json.dumps(data, ensure_ascii=False).encode())
             if size > MAX_INPUT_BYTES:
                 msg = (

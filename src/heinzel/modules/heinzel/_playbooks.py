@@ -15,6 +15,7 @@ from pydantic_core import to_jsonable_python
 
 from heinzel import HeinzelError, Kernel, SetupLet, clean_text
 from heinzel.kernel import ContractTemplate, DiscoveryHint, PlaybookLet, Requester, Requirement, toml_value
+from heinzel.modules.heinzel._jsonable import jsonable
 from heinzel.modules.heinzel._models import Input, Step
 
 MAX_CANDIDATES = 20
@@ -166,7 +167,7 @@ def _view(qualname: str, playbook: PlaybookLet) -> PlaybookView:
                 hints=[
                     HintView(
                         read=h.read,
-                        args=cast("dict[str, JsonValue]", to_jsonable_python(dict(h.args))),
+                        args=cast("dict[str, JsonValue]", jsonable(dict(h.args))),
                         window=h.window,
                         match=h.match,
                         summary=h.summary,

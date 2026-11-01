@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from pydantic import BaseModel
-from pydantic_core import to_jsonable_python
+from pydantic_core import PydanticSerializationError, to_jsonable_python
 from rich.console import Console, ConsoleOptions, RenderableType
 from rich.json import JSON
 from rich.segment import Segment
@@ -56,9 +56,19 @@ def message(label: str, text: str) -> TerminalSafe:
     return TerminalSafe(Text.assemble((label, "red"), " ", text))
 
 
+def _refuse(value: object) -> object:
+    """Fail on a value with no JSON form, as `to_jsonable_python` does by default, rather than stringify it.
+
+    Raises:
+        PydanticSerializationError: Always.
+    """
+    msg = f"Unable to serialize unknown type: {type(value)}"
+    raise PydanticSerializationError(msg)
+
+
 def to_json(result: object) -> str:
     """The JSON form of a result, as every machine-facing head returns it; C1 controls are escaped like C0 ones."""
-    text = JSON.from_data(to_jsonable_python(result)).text.plain
+    text = JSON.from_data(to_jsonable_python(result, fallback=_refuse)).text.plain
     return re.sub(r"[\x7f-\x9f]", lambda match: f"\\u{ord(match.group()):04x}", text)
 
 
