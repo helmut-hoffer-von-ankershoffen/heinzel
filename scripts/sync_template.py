@@ -76,9 +76,9 @@ def makefile() -> str:
     text = text.replace(" docs-catalog docs-site-check", "")
     text = re.sub(r"\n(docs-catalog|docs-site-check):.*?\n(?:\t.*\n)+", "\n", text)
     # The web head's app (web/, ADR 0039): plugins bring operations, not UI.
-    text = text.replace(" web-build web-dev test-web", "").replace(" test-browser-deps", "")
+    text = text.replace(" web-build web-dev test-web test-site", "").replace(" test-browser-deps", "")
     text = re.sub(r"\n# The web head's app in web/.*?\nWEB_TESTS := [^\n]*", "", text, flags=re.DOTALL)
-    text = re.sub(r"\n(web-build|web-dev|test-web|test-browser-deps):.*?\n(?:\t.*\n)+", "\n", text)
+    text = re.sub(r"\n(web-build|web-dev|test-web|test-site|test-browser-deps):.*?\n(?:\t.*\n)+", "\n", text)
     text = re.sub(r"\n\t\t\$\(WEB_LINT\) \$\(WEB_TYPES\) \\", "", text)
     text = re.sub(
         r" \$\(WEB_(LINT|TYPES|TESTS)\)"
@@ -170,6 +170,7 @@ def ci_workflow() -> str:
     text = re.sub(r"\n  notifier:\n.*?(?=\n  build:)", "\n", text, flags=re.DOTALL)
     # The Electron window and its native runtime are core-only; plugins carry no desktop app.
     text = re.sub(r"\n  electron:\n.*?(?=\n  build:)", "\n", text, flags=re.DOTALL)
+    text = re.sub(r"\n  site-tests:\n.*?(?=\n  e2e:)", "\n", text, flags=re.DOTALL)
     text = re.sub(r"\n  changes:\n.*?(?=\n  dependency-review:)", "", text, flags=re.DOTALL)
     # The template has no changed-path job; keep its original E2E matrix policy without core-only gating.
     text = text.replace("    needs: changes\n", "")
@@ -199,6 +200,7 @@ def ci_workflow() -> str:
     # Removed jobs must also disappear from the stable required aggregate, irrespective of list order.
     removed = {
         "changes",
+        "site-tests",
         "template",
         "notifier",
         "electron",
