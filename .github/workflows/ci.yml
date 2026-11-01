@@ -33,6 +33,7 @@ jobs:
       electron: ${{ steps.paths.outputs.electron }}
       core: ${{ steps.paths.outputs.core }}
       plugins: ${{ steps.paths.outputs.plugins }}
+      site_only: ${{ steps.paths.outputs.site_only }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -52,6 +53,16 @@ jobs:
             && ! grep -qE '(^|/)CHANGELOG\.md$|^docs/.*\.sh$' <<< "$changed"; then
             prose_push=true
           fi
+          # A pull request of the site alone skips the app's test jobs and runs site-tests. The E2E suite runs the root
+          # README's commands, and nested Markdown can be a template or a skill, so those do not count. These paths
+          # are documents and tooling to the pre-push scope too; ci_test.py pins that.
+          site_only=false
+          if [ "$EVENT" = pull_request ] && [ -n "$changed" ] \
+            && ! grep -qvE '^(docs/.*|[^/]*\.md|mkdocs\.yml|scripts/(site_[a-z_]+|check_docs)\.py|tests/unit/(site_[a-z_]+|docs_style|documentation)_test\.py)$' <<< "$changed" \
+            && ! grep -qE '^(CHANGELOG|README)\.md$|^docs/.*\.sh$' <<< "$changed"; then
+            site_only=true
+          fi
+          echo "site_only=$site_only" >> "$GITHUB_OUTPUT"
           if [ "$prose_push" = true ]; then
             echo "core=false" >> "$GITHUB_OUTPUT"
             core_work=false
@@ -208,7 +219,7 @@ jobs:
 
   test:
     needs: changes
-    if: needs.changes.outputs.core == 'true'
+    if: needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true'
     name: Test (${{ matrix.os }}, Python ${{ matrix.python }}${{ matrix.levels && format(', {0}', matrix.levels) || '' }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10
@@ -248,7 +259,7 @@ jobs:
 
   coverage:
     needs: changes
-    if: needs.changes.outputs.core == 'true'
+    if: needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true'
     name: Coverage
     # One measured run, in parallel with the matrix instead of after it.
     runs-on: ubuntu-latest
@@ -281,7 +292,7 @@ jobs:
 
   perf:
     needs: changes
-    if: needs.changes.outputs.core == 'true'
+    if: needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true'
     name: Performance tests
     # Timing assertions (linear time) run here only: on a loaded developer machine they flake, so neither the
     # pre-push hook nor the test matrix runs them.
@@ -302,10 +313,28 @@ jobs:
       - run: uv sync --no-dev --group test # UV_FROZEN: exactly the lockfile
       - run: make test-perf
 
+  site-tests:
+    needs: changes
+    if: needs.changes.outputs.site_only == 'true'
+    name: Site tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+          save-cache: false
+          python-version: "3.14"
+      - run: make test-site # the tests that read documents and the site
+
   e2e:
     name: End-to-end (${{ matrix.os }})
     needs: changes
-    if: needs.changes.outputs.core == 'true'
+    if: needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     strategy:
@@ -611,7 +640,7 @@ jobs:
   ci-ok:
     name: CI OK
     if: always()
-    needs: [dependency-review, commits, changes, lint, secrets, setup, audit, test, coverage, perf, e2e, template, notifier, electron, build, core-wheel, local-plugin-plan, local-plugin-check, consumer-plan, consumer-check]
+    needs: [dependency-review, commits, changes, lint, secrets, setup, audit, test, coverage, perf, site-tests, e2e, template, notifier, electron, build, core-wheel, local-plugin-plan, local-plugin-check, consumer-plan, consumer-check]
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
