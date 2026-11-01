@@ -7,6 +7,7 @@ import os
 import re
 import secrets
 import stat
+import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import Protocol
@@ -24,6 +25,10 @@ _MAX_FILES = 100_000
 _MAX_BYTES = 2_000_000_000
 _FLAGS = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK
 _DIRECTORY = _FLAGS | os.O_DIRECTORY
+_SETTLE_NS = 2_000_000_000
+_REUSE_NS = 60_000_000_000
+_settled: dict[Path, tuple[object, str, str, int]] = {}
+_seen: set[Path] = set()
 
 
 def _identity(info: os.stat_result) -> tuple[int, ...]:
@@ -125,7 +130,7 @@ class _Observation:
                     self.digest.update(len(self.receipt).to_bytes(8, "big"))
                     self.digest.update(self.receipt)
                 else:
-                    _regular(fd, self.digest, self.budget)
+                    self.content(fd)
             finally:
                 os.close(fd)
         elif stat.S_ISLNK(info.st_mode):
@@ -133,6 +138,9 @@ class _Observation:
         else:
             msg = "Installation contains an unsafe file."
             raise HeinzelError(msg)
+
+    def content(self, fd: int) -> None:
+        _regular(fd, self.digest, self.budget)
 
     def link(self, directory: int, name: str, path: Path, info: os.stat_result) -> None:
         link = os.readlink(name, dir_fd=directory)
@@ -157,12 +165,71 @@ class _Observation:
                 self.digest.update(f"{info_target.st_uid}:{info_target.st_mode}\0".encode("ascii"))
                 if self.strict_identity:
                     self.digest.update(repr(_identity(info_target)).encode("ascii"))
-                _regular(fd, self.digest, self.budget)
+                self.content(fd)
             finally:
                 os.close(fd)
         if _identity(info) != _identity(os.stat(name, dir_fd=directory, follow_symlinks=False)):
             msg = "Installation changed during inspection (link metadata)."
             raise HeinzelError(msg)
+
+
+class _Metadata(_Observation):
+    """A snapshot's walk and refusals, with each file's filesystem identity in place of its bytes."""
+
+    newest = 0
+
+    def identity(self, info: os.stat_result) -> None:
+        self.digest.update(repr(_identity(info)).encode("ascii"))
+        self.newest = max(self.newest, info.st_mtime_ns, info.st_ctime_ns)
+
+    def entry(self, directory: int, name: str, path: Path, info: os.stat_result) -> None:
+        if stat.S_ISREG(info.st_mode):
+            self.identity(info)
+        else:
+            super().entry(directory, name, path, info)
+
+    def content(self, fd: int) -> None:
+        self.identity(os.fstat(fd))
+
+
+def _metadata(prefix: Path) -> tuple[str, int] | None:
+    """What a snapshot would visit, by identity, and its newest timestamp; None if it can't be observed now."""
+    observation = _Metadata(prefix)
+    try:
+        root = os.open(prefix, _DIRECTORY)
+        try:
+            info = os.fstat(root)
+            observation.digest.update(f"{info.st_dev}:{info.st_ino}\0".encode("ascii"))
+            observation.visit(root, Path())
+        finally:
+            os.close(root)
+    except (HeinzelError, OSError, ValueError):
+        return None
+    return observation.digest.hexdigest(), observation.newest
+
+
+def _settle(prefix: Path, target: object, before: tuple[str, int] | None, value: str) -> None:
+    """Keep a fingerprint for reuse if no file changed while it was read and none is too new to tell a change by."""
+    _settled.pop(prefix, None)
+    if before is None:  # the first look at this tool; the next one brackets its read with two walks
+        _seen.add(prefix)
+        return
+    after = _metadata(prefix)
+    if after != before or after[1] > time.time_ns() - _SETTLE_NS:
+        return
+    _settled[prefix] = (target, after[0], value, time.monotonic_ns())
+
+
+def _reusable(prefix: Path, target: object, metadata: tuple[str, int] | None) -> str | None:
+    settled = _settled.get(prefix)
+    if (
+        settled is None
+        or metadata is None
+        or settled[:2] != (target, metadata[0])
+        or time.monotonic_ns() - settled[3] > _REUSE_NS
+    ):
+        return None
+    return settled[2]
 
 
 def _snapshot(prefix: Path, *, strict_identity: bool = False, receipt: bytes | None = None) -> str:
@@ -179,6 +246,35 @@ def _snapshot(prefix: Path, *, strict_identity: bool = False, receipt: bytes | N
     return observation.digest.hexdigest()
 
 
+def _require_authority(authority: Callable[[], object], target: object) -> None:
+    if authority() != target:
+        msg = "Installation changed during inspection (authority mismatch)."
+        raise HeinzelError(msg)
+
+
+def _stable(
+    prefix: Path,
+    authority: Callable[[], object],
+    target: object,
+    *,
+    strict_identity: bool = False,
+    receipt: bytes | None = None,
+) -> str:
+    previous = None
+    for _ in range(3):
+        _require_authority(authority, target)
+        if receipt is not None:
+            current = _snapshot(prefix, strict_identity=strict_identity, receipt=receipt)
+        else:
+            current = _snapshot(prefix, strict_identity=True) if strict_identity else _snapshot(prefix)
+        _require_authority(authority, target)
+        if previous == current:
+            return current
+        previous = current
+    msg = "Installation changed during inspection (snapshot mismatch)."
+    raise HeinzelError(msg)
+
+
 def fingerprint(
     prefix: Path, authority: Callable[[], object], *, strict_identity: bool = False, receipt: bytes | None = None
 ) -> str:
@@ -186,6 +282,9 @@ def fingerprint(
 
     Up to three snapshots allow a later stable observation after a transient change.
     This does not establish an atomic snapshot or uninterrupted history.
+
+    A plain fingerprint repeated within a minute in this process is reused while every file keeps its size, timestamps
+    and inode: one update asks for dozens, each reading the whole tool twice. The walk and its refusals still run.
 
     Raises:
         HeinzelError: If the installation cannot be inspected safely.
@@ -199,26 +298,19 @@ def fingerprint(
         if info.st_uid != os.getuid() or info.st_mode & 0o022:
             msg = "The installation prefix is not privately owned."
             raise HeinzelError(msg)
-        previous = None
-        for _ in range(3):
-            if authority() != target:
-                msg = "Installation changed during inspection (authority mismatch)."
-                raise HeinzelError(msg)
-            if receipt is not None:
-                current = _snapshot(prefix, strict_identity=strict_identity, receipt=receipt)
-            else:
-                current = _snapshot(prefix, strict_identity=True) if strict_identity else _snapshot(prefix)
-            if authority() != target:
-                msg = "Installation changed during inspection (authority mismatch)."
-                raise HeinzelError(msg)
-            if previous == current:
-                return current
-            previous = current
-        msg = "Installation changed during inspection (snapshot mismatch)."
-        raise HeinzelError(msg)
+        if strict_identity or receipt is not None:
+            return _stable(prefix, authority, target, strict_identity=strict_identity, receipt=receipt)
+        metadata = _metadata(prefix) if prefix in _seen else None
+        if (known := _reusable(prefix, target, metadata)) is not None:
+            _require_authority(authority, target)
+            return known
+        value = _stable(prefix, authority, target)
     except (OSError, ValueError) as exc:
         msg = "Cannot inspect the owned installation safely."
         raise HeinzelError(msg) from exc
+    else:
+        _settle(prefix, target, metadata, value)
+        return value
 
 
 def _pending_exists(directory: int) -> bool:
