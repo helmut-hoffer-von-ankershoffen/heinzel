@@ -1,6 +1,6 @@
 ---
 title: Heinzelmännchen — helpers for good work
-description: An open-source crew of AI helpers that draft your busywork. You approve. Runs on your machine.
+description: Heinzelmännchen, or Heinzel for short, is an open-source crew of AI helpers that draft your busywork. You approve; it runs on your machine.
 template: home.html
 hide:
   - navigation
