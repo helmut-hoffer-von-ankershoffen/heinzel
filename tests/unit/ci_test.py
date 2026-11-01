@@ -41,6 +41,12 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
         "tar -czf notifier.tar.gz": "packs the app the macOS job built, with its executable bit, for the build job",
         "tar -xzf notifier.tar.gz": "unpacks Heinzel Notifier into the package before the wheel is built",
     },
+    "acceptance.yml": {
+        "uv python install 3.13": "the interpreter the harness runs on",
+        '"$(uv python find 3.13)" -I scripts/acceptance/': (
+            "installs the published core with the public commands on a hosted runner and writes the receipt"
+        ),
+    },
     "docs.yml": {
         "sudo apt-get update": "fonts for the terminal recordings, from the runner's packages",
         "uv run --quiet --group docs playwright install-deps": "Chromium's system libraries, from the runner",
@@ -1090,3 +1096,9 @@ def test_electron_runs_for_its_paths_on_a_push_and_always_on_schedule_and_dispat
         timeout=4,
     )
     assert f"electron={electron}" in output.read_text().splitlines()
+
+
+def test_the_test_matrix_keeps_the_whole_output_of_a_failure():
+    jobs = yaml.safe_load((REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))["jobs"]
+    step = next(step for step in jobs["test"]["steps"] if step.get("run") == "make test-parallel")
+    assert step["env"]["VERBOSE"] == "1"

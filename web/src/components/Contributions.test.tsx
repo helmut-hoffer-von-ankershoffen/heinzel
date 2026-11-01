@@ -2,7 +2,7 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import { shell } from "@/test/fixtures";
-import { expectAccessible, mockApi, renderAt } from "@/test/render";
+import { eventStream, expectAccessible, mockApi, renderAt } from "@/test/render";
 import { ICONS, liveText, widgetText } from "./Contributions";
 
 const entry = { module: "acme", plugin: "heinzel-acme", order: 500, refresh: 60, problem: null };
@@ -171,17 +171,17 @@ describe("Contributions", () => {
   );
 
   it("asks before a write and runs exactly the call the server built", async () => {
-    const { calls } = mockApi(answers);
+    const { calls } = mockApi({ ...answers, "/api/stream/acme/sync": () => eventStream([]) });
     const user = userEvent.setup();
     renderAt("/doctor");
     await user.hover(await screen.findByRole("button", { name: /^3 reviews/ }));
     await user.click(await screen.findByRole("button", { name: "Sync" }));
     const dialog = await screen.findByRole("alertdialog", { name: "Sync the reviews." });
     expect(within(dialog).getByText("hz acme sync --dry-run true")).toBeInTheDocument();
-    expect(calls.some((call) => new URL(call.url).pathname === "/api/acme/sync")).toBe(false);
+    expect(calls.some((call) => new URL(call.url).pathname === "/api/stream/acme/sync")).toBe(false);
     await user.click(within(dialog).getByRole("button", { name: "Run it" }));
     await waitFor(() => {
-      const sync = calls.find((call) => new URL(call.url).pathname === "/api/acme/sync");
+      const sync = calls.find((call) => new URL(call.url).pathname === "/api/stream/acme/sync");
       expect(sync?.method).toBe("POST");
       expect(new URL(sync?.url ?? "http://x").searchParams.get("dry_run")).toBe("true");
     });
@@ -200,7 +200,7 @@ describe("Contributions", () => {
     const body = { name: "Personal draft", appearance: { hat: "blue", accessories: ["scarf"] } };
     const { calls } = mockApi({
       ...answers,
-      "/api/harbor/profile": {},
+      "/api/stream/harbor/profile": () => eventStream([]),
       "/api/system/ui/status": [
         {
           ...entry,
@@ -233,10 +233,12 @@ describe("Contributions", () => {
     await user.hover(await screen.findByRole("button", { name: /Edit personal helper/ }));
     await user.click(await screen.findByRole("button", { name: "Run" }));
     const dialog = await screen.findByRole("alertdialog", { name: "Save the helper." });
-    expect(calls.some((call) => new URL(call.url).pathname === "/api/harbor/profile")).toBe(false);
+    expect(calls.some((call) => new URL(call.url).pathname === "/api/stream/harbor/profile")).toBe(false);
     await user.click(within(dialog).getByRole("button", { name: "Run it" }));
-    await waitFor(() => expect(calls.some((call) => new URL(call.url).pathname === "/api/harbor/profile")).toBe(true));
-    const sent = calls.find((call) => new URL(call.url).pathname === "/api/harbor/profile");
+    await waitFor(() =>
+      expect(calls.some((call) => new URL(call.url).pathname === "/api/stream/harbor/profile")).toBe(true),
+    );
+    const sent = calls.find((call) => new URL(call.url).pathname === "/api/stream/harbor/profile");
     expect(new URL(sent?.url ?? "http://x").search).toBe("");
     expect(sent?.headers.get("Content-Type")).toBe("application/json");
     expect(await sent?.json()).toEqual(body);
