@@ -71,7 +71,7 @@ Are your team's contracts kept? Artifacts and Heinzelmännchen, and where the fl
 
 | Operation | CLI | MCP tool | REST | Web | Changes state | Expert |
 | --- | --- | --- | --- | --- | --- | --- |
-| Show your team's contracts: who keeps which artifact, how each contract stands, where the flow waits. | `hz graph` | `graph` | — | `GET /api/graph` |  |  |
+| Show your team's contracts: who keeps which artifact, how each stands, where the flow waits. | `hz graph` | `graph` | — | `GET /api/graph` |  |  |
 
 Settings: [`[graph]`](CONFIGURATION.md#graph).
 
@@ -105,7 +105,7 @@ Your Heinzelmännchen: durable agents that keep your team's documents true.
 | List your Heinzelmännchen, one per contract: owner, schedule, state, last and next run. | `hz heinzel list` | `heinzel_list` | — | `GET /api/heinzel/list` |  |  |
 | Write a starter contract, or a playbook's template (--template), into your contracts folder. | `hz heinzel new` | `heinzel_new` | — | — | yes |  |
 | List the playbooks plugins contribute: artifact types, template contracts and recommended settings. | `hz heinzel playbooks` | `heinzel_playbooks` | — | `GET /api/heinzel/playbooks` |  | expert |
-| Find candidates for each playbook's artifact types through the capabilities you have bound; reads only. | `hz heinzel discover` | `heinzel_discover` | — | `GET /api/heinzel/discover` |  | expert |
+| Find candidates for each playbook's artifact types through your bound capabilities; reads only. | `hz heinzel discover` | `heinzel_discover` | — | `GET /api/heinzel/discover` |  | expert |
 | Show a contract as the daemon runs it: schedule, requirements, adapters, readiness, next steps. | `hz heinzel show` | `heinzel_show` | — | `GET /api/heinzel/show` |  |  |
 | List the drafts runs saved locally, newest first, with their paths and records, or show the newest. | `hz heinzel drafts` | `heinzel_drafts` | — | — |  |  |
 | Record how much of a draft you changed before sending it; `hz heinzel show` reports it. | `hz heinzel sent` | `heinzel_sent` | — | — | yes | expert |

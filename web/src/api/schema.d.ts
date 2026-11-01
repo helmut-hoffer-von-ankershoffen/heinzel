@@ -116,8 +116,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Show your team's contracts: who keeps which artifact, how each contract stands, where the flow waits.
-         * @description Show your team's contracts: who keeps which artifact, how each contract stands, where the flow waits.
+         * Show your team's contracts: who keeps which artifact, how each stands, where the flow waits.
+         * @description Show your team's contracts: who keeps which artifact, how each stands, where the flow waits.
          */
         get: operations["graph"];
         put?: never;
@@ -582,8 +582,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Find candidates for each playbook's artifact types through the capabilities you have bound; reads only.
-         * @description Find candidates for each playbook's artifact types through the capabilities you have bound; reads only.
+         * Find candidates for each playbook's artifact types through your bound capabilities; reads only.
+         * @description Find candidates for each playbook's artifact types through your bound capabilities; reads only.
          */
         get: operations["heinzel_discover"];
         put?: never;

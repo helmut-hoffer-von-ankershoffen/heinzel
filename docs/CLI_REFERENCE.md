@@ -570,7 +570,7 @@ $ hz chat show [OPTIONS] {session}
 
 ## `hz graph`
 
-Show your team&#x27;s contracts: who keeps which artifact, how each contract stands, where the flow waits.
+Show your team&#x27;s contracts: who keeps which artifact, how each stands, where the flow waits.
 
 **Usage**:
 
@@ -791,7 +791,7 @@ $ hz heinzel check [OPTIONS]
 
 ### `hz heinzel discover`
 
-(expert) Find candidates for each playbook&#x27;s artifact types through the capabilities you have bound; reads only.
+(expert) Find candidates for each playbook&#x27;s artifact types through your bound capabilities; reads only.
 
 **Usage**:
 

@@ -18284,7 +18284,7 @@
     },
     "/graph": {
       "get": {
-        "description": "Show your team's contracts: who keeps which artifact, how each contract stands, where the flow waits.",
+        "description": "Show your team's contracts: who keeps which artifact, how each stands, where the flow waits.",
         "operationId": "graph",
         "parameters": [
           {
@@ -18390,7 +18390,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Show your team's contracts: who keeps which artifact, how each contract stands, where the flow waits.",
+        "summary": "Show your team's contracts: who keeps which artifact, how each stands, where the flow waits.",
         "tags": [
           "graph"
         ]
@@ -19451,7 +19451,7 @@
     },
     "/heinzel/discover": {
       "get": {
-        "description": "Find candidates for each playbook's artifact types through the capabilities you have bound; reads only.",
+        "description": "Find candidates for each playbook's artifact types through your bound capabilities; reads only.",
         "operationId": "heinzel_discover",
         "parameters": [
           {
@@ -19495,7 +19495,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Find candidates for each playbook's artifact types through the capabilities you have bound; reads only.",
+        "summary": "Find candidates for each playbook's artifact types through your bound capabilities; reads only.",
         "tags": [
           "heinzel"
         ]

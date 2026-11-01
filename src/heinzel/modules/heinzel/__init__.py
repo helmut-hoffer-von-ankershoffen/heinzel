@@ -178,7 +178,7 @@ def discover(
         str | None, Field(description="Only this module's playbook; every playbook's if omitted.")
     ] = None,
 ) -> Discovery:
-    """Find candidates for each playbook's artifact types through the capabilities you have bound; reads only."""
+    """Find candidates for each playbook's artifact types through your bound capabilities; reads only."""
     return service.discover(playbook)
 
 

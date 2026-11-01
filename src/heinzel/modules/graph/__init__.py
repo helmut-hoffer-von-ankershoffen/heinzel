@@ -53,7 +53,7 @@ def graph(
         datetime | None, Field(description="The graph as of this time, ISO 8601 with offset; now by default.")
     ] = None,
 ) -> TeamGraphDocument:
-    """Show your team's contracts: who keeps which artifact, how each contract stands, where the flow waits."""
+    """Show your team's contracts: who keeps which artifact, how each stands, where the flow waits."""
     return service.graph(artifact=artifact, heinzel=heinzel, state=state, at=at)
 
 
