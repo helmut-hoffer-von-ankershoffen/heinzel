@@ -63,7 +63,7 @@ tool where one exists, and by the `critic` agent in review otherwise.
 
 ## Architecture rules
 
-These keep the modulith a modulith. See [ARCHITECTURE.md](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/blob/main/docs/ARCHITECTURE.md) and the [ADRs](adr/).
+These keep the modulith a modulith. See [ARCHITECTURE.md](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/blob/main/docs/ARCHITECTURE.md) and the [ADRs](adr/README.md).
 
 | Layer | May import | Must not import |
 | --- | --- | --- |
@@ -136,7 +136,7 @@ The `heinzel.testing` pytest plugin enforces the markers and the timeouts below,
 ## Documentation
 
 - [INTENT.md](../INTENT.md) states why Heinzelmännchen exists; change it only with the maintainers.
-- Every significant decision is an [ADR](adr/) in MADR format, numbered, never rewritten once accepted — superseded.
+- Every significant decision is an [ADR](adr/README.md) in MADR format, numbered, never rewritten once accepted — superseded.
 - README explains how to use Heinzelmännchen; AGENTS.md how to work on it; this file how to write code for it.
 - Docs are part of the change: a pull request that changes behaviour updates the docs in the same commit.
 

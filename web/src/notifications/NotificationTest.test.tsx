@@ -109,10 +109,11 @@ describe("The notification test", () => {
     const opened = vi.fn();
     window.addEventListener(OPEN_TERMINAL, opened);
     await user.click(within(result).getByRole("button", { name: "Install daemon" }));
-    const confirm = screen.getByRole("alertdialog", { name: "Run in the terminal" });
+    const confirm = await screen.findByRole("alertdialog", { name: /Keep my Heinzelmännchen working/ });
     expect(confirm).toHaveTextContent("hz system daemon install");
-    await user.click(within(confirm).getByRole("button", { name: "Run it" }));
-    expect(opened).toHaveBeenCalled();
+    expect(confirm).toHaveTextContent("registers a background service");
+    await user.click(within(confirm).getByRole("button", { name: "Cancel" }));
+    expect(opened).not.toHaveBeenCalled();
     window.removeEventListener(OPEN_TERMINAL, opened);
 
     const test = calls.find((call) => call.url.includes("/system/notify/test"));
