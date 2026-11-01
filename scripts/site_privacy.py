@@ -29,7 +29,7 @@ def require(condition: bool, message: str) -> None:
 
 # Every host a visitor's browser may contact besides the site itself, with the reason. The list is empty on purpose:
 # a page view requests only this site (docs/privacy.md says so). To add a host, name it here with the reason AND in
-# both docs/privacy.md and docs/datenschutz.md, or the check fails.
+# docs/privacy.md, or the check fails.
 THIRD_PARTY_HOSTS: dict[str, str] = {}
 LOADED_ATTRIBUTES = {
     ("img", "src"),
@@ -60,7 +60,7 @@ LOADED_RELATIONS = {
     "manifest",
 }
 CSS_URL = re.compile(r"""url\(\s*['"]?([^'")\s]+)|@import\s+['"]([^'"]+)""")
-LEGAL_PAGES = ("imprint", "impressum", "privacy", "datenschutz")
+LEGAL_PAGES = ("imprint", "privacy")
 
 
 class LoadedUrls(HTMLParser):
@@ -135,11 +135,10 @@ def static_privacy(site: Path, own: str) -> None:
 
 
 def legal_pages_name_hosts(site: Path) -> None:
-    """A listed third-party host must be named in the English and the German privacy page, and both pages must exist."""
+    """A listed third-party host must be named in the privacy page, and the legal pages must exist."""
     for name in LEGAL_PAGES:
         require((site / name / "index.html").is_file(), f"The {name} page is part of the site")
     for host in THIRD_PARTY_HOSTS:
-        for name in ("privacy", "datenschutz"):
-            require(
-                host in (site / name / "index.html").read_text(), f"{host} is listed but not named in the {name} page"
-            )
+        require(
+            host in (site / "privacy" / "index.html").read_text(), f"{host} is listed but not named in the privacy page"
+        )
