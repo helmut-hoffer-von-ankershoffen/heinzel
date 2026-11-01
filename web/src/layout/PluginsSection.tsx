@@ -282,6 +282,7 @@ function CandidateDetails({ candidate }: { candidate: SchemaPluginCandidate }) {
           candidate.version ?? t("plugins.unknown"),
           candidate.publisher ?? t("plugins.unknown"),
           sourceLabel({ source_url: candidate.url }, candidate.private),
+          ...(candidate.installed_version ? [`${t("plugins.field.replaces")} ${candidate.installed_version}`] : []),
         ].join(" · ")}
       </p>
       <details className="mt-1">

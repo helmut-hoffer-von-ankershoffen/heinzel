@@ -37,7 +37,7 @@ const candidate = {
   first_party: false,
   private: true,
   revision: "b".repeat(40),
-  installed_version: null,
+  installed_version: null as string | null,
   warnings: ["It is named crm-tools, not heinzel-<name> as plugins are (ADR 0025)."],
 };
 let receiptCount = 0;
@@ -245,6 +245,23 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("PluginsSection", () => {
+  it("says outright which installed version a plugin replaces, without opening the details", async () => {
+    candidate.installed_version = "0.9.3";
+    try {
+      serve(base);
+      const user = userEvent.setup();
+      show({ reload: vi.fn() });
+      await user.click(screen.getByRole("button", { name: "Add" }));
+      await user.type(screen.getByLabelText(/A plugin's name/), candidate.spec);
+      await user.click(screen.getByRole("button", { name: "Install" }));
+      const group = await screen.findByRole("group", { name: /Install this plugin/ });
+      const line = within(group).getByText(/Replaces 0\.9\.3/);
+      expect(line.closest("details")).toBeNull();
+    } finally {
+      candidate.installed_version = null;
+    }
+  });
+
   it("does not call an uncompleted backend reply an installed plugin or restart the server", async () => {
     const calls = serve((url) =>
       url.pathname === "/api/system/plugin/add" || url.pathname === "/api/stream/system/plugin/add"
