@@ -17,7 +17,7 @@ GATE := "lock=uv lock --check" "&format=uv run ruff format --check ." "&ruff=uv 
 LINT := \
 		"&docs-plugins=uv run --quiet hz system plugin docs build --directory docs/plugins --check" \
 		"&zizmor=uv run zizmor --offline --quiet .github/workflows" \
-		"&actionlint=uv run actionlint" \
+		"&actionlint=$(TOOLS) run actionlint" \
 		"&typos=uv run typos" \
 		"&confidential=uv run --script scripts/check_confidentiality.py"
 TYPES := "&mypy=uv run mypy" "&pyright=uv run pyright"
@@ -33,7 +33,8 @@ help: ## Show this help
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
 
 install: ## Install what the build needs: Python with every dependency group (.venv) and the pinned tools (.tools)
-	@uv sync --all-groups --quiet && echo "✓ .venv: Python and every dependency group, as locked in uv.lock"
+	@test -f uv.lock || uv lock --quiet
+	@uv sync --frozen --all-groups --quiet && echo "✓ .venv: Python and every dependency group, as locked in uv.lock"
 	@$(TOOLS) install
 
 setup: install ## Install what the build needs, and the git hooks (prek: lint on commit, conventional commits)
@@ -49,12 +50,17 @@ tools-verify: ## Download every pinned tool for every platform and check its che
 check: ## Everything CI checks that runs offline, in parallel: lint, types, tests
 	$(STEPS) $(GATE) $(LINT) $(TYPES) $(TESTS)
 
+# The pre-push hook (scripts/scoped_checks.py push) narrows UNIT_TARGETS to the tests related to the branch and sets
+# FAST_TYPES to the type checks; by hand both stay empty and this is the full unit run.
+FAST_TYPES ?=
+UNIT_TARGETS ?=
 check-fast: ## Seconds-fast feedback for the edit loop: format, lint, generated pages, unit tests
 	$(STEPS) \
 		"format=uv run ruff format --check ." \
 		"&ruff=uv run ruff check --no-fix ." \
 		"&docs-plugins=uv run --quiet hz system plugin docs build --directory docs/plugins --check" \
-		"unit=uv run pytest -m 'unit and not perf' -n auto -x -q --session-timeout=120"
+		$(FAST_TYPES) \
+		"unit=uv run pytest $(UNIT_TARGETS) -m 'unit and not perf' -n auto -x -q --session-timeout=120"
 
 preflight: ## What CI checks, before you push: check with coverage, build, commits (PREFLIGHT=full adds e2e, audit)
 	$(STEPS) $(GATE) $(LINT) $(TYPES) \
@@ -94,6 +100,7 @@ test: ## Run unit and integration tests with coverage on 4 workers (offline; wha
 # TEST_LEVELS picks a shard: CI's macOS cells set unit or integration, each under the same session cap.
 TEST_LEVELS ?= unit or integration
 test-parallel: ## Unit and integration tests on 4 workers, stopping at the first failure; no coverage (the CI test matrix)
+	@echo "Runner: $$(getconf _NPROCESSORS_ONLN) CPUs"
 	$(STEPS) "tests=uv run pytest -m '($(TEST_LEVELS)) and not perf' -n 4 -x -q --session-timeout=420 --durations=20"
 
 commits: ## Commit messages since BASE, and $$TITLE and $$BRANCH when set: conventional, no confidential terms
@@ -119,6 +126,7 @@ test-notifier: ## Real Heinzel Notifier launches leave no process behind (macOS;
 	$(STEPS) "notifier=uv run pytest tests/e2e/notifier_instances_test.py -q -p no:cacheprovider -o timeout=120"
 
 test-e2e: ## Run end-to-end tests (needs network), on 3 workers
+	@echo "Runner: $$(getconf _NPROCESSORS_ONLN) CPUs"
 	$(STEPS) "e2e=uv run pytest -m e2e -n 3 -q --session-timeout=600 -x"
 
 audit: ## Audit runtime dependencies: known vulnerabilities (pip-audit) and licenses (.license-allowlist)

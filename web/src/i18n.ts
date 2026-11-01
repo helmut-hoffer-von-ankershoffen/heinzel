@@ -302,14 +302,14 @@ const en = {
   "onboarding.first.intro": "Start from a playbook's template, or say in one sentence what should get done.",
   "onboarding.first.template": "From a template",
   "onboarding.first.sentence": "Or in one sentence",
-  "onboarding.first.placeholder": "Weekly status for the Acme team",
+  "onboarding.first.placeholder": "Weekly status for the ACME team",
   "onboarding.first.name": "Its contract will be called {name}.",
   "onboarding.first.create": "Create it",
   "changelog.installed": "This version",
   "changelog.newer": "Newer releases",
   "changelog.upToDate": "You have the newest release.",
   "help.intro":
-    "Heinzelmännchen keeps your team's recurring work done: it drafts reports and updates on a schedule, tells you when something needs you, and leaves every decision to a person. Use the **chat** on the right to ask anything, the **terminal** under it for sign-ins and commands, and **Settings** (⌘,) to change how it works.",
+    "Heinzelmännchen drafts your team's recurring work: reports and updates on a schedule. It tells you when something needs you, and leaves every decision to a person. Use the **chat** on the right to ask anything, the **terminal** under it for sign-ins and commands, and **Settings** (⌘,) to change how it works.",
   "help.commands": "Commands you'll use",
   "help.commandsIntro":
     "Each runs in the terminal with ▶, or copy it for your own. Turn on expert mode in Settings to see all of them.",
@@ -384,6 +384,10 @@ const en = {
   "splash.tokenTitle": "Sign in again",
   "splash.token":
     "{command} no longer accepts this page's sign-in: it started again with a new link, or this browser was unpaired. Open the link it printed.",
+  "splash.tokenApp":
+    "This app has no address bar. After {command} started again, or this app was unpaired, it needs the new link: paste it below.",
+  "splash.pasteLabel": "Paste the link `hz ui` printed",
+  "splash.pasteProblem": "That isn't a link with a sign-in token for {address}; copy the whole line `hz ui` printed.",
   "splash.tokenCommand": "For a new link, press Ctrl+C in the terminal running it, then run:",
   "state.loading": "Loading…",
   "state.error": "Couldn't load this:",

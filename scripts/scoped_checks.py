@@ -8,8 +8,10 @@
 templates, assets and `mkdocs.yml`, and the site's own tooling (`scripts/site_*.py`, `check_docs.py`,
 `sync_template.py` and their unit tests) run the documentation checks and the tests that read documents and the site;
 only `web/` runs the web checks; changes that touch neither `web/` nor `desktop/` nor the root build files run
-`make check-fast` without the web app's tests and the managed backend's check; anything else runs `make check-fast` in
-full. CI always runs the full gate, so nothing goes unchecked, only later.
+`make check-fast` without the web app's tests and the managed backend's check, with the type checks added and the unit
+tests narrowed to the ones related to the change (`scripts/related_tests.py`; configuration, the lockfile and
+`conftest.py` cannot be mapped and run all of them); anything else runs `make check-fast` in full. `make check-fast` by
+hand stays the full run. CI always runs the full gate, so nothing goes unchecked, only later.
 """
 
 import argparse
@@ -28,11 +30,55 @@ TOOLKIT = (
 )
 
 
+def named_revision(base: str) -> str:
+    """Rebuild a revision from parts that cannot carry an option: Git's own ref names, hex digits or `HEAD` offsets.
+
+    Raises:
+        ValueError: If the input is none of these.
+    """
+    if offset := re.fullmatch(r"HEAD(?:([~^])([0-9]{1,4}))?", base):
+        return f"HEAD{offset[1]}{int(offset[2])}" if offset[1] else "HEAD"
+    if re.fullmatch(r"[0-9a-f]{7,64}", base):
+        return f"{int(base, 16):0{len(base)}x}"
+    # Fixed Git listing of the branch, remote and tag names
+    names = subprocess.check_output(
+        # Repository Git from PATH
+        ["git", "for-each-ref", "--format=%(refname:short)", "refs/heads", "refs/remotes", "refs/tags"],  # noqa: S607
+        text=True,
+        timeout=30,
+    ).splitlines()
+    for name in names:
+        if name == base:
+            return name
+    msg = "The base must name a branch, tag, commit or HEAD offset"
+    raise ValueError(msg)
+
+
+def resolve_base(base: str) -> str:
+    """Resolve a revision once so Git and Make receive only a canonical commit identity.
+
+    Raises:
+        ValueError: If the input is not a revision or Git returned an invalid identity.
+    """
+    # Fixed Git operation, revision explicitly separated from options
+    revision = subprocess.check_output(  # noqa: S603
+        # Repository Git from PATH
+        ["git", "rev-parse", "--verify", "--end-of-options", f"{named_revision(base)}^{{commit}}"],  # noqa: S607
+        text=True,
+        timeout=30,
+    ).strip()
+    if not re.fullmatch(r"[0-9a-f]{40}(?:[0-9a-f]{24})?", revision):
+        msg = "Git returned an invalid commit identity"
+        raise ValueError(msg)
+    return revision
+
+
 def changed_paths(mode: str, base: str) -> list[str]:
     """Include deleted, moved and untracked paths without parsing Git's quoted display format."""
     revision = [f"{base}...HEAD"] if mode in ("preflight", "push") else ["HEAD"]
     result = subprocess.check_output(  # noqa: S603 - fixed git argument lists, no shell
-        ["git", "diff", "--name-only", "--no-renames", "-z", *revision],  # noqa: S607 - git from PATH
+        # Git from PATH
+        ["git", "diff", "--name-only", "--no-renames", "-z", "--end-of-options", *revision, "--"],  # noqa: S607
         text=True,
         timeout=30,
     )
@@ -134,15 +180,41 @@ def touches_web(changed: list[str]) -> bool:
     return any(path.startswith(WEB_INPUTS) or path in WEB_ROOT_FILES for path in changed)
 
 
+TYPES = '"&mypy=uv run mypy" "&pyright=uv run pyright"'
+
+
+def python_overrides(changed: list[str]) -> list[str]:
+    """Make variables for the pre-push run of `check-fast`: no web steps, the type checks, the related unit tests.
+
+    A change that cannot be mapped to tests (configuration, the lockfile, `conftest.py`) keeps the full unit run. When
+    nothing is related (a script no test mentions), only the hook's own test runs besides lint, contracts and types.
+    """
+    overrides = ["WEB_TESTS=", "MANAGED_CHECK=", f"FAST_TYPES={TYPES}"]
+    sys.path.insert(0, str(ROOT / "scripts"))
+    from related_tests import related_tests  # noqa: PLC0415 - only the hook needs the import graph
+
+    related = related_tests(changed)
+    if related is None:
+        return overrides
+    if not related:
+        related = ["tests/unit/scoped_checks_test.py"]  # pytest fails on an empty selection; this pins the hook itself
+    return [*overrides, f"UNIT_TARGETS={' '.join(related)}"]
+
+
 def main() -> None:
     """Preserve core checks and common policies while selecting independent owning plugin work."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("mode", choices=["fast", "preflight", "push"])
     parser.add_argument("--base", default="origin/main")
     args = parser.parse_args()
-    changed = changed_paths(args.mode, args.base)
+    try:
+        base = resolve_base(args.base) if args.mode in ("preflight", "push") else "HEAD"
+    except (ValueError, subprocess.CalledProcessError):
+        parser.error("Use a valid commit revision for --base")
+    changed = changed_paths(args.mode, base)
+    base_arguments = [f"BASE={base}"] if args.mode == "preflight" else []
     if args.mode == "push":
-        changed = sorted({*changed, *changed_paths("fast", args.base)})
+        changed = sorted({*changed, *changed_paths("fast", base)})
         steps = scoped_steps(changed)
         if steps:
             command = ["uv", "run", "--quiet", "--script", "scripts/steps.py", *steps]
@@ -151,24 +223,26 @@ def main() -> None:
         if changed and not touches_web(changed) and not all(path.startswith("plugins/") for path in changed):
             # Python, scripts, tests and documents: everything of the fast gate but the web app's tests and the managed
             # backend's check, which read nothing of it (the generated client is still checked by web-lint).
-            command = ["make", "check-fast", "WEB_TESTS=", "MANAGED_CHECK="]
+            command = ["make", "check-fast", *python_overrides(changed)]
             sys.exit(subprocess.run(command, check=False, timeout=1800).returncode)  # noqa: S603
         args.mode = "fast"  # everything else is the full fast gate
     if not changed or not all(path.startswith("plugins/") for path in changed):
         subprocess.run(  # noqa: S603 - explicit owning commands, no shell
-            ["make", "preflight" if args.mode == "preflight" else "check-fast", f"BASE={args.base}"],  # noqa: S607 - make from PATH
+            # Make from PATH
+            ["make", "preflight" if args.mode == "preflight" else "check-fast", *base_arguments],  # noqa: S607
             check=True,
             timeout=1800 if args.mode == "preflight" else 300,
         )
         return
-    toolkit = ["uv", "run", "--quiet", "--no-project", "--with", TOOLKIT, "hz-plugin"]
+    toolkit = [sys.executable, str(Path(__file__).with_name("plugin_tooling.py")), "--toolkit", TOOLKIT, "hz-plugin"]
     if args.mode == "fast":
         subprocess.run([*toolkit, "check-changed", "--changed", *changed], check=True, timeout=300)  # noqa: S603 - pinned toolkit, literal paths
         return
     # These policies apply to plugin source too; no core build, native job or test suite runs.
-    subprocess.run(["make", "commits", "secrets", f"BASE={args.base}"], check=True, timeout=120)  # noqa: S603, S607 - shared policy targets
+    # Shared policy targets
+    subprocess.run(["make", "commits", "secrets", *base_arguments], check=True, timeout=120)  # noqa: S603, S607
     subprocess.run(
-        ["uv", "run", "--script", "scripts/check_confidentiality.py"],  # noqa: S607 - pinned script runner
+        [sys.executable, "scripts/check_confidentiality.py"],
         check=True,
         timeout=120,
     )

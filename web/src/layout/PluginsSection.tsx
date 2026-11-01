@@ -31,6 +31,7 @@ import {
 } from "@/api/queries";
 import { Loaded } from "@/components/common";
 import { Button } from "@/components/ui/button";
+import { CodeInput } from "@/components/ui/code-input";
 import { SearchField } from "@/components/ui/search-field";
 import { type MessageKey, t } from "@/i18n";
 import { cn } from "@/lib/utils";
@@ -636,12 +637,11 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
             {t("plugins.addLabel")}
           </label>
           <div className="flex gap-2">
-            <input
+            <CodeInput
               id="plugin-spec"
               value={spec}
               onChange={(event) => setSpec(event.target.value)}
               placeholder="git+https://github.com/acme-example/heinzel-acme"
-              className="h-8 min-w-0 flex-1 rounded-lg border border-border bg-input px-2.5 font-mono text-xs outline-none focus:border-muted-foreground/50"
             />
             <Button type="submit" size="sm" disabled={!spec.trim() || preview.isPending}>
               {preview.isPending ? t("plugins.checking") : t("plugins.install")}
@@ -685,10 +685,17 @@ function Yours({
   const catalog = usePluginSearch("");
   const [kind, setKind] = useState<PluginKind | null>(null);
   const known = new Map((catalog.data?.plugins ?? []).map((plugin) => [plugin.name, plugin]));
+  const lastSeen = useRef(new Map<string, SchemaPluginInfo>());
   return (
     <Loaded query={plugins}>
       {(list) => {
-        const shown = list.filter(
+        // A removal refreshes the list before its restart. The row holds the confirmation, whose restart is cancelled
+        // if it unmounts, so the row stays until the page reloads.
+        for (const plugin of list) lastSeen.current.set(`yours:${plugin.distribution}`, plugin);
+        const leaving = slot ? lastSeen.current.get(slot.key) : undefined;
+        const current =
+          leaving && !list.some((plugin) => plugin.distribution === leaving.distribution) ? [...list, leaving] : list;
+        const shown = current.filter(
           (plugin) =>
             plugin.distribution.toLowerCase().includes(query.toLowerCase()) &&
             (kind === null || (plugin.kinds ?? []).includes(kind)),

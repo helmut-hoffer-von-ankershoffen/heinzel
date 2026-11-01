@@ -55,7 +55,7 @@ from heinzel.heads.web._lifecycle import CANT_RESTART as CANT_RESTART
 from heinzel.heads.web._lifecycle import add_lifecycle
 from heinzel.heads.web._pairing import add_pairing
 from heinzel.heads.web._ports import wait_for_port
-from heinzel.heads.web._shutdown import GRACE_SECONDS, Stopping
+from heinzel.heads.web._shutdown import GRACE_SECONDS, KEEP_ALIVE_SECONDS, Stopping
 from heinzel.heads.web._shutdown import server as stopping_server
 from heinzel.heads.web._stream import add_stream
 from heinzel.heads.web._updates import add_updates
@@ -518,7 +518,13 @@ def serve(  # noqa: PLR0913 - all but the kernel by keyword
     except BaseException:
         sock.close()
         raise
-    config = uvicorn.Config(app, log_level="warning", lifespan="off", timeout_graceful_shutdown=GRACE_SECONDS)
+    config = uvicorn.Config(
+        app,
+        log_level="warning",
+        lifespan="off",
+        timeout_graceful_shutdown=GRACE_SECONDS,
+        timeout_keep_alive=KEEP_ALIVE_SECONDS,
+    )
     server = stopping_server(config, stopping)
     url = session_url(bound, token, base)
 

@@ -112,3 +112,18 @@ darwin-arm64 = { file = "jq-macos-arm64", sha256 = "2d75340ba57a4b4b4c8708a21c2d
 darwin-x86_64 = { file = "jq-macos-amd64", sha256 = "e94b266e3c26690550006abe63152b782280f4e14374accdf04cbde844f00bc0" }
 linux-x86_64 = { file = "jq-linux-amd64", sha256 = "b1c22172dd303f3be49e935aa56aa48a8b7a46e0bc838b4997d3bb451495870f" }
 linux-arm64 = { file = "jq-linux-arm64", sha256 = "8b85c817833814ddca00a144c33705546355afccf0cf39b188f3cdb48b852309" }
+
+[actionlint]
+version = "1.7.12"
+group = "build"
+why = "GitHub workflow lint, without a Python source-build wrapper"
+home = "https://github.com/rhysd/actionlint"
+url = "https://github.com/rhysd/actionlint/releases/download/v{version}/{file}"
+member = "actionlint"
+hint = { darwin = "brew install actionlint", linux = "see https://github.com/rhysd/actionlint#installation" }
+
+[actionlint.files]
+darwin-arm64 = { file = "actionlint_{version}_darwin_arm64.tar.gz", sha256 = "aba9ced2dee8d27fecca3dc7feb1a7f9a52caefa1eb46f3271ea66b6e0e6953f" }
+darwin-x86_64 = { file = "actionlint_{version}_darwin_amd64.tar.gz", sha256 = "5b44c3bc2255115c9b69e30efc0fecdf498fdb63c5d58e17084fd5f16324c644" }
+linux-x86_64 = { file = "actionlint_{version}_linux_amd64.tar.gz", sha256 = "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8" }
+linux-arm64 = { file = "actionlint_{version}_linux_arm64.tar.gz", sha256 = "325e971b6ba9bfa504672e29be93c24981eeb1c07576d730e9f7c8805afff0c6" }

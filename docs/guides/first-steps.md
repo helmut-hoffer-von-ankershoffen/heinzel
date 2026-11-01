@@ -1,6 +1,6 @@
 ---
 title: Your first session
-description: Find your way around Heinzel, inspect its operations, and choose your next useful step.
+description: Find your way around Heinzelmännchen, inspect its operations, and choose your next useful step.
 ---
 
 # A useful first session.

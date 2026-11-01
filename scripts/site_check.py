@@ -143,10 +143,13 @@ def copy_command(page: "Page", identity: str) -> None:
     """Verify a real completed clipboard write or the actual fallback text selection."""
     button = page.locator(f'[data-copy="{identity}"]')
     expected = page.locator(f"#{identity}").inner_text()
+    require(button.inner_text().strip() == "", "The copy button is an icon; its name is the aria-label")
     button.click()
-    expect(button).to_have_text(re.compile(r"^(Copied|Select command)$"), timeout=3000)
-    if button.inner_text() == "Copied":
+    expect(button).to_have_attribute("aria-label", re.compile(r"^(Copied|Select command)$"), timeout=3000)
+    if button.get_attribute("aria-label") == "Copied":
         require(page.evaluate("window.__hzCopied") == expected, "Copy must complete writing the command")
+        require(button.get_attribute("data-state") == "copied", "The button shows the check while copied")
+        expect(button).to_have_attribute("aria-label", "Copy command", timeout=3000)  # back after a moment
     else:
         require(page.evaluate("window.getSelection().toString()") == expected, "Fallback must select the command")
 

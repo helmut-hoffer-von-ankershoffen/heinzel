@@ -581,7 +581,7 @@ class UpdateService:
         metadata = self._installation.verify_installed_requirements(
             selected,
             expected_version=target.removeprefix("v")
-            if target and re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+(?:[a-zA-Z0-9.+-]*)?", target)
+            if target and re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+[a-zA-Z0-9.+-]*", target)
             else None,
             forbidden=tuple(plugin.name for plugin in plugins if modes[canonicalize_name(plugin.name)] == "drop"),
             constraints=captured_constraints,

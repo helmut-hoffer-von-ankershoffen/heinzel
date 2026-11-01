@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { _electron as electron } from '../../web/node_modules/playwright-core/index.mjs';
-import { withTimeout } from './harness-cleanup.mjs';
+import { retainEvidence, withTimeout } from './harness-cleanup.mjs';
 import { diagnosePermissionClick } from './permission-diagnostics.mjs';
 
 const directory = process.env.HZ_TEST_ELECTRON_DIR ?? fileURLToPath(new URL('../node_modules/electron/', import.meta.url));
@@ -29,6 +29,9 @@ try {
     env: {PATH: '/usr/bin:/bin', HOME: root, TMPDIR: root, USER: process.env.USER || '', LOGNAME: process.env.LOGNAME || '', LANG: 'en_US.UTF-8', ...(process.env.DISPLAY ? {DISPLAY: process.env.DISPLAY} : {}), ...(process.env.XAUTHORITY ? {XAUTHORITY: process.env.XAUTHORITY} : {}), XDG_CONFIG_HOME: join(root, 'config'), XDG_STATE_HOME: join(root, 'state'), XDG_CACHE_HOME: join(root, 'cache'), XDG_DATA_HOME: join(root, 'data'), HZ_TEST_PROFILE: join(root, 'profile'), HZ_TEST_ORIGIN: origin}});
   child = instance.process();
   const page = await instance.firstWindow({ timeout: 10000 });
+  // A new machine's first launch starts the GPU process cold and paints no frame for up to seconds: 0.2 to 4.4 s on ten
+  // fresh runners, against under 0.1 s with --disable-gpu. Page.click needs frames, so its budget must not include that.
+  await withTimeout(page.evaluate(() => new Promise((painted) => requestAnimationFrame(() => requestAnimationFrame(painted)))), 30000, 'Electron painted no frame');
   for (const id of ['notification', 'microphone']) {
     try { await page.click(`#${id}`, { timeout: 5000 }); }
     catch (error) { await diagnosePermissionClick(page, instance, id, error); }
@@ -69,5 +72,5 @@ try {
   }
   await new Promise((resolve) => server.close(resolve));
   if (safeToRemove) await rm(root, {recursive: true, force: true});
-  else throw new Error(`Electron shutdown uncertain; evidence retained at ${root}`);
+  else retainEvidence(`Electron shutdown uncertain; evidence retained at ${root}`);
 }

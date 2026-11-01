@@ -2,7 +2,7 @@
 # (ADR 0082). `make docs-site` builds it into site/; the Docs workflow deploys it. Nothing here is hand-written
 # content: every page is a file in docs/ or at the root, so GitHub and the site show the same thing.
 site_name: Heinzelmännchen
-site_description: Open-source helpers that keep product development teams running.
+site_description: An open-source crew of AI helpers that drafts your team's busywork and asks before anything leaves your machine.
 site_url: https://heinzel.team/
 repo_url: https://github.com/helmut-hoffer-von-ankershoffen/heinzel
 repo_name: heinzel
@@ -11,9 +11,7 @@ docs_dir: docs
 site_dir: site
 not_in_nav: |
   imprint.md
-  impressum.md
   privacy.md
-  datenschutz.md
 exclude_docs: |
   overrides/
   _data/
@@ -94,7 +92,7 @@ hooks:
 nav:
   - Home: README.md
   - Start here:
-      - Install Heinzel: guides/install.md
+      - Install Heinzelmännchen: guides/install.md
       - Your first session: guides/first-steps.md
       - Product tour: guides/tour.md
       - Bootstrap a team: guides/manager.md
@@ -108,6 +106,7 @@ nav:
       - Extension contracts: PLUGINS.md
       - Themes and soundscapes: THEMES.md
       - Publishing: PUBLISHING.md
+      - Branding: BRANDING.md
   - Vision & architecture:
       - Where we are going: VISION.md
       - Architecture tour: guides/architecture.md
