@@ -1,8 +1,10 @@
+import { fetchOnce, ONE_CONNECTION } from "./fetch-once.mjs";
+
 // Exercise an arbitrary provider's navigation and the actual authenticated private JSON operation it invokes.
 export async function verifyNavigation(page, url, shots) {
   const base = new URL(url).origin;
   const token = new URLSearchParams(new URL(url).hash.slice(1)).get("token");
-  const headers = { Authorization: `Bearer ${token}` };
+  const headers = { ...ONE_CONNECTION, Authorization: `Bearer ${token}` };
   const create = await page.request.post(`${base}/api/heinzel/new-chat`, {
     headers,
     data: { request_id: crypto.randomUUID(), name: "Harbor helper" },
@@ -42,7 +44,7 @@ export async function verifyNavigation(page, url, shots) {
   };
   await page.route("**/api/system/ui/navigation", (route) => route.fulfill({ json: [entry] }));
   await page.route("**/api/system/config/show", async (route) => {
-    const response = await route.fetch();
+    const response = await fetchOnce(route);
     const report = await response.json();
     await route.fulfill({
       response,
@@ -99,7 +101,7 @@ export async function verifyNavigation(page, url, shots) {
   if (viewport) await page.setViewportSize(viewport);
   let sent;
   page.on("request", (request) => {
-    if (new URL(request.url()).pathname === "/api/heinzel/profile") sent = request;
+    if (new URL(request.url()).pathname === "/api/stream/heinzel/profile") sent = request; // a confirmed write runs on the operation stream
   });
   await page
     .getByRole("navigation", { name: "Main", exact: true })
@@ -108,11 +110,22 @@ export async function verifyNavigation(page, url, shots) {
   const confirmation = page.getByRole("alertdialog", { name: "Save the helper profile." });
   await confirmation.waitFor();
   if (sent) throw new Error("A private mutation ran before confirmation");
-  const answer = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/heinzel/profile");
+  const answer = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/stream/heinzel/profile");
   await confirmation.getByRole("button", { name: "Run it" }).click();
   const changed = await answer;
   if (!changed.ok() || !sent || new URL(sent.url()).search || sent.postDataJSON().appearance.hat !== "blue")
     throw new Error("The generic action did not use the private JSON wire");
+  // A stream's response starts before the operation runs: wait for the write it reports, then compare what was saved.
+  await page.waitForFunction(
+    async ({ id, name, credential }) => {
+      const response = await fetch(`/api/heinzel/session?session_id=${encodeURIComponent(id)}`, {
+        headers: { Authorization: `Bearer ${credential}` },
+      });
+      return response.ok && (await response.json()).name === name;
+    },
+    { id: session.session_id, name: body.name, credential: token },
+    { polling: 100, timeout: 30_000 },
+  );
   const check = await page.request.get(`${base}/api/heinzel/session`, {
     headers,
     params: { session_id: session.session_id },

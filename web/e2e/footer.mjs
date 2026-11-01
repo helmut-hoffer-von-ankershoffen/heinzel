@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { chromium } from "playwright-core";
+import { fetchOnce } from "./fetch-once.mjs";
 import { verifyLayers } from "./layers.mjs";
 
 export function navigationFolded() {
@@ -317,7 +318,7 @@ if (process.argv[1]?.endsWith("/footer.mjs")) {
         await route.fulfill({ json: entries.filter((entry) => entry.id === selected) });
         return;
       }
-      const response = await route.fetch();
+      const response = await fetchOnce(route);
       const body = await response.json();
       await route.fulfill({
         response,

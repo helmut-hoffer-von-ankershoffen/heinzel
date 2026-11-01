@@ -78,7 +78,7 @@ Reads github pull requests and issues of the last 5 days through gh; spends at m
   ! daemon               not installed (fine; nothing runs in the background until you say so)
 
 What happens next
-  Every Friday 16:00   hz workflow schedule me:my-week      drafts your part again, for you to edit
+  Every Friday 16:00   hz workflow schedule (removed) me:my-week      drafts your part again, for you to edit
   Background           hz system daemon install             runs scheduled contracts while you work
   Teammates            post the same line in the channel; it is the invite
 ```
@@ -177,7 +177,7 @@ hz-team-checkout/
   policies/, control.toml      auto-approvals, kill switch, cost ceilings (ADR 0020)
   receipts/, cursors/          written by daemons and the Actions runner (ADR 0020)
   plugin/                      optional: the team plugin itself, for a team without a company plugin repository
-  .github/workflows/hz-team.yml  the Actions team runner, hz workflow check
+  .github/workflows/hz-team.yml  the Actions team runner, hz heinzel check
 ```
 
 ```yaml
@@ -285,7 +285,7 @@ company as repositories of their own, core role templates.
    `[team] checkout` replace `[workflow] team_repository`, which is deprecated; the checkout is fetched by the tick.
 5. Data files people write are YAML (manifest, roster, people files), parsed with ADR 0021's strict loader;
    configuration stays TOML.
-6. The first win is a contract run by hand (`hz workflow run`, ADR 0021 §12) from the stacked playbooks' template
+6. The first win is a contract run by hand (`hz workflow run (removed)`, ADR 0021 §12) from the stacked playbooks' template
    contracts, picked by role (the most specific layer that names one wins), copied into `me:`; the core ships none.
 7. `join` is CLI and MCP only (it installs, clones and may open a pull request; it spends money for the win); `hz team
    show` and `hz org show` are in every head.

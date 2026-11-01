@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { acmeTheme, config, shell, themeList } from "@/test/fixtures";
 import { expectAccessible, mockApi } from "@/test/render";
 import { GIVE_UP_MS, initial, reduce, type SplashEvent } from "./machine";
-import { type ProbeResult, Splash, SplashGone, START } from "./Splash";
+import { type ProbeResult, Splash, SplashGone, START, signInFromLink } from "./Splash";
 import { createSplashStore } from "./store";
 
 const page = readFileSync(join(process.cwd(), "index.html"), "utf8"); // vitest runs in web/
@@ -182,6 +182,31 @@ describe("the splash", () => {
     expect(probe).toHaveBeenCalledTimes(1); // a new link is needed: asking again won't help
     vi.useRealTimers(); // axe waits on real timers
     await expectAccessible(splash());
+  });
+
+  it("offers a paste field for the printed link, and wording for an app without an address bar", async () => {
+    vi.stubGlobal("matchMedia", (query: string) => ({
+      matches: query.includes("standalone"),
+      addEventListener() {},
+      removeEventListener() {},
+    }));
+    const probe = vi.fn(async (): Promise<ProbeResult> => ({ kind: "refused" }));
+    mount(probe);
+    await passes(0);
+    expect(screen.getByRole("alert")).toHaveTextContent("no address bar");
+    expect(screen.getByLabelText("Paste the link `hz ui` printed")).toBeInTheDocument();
+    vi.unstubAllGlobals();
+  });
+
+  it("signs in from a pasted link only for this page's own address", () => {
+    const here = { origin: "http://127.0.0.1:8737" } as Location;
+    expect(signInFromLink(" http://127.0.0.1:8737/#token=abc_DEF ", here)).toEqual({
+      ok: true,
+      hash: "#token=abc_DEF",
+    });
+    expect(signInFromLink("http://127.0.0.1:9999/#token=abc", here)).toEqual({ ok: false, reason: "elsewhere" });
+    expect(signInFromLink("http://127.0.0.1:8737/", here)).toEqual({ ok: false, reason: "invalid" });
+    expect(signInFromLink("not a link", here)).toEqual({ ok: false, reason: "invalid" });
   });
 
   it("ignores a blip, but comes back over the app when hz is gone, and gives focus back when it returns", async () => {
