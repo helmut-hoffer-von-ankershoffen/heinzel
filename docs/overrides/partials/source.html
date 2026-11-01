@@ -1,0 +1,12 @@
+{#- Material's partials/source.html without data-md-component="source": that attribute makes the visitor's browser
+    ask api.github.com for the release, stars and forks. The link stays; the numbers are gone, so a page view
+    contacts no host but this site (see privacy.md). -#}
+<a href="{{ config.repo_url }}" title="{{ lang.t('source') }}" class="md-source">
+  <div class="md-source__icon md-icon">
+    {% set icon = config.theme.icon.repo or "fontawesome/brands/git-alt" %}
+    {% include ".icons/" ~ icon ~ ".svg" %}
+  </div>
+  <div class="md-source__repository">
+    {{ config.repo_name }}
+  </div>
+</a>
