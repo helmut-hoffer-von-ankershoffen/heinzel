@@ -257,6 +257,28 @@ def _start_ui(env: dict[str, str], port: int) -> tuple[subprocess.Popen[str], st
     return ui, url
 
 
+def _browser_ready(engine: str) -> list[str]:
+    """Build the web app, install the engine, and return the command that runs a web tool."""
+    web_build.ensure_built()
+    run = [sys.executable, str(REPO / "scripts" / "web_build.py")]
+    subprocess.run(
+        [*run, "exec", "playwright-core", "install", engine], cwd=REPO, check=True, timeout=900, capture_output=True
+    )
+    return run
+
+
+def _node(run: list[str], script: str, *args: str) -> subprocess.CompletedProcess[str]:
+    """Run one browser driver of web/e2e and capture what it printed."""
+    return subprocess.run(
+        [*run, "exec", "node", f"e2e/{script}.mjs", *args],
+        cwd=REPO,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=200,
+    )
+
+
 def _stop_ui(ui: subprocess.Popen[str]) -> None:
     ui.send_signal(signal.SIGINT)  # Ctrl-C, as in a terminal
     try:
@@ -470,6 +492,20 @@ def test_a_plugin_installed_outside_the_running_app_offers_restart_and_apply_in_
                 stream.close()
     assert driven.returncode == 0, driven.stderr + driven.stdout
     assert json.loads(driven.stdout.strip().splitlines()[-1]) == {"pending": True}
+
+
+@pytest.mark.timeout(600)
+def test_a_refused_sign_in_offers_a_paste_field_that_signs_in_with_the_printed_link(environment, tmp_path):
+    """An installed app has no address bar: the sign-in page takes the printed link and rejects another address."""
+    env, _ = environment
+    run = _browser_ready("chromium")
+    ui, url = _start_ui(env, _free_port())
+    try:
+        driven = _node(run, "signin-paste", url, str(tmp_path))
+    finally:
+        _stop_ui(ui)
+    assert driven.returncode == 0, driven.stderr
+    assert json.loads(driven.stdout.strip().splitlines()[-1]) == {"pasted": True}
 
 
 @pytest.mark.timeout(600)

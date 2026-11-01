@@ -204,8 +204,8 @@
         attributes: true, attributeFilter: ['data-md-color-scheme'],
       });
     }
-    // The header widget gets its release from the GitHub API in the browser; that call can fail (shared-IP rate limit).
-    // Then the build's own lookup of the latest release fills in, and only when the widget has no version.
+    // The header no longer asks the GitHub API from the visitor's browser (docs/overrides/partials/source.html), so the
+    // release the build looked up fills in at once. A widget that does carry a version still wins.
     const built = document.querySelector('meta[name="hz-latest-release"]')?.content;
     const versionFact = () => document.querySelector('.md-source__fact--version');
     const showVersion = () => {
@@ -217,8 +217,7 @@
     };
     showVersion();
     new MutationObserver(showVersion).observe(document.body, { childList: true, subtree: true });
-    if (built) setTimeout(() => {
-      if (versionFact()) return;
+    if (built && !versionFact()) {
       document.querySelectorAll('.md-source').forEach(source => {
         let facts = source.querySelector('.md-source__facts');
         if (!facts) {
@@ -232,7 +231,7 @@
         facts.prepend(item);
       });
       showVersion();
-    }, 4000);
+    }
     document.querySelectorAll('[data-copy]').forEach(button => {
       if (button.dataset.ready) return;
       button.dataset.ready = 'true';
@@ -300,7 +299,8 @@
         event.preventDefault();
         go(targets[event.key]);
       });
-      const resize = new ResizeObserver(update);
+      // update() resizes the track: do it in the next frame, or the browser reports an undelivered ResizeObserver loop.
+      const resize = new ResizeObserver(() => requestAnimationFrame(update));
       slides.forEach(slide => {
         resize.observe(slide);
         slide.querySelector('img').addEventListener('load', update);
@@ -315,23 +315,6 @@
         if (!HTMLDialogElement.prototype.showModal) return;
         event.preventDefault();
         openImage(link.querySelector('img'), link.href);
-      });
-    });
-    document.querySelectorAll('[data-play-soundscape]').forEach(button => {
-      if (button.dataset.ready) return;
-      button.dataset.ready = 'true';
-      button.hidden = false;
-      button.addEventListener('click', () => {
-        const host = button.parentElement;
-        const video = host.dataset.soundscape;
-        if (!/^[A-Za-z0-9_-]{11}$/.test(video)) return;
-        const player = document.createElement('iframe');
-        player.src = `https://www.youtube-nocookie.com/embed/${video}?autoplay=1`;
-        player.title = host.dataset.title;
-        player.allow = 'autoplay; encrypted-media; picture-in-picture; fullscreen';
-        player.referrerPolicy = 'strict-origin-when-cross-origin';
-        player.allowFullscreen = true;
-        host.replaceChildren(player);
       });
     });
     const catalog = document.querySelector('[data-catalog]');

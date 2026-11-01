@@ -531,7 +531,8 @@ def test_packaged_youtube_soundscapes_are_discovered_without_execution():
     rendered = pages.detail(project)
     assert "Harbor Tide" in rendered
     assert "https://www.youtube.com/watch?v=abcdefghijk" in rendered
-    assert 'data-soundscape="abcdefghijk"' in rendered
+    assert "data-soundscape" not in rendered
+    assert "data-play-soundscape" not in rendered
     assert "<iframe" not in rendered
     assert "youtube-nocookie.com" not in rendered
 
