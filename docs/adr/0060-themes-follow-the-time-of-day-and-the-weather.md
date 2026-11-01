@@ -1,6 +1,7 @@
 ---
 status: proposed
 date: 2026-10-24
+implementation: built
 decision-makers: maintainer
 amends: 0044
 amends-0044: variants that follow signals; a base theme is checked for contrast too
