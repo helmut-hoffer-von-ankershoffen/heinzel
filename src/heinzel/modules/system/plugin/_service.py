@@ -337,7 +337,8 @@ class PluginService:
         resolved: str | None = None
         if spec.strip().replace("-", "").isalnum() and not spec.strip().startswith(PREFIX):
             wanted = canonicalize_name(spec.strip().removeprefix(PREFIX))
-            matches = [entry for entry in self.search(wanted).plugins if canonicalize_name(entry.short_name) == wanted]
+            # Search without text: a topic search matches repository words, never the plugins inside a repository.
+            matches = [entry for entry in self.search().plugins if canonicalize_name(entry.short_name) == wanted]
             if len(matches) > 1:
                 msg = "Several catalog plugins have that short name; install an exact catalog specification"
                 raise HeinzelError(msg)
@@ -774,17 +775,16 @@ class PluginService:
         private = repository.get("private")
         visibility = private if isinstance(private, bool) else None
         entries = self._monorepo_plugins(repository)
+        # A repository can be a plugin itself and hold more under plugins/ (the ACME reference company does).
+        full_name = repository.get("full_name")
+        text = self._file(f"{GITHUB_REPOS}/{full_name}/contents/pyproject.toml") if full_name else None
+        project = _table(_toml(text), "project") if text else {}
+        name = project.get("name")
+        declared = _table(_table(project, "entry-points"), ENTRY_POINT_GROUP)
+        if declared and isinstance(name, str) and name not in {entry[0] for entry in entries}:
+            entries = [(name, "", str(project.get("description") or "")), *entries]
         if not entries:
-            full_name = repository.get("full_name")
-            text = self._file(f"{GITHUB_REPOS}/{full_name}/contents/pyproject.toml") if full_name else None
-            project = _table(_toml(text), "project") if text else {}
-            points = _table(project, "entry-points")
-            if not _table(points, ENTRY_POINT_GROUP):
-                return []
-            name = project.get("name")
-            if not isinstance(name, str):
-                return []
-            entries = [(name, "", str(project.get("description") or ""))]
+            return []
         branch = repository.get("default_branch") or "HEAD"
         return [
             AvailablePlugin(
