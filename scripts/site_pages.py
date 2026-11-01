@@ -11,6 +11,7 @@ import os
 import posixpath
 import re
 import shlex
+import tomllib
 import unicodedata
 import urllib.request
 from pathlib import Path
@@ -608,8 +609,55 @@ def tour_story(story: Object, page_url: str) -> str:
     )
 
 
-def detail(project: Object) -> str:
-    """A searchable static detail page with immutable installation and source provenance."""
+FIRST_PARTY_OWNER = tomllib.loads((ROOT / "docs" / "catalog-sources.toml").read_text())["composition_repository"].split(
+    "/"
+)[0]
+"""Plugins owned by the maintainers resolve by short name through `hz system plugin add`."""
+
+
+def install_steps(project: Object, plugins: list[Object]) -> tuple[str, str] | None:
+    """The preview and install commands a person types, or none when the standard app already includes it.
+
+    A maintainer-owned plugin with a unique short name uses that name, which `hz` resolves through its own catalog and
+    pins to an immutable revision when it installs. Anything else uses the plain repository URL: the commit stays in
+    the tool and in catalog.json, never in the command shown to people.
+    """
+    if project["included_version"]:
+        return None
+    short = project["name"].removeprefix("heinzel-")
+    source = project["source"]
+    owner = source["repository"].split("/")[0]
+    taken = sum(1 for p in plugins if p["name"].removeprefix("heinzel-") == short)
+    if owner == FIRST_PARTY_OWNER and taken <= 1:
+        target = short
+    else:
+        target = f"https://github.com/{source['repository']}"
+        if project["directory"] != ".":
+            target = f"git+{target}#subdirectory={project['directory']}"
+    target = shlex.quote(target)
+    return f"hz system plugin add {target}", f"hz system plugin add {target} --confirm"
+
+
+def install_section(project: Object, plugins: list[Object]) -> str:
+    """The Install and try body: included plugins need nothing, others show a preview and then the install."""
+    steps = install_steps(project, plugins)
+    if steps is None:
+        return (
+            "Included in the standard app: there is nothing to install. "
+            "Run `hz system plugin list` to see it, or [install Heinzel first](../../guides/install.md)."
+        )
+    preview, install = steps
+    return f"""{command(preview, "plugin-preview")}
+
+This shows what would be installed and changes nothing. Review it, then install:
+
+{command(install, "plugin-install")}
+
+Run `hz system doctor` afterward. [Install Heinzel first](../../guides/install.md)."""
+
+
+def detail(project: Object, plugins: list[Object] | None = None) -> str:
+    """A searchable static detail page with installation instructions and source provenance."""
     source = project["source"]
     title = escape(project["title"])
     included = project["included_version"]
@@ -650,10 +698,7 @@ description: {json.dumps(escape(project["summary"]), ensure_ascii=False)}
 
 ## Install and try
 
-{command(project["install"], "plugin-install")}
-
-This command previews the immutable source. Review it, then repeat with `--confirm` to install.
-Run `hz system doctor` afterward. [Install Heinzel first](../../guides/install.md).
+{install_section(project, plugins or [project])}
 
 ## Compatibility and ownership
 
@@ -703,7 +748,9 @@ def on_files(files: Any, config: Any) -> Any:  # noqa: ANN401 - MkDocs owns the 
 
     snapshot = load_snapshot(Path(os.environ.get("HZ_SITE_CATALOG", str(SNAPSHOT))))
     for project in snapshot["plugins"]:
-        files.append(File.generated(config, f"catalog/{project['id']}/index.md", content=detail(project)))
+        files.append(
+            File.generated(config, f"catalog/{project['id']}/index.md", content=detail(project, snapshot["plugins"]))
+        )
         for index, theme in enumerate(project["themes"]):
             for mode in ("light", "dark"):
                 files.append(
