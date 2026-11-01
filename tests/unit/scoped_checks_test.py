@@ -1,9 +1,10 @@
 import importlib.util
+import sys
 from pathlib import Path
 
 import pytest
 
-pytestmark = pytest.mark.unit
+pytestmark = [pytest.mark.unit, pytest.mark.timeout(60)]  # the import graph parses the tree: ~1 s idle, more loaded
 
 REPO = Path(__file__).resolve().parents[2]
 spec = importlib.util.spec_from_file_location("scoped_checks", REPO / "scripts" / "scoped_checks.py")
@@ -11,6 +12,8 @@ assert spec
 assert spec.loader
 scoped = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(scoped)
+sys.path.insert(0, str(REPO / "scripts"))
+import related_tests as scoped_related  # noqa: E402 - needs the scripts path above
 
 
 def names(steps: list[str]) -> list[str]:
@@ -111,3 +114,58 @@ def test_docs_tooling_alone_is_enough_for_the_scope():
 )
 def test_anything_beyond_docs_and_their_tooling_runs_the_full_gate(changed):
     assert scoped.scoped_steps(changed) is None
+
+
+def overrides(changed):
+    return dict(item.split("=", 1) for item in scoped.python_overrides(changed))
+
+
+def test_the_push_hook_runs_the_types_and_only_the_unit_tests_related_to_the_change():
+    given = overrides(["src/heinzel/modules/system/_update.py"])
+    targets = given["UNIT_TARGETS"].split()
+    assert "tests/unit/modules/system_update_test.py" in targets
+    assert 0 < len(targets) < 20  # not the ~340 test files of the full run
+    assert "mypy" in given["FAST_TYPES"]
+    assert "pyright" in given["FAST_TYPES"]
+    assert given["WEB_TESTS"] == given["MANAGED_CHECK"] == ""
+
+
+def test_a_changed_test_file_runs_itself_and_a_changed_script_runs_the_tests_that_name_it():
+    assert overrides(["tests/unit/ship_test.py"])["UNIT_TARGETS"] == "tests/unit/ship_test.py"
+    assert "tests/unit/ship_test.py" in overrides(["scripts/ship.py"])["UNIT_TARGETS"].split()
+
+
+@pytest.mark.parametrize(
+    "changed",
+    [["pyproject.toml"], ["tests/conftest.py"], ["src/heinzel/modules/system/_update.py", "src/heinzel/x.json"]],
+)
+def test_changes_that_cannot_be_mapped_to_tests_keep_the_full_unit_run(changed):
+    assert scoped_related.related_tests(changed) is None
+    assert "UNIT_TARGETS" not in overrides(changed)
+
+
+def test_a_change_no_test_reaches_still_runs_the_hooks_own_test():
+    assert overrides(["docs/TEAMS.md", "scripts/__nothing_mentions_this__.py"])["UNIT_TARGETS"] == (
+        "tests/unit/scoped_checks_test.py"
+    )
+
+
+def test_imports_follow_the_defining_module_not_the_package_that_re_exports_it():
+    """`from heinzel import Config` must not make every test depend on everything `heinzel` imports."""
+    graph = scoped_related.graph()
+    assert "src/heinzel/modules/system/_update.py" not in graph.imports["tests/conftest.py"]
+    assert "tests/unit/modules/system_update_test.py" in graph.dependents({"src/heinzel/modules/system/_update.py"})
+
+
+def test_make_check_fast_by_hand_is_the_full_unit_run():
+    makefile = (REPO / "Makefile").read_text(encoding="utf-8")
+    assert "UNIT_TARGETS ?=\n" in makefile
+    assert "FAST_TYPES ?=\n" in makefile
+    assert "uv run pytest $(UNIT_TARGETS) -m 'unit and not perf' -n auto" in makefile
+
+
+def test_the_pre_push_hook_keeps_the_confidentiality_and_commit_checks():
+    config = (REPO / ".pre-commit-config.yaml").read_text(encoding="utf-8")
+    assert "id: confidentiality-branch" in config
+    assert "id: check-fast" in config
+    assert "scoped_checks.py push" in config

@@ -117,6 +117,7 @@ CORE_ONLY = {  # path: why plugins don't get it
     "scripts/ship.py": "the golden path for small changes in Heinzelmännchen's own worktrees (docs/SHIP_SMALL.md)",
     ".claude/skills/ship-small/SKILL.md": "drives scripts/ship.py, which plugins don't get",
     "scripts/scoped_checks.py": "routes Core-root checks; owning and governed plugins already check their own project",
+    "scripts/related_tests.py": "maps the core pre-push diff to its related unit tests; plugins run their own",
     "scripts/template_pyproject_head.toml.tmpl": "input of sync_template.py",
     "scripts/web.py": "the web head's typed client and dev server (web/, ADR 0039); plugins bring no UI",
     "scripts/web_build.py": "runs and builds the web head's app (web/, ADR 0039); plugins bring no UI",
