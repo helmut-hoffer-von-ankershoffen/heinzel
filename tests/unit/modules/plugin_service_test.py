@@ -145,6 +145,8 @@ def test_pending_lists_every_way_the_installed_plugins_differ_from_the_loaded_on
         other | {"distribution": "heinzel-newcomer", "version": "0.1.0", "themes": ["dawn"]},  # installed
     ]
     monkeypatch.setattr(service._installation, "hz", lambda *args: json.dumps(fresh))
+    stamps = iter(range(100))
+    monkeypatch.setattr(service, "_environment_stamp", lambda: next(stamps))
     pending = service.pending()
     assert pending.restart_required is True
     assert {(c.distribution, c.change) for c in pending.changes} == {
@@ -1836,3 +1838,26 @@ def test_a_plugin_not_installed_yet_is_not_held(make_kernel, tool_env, monkeypat
 
 def test_only_uv_tool_installs_hold_anything(make_kernel, tool_env):
     assert service_for(make_kernel, tool_env)._holds(["uv", "pip", "install", "--with", "x"], None) == ()
+
+
+def test_pending_reads_afresh_only_when_the_installed_environment_changed(make_kernel, tmp_path, monkeypatch):
+    service = service_for(make_kernel, tmp_path)
+    reads = []
+    monkeypatch.setattr(service._installation, "hz", lambda *args: reads.append(args) or "[]")
+    stamp = ["before"]
+    monkeypatch.setattr(service, "_environment_stamp", lambda: stamp[0])
+    first = service.pending()
+    assert service.pending() == first
+    assert len(reads) == 1
+    stamp[0] = "after"
+    service.pending()
+    assert len(reads) == 2
+
+
+def test_environment_stamp_notices_a_changed_configuration_file(make_kernel, tmp_path, monkeypatch):
+    service = service_for(make_kernel, tmp_path)
+    config = tmp_path / "hz.toml"
+    monkeypatch.setattr(service._kernel, "config", types.SimpleNamespace(files=(types.SimpleNamespace(path=config),)))
+    before = service._environment_stamp()
+    config.write_text("[hz]\nplugins_enabled = false\n", encoding="utf-8")
+    assert service._environment_stamp() != before

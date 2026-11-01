@@ -9,8 +9,10 @@ import base64
 import contextlib
 import hashlib
 import json
+import os
 import re
 import shlex
+import site
 import subprocess
 import tempfile
 import threading
@@ -161,6 +163,8 @@ class PluginService:
         self._settings = settings
         self._lifecycle = lifecycle
         self._changing = threading.Lock()
+        self._pending_lock = threading.Lock()
+        self._pending_read: tuple[tuple[tuple[str, int, int], ...], PluginPending] | None = None
         self._receipts = PluginReceipts(kernel.settings.state_dir)
         self.github_api: JsonGetter = github_getter(settings.github_token)
         """Reads the GitHub API for `add`; tests replace it."""
@@ -189,6 +193,29 @@ class PluginService:
         Raises:
             HeinzelError: If the installed environment cannot be read.
         """
+        # The app polls this from every open page, and a fresh interpreter is seconds of CPU, minutes when cold: read
+        # afresh only once, and again when what it reads changed. Overlapping polls share one read.
+        with self._pending_lock:
+            stamp = self._environment_stamp()
+            if self._pending_read is None or self._pending_read[0] != stamp:
+                self._pending_read = (stamp, self._read_pending())
+            return self._pending_read[1]
+
+    def _environment_stamp(self) -> tuple[tuple[str, int, int], ...]:
+        """What a fresh interpreter's plugin list depends on: installed packages and configuration files, unread."""
+        found: list[tuple[str, int, int]] = []
+        for directory in site.getsitepackages():
+            with contextlib.suppress(OSError), os.scandir(directory) as entries:
+                found.extend(
+                    (entry.path, entry.stat().st_mtime_ns, 0) for entry in entries if entry.name.endswith(".dist-info")
+                )
+        for file in self._kernel.config.files:
+            with contextlib.suppress(OSError):
+                info = file.path.stat()
+                found.append((str(file.path), info.st_mtime_ns, info.st_size))
+        return tuple(sorted(found))
+
+    def _read_pending(self) -> PluginPending:
         loaded = {canonicalize_name(info.distribution): info for info in self._loaded_inventory()}
         installed = {canonicalize_name(info.distribution): info for info in self.installed(fresh=True)}
         changes: list[PluginPendingChange] = []
