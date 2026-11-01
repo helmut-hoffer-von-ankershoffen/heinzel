@@ -60,13 +60,14 @@ else
                 while IFS= read -r wget_line; do
                     wget_line=${wget_line#"${wget_line%%[! ]*}"}
                     case "$wget_line" in
-                        Location:\ *) wget_next=${wget_line#Location: }; break ;;
+                        [Ll]ocation:\ *) wget_next=${wget_line#*: }; break ;;
                         *) ;;
                     esac
                 done <<EOF
 $wget_answer
 EOF
-                wget_url=${wget_next%"$(printf '\r')"}
+                wget_next=${wget_next%"$(printf '\r')"}
+                wget_url=${wget_next% \[following\]}
                 wget_hops=$((wget_hops + 1))
                 case "$wget_url" in
                     https://*) [ "$wget_hops" -le 3 ] || wget_url= ;;
