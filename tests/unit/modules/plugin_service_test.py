@@ -12,6 +12,7 @@ import urllib.error
 from contextlib import contextmanager
 
 import pytest
+from packaging.utils import canonicalize_name
 
 from heinzel import HeinzelError, Kernel, Module, ModuleRecord, Progress, Settings, Theme
 from heinzel.kernel import DEFAULT_THEME, Installation, Origin
@@ -136,15 +137,28 @@ def test_fresh_inventory_is_explicit_and_does_not_recurse_or_change_loaded_modul
     assert service.installed()[0].version == "1.0.0"
 
 
-def test_pending_lists_every_way_the_installed_plugins_differ_from_the_loaded_ones(make_kernel, tmp_path, monkeypatch):
+def test_pending_compares_in_process_and_asks_a_fresh_interpreter_only_for_a_new_difference(
+    make_kernel, tmp_path, monkeypatch
+):
     service = service_for(make_kernel, tmp_path)
     loaded = service.installed()[0]
-    other = loaded.model_dump(mode="json")
-    fresh = [
-        other | {"version": "2.0.0"},  # updated
-        other | {"distribution": "heinzel-newcomer", "version": "0.1.0", "themes": ["dawn"]},  # installed
-    ]
-    monkeypatch.setattr(service._installation, "hz", lambda *args: json.dumps(fresh))
+    name = canonicalize_name(loaded.distribution)
+    asked = []
+
+    def hz(*args):
+        asked.append(args)
+        return json.dumps([loaded.model_dump(mode="json") | {"distribution": "heinzel-newcomer", "themes": ["dawn"]}])
+
+    monkeypatch.setattr(service._installation, "hz", hz)
+    same = types.SimpleNamespace(name=loaded.distribution, version=loaded.version)
+    service.distributions = {name: same}
+    assert service.pending().changes == []
+    assert asked == []  # nothing differs: no subprocess
+
+    service.distributions = {
+        name: types.SimpleNamespace(name=loaded.distribution, version="9.9.9"),
+        "heinzel-newcomer": types.SimpleNamespace(name="heinzel-newcomer", version="0.1.0"),
+    }
     pending = service.pending()
     assert pending.restart_required is True
     assert {(c.distribution, c.change) for c in pending.changes} == {
@@ -152,10 +166,10 @@ def test_pending_lists_every_way_the_installed_plugins_differ_from_the_loaded_on
         ("heinzel-newcomer", "installed"),
     }
     assert next(c for c in pending.changes if c.change == "installed").themes == ["dawn"]
-    fresh[:] = [other]
-    assert service.pending().changes == []
-    assert service.pending().restart_required is False
-    fresh[:] = []
+    service.pending()
+    assert len(asked) == 1  # the same difference is not asked about again
+
+    service.distributions = {}
     assert [(c.distribution, c.change) for c in service.pending().changes] == [(loaded.distribution, "removed")]
 
 
