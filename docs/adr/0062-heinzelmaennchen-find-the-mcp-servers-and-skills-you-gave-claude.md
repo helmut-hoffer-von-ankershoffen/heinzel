@@ -1,6 +1,7 @@
 ---
 status: proposed
 date: 2026-10-25
+implementation: partial
 decision-makers: maintainer (direction), architect (shape)
 related: 0019, 0027, 0028, 0030, 0045, 0050
 implemented-by: 132

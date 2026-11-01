@@ -1,6 +1,7 @@
 ---
 status: accepted
 date: 2026-10-23
+implementation: built
 ---
 
 # 0004: Discovery through packages, entry points and pluggy

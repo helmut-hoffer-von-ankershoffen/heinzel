@@ -1,6 +1,7 @@
 ---
 status: proposed
 date: 2026-10-24
+implementation: built
 decision-makers: maintainer
 amends: 0020, 0039
 amends-0020: every tick ends by popping up due notices
