@@ -9,6 +9,7 @@ import { api } from "@/api/client";
 import { usePlayful } from "@/api/queries";
 import { HeinzelAvatar } from "@/components/HeinzelAvatar";
 import { Button } from "@/components/ui/button";
+import { CodeInput } from "@/components/ui/code-input";
 import { type MessageKey, t } from "@/i18n";
 import { Branding } from "@/layout/Branding";
 import { useDark, useSelectedTheme } from "@/layout/ThemeTokens";
@@ -129,15 +130,12 @@ function PasteLink() {
         {t("splash.pasteLabel")}
       </label>
       <div className="flex gap-2">
-        <input
+        <CodeInput
           id="splash-paste"
           value={value}
           onChange={(event) => setValue(event.target.value)}
           placeholder="http://127.0.0.1:…/#token=…"
-          autoComplete="off"
-          spellCheck={false}
           aria-describedby={reason ? "splash-paste-problem" : undefined}
-          className="h-8 min-w-0 flex-1 rounded-lg border border-border bg-input px-2.5 font-mono text-xs outline-none focus:border-muted-foreground/50"
         />
         <Button type="submit" size="sm" disabled={!value.trim()}>
           {t("splash.pasteSubmit")}
