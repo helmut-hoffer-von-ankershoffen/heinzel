@@ -146,6 +146,11 @@ class DaemonStatus(BaseModel):
         description="The hz version in the last install marker; a successful service-manager command is not proof "
         "that this code ran.",
     )
+    installed_at: datetime | None = Field(
+        default=None,
+        description="When `install` last loaded the unit, from its marker; tells a daemon still waiting for its first "
+        "tick from one that stopped ticking.",
+    )
     version_mismatch: bool = Field(
         default=False,
         description="Whether the install marker or the last observed tick differs from the hz that answers, or "

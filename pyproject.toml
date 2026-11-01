@@ -101,7 +101,7 @@ required-version = ">=0.13.0"
 [tool.ruff]
 line-length = 120
 fix = true
-extend-exclude = ["template", "plugins"] # independent projects run their own checks
+extend-exclude = ["template", "plugins", "scripts/acceptance"] # independent projects; a hash-pinned stdlib harness
 
 [tool.ruff.lint]
 select = ["ALL"]

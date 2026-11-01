@@ -258,7 +258,7 @@ def pyproject() -> str:
         'no deadline or selection change.",\n',
         "",
     )
-    tools = re.sub(r'\nextend-exclude = \["template", "plugins"\][^\n]*', "", tools)
+    tools = re.sub(r'\nextend-exclude = \["template", "plugins"[^\]]*\][^\n]*', "", tools)
     tools = tools.replace(
         'extend-exclude = ["ATTRIBUTIONS.md", "site", "plugins"]', 'extend-exclude = ["ATTRIBUTIONS.md", "site"]'
     )
