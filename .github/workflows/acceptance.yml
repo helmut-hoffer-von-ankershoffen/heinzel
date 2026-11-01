@@ -82,7 +82,7 @@ jobs:
         include:
           - os: macos-latest
             no_sandbox: "false"
-          - os: ubuntu-latest
+          - os: ubuntu-24.04
             no_sandbox: "true" # a disposable hosted VM; Chrome's sandbox needs user namespaces the image restricts
     env:
       # A pull request has no inputs: it takes whatever is published now, and the receipt records that.

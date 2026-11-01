@@ -18,6 +18,17 @@ TEMPLATE = ROOT / "template"
 PYPROJECT_HEAD = ROOT / "scripts" / "template_pyproject_head.toml.tmpl"
 
 
+def _one_e2e_suite(text: str) -> str:
+    """The core splits its browser E2E files from the rest for CI (SUITE=cli|web); a plugin runs one suite."""
+    return re.sub(
+        r"# The browser E2E files[^\n]*\n(?:[^\n]*\n)*?test-e2e:[^\n]*\n(?:\t[^\n]*\n)+",
+        "test-e2e: ## Run end-to-end tests (needs network), on 3 workers\n"
+        '\t@echo "Runner: $$(getconf _NPROCESSORS_ONLN) CPUs"\n'
+        '\t$(STEPS) "e2e=uv run pytest -m e2e -n 3 -q --session-timeout=600 -x"\n',
+        text,
+    )
+
+
 def makefile() -> str:
     """The Makefile without Heinzelmännchen-only targets, plus `update-template`."""
     text = (ROOT / "Makefile").read_text(encoding="utf-8")
@@ -31,17 +42,10 @@ def makefile() -> str:
     text = re.sub(r"\nlinux-user-manager-proof:.*?\n(?:\t.*\n)+", "\n", text)
     text = text.replace(" linux-user-manager-proof", "")
     # Core README e2e builds its own candidate wheel; plugins have no core web/notifier assets to prepare.
-    text = (
+    text = _one_e2e_suite(
         re.sub(r"\ne2e-prepare:.*?\n(?:\t.*\n)+", "\n", text)
         .replace(" test-e2e e2e-prepare ", " test-e2e ")
         .replace("test-e2e: e2e-prepare", "test-e2e:")
-        .replace(
-            '"e2e-readme=uv run pytest -m e2e -n 3 -q --session-timeout=600 -x '
-            'tests/e2e/docs_test.py::test_readme_instructions" '
-            '"e2e=uv run pytest -m e2e -n 3 -q --session-timeout=600 -x '
-            '--deselect=tests/e2e/docs_test.py::test_readme_instructions"',
-            '"e2e=uv run pytest -m e2e -n 3 -q --session-timeout=600 -x"',
-        )
     )
     # The core's generate_docs.py writes the plugin pages with everything else; a plugin runs the builder (ADR 0082).
     text = text.replace(
@@ -151,9 +155,11 @@ def ci_workflow() -> str:
     text = text.replace("- name: Check the wheel ships the changelog", "- name: Check the wheel ships the package")
     # The web head's app (ADR 0039) and ATTRIBUTIONS.md, the notices of what it bundles: plugins have neither.
     text = re.sub(r"\n      - run: make test-web[^\n]*", "", text)
-    text = text.replace(
-        "\n      - name: Install browser runtimes and host dependencies\n        run: make test-browser-deps",
+    text = re.sub(
+        r"\n      - name: Install browser runtimes and host dependencies\n"
+        r"(?:        if: [^\n]*\n)?        run: make test-browser-deps",
         "",
+        text,
     )
     text = re.sub(r"\n      - run: make managed-backend-[^\n]*", "", text)
     # Only the core daemon uses the host's user service manager; plugins ship no such probe.
@@ -178,9 +184,14 @@ def ci_workflow() -> str:
     text = re.sub(
         r"(?m)^        os: .*needs\.changes\.outputs\.mounted_tailscale.*$",
         "        os: ${{ fromJSON(github.event_name == 'pull_request' && "
-        '\'["ubuntu-latest"]\' || \'["ubuntu-latest","macos-latest"]\') }}',
+        '\'["ubuntu-24.04"]\' || \'["ubuntu-24.04","macos-latest"]\') }}',
         text,
     )
+    # A plugin has no browser E2E files to split off, so its E2E job stays one per OS.
+    text = text.replace("End-to-end ${{ matrix.suite }} (", "End-to-end (")
+    text = re.sub(r"(?m)^        # Two jobs per OS[^\n]*\n        suite: \[cli, web\]\n", "", text)
+    text = re.sub(r"(?m)^        if: matrix\.suite == 'web'\n", "", text)
+    text = text.replace("make test-e2e SUITE=${{ matrix.suite }}", "make test-e2e")
     text = text.replace("    needs: notifier\n", "")
     text = re.sub(r"    if: \$\{\{ !cancelled\(\) && needs\.notifier\.result[^\n]*\n", "", text)
     text = re.sub(
@@ -224,7 +235,7 @@ def ci_workflow() -> str:
     # its minutes, sets up on the two most contributors use.
     text = re.sub(
         r"(\n  setup:\n.*?\n        os: )\$\{\{ fromJSON[^\n]*",
-        r"\1[ubuntu-latest, macos-latest]",
+        r"\1[ubuntu-24.04, macos-latest]",
         text,
         count=1,
         flags=re.DOTALL,
