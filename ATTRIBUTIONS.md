@@ -25,7 +25,7 @@ Installed with `hz`: the runtime dependencies of the core and of every first-par
 | [click](#click-850) | 8.5.0 | BSD-3-Clause |
 | [croniter](#croniter-624) | 6.2.4 | MIT |
 | [cryptography](#cryptography-5002) | 50.0.2 | Apache-2.0 OR BSD-3-Clause |
-| [fastapi](#fastapi-01611) | 0.161.1 | MIT |
+| [fastapi](#fastapi-01620) | 0.162.0 | MIT |
 | [genai-prices](#genai-prices-0113) | 0.1.13 | MIT |
 | [griffelib](#griffelib-241) | 2.4.1 | ISC |
 | [h11](#h11-0160) | 0.16.0 | MIT |
@@ -565,7 +565,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 </details>
 
-### fastapi 0.161.1
+### fastapi 0.162.0
 
 - License: MIT
 - Homepage: <https://github.com/fastapi/fastapi>
