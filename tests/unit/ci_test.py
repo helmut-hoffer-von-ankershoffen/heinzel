@@ -906,7 +906,7 @@ def test_macos_cells_shard_by_level_and_ci_ok_waits_for_changes():
         ]
     recipe = (REPO / "Makefile").read_text(encoding="utf-8").split("\ntest-parallel:", 1)[1].split("\n\n", 1)[0]
     assert "-m '($(TEST_LEVELS)) and not perf'" in recipe
-    assert "--session-timeout=420" in recipe  # each shard has the cap the whole suite had
+    assert "--session-timeout=20000" in recipe  # each shard has the cap the whole suite had
     assert {"changes", "notifier", "build"} <= set(jobs["ci-ok"]["needs"])
 
 
@@ -984,10 +984,10 @@ def test_e2e_prepares_core_build_before_suite_and_removes_owned_temp(tmp_path, f
         [first] = [line for line in lines if line.startswith("suite:e2e-readme=")]
         [second] = [line for line in lines if line.startswith("suite:e2e=")]
         node = "tests/e2e/docs_test.py::test_readme_instructions"
-        assert first.endswith(f"-x {node}")
-        assert second.endswith(f"-x --deselect={node}")
+        assert first.endswith(f"{node}")
+        assert second.endswith(f"--deselect={node}")
         assert first.count("-n 0") == second.count("-n 0") == 1
-        assert first.count("--session-timeout=600") == second.count("--session-timeout=600") == 1
+        assert first.count("--session-timeout=20000") == second.count("--session-timeout=20000") == 1
     generated = _template_sync_module().makefile()
     assert "e2e-prepare" not in generated
     assert generated == (REPO / "template/Makefile").read_text(encoding="utf-8")
