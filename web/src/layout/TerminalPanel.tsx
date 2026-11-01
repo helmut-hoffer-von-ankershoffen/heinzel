@@ -201,6 +201,10 @@ export function TerminalPanel({ onClose, full, onToggleFull, onActivate }: Props
 }
 
 type State = "connecting" | "open" | "closed";
+/** How long the shell is silent after its last output before it counts as waiting at the prompt. */
+export const READY_QUIET_MS = 250;
+/** A shell that says nothing at all is taken as ready after this long. */
+export const READY_FALLBACK_MS = 3000;
 
 /** One shell in one tab; it keeps running while another tab is shown. */
 function TerminalView({
@@ -229,6 +233,9 @@ function TerminalView({
   const copyOnSelect = useRef(options.copyOnSelect);
   const initial = useRef(options);
   const [state, setState] = useState<State>("connecting");
+  // The shell has drawn its prompt: commands typed for the person wait until then, or the line is echoed twice and
+  // the shell prints a stray `%` for output that had no newline.
+  const [ready, setReady] = useState(false);
   const [reason, setReason] = useState("");
   const [generation, setGeneration] = useState(0);
   useEffect(() => {
@@ -257,15 +264,26 @@ function TerminalView({
       if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ resize: [cols, rows] }));
     });
     refitRef.current = follower.refit;
+    let quiet: ReturnType<typeof setTimeout> | undefined;
+    // Ready when the shell has said something and then been quiet for a moment (its prompt); a shell that never
+    // speaks is ready after a while, so a command is never held back for good.
+    const settle = (after: number) => {
+      clearTimeout(quiet);
+      quiet = setTimeout(() => setReady(true), after);
+    };
     socket.onopen = () => {
+      setReady(false);
+      settle(READY_FALLBACK_MS);
       socket.send(JSON.stringify({ token: token() ?? "" }));
       senderRef.current = (text) => socket.send(encoder.encode(text));
       setState("open");
       follower.refit();
     };
     socket.onmessage = (event) => {
-      if (event.data instanceof ArrayBuffer) terminal.write(new Uint8Array(event.data));
-      else if (typeof event.data === "string") {
+      if (event.data instanceof ArrayBuffer) {
+        terminal.write(new Uint8Array(event.data));
+        settle(READY_QUIET_MS);
+      } else if (typeof event.data === "string") {
         try {
           const message: unknown = JSON.parse(event.data);
           if (typeof message === "object" && message !== null && "agent_title" in message) {
@@ -278,6 +296,8 @@ function TerminalView({
       }
     };
     socket.onclose = (event) => {
+      clearTimeout(quiet);
+      setReady(false);
       senderRef.current = null;
       callbacks.current.onStatus("");
       callbacks.current.onTitle("");
@@ -382,6 +402,7 @@ function TerminalView({
       if (copyOnSelect.current && terminal.hasSelection()) void navigator.clipboard?.writeText(terminal.getSelection());
     });
     return () => {
+      clearTimeout(quiet);
       follower.dispose();
       refitRef.current = null;
       typed.dispose();
@@ -417,9 +438,10 @@ function TerminalView({
     if (!active || state !== "open") return;
     refitRef.current?.();
     terminalRef.current?.focus();
+    if (!ready) return;
     connectTerminal((text) => senderRef.current?.(text));
     return () => connectTerminal(null);
-  }, [active, state]);
+  }, [active, state, ready]);
   return (
     <div className={cn("absolute inset-0 flex flex-col", !active && "hidden")}>
       {state === "closed" && (

@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Providers, queryClient } from "@/App";
 import { expectAccessible } from "@/test/render";
-import { ModuleHeader, PluginsSection, sourceLabel } from "./PluginsSection";
+import { CandidateDetails, ModuleHeader, PluginsSection, sourceLabel } from "./PluginsSection";
 
 const PINNED = `heinzel-crm @ git+https://github.com/acme-example/heinzel-crm@${"b".repeat(40)}`;
 
@@ -37,7 +37,7 @@ const candidate = {
   first_party: false,
   private: true,
   revision: "b".repeat(40),
-  installed_version: null,
+  installed_version: null as string | null,
   warnings: ["It is named crm-tools, not heinzel-<name> as plugins are (ADR 0025)."],
 };
 let receiptCount = 0;
@@ -236,6 +236,7 @@ function show(props: Parameters<typeof PluginsSection>[0] = {}) {
 }
 
 beforeEach(() => {
+  window.history.replaceState(null, "", "/");
   sessionStorage.clear();
   receiptCount = 0;
   confirmedStreamDelay = 0;
@@ -244,6 +245,12 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("PluginsSection", () => {
+  it("says outright which installed version a plugin replaces, without opening the details", () => {
+    render(<CandidateDetails candidate={{ ...candidate, source: "git", installed_version: "0.9.3" }} />);
+    const line = screen.getByText(/Replaces 0\.9\.3/);
+    expect(line.closest("details")).toBeNull();
+  });
+
   it("does not call an uncompleted backend reply an installed plugin or restart the server", async () => {
     const calls = serve((url) =>
       url.pathname === "/api/system/plugin/add" || url.pathname === "/api/stream/system/plugin/add"
@@ -689,6 +696,22 @@ describe("PluginsSection", () => {
     await user.click(within(card).getByRole("button", { name: "Cancel" }));
     expect(screen.queryByRole("group", { name: /Install this plugin/ })).not.toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Installed" })).toBeEnabled();
+  });
+
+  it("keeps the tab in the address so a reload returns to it", async () => {
+    window.history.replaceState(null, "", "/");
+    serve((url) =>
+      url.pathname === "/api/system/plugin/search" ? { body: { plugins: [], warnings: [] } } : base(url),
+    );
+    const user = userEvent.setup();
+    const first = show({ restartInterval: 1 });
+    await user.click(screen.getByRole("tab", { name: "Discover" }));
+    expect(window.location.search).toBe("?plugins=discover");
+    first.unmount();
+    show({ restartInterval: 1 });
+    expect(screen.getByRole("tab", { name: "Discover" })).toHaveAttribute("aria-selected", "true");
+    await user.click(screen.getByRole("tab", { name: "Installed" }));
+    expect(window.location.search).toBe("");
   });
 
   it("says why a source is refused and installs nothing", async () => {

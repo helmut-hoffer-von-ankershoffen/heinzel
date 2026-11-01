@@ -45,3 +45,33 @@ it, installation, launch, runtime lifecycle, update, uninstall and the same UI i
 browser application and desktop proof of concept must not be described as an already shipped desktop installer.
 Record the walkthrough only after these steps work; label the exact release and platform rather than stitching
 together previews of features that are not in the installed artifact.
+
+## Website catalog pipeline
+
+How the public website builds its plugin catalog, and how to build and check the site locally. Plugin authors need only the [catalog guide](guides/catalog.md).
+
+### Refresh and publication
+
+- Per-source project and blob limits, an aggregate project cap and a refresh API budget keep one topic repository from crowding out healthy entries.
+- An incomplete discovery or a failure in a required source keeps the previously deployed site.
+- Publication checks public visibility again for every included source. Removing a project or making it private takes effect on the next successful refresh.
+- The Docs workflow refreshes public metadata hourly, on relevant changes to `main`, on manual dispatch and on release publication.
+- It checks out current `main` for publication, so an older release cannot roll back site code.
+- One production deployment queue serializes publication.
+- Provider media recording is a separate explicit job and is never part of metadata refresh.
+- No cross-repository publishing credential is required.
+- The installation call to action advances only when a complete standard profile, matching release artifact hashes and the published core PyPI wheel can be verified.
+
+The publishing boundary is in [ADR 0098](adr/0098-pages-showcases-the-product-and-discovers-public-plugin-metadata.md).
+
+### Build and verify the website
+
+```sh
+make docs-site          # deterministic build from checked-in public metadata
+make docs-site SERVE=1  # local preview with reload
+make docs-site-check    # browser behavior, phone layouts, light/dark and accessibility
+make docs-catalog       # explicit online refresh; needs gh authentication
+```
+
+`docs/_data/catalog.json` is the offline snapshot. `HZ_SITE_CATALOG=/path/to/catalog.json` selects another snapshot for a site build.
+Unit tests use synthetic unknown projects and hostile metadata. Browser checks exercise the built site, including keyboard filtering and a catalog without JavaScript.

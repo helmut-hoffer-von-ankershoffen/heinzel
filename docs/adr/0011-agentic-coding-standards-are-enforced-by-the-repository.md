@@ -1,6 +1,7 @@
 ---
 status: accepted
 date: 2026-10-23
+implementation: built
 ---
 
 # 0011: Agentic coding standards are enforced by the repository

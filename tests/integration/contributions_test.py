@@ -72,7 +72,10 @@ def test_the_web_head_serves_them_behind_its_token(kernel):
     assert answer.status_code == 200
     (entry,) = answer.json()
     install = entry["item"]["actions"][0]["effect"]
-    assert install == {"kind": "command", "command": "hz system daemon install", "runs": False}
+    assert install["kind"] == "operation"  # the app runs it after a confirmation; it types nothing into a terminal
+    assert install["call"]["path"] == "/system/daemon/install"
+    assert install["call"]["command"] == "hz system daemon install"
+    assert install["call"]["read_only"] is False
     assert client.get("/api/system/ui/actions", headers=AUTH).status_code == 200
     assert client.get("/api/system/ui/widgets", headers=AUTH).status_code == 200
     shown = client.post("/api/system/ui/hide", params={"item": "system.daemon:daemon"}, headers=AUTH)
