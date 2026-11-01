@@ -63,8 +63,10 @@ options are in [docs/CLI_REFERENCE.md](docs/CLI_REFERENCE.md).
 - Core-root PR preflight, agent completion and pre-push hooks select owning checks for plugin-only changes.
   Mixed/core changes retain core checks. The pre-push hook also scopes by path (`scripts/scoped_checks.py push`):
   Markdown and site templates alone run the documentation checks and the tests that read documents, `web/` alone the
-  web checks, everything else `make check-fast` in full; `make check-fast` itself stays the full run, and CI always
-  runs the full gate. On a heavily loaded machine the unit step can hit the session
+  web checks, and Python changes run `make check-fast` plus mypy and pyright with only the unit tests related to the
+  change (`scripts/related_tests.py`: the import graph, test names and scripts a test mentions); configuration, the
+  lockfile and `conftest.py` cannot be mapped and run all unit tests. `make check-fast` by hand stays the full run, and
+  CI always runs the full gate. On a heavily loaded machine the unit step can hit the session
   timeout; wait for the load to drop and push again. `NO_PREFLIGHT=1 make pr` skips only the preflight, never a
   hook, and is for timeouts in tests you didn't touch, after review.
 - UI changes must follow [Mobile UI](docs/CODING_STANDARDS.md#mobile-ui): use the shared viewport primitives and
