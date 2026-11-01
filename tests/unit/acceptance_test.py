@@ -231,3 +231,7 @@ def test_a_result_holding_an_object_still_writes(tmp_path):
     path = tmp_path / "result.json"
     harness.write_result(path, {"cases": {"8": {"session": object()}}}, [])
     assert "object object" in path.read_text()
+
+
+def test_the_injected_fixture_is_valid_python():
+    compile(harness.FIXTURE, "fixture", "exec")
