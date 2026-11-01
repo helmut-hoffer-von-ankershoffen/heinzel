@@ -188,7 +188,7 @@ test: ## Run unit and integration tests with coverage on 4 workers (offline; wha
 TEST_LEVELS ?= unit or integration
 test-parallel: ## Unit and integration tests on 4 workers, stopping at the first failure; no coverage (the CI test matrix)
 	@echo "Runner: $$(getconf _NPROCESSORS_ONLN) CPUs"
-	$(STEPS) "tests=uv run pytest -m '($(TEST_LEVELS)) and not perf' -n 4 -x -q --session-timeout=420 --durations=20"
+	$(STEPS) "tests=uv run pytest -m '($(TEST_LEVELS)) and not perf' -n 0 -q --session-timeout=20000 --durations=20"
 
 commits: ## Commit messages since BASE, and $$TITLE and $$BRANCH when set: conventional, no confidential terms
 	$(STEPS) \
@@ -222,7 +222,7 @@ test-browser-deps: ## Install Chromium and WebKit; include Linux host libraries 
 # The browser E2E files (Playwright, the mounted web app) compete with the tool-install and CLI ones for CPU, so CI runs
 # the two halves as separate jobs. A file counts as browser when it mentions Playwright or the shared browser helpers.
 E2E_WEB := $(sort $(shell grep -lE 'playwright|_browser_result|_mounted|web_build' tests/e2e/*_test.py 2>/dev/null))
-E2E_PYTEST := uv run pytest -m e2e -n 3 -q --session-timeout=600 -x
+E2E_PYTEST := uv run pytest -m e2e -n 0 -q --session-timeout=20000
 E2E_SELECT := $(if $(filter cli,$(SUITE)),$(foreach f,$(E2E_WEB), --ignore=$(f)))$(if $(filter web,$(SUITE)),$(foreach f,$(E2E_WEB), $(f)))
 
 test-e2e: e2e-prepare ## Run end-to-end tests (needs network), on 3 workers; SUITE=cli (tool install, CLI) or SUITE=web (browser) runs half

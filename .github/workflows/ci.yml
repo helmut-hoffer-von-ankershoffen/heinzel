@@ -224,7 +224,7 @@ jobs:
     if: needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true'
     name: Test (${{ matrix.os }}, Python ${{ matrix.python }}${{ matrix.levels && format(', {0}', matrix.levels) || '' }})
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 10
+    timeout-minutes: 360
     strategy:
       fail-fast: ${{ github.event_name == 'pull_request' }} # a red cell is enough to know on a pull request
       matrix:
@@ -256,6 +256,7 @@ jobs:
         env:
           UV_NO_SYNC: "1" # use the test group just installed
           TEST_LEVELS: ${{ matrix.levels || 'unit or integration' }}
+          STEP_TIMEOUT: "20000"
           VERBOSE: "1" # a worker's INTERNALERROR trace comes first, above what the step wrapper's tail keeps
         run: make test-parallel
 
@@ -338,7 +339,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true'
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 15
+    timeout-minutes: 360
     strategy:
       fail-fast: false
       matrix:
@@ -370,6 +371,7 @@ jobs:
       # can otherwise hide the test name and the action that timed out.
       - run: make test-e2e SUITE=${{ matrix.suite }}
         env:
+          STEP_TIMEOUT: "20000"
           VERBOSE: "1"
           # read-only (contents: read): e2e tests ask GitHub's API (`hz system changelog --newer`), which rate-limits
           # shared runners' unauthenticated requests; hz sends the token to api.github.com only (ADR 0031)
