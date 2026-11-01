@@ -1,12 +1,11 @@
 ---
 title: Privacy notice
-description: What data is processed when you visit heinzel.team or use the hz app (English translation; the German version prevails).
+description: What data is processed when you visit heinzel.team or use the hz app.
 ---
 
 # Privacy notice
 
-*Deutsch: [Datenschutzerklärung](datenschutz.md). The German version is the legally relevant one and prevails if the
-two differ; this page is a translation for information. Status: 31 October 2026.*
+*Status: 1 November 2026.*
 
 ## In short
 

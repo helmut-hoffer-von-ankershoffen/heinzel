@@ -68,3 +68,19 @@ test("failure before attempting a launch can remove its temporary profile", asyn
   });
   assert.deepEqual(calls, ["/temporary-test-root"]);
 });
+
+test("retained evidence fails the run without masking the error already propagating", async () => {
+  const { spawnSync } = await import("node:child_process");
+  const { fileURLToPath } = await import("node:url");
+  const module = fileURLToPath(new URL("../e2e/harness-cleanup.mjs", import.meta.url));
+  const run = (body) => spawnSync(process.execPath, ["--input-type=module", "-e",
+    `import { retainEvidence } from ${JSON.stringify(module)}; try { ${body} } finally { retainEvidence("evidence retained at /x"); }`,
+  ], { encoding: "utf8", timeout: 5000 });
+  const failed = run('throw new Error("the original failure");');
+  assert.notEqual(failed.status, 0);
+  assert.match(failed.stderr, /the original failure/);
+  assert.match(failed.stderr, /evidence retained at \/x/);
+  const passed = run("");
+  assert.equal(passed.status, 1);
+  assert.match(passed.stderr, /evidence retained at \/x/);
+});

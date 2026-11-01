@@ -87,6 +87,9 @@ def repository_files() -> list[str]:
 
 SHARED = [".claude", ".github/workflows", "scripts"]
 CORE_ONLY = {  # path: why plugins don't get it
+    "scripts/merge_gate.py": "judges a public repo's SonarCloud project; a new plugin has none until it is set up",
+    "scripts/merge_gate.py.lock": "the lock of scripts/merge_gate.py, which plugins don't get by default",
+    ".github/workflows/merge-gate.yml": "runs scripts/merge_gate.py, which plugins don't get by default",
     "scripts/site_characters.mjs": "draws product-site guides from core artwork; standalone plugins own their art",
     "scripts/site_catalog.py": "public product website aggregation, never a standalone plugin build (ADR 0098)",
     "scripts/adr_index.py": "renders the core ADR index and pages; plugins have no ADRs",

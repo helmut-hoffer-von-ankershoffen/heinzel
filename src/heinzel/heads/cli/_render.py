@@ -11,12 +11,13 @@ from pathlib import Path
 from typing import Any, cast
 
 from pydantic import BaseModel
-from pydantic_core import to_jsonable_python
 from rich.console import Console, ConsoleOptions, RenderableType
 from rich.json import JSON
 from rich.segment import Segment
 from rich.table import Table
 from rich.text import Text
+
+from heinzel.kernel import jsonable
 
 CONTROLS = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]")
 """C0 controls but tab and line feed, DEL and C1 controls: what a terminal acts on rather than shows."""
@@ -58,7 +59,7 @@ def message(label: str, text: str) -> TerminalSafe:
 
 def to_json(result: object) -> str:
     """The JSON form of a result, as every machine-facing head returns it; C1 controls are escaped like C0 ones."""
-    text = JSON.from_data(to_jsonable_python(result)).text.plain
+    text = JSON.from_data(jsonable(result)).text.plain
     return re.sub(r"[\x7f-\x9f]", lambda match: f"\\u{ord(match.group()):04x}", text)
 
 

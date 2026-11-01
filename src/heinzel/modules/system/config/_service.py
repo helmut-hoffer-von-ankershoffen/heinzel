@@ -20,7 +20,7 @@ from pydantic_core import to_jsonable_python
 from tomlkit.exceptions import ParseError
 
 from heinzel import Config, ConfigEditor, ConfigListChange, CurrentUser, HeinzelError, Kernel, ModuleSettings
-from heinzel.kernel import FILENAME, PROJECT_FILENAME, ConfigFile, env_prefix, toml_value, user_config_dir
+from heinzel.kernel import FILENAME, PROJECT_FILENAME, ConfigFile, env_prefix, jsonable, toml_value, user_config_dir
 from heinzel.modules.system.config._models import (
     ConfigFileInfo,
     ConfigReport,
@@ -253,7 +253,7 @@ class ConfigService(ConfigEditor):
         """
         section, name, model = self._locate(key)
         self._require(model.model_fields[name], write=True)
-        parsed = _without_none(to_jsonable_python(value))
+        parsed = _without_none(jsonable(value))
         if parsed is None:
             msg = f"TOML has no null; to let {key} take its default, run `hz system config unset {key}`."
             raise HeinzelError(msg)

@@ -497,6 +497,7 @@ KERNEL = [
     "free_busy_people",
     "git_command",
     "input_schema",
+    "jsonable",
     "link_problem",
     "operation_path",
     "owns_path",
