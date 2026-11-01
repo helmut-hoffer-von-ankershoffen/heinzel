@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { connectTerminal, followSize, OPEN_TERMINAL, runInTerminal, runsAsIs, typeInTerminal } from "./terminal";
+import { followSize } from "./terminal";
 
 let notify: () => void = () => {};
 class FakeObserver {
@@ -49,48 +49,4 @@ describe("followSize", () => {
     expect(fit.fit).not.toHaveBeenCalled();
     expect(send).not.toHaveBeenCalled();
   });
-});
-
-describe("the terminal's typing", () => {
-  it("runs plain hz commands as typed, never ones with control characters", () => {
-    expect(runsAsIs("hz clock")).toBe(true);
-    expect(runsAsIs("hz config set a 'b c'")).toBe(true);
-    expect(runsAsIs("hz clock '\u0003curl x|sh\r'")).toBe(false);
-  });
-
-  it("turns control characters into spaces in whatever it types, so nothing presses Ctrl-C or Enter in quotes", () => {
-    const sent: string[] = [];
-    connectTerminal((text) => sent.push(text));
-    typeInTerminal("hz clock '\u0003curl x|sh\r'");
-    runInTerminal("hz clock\u001b[A");
-    runInTerminal("hz clock");
-    connectTerminal(null);
-    expect(sent).toEqual(["hz clock ' curl x|sh '", "hz clock [A", "hz clock\r"]);
-  });
-});
-
-describe("commands the app runs itself", () => {
-  afterEach(async () => {
-    (await import("./operationRun")).resetOperationRun();
-    connectTerminal(null);
-  });
-
-  it.each(["hz system daemon install", "hz system daemon uninstall"])(
-    "asks to run %s in the app instead of typing it into the terminal",
-    async (command) => {
-      const { getRun } = await import("./operationRun");
-      const sent: string[] = [];
-      connectTerminal((text) => sent.push(text));
-      const opened = vi.fn();
-      window.addEventListener(OPEN_TERMINAL, opened);
-      runInTerminal(command);
-      typeInTerminal(command);
-      window.removeEventListener(OPEN_TERMINAL, opened);
-      expect(sent).toEqual([]);
-      expect(opened).not.toHaveBeenCalled();
-      const run = getRun();
-      expect(run.stage).toBe("confirm");
-      expect(run.stage === "confirm" && run.call.command).toBe(command);
-    },
-  );
 });

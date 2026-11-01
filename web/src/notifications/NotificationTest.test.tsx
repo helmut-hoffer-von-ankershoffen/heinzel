@@ -2,7 +2,6 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SchemaChannel, SchemaTested } from "@/api/client";
-import { OPEN_TERMINAL } from "@/lib/terminal";
 import * as registration from "@/pwa/register";
 import { base } from "@/test/chat";
 import { expectAccessible, mockApi, renderAt } from "@/test/render";
@@ -106,15 +105,11 @@ describe("The notification test", () => {
     await waitFor(() => expect(calls.some((call) => call.url.includes("/system/notify/settings"))).toBe(true));
     expect(screen.getByText("Fixed it? Try again.")).toBeInTheDocument();
 
-    const opened = vi.fn();
-    window.addEventListener(OPEN_TERMINAL, opened);
     await user.click(within(result).getByRole("button", { name: "Install daemon" }));
     const confirm = await screen.findByRole("alertdialog", { name: /Keep my Heinzelmännchen working/ });
     expect(confirm).toHaveTextContent("hz system daemon install");
     expect(confirm).toHaveTextContent("registers a background service");
     await user.click(within(confirm).getByRole("button", { name: "Cancel" }));
-    expect(opened).not.toHaveBeenCalled();
-    window.removeEventListener(OPEN_TERMINAL, opened);
 
     const test = calls.find((call) => call.url.includes("/system/notify/test"));
     expect(new URL(test?.url ?? "").searchParams.get("native")).toBe("true");

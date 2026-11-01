@@ -224,7 +224,7 @@ function Step({ id, onClose }: { id: StepId; onClose: () => void }) {
     case "connectors":
       return <SettingsLink section="connectors" label="onboarding.connectors.open" onClose={onClose} />;
     case "notifications":
-      return <Notifications onClose={onClose} />;
+      return <Notifications />;
     case "first":
       return <FirstHeinzel />;
   }
@@ -331,66 +331,12 @@ function YouForm({ me }: { me: SchemaProfile }) {
   );
 }
 
-/** A command that changes this machine, typed into the terminal only after the person confirms it here. */
-function Confirmed({
-  command,
-  label,
-  disabled,
-  onRun,
-}: {
-  command: string;
-  label: string;
-  disabled?: boolean;
-  onRun?: () => void;
-}) {
-  // The command as it was when asked, so editing the field behind the question can't change what runs.
-  const [asking, setAsking] = useState<string | null>(null);
-  const [sent, setSent] = useState(false);
-  const trigger = useRef<HTMLButtonElement>(null);
-  const done = (run: boolean) => {
-    if (run && asking) {
-      runCommand(asking);
-      onRun?.();
-    }
-    setSent(run);
-    setAsking(null);
-    // The question unmounts; the focus goes back to the button that asked it.
-    window.setTimeout(() => trigger.current?.focus());
-  };
-  if (asking !== null)
-    return (
-      <fieldset
-        aria-label={label}
-        onKeyDown={(event) => {
-          if (event.key !== "Escape") return;
-          event.stopPropagation();
-          event.preventDefault();
-          done(false);
-        }}
-        className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-card p-2"
-      >
-        <p className="text-sm">
-          {t("onboarding.confirm")} <code className="font-mono text-xs">{asking}</code>
-        </p>
-        <Button size="sm" autoFocus onClick={() => done(true)}>
-          {t("onboarding.run")}
-        </Button>
-        <Button size="sm" variant="ghost" onClick={() => done(false)}>
-          {t("onboarding.cancel")}
-        </Button>
-      </fieldset>
-    );
+/** A command that changes this machine: the button shows it to copy; the app never types it into a terminal. */
+function Confirmed({ command, label, disabled }: { command: string; label: string; disabled?: boolean }) {
   return (
-    <div className="flex items-center gap-2">
-      <Button ref={trigger} variant="outline" disabled={disabled} onClick={() => setAsking(command)}>
-        {label}
-      </Button>
-      {sent && (
-        <span role="status" className="text-xs text-muted-foreground">
-          {t("onboarding.sent")}
-        </span>
-      )}
-    </div>
+    <Button variant="outline" disabled={disabled} onClick={() => runCommand(command)}>
+      {label}
+    </Button>
   );
 }
 
@@ -496,7 +442,7 @@ const useDaemonStatus = (enabled: boolean) =>
     enabled,
   });
 
-function Notifications({ onClose }: { onClose: () => void }) {
+function Notifications() {
   const state = useDesktopState();
   const local = isLocalServer();
   const daemon = useDaemonStatus(local).data;
@@ -519,7 +465,7 @@ function Notifications({ onClose }: { onClose: () => void }) {
         title={t(local ? "onboarding.notifications.native" : "onboarding.notifications.device")}
         hint={t(local ? "onboarding.notifications.nativeHint" : "onboarding.notifications.deviceHint")}
       >
-        <NotificationTest label={t("onboarding.notifications.test")} onTerminal={onClose} />
+        <NotificationTest label={t("onboarding.notifications.test")} />
       </Item>
       {local && (
         <Item title={t("onboarding.notifications.daemon")} hint={t("onboarding.notifications.daemonHint")}>

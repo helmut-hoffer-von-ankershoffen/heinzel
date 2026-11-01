@@ -8,11 +8,11 @@ import { AudioVisualizer } from "@/audio/AudioVisualizer";
 import { ChatProvider } from "@/chat/ChatContext";
 import { isDurableSession } from "@/chat/useChat";
 import { AvatarThemeProvider } from "@/components/AvatarTheme";
+import { CommandHost } from "@/components/CommandHost";
 import { FOOTER_RELOCATED } from "@/components/FooterLayout";
 import { OperationDialog } from "@/components/OperationDialog";
 import { t } from "@/i18n";
 import { OPEN_CHAT } from "@/lib/chatIntent";
-import { OPEN_TERMINAL } from "@/lib/terminal";
 import { useWidth } from "@/lib/useWidth";
 import { cn } from "@/lib/utils";
 import { useVisualViewport } from "@/lib/viewport";
@@ -342,21 +342,13 @@ function Layout() {
       return next;
     });
   };
-  // Commands select the terminal without discarding the other open workspace panels.
   useEffect(() => {
-    const open = () => {
-      setChatOpen(true);
-      setTerminalOpen(true);
-      selectPanel("terminal");
-    };
     const openChat = () => {
       setChatOpen(true);
       selectPanel("chat");
     };
-    window.addEventListener(OPEN_TERMINAL, open);
     window.addEventListener(OPEN_CHAT, openChat);
     return () => {
-      window.removeEventListener(OPEN_TERMINAL, open);
       window.removeEventListener(OPEN_CHAT, openChat);
     };
   }, [setChatOpen, selectPanel]);
@@ -581,6 +573,7 @@ function Layout() {
       <SearchPalette open={searchOpen} onOpenChange={setSearchOpen} />
       <Onboarding />
       <OperationDialog />
+      <CommandHost />
       {(params.get("panel") === "changelog" || params.get("panel") === "help") && (
         <InfoDialog
           panel={params.get("panel") as Panel}

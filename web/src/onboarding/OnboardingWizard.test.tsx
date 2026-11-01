@@ -1,7 +1,6 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { connectTerminal, runInTerminal } from "@/lib/terminal";
 import { config, doctor, noTeam, profile, shell } from "@/test/fixtures";
 import { eventStream, expectAccessible, mockApi, renderAt } from "@/test/render";
 import { contractName, loadProgress, setupIncomplete } from "./progress";
@@ -78,8 +77,9 @@ describe("Onboarding", { timeout: 20_000 }, () => {
     expect(within(dialog).getByRole("button", { name: "Join this team" })).toBeDisabled();
     await user.type(within(dialog).getByLabelText("Team repository"), "https://github.com/acme/payments-team");
     await user.click(within(dialog).getByRole("button", { name: "Join this team" }));
-    expect(within(dialog).getByText("hz team join https://github.com/acme/payments-team")).toBeInTheDocument();
-    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    const copy = await screen.findByRole("alertdialog", { name: "Run this on your computer" });
+    expect(within(copy).getByText("hz team join https://github.com/acme/payments-team")).toBeInTheDocument();
+    await user.click(within(copy).getByRole("button", { name: "Close" }));
     await user.selectOptions(await within(dialog).findByLabelText("Team or org layer"), "acme-payments");
     await waitFor(() => expect(calls.some((call) => call.url.includes("team.layer"))).toBe(true));
     expect(JSON.parse(localStorage.getItem("hz.onboarding") ?? "{}")).toMatchObject({ step: "team" });
@@ -99,7 +99,9 @@ describe("Onboarding", { timeout: 20_000 }, () => {
     await user.type(within(dialog).getByLabelText("Or in one sentence"), "Weekly status for Acme");
     expect(within(dialog).getByText("Its contract will be called weekly-status-for-acme.")).toBeInTheDocument();
     await user.click(within(dialog).getByRole("button", { name: "Create it" }));
-    expect(within(dialog).getByText("hz heinzel new weekly-status-for-acme")).toBeInTheDocument();
+    const copy = await screen.findByRole("alertdialog", { name: "Run this on your computer" });
+    expect(within(copy).getByText("hz heinzel new weekly-status-for-acme")).toBeInTheDocument();
+    await user.click(within(copy).getByRole("button", { name: "Close" }));
     await user.click(within(dialog).getByRole("button", { name: "Back" }));
     expect(within(dialog).getByRole("heading", { name: "Notifications" })).toBeInTheDocument();
     expect(within(dialog).getByRole("button", { name: "Install the daemon" })).toBeInTheDocument();
@@ -107,17 +109,6 @@ describe("Onboarding", { timeout: 20_000 }, () => {
     await user.click(within(dialog).getByRole("button", { name: "Finish" }));
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(JSON.parse(localStorage.getItem("hz.onboarding") ?? "{}")).toMatchObject({ closed: true });
-  });
-});
-
-describe("runInTerminal", () => {
-  it("turns control characters into spaces, so a line break can't run half a command", () => {
-    const sent: string[] = [];
-    connectTerminal((text) => sent.push(text));
-    runInTerminal("hz team join https://github.com/acme/team");
-    runInTerminal("hz heinzel new x\nrm -rf ~");
-    connectTerminal(null);
-    expect(sent).toEqual(["hz team join https://github.com/acme/team\r", "hz heinzel new x rm -rf ~"]);
   });
 });
 
@@ -298,8 +289,6 @@ describe("Onboarding notifications step", { timeout: 20_000 }, () => {
   });
 
   it("installs the daemon in the app, asking first and showing the steps, never typing into the terminal", async () => {
-    const sent: string[] = [];
-    connectTerminal((text) => sent.push(text));
     const { user, dialog } = await open({
       "/api/system/daemon/status": idle,
       "/api/stream/system/daemon/install": () =>
@@ -316,9 +305,7 @@ describe("Onboarding notifications step", { timeout: 20_000 }, () => {
     expect(confirm).toHaveTextContent("hz system daemon install");
     await user.click(within(confirm).getByRole("button", { name: "Install background service" }));
     expect(await screen.findByText(/Installed\. Its first check comes within 5 minutes/)).toBeInTheDocument();
-    expect(sent).toEqual([]);
     expect(screen.getByRole("dialog", { name: "Set up hz" })).toBeInTheDocument();
-    connectTerminal(null);
   });
 
   it("says the daemon is installed and running, or installed but not running", async () => {

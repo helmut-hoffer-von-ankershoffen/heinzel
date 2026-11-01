@@ -9686,7 +9686,7 @@ export interface components {
         };
         /**
          * RunCommand
-         * @description Open the terminal with an `hz` command.
+         * @description Show an `hz` command: open its Settings page, run it in the app, or show it to copy.
          */
         RunCommand: {
             /**
@@ -9695,7 +9695,7 @@ export interface components {
              */
             command: string;
             /**
-             * @description Open the terminal with an `hz` command. (enum property replaced by openapi-typescript)
+             * @description Show an `hz` command: open its Settings page, run it in the app, or show it to copy. (enum property replaced by openapi-typescript)
              * @enum {string}
              */
             kind: "command";

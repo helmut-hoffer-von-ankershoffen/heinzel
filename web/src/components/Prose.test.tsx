@@ -2,7 +2,6 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { OPEN_TERMINAL } from "@/lib/terminal";
 import { expectAccessible } from "@/test/render";
 import { Prose } from "./Prose";
 
@@ -64,20 +63,17 @@ describe("Markdown in the app (GitHub-flavoured)", () => {
     expect(container.querySelector("b")).toBeNull();
   });
 
-  it("shows fenced code with Copy, and Run in the terminal for a one-line shell command", async () => {
+  it("shows fenced code with Copy, and Run here only for a command the app does itself", async () => {
     const user = userEvent.setup();
     const writeText = vi.spyOn(navigator.clipboard, "writeText");
-    const opened = vi.fn();
-    window.addEventListener(OPEN_TERMINAL, opened);
-    show("```sh\n$ hz system doctor\n```\n\n```python\nprint(1)\n```");
-    const [shell, python] = screen.getAllByRole("button", { name: "Copy the code" });
-    await user.click(python as HTMLElement);
+    show("```sh\n$ hz system doctor\n```\n\n```sh\nhz system daemon resume\n```\n\n```python\nprint(1)\n```");
+    const buttons = screen.getAllByRole("button", { name: "Copy the code" });
+    await user.click(buttons[2] as HTMLElement);
     expect(writeText).toHaveBeenCalledWith("print(1)\n");
-    expect(shell).toBeInTheDocument();
-    expect(screen.getAllByRole("button", { name: /in the terminal/ })).toHaveLength(1);
-    await user.click(screen.getByRole("button", { name: "Run hz system doctor in the terminal" }));
-    expect(opened).toHaveBeenCalled();
-    window.removeEventListener(OPEN_TERMINAL, opened);
+    expect(screen.queryByRole("button", { name: /terminal/i })).not.toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: /Run hz system/ })).toHaveLength(1);
+    await user.click(screen.getByRole("button", { name: "Run hz system daemon resume here" }));
+    expect((await import("@/lib/operationRun")).getRun().stage).toBe("confirm");
   });
 
   it("renders a streaming answer cut mid-way without losing what came", () => {

@@ -113,7 +113,7 @@ IN_APP_PATH = re.compile(rf"^/(?:{_SEGMENT}(?:/{_SEGMENT})*)?(?:{_QUERY})?$")
 """An in-app path: `/`, dash-separated lowercase segments, at most one `?name=value`; never `//`, `\\` or `..`."""
 _UNSAFE = re.compile(r"[\s\\\"'<>`\x00-\x1f\x7f-\x9f]")
 COMMAND = re.compile(r"^hz(?: +(?:[\w./:=@,+-]+|'(?:[^'\\\x00-\x1f\x7f-\x9f]|'\\'')*'))+$", re.ASCII)
-"""An `hz` command the terminal panel runs as typed: plain words, or single-quoted arguments without control
+"""An `hz` command the app shows as typed: plain words, or single-quoted arguments without control
 characters, which a terminal would act on (Ctrl-C, Enter, escape sequences) even inside quotes."""
 MAX_COMMAND = 300
 MAX_ARGUMENT_DEPTH = 8
@@ -295,9 +295,12 @@ class RunOperation(_Data):
 
 
 class RunCommand(_Data):
-    """Open the terminal with an `hz` command."""
+    """Show an `hz` command: open its Settings page, run it in the app, or show it to copy."""
 
-    kind: Literal["command"] = Field(default="command", description="Open the terminal with an `hz` command.")
+    kind: Literal["command"] = Field(
+        default="command",
+        description="Show an `hz` command: open its Settings page, run it in the app, or show it to copy.",
+    )
     command: Annotated[str, AfterValidator(_command)] = Field(description="e.g. `hz clock`.")
     runs: bool = Field(
         default=False,

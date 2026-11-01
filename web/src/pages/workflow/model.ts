@@ -58,7 +58,7 @@ export function capabilityOf(read: string): string {
   return read.split(/[.(]/, 1)[0] ?? read;
 }
 
-/** A shell word as `runsAsIs` accepts it: plain, or single-quoted. */
+/** A shell word: plain, or single-quoted. */
 export function shellWord(value: string): string {
   return /^[\w./:=@,+-]+$/.test(value) ? value : `'${value.replaceAll("'", "'\\''")}'`;
 }

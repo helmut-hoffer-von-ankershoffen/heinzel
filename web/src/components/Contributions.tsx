@@ -62,7 +62,7 @@ import {
   unwrap,
 } from "@/api/client";
 import { token } from "@/api/token";
-import { CommandDialog } from "@/components/CommandDialog";
+import { runCommand } from "@/components/CommandActions";
 import { ContributionToggle } from "@/components/ContributionToggle";
 import { FooterItem, stateOf } from "@/components/FooterItem";
 import { FooterPart } from "@/components/FooterLayout";
@@ -72,7 +72,6 @@ import { OperationDialog } from "@/components/OperationDialog";
 import { Button } from "@/components/ui/button";
 import { type MessageKey, t } from "@/i18n";
 import { contributionPath } from "@/lib/navigation";
-import { appCallFor } from "@/lib/operationCalls";
 import { requestOperation } from "@/lib/operationRun";
 import { cn } from "@/lib/utils";
 import { zoneClock, zoneTime } from "@/lib/zoneTime";
@@ -214,7 +213,6 @@ export function useEffectRunner(): { run: (effect: Effect) => void; dialog: Reac
   const location = useLocation();
   const queries = useQueryClient();
   const [outcome, setOutcome] = useState<string | null>(null);
-  const [command, setCommand] = useState<string | null>(null);
   const call = async (operation: SchemaOperationCall) => {
     const url = new URL(`/api${operation.path}`, window.location.origin);
     const json = operation.body !== null && operation.body !== undefined;
@@ -237,11 +235,8 @@ export function useEffectRunner(): { run: (effect: Effect) => void; dialog: Reac
     setOutcome(null);
     if (effect.kind === "navigate") void navigate(contributionPath(effect.path, location));
     else if (effect.kind === "open") window.open(effect.url, "_blank", "noopener,noreferrer");
-    else if (effect.kind === "command") {
-      const call = appCallFor(effect.command);
-      if (call) requestOperation(call);
-      else setCommand(effect.command);
-    } else if (effect.call) {
+    else if (effect.kind === "command") runCommand(effect.command);
+    else if (effect.call) {
       if (effect.call.read_only) void call(effect.call);
       else requestOperation(effect.call);
     }
@@ -249,7 +244,6 @@ export function useEffectRunner(): { run: (effect: Effect) => void; dialog: Reac
   const dialog = (
     <>
       <OperationDialog />
-      {command && <CommandDialog command={command} onClose={() => setCommand(null)} />}
       <span className="sr-only" aria-live="polite">
         {outcome}
       </span>

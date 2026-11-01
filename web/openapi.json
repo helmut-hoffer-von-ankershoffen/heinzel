@@ -10888,7 +10888,7 @@
       },
       "RunCommand": {
         "additionalProperties": false,
-        "description": "Open the terminal with an `hz` command.",
+        "description": "Show an `hz` command: open its Settings page, run it in the app, or show it to copy.",
         "properties": {
           "command": {
             "description": "e.g. `hz clock`.",
@@ -10898,7 +10898,7 @@
           "kind": {
             "const": "command",
             "default": "command",
-            "description": "Open the terminal with an `hz` command.",
+            "description": "Show an `hz` command: open its Settings page, run it in the app, or show it to copy.",
             "title": "Kind",
             "type": "string"
           },

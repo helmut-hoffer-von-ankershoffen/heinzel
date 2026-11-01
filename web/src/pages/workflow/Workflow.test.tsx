@@ -179,9 +179,7 @@ describe("the Workflow screen", () => {
     expect(
       within(panel).getByText("hz heinzel new weekly-report --template teamwork:weekly-report"),
     ).toBeInTheDocument();
-    expect(
-      within(panel).getByRole("button", { name: /Run in terminal: hz heinzel new weekly-report/ }),
-    ).toBeInTheDocument();
+    expect(within(panel).queryByRole("button", { name: /terminal/i })).not.toBeInTheDocument();
     await expectAccessible(container);
     await userEvent.click(within(panel).getByRole("button", { name: "Close details" }));
     await waitFor(() => expect(screen.queryByRole("complementary", { name: "weekly-report" })).toBeNull());

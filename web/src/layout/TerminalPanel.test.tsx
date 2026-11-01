@@ -1,8 +1,7 @@
 import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { connectTerminal } from "@/lib/terminal";
-import { READY_FALLBACK_MS, READY_QUIET_MS, TerminalPanel } from "./TerminalPanel";
+import { TerminalPanel } from "./TerminalPanel";
 
 const { terminals } = vi.hoisted(() => ({
   terminals: [] as Array<{ title: (value: string) => void; osc: Map<number, (value: string) => boolean> }>,
@@ -40,7 +39,7 @@ vi.mock("@xterm/xterm", () => ({
   },
 }));
 vi.mock("@xterm/addon-fit", () => ({ FitAddon: class {} }));
-vi.mock("@/lib/terminal", () => ({ connectTerminal: vi.fn(), followSize: () => ({ refit() {}, dispose() {} }) }));
+vi.mock("@/lib/terminal", () => ({ followSize: () => ({ refit() {}, dispose() {} }) }));
 class Socket {
   static OPEN = 1;
   static instances: Socket[] = [];
@@ -59,38 +58,6 @@ afterEach(() => {
   desktopState.mockReturnValue("off");
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
-});
-
-describe("typing a command for the person", () => {
-  afterEach(() => vi.useRealTimers());
-
-  it("waits until the shell has drawn its prompt, or the line would be echoed twice with a stray %", () => {
-    vi.useFakeTimers();
-    vi.stubGlobal("WebSocket", Socket);
-    render(<TerminalPanel onClose={vi.fn()} full={false} onToggleFull={vi.fn()} />);
-    const socket = Socket.instances[0];
-    act(() => socket?.onopen?.());
-    expect(connectTerminal).not.toHaveBeenCalledWith(expect.any(Function));
-    // The shell speaks (its prompt arrives in pieces) and a command may only go once it has been quiet a moment.
-    act(() => socket?.onmessage?.({ data: new ArrayBuffer(8) }));
-    act(() => void vi.advanceTimersByTime(READY_QUIET_MS - 1));
-    act(() => socket?.onmessage?.({ data: new ArrayBuffer(8) }));
-    act(() => void vi.advanceTimersByTime(READY_QUIET_MS - 1));
-    expect(connectTerminal).not.toHaveBeenCalledWith(expect.any(Function));
-    act(() => void vi.advanceTimersByTime(1));
-    expect(connectTerminal).toHaveBeenCalledWith(expect.any(Function));
-  });
-
-  it("does not hold a command back for good when the shell never says anything", () => {
-    vi.useFakeTimers();
-    vi.stubGlobal("WebSocket", Socket);
-    render(<TerminalPanel onClose={vi.fn()} full={false} onToggleFull={vi.fn()} />);
-    act(() => Socket.instances[0]?.onopen?.());
-    act(() => void vi.advanceTimersByTime(READY_FALLBACK_MS - 1));
-    expect(connectTerminal).not.toHaveBeenCalledWith(expect.any(Function));
-    act(() => void vi.advanceTimersByTime(1));
-    expect(connectTerminal).toHaveBeenCalledWith(expect.any(Function));
-  });
 });
 
 describe("terminal tabs", () => {

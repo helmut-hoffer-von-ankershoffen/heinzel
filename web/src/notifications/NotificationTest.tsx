@@ -32,22 +32,12 @@ const BROWSER: Record<DesktopState, MessageKey> = {
   install: "notify.browser.install",
 };
 
-/** `onTerminal` runs after a fix is typed into the terminal, for a host (the setup dialog) that covers the panel. */
-export function NotificationTest({
-  className,
-  label,
-  onTerminal,
-}: {
-  className?: string;
-  label?: string;
-  onTerminal?: () => void;
-}) {
+export function NotificationTest({ className, label }: { className?: string; label?: string }) {
   const test = useTestNotice();
   const settings = useOpenNotificationSettings();
   const browser = useDesktopState();
   const local = isLocalServer();
   const navigate = useNavigate();
-  const [confirm, setConfirm] = useState<string | null>(null);
   const [fixed, setFixed] = useState(false);
   const [delivery, setDelivery] = useState<"idle" | "showing" | "shown" | "failed">("idle");
   const result = test.data;
@@ -84,10 +74,11 @@ export function NotificationTest({
         </Button>
       );
     }
-    if (channel.command) {
+    const command = channel.command;
+    if (command) {
       const label = channel.fix === "install-notifier" ? t("notify.fix.installNotifier") : t("notify.fix.turnOn");
       return (
-        <Button size="sm" variant="outline" onClick={() => setConfirm(channel.command ?? null)}>
+        <Button size="sm" variant="outline" onClick={() => runCommand(command)}>
           {label}
         </Button>
       );
@@ -159,32 +150,6 @@ export function NotificationTest({
         </section>
       )}
       {settings.data && !settings.data.opened && <p className="text-xs text-warn">{settings.data.message}</p>}
-      {confirm && (
-        <div
-          role="alertdialog"
-          aria-label={t("notify.confirmTitle")}
-          className="rounded-lg border border-warn p-2 text-ui-sm"
-        >
-          <p>{t("notify.confirmRun")}</p>
-          <code className="mt-1 block font-mono text-xs">{confirm}</code>
-          <div className="mt-2 flex gap-2">
-            <Button
-              size="sm"
-              onClick={() => {
-                runCommand(confirm);
-                setConfirm(null);
-                setFixed(true);
-                onTerminal?.();
-              }}
-            >
-              {t("notify.runIt")}
-            </Button>
-            <Button size="sm" variant="outline" onClick={() => setConfirm(null)}>
-              {t("plugins.cancel")}
-            </Button>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

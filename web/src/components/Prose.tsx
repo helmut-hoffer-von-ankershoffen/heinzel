@@ -2,12 +2,12 @@
 // code, quotes, nested and task lists, tables, rules, links and line breaks, in the theme's tokens. The chat's answers,
 // the changelog and help all use it. No raw HTML is rendered; links go only to http(s), mailto or a screen of the app;
 // images are never loaded (the CSP and your privacy), they show as a link with their alt text, as a terminal would.
-import { Check, Copy, SquareTerminal } from "lucide-react";
+import { Check, Copy, Play } from "lucide-react";
 import { type ComponentProps, isValidElement, type ReactNode, useState } from "react";
 import Markdown, { type Components } from "react-markdown";
 import { Link } from "react-router";
 import remarkGfm from "remark-gfm";
-import { runCommand } from "@/components/CommandActions";
+import { runCommand, runsInApp } from "@/components/CommandActions";
 import { t } from "@/i18n";
 import { appCallFor } from "@/lib/operationCalls";
 import { cn } from "@/lib/utils";
@@ -27,7 +27,7 @@ function textOf(node: ReactNode): string {
 export function CodeBlock({ code, language }: { code: string; language: string }) {
   const [copied, setCopied] = useState(false);
   const command = code.trim().replace(/^\$ /, "");
-  const runnable = SHELLS.has(language) && command !== "" && !command.includes("\n");
+  const runnable = SHELLS.has(language) && command !== "" && !command.includes("\n") && runsInApp(command);
   const copy = async () => {
     await navigator.clipboard.writeText(code);
     setCopied(true);
@@ -44,11 +44,11 @@ export function CodeBlock({ code, language }: { code: string; language: string }
           <button
             type="button"
             onClick={() => runCommand(command)}
-            aria-label={appCallFor(command) ? t("run.hereAria", { command }) : t("run.aria", { command })}
-            title={appCallFor(command) ? t("run.here") : t("run.label")}
+            aria-label={appCallFor(command) ? t("run.hereAria", { command }) : t("run.settingsAria", { command })}
+            title={appCallFor(command) ? t("run.here") : t("run.settings")}
             className={button}
           >
-            <SquareTerminal aria-hidden />
+            <Play aria-hidden />
           </button>
         )}
         <button
