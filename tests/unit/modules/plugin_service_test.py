@@ -136,6 +136,29 @@ def test_fresh_inventory_is_explicit_and_does_not_recurse_or_change_loaded_modul
     assert service.installed()[0].version == "1.0.0"
 
 
+def test_pending_lists_every_way_the_installed_plugins_differ_from_the_loaded_ones(make_kernel, tmp_path, monkeypatch):
+    service = service_for(make_kernel, tmp_path)
+    loaded = service.installed()[0]
+    other = loaded.model_dump(mode="json")
+    fresh = [
+        other | {"version": "2.0.0"},  # updated
+        other | {"distribution": "heinzel-newcomer", "version": "0.1.0", "themes": ["dawn"]},  # installed
+    ]
+    monkeypatch.setattr(service._installation, "hz", lambda *args: json.dumps(fresh))
+    pending = service.pending()
+    assert pending.restart_required is True
+    assert {(c.distribution, c.change) for c in pending.changes} == {
+        (loaded.distribution, "updated"),
+        ("heinzel-newcomer", "installed"),
+    }
+    assert next(c for c in pending.changes if c.change == "installed").themes == ["dawn"]
+    fresh[:] = [other]
+    assert service.pending().changes == []
+    assert service.pending().restart_required is False
+    fresh[:] = []
+    assert [(c.distribution, c.change) for c in service.pending().changes] == [(loaded.distribution, "removed")]
+
+
 @pytest.mark.parametrize("action", ["add", "develop"])
 def test_replacing_a_source_without_visibility_does_not_inherit_its_private_badge(make_kernel, tmp_path, action):
     service = service_for(make_kernel, tmp_path)
