@@ -117,7 +117,7 @@ def test_separate_consent_daemon_occurrence_dedup_and_pause(tmp_path, monkeypatc
             asyncio.run(schedules.tick(session, "schedule", now))
 
 
-def test_cancelled_occurrence_never_relaunches_and_changed_access_refuses(tmp_path, monkeypatch):  # noqa: PLR0915
+def test_cancelled_occurrence_never_relaunches_and_changed_access_refuses(tmp_path, monkeypatch):
     import heinzel.modules.heinzel._autonomous_schedule as schedule_module
 
     fixed = datetime.now(UTC)
@@ -167,27 +167,14 @@ def test_cancelled_occurrence_never_relaunches_and_changed_access_refuses(tmp_pa
             asyncio.run(cancel())
             with pytest.raises(HeinzelError, match="uncertain"):
                 asyncio.run(schedules.tick(session, "schedule", now))
-            from datetime import timedelta
-
-            later = now + timedelta(seconds=60)
-
-            class LaterClock(datetime):
-                @classmethod
-                def now(cls, tz=None):
-                    return later
-
-            monkeypatch.setattr(schedule_module, "datetime", LaterClock)
-            with pytest.raises(HeinzelError, match="earlier message"):
-                asyncio.run(schedules.tick(session, "schedule", later))
-            assert sum(e.kind == "message.accepted" for e in crud.repository.control_read(session).events) == 1
-            monkeypatch.setattr(schedule_module, "datetime", datetime)
+            # A later slot sets the dead turn aside instead of being blocked by it, and never replays it.
+            schedules._ensure_no_prior_pending(session, "scheduled-later")
         assert (tmp_path / "model-calls").read_text() == "x"
         events = crud.repository.control_read(session).events
         occurrence = next(
             e.data["message_id"] for e in events if e.kind == "message.accepted" and e.data.get("origin") == "daemon"
         )
-        assert chat.turn_state(session, occurrence).status == "unresolved"
-        assert chat.abandon(session, occurrence).status == "abandoned"
+        assert chat.turn_state(session, occurrence).status == "abandoned"
         executable.write_text(executable.read_text() + "\n# changed")
         with current.local("daemon"), pytest.raises(HeinzelError, match="changed"):
             asyncio.run(schedules.tick(session, "schedule", now))

@@ -10,6 +10,7 @@ const context = await browser.newContext({
   isMobile: true,
   hasTouch: true,
 });
+await context.addInitScript(() => localStorage.setItem("hz.chat.more", "1"));
 const page = await context.newPage();
 const token = new URL(supplied).hash.match(/(?:^#|&)token=([^&]+)/)?.[1];
 

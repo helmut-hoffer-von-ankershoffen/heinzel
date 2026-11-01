@@ -330,3 +330,117 @@ def test_observed_item_policy_cannot_activate_without_separate_approved_source(t
         assert not any(
             event.kind == "agent.schedule-proposed" for event in crud.repository.control_read(session).events
         )
+
+
+def test_bulk_inventory_linear_validation_and_inconsistent_outcomes(tmp_path, monkeypatch):
+    import hashlib
+
+    current = CurrentUser(tmp_path / "identity")
+    with current.local("cli"):
+        repo = PersonalSessionRepository(current)
+        crud = SessionCrud(repo, lambda: SessionCosts(session_max_usd=2, message_max_usd=0.2))
+        session = crud.new_chat("bulk").session_id
+        notice = FakeNotifications()
+        runner = ScheduledNotifications(
+            crud,
+            current,
+            notice,
+            session=session,
+            turn="original",
+            contract_sha256="a" * 64,
+            schedule_request="schedule",
+            schedule_sha256="b" * 64,
+            policy=ScheduledNotificationPolicy(max_per_24h=2, topic_cooldown_seconds=300),
+            verify=lambda: None,
+        )
+        with current.local("daemon"), repo.main_writer(session) as writer:
+            runner.send({"topic": "bulk", "title": "Title", "body": "Private"}, writer)
+        events = repo.control_read(session).events
+        attempt = next(e for e in events if e.kind == "scheduled-notification.attempted")
+        recorded = next(e for e in events if e.kind == "scheduled-notification.recorded")
+        template = crud.read_body(session, attempt)
+        owner = repo.principal_id
+        bodies = {}
+        attempts = []
+        outcomes = []
+        for n in range(200):
+            turn = f"turn-{n}"
+            topic = f"topic-{n}"
+            digest = hashlib.sha256(f"{owner}\0{session}\0{topic}".encode()).hexdigest()
+            key = "notice-" + hashlib.sha256(f"{owner}\0{session}\0{turn}\0{digest}".encode()).hexdigest()
+            bodies[key] = {**template, "topic": topic, "request_id": key}
+            attempts.append(
+                attempt.model_copy(
+                    update={"key": key, "turn": turn, "seq": n + 1, "data": {**attempt.data, "topic_sha256": digest}}
+                )
+            )
+            outcomes.append(recorded.model_copy(update={"key": key, "turn": turn, "seq": n + 201}))
+
+        class CountedEvents(list):
+            scans = 0
+
+            def __iter__(self):
+                self.scans += 1
+                return super().__iter__()
+
+        reads = []
+
+        def read_body(_session, event):
+            reads.append(event.key)
+            return bodies[event.key]
+
+        monkeypatch.setattr(crud, "read_body", read_body)
+        recovery = ScheduledNotificationRecovery(crud, current, notice)
+        journal = CountedEvents(attempts + outcomes)
+        assert recovery.unresolved_attempts(journal) == []
+        assert journal.scans == 1
+        assert reads == []  # a resolved attempt's expired body can never block a later turn
+        assert recovery.unresolved_attempts(attempts + outcomes[:-1]) == attempts[-1:]
+        forged = outcomes[0].model_copy(
+            update={"kind": "scheduled-notification.abandoned", "data": {"acknowledged": True}}
+        )
+        for events, refusal in (
+            (attempts + outcomes + [outcomes[0]], "inconsistent"),
+            ([*attempts, attempts[0], *outcomes], "inconsistent"),
+            (attempts + outcomes + [outcomes[0].model_copy(update={"key": "orphan"})], "inconsistent"),
+            ([*attempts, outcomes[0].model_copy(update={"seq": 1})], "inconsistent"),
+            ([*attempts, forged], "invalid"),
+        ):
+            with pytest.raises(HeinzelError, match=refusal):
+                recovery.unresolved_attempts(events)
+
+
+def test_an_expired_body_blocks_but_its_owner_can_still_set_it_aside(tmp_path, monkeypatch):
+    current = CurrentUser(tmp_path / "identity")
+    with current.local("cli"):
+        repo = PersonalSessionRepository(current)
+        crud = SessionCrud(repo, lambda: SessionCosts(session_max_usd=2, message_max_usd=0.2))
+        session = crud.new_chat("new").session_id
+        provider = FakeNotifications(result=False)
+        notice = ScheduledNotifications(
+            crud,
+            current,
+            provider,
+            session=session,
+            turn="turn",
+            contract_sha256="a" * 64,
+            schedule_request="schedule",
+            schedule_sha256="b" * 64,
+            policy=ScheduledNotificationPolicy(max_per_24h=2, topic_cooldown_seconds=60),
+            verify=lambda: None,
+        )
+        with current.local("daemon"), repo.main_writer(session) as writer:
+            assert notice.send({"topic": "example", "title": "Title", "body": "Private"}, writer)[0] == "uncertain"
+
+        def expired(_session, _event):
+            raise FileNotFoundError
+
+        monkeypatch.setattr(crud, "read_body", expired)
+        recovery = ScheduledNotificationRecovery(crud, current, provider)
+        assert len(recovery.unresolved_attempts(repo.control_read(session).events)) == 1
+        view = recovery.list(session).items[0]
+        assert (view.status, view.proposal.topic, view.proposal.body) == ("unresolved", "unavailable", "")
+        assert "Private" not in view.model_dump_json()
+        resolved = recovery.resolve(session, view.proposal.request_id, acknowledge_uncertain=True)
+        assert resolved.status == "abandoned"
+        assert recovery.unresolved_attempts(repo.control_read(session).events) == []

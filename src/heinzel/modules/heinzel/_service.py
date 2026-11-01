@@ -30,6 +30,7 @@ from pydantic_core import to_jsonable_python
 from heinzel import (
     AgentRunner,
     CatchUp,
+    ChannelReplyConsumer,
     Check,
     Config,
     ConfigEditor,
@@ -63,7 +64,7 @@ from heinzel.kernel import (
     toml_value,
 )
 from heinzel.modules.heinzel import _measure, _playbooks
-from heinzel.modules.heinzel._autonomous_schedule import AutonomousSchedules, ScheduleBinding
+from heinzel.modules.heinzel._autonomous_schedule import NOTHING_NEW, QUIET, AutonomousSchedules, ScheduleBinding
 from heinzel.modules.heinzel._contracts import Contract, collect, read_contract
 from heinzel.modules.heinzel._graph import CODES as GRAPH_CODES
 from heinzel.modules.heinzel._graph import asset as asset_id
@@ -549,6 +550,7 @@ class HeinzelService:
             jobs.extend(self._check_in_jobs(sessions))
             if schedules is not None:
                 jobs.extend(self._autonomous_jobs(sessions, schedules))
+            jobs.extend(self._channel_jobs())
         return CompiledJobs(jobs=tuple(jobs))
 
     def _autonomous_jobs(self, sessions: SessionCrud, schedules: AutonomousSchedules) -> list[JobLet]:
@@ -581,8 +583,8 @@ class HeinzelService:
         """A daemon tick uses its real slot; the user-approved binding is rechecked at launch."""
 
         def run(slot: datetime) -> JsonValue:
-            asyncio.run(schedules.tick(binding.session_id, binding.request_id, slot))
-            return {"status": "completed"}
+            text = asyncio.run(schedules.tick(binding.session_id, binding.request_id, slot))
+            return {"status": "quiet" if text == QUIET else "nothing-new" if text == NOTHING_NEW else "completed"}
 
         def unavailable() -> JsonValue:
             msg = "An agent schedule requires a daemon schedule slot"
@@ -600,6 +602,30 @@ class HeinzelService:
             retries=0,
             catch_up=CatchUp.LATEST,
         )
+
+    def _channel_jobs(self) -> list[JobLet]:
+        """Read the owner's answers on other channels, only once the owner chose such a channel."""
+        if not self._settings_channels():
+            return []
+
+        def run() -> JsonValue:
+            consumers = self._kernel.implementations(ChannelReplyConsumer)  # type: ignore[type-abstract]
+            return {"settled": sum(consumer.apply_channel_replies() for consumer in consumers)}
+
+        return [
+            JobLet(
+                name="channel-replies",
+                func=run,
+                summary="Act on your answers from your other channels",
+                schedule="* * * * *",
+                timeout=timedelta(minutes=2),
+                retries=0,
+                catch_up=CatchUp.LATEST,
+            )
+        ]
+
+    def _settings_channels(self) -> list[str]:
+        return Config.load(Path.home()).settings(HeinzelSettings, "heinzel").approval_channels
 
     def _check_in_jobs(self, sessions: SessionCrud) -> list[JobLet]:
         """Compile only the current owner's approved five-minute notification records."""

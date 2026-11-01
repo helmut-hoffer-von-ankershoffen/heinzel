@@ -15,6 +15,7 @@ import { Gnome } from "@/components/Gnome";
 import { OperationDialog } from "@/components/OperationDialog";
 import { Button } from "@/components/ui/button";
 import { type MessageKey, t } from "@/i18n";
+import { AiAccessSetting } from "@/layout/AiAccessSetting";
 import { ThemePreviews } from "@/layout/ThemePreviews";
 import { TimeZonePicker } from "@/layout/TimeZonePicker";
 import { isLocalServer } from "@/lib/browser";
@@ -220,7 +221,7 @@ function Step({ id, onClose }: { id: StepId; onClose: () => void }) {
     case "look":
       return <ThemePreviews />;
     case "ai":
-      return <SettingsLink section="ai" label="onboarding.ai.open" onClose={onClose} />;
+      return <AiAccessSetting />;
     case "connectors":
       return <SettingsLink section="connectors" label="onboarding.connectors.open" onClose={onClose} />;
     case "notifications":

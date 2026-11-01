@@ -188,8 +188,8 @@ describe("Onboarding focus and answers", { timeout: 20_000 }, () => {
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
     expect(screen.getByRole("dialog", { name: "Set up hz" })).toBeInTheDocument();
     await waitFor(() => expect(within(dialog).getByRole("button", { name: "Install the daemon" })).toHaveFocus());
-    await user.click(within(dialog).getByRole("button", { name: /AI access/ }));
-    await user.click(within(dialog).getByRole("link", { name: "Open AI settings" }));
+    await user.click(within(dialog).getByRole("button", { name: /Connectors/ }));
+    await user.click(within(dialog).getByRole("link", { name: "Open Connectors" }));
     expect(screen.queryByRole("dialog", { name: "Set up hz" })).not.toBeInTheDocument();
   });
 });

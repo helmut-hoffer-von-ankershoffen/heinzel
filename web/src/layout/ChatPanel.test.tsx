@@ -44,7 +44,7 @@ describe("ChatPanel", () => {
     ).toBe(false);
   });
 
-  it("takes a workshop sentence into a new agent chat without sending or losing it", async () => {
+  it("takes a workshop sentence into a new agent chat and sends it once", async () => {
     const id = "hz-01ARZ3NDEKTSV4RRFFQ69G5FAV";
     const { calls } = mockApi({
       ...base,
@@ -57,11 +57,9 @@ describe("ChatPanel", () => {
     await user.type(screen.getByLabelText("Your message"), "Keep my notes current");
     await user.click(screen.getByRole("button", { name: "Create Heinzel and take this message" }));
     const panel = within(await screen.findByRole("complementary", { name: "Chat" }));
-    expect(await panel.findByLabelText("Message your Heinzel")).toHaveValue("Keep my notes current");
-    expect(panel.getByRole("button", { name: "Queue message" })).toBeEnabled();
-    expect(calls.some((request) => new URL(request.url).pathname === "/api/heinzel/chat")).toBe(false);
-    expect(JSON.parse(sessionStorage.getItem(`hz.durable.composer.${id}`) ?? "null").text).toBe(
-      "Keep my notes current",
+    await panel.findByLabelText("Message your Heinzel");
+    await waitFor(() =>
+      expect(calls.filter((request) => new URL(request.url).pathname === "/api/heinzel/chat")).toHaveLength(1),
     );
   });
 
@@ -110,8 +108,6 @@ describe("ChatPanel", () => {
     await user.type(screen.getByLabelText("Your message"), "Keep the chosen artifact current");
     await user.click(screen.getByRole("button", { name: "Create Heinzel and take this message" }));
     const panel = within(await screen.findByRole("complementary", { name: "Chat" }));
-    expect(await panel.findByLabelText("Message your Heinzel")).toHaveValue("Keep the chosen artifact current");
-    await user.click(panel.getByRole("button", { name: "Queue message" }));
     expect(await panel.findByText("I prepared terms for review.")).toBeInTheDocument();
     const review = within(await panel.findByRole("region", { name: "Proposed agent terms" }));
     expect(review.getByText("Revision 1 · proposed terms")).toBeInTheDocument();

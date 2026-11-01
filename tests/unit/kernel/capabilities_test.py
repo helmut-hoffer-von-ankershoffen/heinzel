@@ -49,12 +49,13 @@ def test_issues_are_the_trackers_not_the_code_hosts():
     assert CAPABILITIES["code-host"].methods == {"merged_pull_requests": "read"}
 
 
-def test_only_calendar_chat_documents_and_mail_can_write():
+def test_only_calendar_chat_documents_mail_and_tracker_can_write():
     assert {name for name, spec in CAPABILITIES.items() if "write" in spec.modes} == {
         "calendar",
         "chat",
         "documents",
         "mail",
+        "tracker",
     }
 
 
@@ -211,7 +212,7 @@ def test_parses_requirements(text, expected):
         ("spreadsheets:read", "unknown capability 'spreadsheets'"),
         ("tracker:", "modes must be"),
         ("tracker:delete", "modes must be"),
-        ("tracker:write", "tracker has no write mode"),
+        ("team-graph:write", "team-graph has no write mode"),
         ("Acme:tracker:read", "adapter 'Acme'"),
     ],
 )

@@ -19,6 +19,7 @@ import pytest
 from heinzel import (
     Check,
     CompiledJobs,
+    CurrentUser,
     HeinzelError,
     JobLet,
     Kernel,
@@ -2538,6 +2539,27 @@ def test_linux_private_manager_socket_identity_rejects_wrong_or_replaced_socket(
         with socket.socket(socket.AF_UNIX) as second:
             second.bind("private")
             assert _linux_user_manager_identity(run_root) != identity
+
+
+def test_a_local_cli_tick_runs_under_the_owners_daemon_identity(make_kernel, settings, tmp_path):
+    """launchd and systemd reach a tick through the CLI head, and approved schedules only run as the daemon."""
+    seen: list[str] = []
+    user = CurrentUser(tmp_path / "identity")
+    kernel = make_kernel()
+    kernel.bind(CurrentUser, user)
+    service = DaemonService(kernel, settings, DaemonSettings())
+
+    def record(*, dry_run, job):
+        assert (dry_run, job) == (False, None)
+        seen.append(user.context().authentication)
+        return "report"
+
+    service._tick = record
+    with user.local("cli"):
+        assert service.tick() == "report"
+    with user.local("mcp-stdio"):
+        service.tick()
+    assert seen == ["daemon", "mcp-stdio"]
 
 
 HISTORIC_UNITS = Path(__file__).parent / "data"

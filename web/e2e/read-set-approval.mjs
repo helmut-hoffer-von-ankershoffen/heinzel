@@ -11,6 +11,7 @@ url.pathname = "/heinzel";
 url.searchParams.set("chat", process.argv[4]);
 const browser = await (process.argv[3] === "webkit" ? webkit : chromium).launch({ headless: true });
 const context = await browser.newContext({ serviceWorkers: "block", viewport: { width: 390, height: 844 } });
+await context.addInitScript(() => localStorage.setItem("hz.chat.more", "1"));
 const page = await context.newPage();
 let approvals = 0;
 const outcomes = [];

@@ -258,6 +258,7 @@ try {
       isLandscape: spec.width > spec.height,
       colorScheme: spec.width >= 390 ? "dark" : "light",
     });
+    await context.addInitScript(() => localStorage.setItem("hz.chat.autosend", "0"));
     const page = await context.newPage();
     await contributePanel(page);
     // Platform-specific CLI paths and provider names must wrap rather than widen their settings pane.

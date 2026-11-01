@@ -374,6 +374,7 @@ Chat with the agent runner about where you are; it acts through hz once you conf
 | Stage a schedule action for review in chat; creating the proposal never changes or activates it. | `hz chat propose-schedule-control` | — | — | `POST /api/system/runner/chat/propose-schedule-control` | yes |  |
 | Stage the exact current model policy for human review; no grant or model call is made. | `hz chat propose-model-policy` | — | — | `POST /api/system/runner/chat/propose-model-policy` | yes |  |
 | Stage current agent contract terms for human review. | `hz chat propose-agent-contract` | — | — | `POST /api/system/runner/chat/propose-agent-contract` | yes |  |
+| Stage exact owner-private captured write terms for separate human confirmation. | `hz chat propose-captured-write` | — | — | `POST /api/system/runner/chat/propose-captured-write` | yes |  |
 | Stage one exact notification draft for a human decision; no notice is sent. | `hz chat propose-agent-notification` | — | — | `POST /api/system/runner/chat/propose-agent-notification` | yes |  |
 | Stage current connected-read terms for an explicit human decision. | `hz chat propose-connected-read-review` | — | — | `POST /api/system/runner/chat/propose-connected-read-review` | yes |  |
 | Stage the current read-set review for an explicit human decision. | `hz chat propose-connected-read-set-review` | — | — | `POST /api/system/runner/chat/propose-connected-read-set-review` | yes |  |

@@ -14,6 +14,11 @@ export async function openChatJourney() {
   url.pathname = "/doctor";
   const browser = await (process.argv[3] === "webkit" ? webkit : chromium).launch({ headless: true });
   const context = await browser.newContext({ serviceWorkers: "block", viewport: { width: 390, height: 844 } });
+  // These journeys open the closed panels and send the first message themselves.
+  await context.addInitScript(() => {
+    localStorage.setItem("hz.chat.more", "1");
+    localStorage.setItem("hz.chat.autosend", "0");
+  });
   const page = await context.newPage();
   const axe = readFileSync(require.resolve("axe-core/axe.min.js"), "utf8");
   return { axe, browser, context, page, token, url };

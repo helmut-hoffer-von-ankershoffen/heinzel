@@ -276,8 +276,7 @@ const en = {
   "onboarding.look.title": "Look",
   "onboarding.look.intro": "Pick a theme; you can change it any time in Settings.",
   "onboarding.ai.title": "AI access",
-  "onboarding.ai.intro": "Heinzelmännchen draft with an AI model. Choose how hz reaches one in Settings, General.",
-  "onboarding.ai.open": "Open AI settings",
+  "onboarding.ai.intro": "Heinzelmännchen think with an AI model you already have. Choose how hz reaches it.",
   "onboarding.connectors.title": "Connectors",
   "onboarding.connectors.intro":
     "Sign in to the tools hz reads from and writes to, such as your tracker and documents.",

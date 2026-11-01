@@ -1674,6 +1674,286 @@
         "title": "CapabilityUse",
         "type": "object"
       },
+      "CapturedWriteActivityItem": {
+        "description": "One saved write draft or verified provider acknowledgement, without replacement text.",
+        "properties": {
+          "account": {
+            "description": "Account recorded in the reviewed draft.",
+            "title": "Account",
+            "type": "string"
+          },
+          "at": {
+            "description": "Time of the latest recorded activity.",
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "provider": {
+            "description": "Host-selected provider recorded with the draft.",
+            "title": "Provider",
+            "type": "string"
+          },
+          "reference": {
+            "description": "Exact artifact reference recorded in the reviewed draft.",
+            "title": "Reference",
+            "type": "string"
+          },
+          "request_id": {
+            "description": "Owner-scoped draft identity.",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "revision": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Provider-reported acknowledgement revision, if any.",
+            "title": "Revision"
+          },
+          "seq": {
+            "description": "Latest recorded activity position.",
+            "exclusiveMinimum": 0.0,
+            "title": "Seq",
+            "type": "integer"
+          },
+          "source": {
+            "description": "Source identity recorded in the reviewed draft.",
+            "title": "Source",
+            "type": "string"
+          },
+          "status": {
+            "description": "Verified local attempt disposition.",
+            "enum": [
+              "draft",
+              "uncertain",
+              "acknowledged"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_id",
+          "seq",
+          "at",
+          "provider",
+          "account",
+          "source",
+          "reference",
+          "status",
+          "revision"
+        ],
+        "title": "CapturedWriteActivityItem",
+        "type": "object"
+      },
+      "CapturedWriteActivityPage": {
+        "description": "A bounded owner-private page of verified captured-write activity.",
+        "properties": {
+          "items": {
+            "description": "Latest verified activity, newest first.",
+            "items": {
+              "$ref": "#/components/schemas/CapturedWriteActivityItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_before": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Exclusive activity sequence for the next page, if available.",
+            "title": "Next Before"
+          },
+          "session_id": {
+            "description": "The owner-scoped conversation.",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "items",
+          "next_before"
+        ],
+        "title": "CapturedWriteActivityPage",
+        "type": "object"
+      },
+      "CapturedWriteProposal": {
+        "additionalProperties": false,
+        "description": "Untrusted inert target terms; owner and provider binding are selected by the host.",
+        "properties": {
+          "account": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Account",
+            "type": "string"
+          },
+          "base_revision": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Base Revision",
+            "type": "string"
+          },
+          "content": {
+            "format": "password",
+            "title": "Content",
+            "type": "string",
+            "writeOnly": true
+          },
+          "operation": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Operation",
+            "type": "string"
+          },
+          "reference": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Reference",
+            "type": "string"
+          },
+          "request_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "section": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Section",
+            "type": "string"
+          },
+          "session_id": {
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "source": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Source",
+            "type": "string"
+          },
+          "write_scope": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Write Scope",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "request_id",
+          "account",
+          "source",
+          "reference",
+          "operation",
+          "section",
+          "base_revision",
+          "write_scope",
+          "content"
+        ],
+        "title": "CapturedWriteProposal",
+        "type": "object"
+      },
+      "CapturedWriteReceipt": {
+        "description": "Host-recorded provider acknowledgement of one exact attempt; not a later read observation.",
+        "properties": {
+          "account": {
+            "description": "Account recorded in the reviewed draft.",
+            "title": "Account",
+            "type": "string"
+          },
+          "base_revision": {
+            "description": "Revision reviewed before the attempt.",
+            "title": "Base Revision",
+            "type": "string"
+          },
+          "provider": {
+            "description": "Host-selected provider recorded with the draft.",
+            "title": "Provider",
+            "type": "string"
+          },
+          "reference": {
+            "description": "Exact artifact reference recorded in the reviewed draft.",
+            "title": "Reference",
+            "type": "string"
+          },
+          "request_id": {
+            "description": "Owner-scoped identity of the confirmed write draft.",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "revision": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Revision returned by the provider acknowledgement, if any.",
+            "title": "Revision"
+          },
+          "source": {
+            "description": "Source identity recorded in the reviewed draft.",
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_id",
+          "provider",
+          "account",
+          "source",
+          "reference",
+          "base_revision"
+        ],
+        "title": "CapturedWriteReceipt",
+        "type": "object"
+      },
+      "CapturedWriteStatus": {
+        "description": "Owner-private state without draft content or an invented success.",
+        "properties": {
+          "receipt": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CapturedWriteReceipt"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Recorded provider acknowledgement, not a later artifact verification, if present."
+          },
+          "status": {
+            "description": "Local state; a draft does not grant a write.",
+            "enum": [
+              "draft",
+              "uncertain",
+              "acknowledged"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "CapturedWriteStatus",
+        "type": "object"
+      },
       "CardWidget": {
         "additionalProperties": false,
         "description": "A card: a title, a short body and up to three buttons.",
@@ -4044,6 +4324,126 @@
         "title": "CredentialInfo",
         "type": "object"
       },
+      "CrossHistoryPage": {
+        "description": "At most one agent's results or explicit bounded progress.",
+        "properties": {
+          "completeness": {
+            "const": "unknown",
+            "default": "unknown",
+            "description": "Search completeness cannot be established.",
+            "title": "Completeness",
+            "type": "string"
+          },
+          "items": {
+            "description": "Matches from at most one conversation in this step.",
+            "items": {
+              "$ref": "#/components/schemas/SessionMessage"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "jump_cursors": {
+            "description": "Owner and journal-bound message navigation hints.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Jump Cursors",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Continuation for the same owner, query and catalog prefix, if available.",
+            "title": "Next Cursor"
+          },
+          "session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Owner-scoped conversation for this step, if any.",
+            "title": "Session Id"
+          },
+          "status": {
+            "description": "Bounded search progress for this step.",
+            "enum": [
+              "indexing",
+              "results",
+              "next-agent",
+              "done",
+              "blocked"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "session_id",
+          "items",
+          "next_cursor"
+        ],
+        "title": "CrossHistoryPage",
+        "type": "object"
+      },
+      "CrossHistoryRequest": {
+        "additionalProperties": false,
+        "description": "One owner's query; continuation is a navigation hint, not authority.",
+        "properties": {
+          "cursor": {
+            "anyOf": [
+              {
+                "maxLength": 8192,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cursor"
+          },
+          "query": {
+            "default": "",
+            "maxLength": 200,
+            "title": "Query",
+            "type": "string"
+          },
+          "since": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Since"
+          },
+          "until": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Until"
+          }
+        },
+        "title": "CrossHistoryRequest",
+        "type": "object"
+      },
       "DaemonStatus": {
         "description": "Whether the daemon is installed, loaded and healthy.",
         "properties": {
@@ -5917,6 +6317,173 @@
           "summary"
         ],
         "title": "HintView",
+        "type": "object"
+      },
+      "HistorySearchPage": {
+        "description": "One scan window and its continuation; an empty page can still have more.",
+        "properties": {
+          "items": {
+            "description": "Matches in this bounded scan window.",
+            "items": {
+              "$ref": "#/components/schemas/SessionMessage"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "jump_cursors": {
+            "description": "Owner and journal-bound message navigation hints.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Jump Cursors",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Continuation for the same query and journal prefix, if available.",
+            "title": "Next Cursor"
+          },
+          "scanned": {
+            "description": "Number of message bodies examined in this scan window.",
+            "maximum": 50.0,
+            "minimum": 0.0,
+            "title": "Scanned",
+            "type": "integer"
+          },
+          "session_id": {
+            "description": "The owner-scoped conversation searched.",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "items",
+          "next_cursor",
+          "scanned"
+        ],
+        "title": "HistorySearchPage",
+        "type": "object"
+      },
+      "HistorySearchRequest": {
+        "additionalProperties": false,
+        "description": "Exact text and time bounds for one owner-private conversation.",
+        "properties": {
+          "cursor": {
+            "anyOf": [
+              {
+                "maxLength": 2048,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cursor"
+          },
+          "query": {
+            "default": "",
+            "maxLength": 200,
+            "title": "Query",
+            "type": "string"
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "since": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Since"
+          },
+          "until": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Until"
+          }
+        },
+        "required": [
+          "session_id"
+        ],
+        "title": "HistorySearchRequest",
+        "type": "object"
+      },
+      "IndexedHistoryPage": {
+        "description": "Private matching messages; coverage is a checked cache, not a completeness proof.",
+        "properties": {
+          "completeness": {
+            "default": "unknown",
+            "description": "Whether the retained search can establish completeness.",
+            "title": "Completeness",
+            "type": "string"
+          },
+          "items": {
+            "description": "Matches in this bounded results page.",
+            "items": {
+              "$ref": "#/components/schemas/SessionMessage"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "jump_cursors": {
+            "description": "Owner and journal-bound message navigation hints.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Jump Cursors",
+            "type": "array"
+          },
+          "mode": {
+            "description": "Search method used for this page.",
+            "title": "Mode",
+            "type": "string"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Continuation for the same query and journal prefix, if available.",
+            "title": "Next Cursor"
+          },
+          "session_id": {
+            "description": "The owner-scoped conversation searched.",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "items",
+          "next_cursor",
+          "mode"
+        ],
+        "title": "IndexedHistoryPage",
         "type": "object"
       },
       "InputSnapshotPage": {
@@ -10115,6 +10682,36 @@
         "title": "Question",
         "type": "object"
       },
+      "QuietHours": {
+        "additionalProperties": false,
+        "description": "A daily local-time window; a window that ends earlier than it starts runs over midnight.",
+        "properties": {
+          "end": {
+            "description": "Local time the quiet window ends, as HH:MM; exclusive.",
+            "title": "End",
+            "type": "string"
+          },
+          "start": {
+            "description": "Local time the quiet window begins, as HH:MM; inclusive.",
+            "title": "Start",
+            "type": "string"
+          },
+          "timezone": {
+            "description": "IANA timezone of the window.",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Timezone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "start",
+          "end",
+          "timezone"
+        ],
+        "title": "QuietHours",
+        "type": "object"
+      },
       "ReadSetEntry": {
         "additionalProperties": false,
         "description": "An opaque host-issued selector and its proposed terms.",
@@ -11254,6 +11851,17 @@
             "title": "Owner",
             "type": "string"
           },
+          "quiet_hours": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QuietHours"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Reviewed daily window in which a due slot starts no turn; absent means no quiet hours."
+          },
           "request_id": {
             "description": "Stable schedule proposal request.",
             "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
@@ -11279,6 +11887,12 @@
             "minimum": 1.0,
             "title": "Timeout Seconds",
             "type": "integer"
+          },
+          "wake_on_new_items": {
+            "default": false,
+            "description": "A due slot checks the approved source and takes a turn only for an item not seen before.",
+            "title": "Wake On New Items",
+            "type": "boolean"
           }
         },
         "required": [
@@ -11371,6 +11985,28 @@
             "title": "Based On Revision",
             "type": "integer"
           },
+          "notices": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SuggestedNotices"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Suggested local notice limits, not yet approved."
+          },
+          "quiet_hours": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QuietHours"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Suggested quiet hours, not yet approved."
+          },
           "request_id": {
             "description": "Stable host-derived suggestion identity.",
             "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
@@ -11416,6 +12052,12 @@
             ],
             "description": "Suggested schedule, not yet approved or activated.",
             "title": "Trigger"
+          },
+          "wake_on_new_items": {
+            "default": false,
+            "description": "Take a turn only for items not seen before.",
+            "title": "Wake On New Items",
+            "type": "boolean"
           }
         },
         "required": [
@@ -11562,6 +12204,16 @@
         "additionalProperties": false,
         "description": "Explicit bounded notification scope; it grants no external messaging or data access.",
         "properties": {
+          "channels": {
+            "default": [],
+            "description": "Other channels, by name, that also carry each notice; the owner reviews this list.",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 8,
+            "title": "Channels",
+            "type": "array"
+          },
           "delivery": {
             "const": "local-notification",
             "default": "local-notification",
@@ -13296,6 +13948,17 @@
             "description": "Inert suggestion, without authority.",
             "title": "Status",
             "type": "string"
+          },
+          "window": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SuggestedWindow"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Suggested window that follows each read, not yet approved."
           }
         },
         "required": [
@@ -13926,6 +14589,49 @@
         "title": "SuggestedInterval",
         "type": "object"
       },
+      "SuggestedNotices": {
+        "additionalProperties": false,
+        "description": "Suggested local notice limits for scheduled turns; the owner reviews them, and they grant nothing alone.",
+        "properties": {
+          "channels": {
+            "description": "Other channels, by name, when the person asked to be reached there too.",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 8,
+            "title": "Channels",
+            "type": "array"
+          },
+          "deduplicate_by": {
+            "anyOf": [
+              {
+                "enum": [
+                  "item",
+                  "revision"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "With an approved source: one notice per observed item, or per item revision so a moved item can notify again. Null when the notice is not about a source item.",
+            "title": "Deduplicate By"
+          },
+          "max_per_24h": {
+            "description": "At most this many notices in any 24 hours.",
+            "maximum": 24.0,
+            "minimum": 1.0,
+            "title": "Max Per 24H",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "max_per_24h"
+        ],
+        "title": "SuggestedNotices",
+        "type": "object"
+      },
       "SuggestedRead": {
         "additionalProperties": false,
         "description": "An unverified capability reference, not a grant or provider selection.",
@@ -13976,6 +14682,40 @@
           "timezone"
         ],
         "title": "SuggestedTrigger",
+        "type": "object"
+      },
+      "SuggestedWindow": {
+        "additionalProperties": false,
+        "description": "A time window that follows each read, for a source that changes: elapsed seconds around that moment.",
+        "properties": {
+          "lookahead_seconds": {
+            "description": "Seconds after each read to include.",
+            "maximum": 2678400.0,
+            "minimum": 0.0,
+            "title": "Lookahead Seconds",
+            "type": "integer"
+          },
+          "lookback_seconds": {
+            "description": "Seconds before each read to include.",
+            "maximum": 2678400.0,
+            "minimum": 0.0,
+            "title": "Lookback Seconds",
+            "type": "integer"
+          },
+          "timezone": {
+            "description": "IANA timezone the person sees times in.",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Timezone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "lookback_seconds",
+          "lookahead_seconds",
+          "timezone"
+        ],
+        "title": "SuggestedWindow",
         "type": "object"
       },
       "SystemInfo": {
@@ -17383,6 +18123,75 @@
         "title": "heinzel_chat_Input",
         "type": "object"
       },
+      "heinzel_discard_captured_write_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "request_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "session_id": {
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "request_id"
+        ],
+        "title": "heinzel_discard_captured_write_Input",
+        "type": "object"
+      },
+      "heinzel_execute_captured_write_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "approval_proof": {
+            "minLength": 1,
+            "title": "Approval Proof",
+            "type": "string"
+          },
+          "request_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "review": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "title": "Review",
+            "type": "object"
+          },
+          "session_id": {
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "request_id",
+          "review",
+          "approval_proof"
+        ],
+        "title": "heinzel_execute_captured_write_Input",
+        "type": "object"
+      },
+      "heinzel_indexed_conversation_search_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "request": {
+            "$ref": "#/components/schemas/HistorySearchRequest"
+          }
+        },
+        "required": [
+          "request"
+        ],
+        "title": "heinzel_indexed_conversation_search_Input",
+        "type": "object"
+      },
       "heinzel_new_chat_Input": {
         "additionalProperties": false,
         "properties": {
@@ -17613,6 +18422,16 @@
               }
             ]
           },
+          "quiet_hours": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QuietHours"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "request_id": {
             "description": "A stable client request id; reuse it only for an exact retry.",
             "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
@@ -17630,6 +18449,17 @@
             "minimum": 1.0,
             "title": "Timeout Seconds",
             "type": "integer"
+          },
+          "wake_on_new_items": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Wake On New Items"
           }
         },
         "required": [
@@ -17641,6 +18471,19 @@
           "timeout_seconds"
         ],
         "title": "heinzel_propose_agent_schedule_Input",
+        "type": "object"
+      },
+      "heinzel_propose_captured_write_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "proposal": {
+            "$ref": "#/components/schemas/CapturedWriteProposal"
+          }
+        },
+        "required": [
+          "proposal"
+        ],
+        "title": "heinzel_propose_captured_write_Input",
         "type": "object"
       },
       "heinzel_propose_check_in_Input": {
@@ -18163,6 +19006,32 @@
           "action"
         ],
         "title": "heinzel_schedule_control_Input",
+        "type": "object"
+      },
+      "heinzel_search_agent_conversations_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "request": {
+            "$ref": "#/components/schemas/CrossHistoryRequest"
+          }
+        },
+        "required": [
+          "request"
+        ],
+        "title": "heinzel_search_agent_conversations_Input",
+        "type": "object"
+      },
+      "heinzel_search_conversation_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "request": {
+            "$ref": "#/components/schemas/HistorySearchRequest"
+          }
+        },
+        "required": [
+          "request"
+        ],
+        "title": "heinzel_search_conversation_Input",
         "type": "object"
       },
       "system_state_push_Input": {
@@ -19061,6 +19930,131 @@
         ]
       }
     },
+    "/heinzel/captured-write-activity-page": {
+      "get": {
+        "description": "Inspect recorded write attempts without contacting a provider or authorizing effects.",
+        "operationId": "heinzel_captured_write_activity_page",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Exclusive activity sequence before this page.",
+            "in": "query",
+            "name": "before",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Exclusive activity sequence before this page.",
+              "title": "Before"
+            }
+          },
+          {
+            "description": "Maximum activities to return.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "description": "Maximum activities to return.",
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapturedWriteActivityPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Inspect recorded write attempts without contacting a provider or authorizing effects.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/captured-write-status": {
+      "get": {
+        "description": "Read the owner's recorded disposition without repeating a provider operation.",
+        "operationId": "heinzel_captured_write_status",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapturedWriteStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read the owner's recorded disposition without repeating a provider operation.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
     "/heinzel/chat": {
       "post": {
         "description": "Durably queue a message for this Heinzel; acceptance is distinct from a completed model answer.",
@@ -19561,6 +20555,49 @@
         ]
       }
     },
+    "/heinzel/discard-captured-write": {
+      "post": {
+        "description": "Set a draft aside without writing it.",
+        "operationId": "heinzel_discard_captured_write",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/heinzel_discard_captured_write_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Heinzel Discard Captured Write",
+                  "type": "boolean"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set a draft aside without writing it.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
     "/heinzel/discover": {
       "get": {
         "description": "Find candidates for each playbook's asset types through the capabilities you have bound; reads only.",
@@ -19613,6 +20650,49 @@
         ]
       }
     },
+    "/heinzel/execute-captured-write": {
+      "post": {
+        "description": "Execute one exact confirmed conditional write or leave its outcome uncertain.",
+        "operationId": "heinzel_execute_captured_write",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/heinzel_execute_captured_write_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Heinzel Execute Captured Write",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Execute one exact confirmed conditional write or leave its outcome uncertain.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
     "/heinzel/graph": {
       "get": {
         "description": "Show the workflow your contracts make: what each maintains and reads, cycles, unmaintained inputs.",
@@ -19654,6 +20734,48 @@
           }
         },
         "summary": "Show the workflow your contracts make: what each maintains and reads, cycles, unmaintained inputs.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/indexed-conversation-search": {
+      "post": {
+        "description": "Search a disposable private text index; its coverage is not a completeness guarantee.",
+        "operationId": "heinzel_indexed_conversation_search",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/heinzel_indexed_conversation_search_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IndexedHistoryPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Search a disposable private text index; its coverage is not a completeness guarantee.",
         "tags": [
           "heinzel"
         ]
@@ -20371,6 +21493,56 @@
         ]
       }
     },
+    "/heinzel/pending-captured-writes": {
+      "get": {
+        "description": "Drafts waiting for your decision, with their exact terms; reading them writes nothing.",
+        "operationId": "heinzel_pending_captured_writes",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": {
+                      "$ref": "#/components/schemas/JsonValue"
+                    },
+                    "type": "object"
+                  },
+                  "title": "Response Heinzel Pending Captured Writes",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Drafts waiting for your decision, with their exact terms; reading them writes nothing.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
     "/heinzel/personal-artifacts": {
       "get": {
         "description": "List local principal-submitted file associations without accessing the provider.",
@@ -20497,7 +21669,15 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ConnectedGrantProposal"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ConnectedGrantProposal"
+                    },
+                    {
+                      "$ref": "#/components/schemas/RollingConnectedGrantProposal"
+                    }
+                  ],
+                  "title": "Response Heinzel Prepare Suggested Source"
                 }
               }
             },
@@ -20599,6 +21779,49 @@
           }
         },
         "summary": "Propose autonomous turns; separate human confirmation is required to authorize them.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/propose-captured-write": {
+      "post": {
+        "description": "Persist a local draft without writing to a provider or granting authority.",
+        "operationId": "heinzel_propose_captured_write",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/heinzel_propose_captured_write_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Heinzel Propose Captured Write",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Persist a local draft without writing to a provider or granting authority.",
         "tags": [
           "heinzel"
         ]
@@ -21271,6 +22494,90 @@
           }
         },
         "summary": "Inspect bounded owner-private scheduled attempts and their recorded outcomes.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/search-agent-conversations": {
+      "post": {
+        "description": "Search the current owner's conversations with explicit bounded progress.",
+        "operationId": "heinzel_search_agent_conversations",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/heinzel_search_agent_conversations_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CrossHistoryPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Search the current owner's conversations with explicit bounded progress.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/search-conversation": {
+      "post": {
+        "description": "Search privately by POST so terms do not appear in request URLs; this changes no state.",
+        "operationId": "heinzel_search_conversation",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/heinzel_search_conversation_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HistorySearchPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Search privately by POST so terms do not appear in request URLs; this changes no state.",
         "tags": [
           "heinzel"
         ]
@@ -24312,6 +25619,62 @@
           }
         },
         "summary": "Stage the exact current agent schedule for human review; no schedule is approved yet.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/runner/chat/propose-captured-write": {
+      "post": {
+        "description": "Stage exact owner-private captured write terms for separate human confirmation.",
+        "operationId": "system_runner_chat_propose_captured_write",
+        "parameters": [
+          {
+            "description": "Owner-scoped personal conversation.",
+            "in": "query",
+            "name": "durable_session",
+            "required": true,
+            "schema": {
+              "description": "Owner-scoped personal conversation.",
+              "title": "Durable Session",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Identity of the captured write draft.",
+            "in": "query",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "description": "Identity of the captured write draft.",
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatSession"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Stage exact owner-private captured write terms for separate human confirmation.",
         "tags": [
           "system"
         ]
