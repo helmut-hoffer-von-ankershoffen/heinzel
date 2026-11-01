@@ -281,10 +281,7 @@ def preflight(args, accepted_dir):
     """Bind every published input to its release identity. Executes nothing it downloads."""
     version, app = args.expect_version, args.expect_app_version
     report = {"expect_version": version, "expect_app_version": app}
-    check(version == app and CANDIDATE_VERSION.fullmatch(version), "A candidate names one final or edge version")
-    if not is_final_version(version):
-        global EDGE_CANDIDATE  # noqa: PLW0603 - set once, before any case runs, for this explicit run only
-        EDGE_CANDIDATE = version
+    check(is_final_version(version) and is_final_version(app), "The expected versions must be final X.Y.Z versions")
     pypi = json.loads(fetch("https://pypi.org/pypi/heinzel/json", 8 * 1024 * 1024))
     report["pypi_latest"] = pypi["info"]["version"]
     check(pypi["info"]["version"] == version, f"PyPI latest is {pypi['info']['version']}, not expected {version}")
@@ -1995,7 +1992,10 @@ def assert_final_install(case, where):
         f"{where}: receipt Core {receipt.get('core_version')} is not final",
     )
     for name, version in versions.items():
-        check(is_final_version(version), f"{where}: {name} {version} is not a final version")
+        check(
+            is_accepted_core(version) if name == "heinzel" else is_final_version(version),
+            f"{where}: {name} {version} is not a final version",
+        )
     info = case.json_command("system", "info", label="hz-system-info-final")
     check(is_accepted_core(info["version"]), f"{where}: the installed Core {info['version']} is not a final version")
     check(info["version"] == receipt["core_version"], f"{where}: the receipt and the installed Core differ")
@@ -2236,6 +2236,9 @@ def bind_release_candidate(args, parent):
     """
     version, app = args.expect_version, args.expect_app_version
     check(version == app and CANDIDATE_VERSION.fullmatch(version), "A candidate names one final or edge version")
+    if not is_final_version(version):
+        global EDGE_CANDIDATE  # noqa: PLW0603 - set once, before any case runs, for this explicit run only
+        EDGE_CANDIDATE = version
     wheel_url, profile_url = args.candidate_wheel_url, args.candidate_profile_url
     wheel_match = RELEASE_WHEEL_URL.fullmatch(wheel_url or "")
     check(wheel_match, "--candidate-wheel-url must be this project's final release wheel")
