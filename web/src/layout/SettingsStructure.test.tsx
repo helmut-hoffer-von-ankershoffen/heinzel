@@ -234,7 +234,7 @@ describe("Settings: Preferences, Customize, This computer", () => {
     const plugin = await screen.findByTitle("Show it under Plugins");
     const header = (plugin.closest("div") as HTMLElement).parentElement as HTMLElement;
     expect(within(header).getByTitle("Capability: hz clock")).toBeInTheDocument();
-    expect(header).toHaveTextContent("First-Party");
+    expect(header).toHaveTextContent("First-party");
     expect(header).toHaveTextContent("v0.3.0");
     expect(
       within(header).getByRole("link", { name: "github.com/helmut-hoffer-von-ankershoffen/heinzel" }),
@@ -260,7 +260,7 @@ describe("Settings: Preferences, Customize, This computer", () => {
   it("heads a built-in module's settings with hz and its version", async () => {
     mockApi({ ...answers, "/api/system/info": { version: "0.4.0", modules: [] } });
     renderAt("/doctor?settings=org");
-    expect(await screen.findByRole("link", { name: "First-Party" })).toHaveAttribute(
+    expect(await screen.findByRole("link", { name: "First-party" })).toHaveAttribute(
       "href",
       "https://github.com/helmut-hoffer-von-ankershoffen/heinzel",
     );

@@ -43,7 +43,7 @@ export async function startChatJourney(page, url) {
   if (!(await page.getByLabel("Your message").isVisible()))
     await page.getByRole("tab", { name: "Chat", exact: true }).click();
   await page.getByLabel("Your message").fill("Read my selected source.");
-  await page.getByRole("button", { name: "Create Heinzel and take this message" }).click();
+  await page.getByRole("button", { name: "Create a helper and take this message" }).click();
 }
 
 /** A grant survives a reload as approved, then is revoked, and the review panel still fits the phone. */

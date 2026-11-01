@@ -267,8 +267,8 @@ export function Composer({
             type="button"
             variant="outline"
             size="icon"
-            aria-label="Create Heinzel and take this message"
-            title="Create Heinzel and take this message"
+            aria-label={t("chat.createPersonal")}
+            title={t("chat.createPersonal")}
             disabled={!message.trim() || creating || chat.live != null || chat.loading}
             onClick={() => void createPersonal()}
           >
@@ -286,7 +286,7 @@ export function Composer({
       </form>
       {creating && (
         <span role="status" className="sr-only">
-          Creating your Heinzel…
+          {t("chat.creatingPersonal")}
         </span>
       )}
       {initialPersonalMessage && !creating && (

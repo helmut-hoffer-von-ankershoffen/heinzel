@@ -200,7 +200,7 @@ try {
     ["home", "/", "Today"],
     ["settings", "/settings", "Settings"],
     ["heinzel", "/heinzel", "Heinzelmännchen"],
-    ["contracts", "/contracts", "Workflow"],
+    ["contracts", "/contracts", "Contracts"],
     ["team-graph", "/graph", "Team graph"],
     ["team", "/team", "Team roster"],
     ["artifact-types", "/inventory/types", "Types"],

@@ -20,7 +20,7 @@ $ hz [OPTIONS] COMMAND [ARGS]...
 
 * `ai`: (expert) How hz reaches AI, and what it...
 * `chat`: Chat with the agent runner in this...
-* `graph`: Show your team&#x27;s promises: who keeps which...
+* `graph`: Show your team&#x27;s contracts: who keeps...
 * `heinzel`: Your Heinzelmännchen: durable helpers that...
 * `join`: Join a team from its invite line: finds...
 * `org`: Your profile, and the team, org and...
@@ -570,7 +570,7 @@ $ hz chat show [OPTIONS] {session}
 
 ## `hz graph`
 
-Show your team&#x27;s promises: who keeps which artifact, how each promise stands, where the flow waits.
+Show your team&#x27;s contracts: who keeps which artifact, how each stands, where the flow waits.
 
 **Usage**:
 
@@ -791,7 +791,7 @@ $ hz heinzel check [OPTIONS]
 
 ### `hz heinzel discover`
 
-(expert) Find candidates for each playbook&#x27;s asset types through the capabilities you have bound; reads only.
+(expert) Find candidates for each playbook&#x27;s artifact types through your bound capabilities; reads only.
 
 **Usage**:
 
@@ -923,7 +923,7 @@ $ hz heinzel list [OPTIONS]
 
 ### `hz heinzel new`
 
-Write a starter contract, or a playbook&#x27;s template (--template), into your workflows directory.
+Write a starter contract, or a playbook&#x27;s template (--template), into your contracts folder.
 
 **Usage**:
 
@@ -939,7 +939,7 @@ $ hz heinzel new [OPTIONS] {name}
 
 * `--team / --no-team`: Write it into the team repository&#x27;s workflows/ instead of your own directory.  [default: no-team]
 * `--template <str>`: Start from a playbook&#x27;s template contract, `&lt;module&gt;:&lt;name&gt;` (`hz heinzel playbooks` lists them), instead of the blank starter.
-* `--asset <str>`: Fill a template&#x27;s asset placeholder as type=reference, e.g. weekly-report=doc-123 (`hz heinzel discover` finds candidates); repeat for each.
+* `--asset <str>`: Fill a template&#x27;s artifact placeholder as type=reference, e.g. weekly-report=doc-123 (`hz heinzel discover` finds candidates); repeat for each.
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
@@ -988,7 +988,7 @@ $ hz heinzel personal-artifacts [OPTIONS] {session_id}
 
 ### `hz heinzel playbooks`
 
-(expert) List the playbooks plugins contribute: asset types, template contracts and recommended settings.
+(expert) List the playbooks plugins contribute: artifact types, template contracts and recommended settings.
 
 **Usage**:
 
@@ -3299,7 +3299,7 @@ $ hz system theme list [OPTIONS]
 
 #### `hz system theme signals`
 
-(expert) Show the signals themes follow now: the time of day, and the weather when a plugin publishes it.
+(expert) Show the signals themes follow now: the time of day, and the weather when a plugin provides it.
 
 **Usage**:
 

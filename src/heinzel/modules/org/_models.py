@@ -149,10 +149,12 @@ class OrgSettings(ModuleSettings):
     role: Annotated[str, WithJsonSchema({"type": "string", "enum": list(ROLES)})] | None = Field(
         default=None,
         title="Role",
-        description="What you do on your team.",
+        description="What you do on your team, shown in your profile.",
         json_schema_extra={"x-labels": ROLE_LABELS},
     )
-    timezone: TimeZoneName | None = Field(default=None, title="Time zone", description="Your time zone.")
+    timezone: TimeZoneName | None = Field(
+        default=None, title="Time zone", description="Your time zone. The agenda and your default working hours use it."
+    )
     working_hours: Annotated[tuple[Hour, Hour], NoDecode] = Field(
         default=DEFAULT_HOURS,
         title="Working hours",

@@ -99,7 +99,7 @@ class Settings(ModuleSettings):
         default=True,
         title="Check for updates",
         description="Look for a newer release at most once an hour and mention it after a command's output. The "
-        "check sends nothing about you, and never runs in CI or in JSON, MCP or REST output.",
+        "check uses no personal data, and never runs in CI or in JSON, MCP or REST output.",
     )
     update_channel: Annotated[Literal["stable", "edge", "main"], BeforeValidator(_update_channel)] = Field(
         default="stable",
@@ -136,9 +136,10 @@ class Settings(ModuleSettings):
         default=frozenset(),
         max_length=16,
         title="Shared web app origins",
-        description="Exact HTTPS origins allowed by the authenticated web app behind a private reverse proxy, "
-        "such as https://workstation.example.ts.net. The listener stays on this computer. Restart and apply "
-        "after changing this user-only setting. In the environment, separate origins with commas.",
+        description="Exact HTTPS origins allowed by the authenticated web app behind a private reverse proxy. The "
+        "listener stays on this computer. Restart and apply after changing this user-only setting. In the "
+        "environment, separate origins with commas.",
+        examples=["https://workstation.example.ts.net"],
         json_schema_extra={"x-expert": True, "x-private": True},
     )
     api_allowed_hosts: Annotated[frozenset[str], NoDecode] = Field(

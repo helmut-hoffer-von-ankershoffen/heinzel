@@ -1,6 +1,7 @@
 // Local references only: the registry does not contact Google or verify access or ownership.
 import { useEffect, useId, useState } from "react";
 import { api, type SchemaPersonalArtifact, type SchemaSessionSummary } from "@/api/client";
+import { t } from "@/i18n";
 
 function safeGoogleLink(item: SchemaPersonalArtifact, sessionId: string): boolean {
   const paths = { document: "document", spreadsheet: "spreadsheets", presentation: "presentation" } as const;
@@ -55,17 +56,13 @@ export function PersonalArtifactLinks({ sessionId, compact = false }: { sessionI
       <h3 id={headingId} className="font-medium">
         {compact ? "Associated files" : "Local associations"}
       </h3>
-      {compact && (
-        <p className="text-xs text-muted-foreground">
-          Association only: Google access and agent management are unverified. Recent agent edits are not available.
-        </p>
-      )}
+      {compact && <p className="text-xs text-muted-foreground">{t("artifacts.note")}</p>}
       {error ? (
         <p role="alert">Associations could not be loaded or validated.</p>
       ) : artifacts === null ? (
         <p role="status">Loading associations…</p>
       ) : artifacts.length === 0 ? (
-        <p>No local file associations for this Heinzel.</p>
+        <p>{t("artifacts.none")}</p>
       ) : (
         <ul className="space-y-1">
           {artifacts.map((item) => (
@@ -73,9 +70,7 @@ export function PersonalArtifactLinks({ sessionId, compact = false }: { sessionI
               <a href={item.ref} target="_blank" rel="noopener noreferrer" className="break-all text-primary underline">
                 {names[item.kind]} · {item.ref.split("/")[5]}
               </a>
-              <p className="text-xs text-muted-foreground">
-                Principal-submitted · Association only · Google access and agent management unverified
-              </p>
+              <p className="text-xs text-muted-foreground">{t("artifacts.note")}</p>
             </li>
           ))}
         </ul>
@@ -106,25 +101,22 @@ export function PersonalArtifacts() {
   return (
     <section aria-labelledby="personal-artifacts" className="space-y-3 rounded-lg border border-border p-4">
       <h2 id="personal-artifacts" className="font-semibold">
-        Personal Heinzel associations
+        {t("artifacts.title")}
       </h2>
-      <p className="text-sm text-muted-foreground">
-        These links were submitted under your account. Google access, file ownership, and agent management have not been
-        verified. Recent agent edits are not available in this view.
-      </p>
+      <p className="text-sm text-muted-foreground">{t("artifacts.note")}</p>
       {sessionError ? (
-        <p role="alert">Personal Heinzels could not be loaded.</p>
+        <p role="alert">{t("artifacts.loadError")}</p>
       ) : sessions === null ? (
-        <p role="status">Loading personal Heinzels…</p>
+        <output>Loading personal helpers…</output>
       ) : (
         <label className="block space-y-1 text-sm">
-          <span>Choose a personal Heinzel</span>
+          <span>{t("artifacts.choose")}</span>
           <select
             className="block w-full rounded border border-border bg-background p-2"
             value={selected}
             onChange={(event) => setSelected(event.target.value)}
           >
-            <option value="">Choose a Heinzel</option>
+            <option value="">{t("artifacts.pick")}</option>
             {sessions.map((session) => (
               <option key={session.session_id} value={session.session_id}>
                 {session.name}

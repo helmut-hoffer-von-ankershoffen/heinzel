@@ -1199,8 +1199,8 @@ export function DurableSession({ sessionId, onClose }: { sessionId: string; onCl
         ) : (
           pending?.accepted && (
             <p role="status" className="text-sm">
-              Your message was saved. Its answer is not confirmed; retrying uses the same request and an interrupted
-              turn will not be run again automatically.
+              Your message was saved. Its answer is not confirmed. Retrying uses the same request; an interrupted turn
+              will not be run again.
             </p>
           )
         )}

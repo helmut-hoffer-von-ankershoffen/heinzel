@@ -671,7 +671,7 @@ def _register_autonomous_schedule_operations(module: Module) -> None:
         ] = None,
         notification_policy: ScheduledNotificationPolicy | None = None,
     ) -> ScheduleBinding:
-        """Propose autonomous turns; separate human confirmation is required to authorize them."""
+        """Propose scheduled turns; separate human confirmation is required to approve them."""
         return service.propose(
             session_id,
             request_id,
@@ -715,7 +715,7 @@ def _register_autonomous_schedule_operations(module: Module) -> None:
         review: dict[str, JsonValue],
         approval_proof: str,
     ) -> ScheduleBinding:
-        """Record exact human-confirmed autonomous schedule authority."""
+        """Record the exact human-confirmed schedule approval."""
         return service.approve(session_id, request_id, review, approval_proof, confirmation)
 
 

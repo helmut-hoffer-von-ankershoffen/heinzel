@@ -29,7 +29,7 @@ try {
     await page.getByRole("tab", { name: "Chat", exact: true }).click();
   const text = "Prepare a private draft and suggest an identity.";
   await page.getByLabel("Your message").fill(text);
-  await page.getByRole("button", { name: "Create Heinzel and take this message" }).click();
+  await page.getByRole("button", { name: "Create a helper and take this message" }).click();
   const message = page.getByLabel("Message your Heinzel");
   await message.waitFor();
   assert.equal(await message.inputValue(), text);

@@ -11,7 +11,7 @@ try {
   if (await setup.isVisible().catch(() => false)) await setup.getByRole("button", { name: "Close setup" }).click();
   if (!(await page.getByLabel("Your message").isVisible())) await revealChat(page);
   await page.getByLabel("Your message").fill("Read my selected source.");
-  await page.getByRole("button", { name: "Create Heinzel and take this message" }).click();
+  await page.getByRole("button", { name: "Create a helper and take this message" }).click();
   await page.getByRole("button", { name: "Queue message" }).click();
   await page.getByText("Read complete.").waitFor({ timeout: 30000 });
   const terms = page.getByRole("region", { name: "Proposed agent terms" });
