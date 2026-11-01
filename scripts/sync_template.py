@@ -218,7 +218,7 @@ def ci_workflow() -> str:
     # its minutes, sets up on the two most contributors use.
     text = re.sub(
         r"(\n  setup:\n.*?\n        os: )\$\{\{ fromJSON[^\n]*",
-        r"\1[ubuntu-latest, macos-latest]",
+        r"\1[ubuntu-24.04, macos-latest]",
         text,
         count=1,
         flags=re.DOTALL,
