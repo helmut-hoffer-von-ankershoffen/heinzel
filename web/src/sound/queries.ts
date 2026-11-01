@@ -4,7 +4,7 @@ import { api, type SchemaSoundList, type SchemaSoundscapeView, unwrap } from "@/
 import { useSetSetting } from "@/api/queries";
 import { token } from "@/api/token";
 import type { Signals } from "./machine";
-import { stop } from "./store";
+import { play, stop } from "./store";
 
 export const SOUND_KEY = ["system", "sound", "list"] as const;
 /** `hz system sound list`, read now. */
@@ -41,18 +41,94 @@ export function resetPageFrame(): void {
   pageFrame = undefined;
 }
 
-/** `hz system sound use <name>`: stops what plays, and reloads the page when its CSP must change (ADR 0058). */
+const RESUME_KEY = "hz.sound.resume";
+const RESUME_WINDOW_MS = 30_000;
+
+/** A pick that reloads the page leaves a note, so the reloaded page plays it and opens the picker again. */
+function rememberResume(name: string): void {
+  try {
+    sessionStorage.setItem(RESUME_KEY, JSON.stringify({ name, at: Date.now() }));
+  } catch {
+    // no storage: the page reloads silent, and Play is one click
+  }
+}
+
+/** The soundscape a pick just reloaded the page for, if the note is fresh; the note stays until `takeResume`. */
+export function pendingResume(): string | null {
+  try {
+    const note = JSON.parse(sessionStorage.getItem(RESUME_KEY) ?? "null") as { name?: unknown; at?: unknown } | null;
+    return note &&
+      typeof note.name === "string" &&
+      typeof note.at === "number" &&
+      Date.now() - note.at < RESUME_WINDOW_MS
+      ? note.name
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+/** `pendingResume`, once: the note is gone afterwards. */
+export function takeResume(): string | null {
+  const name = pendingResume();
+  try {
+    sessionStorage.removeItem(RESUME_KEY);
+  } catch {
+    // nothing to remove
+  }
+  return name;
+}
+
+/** The list as it will be once `name` is picked: what the server answers, ahead of it, so the pick plays at once. */
+function picked(list: SchemaSoundList, name: string): SchemaSoundList {
+  return {
+    ...list,
+    selected: name,
+    effective: name,
+    follow_theme: false,
+    soundscapes: list.soundscapes.map((soundscape) => ({
+      ...soundscape,
+      selected: soundscape.name === name,
+      effective: soundscape.name === name,
+    })),
+  };
+}
+
+/**
+ * `hz system sound use <name>`, and play it (ADR 0058): `pick` runs in the click, so the player starts inside the
+ * gesture that browsers' autoplay rules need, and switches over from what played. The page reloads, when its CSP must
+ * change, and plays the pick again after.
+ */
 export const useSetSound = () => {
   const client = useQueryClient();
-  return useMutation({
+  const mutation = useMutation({
     mutationFn: (name: string) => unwrap(api.POST("/system/sound/use", { params: { query: { name } } })),
-    onMutate: () => stop(),
-    onSuccess: (list) => {
+    onSuccess: (list, name) => {
       client.setQueryData(SOUND_KEY, list);
-      if (needsReload(list)) page.reload(); // the network's page, with the frame-src the new soundscape needs or none
+      if (needsReload(list)) {
+        rememberResume(name);
+        page.reload(); // the network's page, with the frame-src the new soundscape needs or none
+      }
+    },
+    onError: () => {
+      stop();
+      void client.invalidateQueries({ queryKey: SOUND_KEY });
     },
     onSettled: () => client.invalidateQueries({ queryKey: SOUND_KEY }),
   });
+  return {
+    isPending: mutation.isPending,
+    pick: (name: string) => {
+      const list = client.getQueryData<SchemaSoundList>(SOUND_KEY);
+      stop();
+      if (!list) return mutation.mutate(name);
+      const next = picked(list, name);
+      void client.cancelQueries({ queryKey: SOUND_KEY }); // a read in flight must not bring the old pick back
+      client.setQueryData(SOUND_KEY, next);
+      if (!needsReload(next)) play(name); // otherwise the reload comes first, and the new page plays it
+      mutation.mutate(name);
+    },
+  };
 };
 
 /** Save one `[system.sound]` setting: the sound follows at once, and the page reloads if its CSP must change. */

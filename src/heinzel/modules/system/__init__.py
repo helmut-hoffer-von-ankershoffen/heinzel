@@ -8,6 +8,7 @@ from heinzel import Kernel, Module
 from heinzel.kernel import CoreMetadataVerifier, DaemonInstallationLifecycle, Installation, ReleaseSource
 from heinzel.modules.system._metadata_identity import CoreMetadataIdentity
 from heinzel.modules.system._models import (
+    ChannelReport,
     ModuleInfo,
     PluginUpdate,
     ReleaseCheck,
@@ -15,9 +16,10 @@ from heinzel.modules.system._models import (
     SystemInfo,
     UpdateResult,
 )
-from heinzel.modules.system._render import render_info, render_modules, render_release, render_update
+from heinzel.modules.system._render import render_channel, render_info, render_modules, render_release, render_update
 from heinzel.modules.system._service import GitHubReleases, SystemService, github_releases
 from heinzel.modules.system._update import UpdateService
+from heinzel.modules.system.config._service import ConfigService
 
 module = Module("system", "Inspect, configure, diagnose and update Heinzelmännchen itself.", essential=True)
 module.service(SystemService)
@@ -67,10 +69,11 @@ def update(
         Field(description="Install from here instead, e.g. git+https://github.com/org/heinzel@v1.2.0 or a wheel."),
     ] = None,
     channel: Annotated[
-        Literal["release", "main"] | None,
+        Literal["stable", "edge", "main", "release"] | None,
         Field(
-            description="Follow `release` (the default, setting `update_channel`): the newest release, also from "
-            "`main` once a release is as new as it; or `main`: its newest commit."
+            description="Follow `stable` (the default, setting `update_channel`; `release` is its earlier name): the "
+            "newest accepted release, also from `main` or edge once it is as new; `edge`: the newest edge release; "
+            "or `main`: its newest commit."
         ),
     ] = None,
 ) -> UpdateResult:
@@ -93,6 +96,33 @@ def update(
         HeinzelError: If Heinzelmännchen wasn't installed with `uv tool install`, or the update fails.
     """
     return service.update(source, channel=channel or kernel.settings.update_channel)
+
+
+@module.operation(read_only=False, audience="everyday", render=render_channel)
+def channel(
+    service: UpdateService,
+    config: ConfigService,
+    kernel: Kernel,
+    to: Annotated[
+        Literal["stable", "edge", "main"] | None,
+        Field(description="The channel to move to; without it, shows the current one."),
+    ] = None,
+    *,
+    yes: Annotated[bool, Field(description="Make the change that was described; without it, nothing changes.")] = False,
+) -> ChannelReport:
+    """Show the update channel, or say what switching changes and, with `--yes`, switch.
+
+    Default is stable. Switching installs nothing until `hz system update`, and survives updates. Going from edge to
+    stable never downgrades: edge stays until stable is as new.
+    """
+    selected = kernel.settings.update_channel
+    if to is None:
+        return ChannelReport(channel=selected, changed=False, statement=service.channel_summary(selected))
+    statement = service.channel_statement(selected, to)
+    if to == selected or not yes:
+        return ChannelReport(channel=selected, changed=False, statement=statement)
+    config.set("update_channel", to)
+    return ChannelReport(channel=to, changed=True, statement=statement)
 
 
 __all__ = [

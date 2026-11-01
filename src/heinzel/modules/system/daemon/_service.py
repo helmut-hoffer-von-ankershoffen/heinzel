@@ -42,6 +42,7 @@ from heinzel import (
     JobLet,
     Kernel,
     Notifications,
+    Progress,
     Settings,
     Status,
     __version__,
@@ -75,6 +76,7 @@ from heinzel.modules.system.daemon._models import (
     Uninstalled,
     Wake,
 )
+from heinzel.modules.system.daemon._phases import Phases
 from heinzel.modules.system.daemon._runtime import (
     Outcome,
     Runner,
@@ -112,6 +114,9 @@ DEFAULT_INTERVAL = 5
 """Minutes between ticks unless `install --interval` says otherwise."""
 STALE_TICKS = 3
 """A daemon that missed this many intervals in a row is reported as degraded."""
+SESSION_STEP = "Checking this is your Mac's desktop session"
+NOTIFIER_STEP = "Setting up desktop notifications"
+LOAD_FIX = "run `hz system daemon status` in a terminal for what the service manager says."
 PLATFORMS = ("darwin", "linux")
 """launchd and systemd read unit files; they hold no secrets."""
 MODULE_SECTION = "system.daemon"
@@ -568,6 +573,8 @@ class DaemonService:
         quiescence_probe: Callable[[list[str]], ProcessOutcome] | None = None,
         quiescence_installation: Installation | None = None,
         linux_manager_identity: Callable[[], tuple[int, ...] | None] | None = None,
+        desktop_session: Callable[[], str | None] | None = None,
+        install_notifier: Callable[[], str | None] | None = None,
     ) -> None:
         """Create the service; `for_user` builds it for the kernel, tests pass the rest.
 
@@ -590,7 +597,13 @@ class DaemonService:
             quiescence_probe: Bounded read-only service-manager query, replaceable in tests.
             quiescence_installation: Selected tool identity for verifying an existing stopped unit.
             linux_manager_identity: Physical private manager socket identity, replaceable in tests.
+            desktop_session: The macOS launchd session this process runs in (`Aqua` on the desktop), or None when
+                unknown; replaceable in tests so none touches the real launchd.
+            install_notifier: Installs the native notifier as a step of `install` on macOS and returns what went wrong
+                in plain words, or None when it worked; None (the default) leaves that step out.
         """
+        self._desktop_session = desktop_session or self._launchd_session
+        self._install_notifier = install_notifier
         self._notifier_installed = notifier_installed
         self._quiescence_probe = quiescence_probe or _quiescence_command
         self._quiescence_installation = quiescence_installation
@@ -665,16 +678,29 @@ class DaemonService:
                 commands=[],
                 dry_run=True,
             )
+        darwin = self._platform == "darwin"
+        phases = Phases(
+            self._kernel.resolve(Progress),
+            [
+                *([("session", SESSION_STEP)] if darwin else []),
+                ("unit", "Writing the service definition"),
+                ("load", f"Loading it into {'launchd' if darwin else 'systemd'}"),
+                ("verify", "Checking that it is loaded"),
+                *([("notifier", NOTIFIER_STEP)] if darwin and self._install_notifier else []),
+            ],
+        )
+        self._require_desktop_session(phases)
         private_dir(self.log_path.parent)
-        for path, content in files.items():
-            write_private(path, content, shared_dir=True)  # 0600: launchd and systemd read user units as the user
-        if self._platform == "darwin":  # bootstrap fails on a loaded agent; unload the old one, if any, first
-            self._runner(self._command("launchctl", "bootout", f"gui/{self._uid()}/{LABEL}"))
-        for command in commands:
-            result = self._runner(command)
-            if result.returncode != 0:
-                msg = f"`{' '.join(command)}` failed: {(result.stderr or result.stdout).strip()}"
-                raise HeinzelError(msg)
+        before = {path: path.read_bytes() if path.exists() else None for path in files}
+        with phases.step("unit", "Writing the service definition"):
+            for path, content in files.items():
+                write_private(path, content, shared_dir=True)  # 0600: launchd and systemd read user units as the user
+        try:
+            self._load_and_verify(phases, commands)
+        except HeinzelError as exc:
+            self._restore_units(before)
+            msg = f"{exc} The service file was put back as it was, so nothing starts at login because of this."
+            raise HeinzelError(msg) from exc
         # This marker is used to refuse new schedule approvals when an older daemon may still be running. Write it
         # only after the service manager accepted the load/reload commands, so a failed replacement stays fail-closed.
         self._write_state(
@@ -689,6 +715,7 @@ class DaemonService:
         )
         (self.state_dir / "handover-pending.json").unlink(missing_ok=True)
         (self.state_dir / "handover-request.json").unlink(missing_ok=True)
+        self._set_up_notifier(phases)
         hint = LOGIN_ITEM_HINT if self._platform == "darwin" and not self._notifier_installed() else None
         return Installed(
             platform=self._platform,
@@ -699,6 +726,74 @@ class DaemonService:
             dry_run=False,
             hint=hint,
         )
+
+    def _load_and_verify(self, phases: Phases, commands: list[list[str]]) -> None:
+        """Hand the written unit to the service manager and check that it lists it as loaded.
+
+        Raises:
+            HeinzelError: If a load command fails or the manager does not list the unit as loaded.
+        """
+        darwin = self._platform == "darwin"
+        with phases.step("load", f"Loading it into {'launchd' if darwin else 'systemd'}"):
+            if darwin:  # bootstrap fails on a loaded agent; unload the old one first
+                self._runner(self._command("launchctl", "bootout", f"gui/{self._uid()}/{LABEL}"))
+            for command in commands:
+                result = self._runner(command)
+                if result.returncode != 0:
+                    msg = f"`{' '.join(command)}` failed: {(result.stderr or result.stdout).strip()}"
+                    raise HeinzelError(msg)
+        with phases.step("verify", "Checking that it is loaded"):
+            if not self._loaded():
+                msg = f"The service manager took the unit but does not list it as loaded: {LOAD_FIX}"
+                raise HeinzelError(msg)
+
+    def _launchd_session(self) -> str | None:
+        """The launchd session this process runs in (`Aqua` on the desktop), or None when launchctl doesn't say."""
+        try:
+            result = self._runner(self._command("launchctl", "managername"))
+        except (HeinzelError, OSError):
+            return None
+        return result.stdout.strip() or None if result.returncode == 0 else None
+
+    def _require_desktop_session(self, phases: Phases) -> None:
+        """A macOS login service can only be registered from the person's desktop session.
+
+        Raises:
+            HeinzelError: If launchd puts this process in another session (SSH, a system service), saying so.
+        """
+        if self._platform != "darwin":
+            return
+        with phases.step("session", SESSION_STEP):
+            name = self._desktop_session()
+            if name != "Aqua":
+                where = f"launchd calls it {name!r}" if name else "launchd doesn't say which it is"
+                msg = (
+                    "macOS only lets a login service be registered from your Mac's desktop session, and this hz "
+                    f"does not run in it ({where}), for example because it was started over SSH or as a system "
+                    "service. Nothing was changed. Install it where you are logged in at the Mac itself."
+                )
+                raise HeinzelError(msg)
+
+    def _restore_units(self, before: dict[Path, bytes | None]) -> None:
+        """Put the unit files back as they were before a failed install, so a failure registers nothing."""
+        for path, content in before.items():
+            if content is None:
+                path.unlink(missing_ok=True)
+            else:
+                write_private(path, content.decode("utf-8"), shared_dir=True)
+
+    def _set_up_notifier(self, phases: Phases) -> None:
+        """Install the native notifier as the last step on macOS; a problem there leaves the daemon installed."""
+        if self._platform != "darwin" or self._install_notifier is None:
+            return
+        label = NOTIFIER_STEP
+        try:
+            with phases.step("notifier", label):
+                problem = self._install_notifier()
+        except HeinzelError as exc:
+            problem = str(exc)
+        if problem:
+            phases.note("notifier", label, "warn", problem)
 
     def restart(self) -> Restarted:
         """Ask the service manager to reload the installed daemon with the interval it has.
@@ -1412,18 +1507,24 @@ class DaemonService:
         paths = [path for path in self._unit_paths() if path.exists()]
         if not paths:
             return Uninstalled(removed=[], commands=[])
+        phases = Phases(
+            self._kernel.resolve(Progress),
+            [("unload", "Stopping the service"), ("remove", "Removing the service definition")],
+        )
         if self._platform == "darwin":
             commands = [self._command("launchctl", "bootout", f"gui/{self._uid()}/{LABEL}")]
         else:
             commands = [self._command("systemctl", "--user", "disable", "--now", f"{SYSTEMD_NAME}.timer")]
-        for command in commands:  # failing because it wasn't loaded is fine: the goal is that it isn't
-            self._runner(command)
-        for path in paths:
-            path.unlink()
-        if self._platform == "linux":
-            reload = self._command("systemctl", "--user", "daemon-reload")
-            self._runner(reload)
-            commands.append(reload)
+        with phases.step("unload", "Stopping the service"):
+            for command in commands:  # failing because it wasn't loaded is fine: the goal is that it isn't
+                self._runner(command)
+        with phases.step("remove", "Removing the service definition"):
+            for path in paths:
+                path.unlink()
+            if self._platform == "linux":
+                reload = self._command("systemctl", "--user", "daemon-reload")
+                self._runner(reload)
+                commands.append(reload)
         (self.state_dir / "install.json").unlink(missing_ok=True)
         (self.state_dir / "handover-pending.json").unlink(missing_ok=True)
         return Uninstalled(removed=paths, commands=commands)
@@ -1459,6 +1560,7 @@ class DaemonService:
             failing=[job.job for job in jobs if job.problem or job.last_disposition is Disposition.FAILED],
             version=version,
             installed_version=installed_version,
+            installed_at=self._timestamp("install.json", "installed_at") if installed else None,
             version_mismatch=version_mismatch,
         )
 

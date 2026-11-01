@@ -11,7 +11,9 @@ import os
 import posixpath
 import re
 import shlex
+import tomllib
 import unicodedata
+import urllib.request
 from pathlib import Path
 from typing import Any
 
@@ -607,8 +609,55 @@ def tour_story(story: Object, page_url: str) -> str:
     )
 
 
-def detail(project: Object) -> str:
-    """A searchable static detail page with immutable installation and source provenance."""
+FIRST_PARTY_OWNER = tomllib.loads((ROOT / "docs" / "catalog-sources.toml").read_text())["composition_repository"].split(
+    "/"
+)[0]
+"""Plugins owned by the maintainers resolve by short name through `hz system plugin add`."""
+
+
+def install_steps(project: Object, plugins: list[Object]) -> tuple[str, str] | None:
+    """The preview and install commands a person types, or none when the standard app already includes it.
+
+    A maintainer-owned plugin with a unique short name uses that name, which `hz` resolves through its own catalog and
+    pins to an immutable revision when it installs. Anything else uses the plain repository URL: the commit stays in
+    the tool and in catalog.json, never in the command shown to people.
+    """
+    if project["included_version"]:
+        return None
+    short = project["name"].removeprefix("heinzel-")
+    source = project["source"]
+    owner = source["repository"].split("/")[0]
+    taken = sum(1 for p in plugins if p["name"].removeprefix("heinzel-") == short)
+    if owner == FIRST_PARTY_OWNER and taken <= 1:
+        target = short
+    else:
+        target = f"https://github.com/{source['repository']}"
+        if project["directory"] != ".":
+            target = f"git+{target}#subdirectory={project['directory']}"
+    target = shlex.quote(target)
+    return f"hz system plugin add {target}", f"hz system plugin add {target} --confirm"
+
+
+def install_section(project: Object, plugins: list[Object]) -> str:
+    """The Install and try body: included plugins need nothing, others show a preview and then the install."""
+    steps = install_steps(project, plugins)
+    if steps is None:
+        return (
+            "Included in the standard app: there is nothing to install. "
+            "Run `hz system plugin list` to see it, or [install Heinzel first](../../guides/install.md)."
+        )
+    preview, install = steps
+    return f"""{command(preview, "plugin-preview")}
+
+This shows what would be installed and changes nothing. Review it, then install:
+
+{command(install, "plugin-install")}
+
+Run `hz system doctor` afterward. [Install Heinzel first](../../guides/install.md)."""
+
+
+def detail(project: Object, plugins: list[Object] | None = None) -> str:
+    """A searchable static detail page with installation instructions and source provenance."""
     source = project["source"]
     title = escape(project["title"])
     included = project["included_version"]
@@ -649,10 +698,7 @@ description: {json.dumps(escape(project["summary"]), ensure_ascii=False)}
 
 ## Install and try
 
-{command(project["install"], "plugin-install")}
-
-This command previews the immutable source. Review it, then repeat with `--confirm` to install.
-Run `hz system doctor` afterward. [Install Heinzel first](../../guides/install.md).
+{install_section(project, plugins or [project])}
 
 ## Compatibility and ownership
 
@@ -679,13 +725,32 @@ not a runtime screenshot.
 """
 
 
+LATEST_RELEASE_API = "https://api.github.com/repos/helmut-hoffer-von-ankershoffen/heinzel/releases/latest"
+RELEASE_TAG = re.compile(r"v[0-9]+\.[0-9]+\.[0-9]+")
+
+
+def latest_release_tag() -> str | None:
+    """The latest published release tag from the GitHub API, or None: a failed lookup must not fail or age the build."""
+    request = urllib.request.Request(LATEST_RELEASE_API, headers={"Accept": "application/vnd.github+json"})
+    if token := os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN"):
+        request.add_header("Authorization", f"Bearer {token}")
+    try:
+        with urllib.request.urlopen(request, timeout=5) as response:  # noqa: S310 - fixed https URL
+            tag = str(json.load(response).get("tag_name", ""))
+    except (OSError, ValueError):
+        return None
+    return tag if RELEASE_TAG.fullmatch(tag) else None
+
+
 def on_files(files: Any, config: Any) -> Any:  # noqa: ANN401 - MkDocs owns the event objects
     """Generate public catalog pages and inert palette artwork from an explicit snapshot."""
     from mkdocs.structure.files import File  # noqa: PLC0415 - docs-only dependency; unit rendering needs no MkDocs
 
     snapshot = load_snapshot(Path(os.environ.get("HZ_SITE_CATALOG", str(SNAPSHOT))))
     for project in snapshot["plugins"]:
-        files.append(File.generated(config, f"catalog/{project['id']}/index.md", content=detail(project)))
+        files.append(
+            File.generated(config, f"catalog/{project['id']}/index.md", content=detail(project, snapshot["plugins"]))
+        )
         for index, theme in enumerate(project["themes"]):
             for mode in ("light", "dark"):
                 files.append(
@@ -695,6 +760,7 @@ def on_files(files: Any, config: Any) -> Any:  # noqa: ANN401 - MkDocs owns the 
                 )
     files.append(File.generated(config, "catalog.json", content=json.dumps(snapshot, ensure_ascii=False)))
     config.extra["hz_release"] = snapshot["release"]
+    config.extra["hz_latest_release"] = latest_release_tag()
     config.extra["hz_plugin_pages"] = {f"catalog/{item['id']}/index.md": item for item in snapshot["plugins"]}
     return files
 
@@ -913,9 +979,34 @@ def on_env(env: Any, **_: Any) -> Any:  # noqa: ANN401 - MkDocs owns the Jinja e
     return env
 
 
+DESCRIPTION_LIMIT = 155
+MARKDOWN_SYNTAX = re.compile(r"!?\[([^\]]*)\]\([^)]*\)|[`*_]|<[^>]+>")
+
+
+def derive_description(markdown: str) -> str:
+    """The first plain paragraph as a search-result summary, or nothing when the page opens with something else."""
+    for raw in re.split(r"\n\s*\n", markdown):
+        block = raw.strip()
+        if not block or block.startswith(("#", "<", "|", "```", "-", "*", ">", "!", "[")) or block[0].isdigit():
+            continue
+        plain = " ".join(MARKDOWN_SYNTAX.sub(lambda found: found.group(1) or "", block).split())
+        if len(plain) < 40:  # noqa: PLR2004 - too short to describe a page
+            continue
+        if len(plain) <= DESCRIPTION_LIMIT:
+            return plain
+        return plain[:DESCRIPTION_LIMIT].rsplit(" ", 1)[0].rstrip(",;:") + "…"
+    return ""
+
+
 def on_page_markdown(markdown: str, *, page: Any, config: Any, **_: Any) -> str:  # noqa: ANN401 - MkDocs owns event objects
     """Fill presentation markers and place the page's characters, keeping the authored Markdown useful on GitHub."""
     path = page.file.src_uri
+    heading = re.search(r"^# (.+)$", markdown, re.MULTILINE)
+    if "title" not in page.meta and heading and page.title != heading.group(1):
+        # A generated notice above the heading hides it from MkDocs, which would call the page "Index".
+        page.title = heading.group(1).strip()
+    if not page.meta.get("description") and (derived := derive_description(markdown)):
+        page.meta["description"] = derived
     if path.startswith("plugins/"):
         page.meta["search"] = {"exclude": True}
     markdown = place_waypoints(

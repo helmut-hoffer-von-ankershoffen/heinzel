@@ -140,6 +140,7 @@ from heinzel.kernel._git import (
 from heinzel.kernel._identity import PRIVATE_WRITE, Authentication, CallIdentity, CurrentUser, Principal
 from heinzel.kernel._installation import (
     CORE_DISTRIBUTION,
+    EDGE_WHEEL_PREFIX,
     CorePin,
     Installation,
     ToolConstraintPolicy,
@@ -238,7 +239,7 @@ from heinzel.kernel._protocols import (
     free_busy_people,
     plain_addresses,
 )
-from heinzel.kernel._release import ReleaseCache, ReleaseSource
+from heinzel.kernel._release import EdgeRelease, ReleaseCache, ReleaseSource
 from heinzel.kernel._runner_snapshot import RunnerSnapshot, RunnerSnapshotProvider
 from heinzel.kernel._services import ServiceContract
 from heinzel.kernel._session import SessionEvent, SessionHead, SessionProjector, SessionRead
@@ -319,6 +320,7 @@ __all__ = [
     "DAYPARTS",
     "DEFAULT_LOGO",
     "DEFAULT_THEME",
+    "EDGE_WHEEL_PREFIX",
     "ENTRY_POINT_GROUP",
     "FILENAME",
     "FONT_ROUTE",
@@ -429,6 +431,7 @@ __all__ = [
     "Document",
     "Documents",
     "DraftedMail",
+    "EdgeRelease",
     "Effect",
     "Effort",
     "Emit",

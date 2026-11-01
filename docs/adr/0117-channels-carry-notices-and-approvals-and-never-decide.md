@@ -1,6 +1,7 @@
 ---
 status: proposed
 date: 2026-10-31
+implementation: partial
 decision-makers: maintainer
 related: 0028, 0043, 0094
 ---

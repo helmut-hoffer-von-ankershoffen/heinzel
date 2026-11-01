@@ -599,3 +599,74 @@ def test_unknown_acknowledgement_after_atomic_commit_replays_without_duplicate(m
     assert len(service.recent()) == 1
     assert make(repeat_hours=0).emit_once(*args, **kwargs)
     assert len(service.recent()) == 1
+
+
+def leftover_service(settings, clock, tmp_path, ended: list[int]) -> NotifyService:
+    bundle = tmp_path / "HeinzelNotifier.app"
+    (bundle / "Contents" / "MacOS").mkdir(parents=True)
+    (bundle / "Contents" / "MacOS" / "notifier").write_bytes(b"app")
+    table = (
+        "PID\tStatus\tLabel\n"
+        "7001\t0\tapplication.dev.heinzel.notifier.1.2.AAAA\n"
+        "7002\t0\tapplication.dev.heinzel.notifier.1.3.BBBB\n"
+        "7003\t0\tcom.example.stranger\n"
+    )
+
+    def run(command, timeout=None):
+        if command[0].endswith("launchctl"):
+            return subprocess.CompletedProcess(command, 0, table, "")
+        if command[0].endswith("/ps"):
+            return subprocess.CompletedProcess(command, 0, {"7001": "2-00:00:00", "7002": "00:04"}[command[-1]], "")
+        if "--stdout" in command:
+            Path(command[command.index("--stdout") + 1]).write_text("authorized", encoding="utf-8")
+        return subprocess.CompletedProcess(command, 0 if command[0] != "/usr/bin/xattr" else 1, "", "")
+
+    app = NotifierApp(tmp_path / "home", bundled=bundle, runner=run, kill=lambda pid, sig: ended.append(pid))
+    return NotifyService(
+        settings, NotifySettings(), ORG, clock=clock, notifier=Native(HEINZEL, str(app.path), clicks=True, app=app)
+    )
+
+
+def test_doctor_counts_leftover_notifier_processes_and_names_the_fix(settings, clock, tmp_path):
+    ended: list[int] = []
+    service = leftover_service(settings, clock, tmp_path, ended)
+    assert service.notifier.app is not None
+    service.notifier.app.ensure()
+    checks = {check.name: check for check in service.health()}
+    check = checks["heinzel notifier processes"]
+    assert check.status is Status.DEGRADED
+    assert check.detail.startswith("1 Heinzel Notifier process(es) have run for over 5 minutes")
+    assert check.fix == "hz system notify clean"
+    assert ended == []  # doctor reads, it never kills
+
+
+def test_every_daemon_tick_ends_the_leftovers_and_leaves_a_notification_being_posted(settings, clock, tmp_path):
+    ended: list[int] = []
+    service = leftover_service(settings, clock, tmp_path, ended)
+    assert service.post_native() == 0
+    assert ended == [7001]  # 7002 is four seconds old, 7003 is a stranger
+    assert service.clean().ended == 1
+    assert ended == [7001, 7001]
+
+
+def test_the_tick_makes_macos_forget_stray_copies_once_a_day(settings, clock, tmp_path):
+    forgotten: list[str] = []
+    ended: list[int] = []
+    service = leftover_service(settings, clock, tmp_path, ended)
+    assert service.notifier.app is not None
+    app = service.notifier.app
+    app.unregister_strays = lambda: forgotten.append("x") or 3  # type: ignore[method-assign]
+    service.post_native()
+    service.post_native()
+    assert forgotten == ["x"]  # the second tick, a minute later, doesn't ask macOS again
+    clock.now += timedelta(days=1, minutes=1)
+    service.post_native()
+    assert forgotten == ["x", "x"]
+
+
+def test_the_tick_installs_a_missing_notifier_without_any_command(settings, clock, tmp_path):
+    service = leftover_service(settings, clock, tmp_path, [])
+    assert service.notifier.app is not None
+    assert not service.notifier.app.path.exists()
+    service.post_native()
+    assert service.notifier.app.path.is_dir()  # an update, or a daemon installed first, heals on its next tick

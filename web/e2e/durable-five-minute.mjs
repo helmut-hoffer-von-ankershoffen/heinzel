@@ -1,4 +1,5 @@
 import { chromium, webkit } from "playwright-core";
+import { fetchOnce } from "./fetch-once.mjs";
 
 const supplied = process.argv[2];
 if (!supplied) throw new Error("Missing isolated web URL");
@@ -30,7 +31,7 @@ try {
   let saves = 0;
   await page.route("**/api/heinzel/profile", async (route) => {
     saves += 1;
-    const actual = await route.fetch();
+    const actual = await fetchOnce(route);
     if (!actual.ok()) throw new Error(`The isolated profile save failed: ${actual.status()}`);
     await route.fulfill({
       status: 503,

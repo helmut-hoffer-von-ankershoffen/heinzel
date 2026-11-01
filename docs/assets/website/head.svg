@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="36 -12 440 392" role="img" aria-label="Heinzelmännchen head with a teal hat">
+  <!-- The head and hat cropped from the original drawing in mark.svg (made by web/src/components/heinzel.ts), not a scaled full body. -->
+      <path d="M112 226 C82 222 54 230 46 248 C40 264 58 280 86 286 C98 288 108 288 114 286 Z" fill="#FFD45E"/>
+      <path d="M400 226 C430 222 458 230 466 248 C472 264 454 280 426 286 C414 288 404 288 398 286 Z" fill="#FFD45E"/>
+      <path d="M108 240 C88 238 70 244 66 254 C64 264 76 272 94 274 C100 275 106 275 110 274 Z" fill="#F2B547"/>
+      <path d="M404 240 C424 238 442 244 446 254 C448 264 436 272 418 274 C412 275 406 275 402 274 Z" fill="#F2B547"/>
+      <circle cx="256" cy="236" r="158" fill="#FFD45E"/>
+      <path d="M96 246 C84 120 168 48 256 48 C344 48 428 120 416 246 C406 210 386 186 362 174 Q342 218 302 182 Q256 226 210 182 Q170 218 150 174 C126 186 106 210 96 246 Z" fill="#E3A12B"/>
+      <path d="M94 178 C94 84 168 38 256 38 C344 38 418 84 418 178 Z" fill="#1F9488"/>
+      <path d="M100 172 C110 99.1 180 34.3 270 10 C306 -4 344 8 362 42 C336 32 312 40 304 60 C342 82.9 398 131.5 412 172 Z" fill="#1F9488"/>
+      <path d="M304 60 C342 82.9 398 131.5 412 172 L370 172 C360 123.4 330 91 292 80 Z" fill="#1A7E74"/>
+      <path d="M88 176 C150 136 362 136 424 176 C428 196 414 206 398 200 C340 176 172 176 114 200 C98 206 84 196 88 176 Z" fill="#1C857A"/>
+      <circle cx="160" cy="318" r="24" fill="#FFAE7F"/>
+      <circle cx="352" cy="318" r="24" fill="#FFAE7F"/>
+      <path d="M178 232 Q202 216 226 230" fill="none" stroke="#A86F17" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M286 230 Q310 216 334 232" fill="none" stroke="#A86F17" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle cx="202" cy="276" r="24" fill="#3D2A16"/>
+      <circle cx="310" cy="276" r="24" fill="#3D2A16"/>
+      <circle cx="210.4" cy="266" r="8.399999999999999" fill="#FFFFFF"/>
+      <circle cx="318.4" cy="266" r="8.399999999999999" fill="#FFFFFF"/>
+      <path d="M206 322 C216 372 296 372 306 322 Z" fill="#8B3A2A"/>
+</svg>

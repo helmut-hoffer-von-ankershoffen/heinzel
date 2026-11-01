@@ -30,8 +30,16 @@ from heinzel.modules.system.notify._channels import (
     pops_up,
     web_channel,
 )
-from heinzel.modules.system.notify._macos import QUARANTINE, NotifierApp
-from heinzel.modules.system.notify._models import Delivered, Installed, NoticeList, NotifySettings, Opened, Tested
+from heinzel.modules.system.notify._macos import QUARANTINE, STALE_AFTER, NotifierApp
+from heinzel.modules.system.notify._models import (
+    Cleaned,
+    Delivered,
+    Installed,
+    NoticeList,
+    NotifySettings,
+    Opened,
+    Tested,
+)
 from heinzel.modules.system.notify._native import ALLOW, DENIED_DETAIL, DENIED_FIX, HEINZEL, ICON_CACHE, Native, native
 from heinzel.modules.system.notify._store import Store
 from heinzel.modules.system.notify._watch import daemon_state, watch
@@ -46,6 +54,8 @@ LOOK_EVERY = timedelta(hours=1)
 """How often the daemon runs doctor to look for problems no one asked about."""
 SETTINGS_URL = "x-apple.systempreferences:com.apple.Notifications-Settings.extension"
 """macOS's System Settings > Notifications."""
+STRAY_EVERY = timedelta(days=1)
+"""How often the daemon asks macOS to forget copies of Heinzel Notifier it met at other paths (it takes seconds)."""
 STALE = timedelta(hours=12)
 """A notice that waited longer than this to be shown doesn't pop up any more; it stays in the list."""
 
@@ -289,6 +299,7 @@ class NotifyService(Notifications):
         A notice the notifier refused stays due and is tried again at the next tick, until it is stale. First, once
         an hour, it looks for doctor's findings and a newer release (`look`), so they pop up in the same tick.
         """
+        self._end_leftover_instances()
         self.look()
         if not self.settings.native or self.is_watched() or self.notifier.name is None:
             return 0
@@ -307,6 +318,60 @@ class NotifyService(Notifications):
         if claimed:
             self.store.native_result(self._clock(), problem)
         return posted
+
+    def _end_leftover_instances(self, *, install: bool = True) -> None:
+        """End Heinzel Notifier processes that outlived any notification: a build that couldn't end itself, or a hang.
+
+        Every tick does it, so an installation heals itself the first tick after it is updated. Its failure is logged.
+        """
+        notifier = self.notifier
+        if notifier.name != HEINZEL or notifier.app is None:
+            return
+        try:
+            if install:  # missing or an older build: put the bundled one in place, no command to type
+                installed = notifier.app.ensure()
+                if installed.state in {"outdated", "missing"} and installed.detail:
+                    logger.warning("Heinzel Notifier is %s: %s", installed.state, installed.detail)
+            ended = notifier.app.clean()
+        except Exception:
+            logger.exception("looking after Heinzel Notifier failed")
+            return
+        if ended:
+            logger.warning("ended %d leftover Heinzel Notifier process(es)", ended)
+        self._forget_stray_copies(notifier.app)
+
+    def _forget_stray_copies(self, app: NotifierApp) -> int:
+        """Make macOS forget copies of the app it met elsewhere (a test, a worktree), at most once a day.
+
+        macOS lists every path an app was launched from, under one name, in System Settings > Notifications.
+        """
+        marker = self.store.directory / "strays-forgotten-at"
+        now = self._clock()
+        try:
+            if now - STRAY_EVERY < datetime.fromisoformat(marker.read_text(encoding="utf-8")) <= now:
+                return 0
+        except (OSError, ValueError):
+            pass
+        try:
+            self.store.directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+            marker.write_text(now.isoformat(), encoding="utf-8")
+            forgotten = app.unregister_strays()
+        except Exception:
+            logger.exception("making macOS forget stray Heinzel Notifier copies failed")
+            return 0
+        if forgotten:
+            logger.warning("macOS forgot %d stray Heinzel Notifier cop(ies)", forgotten)
+        return forgotten
+
+    def clean(self) -> Cleaned:
+        """End every leftover Heinzel Notifier process (ones that ran longer than five minutes)."""
+        notifier = self.notifier
+        if notifier.name != HEINZEL or notifier.app is None:
+            return Cleaned(ended=0, running=0, unregistered=0)
+        ended = notifier.app.clean()
+        return Cleaned(
+            ended=ended, running=len(notifier.app.instances()), unregistered=notifier.app.unregister_strays()
+        )
 
     def _release(self, notices: Sequence[Notice]) -> None:
         """Hand claimed notices back, so they are due again."""
@@ -383,6 +448,7 @@ class NotifyService(Notifications):
             HeinzelError: If Heinzel Notifier can't be copied into ~/Applications.
         """
         notifier = self.notifier
+        self._end_leftover_instances(install=False)  # install() reports what it replaced, so it must see the old state
         if notifier.name is None:
             fixes = [notifier.fix] if notifier.fix else []
             return Installed(notifier=None, shown=False, problem=notifier.detail, next=fixes)
@@ -486,6 +552,19 @@ def _app_checks(app: NotifierApp) -> list[Check]:
         ]
     else:
         checks = [Check(name="heinzel notifier", status=Status.UP, detail=f"{app.path} ({installed.state})")]
+    leftover = [instance for instance in app.instances() if instance.stale]
+    if leftover:
+        checks.append(
+            Check(
+                name="heinzel notifier processes",
+                status=Status.DEGRADED,
+                detail=f"{len(leftover)} Heinzel Notifier process(es) have run for over {STALE_AFTER // 60} minutes, "
+                "though each should end within a minute; an older build left them running",
+                fix="hz system notify clean",
+            )
+        )
+    else:
+        checks.append(Check(name="heinzel notifier processes", status=Status.UP, detail="none left running"))
     if app.quarantined():
         checks.append(
             Check(

@@ -20,8 +20,6 @@ docs/PRIVATE_WEB_SHARING.md:paragraph
 docs/README.md:claims
 docs/SCREENSHOT_PLAYBOOK.md:paragraph
 docs/SESSIONS.md:paragraph
-docs/SONAR_SECURITY.md:paragraph
-docs/SONAR_SECURITY.md:residue
 docs/THEMES.md:paragraph
 docs/adr/0017-first-party-plugins-in-the-core-repository.md:date
 docs/adr/0018-one-administrative-namespace.md:command
@@ -87,10 +85,7 @@ docs/adr/0108-record-owned-installation-continuity-after-verified-changes.md:par
 docs/adr/0109-adopt-plugin-playbook-terms-as-inert-chat-drafts.md:filler
 docs/adr/0109-adopt-plugin-playbook-terms-as-inert-chat-drafts.md:paragraph
 docs/adr/0110-one-versionless-launcher-installs-and-opens-the-standard-app.md:filler
-docs/guides/catalog.md:paragraph
 docs/guides/contribute.md:claims
-docs/guides/first-steps.md:filler
-docs/guides/install.md:claims
 src/heinzel/kernel/_settings.py:claims
 src/heinzel/kernel/_settings.py:filler
 src/heinzel/modules/ai/access/_models.py:claims

@@ -9,15 +9,18 @@ import { Check, X } from "lucide-react";
 import { type KeyboardEvent, type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { api, type SchemaProfile, unwrap } from "@/api/client";
-import { keys, useConfig, usePlaybooks, useProfile, useSetSetting } from "@/api/queries";
+import { keys, useConfig, usePlaybooks, useProfile, useSetSetting, useSetting } from "@/api/queries";
+import { runCommand } from "@/components/CommandActions";
 import { Gnome } from "@/components/Gnome";
+import { OperationDialog } from "@/components/OperationDialog";
 import { Button } from "@/components/ui/button";
 import { type MessageKey, t } from "@/i18n";
 import { AiAccessSetting } from "@/layout/AiAccessSetting";
 import { ThemePreviews } from "@/layout/ThemePreviews";
 import { TimeZonePicker } from "@/layout/TimeZonePicker";
 import { isLocalServer } from "@/lib/browser";
-import { runInTerminal } from "@/lib/terminal";
+import { DAEMON_INSTALL } from "@/lib/operationCalls";
+import { requestOperation } from "@/lib/operationRun";
 import { cn } from "@/lib/utils";
 import { setDesktop, useDesktopState } from "@/notifications/desktop";
 import { NotificationTest } from "@/notifications/NotificationTest";
@@ -250,13 +253,6 @@ function useSave() {
   return { save, status: set.status, error: set.error?.message };
 }
 
-/** A setting's current value from `hz system config show`, as text; "" when unset. */
-function useSetting(section: string, key: string): string {
-  const config = useConfig();
-  const value = config.data?.settings.find((setting) => setting.section === section && setting.key === key)?.value;
-  return typeof value === "string" ? value : "";
-}
-
 function Saved({ state, error }: { state: "idle" | "pending" | "success" | "error"; error?: string }) {
   return (
     <p role="status" className="flex min-h-5 items-center gap-1 text-xs text-muted-foreground">
@@ -307,12 +303,15 @@ function YouForm({ me }: { me: SchemaProfile }) {
           onChange={(event) => event.target.value && save("org.role", event.target.value)}
         >
           <option value="">{t("settings.notSet")}</option>
-          {ROLES.map(([role, short]) => (
+          {ROLES.map(([role, label]) => (
             <option key={role} value={role}>
-              {short} · {role.replaceAll("-", " ")}
+              {label}
             </option>
           ))}
         </select>
+        {me.retired_role && (
+          <output className="block text-xs text-warn">{t("profile.retiredRole", { role: me.retired_role })}</output>
+        )}
       </div>
       <div className="flex flex-col gap-1">
         <span className="text-sm">{t("onboarding.you.zone")}</span>
@@ -351,7 +350,7 @@ function Confirmed({
   const trigger = useRef<HTMLButtonElement>(null);
   const done = (run: boolean) => {
     if (run && asking) {
-      runInTerminal(asking);
+      runCommand(asking);
       onRun?.();
     }
     setSent(run);
@@ -409,14 +408,34 @@ function Team({ onClose }: { onClose: () => void }) {
 function TeamForm({ onClose }: { onClose: () => void }) {
   const saved = useSetting("team", "repository");
   const layer = useSetting("team", "layer");
+  const savedName = useSetting("team", "name");
   const [url, setUrl] = useState(saved);
+  const [name, setName] = useState(savedName);
   const layers = useLayers();
   const set = useSetSetting();
-  const ids = { url: useId(), layer: useId() };
+  const ids = { url: useId(), layer: useId(), name: useId() };
   const chosen = layers.data?.layers.find((entry) => entry.name === layer);
   const valid = /^(https:\/\/|git@)[\w./:@+-]+$/.test(url.trim());
   return (
     <div className="flex max-w-lg flex-col gap-5">
+      <div className="flex flex-col gap-1">
+        <label htmlFor={ids.name} className="text-sm">
+          {t("onboarding.team.name")}
+        </label>
+        <input
+          id={ids.name}
+          className={field}
+          value={name}
+          maxLength={60}
+          placeholder="Payments"
+          autoComplete="off"
+          onChange={(event) => setName(event.target.value)}
+          onBlur={() => name.trim() !== savedName && set.mutate({ key: "team.name", value: name.trim() || null })}
+          onKeyDown={(event) => event.key === "Enter" && event.currentTarget.blur()}
+        />
+        <p className="text-xs text-muted-foreground">{t("onboarding.team.nameHint")}</p>
+        <Saved state={set.status} error={set.error?.message} />
+      </div>
       <div className="flex flex-col gap-1">
         <label htmlFor={ids.url} className="text-sm">
           {t("onboarding.team.repository")}
@@ -511,11 +530,10 @@ function Notifications({ onClose }: { onClose: () => void }) {
             </span>
           ) : (
             <>
-              <Confirmed
-                command="hz system daemon install"
-                label={t("onboarding.notifications.install")}
-                onRun={onClose}
-              />
+              <Button variant="outline" onClick={() => requestOperation(DAEMON_INSTALL)}>
+                {t("onboarding.notifications.install")}
+              </Button>
+              <OperationDialog />
               {daemon?.installed && (
                 <span role="status" className="text-xs text-warn">
                   {t("onboarding.notifications.notLoaded")}

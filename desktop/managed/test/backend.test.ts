@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, type FSWatcher, readFileSync, unlinkSync, watch, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { createConnection } from "node:net";
 import { join } from "node:path";
 import test from "node:test";
@@ -114,18 +114,18 @@ test("stop during a held readiness probe cannot return a retired endpoint", { ti
     );
   const f = fixture(worker);
   const backend = new OwnedBackend(f.profile, f.inventory, 0);
-  let watcher: FSWatcher | undefined;
-  let deadline: NodeJS.Timeout | undefined;
+  let poll: NodeJS.Timeout | undefined;
   try {
+    // Polled, because fs.watch has no delivery guarantee: on macOS it can report nothing at all for a new file.
     const entered = new Promise<void>((resolve, reject) => {
-      watcher = watch(f.profile.directory, (_event, name) => {
-        if (name === "probe-entered") {
-          watcher?.close();
-          clearTimeout(deadline);
+      const deadline = Date.now() + 5000;
+      poll = setInterval(() => {
+        if (existsSync(join(f.profile.directory, "probe-entered"))) {
           resolve();
+        } else if (Date.now() > deadline) {
+          reject(new Error("The readiness probe did not enter its explicit gate"));
         }
-      });
-      deadline = setTimeout(() => reject(new Error("The readiness probe did not enter its explicit gate")), 5000);
+      }, 10);
     });
     const becameReady = backend.start().then(
       () => true,
@@ -146,8 +146,7 @@ test("stop during a held readiness probe cannot return a retired endpoint", { ti
     assert.equal(backend.endpoint, null);
     assert.equal(backend.running, false);
   } finally {
-    watcher?.close();
-    clearTimeout(deadline);
+    clearInterval(poll);
     await backend.stop();
     f.close();
   }

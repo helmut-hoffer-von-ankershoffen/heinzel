@@ -1,5 +1,8 @@
 # Research report: workflows embedded in documents
 
+> Historical design research, not current documentation. The linked decision record and the README describe what is
+> available today.
+
 - Date: 2026-10-23
 - Scope: research only. Decision record: [ADR 0022](../adr/0022-embedded-workflows.md) (proposed). Contract format: ADR 0021 (assumed: YAML frontmatter
   plus Markdown sections). Registration, pinning and approvals: ADR 0020 §5, §7, §9; docs/research/daemon-head.md.

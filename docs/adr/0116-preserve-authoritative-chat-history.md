@@ -1,6 +1,7 @@
 ---
 status: proposed
 date: 2026-10-30
+implementation: built
 decision-makers: maintainer
 related: 0049, 0115
 ---

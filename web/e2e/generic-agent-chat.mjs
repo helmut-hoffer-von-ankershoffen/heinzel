@@ -1,14 +1,7 @@
 import assert from "node:assert/strict";
-import { chromium, webkit } from "playwright-core";
+import { openChatJourney, revealChat } from "./chat-ready.mjs";
 
-const url = new URL(process.argv[2]);
-const token = url.hash.match(/(?:^#|&)token=([^&]+)/)?.[1] ?? "";
-url.pathname = "/doctor";
-const browser = await (process.argv[3] === "webkit" ? webkit : chromium).launch({ headless: true });
-const context = await browser.newContext({ serviceWorkers: "block", viewport: { width: 390, height: 844 } });
-await context.addInitScript(() => localStorage.setItem("hz.chat.more", "1"));
-await context.addInitScript(() => localStorage.setItem("hz.chat.autosend", "0"));
-const page = await context.newPage();
+const { browser, context, page, token, url } = await openChatJourney();
 const trace = [];
 const watched = new Set([
   "/api/heinzel/chat",
@@ -57,10 +50,7 @@ try {
   await terms.getByRole("button", { name: "Review these terms" }).click();
   await terms.getByRole("button", { name: "Confirm" }).click();
   await terms.getByText("These exact terms were accepted.").waitFor();
-  const schedules = page
-    .locator("details")
-    .filter({ has: page.getByText("Recurring agent turns", { exact: true }) })
-    .last();
+  const schedules = page.locator("details").filter({ has: page.getByText("Recurring agent turns", { exact: true }) }).last();
   await schedules.locator("summary").first().click();
   await schedules.getByRole("button", { name: "Propose recurring turns" }).click();
   await schedules.getByRole("button", { name: "Review this schedule" }).click();
@@ -101,13 +91,13 @@ try {
   await page.getByText(/reported its subscription usage limit/).waitFor();
   assert.equal(await page.getByRole("button", { name: "Retry the same message" }).isDisabled(), true);
   await page.reload();
-  await page.getByRole("tab", { name: "Chat", exact: true }).click();
+  await revealChat(page);
   await page.getByText(/may still be running/).waitFor();
   await page.getByRole("checkbox", { name: /will not retry it or undo/ }).check();
   await page.getByRole("button", { name: "Set aside this turn" }).click();
   await page.getByText(/This turn was set aside/).waitFor();
   await page.reload();
-  await page.getByRole("tab", { name: "Chat", exact: true }).click();
+  await revealChat(page);
   await page.getByText(/This turn was set aside/).waitFor();
   await page.getByRole("button", { name: "Continue conversation" }).click();
   const composer = page.getByLabel("Message your Heinzel");
