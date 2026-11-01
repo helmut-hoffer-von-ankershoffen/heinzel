@@ -37,8 +37,10 @@ def makefile() -> str:
     text = text.replace(" template-test template-sync docs attributions fuzz demo", "")
     text = text.replace(" release clean\n", " release clean update-template preview\n", 1)
     text = text.replace(" (KEEP=dir keeps it)", "")
-    text = re.sub(r"\n(template-test|template-sync|docs|attributions|fuzz|demo|icons):.*?\n(?:\t.*\n)+", "\n", text)
-    text = re.sub(r"(?m)^(\.PHONY:.*?) icons\b", r"\1", text)
+    text = re.sub(
+        r"\n(template-test|template-sync|docs|attributions|fuzz|demo|icons|review):.*?\n(?:\t.*\n)+", "\n", text
+    )
+    text = re.sub(r"(?m)^(\.PHONY:.*?) (?:icons|review)\b", r"\1", text)
     text = re.sub(r"\nlinux-user-manager-proof:.*?\n(?:\t.*\n)+", "\n", text)
     text = text.replace(" linux-user-manager-proof", "")
     # Core README e2e builds its own candidate wheel; plugins have no core web/notifier assets to prepare.
