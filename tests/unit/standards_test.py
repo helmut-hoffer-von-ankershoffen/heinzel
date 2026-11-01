@@ -608,3 +608,12 @@ def test_plugins_start_at_the_version_their_release_process_knows():
         assert project, path.name
         assert bump, path.name
         assert project.group(1) == bump.group(1), path.name
+
+
+def test_duplication_detection_skips_only_symlinks_to_the_real_scripts():
+    """A real file under an excluded directory would hide copied code from Sonar's duplication gate."""
+    properties = (REPO / ".sonarcloud.properties").read_text(encoding="utf-8")
+    assert "template/scripts/**,starter/scripts/**" in properties
+    for directory in ("template/scripts", "starter/scripts"):
+        real = [p for p in (REPO / directory).rglob("*") if p.is_file() and not p.is_symlink()]
+        assert not real, f"not a symlink, so its duplicates would go unseen: {real}"

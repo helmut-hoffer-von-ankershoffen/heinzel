@@ -31,11 +31,13 @@ def test_revision_option_cannot_write_a_file(tmp_path):
     assert not destination.exists()
 
 
-def test_commit_range_still_scans_messages(tmp_path):
+def _repo_with_a_marked_commit(path):
+    """A repository whose latest commit message has the marker; returns the initial commit."""
+
     def git(*arguments):
         return subprocess.run(
             [str(shutil.which("git")), *arguments],
-            cwd=tmp_path,
+            cwd=path,
             env={key: value for key, value in os.environ.items() if not key.startswith("GIT_")},
             capture_output=True,
             text=True,
@@ -49,9 +51,13 @@ def test_commit_range_still_scans_messages(tmp_path):
     git("-c", "commit.gpgsign=false", "commit", "--quiet", "--allow-empty", "-m", "Initial")
     previous = git("rev-parse", "HEAD")
     git("-c", "commit.gpgsign=false", "commit", "--quiet", "--allow-empty", "-m", "Contains fictional-sensitive-marker")
-    result = subprocess.run(
-        [sys.executable, str(SCRIPT), "--messages", f"{previous}..HEAD"],
-        cwd=tmp_path,
+    return previous
+
+
+def _scan_messages(path, revisions):
+    return subprocess.run(
+        [sys.executable, str(SCRIPT), "--messages", revisions],
+        cwd=path,
         env={
             **{key: value for key, value in os.environ.items() if not key.startswith("GIT_")},
             "CONFIDENTIAL_TERMS": "fictional-sensitive-marker",
@@ -61,6 +67,11 @@ def test_commit_range_still_scans_messages(tmp_path):
         check=False,
         timeout=10,
     )
+
+
+def test_commit_range_still_scans_messages(tmp_path):
+    previous = _repo_with_a_marked_commit(tmp_path)
+    result = _scan_messages(tmp_path, f"{previous}..HEAD")
     assert result.returncode == 1
     assert "confidential term #1" in result.stderr
     assert "fictional-sensitive-marker" not in result.stderr
@@ -68,34 +79,8 @@ def test_commit_range_still_scans_messages(tmp_path):
 
 @pytest.mark.parametrize("range_text", ["main", "HEAD~1..HEAD", "HEAD~1...HEAD", "HEAD^1..main"])
 def test_every_revision_form_the_hooks_use_is_scanned(tmp_path, range_text):
-    def git(*arguments):
-        return subprocess.run(
-            [str(shutil.which("git")), *arguments],
-            cwd=tmp_path,
-            env={key: value for key, value in os.environ.items() if not key.startswith("GIT_")},
-            capture_output=True,
-            text=True,
-            check=True,
-            timeout=10,
-        ).stdout.strip()
-
-    git("init", "--quiet", "--initial-branch=main")
-    git("config", "user.name", "Example Author")
-    git("config", "user.email", "author@example.test")
-    git("-c", "commit.gpgsign=false", "commit", "--quiet", "--allow-empty", "-m", "Initial")
-    git("-c", "commit.gpgsign=false", "commit", "--quiet", "--allow-empty", "-m", "Contains fictional-sensitive-marker")
-    result = subprocess.run(
-        [sys.executable, str(SCRIPT), "--messages", range_text],
-        cwd=tmp_path,
-        env={
-            **{key: value for key, value in os.environ.items() if not key.startswith("GIT_")},
-            "CONFIDENTIAL_TERMS": "fictional-sensitive-marker",
-        },
-        capture_output=True,
-        text=True,
-        check=False,
-        timeout=10,
-    )
+    _repo_with_a_marked_commit(tmp_path)
+    result = _scan_messages(tmp_path, range_text)
     assert result.returncode == 1, result.stderr
     assert "fictional-sensitive-marker" not in result.stderr
 
