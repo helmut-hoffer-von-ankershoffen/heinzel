@@ -1,6 +1,6 @@
 [project]
 name = "heinzel"
-version = "0.9.9"
+version = "0.9.11"
 description = "Heinzelmännchen: an open-source, AI-driven operating system for product development teams."
 readme = "PYPI.md"
 authors = [{ name = "Helmut Hoffer von Ankershoffen", email = "helmuthva@gmail.com" }]
@@ -101,7 +101,7 @@ required-version = ">=0.13.0"
 [tool.ruff]
 line-length = 120
 fix = true
-extend-exclude = ["template", "plugins"] # independent projects run their own checks
+extend-exclude = ["template", "plugins", "scripts/acceptance"] # independent projects; a hash-pinned stdlib harness
 
 [tool.ruff.lint]
 select = ["ALL"]
@@ -233,7 +233,7 @@ example = "fix(cli): exit with code 1 when an operation fails"
 info = "Conventional commits with the types and scopes in docs/CODING_STANDARDS.md."
 
 [tool.bumpversion]
-current_version = "0.9.9"
+current_version = "0.9.11"
 parse = "(?P<major>\\d+)\\.(?P<minor>\\d+)\\.(?P<patch>\\d+)"
 serialize = ["{major}.{minor}.{patch}"]
 commit = false
@@ -277,10 +277,11 @@ trim = true
 
 [tool.git-cliff.bump]
 initial_tag = "v0.1.0"
-# SemVer 0.x: breaking changes and features bump the minor version, everything else the patch. git-cliff defaults
-# breaking changes to a major bump, which would jump to 1.0.0 on the next `!` commit.
+# Before 1.0, a feature is a patch and a breaking change a minor: plugins cap the core at the next minor (`heinzel<0.10`),
+# so only a real break may cross that, and an automatic release must not (ADR 0114). git-cliff defaults would send a
+# breaking change to 1.0.0.
 breaking_always_bump_major = false
-features_always_bump_minor = true
+features_always_bump_minor = false
 
 [tool.git-cliff.git]
 conventional_commits = true
@@ -309,7 +310,7 @@ commit_parsers = [
     { message = "^(chore|style)", group = "<!-- 10 -->🧹 Miscellaneous" },
 ]
 protect_breaking_commits = true
-tag_pattern = "v[0-9].*"
+tag_pattern = "^v[0-9].*"
 
 [tool.pyright]
 include = ["src"]
@@ -324,7 +325,7 @@ Prompty = "Prompty" # a prompt file format, cited in docs/research/workflow-cont
 intoto = "intoto" # in-toto attestations, as in provenance.intoto.jsonl
 
 [tool.typos.files]
-extend-exclude = ["ATTRIBUTIONS.md", "site", "plugins"] # independent plugin checks own their sources and docs
+extend-exclude = ["ATTRIBUTIONS.md", "site", "plugins", "docs/impressum.md", "docs/datenschutz.md"] # plugins own their sources and docs; the two German legal pages are not English
 
 [tool.importlinter]
 root_packages = ["heinzel"]

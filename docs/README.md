@@ -1,6 +1,6 @@
 ---
 title: Heinzelmännchen — helpers for good work
-description: An open-source crew of AI helpers that draft your busywork. You approve. Runs on your machine.
+description: Heinzelmännchen, or Heinzel for short, is an open-source crew of AI helpers that draft your busywork. You approve; it runs on your machine.
 template: home.html
 hide:
   - navigation
@@ -159,6 +159,7 @@ they are out of date, so they can't drift.
 | **Contribute** to the core | [CONTRIBUTING](../CONTRIBUTING.md) · [CODING_STANDARDS](CODING_STANDARDS.md) · [Sonar security lessons](SONAR_SECURITY.md) · [docs style check](dev/DOCS_CHECK.md) · [durable session storage](SESSIONS.md) · [shipping small changes with a small model](SHIP_SMALL.md) · [CHANGELOG](../CHANGELOG.md) *(generated at release)* |
 | Work on it **as a coding agent** | [AGENTS](../AGENTS.md) and the scoped AGENTS.md files it lists |
 | Report a **vulnerability** | [SECURITY](../SECURITY.md) |
+| Read the **legal notices** of the website (German texts prevail) | [Impressum](impressum.md) · [Imprint](imprint.md) · [Datenschutzerklärung](datenschutz.md) · [Privacy notice](privacy.md) |
 
 How drift is prevented:
 
@@ -175,7 +176,5 @@ How drift is prevented:
 
 
 Site guides: [Install](guides/install.md) · [First steps](guides/first-steps.md) · [Product tour](guides/tour.md) · [Contribute](guides/contribute.md) · [Architecture tour](guides/architecture.md) · [Catalog metadata and automation](guides/catalog.md) · [Vision](VISION.md) · [Catalog](CATALOG.md).
-
-Legacy generated recordings (historical; current sources are in the catalog): [Atlassian](plugins/heinzel-atlassian/index.md) · [Clock](plugins/heinzel-clock/index.md) · [GitHub](plugins/heinzel-github/index.md) · [Google](plugins/heinzel-google/index.md) · [Tailscale](plugins/heinzel-tailscale/index.md) · [Zoom](plugins/heinzel-zoom/index.md).
 
 </details>

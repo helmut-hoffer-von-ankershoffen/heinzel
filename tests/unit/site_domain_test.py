@@ -48,3 +48,21 @@ def test_site_url_and_project_urls_use_the_product_domain() -> None:
     assert urls["Documentation"].startswith(SITE)
     command = (REPO / "docs/_data/install-script-command.txt").read_text(encoding="utf-8").strip()
     assert command == f"curl -LsSf {SITE}install.sh | sh"
+
+
+def test_robots_txt_points_at_the_sitemap_on_the_product_domain() -> None:
+    robots = (REPO / "docs/robots.txt").read_text(encoding="utf-8")
+    assert f"Sitemap: {SITE}sitemap.xml" in robots
+    assert "Disallow: /\n" not in robots
+
+
+def test_link_previews_use_an_existing_image_and_the_landing_pages_describe_themselves() -> None:
+    template = (REPO / "docs/overrides/main.html").read_text(encoding="utf-8")
+    assert 'config.site_url ~ "assets/pypi-hero.png"' in template
+    assert (REPO / "docs/assets/pypi-hero.png").is_file()
+    for name in ("og:title", "og:description", "og:image", "twitter:card"):
+        assert name in template
+    for page in ("README", "CATALOG", "guides/install", "guides/tour", "guides/manager", "guides/joining"):
+        front = (REPO / f"docs/{page}.md").read_text(encoding="utf-8").split("---")[1]
+        description = next(line for line in front.splitlines() if line.startswith("description:")).split(":", 1)[1]
+        assert 50 <= len(description.strip()) <= 170, page

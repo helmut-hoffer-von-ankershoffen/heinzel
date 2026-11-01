@@ -1,3 +1,7 @@
+---
+description: Join your team's Heinzelmännchen setup: run the line your manager shared, answer what it asks and see your team's first draft.
+---
+
 # Join your team
 
 For the engineer or product manager whose manager posted a line in chat. Run the line, answer what it asks, see your
