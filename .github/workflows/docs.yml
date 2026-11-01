@@ -54,7 +54,7 @@ jobs:
     name: Record the scenes
     # Reusable workflows inherit the caller's event: a release push is explicitly site-only.
     if: inputs.site_only != true && inputs.record == true && github.event_name != 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     permissions:
       contents: write # push the docs/recordings branch
@@ -91,7 +91,7 @@ jobs:
 
   site:
     name: Build the site
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
       contents: read
@@ -127,7 +127,7 @@ jobs:
     needs: site
     # Public repositories publish; a private one only when its owner says so, so no page of a company's plugin leaks.
     if: github.event_name != 'pull_request' && (github.event.repository.visibility == 'public' || vars.DOCS_PAGES == 'true')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
       pages: write

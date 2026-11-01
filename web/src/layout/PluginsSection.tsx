@@ -31,6 +31,7 @@ import {
 } from "@/api/queries";
 import { Loaded } from "@/components/common";
 import { Button } from "@/components/ui/button";
+import { CodeInput } from "@/components/ui/code-input";
 import { SearchField } from "@/components/ui/search-field";
 import { type MessageKey, t } from "@/i18n";
 import { cn } from "@/lib/utils";
@@ -636,12 +637,11 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
             {t("plugins.addLabel")}
           </label>
           <div className="flex gap-2">
-            <input
+            <CodeInput
               id="plugin-spec"
               value={spec}
               onChange={(event) => setSpec(event.target.value)}
               placeholder="git+https://github.com/acme-example/heinzel-acme"
-              className="h-8 min-w-0 flex-1 rounded-lg border border-border bg-input px-2.5 font-mono text-xs outline-none focus:border-muted-foreground/50"
             />
             <Button type="submit" size="sm" disabled={!spec.trim() || preview.isPending}>
               {preview.isPending ? t("plugins.checking") : t("plugins.install")}
