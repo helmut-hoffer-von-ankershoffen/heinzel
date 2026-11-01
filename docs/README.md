@@ -13,7 +13,7 @@ hide:
 
 # Less busywork.<br>More good work.
 
-<p class="hz-lead">Heinzelmännchen are small AI helpers that draft the busywork nobody chose. They work with your own accounts. You approve everything.</p>
+<p class="hz-lead">Heinzelmännchen, or heinzels for short, are small AI helpers that draft the busywork nobody chose. They work with your own accounts. You approve everything.</p>
 
 <div class="hz-actions" markdown>
 [Install Heinzelmännchen ↗](guides/install.md){ .hz-button }

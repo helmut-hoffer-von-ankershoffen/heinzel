@@ -7,8 +7,10 @@ This page fixes the names, taglines and claims of Heinzelmännchen. `tests/unit/
 - **Heinzelmännchen** is the product. Use it in prose, titles and the web app.
 - **`hz`** is the command. **`heinzel`** is the distribution on PyPI and the Python import.
 - **heinzelmaennchen** is the ASCII form for identifiers, bundle names and package slugs. Do not use any other ASCII spelling.
-- **Heinzel** alone is the count noun for one helper: "a personal Heinzel". It is not the product name.
-- **Heinzel Notifier** is the macOS notification app.
+- **a heinzel, heinzels** is the short form for one agent or several: "Adi is a heinzel who focuses on getting weekly team status reports drafted and approved." Lowercase in running text, capitalised at a sentence start. It is never the product name, so "Install Heinzel" is wrong.
+- **helper** stays the plain word where it reads better.
+- Never write that a named heinzel is an agent, an AI or a bot. Describe it by name and job.
+- **Heinzel Notifier** keeps its capital. It is the macOS notification app.
 
 ## Three sentences, each with a place
 
