@@ -45,3 +45,12 @@ export async function cleanupHarness({ app, electronProcess, stopped, root, owne
     throw new Error(`The isolated owned child is still running; temporary evidence was retained at ${root}.`);
   await remove(root);
 }
+
+/**
+ * Report that temporary evidence was kept and fail the run, without throwing: called from a `finally`, a throw would
+ * replace the error that is already propagating out of the `try`.
+ */
+export function retainEvidence(message) {
+  console.error(message);
+  process.exitCode = 1;
+}

@@ -1,0 +1,55 @@
+name: Merge gate
+
+# pull_request_target on purpose: the workflow and scripts/merge_gate.py come from the base branch, so a pull request
+# can't change what judges it. Its code is never checked out or run, no secret is used, the token only reads.
+on:
+  pull_request_target: # zizmor: ignore[dangerous-triggers]
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: merge-gate-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  merge-gate:
+    name: merge-gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - name: Quality gate passes, all ratings A, pull request and project
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: uv run --no-build --frozen --script scripts/merge_gate.py sonar
+
+  coverage-floor:
+    name: coverage-floor
+    if: github.event_name == 'pull_request_target'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      actions: read
+      checks: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - name: Coverage at this head is not where the badge turns red
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          COVERAGE_CHECK: Coverage
+        run: uv run --no-build --frozen --script scripts/merge_gate.py coverage

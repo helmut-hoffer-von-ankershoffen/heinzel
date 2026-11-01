@@ -128,6 +128,7 @@ from heinzel.kernel._installation import (
     requirement_from_receipt,
 )
 from heinzel.kernel._jobs import CompiledJobs, JobInactive, tick_interval, using_tick_interval
+from heinzel.kernel._json import jsonable
 from heinzel.kernel._kernel import Kernel, ModuleRecord, Origin
 from heinzel.kernel._layers import (
     Label,
@@ -592,6 +593,7 @@ __all__ = [
     "free_busy_people",
     "git_command",
     "input_schema",
+    "jsonable",
     "link_problem",
     "operation_path",
     "owns_path",

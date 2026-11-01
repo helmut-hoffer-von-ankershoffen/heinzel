@@ -3,6 +3,7 @@ import json
 
 import pytest
 from pydantic import BaseModel
+from pydantic_core import PydanticSerializationError
 from rich.console import Console
 from rich.table import Table
 from rich.text import Text
@@ -51,6 +52,11 @@ def test_empty_list():
 
 def test_other_values_print_as_json():
     assert json.loads(render({"a": 1})) == {"a": 1}
+
+
+def test_to_json_fails_on_a_value_with_no_json_form_instead_of_printing_its_repr():
+    with pytest.raises(PydanticSerializationError):
+        to_json({"value": object()})
 
 
 def test_to_json():
