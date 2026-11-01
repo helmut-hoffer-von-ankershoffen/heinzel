@@ -90,7 +90,7 @@ jobs:
     # What a contributor runs on a fresh machine, on each platform scripts/tools.toml pins: `make setup` installs
     # everything the build needs, relying only on git, make and uv, and `make doctor` confirms it.
     runs-on: ${{ matrix.os }}
-    continue-on-error: ${{ startsWith(matrix.os, 'macos') }} # TEMPORARY, see the note above `jobs:`
+    continue-on-error: ${{ startsWith(matrix.os, 'macos') }} # TEMPORARY: macOS may fail without failing CI OK; remove at 20 clean macOS runs
     timeout-minutes: 10
     strategy:
       fail-fast: false
@@ -129,7 +129,7 @@ jobs:
   test:
     name: Test (${{ matrix.os }}, Python ${{ matrix.python }}${{ matrix.levels && format(', {0}', matrix.levels) || '' }})
     runs-on: ${{ matrix.os }}
-    continue-on-error: ${{ startsWith(matrix.os, 'macos') }} # TEMPORARY, see the note above `jobs:`
+    continue-on-error: ${{ startsWith(matrix.os, 'macos') }} # TEMPORARY: macOS may fail without failing CI OK; remove at 20 clean macOS runs
     timeout-minutes: 10
     strategy:
       fail-fast: ${{ github.event_name == 'pull_request' }} # a red cell is enough to know on a pull request
@@ -214,7 +214,7 @@ jobs:
   e2e:
     name: End-to-end (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    continue-on-error: ${{ startsWith(matrix.os, 'macos') }} # TEMPORARY, see the note above `jobs:`
+    continue-on-error: ${{ startsWith(matrix.os, 'macos') }} # TEMPORARY: macOS may fail without failing CI OK; remove at 20 clean macOS runs
     timeout-minutes: 15
     strategy:
       fail-fast: false
