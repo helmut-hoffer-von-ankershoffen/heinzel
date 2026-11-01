@@ -311,6 +311,16 @@ export function CandidateDetails({ candidate }: { candidate: SchemaPluginCandida
 /** Where a plugin's confirmation opens: under its own row, focused and scrolled into view when it appears. */
 type Slot = { key: string; node: ReactNode };
 
+/** What happened when Install was pressed, as a collapsible on that plugin's row: it never moves the list or the page. */
+function ResultDetails({ name, children }: { name: string; children: ReactNode }) {
+  return (
+    <details open className="mb-2 rounded-xl border border-border/70 px-3 py-2" data-install-result>
+      <summary className="cursor-pointer text-sm font-medium">{t("plugins.result", { name })}</summary>
+      <div className="mt-2">{children}</div>
+    </details>
+  );
+}
+
 function InlineSlot({ children }: { children: ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -649,7 +659,7 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
           </div>
         </form>
       )}
-      {preview.error && !pending && (
+      {preview.error && !pending && !anchor?.startsWith("discover:") && (
         <p role="alert" className="mb-4 text-sm text-bad">
           {preview.error.message}
         </p>
@@ -666,7 +676,13 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
       {pending && !slot && card}
       {tab === "yours" ? <Yours query={query} onChange={ask} slot={slot} /> : null}
       {tab === "discover" ? (
-        <Discover query={query} onInstall={show} slot={slot} checking={preview.isPending ? anchor : null} />
+        <Discover
+          query={query}
+          onInstall={show}
+          slot={slot}
+          checking={preview.isPending ? anchor : null}
+          failed={preview.error && !pending && anchor ? { key: anchor, message: preview.error.message } : null}
+        />
       ) : null}
     </>
   );
@@ -871,11 +887,13 @@ function Discover({
   onInstall,
   slot,
   checking,
+  failed,
 }: {
   query: string;
   onInstall: (spec: string, rowKey: string) => void;
   slot: Slot | null;
   checking: string | null;
+  failed: { key: string; message: string } | null;
 }) {
   const search = usePluginSearch(query);
   const installed = usePlugins();
@@ -894,7 +912,11 @@ function Discover({
           </p>
         ) : (
           <ul>
-            {slot && !available.some((plugin) => `discover:${plugin.name}` === slot.key) && <li>{slot.node}</li>}
+            {slot && !available.some((plugin) => `discover:${plugin.name}` === slot.key) && (
+              <li>
+                <ResultDetails name={t("plugins.title")}>{slot.node}</ResultDetails>
+              </li>
+            )}
             {available.map((plugin) => (
               <li key={plugin.name} className="border-b border-border/70 last:border-b-0">
                 <div className="flex items-center gap-3 py-3">
@@ -929,7 +951,16 @@ function Discover({
                     {checking === `discover:${plugin.name}` ? t("plugins.checking") : t("plugins.install")}
                   </Button>
                 </div>
-                {slot?.key === `discover:${plugin.name}` && slot.node}
+                {slot?.key === `discover:${plugin.name}` && (
+                  <ResultDetails name={displayName(plugin.short_name, plugin.description)}>{slot.node}</ResultDetails>
+                )}
+                {failed?.key === `discover:${plugin.name}` && (
+                  <ResultDetails name={displayName(plugin.short_name, plugin.description)}>
+                    <p role="alert" className="text-sm text-bad">
+                      {failed.message}
+                    </p>
+                  </ResultDetails>
+                )}
               </li>
             ))}
           </ul>

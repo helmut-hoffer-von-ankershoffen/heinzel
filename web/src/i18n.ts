@@ -624,6 +624,7 @@ const en = {
   "plugins.addLabel":
     "A plugin's name, or `name @ git+https://…` for one from a git repository (private ones work with your GitHub sign-in).",
   "plugins.install": "Install",
+  "plugins.result": "What happened when you pressed Install: {name}",
   "plugins.remove": "Remove",
   "plugins.removeName": "Remove {name}",
   "plugins.cancel": "Cancel",

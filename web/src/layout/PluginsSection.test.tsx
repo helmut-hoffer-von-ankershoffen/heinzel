@@ -657,6 +657,40 @@ describe("PluginsSection", () => {
     expect(spec(3)).toBe(PINNED);
   });
 
+  it("shows what happened after Install as a collapsible on that plugin, and a failed check there too", async () => {
+    const entry = (name: string) => ({
+      name: `heinzel-${name}`,
+      short_name: name,
+      description: `The ${name} plugin.`,
+      source: "github",
+      community: true,
+      install_spec: `heinzel-${name}`,
+      url: `https://example.org/${name}`,
+      repository_url: `https://github.com/acme-example/heinzel-${name}`,
+      private_repository: false,
+      stars: null,
+      installed: false,
+    });
+    serve((url) => {
+      if (url.pathname === "/api/system/plugin/search") {
+        return { body: { plugins: ["aa", "bb"].map(entry), warnings: [] } };
+      }
+      if (url.pathname === "/api/system/plugin/add") return { status: 400, body: { error: "No such plugin" } };
+      return base(url);
+    });
+    const user = userEvent.setup();
+    show({ restartInterval: 1 });
+    await user.click(screen.getByRole("tab", { name: "Discover" }));
+    const row = (await screen.findAllByRole("listitem"))[1] as HTMLElement;
+    await user.click(within(row).getByRole("button", { name: "Install" }));
+    const alert = await within(row).findByRole("alert");
+    expect(alert).toHaveTextContent("No such plugin");
+    const result = alert.closest("details");
+    expect(result).toHaveAttribute("data-install-result");
+    expect(result?.querySelector("summary")).toHaveTextContent("What happened when you pressed Install");
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
+  });
+
   it("opens the confirmation under the clicked Discover row, focused, one at a time, with provenance collapsed", async () => {
     const entry = (name: string) => ({
       name: `heinzel-${name}`,
