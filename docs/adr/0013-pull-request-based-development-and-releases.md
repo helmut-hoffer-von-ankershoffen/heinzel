@@ -1,7 +1,9 @@
 ---
 status: accepted
 date: 2026-10-23
+implementation: built
 amends: 0008
+amended-by: 0114
 ---
 
 # 0013: Pull-request-based development and releases

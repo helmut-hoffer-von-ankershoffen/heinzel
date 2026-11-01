@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help install setup release-local doctor tools-verify check check-fast preflight fix lint format typecheck test test-parallel commits test-all-pythons test-unit test-integration test-perf test-e2e audit licenses secrets build pypi-clean-build-marker changelog ci-logs pr sync docs-plugins docs-record docs-site docs-publish-check release clean update-template preview
+.PHONY: help install setup release-local doctor tools-verify check check-fast preflight fix lint format typecheck test test-parallel commits test-all-pythons test-unit test-integration test-perf test-notifier test-e2e audit licenses secrets build pypi-clean-build-marker changelog ci-logs pr sync docs-plugins docs-record docs-site docs-publish-check release clean update-template preview
 
 # Quiet by default: one line per passing step, the tail of a failing one. VERBOSE=1 streams everything.
 # A step starting with & runs concurrently with the one before it; the first failure cancels the rest.
@@ -91,8 +91,10 @@ test: ## Run unit and integration tests with coverage on 4 workers (offline; wha
 	@uv run --quiet coverage report --format=total | xargs printf '  coverage %s%%\n'
 
 # Leave headroom under CI's 10-minute job timeout for the full unit/integration suite on slower runners.
+# TEST_LEVELS picks a shard: CI's macOS cells set unit or integration, each under the same session cap.
+TEST_LEVELS ?= unit or integration
 test-parallel: ## Unit and integration tests on 4 workers, stopping at the first failure; no coverage (the CI test matrix)
-	$(STEPS) "tests=uv run pytest -m '(unit or integration) and not perf' -n 4 -x -q --session-timeout=420 --durations=20"
+	$(STEPS) "tests=uv run pytest -m '($(TEST_LEVELS)) and not perf' -n 4 -x -q --session-timeout=420 --durations=20"
 
 commits: ## Commit messages since BASE, and $$TITLE and $$BRANCH when set: conventional, no confidential terms
 	$(STEPS) \
@@ -112,6 +114,9 @@ test-integration: ## Run integration tests
 
 test-perf: ## Run the performance tests (timing assertions such as linear time); CI only, they flake on a loaded machine
 	$(STEPS) "perf=uv run pytest -m perf -q --session-timeout=120"
+
+test-notifier: ## Real Heinzel Notifier launches leave no process behind (macOS; build it first: make notifier)
+	$(STEPS) "notifier=uv run pytest tests/e2e/notifier_instances_test.py -q -p no:cacheprovider -o timeout=120"
 
 test-e2e: ## Run end-to-end tests (needs network), on 3 workers
 	$(STEPS) "e2e=uv run pytest -m e2e -n 3 -q --session-timeout=600 -x"
@@ -153,7 +158,7 @@ changelog: ## Preview the changelog for unreleased commits
 ci-logs: ## The failing steps of the latest CI run of this branch (waits for a running one); JSON=1 for machines
 	@uv run --quiet --script scripts/ci_logs.py $(if $(JSON),--json)
 
-pr: ## Push this branch and open a squash-merged, auto-merging pull request to main: make pr TITLE="feat: ..." (DRAFT=1: draft, no auto-merge; BODY=... or BODY_FILE=path: a new PR's description)
+pr: ## Push this branch and open a pull request for review: make pr TITLE="feat: ..." (DRAFT=1: draft; BODY=... or BODY_FILE=path: a new PR's description)
 	@bash scripts/pr.sh "$(TITLE)"
 
 sync: ## Rebase this branch onto the latest main (upstream's, in a fork)

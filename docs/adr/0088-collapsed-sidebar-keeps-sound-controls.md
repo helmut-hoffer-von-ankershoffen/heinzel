@@ -1,8 +1,10 @@
 ---
 status: proposed
 date: 2026-10-27
+implementation: built
 decision-makers: maintainer
 amends: 0058
+implemented-by: 240
 ---
 
 # 0088: The collapsed sidebar keeps sound controls

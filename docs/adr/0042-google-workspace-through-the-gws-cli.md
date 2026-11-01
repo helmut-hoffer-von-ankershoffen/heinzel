@@ -1,9 +1,11 @@
 ---
 status: accepted
 date: 2026-10-24
+implementation: built
 decision-makers: maintainer
 related: 0017, 0027, 0028, 0030, 0032, 0035
 amended-by: 0059
+implemented-by: 47
 ---
 
 # 0042: Read Google Workspace through the Google Workspace CLI (`gws`)
@@ -91,15 +93,14 @@ so the plugin holds no OAuth client, refresh token or access token, and needs no
 
 ### Confirmation
 
-`plugins/heinzel-google/tests/integration/runner_test.py` (argument list, neutral working directory, no
+In heinzel-plugins: `plugins/heinzel-google/tests/integration/runner_test.py` (argument list, neutral working directory, no
 `HZ_CREDENTIAL_*`, the environment allowlist, timeout and kill, output bounds, a real auth failure, with a stand-in `gws`);
-`tests/unit/gws_test.py` (arguments, PATH and `gws_path`, exit codes, retries, redaction before cutting, paging
+`plugins/heinzel-google/tests/unit/gws_test.py` (arguments, PATH and `gws_path`, exit codes, retries, redaction before cutting, paging
 bounds); `tests/integration/capability_test.py` (a project `hz.toml` can neither bind nor choose the program; doctor
-runs only `gws --version` and reads `gws`'s files); `tests/unit/docs_test.py` (a property test and deep nesting); `tests/unit/setup_test.py`.
+runs only `gws --version` and reads `gws`'s files); `plugins/heinzel-google/tests/unit/docs_test.py` (a property test and deep nesting); `plugins/heinzel-google/tests/unit/setup_test.py`.
 
 ## More Information
 
-- The maintainer chose `gws` as the backend on 2026-10-24, replacing a first draft with its own OAuth flow.
 - Mail (Gmail) follows this record: `gmail users messages list/get` and `users labels list` through `gws`, with
   `gmail.readonly`, which Google classes as restricted and which covers all of a person's mail, asked for only when
   `mail` is bound to `google` (setup offers it with "no" as the default, then signs in again with the scope added).

@@ -97,9 +97,13 @@ function Layout() {
   const panelViews = useMemo(() => (views.data ?? []).filter((view) => view.slot === "panel"), [views.data]);
   const [retainedViews, setRetainedViews] = useState<string[]>([]);
   // Getting narrower folds the navigation; getting wider leaves it as the person set it. The chat moves below instead.
+  // A phone also fires resize for the browser's toolbars and keyboard, at the same width; those change nothing here.
   useEffect(() => {
+    let width = window.innerWidth;
     const fold = () => {
-      if (window.innerWidth < 1024) {
+      const narrower = window.innerWidth < width;
+      width = window.innerWidth;
+      if (narrower && width < 1024) {
         setNavOpen(false);
         if (document.activeElement?.closest("footer")) setActivePanel("page");
       }

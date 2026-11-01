@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block content %}
+{% block extrahead %}
   {{ super() }}
-  {% include "partials/heinzel-helpers.html" %}
+  {% if config.extra.hz_latest_release %}<meta name="hz-latest-release" content="{{ config.extra.hz_latest_release }}">{% endif %}
 {% endblock %}

@@ -1,9 +1,11 @@
 ---
 status: proposed
 date: 2026-10-28
+implementation: built
 decision-makers: maintainer
 amends: 0047
 related: 0003, 0019, 0039, 0046
+implemented-by: 248
 ---
 
 # 0091: Confirmed plugin adds use server-owned operation receipts
