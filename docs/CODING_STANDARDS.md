@@ -79,7 +79,7 @@ These keep the modulith a modulith. See [ARCHITECTURE.md](https://github.com/hel
 
 ## Tests
 
-We follow the test taxonomy of the [Aignostics Python SDK](https://github.com/aignostics/python-sdk) (Martin
+We follow the test taxonomy of a public SDK (Martin
 Fowler's solitary vs. sociable distinction). Every test carries **exactly one** marker; the suite refuses others.
 The `heinzel.testing` pytest plugin enforces the markers and the timeouts below, in Heinzelmännchen and in plugins.
 

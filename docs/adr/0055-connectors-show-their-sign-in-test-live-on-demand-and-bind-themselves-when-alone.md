@@ -1,6 +1,7 @@
 ---
 status: accepted
 date: 2026-10-24
+implementation: built
 decision-makers: maintainer
 amends: 0028
 amends-0028: a sole installed adapter serves its capability automatically
