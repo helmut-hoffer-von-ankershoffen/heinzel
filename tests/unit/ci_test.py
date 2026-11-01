@@ -986,7 +986,7 @@ def test_e2e_prepares_core_build_before_suite_and_removes_owned_temp(tmp_path, f
         node = "tests/e2e/docs_test.py::test_readme_instructions"
         assert first.endswith(f"-x {node}")
         assert second.endswith(f"-x --deselect={node}")
-        assert first.count("-n 3") == second.count("-n 3") == 1
+        assert first.count("-n 0") == second.count("-n 0") == 1
         assert first.count("--session-timeout=600") == second.count("--session-timeout=600") == 1
     generated = _template_sync_module().makefile()
     assert "e2e-prepare" not in generated
