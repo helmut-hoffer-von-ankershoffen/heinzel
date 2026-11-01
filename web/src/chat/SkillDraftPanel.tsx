@@ -2,8 +2,8 @@
 import { useEffect, useRef, useState } from "react";
 import { api, type SchemaHeinzelProposeSkillDraftInput, type SchemaSkillDraft } from "@/api/client";
 import { Button } from "@/components/ui/button";
-import { SkillSharingPanel } from "./SkillSharingPanel";
 import { t } from "@/i18n";
+import { SkillSharingPanel } from "./SkillSharingPanel";
 
 type DraftRequest = SchemaHeinzelProposeSkillDraftInput;
 type Scope = DraftRequest["requested_scope"];

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { type CapturedAudio, captureAudio } from "./capture";
 import { t } from "@/i18n";
+import { type CapturedAudio, captureAudio } from "./capture";
 
 export function spectrumGeometry(width: number, height: number) {
   const columns = Math.max(1, Math.min(16, Math.floor(width / 3)));
