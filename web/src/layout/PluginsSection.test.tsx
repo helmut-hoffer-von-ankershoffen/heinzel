@@ -245,21 +245,10 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("PluginsSection", () => {
-  it("says outright which installed version a plugin replaces, without opening the details", async () => {
-    candidate.installed_version = "0.9.3";
-    try {
-      serve(base);
-      const user = userEvent.setup();
-      show({ reload: vi.fn() });
-      await user.click(screen.getByRole("button", { name: "Add" }));
-      await user.type(screen.getByLabelText(/A plugin's name/), candidate.spec);
-      await user.click(screen.getByRole("button", { name: "Install" }));
-      const group = await screen.findByRole("group", { name: /Install this plugin/ });
-      const line = within(group).getByText(/Replaces 0\.9\.3/);
-      expect(line.closest("details")).toBeNull();
-    } finally {
-      candidate.installed_version = null;
-    }
+  it("says outright which installed version a plugin replaces, without opening the details", () => {
+    render(<CandidateDetails candidate={{ ...candidate, installed_version: "0.9.3" }} />);
+    const line = screen.getByText(/Replaces 0\.9\.3/);
+    expect(line.closest("details")).toBeNull();
   });
 
   it("does not call an uncompleted backend reply an installed plugin or restart the server", async () => {

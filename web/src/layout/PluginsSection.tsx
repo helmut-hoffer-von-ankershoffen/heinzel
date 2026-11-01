@@ -262,7 +262,7 @@ function restoredPluginFlow(): {
 }
 
 /** What a confirmed `add` installs: the backend's answer, shown before anything runs. */
-function CandidateDetails({ candidate }: { candidate: SchemaPluginCandidate }) {
+export function CandidateDetails({ candidate }: { candidate: SchemaPluginCandidate }) {
   const rows: [string, string][] = [
     [t("plugins.field.plugin"), candidate.distribution ?? t("plugins.unknown")],
     [t("plugins.field.version"), candidate.version ?? t("plugins.unknown")],
