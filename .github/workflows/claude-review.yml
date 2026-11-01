@@ -19,7 +19,7 @@ concurrency: # a new push supersedes the review of the previous one
 jobs:
   review:
     if: vars.CLAUDE_REVIEW == 'true' && github.event.sender.type != 'Bot' && !github.event.pull_request.draft && github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
       contents: read
