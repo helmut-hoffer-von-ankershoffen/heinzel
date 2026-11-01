@@ -10,6 +10,9 @@ export const RUNTIME_FILES = Object.freeze([
   "native-permissions.js", "owned-cli.js", "preload.cjs", "shutdown.js", "ui-navigation.js",
 ]);
 const MAX_FILE = 2 * 1024 * 1024;
+// UTF-16 code-unit order, the order of a bare .sort() spelled out so it never depends on the locale.
+const byCodeUnit = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+const sortedKeys = (value) => Object.keys(value).sort(byCodeUnit);
 
 async function regularBytes(file) {
   const handle = await open(file, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
@@ -30,8 +33,8 @@ export async function captureRuntime(packageRoot) {
   const source = path.join(packageRoot, "src");
   const info = await lstat(source);
   if (!info.isDirectory() || info.isSymbolicLink()) throw new Error("Runtime source must be a real directory.");
-  const names = (await readdir(source)).sort();
-  const expected = [...RUNTIME_FILES].sort();
+  const names = (await readdir(source)).sort(byCodeUnit);
+  const expected = [...RUNTIME_FILES].sort(byCodeUnit);
   if (JSON.stringify(names) !== JSON.stringify(expected)) throw new Error("Runtime source inventory differs from the approved list.");
   const metadataText = (await regularBytes(path.join(packageRoot, "package.json"))).toString("utf8");
   uniqueJson(metadataText);
@@ -112,8 +115,8 @@ export async function verifyRuntime(archivePath, packageRoot) {
   if (Object.keys(header.header).length !== 1 || !("files" in header.header))
     throw new Error("Unexpected ASAR root metadata.");
   const entries = listPackage(archivePath).map((name) => name.replace(/^\//, ""));
-  const wanted = ["src", ...expected.files.keys()].sort();
-  if (new Set(entries).size !== entries.length || JSON.stringify([...entries].sort()) !== JSON.stringify(wanted))
+  const wanted = ["src", ...expected.files.keys()].sort(byCodeUnit);
+  if (new Set(entries).size !== entries.length || JSON.stringify([...entries].sort(byCodeUnit)) !== JSON.stringify(wanted))
     throw new Error("Packaged runtime inventory differs from source.");
   const directory = statFile(archivePath, "src", false);
   if (!("files" in directory) || Object.keys(directory).length !== 1) throw new Error("Unsafe packaged source directory.");
@@ -125,8 +128,8 @@ export async function verifyRuntime(archivePath, packageRoot) {
       throw new Error(`Packaged runtime differs from source: ${name}`);
     const hash = createHash("sha256").update(bytes).digest("hex");
     const integrity = info.integrity;
-    if (JSON.stringify(Object.keys(info).sort()) !== JSON.stringify(["integrity", "offset", "size"]) ||
-        !integrity || JSON.stringify(Object.keys(integrity).sort()) !== JSON.stringify(["algorithm", "blockSize", "blocks", "hash"]) ||
+    if (JSON.stringify(sortedKeys(info)) !== JSON.stringify(["integrity", "offset", "size"]) ||
+        !integrity || JSON.stringify(sortedKeys(integrity)) !== JSON.stringify(["algorithm", "blockSize", "blocks", "hash"]) ||
         integrity.algorithm !== "SHA256" || integrity.blockSize !== 4 * 1024 * 1024 || integrity.hash !== hash ||
         !Array.isArray(integrity.blocks) || integrity.blocks.length !== 1 || integrity.blocks[0] !== hash)
       throw new Error(`Invalid ASAR integrity metadata: ${name}`);
