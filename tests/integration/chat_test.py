@@ -973,7 +973,9 @@ def test_stdio_mcp_can_require_direct_human_terminal_approval_without_a_bearer( 
 
             def answer_on_tty() -> None:
                 prompt = bytearray()
-                deadline = time.monotonic() + 3
+                # The clock starts before the server is built and the client connected, which on a busy runner takes
+                # seconds; the reader returns the moment the challenge shows, so a generous limit costs nothing.
+                deadline = time.monotonic() + 30
                 while b"> " not in prompt:
                     remaining = deadline - time.monotonic()
                     if remaining <= 0 or not select.select([master], [], [], max(0, remaining))[0]:
