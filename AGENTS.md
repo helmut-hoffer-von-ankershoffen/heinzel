@@ -57,7 +57,7 @@ options are in [docs/CLI_REFERENCE.md](docs/CLI_REFERENCE.md).
 - `main` requires branches to be up to date and `CI OK` green. Every merge sends the other open pull requests
   back through CI; `gh pr update-branch N` updates one without a local checkout.
 - Big work merges dark: register a flag in `src/heinzel/kernel/_features.py`, check it with `feature_enabled`, and
-  delete both when the work ships (ADR 0114). A flag hides behaviour, not state schema changes.
+  delete both when the work ships (ADR 0115). A flag hides behaviour, not state schema changes.
 - ADR numbers collide when several pull requests are open. Before merging, check `docs/adr/` on `main` and take
   the next free number, fixing every reference (the README index, `amended-by` lines, docstrings).
 - A failing check: `gh run view <run> --log-failed` works only after the whole run has finished. Rerun a job that

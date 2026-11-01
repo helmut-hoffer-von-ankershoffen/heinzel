@@ -1,4 +1,4 @@
-"""Feature flags: big work merges dark and stays off until someone switches it on by name (ADR 0114).
+"""Feature flags: big work merges dark and stays off until someone switches it on by name (ADR 0115).
 
 A flag hides behaviour, not data: a state schema change follows the rule that schemas are only ever fixed forward.
 Register a flag here when the work starts, and delete it with its checks when the work ships.
