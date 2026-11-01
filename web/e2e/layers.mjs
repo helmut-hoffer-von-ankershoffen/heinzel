@@ -1,7 +1,6 @@
 import { reportMediaFailure, watchMedia } from "./media-diagnostics.mjs";
 
 // Real CSS hit testing over a live iframe. The local canvas stream avoids external playback/network requirements.
-let stabilityCheck = 0;
 
 export async function verifyLayers(page, shots, screenshot) {
   const stream = {
@@ -105,34 +104,29 @@ export async function verifyLayers(page, shots, screenshot) {
   const results = [];
   async function front(name, pane) {
     await pane.waitFor();
-    // The layer assertion is about geometry and hit testing. Some CI hosts keep an optional font request
-    // pending even after the UI is usable; the stable-rectangle check below is the relevant readiness gate.
-    const stabilityKey = `__hzStablePane_${++stabilityCheck}`;
-    await pane.evaluate((element, key) => element.setAttribute("data-hz-e2e-stability", key), stabilityKey);
+    // The layer assertion is about geometry and hit testing, so this wait reads layout and needs no painted frame. The
+    // locator is read anew each time: a handle would keep measuring an element the footer has replaced.
+    let recent = [];
     try {
-      await page.waitForFunction(
-        (element) => {
-          const box = element.getBoundingClientRect();
-          const inside =
-            box.width > 0 &&
-            box.height > 0 &&
-            box.x >= 0 &&
-            box.y >= 0 &&
-            box.right <= innerWidth &&
-            box.bottom <= innerHeight;
-          const current = { x: box.x, y: box.y, width: box.width, height: box.height };
-          const key = element.getAttribute("data-hz-e2e-stability");
-          const previous = window[key];
-          const same =
-            previous && Object.keys(current).every((name) => Math.abs(current[name] - previous.rect[name]) < 0.5);
-          const since = inside && same ? previous.since : performance.now();
-          window[key] = { rect: current, since };
-          // Wait for final positioning after content has settled, not a transient frame above the footer.
-          return inside && performance.now() - since >= 150;
-        },
-        await pane.elementHandle(),
-        { timeout: 5000 },
-      );
+      const deadline = Date.now() + 5000;
+      let previous;
+      let since = Date.now();
+      for (;;) {
+        const current = await pane.evaluate((element) => {
+          const { x, y, width, height, right, bottom } = element.getBoundingClientRect();
+          const inside = width > 0 && height > 0 && x >= 0 && y >= 0 && right <= innerWidth && bottom <= innerHeight;
+          return { inside, rect: { x, y, width, height } };
+        });
+        const same =
+          previous && Object.keys(current.rect).every((key) => Math.abs(current.rect[key] - previous[key]) < 0.5);
+        if (!current.inside || !same) since = Date.now();
+        previous = current.rect;
+        recent = [...recent.slice(-4), current.rect];
+        // Final positioning after content has settled, not a transient frame above the footer.
+        if (current.inside && Date.now() - since >= 150) break;
+        if (Date.now() > deadline) throw new Error("not stable");
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
     } catch {
       const geometry = await pane.evaluate((element) => {
         const ancestors = [];
@@ -165,14 +159,9 @@ export async function verifyLayers(page, shots, screenshot) {
         };
       });
       if (screenshot) await page.screenshot({ path: `${shots}/${name}-unstable.png` });
-      throw new Error(`${name}: pane must fit the viewport before overlap is tested: ${JSON.stringify(geometry)}`);
-    } finally {
-      await pane
-        .evaluate((element, key) => {
-          element.removeAttribute("data-hz-e2e-stability");
-          delete window[key];
-        }, stabilityKey)
-        .catch(() => {});
+      throw new Error(
+        `${name}: pane must fit the viewport before overlap is tested: ${JSON.stringify({ ...geometry, recent })}`,
+      );
     }
     // Measure, reposition and hit-test in one browser evaluation. Changing a docked card's width would resize its
     // reserved sidebar slot and invalidate a previously captured pane rectangle on the next observer callback.

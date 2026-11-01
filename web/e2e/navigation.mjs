@@ -1,4 +1,5 @@
 import { fetchOnce, ONE_CONNECTION } from "./fetch-once.mjs";
+import { until } from "./until.mjs";
 
 // Exercise an arbitrary provider's navigation and the actual authenticated private JSON operation it invokes.
 export async function verifyNavigation(page, url, shots) {
@@ -116,21 +117,18 @@ export async function verifyNavigation(page, url, shots) {
   if (!changed.ok() || !sent || new URL(sent.url()).search || sent.postDataJSON().appearance.hat !== "blue")
     throw new Error("The generic action did not use the private JSON wire");
   // A stream's response starts before the operation runs: wait for the write it reports, then compare what was saved.
-  await page.waitForFunction(
-    async ({ id, name, credential }) => {
-      const response = await fetch(`/api/heinzel/session?session_id=${encodeURIComponent(id)}`, {
-        headers: { Authorization: `Bearer ${credential}` },
+  let check;
+  const saved = await until(
+    async () => {
+      check = await page.request.get(`${base}/api/heinzel/session`, {
+        headers,
+        params: { session_id: session.session_id },
       });
-      return response.ok && (await response.json()).name === name;
+      const current = await check.json();
+      return check.ok() && current.name === body.name ? current : null;
     },
-    { id: session.session_id, name: body.name, credential: token },
-    { polling: 100, timeout: 30_000 },
+    { message: `The private action was not saved: ${session.session_id}` },
   );
-  const check = await page.request.get(`${base}/api/heinzel/session`, {
-    headers,
-    params: { session_id: session.session_id },
-  });
-  const saved = await check.json();
   if (
     !check.ok() ||
     saved.name !== body.name ||
