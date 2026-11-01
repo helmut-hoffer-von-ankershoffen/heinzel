@@ -24,18 +24,16 @@ def _adr(directory, number, name, **front):
     )
 
 
-def test_adr_relations_are_rendered_on_both_sides_with_the_amending_reason(tmp_path):
+def test_the_index_has_a_row_per_adr_with_its_pull_requests_and_no_amendment_text(tmp_path):
     _adr(tmp_path, "0001", "old", **{"amended-by": "0002"})
     _adr(tmp_path, "0002", "new", **{"amends": "0001", "amends-0001": "what it changes", "implemented-by": "7, 9"})
     records = hooks.adr_records(tmp_path)
     table = hooks.adr_index_table(records, "https://example.test/r")
-    assert (
-        "| [0001](0001-old.md) Title old | proposed · 24 Oct<br>built |  | "
-        'amended by [0002](0002-new.md "what it changes") |' in table
-    )
+    assert "| [0001](0001-old.md) Title old | proposed · 24 Oct<br>built |  |" in table
     assert "[#7](https://example.test/r/pull/7), [#9](https://example.test/r/pull/9)" in table
-    assert "- **Amended by** [0002](0002-new.md) (what it changes)" in hooks.adr_page_block(records, "0001", "u")
+    assert "mend" not in table
     assert "- **Implemented by** [#7](u/pull/7), [#9](u/pull/9)" in hooks.adr_page_block(records, "0002", "u")
+    assert "mend" not in hooks.adr_page_block(records, "0001", "u")
     alone = hooks.adr_page_block({"0003": {"file": "x.md", "implementation": "planned"}}, "0003", "u")
     assert "- **Implementation** planned" in alone
     assert "Implemented by" not in alone
@@ -44,12 +42,11 @@ def test_adr_relations_are_rendered_on_both_sides_with_the_amending_reason(tmp_p
 def test_the_hook_adds_the_block_under_the_title_of_an_adr_page_only(tmp_path):
     adr_dir = tmp_path / "adr"
     adr_dir.mkdir()
-    _adr(adr_dir, "0001", "old", **{"amended-by": "0002"})
-    _adr(adr_dir, "0002", "new", **{"amends": "0001", "amends-0001": "why"})
+    _adr(adr_dir, "0001", "old", **{"implemented-by": "3"})
     page = SimpleNamespace(file=SimpleNamespace(abs_src_path=str(adr_dir / "0001-old.md")))
     text = "# 0001: Title old\n\nBody\n"
     shown = hooks.on_page_markdown(text, page=page, config={"repo_url": "https://example.test/r"})
     assert shown.startswith('# 0001: Title old\n\n<div class="adr-relations"')
-    assert "**Amended by** [0002](0002-new.md) (why)" in shown
+    assert "**Implemented by** [#3](https://example.test/r/pull/3)" in shown
     other = SimpleNamespace(file=SimpleNamespace(abs_src_path=str(tmp_path / "GUIDE.md")))
     assert hooks.on_page_markdown("# G\n", page=other, config={"repo_url": "x"}) == "# G\n"
