@@ -41,6 +41,12 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
         "tar -czf notifier.tar.gz": "packs the app the macOS job built, with its executable bit, for the build job",
         "tar -xzf notifier.tar.gz": "unpacks Heinzel Notifier into the package before the wheel is built",
     },
+    "acceptance.yml": {
+        "uv python install 3.13": "the interpreter the harness runs on",
+        '"$(uv python find 3.13)" -I scripts/acceptance/': (
+            "installs the published core with the public commands on a hosted runner and writes the receipt"
+        ),
+    },
     "docs.yml": {
         "sudo apt-get update": "fonts for the terminal recordings, from the runner's packages",
         "uv run --quiet --group docs playwright install-deps": "Chromium's system libraries, from the runner",
