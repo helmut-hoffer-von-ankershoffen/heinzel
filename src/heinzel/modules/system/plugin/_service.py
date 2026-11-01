@@ -59,6 +59,8 @@ from heinzel.modules.system.plugin._models import (
     PluginKind,
     PluginLayer,
     PluginOperation,
+    PluginPending,
+    PluginPendingChange,
     PluginSearch,
     PluginSettings,
     Source,
@@ -165,6 +167,8 @@ class PluginService:
         self.pypi: JsonGetter = pypi_get
         """Reads PyPI's JSON API for `add`; tests replace it."""
         self._catalog_warnings: list[str] = []
+        self._pending_signature: tuple[tuple[str, str, str | None], ...] = ()
+        self._pending_themes: dict[str, list[str]] = {}
         self.distributions: Mapping[str, Distribution] | None = None
         """Installed plugin distributions by canonical name; read from the entry points when None (tests set it)."""
 
@@ -180,6 +184,58 @@ class PluginService:
             # The child uses the default snapshot path; forwarding --fresh would recursively spawn interpreters.
             return self._fresh_list()
         return self._loaded_inventory()
+
+    def pending(self) -> PluginPending:
+        """What a restart would load: the installed plugin distributions now, against what this server loaded.
+
+        Both sides are read in this process (installed metadata and the kernel's origins), so a poll costs
+        milliseconds. Only when the difference is new does one fresh interpreter ask which themes it brings.
+        """
+        loaded = self._loaded_versions()
+        installed = {name: dist.version for name, dist in self._plugin_distributions().items()}
+        names = {name: dist.name for name, dist in self._plugin_distributions().items()}
+        found: list[tuple[str, str, str | None]] = []
+        for name, version in sorted(installed.items()):
+            if name not in loaded:
+                found.append((names[name], "installed", version))
+            elif loaded[name] not in {None, version}:
+                found.append((names[name], "updated", version))
+        found.extend((name, "removed", None) for name in sorted(loaded) if name not in installed)
+        if not found:
+            return PluginPending(changes=[], restart_required=False)
+        signature = tuple(found)
+        if signature != self._pending_signature:
+            self._pending_themes = self._themes_of_changed()
+            self._pending_signature = signature
+        changes = [
+            PluginPendingChange(
+                distribution=name,
+                change=cast("Literal['installed', 'removed', 'updated']", change),
+                version=version,
+                themes=self._pending_themes.get(canonicalize_name(name), []),
+            )
+            for name, change, version in found
+        ]
+        return PluginPending(changes=changes, restart_required=True)
+
+    def _loaded_versions(self) -> dict[str, str | None]:
+        """Distribution -> the version this server loaded (None when it failed to load: no version to compare)."""
+        loaded: dict[str, str | None] = {}
+        for record in [*self._kernel.modules, *self._kernel.blocked]:
+            if not record.origin.builtin:
+                loaded[canonicalize_name(record.origin.distribution)] = record.origin.version
+        for name in self._errors_by_distribution():
+            loaded.setdefault(name, None)
+        return loaded
+
+    def _themes_of_changed(self) -> dict[str, list[str]]:
+        """The themes of the installed plugins, from one fresh interpreter; none when it cannot be asked."""
+        try:
+            return {
+                canonicalize_name(info.distribution): list(info.themes or []) for info in self.installed(fresh=True)
+            }
+        except HeinzelError:
+            return {}
 
     def _loaded_inventory(self) -> list[PluginInfo]:
         """Describe the plugins and modules already loaded by this kernel."""
@@ -281,7 +337,8 @@ class PluginService:
         resolved: str | None = None
         if spec.strip().replace("-", "").isalnum() and not spec.strip().startswith(PREFIX):
             wanted = canonicalize_name(spec.strip().removeprefix(PREFIX))
-            matches = [entry for entry in self.search(wanted).plugins if canonicalize_name(entry.short_name) == wanted]
+            # Search without text: a topic search matches repository words, never the plugins inside a repository.
+            matches = [entry for entry in self.search().plugins if canonicalize_name(entry.short_name) == wanted]
             if len(matches) > 1:
                 msg = "Several catalog plugins have that short name; install an exact catalog specification"
                 raise HeinzelError(msg)
@@ -718,17 +775,16 @@ class PluginService:
         private = repository.get("private")
         visibility = private if isinstance(private, bool) else None
         entries = self._monorepo_plugins(repository)
+        # A repository can be a plugin itself and hold more under plugins/ (the ACME reference company does).
+        full_name = repository.get("full_name")
+        text = self._file(f"{GITHUB_REPOS}/{full_name}/contents/pyproject.toml") if full_name else None
+        project = _table(_toml(text), "project") if text else {}
+        name = project.get("name")
+        declared = _table(_table(project, "entry-points"), ENTRY_POINT_GROUP)
+        if declared and isinstance(name, str) and name not in {entry[0] for entry in entries}:
+            entries = [(name, "", str(project.get("description") or "")), *entries]
         if not entries:
-            full_name = repository.get("full_name")
-            text = self._file(f"{GITHUB_REPOS}/{full_name}/contents/pyproject.toml") if full_name else None
-            project = _table(_toml(text), "project") if text else {}
-            points = _table(project, "entry-points")
-            if not _table(points, ENTRY_POINT_GROUP):
-                return []
-            name = project.get("name")
-            if not isinstance(name, str):
-                return []
-            entries = [(name, "", str(project.get("description") or ""))]
+            return []
         branch = repository.get("default_branch") or "HEAD"
         return [
             AvailablePlugin(

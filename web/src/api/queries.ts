@@ -200,6 +200,19 @@ export const usePlugins = () =>
     queryKey: ["system", "plugin", "list"],
     queryFn: ({ signal }) => unwrap(api.GET("/system/plugin/list", { params: { query: { fresh: true } }, signal })),
   });
+/** Plugins changed on this machine since this server started, however they changed (the CLI, another window). */
+export const usePluginsPending = () =>
+  useQuery({
+    queryKey: ["system", "plugin", "pending"],
+    queryFn: ({ signal }) => unwrap(api.GET("/system/plugin/pending", { signal })),
+    // In-process on the server, so cheap; still no poll of a hidden page (the default), a slow one while it is shown,
+    // and a check when the window gets focus or becomes visible again.
+    refetchInterval: 5 * 60_000,
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
+    staleTime: 30_000,
+    retry: false,
+  });
 export const usePluginSearch = (text: string) =>
   useQuery({
     queryKey: ["system", "plugin", "search", text],

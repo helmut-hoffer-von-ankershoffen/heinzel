@@ -1,6 +1,7 @@
 ---
 status: proposed
 date: 2026-10-31
+implementation: partial
 decision-makers: maintainer
 amends: 0013, 0079, 0110
 amends-0013: release pull requests can merge without a person

@@ -262,7 +262,7 @@ function restoredPluginFlow(): {
 }
 
 /** What a confirmed `add` installs: the backend's answer, shown before anything runs. */
-function CandidateDetails({ candidate }: { candidate: SchemaPluginCandidate }) {
+export function CandidateDetails({ candidate }: { candidate: SchemaPluginCandidate }) {
   const rows: [string, string][] = [
     [t("plugins.field.plugin"), candidate.distribution ?? t("plugins.unknown")],
     [t("plugins.field.version"), candidate.version ?? t("plugins.unknown")],
@@ -282,6 +282,7 @@ function CandidateDetails({ candidate }: { candidate: SchemaPluginCandidate }) {
           candidate.version ?? t("plugins.unknown"),
           candidate.publisher ?? t("plugins.unknown"),
           sourceLabel({ source_url: candidate.url }, candidate.private),
+          ...(candidate.installed_version ? [`${t("plugins.field.replaces")} ${candidate.installed_version}`] : []),
         ].join(" · ")}
       </p>
       <details className="mt-1">
@@ -325,7 +326,17 @@ function InlineSlot({ children }: { children: ReactNode }) {
 }
 
 export function PluginsSection({ reload, restartInterval }: { reload?: () => void; restartInterval?: number } = {}) {
-  const [tab, setTab] = useState<"yours" | "discover">("yours");
+  const [tab, setTabState] = useState<"yours" | "discover">(() =>
+    new URLSearchParams(window.location.search).get("plugins") === "discover" ? "discover" : "yours",
+  );
+  // The tab lives in the address too, so a reload (Restart and apply) returns to the tab the person was on.
+  const setTab = (next: "yours" | "discover") => {
+    setTabState(next);
+    const address = new URL(window.location.href);
+    if (next === "discover") address.searchParams.set("plugins", "discover");
+    else address.searchParams.delete("plugins");
+    window.history.replaceState(window.history.state, "", `${address.pathname}${address.search}${address.hash}`);
+  };
   const [query, setQuery] = useState("");
   const [adding, setAdding] = useState(false);
   const [spec, setSpec] = useState("");

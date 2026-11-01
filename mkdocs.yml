@@ -15,7 +15,6 @@ not_in_nav: |
   privacy.md
   datenschutz.md
 exclude_docs: |
-  plugins/*/assets/*.md
   overrides/
   _data/
   catalog-sources.toml
