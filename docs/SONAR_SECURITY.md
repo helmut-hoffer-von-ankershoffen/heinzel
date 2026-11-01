@@ -80,7 +80,7 @@ ban. Recheck the actual main metrics after merging; these changes alone do not r
 
 ### Core findings reviewed individually
 
-Each row below was checked against core's own callers against the current code; the Acme conclusions were not carried over.
+Each row below was checked against core's own callers against the current code; the ACME conclusions were not carried over.
 Sonar's trace is a taint-analysis claim, not evidence of a remote boundary. Resolve these in Sonar only with the
 finding-specific text here, never with `NOSONAR` or an exclusion.
 
@@ -112,4 +112,4 @@ asserts no guarantee. It is there because Sonar's S8544 only accepts a frozen in
 `--no-project --no-build` and from the scripts having no dependencies.
 
 References: [Sonar metric definitions](https://docs.sonarsource.com/sonarqube-cloud/managing-your-projects/metric-definitions),
-[Acme's implementation and trust-boundary review](https://github.com/helmut-hoffer-von-ankershoffen/heinzel-acme/blob/284a4b6afed536d5368ab332b07fcc5e5a508528/docs/SECURITY_REVIEW.md).
+[ACME's implementation and trust-boundary review](https://github.com/helmut-hoffer-von-ankershoffen/heinzel-acme/blob/284a4b6afed536d5368ab332b07fcc5e5a508528/docs/SECURITY_REVIEW.md).
