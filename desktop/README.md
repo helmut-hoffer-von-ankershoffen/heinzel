@@ -39,7 +39,8 @@ fragment-bearing redirect, against isolated temporary servers. Cross-origin dest
 
 ## Local unsigned packaging
 
-Node.js 24.19.0 and pnpm 12.15.0 are pinned by repository CI. From this directory, run
+Node.js 24.19.0 and pnpm 12.15.0 are pinned by repository CI, which (`CI=true`) requires exactly that Node.js. Local
+builds accept any newer Node.js and print a notice; set `HZ_DESKTOP_STRICT_NODE=1` to require the pinned version. From this directory, run
 `pnpm install --node-linker=hoisted --frozen-lockfile`, then `pnpm build` and `pnpm verify:package`. Packaging takes
 the app version from the core `pyproject.toml` without editing either project's version files. The build targets the
 current host by default; CI builds Linux x64 on Ubuntu and macOS arm64 on macOS. To select a target explicitly, use
@@ -52,5 +53,5 @@ production install. Gatekeeper may block macOS launches, and Linux desktop integ
 is not included. There is no auto-update, login item, background service, OS permission request, installer/uninstaller,
 or Python runtime provisioning. The shell invokes `hz ui --port 0 --no-browser` without a shell, accepts only its
 single verified loopback URL line, passes its fragment only to the owned web UI, and stops only its owned child on
-Quit. This does not install the `hz` CLI or enable background operation; the CLI must already be installed and the
+Quit or on SIGTERM, SIGINT or SIGHUP (the owned service gets SIGINT first and SIGKILL only after a timeout). This does not install the `hz` CLI or enable background operation; the CLI must already be installed and the
 user must launch the app while it is on `PATH`.
