@@ -3480,8 +3480,8 @@ Bundled into the web app that `hz ui` serves: the production dependencies of [we
 | [d3-timer](#d3-timer-301) | 3.0.1 | ISC |
 | [d3-transition](#d3-transition-301) | 3.0.1 | ISC |
 | [d3-zoom](#d3-zoom-300) | 3.0.0 | ISC |
-| [@dagrejs/dagre](#dagrejsdagre-311) | 3.1.1 | MIT |
-| [@dagrejs/graphlib](#dagrejsgraphlib-405) | 4.0.5 | MIT |
+| [@dagrejs/dagre](#dagrejsdagre-312) | 3.1.2 | MIT |
+| [@dagrejs/graphlib](#dagrejsgraphlib-406) | 4.0.6 | MIT |
 | [debug](#debug-443) | 4.4.3 | MIT |
 | [decode-named-character-reference](#decode-named-character-reference-130) | 1.3.0 | MIT |
 | [dequal](#dequal-203) | 2.0.3 | MIT |
@@ -4417,7 +4417,7 @@ THIS SOFTWARE.
 
 </details>
 
-### @dagrejs/dagre 3.1.1
+### @dagrejs/dagre 3.1.2
 
 - License: MIT
 - Homepage: <https://github.com/dagrejs/dagre#readme>
@@ -4449,7 +4449,7 @@ THE SOFTWARE.
 
 </details>
 
-### @dagrejs/graphlib 4.0.5
+### @dagrejs/graphlib 4.0.6
 
 - License: MIT
 - Homepage: <https://github.com/dagrejs/graphlib#readme>

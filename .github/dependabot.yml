@@ -32,6 +32,14 @@ updates:
     commit-message:
       prefix: build
       prefix-development: build
+    ignore:
+      # The Node the build runs on is pinned in uv.lock; @types/node must stay on its major (web_build_test).
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+      # `typescript` stays 5.x for the compiler API that web/e2e/mobile-responsive.mjs reads routes with; 7 ships
+      # none. The type check already runs on 7 through @typescript/native.
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
     groups:
       web:
         patterns: ["*"]
