@@ -178,7 +178,7 @@ def ci_workflow() -> str:
     text = re.sub(
         r"(?m)^        os: .*needs\.changes\.outputs\.mounted_tailscale.*$",
         "        os: ${{ fromJSON(github.event_name == 'pull_request' && "
-        '\'["ubuntu-latest"]\' || \'["ubuntu-latest","macos-latest"]\') }}',
+        '\'["ubuntu-24.04"]\' || \'["ubuntu-24.04","macos-latest"]\') }}',
         text,
     )
     text = text.replace("    needs: notifier\n", "")
@@ -224,7 +224,7 @@ def ci_workflow() -> str:
     # its minutes, sets up on the two most contributors use.
     text = re.sub(
         r"(\n  setup:\n.*?\n        os: )\$\{\{ fromJSON[^\n]*",
-        r"\1[ubuntu-latest, macos-latest]",
+        r"\1[ubuntu-24.04, macos-latest]",
         text,
         count=1,
         flags=re.DOTALL,
