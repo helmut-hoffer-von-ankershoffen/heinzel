@@ -79,6 +79,14 @@ class PluginUpdate(BaseModel):
     next: list[str] = Field(default_factory=list, description="Commands that bring a failed plugin back.")
 
 
+class ChannelReport(BaseModel):
+    """The update channel, and what a switch changes."""
+
+    channel: str = Field(description="The channel followed now: stable, edge or main.")
+    changed: bool = Field(description="Whether this call switched the channel.")
+    statement: str = Field(description="What the switch changes; said before anything happens.")
+
+
 class UpdateResult(BaseModel):
     """What `hz system update` did, or why it left the installation as it was."""
 
