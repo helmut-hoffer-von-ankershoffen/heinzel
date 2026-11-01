@@ -26,5 +26,6 @@ def test_the_environment_takes_a_comma_separated_list(monkeypatch):
 
 
 def test_an_unregistered_name_in_code_is_a_bug():
+    settings = Settings()
     with pytest.raises(KeyError):
-        feature_enabled(Settings(), "typo")
+        feature_enabled(settings, "typo")
