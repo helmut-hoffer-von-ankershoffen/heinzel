@@ -79,7 +79,7 @@ def is_document(path: str) -> bool:
 
 
 TOOLING = re.compile(r"scripts/(?:site_[a-z_]+|check_docs|sync_template)\.py")
-TOOLING_TESTS = re.compile(r"tests/unit/(?:site_[a-z_]+|check_docs|docs_style|sync_template)_test\.py")
+TOOLING_TESTS = re.compile(r"tests/unit/(?:site_[a-z_]+|check_docs|docs_style|documentation|sync_template)_test\.py")
 
 
 def is_docs_tooling(path: str) -> bool:

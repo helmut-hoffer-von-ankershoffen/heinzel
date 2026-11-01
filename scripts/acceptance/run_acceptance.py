@@ -917,6 +917,9 @@ calls = []
 def runner(command, *_args, **_kwargs):
     if command == [uv, "tool", "dir", "--bin"]:
         return subprocess.run(command, capture_output=True, text=True, check=False, timeout=15)
+    if command[-1:] == ["managername"]:
+        # The desktop-session check of newer SDKs. The harness itself refuses a non-Aqua session before any case.
+        return subprocess.CompletedProcess(command, 0, "Aqua", "")
     calls.append(command)  # Never executed: this is the interception.
     return subprocess.CompletedProcess(command, 0, "", "")
 
@@ -951,7 +954,11 @@ def install_fixture(case):
         ["/intercepted/launchctl", "bootout", f"gui/{uid}/{LABEL}"],
         ["/intercepted/launchctl", "bootstrap", f"gui/{uid}", str(plist)],
     ]
-    check(result["calls"] == expected, "The installed SDK asked for unexpected registration commands")
+    # Newer SDKs also read the registration back after loading it. Reading changes nothing, so it may repeat; every
+    # command that could change the manager must still be exactly these, in this order.
+    reads = {("/intercepted/launchctl", "print", f"gui/{uid}/{LABEL}")}
+    changes = [call for call in result["calls"] if tuple(call) not in reads]
+    check(changes == expected, f"The installed SDK asked for unexpected registration commands: {changes}")
     check(plist.is_file(), "The fixture unit was not written inside this case")
     return {"intercepted_commands_validated": len(expected), "executed": 0, "registration": "simulated"}
 

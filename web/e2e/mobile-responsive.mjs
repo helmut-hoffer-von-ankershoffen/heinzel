@@ -230,7 +230,13 @@ async function showPage(page) {
   await tab.tap();
 }
 
-async function footerPane(page, id, label) {
+async function footerPane(page, id, label, ready) {
+  if (ready) {
+    await ready;
+    await page.waitForFunction(
+      () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve(true)))),
+    );
+  }
   const trigger = page.locator(`[data-footer-content="${id}"] button`).first();
   if (!(await trigger.isVisible())) {
     await page.locator('[data-footer-content="@more"] button').click();
@@ -484,10 +490,12 @@ try {
     await page.screenshot({ path: join(shots, `mobile-${spec.name}-updates.png`) });
     await dismissFooterPane(page);
     updateAvailable = true;
+    // The footer's label and its fit depend on this answer, so tap only once the footer shows it.
+    const updateAnswered = page.waitForResponse("**/api/update-status");
     await page.goto(url);
     await page.getByRole("heading", { name: "Today" }).waitFor();
     await page.locator("#splash").waitFor({ state: "hidden", timeout: 15_000 });
-    const availablePane = await footerPane(page, "@updates", "Update available");
+    const availablePane = await footerPane(page, "@updates", "Update available", updateAnswered);
     await assertContained(page, availablePane, `${spec.name}: available update pane`);
     await availablePane.getByText(/^Last installed:/).waitFor();
     await assertTouchTarget(

@@ -9,6 +9,11 @@ repo_name: heinzel
 edit_uri: edit/main/docs/
 docs_dir: docs
 site_dir: site
+not_in_nav: |
+  imprint.md
+  impressum.md
+  privacy.md
+  datenschutz.md
 exclude_docs: |
   overrides/
   _data/
@@ -68,6 +73,12 @@ extra:
 
 plugins:
   - search
+  # Visitors' browsers contact only this site: at build time the plugin downloads every external image the pages embed
+  # (the README badges, the plugin screenshots from their repositories) and serves them from assets/external/. The
+  # price is that a badge shows the status of the last build; the Docs workflow rebuilds hourly. Fonts are the
+  # system fonts (theme.font is false), the repository link carries no live GitHub facts (docs/overrides/partials/
+  # source.html), and scripts/site_check.py fails if a page requests any host not listed there with a reason.
+  - privacy
 
 extra_css:
   - assets/website/site.css
