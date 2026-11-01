@@ -115,10 +115,14 @@ export async function verifyNavigation(page, url, shots) {
   const changed = await answer;
   if (!changed.ok() || !sent || new URL(sent.url()).search || sent.postDataJSON().appearance.hat !== "blue")
     throw new Error("The generic action did not use the private JSON wire");
-  const check = await page.request.get(`${base}/api/heinzel/session`, {
-    headers,
-    params: { session_id: session.session_id },
-  });
+  // A stream's response starts before the operation runs: wait for the write it reports, then compare what was saved.
+  const read = () =>
+    page.request.get(`${base}/api/heinzel/session`, { headers, params: { session_id: session.session_id } });
+  let check = await read();
+  for (let waited = 0; waited < 30_000 && check.ok() && (await check.json()).name !== body.name; waited += 100) {
+    await page.waitForTimeout(100);
+    check = await read();
+  }
   const saved = await check.json();
   if (
     !check.ok() ||
