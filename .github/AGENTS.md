@@ -21,6 +21,8 @@ Constraints per workflow:
 - `pypi.yml`: manual dispatch on a final version tag; builds without OIDC, uploads only core with trusted publishing
   in environment `pypi`.
 - `release.yml`: manual dispatch for one optional plugin; never builds or tests core.
+- `source-review.yml`: dispatch on the protected ref `trusted/source-review` only (`make review PR=<n>`); paid, tool-free
+  review of one PR's source; fails closed unless live head, base and protected ref equal the dispatch; core only.
 - `fuzz.yml`: core only. `claude-review.yml`: opt-in (`vars.CLAUDE_REVIEW`).
 - `docs.yml`: deploys to GitHub Pages when the repository is public or `vars.DOCS_PAGES` is `true`, else keeps an
   artifact (ADR 0082).

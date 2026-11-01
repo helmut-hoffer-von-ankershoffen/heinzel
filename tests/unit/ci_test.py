@@ -40,8 +40,12 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
         'changed="$(git diff --name-only': "decides from the changed paths whether a pull request builds the macOS app",
         "if compgen -G ": "selects the built core candidate or an independently released artifact for source plugins",
         "for result in $RESULTS": "the CI OK gate aggregates the results of the other jobs",
+        "uv run --no-build coverage report --format=total": "hands the measured total to the merge gate",
         "tar -czf notifier.tar.gz": "packs the app the macOS job built, with its executable bit, for the build job",
         "tar -xzf notifier.tar.gz": "unpacks Heinzel Notifier into the package before the wheel is built",
+    },
+    "merge-gate.yml": {
+        "uv run --no-build --frozen --script scripts/merge_gate.py": "judges by public APIs, from the base branch",
     },
     "acceptance.yml": {
         "uv python install 3.13": "the interpreter the harness runs on",
@@ -110,6 +114,11 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
         'if [[ ! "$INTRO"': "rejects blank dispatch input before checkout or release work",
         "git config user.name": "opens the release pull request as the bot and hands its tag to the next step",
         "gh workflow run ci.yml": "starts CI on the release pull request, which the bot's token doesn't",
+    },
+    "source-review.yml": {
+        ': "source-review dispatch authority"': "refuses any other ref, actor or commit, before checkout",
+        "uv run --no-build --frozen --script scripts/source_review.py": "the guard and the tool-free review",
+        ': "source-review final identity"': "rechecks the pull request and the protected ref on a fresh runner",
     },
     "release-tag.yml": {'tag="v$(uv version --short)"': "tags a merged release commit"},
     "claude-review.yml": {'files="$(git diff': "picks the review tier from the changed files"},

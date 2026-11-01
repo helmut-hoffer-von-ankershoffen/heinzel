@@ -37,8 +37,10 @@ def makefile() -> str:
     text = text.replace(" template-test template-sync docs attributions fuzz demo", "")
     text = text.replace(" release clean\n", " release clean update-template preview\n", 1)
     text = text.replace(" (KEEP=dir keeps it)", "")
-    text = re.sub(r"\n(template-test|template-sync|docs|attributions|fuzz|demo|icons):.*?\n(?:\t.*\n)+", "\n", text)
-    text = re.sub(r"(?m)^(\.PHONY:.*?) icons\b", r"\1", text)
+    text = re.sub(
+        r"\n(template-test|template-sync|docs|attributions|fuzz|demo|icons|review):.*?\n(?:\t.*\n)+", "\n", text
+    )
+    text = re.sub(r"(?m)^(\.PHONY:.*?) (?:icons|review)\b", r"\1", text)
     text = re.sub(r"\nlinux-user-manager-proof:.*?\n(?:\t.*\n)+", "\n", text)
     text = text.replace(" linux-user-manager-proof", "")
     # Core README e2e builds its own candidate wheel; plugins have no core web/notifier assets to prepare.
@@ -178,15 +180,9 @@ def ci_workflow() -> str:
     text = re.sub(r"\n  electron:\n.*?(?=\n  build:)", "\n", text, flags=re.DOTALL)
     text = text[: text.index("  site-tests:\n")] + text[text.index("  e2e:\n") :]
     text = re.sub(r"\n  changes:\n.*?(?=\n  dependency-review:)", "", text, flags=re.DOTALL)
-    # The template has no changed-path job; keep its original E2E matrix policy without core-only gating.
+    # The template has no changed-path job; keep the E2E matrix as is, without core-only gating.
     text = text.replace("    needs: changes\n", "")
     text = re.sub(r"(?m)^    if: .*needs\.changes\.outputs\.core[^\n]*\n", "", text)
-    text = re.sub(
-        r"(?m)^        os: .*needs\.changes\.outputs\.mounted_tailscale.*$",
-        "        os: ${{ fromJSON(github.event_name == 'pull_request' && "
-        '\'["ubuntu-24.04"]\' || \'["ubuntu-24.04","macos-latest"]\') }}',
-        text,
-    )
     # A plugin has no browser E2E files to split off, so its E2E job stays one per OS.
     text = text.replace("End-to-end ${{ matrix.suite }} (", "End-to-end (")
     text = re.sub(r"(?m)^        # Two jobs per OS[^\n]*\n        suite: \[cli, web\]\n", "", text)

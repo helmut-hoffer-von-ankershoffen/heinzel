@@ -50,6 +50,8 @@ every operation takes `--json`; options in [docs/CLI_REFERENCE.md](docs/CLI_REFE
   touching a branch someone else started.
 - Update a pushed branch with `git merge origin/main`, not a rebase (PRs squash-merge). `gh pr update-branch N` does it
   without a checkout; `main` requires an up-to-date branch and green `CI OK`.
+- Big work merges dark: register a flag in `src/heinzel/kernel/_features.py`, check it with `feature_enabled`, delete both
+  when it ships (ADR 0115). A flag hides behaviour, not state schema changes.
 - ADR numbers collide across open PRs. Before merging, take the next free number on `main` and fix every reference
   (README index, `amended-by` lines, docstrings).
 - `gh run view <run> --log-failed` works only after the whole run finishes. Rerun a job that failed outside the diff

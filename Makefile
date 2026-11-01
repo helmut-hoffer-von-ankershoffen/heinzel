@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help install setup release-local doctor tools-verify check check-fast linux-user-manager-proof preflight fix lint format typecheck test test-parallel commits test-all-pythons test-unit test-integration test-perf test-notifier test-e2e e2e-prepare test-browser-deps audit licenses secrets template-test template-sync docs attributions fuzz demo terminal-art notifier icons web-build web-dev test-web test-site managed-backend-setup managed-backend-check desktop-electron-test desktop-electron-sandbox desktop-electron-native desktop-electron-package build pypi-clean-build-marker changelog ci-logs pr sync docs-plugins docs-record docs-site docs-catalog docs-site-check docs-publish-check release clean
+.PHONY: help install setup release-local doctor tools-verify check check-fast linux-user-manager-proof preflight fix lint format typecheck test test-parallel commits test-all-pythons test-unit test-integration test-perf test-notifier test-e2e e2e-prepare test-browser-deps audit licenses secrets template-test template-sync docs attributions fuzz demo terminal-art notifier icons web-build web-dev test-web test-site managed-backend-setup managed-backend-check desktop-electron-test desktop-electron-sandbox desktop-electron-native desktop-electron-package build pypi-clean-build-marker changelog ci-logs pr review sync docs-plugins docs-record docs-site docs-catalog docs-site-check docs-publish-check release clean
 
 # Quiet by default: one line per passing step, the tail of a failing one. VERBOSE=1 streams everything.
 # A step starting with & runs concurrently with the one before it; the first failure cancels the rest.
@@ -322,6 +322,9 @@ ci-logs: ## The failing steps of the latest CI run of this branch (waits for a r
 
 pr: ## Push this branch and open a pull request for review: make pr TITLE="feat: ..." (DRAFT=1: draft; BODY=... or BODY_FILE=path: a new PR's description)
 	@bash scripts/pr.sh "$(TITLE)"
+
+review: ## Source review of pull request PR=<n> by a tool-free model on the protected ref; the tier (scripts/review_tier.py) decides, docs/tests-only costs nothing; needs REVIEW_TRUSTED
+	@bash scripts/review.sh "$(PR)"
 
 sync: ## Rebase this branch onto the latest main (upstream's, in a fork)
 	@git fetch --quiet $(REMOTE) && git rebase --quiet $(REMOTE)/main && git log --oneline $(REMOTE)/main..HEAD

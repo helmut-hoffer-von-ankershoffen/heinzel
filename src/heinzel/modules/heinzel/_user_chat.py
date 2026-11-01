@@ -39,7 +39,8 @@ from heinzel.modules.heinzel._session_models import BackendBinding, RequestId, S
 from heinzel.modules.heinzel._subscription_slots import SubscriptionSlots
 
 _HEADS = frozenset({"cli", "api-bearer", "web-session", "web-device"})
-_MAX_REQUESTS = 4
+# A turn that creates an agent reads and proposes its contract, identity, schedule and sources, then reports.
+_MAX_REQUESTS = 12
 MAX_TURN_SECONDS = 120
 _MAX_OUTPUT = 128 * 1024
 
