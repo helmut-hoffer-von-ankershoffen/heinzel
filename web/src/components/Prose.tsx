@@ -7,8 +7,9 @@ import { type ComponentProps, isValidElement, type ReactNode, useState } from "r
 import Markdown, { type Components } from "react-markdown";
 import { Link } from "react-router";
 import remarkGfm from "remark-gfm";
+import { runCommand } from "@/components/CommandActions";
 import { t } from "@/i18n";
-import { runInTerminal } from "@/lib/terminal";
+import { appCallFor } from "@/lib/operationCalls";
 import { cn } from "@/lib/utils";
 
 const OUTSIDE = /^(https?:|mailto:)/i;
@@ -42,9 +43,9 @@ export function CodeBlock({ code, language }: { code: string; language: string }
         {runnable && (
           <button
             type="button"
-            onClick={() => runInTerminal(command)}
-            aria-label={t("run.aria", { command })}
-            title={t("run.label")}
+            onClick={() => runCommand(command)}
+            aria-label={appCallFor(command) ? t("run.hereAria", { command }) : t("run.aria", { command })}
+            title={appCallFor(command) ? t("run.here") : t("run.label")}
             className={button}
           >
             <SquareTerminal aria-hidden />

@@ -177,6 +177,4 @@ How drift is prevented:
 
 Site guides: [Install](guides/install.md) · [First steps](guides/first-steps.md) · [Product tour](guides/tour.md) · [Contribute](guides/contribute.md) · [Architecture tour](guides/architecture.md) · [Catalog metadata and automation](guides/catalog.md) · [Vision](VISION.md) · [Catalog](CATALOG.md).
 
-Legacy generated recordings (historical; current sources are in the catalog): [Atlassian](plugins/heinzel-atlassian/index.md) · [Clock](plugins/heinzel-clock/index.md) · [GitHub](plugins/heinzel-github/index.md) · [Google](plugins/heinzel-google/index.md) · [Tailscale](plugins/heinzel-tailscale/index.md) · [Zoom](plugins/heinzel-zoom/index.md).
-
 </details>
