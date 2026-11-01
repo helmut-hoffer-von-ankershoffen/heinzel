@@ -70,7 +70,7 @@ jobs:
       - name: Fonts for the terminal recordings
         run: sudo apt-get update -qq && sudo apt-get install -y -qq fonts-jetbrains-mono fonts-noto-color-emoji
       - name: Chromium's system libraries, for Playwright
-        run: uv run --quiet --group docs playwright install-deps chromium
+        run: uv run --quiet --frozen --no-build --group docs playwright install-deps chromium
       - name: Record every scene
         env:
           CONFIDENTIAL_TERMS: ${{ secrets.CONFIDENTIAL_TERMS }}

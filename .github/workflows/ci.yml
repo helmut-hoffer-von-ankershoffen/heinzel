@@ -158,7 +158,7 @@ jobs:
         if: github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork
         env:
           CONFIDENTIAL_TERMS: ${{ secrets.CONFIDENTIAL_TERMS }}
-        run: uv run --script scripts/check_confidentiality.py --require --text ""
+        run: uv run --no-project --frozen --no-build --python 3.14 python scripts/check_confidentiality.py --require --text ""
       - run: make lint
         env:
           CONFIDENTIAL_TERMS: ${{ secrets.CONFIDENTIAL_TERMS }}
@@ -250,8 +250,14 @@ jobs:
           cache-dependency-glob: uv.lock
           save-cache: ${{ github.ref == 'refs/heads/main' }} # pull requests reuse main's cache
           python-version: ${{ matrix.python }}
-      - name: Install what the tests need, and no more
-        run: uv sync --no-dev --group test # UV_FROZEN: exactly the lockfile
+      - name: Install wheel dependencies
+        if: matrix.python != '3.15'
+        run: uv sync --frozen --no-build --no-dev --group test
+      - name: Install Python 3.15 dependencies with the verified PyYAML compatibility build
+        if: matrix.python == '3.15'
+        run: |
+          uv sync --frozen --no-build --no-dev --group test --no-install-package pyyaml
+          bash scripts/bootstrap-pyyaml.sh
       - name: Inspect the Linux user manager without starting services
         if: matrix.os == 'ubuntu-24.04' && matrix.python == '3.14'
         env:
@@ -287,7 +293,7 @@ jobs:
           cache-dependency-glob: uv.lock
           save-cache: ${{ github.ref == 'refs/heads/main' }} # pull requests reuse main's cache
           python-version: "3.14"
-      - run: uv sync --no-dev --group test # UV_FROZEN: exactly the lockfile
+      - run: uv sync --frozen --no-build --no-dev --group test
       - run: make test
       - name: Report coverage on pull requests and publish the badge
         # The action only understands pull_request, push and schedule events; dispatched runs (release PRs) skip it.
@@ -318,7 +324,7 @@ jobs:
           cache-dependency-glob: uv.lock
           save-cache: ${{ github.ref == 'refs/heads/main' }} # pull requests reuse main's cache
           python-version: "3.14"
-      - run: uv sync --no-dev --group test # UV_FROZEN: exactly the lockfile
+      - run: uv sync --frozen --no-build --no-dev --group test
       - run: make test-perf
 
   site-tests:
@@ -582,7 +588,7 @@ jobs:
           if compgen -G 'candidate/heinzel-*.whl' >/dev/null; then
             echo "wheel=$(realpath candidate/heinzel-*.whl)" >> "$GITHUB_OUTPUT"
           else
-            uv run --no-project --script .plugin-tooling/scripts/core_artifact.py
+            uv run --no-project --frozen --no-build --python 3.14 python .plugin-tooling/scripts/core_artifact.py
           fi
       - name: Check, audit, build and accept only this plugin
         env:
