@@ -1,6 +1,7 @@
 ---
 status: proposed
 date: 2026-10-24
+implementation: built
 decision-makers: maintainer
 amends: 0018
 amends-0018: adds hz setup

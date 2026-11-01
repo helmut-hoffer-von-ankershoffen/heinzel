@@ -1,6 +1,7 @@
 ---
 status: proposed
 date: 2026-10-24
+implementation: built
 decision-makers: maintainer
 amends: 0027, 0039, 0046
 amends-0027: fixed allowlisted player origins while a stream is in effect; the player loads only after Play

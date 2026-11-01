@@ -1,6 +1,7 @@
 ---
 status: accepted
 date: 2026-10-23
+implementation: built
 ---
 
 # 0002: A modulith of a kernel, modules and lets

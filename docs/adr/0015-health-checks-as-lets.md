@@ -1,6 +1,7 @@
 ---
 status: accepted
 date: 2026-10-23
+implementation: built
 ---
 
 # 0015: Health checks are lets, aggregated by `hz system doctor`

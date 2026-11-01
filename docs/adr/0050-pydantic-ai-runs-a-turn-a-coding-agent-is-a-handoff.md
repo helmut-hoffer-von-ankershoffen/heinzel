@@ -1,6 +1,7 @@
 ---
 status: proposed
 date: 2026-10-24
+implementation: built
 decision-makers: maintainer (direction), architect (evaluation and shape)
 amends: 0029, 0045
 amends-0029: Pydantic AI in the core as the turn engine; runners are the handoff
