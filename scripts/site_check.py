@@ -129,7 +129,8 @@ def catalog_flow(page: "Page", total: int) -> None:
     page.get_by_role("checkbox", name="Included in the app").check()
     require(page.locator("[data-plugin]:visible").count() > 0, "Included plugins must remain discoverable")
     page.get_by_role("button", name="Reset filters").click()
-    search.fill(page.locator("[data-plugin] h3 a").first.inner_text())
+    # An included plugin has nothing to install, so the install flow needs one that is optional.
+    search.fill(page.locator('[data-plugin][data-included="false"] h3 a').first.inner_text())
     search.press("Tab")
     require(page.locator("#plugin-category").evaluate("e => e === document.activeElement"), "Keyboard order")
     page.locator("[data-plugin]:visible h3 a").first.click()
@@ -537,6 +538,16 @@ def drawer_flow(page: "Page", identity: str) -> None:
     require(not toggle.is_checked(), f"Tapping outside must close the drawer: {identity}")
 
 
+def static_install_flow(page: "Page", base: str) -> None:
+    """Without JavaScript an optional plugin shows its install command and an included one says it needs none."""
+    page.locator('[data-plugin][data-included="false"] h3 a').first.click()
+    require(page.locator("#plugin-install").is_visible(), "Static plugin detail must work without JS")
+    page.goto(base + "CATALOG/")
+    page.locator('[data-plugin][data-included="true"] h3 a').first.click()
+    require("nothing to install" in page.inner_text("main"), "An included plugin must say it needs no install")
+    require(page.locator("#plugin-install").count() == 0, "An included plugin shows no install command")
+
+
 def sweep(browser: "Browser", engine: str, base: str, axe: Path, snapshot: dict[str, Any]) -> None:
     """Exercise desktop/phone and light/dark combinations with real rendered artifacts."""
     total = len(snapshot["plugins"])
@@ -614,8 +625,7 @@ def sweep(browser: "Browser", engine: str, base: str, axe: Path, snapshot: dict[
     page = context.new_page()
     page.goto(base + "CATALOG/")
     require(page.locator("[data-plugin]:visible").count() == total, "Every plugin must be reachable without JS")
-    page.locator("[data-plugin] h3 a").first.click()
-    require(page.locator("#plugin-install").is_visible(), "Static plugin detail must work without JS")
+    static_install_flow(page, base)
     for project in snapshot["plugins"]:
         for _sound in project.get("soundscapes", []):
             page.goto(base + f"catalog/{project['id']}/")

@@ -28,7 +28,7 @@ This page fixes the names, taglines and claims of Heinzelmännchen. `tests/unit/
 ## ACME is the fictional company
 
 - **ACME**, all caps, is the display name of the made-up company in prose and UI text.
-- **`acme`** is the identifier in commands, package names and config, such as `hz acme` or `acme.example`.
+- **`acme`** is the identifier in commands, package names and config, such as `acme-example` on GitHub.
 - Mixed case is not used. Class names such as `AcmeService` follow code style. ADRs and research keep their history.
 
 ## Three guides, and only three

@@ -35,6 +35,23 @@ Stop with **Ctrl-C**. Background operation is optional. Run `hz setup` to choose
 
 [Continue to your first session →](first-steps.md)
 
+## Stable by default, edge if you ask
+
+Every command above, the app's update prompt and `hz system update` follow **stable**: releases that passed acceptance
+on macOS and Linux. Nothing moves you off it by accident.
+
+**Edge** is every green change, sooner and less tested. To choose it, or to go back:
+
+```sh
+hz system channel --to edge        # says what would change; changes nothing
+hz system channel --to edge --yes  # chooses edge; the next hz system update installs it
+hz system channel --to stable --yes
+```
+
+**Update channel** in Settings makes the same choice. It survives updates, and choosing a channel installs nothing
+until you update. Going back to stable never downgrades: edge stays installed until stable is as new, and then the next
+update moves you to stable. Your settings, plugins and data stay as they are.
+
 ## Building a plugin? Start with the SDK
 
 ```sh

@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Providers, queryClient } from "@/App";
 import { expectAccessible } from "@/test/render";
-import { ModuleHeader, PluginsSection, sourceLabel } from "./PluginsSection";
+import { CandidateDetails, ModuleHeader, PluginsSection, sourceLabel } from "./PluginsSection";
 
 const PINNED = `heinzel-crm @ git+https://github.com/acme-example/heinzel-crm@${"b".repeat(40)}`;
 
@@ -37,7 +37,7 @@ const candidate = {
   first_party: false,
   private: true,
   revision: "b".repeat(40),
-  installed_version: null,
+  installed_version: null as string | null,
   warnings: ["It is named crm-tools, not heinzel-<name> as plugins are (ADR 0025)."],
 };
 let receiptCount = 0;
@@ -245,6 +245,12 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("PluginsSection", () => {
+  it("says outright which installed version a plugin replaces, without opening the details", () => {
+    render(<CandidateDetails candidate={{ ...candidate, source: "git", installed_version: "0.9.3" }} />);
+    const line = screen.getByText(/Replaces 0\.9\.3/);
+    expect(line.closest("details")).toBeNull();
+  });
+
   it("does not call an uncompleted backend reply an installed plugin or restart the server", async () => {
     const calls = serve((url) =>
       url.pathname === "/api/system/plugin/add" || url.pathname === "/api/stream/system/plugin/add"

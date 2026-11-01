@@ -1030,6 +1030,27 @@ def test_e2e_sequence_stops_after_readme_failure(tmp_path, first_fails):
     assert (result.returncode != 0) is first_fails
 
 
+def _changes_outputs(tmp_path, event: str, changed: str) -> set[str]:
+    jobs = yaml.safe_load((REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))["jobs"]
+    script = next(step["run"] for step in jobs["changes"]["steps"] if step.get("id") == "paths")
+    stubs = tmp_path / "bin"
+    stubs.mkdir()
+    git = stubs / "git"
+    git.write_text(f"#!/bin/sh\nprintf '{changed}'\n")
+    git.chmod(0o700)
+    (tmp_path / "desktop").mkdir()
+    (tmp_path / "desktop" / "package.json").write_text("{}")
+    output = tmp_path / "output"
+    subprocess.run(
+        ["bash", "-c", script],
+        env={"PATH": f"{stubs}:/usr/bin:/bin", "EVENT": event, "BASE": "base", "GITHUB_OUTPUT": str(output)},
+        cwd=tmp_path,
+        check=True,
+        timeout=4,
+    )
+    return set(output.read_text().splitlines())
+
+
 @pytest.mark.parametrize(
     ("event", "changed", "core"),
     [
@@ -1044,22 +1065,7 @@ def test_e2e_sequence_stops_after_readme_failure(tmp_path, first_fails):
     ],
 )
 def test_only_a_prose_push_to_main_skips_the_core_jobs(tmp_path, event, changed, core):
-    jobs = yaml.safe_load((REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))["jobs"]
-    script = next(step["run"] for step in jobs["changes"]["steps"] if step.get("id") == "paths")
-    stubs = tmp_path / "bin"
-    stubs.mkdir()
-    git = stubs / "git"
-    git.write_text(f"#!/bin/sh\nprintf '{changed}'\n")
-    git.chmod(0o700)
-    output = tmp_path / "output"
-    subprocess.run(
-        ["bash", "-c", script],
-        env={"PATH": f"{stubs}:/usr/bin:/bin", "EVENT": event, "BASE": "base", "GITHUB_OUTPUT": str(output)},
-        cwd=tmp_path,
-        check=True,
-        timeout=4,
-    )
-    assert f"core={core}" in output.read_text().splitlines()
+    assert f"core={core}" in _changes_outputs(tmp_path, event, changed)
 
 
 @pytest.mark.parametrize(
@@ -1078,21 +1084,83 @@ def test_only_a_prose_push_to_main_skips_the_core_jobs(tmp_path, event, changed,
     ],
 )
 def test_electron_runs_for_its_paths_on_a_push_and_always_on_schedule_and_dispatch(tmp_path, event, changed, electron):
+    assert f"electron={electron}" in _changes_outputs(tmp_path, event, changed)
+
+
+def test_the_test_matrix_keeps_the_whole_output_of_a_failure():
     jobs = yaml.safe_load((REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))["jobs"]
-    script = next(step["run"] for step in jobs["changes"]["steps"] if step.get("id") == "paths")
-    stubs = tmp_path / "bin"
-    stubs.mkdir()
-    git = stubs / "git"
-    git.write_text(f"#!/bin/sh\nprintf '{changed}'\n")
-    git.chmod(0o700)
-    (tmp_path / "desktop").mkdir()
-    (tmp_path / "desktop" / "package.json").write_text("{}")
-    output = tmp_path / "output"
-    subprocess.run(
-        ["bash", "-c", script],
-        env={"PATH": f"{stubs}:/usr/bin:/bin", "EVENT": event, "BASE": "base", "GITHUB_OUTPUT": str(output)},
-        cwd=tmp_path,
-        check=True,
-        timeout=4,
-    )
-    assert f"electron={electron}" in output.read_text().splitlines()
+    step = next(step for step in jobs["test"]["steps"] if step.get("run") == "make test-parallel")
+    assert step["env"]["VERBOSE"] == "1"
+
+
+SITE_ONLY_PATHS = [
+    "docs/guides/install.md",
+    "docs/assets/website/site.css",
+    "docs/overrides/home.html",
+    "CONTRIBUTING.md",
+    "mkdocs.yml",
+    "scripts/site_pages.py",
+    "scripts/check_docs.py",
+    "tests/unit/site_catalog_test.py",
+    "tests/unit/docs_style_test.py",
+    "tests/unit/documentation_test.py",
+]
+
+
+@pytest.mark.parametrize("path", SITE_ONLY_PATHS)
+def test_a_site_pull_request_skips_the_app_jobs(tmp_path, path):
+    outputs = _changes_outputs(tmp_path, "pull_request", f"{path}\n")
+    assert "site_only=true" in outputs
+    assert "electron=false" in outputs
+
+
+@pytest.mark.parametrize(
+    ("event", "changed"),
+    [
+        ("pull_request", "README.md\n"),  # the end-to-end suite runs its commands
+        ("pull_request", "CHANGELOG.md\n"),
+        ("pull_request", "docs/install.sh\n"),
+        ("pull_request", ".github/workflows/docs.yml\n"),
+        ("pull_request", "template/README.md\n"),
+        ("pull_request", "docs/TEAMS.md\nsrc/heinzel/__init__.py\n"),
+        ("pull_request", ""),
+        ("push", "mkdocs.yml\n"),
+        ("schedule", "docs/TEAMS.md\n"),
+        ("workflow_dispatch", "docs/TEAMS.md\n"),
+    ],
+)
+def test_everything_else_runs_the_app_jobs(tmp_path, event, changed):
+    assert "site_only=false" in _changes_outputs(tmp_path, event, changed)
+
+
+def test_site_only_skips_exactly_the_app_test_jobs_and_ci_ok_waits_for_site_tests():
+    jobs = yaml.safe_load((REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))["jobs"]
+    for name in ("test", "coverage", "perf", "e2e"):
+        assert jobs[name]["if"] == "needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true'"
+    for name in ("lint", "build"):
+        assert "site_only" not in jobs[name]["if"]
+    assert jobs["site-tests"]["if"] == "needs.changes.outputs.site_only == 'true'"
+    assert "site-tests" in jobs["ci-ok"]["needs"]
+
+
+def test_site_only_agrees_with_the_pre_push_scope_and_runs_its_tests():
+    spec = importlib.util.spec_from_file_location("scoped_checks", REPO / "scripts" / "scoped_checks.py")
+    assert spec
+    assert spec.loader
+    scoped = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(scoped)
+    tooling = [path for path in SITE_ONLY_PATHS if path.startswith(("scripts/", "tests/"))]
+    assert scoped.scoped_steps(tooling) is not None
+    assert scoped.scoped_steps([path for path in SITE_ONLY_PATHS if path not in tooling]) is not None
+    jobs = yaml.safe_load((REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))["jobs"]
+    assert any(step.get("run", "").startswith("make test-site") for step in jobs["site-tests"]["steps"])
+    recipe = (REPO / "Makefile").read_text(encoding="utf-8").split("\ntest-site:", 1)[1].split("\n\n", 1)[0]
+    assert set(scoped.MARKDOWN_TESTS) <= set(recipe.replace('"', " ").split())
+
+
+def test_release_versions_ignore_edge_tags_and_stay_under_plugin_caps():
+    """An unanchored pattern read `edge-v1.2.3.dev4` as a release; a feature must stay under plugins' `<0.10` caps."""
+    cliff = tomllib.loads((REPO / "pyproject.toml").read_text(encoding="utf-8"))["tool"]["git-cliff"]
+    assert cliff["git"]["tag_pattern"].startswith("^v")
+    assert cliff["bump"]["features_always_bump_minor"] is False
+    assert cliff["bump"]["breaking_always_bump_major"] is False
