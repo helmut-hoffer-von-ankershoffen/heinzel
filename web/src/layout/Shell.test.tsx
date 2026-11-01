@@ -66,7 +66,7 @@ describe("Shell", () => {
   it("has the three landmarks, a skip link and every section in the navigation tree in expert mode", async () => {
     mockApi({ ...answers, "/api/system/expert": expert });
     const { container } = renderAt("/doctor"); // Home is the chat itself, so it has no chat sidebar
-    expect(screen.getByRole("link", { name: "Home" })).toHaveAttribute("href", "/");
+    expect(screen.getByRole("link", { name: "Today" })).toHaveAttribute("href", "/");
     const navigation = screen.getByRole("navigation", { name: "Main" });
     for (const name of ["Workflow", "Org chart", "Team roster", "Types", "Artifacts"]) {
       expect(await within(navigation).findByRole("link", { name })).toBeInTheDocument();

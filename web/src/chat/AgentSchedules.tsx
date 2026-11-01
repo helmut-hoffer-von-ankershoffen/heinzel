@@ -12,6 +12,7 @@ import {
   validNotificationPolicy,
 } from "@/chat/ScheduledNotificationConsent";
 import { Button } from "@/components/ui/button";
+import { t } from "@/i18n";
 
 async function result<T>(call: Promise<{ data?: T; error?: unknown; response: Response }>): Promise<T> {
   const { data, error, response } = await call;
@@ -228,11 +229,7 @@ export function AgentSchedules({ sessionId }: { sessionId: string }) {
       <details className="rounded border border-border p-3 text-sm">
         <summary className="cursor-pointer font-medium">Recurring agent turns</summary>
         <div className="space-y-3 pt-2">
-          <p>
-            Set a cadence for this agent’s accepted terms. Approval is separate. This path uses the selected Claude
-            subscription and has unknown cost. Connected reads require separate approval and are included only when
-            selected below.
-          </p>
+          <p>{t("schedules.intro")}</p>
           <section className="space-y-2 rounded border border-border p-2" aria-label="Chat schedule suggestion">
             <p className="font-medium">Chat schedule suggestion</p>
             <Button type="button" size="sm" variant="outline" onClick={() => void suggestion.refetch()}>
@@ -267,9 +264,9 @@ export function AgentSchedules({ sessionId }: { sessionId: string }) {
                 )}
                 {suggestion.data.suggested_reads.length > 0 && (
                   <p className="break-words">
-                    Suggested reads:{" "}
-                    {suggestion.data.suggested_reads.map((read) => `${read.capability}.${read.method}`).join(", ")}.
-                    These do not grant access. Choose an already approved read separately.
+                    {t("schedules.suggestedReads", {
+                      reads: suggestion.data.suggested_reads.map((read) => `${read.capability}.${read.method}`).join(", "),
+                    })}
                   </p>
                 )}
               </>

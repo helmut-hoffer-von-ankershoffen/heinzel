@@ -207,7 +207,7 @@ function NotificationDraft({ sessionId, requestId }: { sessionId: string; reques
       {chatId && chat.isError && <p role="alert">The saved review conversation could not be verified.</p>}
       {error && (
         <p role="alert">
-          The outcome could not be verified. Inspect the saved action; it will not be retried automatically.
+          The outcome could not be verified. Inspect the saved action; it will not be retried.
         </p>
       )}
       {draft.data && <DraftTerms proposal={draft.data} />}

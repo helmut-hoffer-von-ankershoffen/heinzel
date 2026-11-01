@@ -469,8 +469,9 @@ class HeinzelSettings(ModuleSettings):
     )
     team_repository: Path | None = Field(
         default=None,
-        description="Deprecated: `hz team join` or `hz team adopt` sets your team's checkout in `[team]` instead. A "
-        "checkout of your team's state repository, used when `[team]` names none; its contracts are in `workflows/`.",
+        description="Deprecated: joining or adopting a team with hz now sets your team's checkout. A checkout of "
+        "your team's state repository, used when no team checkout is set; its contracts are in the workflows "
+        "folder.",
         json_schema_extra={"deprecated": True},  # the web app's Settings leave it out
     )
     schedule_team: list[str] = Field(
@@ -497,7 +498,7 @@ class HeinzelSettings(ModuleSettings):
         gt=0,
         allow_inf_nan=False,
         title="Most per durable chat",
-        description="The most one durable Heinzel conversation may cost in US dollars on direct API model turns.",
+        description="The most one saved chat with a helper may cost in US dollars on direct API replies.",
         json_schema_extra={"x-unit": "usd"},
     )
     message_max_usd: float = Field(
@@ -505,7 +506,7 @@ class HeinzelSettings(ModuleSettings):
         ge=0,
         allow_inf_nan=False,
         title="Most per message",
-        description="The most one direct API model turn in a durable Heinzel conversation may cost in US dollars.",
+        description="The most one direct API reply in a saved chat with a helper may cost in US dollars.",
         json_schema_extra={"x-unit": "usd"},
     )
 
@@ -513,7 +514,7 @@ class HeinzelSettings(ModuleSettings):
         default="plan-unknown",
         title="Subscription chat budget",
         description="Subscription plans use provider limits and report unknown dollar cost; USD caps govern APIs. "
-        "Select usd-cap to require a dollar limit, which currently blocks subscription turns.",
+        "With a dollar cap, every turn must stay under the dollar limit, so subscription turns are blocked for now.",
     )
 
     retention_days: int = Field(

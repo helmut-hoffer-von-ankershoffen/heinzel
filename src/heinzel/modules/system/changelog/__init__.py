@@ -37,7 +37,7 @@ class ChangelogSettings(ModuleSettings):
         validation_alias=AliasChoices("HZ_SYSTEM_CHANGELOG__GITHUB_TOKEN", "GH_TOKEN", "GITHUB_TOKEN"),
         title="GitHub token",
         description="A GitHub token for reading what newer releases bring, which works without "
-        "one at a lower rate limit. Also read from GH_TOKEN or GITHUB_TOKEN, sent to "
+        "one at a lower rate limit. Also read from GH_TOKEN or GITHUB_TOKEN, used with "
         "GitHub only, and never by the hourly update check.",
         json_schema_extra={"x-expert": True},
     )
@@ -96,7 +96,7 @@ def changelog(
     """Show the installed version's changelog as Markdown, or with `--newer` what newer releases bring.
 
     Only `--newer` uses the network: GETs to the GitHub releases API of the repository in the uv tool receipt (or the
-    default repository) with a `heinzel/<version>` User-Agent (ADR 0031), a few pages at most, and the GitHub token
+    default repository) with a `heinzel/<version>` User-Agent, a few pages at most, and the GitHub token
     of the settings (GH_TOKEN, GITHUB_TOKEN) if one is set; unauthenticated otherwise.
 
     Raises:

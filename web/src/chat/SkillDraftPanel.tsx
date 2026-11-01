@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { api, type SchemaHeinzelProposeSkillDraftInput, type SchemaSkillDraft } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import { SkillSharingPanel } from "./SkillSharingPanel";
+import { t } from "@/i18n";
 
 type DraftRequest = SchemaHeinzelProposeSkillDraftInput;
 type Scope = DraftRequest["requested_scope"];
@@ -228,10 +229,7 @@ export function SkillDraftPanel({ sessionId }: { sessionId: string }) {
       <summary className="cursor-pointer font-medium">
         Skill draft{pending ? (saving ? " · saving" : " · retry needed") : ""}
       </summary>
-      <p className="mt-2 text-sm text-muted-foreground">
-        Drafts are private. The requested sharing scope is not verified and grants no access. Saving does not publish or
-        execute files.
-      </p>
+      <p className="mt-2 text-sm text-muted-foreground">{t("skillDraft.privacy")}</p>
       {error && (
         <p role="alert" className="text-sm">
           {error}
@@ -292,9 +290,7 @@ export function SkillDraftPanel({ sessionId }: { sessionId: string }) {
               </Button>
             )}
           </div>
-          <p className="text-xs text-muted-foreground">
-            Until the save is confirmed, this tab retains the draft for retry.
-          </p>
+          <p className="text-xs text-muted-foreground">{t("skillDraft.retryNote")}</p>
         </section>
       ) : (
         <form
@@ -434,10 +430,7 @@ export function SkillDraftPanel({ sessionId }: { sessionId: string }) {
                 )}
               </fieldset>
             ))}
-            <p className="text-xs text-muted-foreground">
-              Use SKILL.md plus text under references/, templates/ or assets/, and Python files under scripts/. Up to 16
-              files; each at most 24 KiB and the encoded form under 47 KiB.
-            </p>
+            <p className="text-xs text-muted-foreground">{t("skillDraft.fileLimits")}</p>
             <div className="flex flex-wrap gap-2">
               <Button
                 type="button"

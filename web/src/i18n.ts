@@ -1,4 +1,8 @@
 // Every string the app shows, in one catalogue (ADR 0039): adding a language is a file, not a refactor.
+// Shared by the notification test and the settings hint, so the iPhone and iPad advice has one wording.
+const IOS_INSTALL =
+  "On iPhone or iPad, use Share → Add to Home Screen, open hz from that icon, then allow notifications. Keep hz open to receive notices; background push is not available.";
+
 const en = {
   "personal.title": "Personal Heinzels",
   "personal.intro": "Give each personal Heinzel a name and look. Creating one does not start a schedule.",
@@ -52,7 +56,7 @@ const en = {
   "durable.scheduleCadence": "Cadence",
   "durable.schedulePreview": "Preview hash",
   "durable.daemonAbsent":
-    "The schedule is saved, but no background daemon is installed, so check-ins are dormant. Installing it changes what starts automatically when you sign in; confirm that change in Settings.",
+    "The schedule is saved, but no background daemon is installed, so check-ins are dormant. Installing it changes what starts when you sign in; confirm that change in Settings.",
   "durable.daemonPaused": "The schedule is saved, but the background daemon is paused, so check-ins are dormant.",
   "durable.daemonCadence":
     "The daemon cadence is unknown or slower than five minutes. Check-ins need a tick every five minutes; use `hz system daemon install --interval 5m` to set that cadence.",
@@ -119,7 +123,7 @@ const en = {
   "daemon.restart": "Restart",
   "daemon.refresh": "Refresh",
   "daemon.confirm": "{action} the daemon?",
-  "daemon.persistenceHint": "This changes what starts automatically when you sign in. Confirm to apply it now.",
+  "daemon.persistenceHint": "This changes what starts when you sign in. Confirm to apply it now.",
   "daemon.configuration": "Service configuration",
   "contrib.toggle.pending": "Requested; not ready. Switch off to cancel.",
   "contrib.toggle.on": "On",
@@ -209,11 +213,44 @@ const en = {
   "app.name": "Heinzelmännchen",
   "top.copyCommand": "Copy the hz command",
   "top.copyLink": "Copy link to this screen",
+  "artifacts.title": "Personal Heinzelmännchen associations",
+  "artifacts.note": "You added these links. hz has not checked your access to the files.",
+  "artifacts.none": "No local file associations for this helper.",
+  "artifacts.loadError": "Personal helpers could not be loaded.",
+  "artifacts.choose": "Choose a personal helper",
+  "artifacts.pick": "Choose a helper",
+  "chat.createPersonal": "Create a helper and take this message",
+  "chat.creatingPersonal": "Creating your helper…",
+  "skillDraft.privacy":
+    "Drafts are private. The sharing scope you asked for has not been checked and gives no access. Saving does not share or run files.",
+  "skillDraft.retryNote": "Until the save is confirmed, this tab keeps the draft so you can retry.",
+  "skillDraft.fileLimits":
+    "Use SKILL.md plus text under references/, templates/ or assets/, and Python files under scripts/. Up to 16 files; each at most 24 KiB and the encoded form under 47 KiB.",
+  "schedules.intro":
+    "Set how often this helper runs under its accepted terms. Approval is separate. This path uses the selected Claude subscription and has unknown cost. Connected reads need separate approval and are included only when you select them below.",
+  "schedules.suggestedReads": "Suggested reads: {reads}. These give no access. Choose an already approved read separately.",
+  "scheduledNotify.note":
+    "Optional and off by default. At most one attempt per turn. Content may appear on this device; queued does not mean shown. Item identities come from the provider and do not guarantee complete source history.",
+  "audio.visualizerHelp":
+    "You choose the browser source. Audio stays in this tab and is not recorded or uploaded. Browser or operating system audio sharing may be unavailable.",
+  "proposal.intro":
+    "You write these terms for later review. They do not start a helper or give approval; limits are not enforced. This preview cannot yet describe MCP, shell, or CLI permissions.",
+  "proposal.askRevise": "Ask your helper in chat to revise these subscription terms.",
+  "proposal.confirmError":
+    "Could not confirm the proposal. Retry the same request or reload the chat to inspect the latest terms.",
+  "readSet.intro":
+    "Choose up to four sources to review together. Suggestions give no access. Your approval applies to these sources in direct chat; it does not turn on scheduled access.",
+  "readSet.askHelper":
+    "Tell your helper in the chat which information you want to use, and ask it to suggest sources for review.",
+  "readSet.outcomeUnclear":
+    "The outcome needs inspection; confirmation will not be retried. Check the outcome or start a new review below.",
+  "readSet.decisionUnclear":
+    "The decision outcome needs inspection; it will not be retried. Select Check decision outcome to look again.",
   "top.refresh": "Refresh",
   "command.copied": "Copied",
   "app.skip": "Skip to content",
   "nav.label": "Main",
-  "nav.home": "Home",
+  "nav.home": "Today",
   "nav.heinzelmaennchen": "Heinzelmännchen",
   "nav.settings": "Settings",
   "nav.contracts": "Contracts",
@@ -223,7 +260,7 @@ const en = {
   "nav.team": "Team roster",
   "nav.artifacts": "Artifacts",
   "nav.assetTypes": "Types",
-  "nav.assets": "Artifacts",
+  "nav.assets": "Inventory",
   "nav.doctor": "Doctor",
   "nav.profile": "Profile",
   "account.help": "Get help",
@@ -312,7 +349,7 @@ const en = {
   "nav.collapse": "Collapse navigation",
   "nav.expand": "Expand navigation",
   "search.open": "Search",
-  "search.label": "Search navigation, settings, contracts and assets",
+  "search.label": "Search navigation, settings, contracts and artifacts",
   "search.placeholder": "Search…",
   "search.none": "Nothing matches.",
   "theme.toggle": "Switch between light and dark",
@@ -494,15 +531,15 @@ const en = {
   "zones.search": "Search time zones",
   "zones.none": "No time zone matches.",
   "settings.openFolder": "Open folder",
-  "contracts.title": "Workflow",
+  "contracts.title": "Contracts",
   "contracts.intro":
-    "Contracts, the assets they maintain and what they read. Select a contract to open it; cycles and unmaintained inputs are listed below.",
+    "Contracts, the artifacts they keep true and what they read. Select a contract to open it; cycles and unmaintained inputs are listed below.",
   "contracts.empty": "No contracts yet. Start one:",
   "contracts.cycles": "Cycles: these contracts depend on themselves and don't run",
   "contracts.unmaintained": "Inputs no contract maintains",
   "contracts.list": "All contracts",
   "contracts.kind.contract": "contract",
-  "contracts.kind.asset": "asset",
+  "contracts.kind.asset": "artifact",
   "contracts.kind.source": "source",
   "heinzel.title": "Heinzelmännchen",
   "heinzel.intro":
@@ -537,7 +574,7 @@ const en = {
   "org.title": "Org chart",
   "org.intro": "Your manager and direct reports as the directory capability has them. Guesses are marked as guesses.",
   "org.notYet":
-    "No operation reads the directory capability yet: declaring one would make the one-on-ones adapter's calendar requirement unmet on every installation without a calendar, so the chart comes with the roster step of setup. See which adapter serves `directory` now:",
+    "Reporting lines are guessed from your calendar. Connect a calendar in Settings to see them.",
   "team.title": "Team roster",
   "team.none": "You aren't in a team yet. Join your team's repository, or create one:",
   "team.handle": "Handle",
@@ -549,7 +586,7 @@ const en = {
   "inventory.typesIntro": "What plugins' playbooks keep track of, and how to find it.",
   "inventory.typesEmpty": "No playbooks installed. Plugins bring them:",
   "inventory.assetsTitle": "Artifacts",
-  "inventory.assetsIntro": "Candidates for each asset type, found through the capabilities you bound. Reads only.",
+  "inventory.assetsIntro": "Candidates for each artifact type, found through the capabilities you bound. Reads only.",
   "inventory.assetsEmpty": "No candidates found.",
   "inventory.search": "Find candidates",
   "profile.title": "Profile",
@@ -619,7 +656,7 @@ const en = {
   "plugins.modules": "Modules: {modules}",
   "plugins.community": "Community",
   "plugins.custom": "Custom",
-  "plugins.firstParty": "First-Party",
+  "plugins.firstParty": "First-party",
   "plugins.installed": "Installed",
   "plugins.private": "Private",
   "plugins.plugin": "Plugin",
@@ -692,8 +729,7 @@ const en = {
   "notify.result.inApp": "The test was added to Notifications in this app.",
   "notify.app.open": "This app is open. Read the test in Notifications.",
   "notify.browser.failed": "Notifications are allowed, but this browser could not show the test.",
-  "notify.browser.install":
-    "On iPhone or iPad, use Share → Add to Home Screen, open hz from that icon, then allow notifications. Keep hz open to receive notices; background push is not available.",
+  "notify.browser.install": IOS_INSTALL,
   "notify.works": "works",
   "notify.blocked": "doesn't work",
   "notify.channel.web": "This app",
@@ -811,7 +847,7 @@ const en = {
   "chat.cacheWrite": "{count} cache write",
   "chat.costLabel": "Cost",
   "chat.whyCost":
-    'A coding agent\'s CLI sends its system prompt and tool list with every request, so even "hi" costs about 10–15 ¢ at API prices; a model API through Pydantic AI is far cheaper per message.',
+    'A coding agent\'s CLI includes its system prompt and tool list with every request, so even "hi" costs about 10–15 ¢ at API prices; a model API through Pydantic AI is far cheaper per message.',
   "chat.modelDefault": "Default",
   "chat.modelPicker": "Model and effort: {choice}",
   "chat.modelMenu": "Models of {access}",
@@ -843,8 +879,7 @@ const en = {
   "notify.state.denied":
     "Your browser blocks notifications from this page. Allow them in the browser's site settings, then turn this on.",
   "notify.state.unsupported": "This browser can't show system notifications. Read your notifications inside this app.",
-  "notify.state.install":
-    "On iPhone or iPad, use Share → Add to Home Screen, open hz from that icon, then allow notifications. Keep hz open to receive notices; background push is not available.",
+  "notify.state.install": IOS_INSTALL,
   "notify.sound.toggle": "Play a sound for new notifications",
   "notify.sound.help": "A short ding plays while this app is open. This setting is separate from your music.",
   "notify.sound.gesture": "Your browser couldn't start audio. Try enabling this after clicking or tapping the page.",
@@ -868,7 +903,7 @@ const en = {
   "error.retry": "Try again",
   "splash.retrying": "Trying again every few seconds; this page reconnects by itself.",
   "workflow.intro":
-    "What hz knows of your workflow: the systems you connected, the assets playbooks keep and discovery finds, your contracts and the ones playbooks suggest, and what they maintain. Select a node for its details and its command.",
+    "What hz knows of your workflow: the systems you connected, the artifacts playbooks keep and discovery finds, your contracts and the ones playbooks suggest, and what they maintain. Select a node for its details and its command.",
   "workflow.graph": "Workflow graph",
   "workflow.minimap": "Overview of the workflow graph",
   "workflow.legend": "Legend",
@@ -883,8 +918,8 @@ const en = {
   "workflow.suggested": "suggested",
   "workflow.unmaintainedBadge": "nobody",
   "workflow.kind.source": "System",
-  "workflow.kind.assetType": "Asset type",
-  "workflow.kind.asset": "Discovered asset",
+  "workflow.kind.assetType": "Artifact type",
+  "workflow.kind.asset": "Discovered artifact",
   "workflow.kind.contract": "Contract",
   "workflow.kind.template": "Suggested contract",
   "workflow.kind.output": "Output",
@@ -894,7 +929,7 @@ const en = {
   "workflow.panel.keptBy": "Kept true by",
   "workflow.panel.hints": "Found by",
   "workflow.panel.found": "Discovered",
-  "workflow.panel.type": "Asset type",
+  "workflow.panel.type": "Artifact type",
   "workflow.panel.ref": "Reference",
   "workflow.panel.foundBy": "Found through",
   "workflow.panel.open": "Open it",
@@ -902,7 +937,7 @@ const en = {
   "workflow.panel.readsAssets": "Reads",
   "workflow.panel.keeps": "Keeps true",
   "workflow.panel.templateHow":
-    "The command writes the template into your workflows directory; discovered assets fill its placeholders. Nothing runs until you run it.",
+    "The command writes the template into your contracts folder; discovered artifacts fill its placeholders. Nothing runs until you run it.",
   "workflow.panel.name": "Name",
   "workflow.panel.openContract": "Open the contract",
   "workflow.panel.suggestedOutput": "The draft this template would maintain, once you write it.",
@@ -922,11 +957,11 @@ const en = {
     "A contract reads your systems and keeps one document true. Write a starter, or install a plugin whose playbook suggests contracts for your kind of work:",
   "nav.teamGraph": "Team graph",
   "teamGraph.intro":
-    "Who reads and writes what across the team, and whether each promise is kept. Open an artifact where it lives, or a Heinzelmännchen's page.",
+    "Who reads and writes what across the team, and whether each contract keeps its artifact true. Open an artifact where it lives, or a Heinzelmännchen's page.",
   "teamGraph.graph": "Team graph",
   "teamGraph.minimap": "Team graph overview",
   "teamGraph.legend": "Legend",
-  "teamGraph.legend.states": "Promise states",
+  "teamGraph.legend.states": "Contract states",
   "teamGraph.legend.kinds": "Kinds of node",
   "teamGraph.state.on_time": "On time",
   "teamGraph.state.waiting_for_approval": "Waiting for approval",
@@ -939,12 +974,12 @@ const en = {
   "teamGraph.kind.group": "Artifact with parts",
   "teamGraph.relation.reads": "reads",
   "teamGraph.relation.writes": "writes",
-  "teamGraph.promises": "Promises",
+  "teamGraph.promises": "Contracts",
   "teamGraph.promise": "{actor} {relation} {object}: {state}",
   "teamGraph.newTab": "(opens in a new tab)",
   "teamGraph.ask": "Ask about {label} in the chat",
   "teamGraph.summary.flow": "The team's flow",
-  "teamGraph.summary.kept": "{flow}: every promise kept",
+  "teamGraph.summary.kept": "{flow}: every contract kept",
   "teamGraph.summary.waitingOne": "{flow} waiting on 1 update",
   "teamGraph.summary.waitingMany": "{flow} waiting on {count} updates",
   "teamGraph.summary.late": "{count} late",
@@ -953,7 +988,7 @@ const en = {
   "teamGraph.empty": "No team graph yet — Heinzelmännchen report what they read and write; run:",
   "fromClaude.title": "From Claude",
   "fromClaude.intro":
-    "The MCP servers and skills you already set up for Claude on this computer. hz only lists them for now and uses none of them. Secret values are never read: you see the names of the variables and headers a server is given.",
+    "The MCP servers and skills you already set up for Claude on this computer. hz lists them; it does not use them. Secret values are never read: you see the names of the variables and headers a server is given.",
   "fromClaude.rescan": "Rescan",
   "fromClaude.servers": "MCP servers",
   "fromClaude.skills": "Skills",

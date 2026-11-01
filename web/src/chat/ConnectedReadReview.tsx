@@ -535,7 +535,7 @@ export function ConnectedReadReview({ sessionId }: { sessionId: string }) {
       {action?.status === "declined" && <p>This review was declined.</p>}
       {(action?.status === "running" || action?.status === "uncertain") && (
         <div role="alert">
-          <p>The outcome requires inspection; confirmation will not be repeated automatically.</p>
+          <p>The outcome needs inspection; confirmation will not be retried. Select Check outcome to look again.</p>
           <Button type="button" size="sm" disabled={busy} onClick={() => void recover()}>
             Check outcome
           </Button>

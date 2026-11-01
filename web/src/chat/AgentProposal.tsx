@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api, problem, type SchemaScheduledAgentProposal } from "@/api/client";
 import { Button } from "@/components/ui/button";
+import { t } from "@/i18n";
 
 type Proposal = SchemaScheduledAgentProposal;
 type Request = {
@@ -158,10 +159,7 @@ export function AgentProposal({ sessionId }: { sessionId: string }) {
   return (
     <section aria-label="Scheduled agent proposal" className="space-y-2 rounded-lg border border-border p-3 text-sm">
       <h3 className="font-medium">Scheduled agent proposal</h3>
-      <p>
-        You write these terms for later review. They do not start an agent or grant approval; limits are not enforced.
-        This preview cannot yet describe MCP, shell, or CLI permissions.
-      </p>
+      <p>{t("proposal.intro")}</p>
       {loading ? (
         <p role="status">Loading proposal…</p>
       ) : (
@@ -180,7 +178,7 @@ export function AgentProposal({ sessionId }: { sessionId: string }) {
             </div>
           )}
           {proposal?.max_usd === null && !pending ? (
-            <p>Ask your Heinzel in chat to revise these subscription terms.</p>
+            <p>{t("proposal.askRevise")}</p>
           ) : (
             <form
               onSubmit={(event) => {
@@ -236,9 +234,7 @@ export function AgentProposal({ sessionId }: { sessionId: string }) {
       )}
       {recovery.blocked && <p role="alert">The pending proposal could not be recovered; no new proposal was sent.</p>}
       {error && (
-        <p role="alert">
-          Could not confirm the proposal. Retry the same request or reload the chat to inspect the latest terms.
-        </p>
+        <p role="alert">{t("proposal.confirmError")}</p>
       )}
     </section>
   );

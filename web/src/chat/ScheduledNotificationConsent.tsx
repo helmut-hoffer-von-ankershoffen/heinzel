@@ -1,4 +1,5 @@
 import type { components } from "@/api/schema";
+import { t } from "@/i18n";
 
 type Policy = components["schemas"]["ScheduledNotificationPolicy"];
 
@@ -107,8 +108,7 @@ export function ScheduledNotificationConsent({
         Allow this agent to queue local notifications during these scheduled turns.
       </label>
       <p>
-        Optional and off by default. At most one attempt per turn. Content may appear on this device; queued does not
-        mean shown. Item identities are provider-reported and do not guarantee complete source history.
+        {t("scheduledNotify.note")}
       </p>
       {enabled && (
         <div className="space-y-2">

@@ -50,8 +50,8 @@ class ChatSettings(ModuleSettings):
     tools: Literal["everyday", "all"] = Field(
         default="everyday",
         title="What the chat can use",
-        description="Which operations the chat's agent can use: the everyday ones, or all of them. Every tool is sent "
-        "with every message, so fewer make each message cheaper.",
+        description="Which operations the chat's helper can use: the everyday ones, or all of them. Every tool "
+        "is included with every message, so fewer make each message cheaper.",
         json_schema_extra={"x-expert": True},
     )
 
@@ -71,7 +71,7 @@ class ChatContext(BaseModel):
         default="",
         max_length=4000,
         description="What the opener knows about it, in words (a notification's title and body); email addresses are "
-        "never sent to the agent.",
+        "never shared with the helper.",
     )
     request_id: str | None = Field(
         default=None, description="The idempotency key for opening a scoped durable check-in conversation."

@@ -135,12 +135,12 @@ def new(
     asset: Annotated[
         list[str] | None,
         Field(
-            description="Fill a template's asset placeholder as type=reference, e.g. weekly-report=doc-123 "
+            description="Fill a template's artifact placeholder as type=reference, e.g. weekly-report=doc-123 "
             "(`hz heinzel discover` finds candidates); repeat for each."
         ),
     ] = None,
 ) -> NewContract:
-    """Write a starter contract, or a playbook's template (--template), into your workflows directory."""
+    """Write a starter contract, or a playbook's template (--template), into your contracts folder."""
     return service.new(name, team=team, template=template, assets=_assets(asset or []))
 
 
@@ -157,7 +157,7 @@ def _assets(pairs: list[str]) -> dict[str, str]:
             msg = f"--asset {pair!r} must read type=reference, e.g. weekly-report=doc-123"
             raise HeinzelError(msg)
         if key in found:
-            msg = f"--asset {key} is given twice; give each asset type once"
+            msg = f"--asset {key} is given twice; give each artifact type once"
             raise HeinzelError(msg)
         found[key] = value
     return found
@@ -165,7 +165,7 @@ def _assets(pairs: list[str]) -> dict[str, str]:
 
 @module.operation(render=render_playbooks, heads={"cli", "mcp", "web"}, aliases=["workflow playbooks"])
 def playbooks(service: HeinzelService) -> PlaybookList:
-    """List the playbooks plugins contribute: asset types, template contracts and recommended settings."""
+    """List the playbooks plugins contribute: artifact types, template contracts and recommended settings."""
     return service.playbooks()
 
 
@@ -178,7 +178,7 @@ def discover(
         str | None, Field(description="Only this module's playbook; every playbook's if omitted.")
     ] = None,
 ) -> Discovery:
-    """Find candidates for each playbook's asset types through the capabilities you have bound; reads only."""
+    """Find candidates for each playbook's artifact types through the capabilities you have bound; reads only."""
     return service.discover(playbook)
 
 
@@ -189,7 +189,7 @@ class _PlaybookSetup(PlaybookSetup):
         self._service = service
 
     def run(self, playbook: PlaybookLet, prompter: Prompter, editor: ConfigEditor) -> None:
-        """Propose the playbook's settings, its assets and its templates; apply only what is accepted."""
+        """Propose the playbook's settings, its artifacts and its templates; apply only what is accepted."""
         self._service.setup(playbook, prompter, editor)
 
 
