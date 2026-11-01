@@ -917,6 +917,9 @@ calls = []
 def runner(command, *_args, **_kwargs):
     if command == [uv, "tool", "dir", "--bin"]:
         return subprocess.run(command, capture_output=True, text=True, check=False, timeout=15)
+    if command[-1:] == ["managername"]:
+        # The desktop-session check of newer SDKs. The harness itself refuses a non-Aqua session before any case.
+        return subprocess.CompletedProcess(command, 0, "Aqua\n", "")
     calls.append(command)  # Never executed: this is the interception.
     return subprocess.CompletedProcess(command, 0, "", "")
 
