@@ -75,6 +75,10 @@ check: ## Everything CI checks that runs offline, in parallel: lint, import cont
 linux-user-manager-proof: ## Inspect an existing Linux user manager without starting services; set PROBE_PREFIX
 	uv run python tests/integration/linux_user_manager_probe.py --prefix "$${PROBE_PREFIX:?Set PROBE_PREFIX to an isolated heinzel-probe- name}"
 
+# The pre-push hook (scripts/scoped_checks.py push) narrows UNIT_TARGETS to the tests related to the branch and sets
+# FAST_TYPES to the type checks; by hand both stay empty and this is the full unit run.
+FAST_TYPES ?=
+UNIT_TARGETS ?=
 # Unit tests take every core and have a 5 s budget each; Vitest beside them starved them into timeouts, so it runs after.
 check-fast: ## Seconds-fast feedback for the edit loop: format, lint, contracts, generated files, unit tests
 	@$(WEB) prepare
@@ -86,8 +90,8 @@ check-fast: ## Seconds-fast feedback for the edit loop: format, lint, contracts,
 		"&docs=env -u HZ_SYSTEM_AGENT__SKILL_DIRS uv run python scripts/generate_docs.py --check" \
 		"&demo=uv run --script scripts/demo_tape.py --check" \
 		"&attributions=uv run --quiet --script scripts/attributions.py --check" \
-		$(WEB_LINT) $(WEB_TYPES) \
-		"unit=uv run pytest -m 'unit and not perf' -n auto -x -q --session-timeout=120" $(subst &web-tests,web-tests,$(WEB_TESTS)) $(MANAGED_CHECK)
+		$(FAST_TYPES) $(WEB_LINT) $(WEB_TYPES) \
+		"unit=uv run pytest $(UNIT_TARGETS) -m 'unit and not perf' -n auto -x -q --session-timeout=120" $(subst &web-tests,web-tests,$(WEB_TESTS)) $(MANAGED_CHECK)
 
 preflight: ## What CI checks, before you push: check with coverage, template, build, commits (PREFLIGHT=full adds e2e, audit)
 	@$(WEB) prepare
