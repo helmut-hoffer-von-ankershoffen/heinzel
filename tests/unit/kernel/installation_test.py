@@ -999,3 +999,31 @@ def test_tool_install_rejects_stale_command_after_interpreter_switch(tmp_path):
     link.symlink_to(other)
     with installation.tool_transaction(), pytest.raises(HeinzelError, match="selected tool interpreter changed"):
         installation.attempt(command, "update")
+
+
+def test_remove_transient_constraint_removes_several_and_only_them(tmp_path):
+    prefix, _ = _target_fixture(tmp_path)
+    receipt = prefix / "uv-receipt.toml"
+    original = receipt.read_text()
+    installation = Installation(Progress(), prefix=prefix)
+    policy = installation.capture_tool_constraint_policy()
+    receipt.write_text(
+        original + 'constraints = [{name="heinzel", specifier="==0.9.7"}, {name="heinzel-a", specifier="==1.0"}]\n'
+    )
+    installation.remove_transient_tool_constraint(
+        expected=installation.startup_fingerprint(), original=policy, added=("heinzel==0.9.7", "heinzel-a==1.0")
+    )
+    assert "constraints" not in tomllib.loads(receipt.read_text())["tool"]
+
+
+def test_remove_transient_constraint_refuses_a_different_set(tmp_path):
+    prefix, _ = _target_fixture(tmp_path)
+    receipt = prefix / "uv-receipt.toml"
+    original = receipt.read_text()
+    installation = Installation(Progress(), prefix=prefix)
+    policy = installation.capture_tool_constraint_policy()
+    receipt.write_text(original + 'constraints = [{name="heinzel", specifier="==0.9.7"}]\n')
+    with pytest.raises(HeinzelError, match="constraints changed"):
+        installation.remove_transient_tool_constraint(
+            expected=installation.startup_fingerprint(), original=policy, added=("heinzel==0.9.7", "heinzel-a==1.0")
+        )

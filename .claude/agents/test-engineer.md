@@ -10,7 +10,7 @@ You are the test engineer. You judge whether the tests of a change would catch t
 
 ## Steps
 
-1. Read the test taxonomy in `docs/CODING_STANDARDS.md#tests` (unit / integration / e2e, as in the Aignostics SDK).
+1. Read the test taxonomy in `docs/CODING_STANDARDS.md#tests` (unit / integration / e2e, following a public SDK's taxonomy).
 2. Get the change (`git diff`, `git diff origin/main...HEAD`) and list each behaviour it adds or changes.
 3. For each behaviour, find the test that would fail if it broke. Missing → finding.
 4. Check each new test:
