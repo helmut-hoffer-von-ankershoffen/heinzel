@@ -1178,3 +1178,13 @@ def test_release_versions_ignore_edge_tags_and_stay_under_plugin_caps():
     assert cliff["git"]["tag_pattern"].startswith("^v")
     assert cliff["bump"]["features_always_bump_minor"] is False
     assert cliff["bump"]["breaking_always_bump_major"] is False
+
+
+def test_macos_cells_are_temporarily_non_blocking_and_linux_cells_still_block():
+    jobs = yaml.safe_load((REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))["jobs"]
+    for name in ("setup", "test", "e2e", "electron"):
+        assert jobs[name]["continue-on-error"] == "${{ startsWith(matrix.os, 'macos') }}", name
+    steps = jobs["ci-ok"]["steps"]
+    script = next(step["run"] for step in steps if "RESULTS" in step.get("env", {}))
+    assert "success | skipped) ;;" in script  # a masked macOS failure reports success; anything else still fails
+    assert "continue-on-error" not in jobs["ci-ok"]
