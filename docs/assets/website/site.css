@@ -17,7 +17,6 @@ body { font-family:var(--font-sans); }
 .md-typeset a:hover { text-decoration:underline; }
 .md-typeset img { height:auto; }
 .md-typeset :focus-visible, .md-header :focus-visible, .md-tabs :focus-visible { outline:2px solid var(--color-ring); outline-offset:2px; }
-.md-footer { background:var(--color-muted); color:var(--color-foreground); }
 .hz-home { max-width:1200px; margin:auto; }
 .hz-hero { display:grid; grid-template-columns:1.15fr 1fr; align-items:center; gap:2rem; padding:3.8rem 0 3rem; }
 .md-typeset .hz-hero h1 { font-size:clamp(2rem,4.8vw,2.8rem); line-height:1.1; font-weight:600; letter-spacing:0; margin:.6rem 0 1.3rem; }
@@ -99,9 +98,6 @@ body { font-family:var(--font-sans); }
 /* Material hides a page's navigation with `hidden` on desktop but still shows it as the phone drawer; leave that to Material. */
 [hidden]:not(.md-sidebar) { display:none !important; }
 
-.md-footer-meta { background:var(--color-muted); color:var(--color-foreground); }
-.md-copyright { color:var(--color-muted-foreground); }
-.md-copyright a { color:var(--color-foreground) !important; }
 
 
 /* Code colours come from the tokens, so they keep 4.5:1 on the code background in both modes. */
@@ -222,9 +218,43 @@ body { font-family:var(--font-sans); }
 @media (max-width:600px) {
   .md-typeset .adr-index table, .md-typeset .adr-index tbody, .md-typeset .adr-index tr, .md-typeset .adr-index td { display:block; }
   .md-typeset .adr-index thead { display:none; }
-  .md-typeset .adr-index tr { padding:.55rem 0; border-bottom:1px solid var(--hz-line); }
+  .md-typeset .adr-index tr { padding:.55rem 0; border-bottom:1px solid var(--color-border); }
   .md-typeset .adr-index td, .md-typeset .adr-index td:first-child, .md-typeset .adr-index td:last-child { min-width:0; padding:.1em 0; border:0; white-space:normal; }
   .md-typeset .adr-index td:empty { display:none; }
-  .md-typeset .adr-index td:nth-child(2), .md-typeset .adr-index td:nth-child(3) { display:inline-block; margin-right:1rem; padding:.1em 0; border:0; color:var(--hz-muted); }
+  .md-typeset .adr-index td:nth-child(2), .md-typeset .adr-index td:nth-child(3) { display:inline-block; margin-right:1rem; padding:.1em 0; border:0; color:var(--color-muted-foreground); }
   .md-typeset .adr-index td:nth-child(3):not(:empty)::before { content:"PR "; }
 }
+
+
+/* The header shows the Heinzelmännchen head on every screen size; Material hides its logo below 76em. */
+.md-header__button.md-logo { display:inline-flex; align-items:center; padding:.2rem; margin:.2rem 0 .2rem .2rem; }
+.md-header__button.md-logo img { height:1.7rem; width:auto; }
+.md-header__title { margin-left:.4rem; }
+
+/* The phone drawer: head and title on one row, repository facts in one quiet line, one calm color. */
+.md-nav--primary > .md-nav__title[for="__drawer"] { display:flex; align-items:center; gap:.6rem; height:auto; padding:.7rem 1rem; background:var(--color-muted); color:var(--color-foreground); box-shadow:none; border-bottom:1px solid var(--color-border); font-weight:700; }
+.md-nav--primary > .md-nav__title[for="__drawer"] .md-nav__button.md-logo { position:static; display:inline-flex; margin:0; padding:0; }
+.md-nav--primary > .md-nav__title[for="__drawer"] .md-nav__button.md-logo img { height:1.7rem; width:auto; }
+.md-nav--primary .md-nav__source { background:var(--color-muted); color:var(--color-muted-foreground); border-bottom:1px solid var(--color-border); }
+.md-nav--primary .md-nav__source .md-source { padding:.3rem 1rem; margin:0; }
+.md-nav--primary .md-nav__source .md-source__icon { display:none; }
+.md-nav--primary .md-nav__source .md-source__icon + .md-source__repository { margin-left:0; padding-left:0; max-width:none; color:var(--color-foreground); font-size:.65rem; }
+.md-nav--primary .md-nav__source .md-source__facts { color:var(--color-muted-foreground); }
+
+/* A footer that helps: try it, find things, see what is released. */
+.hz-footer { margin-top:3rem; border-top:1px solid var(--color-border); background:var(--color-muted); color:var(--color-foreground); font-size:.72rem; }
+.hz-footer__inner { box-sizing:border-box; max-width:61rem; margin:0 auto; padding:1.2rem 1rem; display:grid; grid-template-columns:minmax(0,1fr); gap:.4rem 1.5rem; align-items:center; }
+.hz-footer__helper { display:flex; align-items:center; gap:.7rem; }
+.hz-footer__helper img { flex:none; width:44px; height:auto; }
+.hz-footer__helper p, .hz-footer__legal { margin:0; line-height:1.4; }
+.hz-footer__install { display:flex; flex-wrap:wrap; align-items:center; gap:.5rem; min-width:0; }
+.hz-footer__install > span { font-weight:700; }
+.hz-footer__command { display:flex; align-items:center; gap:.5rem; min-width:0; }
+.hz-footer__command code { white-space:nowrap; padding:.5rem .7rem; border:1px solid var(--color-border); border-radius:var(--radius-lg); background:var(--color-card); color:var(--color-foreground); overflow-wrap:anywhere; user-select:all; }
+.hz-footer__command button { min-height:44px; min-width:44px; padding:.4rem .8rem; border:1px solid var(--color-border); border-radius:var(--radius-lg); background:var(--color-card); color:var(--color-primary); font:inherit; cursor:pointer; }
+.hz-footer__links { grid-column:1 / -1; display:flex; flex-wrap:wrap; gap:0 1.2rem; }
+.hz-footer a { color:var(--color-primary); display:inline-flex; align-items:center; min-height:44px; }
+.hz-footer a:hover { text-decoration:underline; }
+.hz-footer__legal { grid-column:1 / -1; color:var(--color-muted-foreground); }
+.hz-footer__legal a { min-height:0; }
+@media(min-width:60em) { .hz-footer__inner { grid-template-columns:auto minmax(0,1fr) auto; } .hz-footer__links { grid-column:1 / 3; } .hz-footer__legal { grid-column:3; text-align:right; } }

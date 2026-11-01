@@ -20,8 +20,8 @@ theme:
   name: material
   custom_dir: docs/overrides
   font: false
-  logo: assets/website/mark.svg
-  favicon: assets/website/mark.svg
+  logo: assets/website/head.svg
+  favicon: assets/website/head.svg
   language: en
   icon:
     logo: material/account-group-outline
@@ -63,6 +63,9 @@ markdown_extensions:
         - name: mermaid
           class: mermaid
           format: !!python/name:pymdownx.superfences.fence_code_format
+
+extra:
+  generator: false
 
 plugins:
   - search
