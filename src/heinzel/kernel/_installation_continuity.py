@@ -215,7 +215,7 @@ def _settle(prefix: Path, target: object, before: tuple[str, int] | None, value:
         _seen.add(prefix)
         return
     after = _metadata(prefix)
-    if after != before or after[1] > time.time_ns() - _SETTLE_NS:
+    if after is None or after != before or after[1] > time.time_ns() - _SETTLE_NS:
         return
     _settled[prefix] = (target, after[0], value, time.monotonic_ns())
 
