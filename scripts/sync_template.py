@@ -172,15 +172,9 @@ def ci_workflow() -> str:
     text = re.sub(r"\n  electron:\n.*?(?=\n  build:)", "\n", text, flags=re.DOTALL)
     text = text[: text.index("  site-tests:\n")] + text[text.index("  e2e:\n") :]
     text = re.sub(r"\n  changes:\n.*?(?=\n  dependency-review:)", "", text, flags=re.DOTALL)
-    # The template has no changed-path job; keep its original E2E matrix policy without core-only gating.
+    # The template has no changed-path job; keep the E2E matrix as is, without core-only gating.
     text = text.replace("    needs: changes\n", "")
     text = re.sub(r"(?m)^    if: .*needs\.changes\.outputs\.core[^\n]*\n", "", text)
-    text = re.sub(
-        r"(?m)^        os: .*needs\.changes\.outputs\.mounted_tailscale.*$",
-        "        os: ${{ fromJSON(github.event_name == 'pull_request' && "
-        '\'["ubuntu-latest"]\' || \'["ubuntu-latest","macos-latest"]\') }}',
-        text,
-    )
     text = text.replace("    needs: notifier\n", "")
     text = re.sub(r"    if: \$\{\{ !cancelled\(\) && needs\.notifier\.result[^\n]*\n", "", text)
     text = re.sub(

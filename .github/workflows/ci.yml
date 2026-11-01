@@ -20,7 +20,8 @@ env:
   FORCE_COLOR: "1"
 
 # GitHub-hosted macOS runners are the scarce resource, so a pull request runs macOS on the newest Python only, one
-# `make setup` and the notifier app when its sources change. The broad platform matrix runs off pull requests.
+# `make setup`, the macOS end-to-end suite on every pull request that is not site-only, and the notifier app when its
+# sources change. The broad platform matrix runs off pull requests.
 # Provider-specific integration checks live with their owning plugins.
 jobs:
   changes:
@@ -340,7 +341,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-latest"]' || '["ubuntu-latest","macos-latest"]') }}
+        os: [ubuntu-latest, macos-latest] # macOS on pull requests too: main must not be the first place it runs
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
