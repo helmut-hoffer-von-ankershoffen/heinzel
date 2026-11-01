@@ -144,6 +144,20 @@ def test_workflows_run_checks_through_make(workflow):
     assert not_through_make(workflow) == [], "run these through a make target, or add them to NOT_MAKE with a reason"
 
 
+def test_every_main_commit_gets_its_own_ci_run_while_pull_requests_cancel_superseded_runs():
+    concurrency = yaml.safe_load((REPO / ".github/workflows/ci.yml").read_text())["concurrency"]
+
+    def group(ref: str, sha: str) -> str:
+        # Evaluate the one expression shape the group uses: `<cond> && github.sha || github.ref`.
+        expr = concurrency["group"]
+        assert "github.ref == 'refs/heads/main' && github.sha || github.ref" in expr
+        return f"{ref}:{sha}" if ref == "refs/heads/main" else ref
+
+    assert group("refs/heads/main", "a") != group("refs/heads/main", "b")
+    assert group("refs/pull/1/merge", "a") == group("refs/pull/1/merge", "b")
+    assert concurrency["cancel-in-progress"] == "${{ github.event_name == 'pull_request' }}"
+
+
 def test_source_plugin_audits_receive_authoritative_repository_visibility():
     workflow = yaml.safe_load((REPO / ".github/workflows/ci.yml").read_text())
     assert workflow["jobs"]["local-plugin-check"]["env"]["PLUGIN_PRIVATE"] == "${{ github.event.repository.private }}"
@@ -1164,3 +1178,13 @@ def test_release_versions_ignore_edge_tags_and_stay_under_plugin_caps():
     assert cliff["git"]["tag_pattern"].startswith("^v")
     assert cliff["bump"]["features_always_bump_minor"] is False
     assert cliff["bump"]["breaking_always_bump_major"] is False
+
+
+def test_macos_cells_are_temporarily_non_blocking_and_linux_cells_still_block():
+    jobs = yaml.safe_load((REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))["jobs"]
+    for name in ("setup", "test", "e2e", "electron"):
+        assert jobs[name]["continue-on-error"] == "${{ startsWith(matrix.os, 'macos') }}", name
+    steps = jobs["ci-ok"]["steps"]
+    script = next(step["run"] for step in steps if "RESULTS" in step.get("env", {}))
+    assert "success | skipped) ;;" in script  # a masked macOS failure reports success; anything else still fails
+    assert "continue-on-error" not in jobs["ci-ok"]

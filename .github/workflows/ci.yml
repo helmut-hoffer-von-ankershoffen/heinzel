@@ -11,8 +11,10 @@ on:
 permissions:
   contents: read
 
+# Every commit on main gets its own group, so a later push never replaces a queued run or cancels a running one and
+# each main commit ends with a CI result. Pull requests share one group per ref and cancel superseded runs.
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
@@ -22,6 +24,10 @@ env:
 # GitHub-hosted macOS runners are the scarce resource, so a pull request runs macOS on the newest Python only, one
 # `make setup` and the notifier app when its sources change. The broad platform matrix runs off pull requests.
 # Provider-specific integration checks live with their owning plugins.
+# TEMPORARY (owner's decision): a macOS failure must not block merges or releases while the pull request queue drains and
+# macOS is fixed step by step. Matrix jobs with a macOS cell set `continue-on-error` for those cells only, so the cell still
+# runs and its failure is visible in the job's log and annotations, but the job reports success to `CI OK`. Linux cells still
+# fail the workflow. Remove every `continue-on-error` line once macOS has 20 clean runs in a row.
 jobs:
   changes:
     name: Changed paths
@@ -180,6 +186,7 @@ jobs:
     # What a contributor runs on a fresh machine, on each platform scripts/tools.toml pins: `make setup` installs
     # everything the build needs, relying only on git, make and uv, and `make doctor` confirms it.
     runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ startsWith(matrix.os, 'macos') }} # TEMPORARY: macOS may fail without failing CI OK; remove at 20 clean macOS runs
     timeout-minutes: 10
     strategy:
       fail-fast: false
@@ -222,6 +229,7 @@ jobs:
     if: needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true'
     name: Test (${{ matrix.os }}, Python ${{ matrix.python }}${{ matrix.levels && format(', {0}', matrix.levels) || '' }})
     runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ startsWith(matrix.os, 'macos') }} # TEMPORARY: macOS may fail without failing CI OK; remove at 20 clean macOS runs
     timeout-minutes: 10
     strategy:
       fail-fast: ${{ github.event_name == 'pull_request' }} # a red cell is enough to know on a pull request
@@ -332,15 +340,18 @@ jobs:
       - run: make test-site # the tests that read documents and the site
 
   e2e:
-    name: End-to-end (${{ matrix.os }})
+    name: End-to-end ${{ matrix.suite }} (${{ matrix.os }})
     needs: changes
     if: needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true'
     runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ startsWith(matrix.os, 'macos') }} # TEMPORARY: macOS may fail without failing CI OK; remove at 20 clean macOS runs
     timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
         os: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-24.04"]' || '["ubuntu-24.04","macos-latest"]') }}
+        # Two jobs per OS so the browser tests and the tool-install and CLI tests stop competing for 3 vCPUs
+        suite: [cli, web]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -352,6 +363,7 @@ jobs:
           cache-dependency-glob: uv.lock
           save-cache: ${{ github.ref == 'refs/heads/main' }} # pull requests reuse main's cache
       - name: Reuse the browsers this lockfile's Playwright installs
+        if: matrix.suite == 'web'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -359,10 +371,11 @@ jobs:
             ~/Library/Caches/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('web/pnpm-lock.yaml') }}
       - name: Install browser runtimes and host dependencies
+        if: matrix.suite == 'web'
         run: make test-browser-deps
       # Keep the full pytest traceback in CI logs when a browser interaction flakes; the step wrapper's default tail
       # can otherwise hide the test name and the action that timed out.
-      - run: make test-e2e
+      - run: make test-e2e SUITE=${{ matrix.suite }}
         env:
           VERBOSE: "1"
           # read-only (contents: read): e2e tests ask GitHub's API (`hz system changelog --newer`), which rate-limits
@@ -412,6 +425,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.electron == 'true'
     runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ startsWith(matrix.os, 'macos') }} # TEMPORARY: macOS may fail without failing CI OK; remove at 20 clean macOS runs
     timeout-minutes: 15
     strategy:
       fail-fast: false

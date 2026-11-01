@@ -219,9 +219,15 @@ test-browser-deps: ## Install Chromium and WebKit; include Linux host libraries 
 		$(WEB) exec playwright-core install chromium webkit; \
 	fi
 
-test-e2e: e2e-prepare ## Run end-to-end tests (needs network), on 3 workers
+# The browser E2E files (Playwright, the mounted web app) compete with the tool-install and CLI ones for CPU, so CI runs
+# the two halves as separate jobs. A file counts as browser when it mentions Playwright or the shared browser helpers.
+E2E_WEB := $(sort $(shell grep -lE 'playwright|_browser_result|_mounted|web_build' tests/e2e/*_test.py 2>/dev/null))
+E2E_PYTEST := uv run pytest -m e2e -n 3 -q --session-timeout=600 -x
+E2E_SELECT := $(if $(filter cli,$(SUITE)),$(foreach f,$(E2E_WEB), --ignore=$(f)))$(if $(filter web,$(SUITE)),$(foreach f,$(E2E_WEB), $(f)))
+
+test-e2e: e2e-prepare ## Run end-to-end tests (needs network), on 3 workers; SUITE=cli (tool install, CLI) or SUITE=web (browser) runs half
 	@echo "Runner: $$(getconf _NPROCESSORS_ONLN) CPUs"
-	$(STEPS) "e2e-readme=uv run pytest -m e2e -n 3 -q --session-timeout=600 -x tests/e2e/docs_test.py::test_readme_instructions" "e2e=uv run pytest -m e2e -n 3 -q --session-timeout=600 -x --deselect=tests/e2e/docs_test.py::test_readme_instructions"
+	$(STEPS) $(if $(filter web,$(SUITE)),,"e2e-readme=$(E2E_PYTEST) tests/e2e/docs_test.py::test_readme_instructions") "e2e=$(E2E_PYTEST)$(E2E_SELECT) --deselect=tests/e2e/docs_test.py::test_readme_instructions"
 
 e2e-prepare: ## Prepare current build assets before end-to-end procedure deadlines
 	@set -eu; dir="$$(mktemp -d "$${TMPDIR:-/tmp}/heinzel-e2e.XXXXXXXX")"; trap 'rm -rf "$$dir"' EXIT; uv build --quiet --wheel --out-dir "$$dir"
