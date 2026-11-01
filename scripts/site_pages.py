@@ -867,12 +867,13 @@ def page_helpers(path: str, page_url: str, project: Object | None = None) -> lis
                 lane="right",
             ),
         ]
+    # Ada, not Pip: the header's logo is Pip's head, and the guide stands beside it on these pages.
     if path.startswith(("guides/install", "guides/first-steps")):
         return [
             helper(
-                "timekeeper",
-                "Pip",
-                "Let's find your first useful screen together.",
+                "draftkeeper",
+                "Ada",
+                "I show you the first screen worth opening.",
                 href("guides/first-steps/", page_url),
                 "First steps",
                 page_url,
