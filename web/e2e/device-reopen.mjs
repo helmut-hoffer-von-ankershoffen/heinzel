@@ -1,6 +1,8 @@
 // A paired browser reopens the app without a link: a persistent browser profile, one step per run.
 // node device-reopen.mjs ENGINE PROFILE_DIR STEP URL [stale]   STEP: pair | open | restart
+
 import { chromium, webkit } from "playwright-core";
+import { until } from "./until.mjs";
 
 const [engineName, profile, step, url, mode] = process.argv.slice(2);
 const engine = engineName === "webkit" ? webkit : chromium;
@@ -44,18 +46,18 @@ try {
       await fetch("/api/restart", { method: "POST", headers }).catch(() => undefined);
       return before;
     });
-    await page.waitForFunction(
-      async (old) => {
-        try {
-          const headers = { Authorization: `Bearer ${localStorage.getItem("hz.device")}` };
-          const answer = await (await fetch("/api/lifecycle", { headers })).json();
-          return answer.instance && answer.instance !== old;
-        } catch {
-          return false;
-        }
-      },
-      instance,
-      { timeout: 60000, polling: 500 },
+    await until(
+      () =>
+        page.evaluate(async (old) => {
+          try {
+            const headers = { Authorization: `Bearer ${localStorage.getItem("hz.device")}` };
+            const answer = await (await fetch("/api/lifecycle", { headers })).json();
+            return answer.instance && answer.instance !== old;
+          } catch {
+            return false;
+          }
+        }, instance),
+      { timeout: 60_000, interval: 500, message: "A new instance did not answer after the restart" },
     );
     await page.goto(url);
     await Promise.race([ready.waitFor({ timeout: 20000 }), failed.first().waitFor({ timeout: 20000 })]).catch(
