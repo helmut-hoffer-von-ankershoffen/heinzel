@@ -392,6 +392,7 @@ class PluginService:
                 f"Adding plugin {candidate.distribution or spec}",
                 self._git_environment(),
                 context=(mutation, ()),
+                adding=candidate.requirement,
             )
             installed = self._verify_added(candidate, before)
             self._verify_candidate_generation(mutation)
@@ -431,6 +432,7 @@ class PluginService:
                         f"Adding plugin {candidate.distribution or candidate.spec}",
                         self._git_environment(),
                         context=(mutation, ()),
+                        adding=candidate.requirement,
                     )
                     installed = self._verify_added(candidate, before)
                     self._verify_candidate_generation(mutation)
@@ -479,6 +481,7 @@ class PluginService:
                 f"Failed to add plugin {path}.",
                 f"Adding plugin {name}",
                 context=(mutation, ()),
+                adding=f"{name} @ {directory.as_uri()}",
             )
             self._verify_developed(directory, name, str(version) if version is not None else None)
             self._verify_candidate_generation(mutation)
@@ -1034,7 +1037,7 @@ class PluginService:
             self._installation.record_startup_state(expected=mutation.generation)
         mutation.scope.verified_complete(mutation.generation)
 
-    def _run_package_change(
+    def _run_package_change(  # noqa: PLR0913 - what runs, how it is reported, and what it must keep
         self,
         command: list[str],
         failure: str,
@@ -1042,6 +1045,7 @@ class PluginService:
         environment: Mapping[str, str] | None = None,
         *,
         context: tuple[_PackageMutation | None, tuple[str, ...]] = (None, ()),
+        adding: str | None = None,
     ) -> str | None:
         """Capture the changed tool before independently checking its installed identity and runtime.
 
@@ -1051,13 +1055,21 @@ class PluginService:
         # A genuine SDK tool is not necessarily the standard app. Only its verified installer may seed continuity.
         mutation, forbidden = context
         managed = self._installation.is_tool and self._installation.startup_state_matches()
+        holds = self._holds(command, adding)
         if mutation is None:
-            self._installation.run(command, failure, activity, environment)
-            return self._installation.startup_fingerprint() if managed else None
+            if not holds:
+                self._installation.run(command, failure, activity, environment)
+                return self._installation.startup_fingerprint() if managed else None
+            policy = self._installation.capture_tool_constraint_policy()
+            self._installation.run(command, failure, activity, environment, additional_constraints=holds)
+            generation = self._installation.remove_transient_tool_constraint(
+                expected=self._installation.startup_fingerprint(), original=policy, added=holds
+            )
+            return generation if managed else None
         policy = self._installation.capture_tool_constraint_policy()
         version = self._installation.installed_core_version()
         guard = f"heinzel=={version}"
-        constraints = (*self._installation.tool_constraints(), guard)
+        constraints = (*self._installation.tool_constraints(), guard, *holds)
         python = command.index("--python")
         selected = [
             command[python + 2],
@@ -1067,7 +1079,7 @@ class PluginService:
         if self._installation.startup_fingerprint() != mutation.initial:
             msg = "The plugin installation changed before mutation; inspect and retry."
             raise HeinzelError(msg)
-        self._installation.run(command, failure, activity, environment, additional_constraints=(guard,))
+        self._installation.run(command, failure, activity, environment, additional_constraints=(guard, *holds))
         generation = self._installation.startup_fingerprint()
         self._installation.verify_installed_requirements(
             selected, expected_version=version, forbidden=forbidden, constraints=constraints
@@ -1076,9 +1088,29 @@ class PluginService:
             msg = "The plugin installation changed during verification; explicit recovery is required."
             raise HeinzelError(msg)
         mutation.generation = self._installation.remove_transient_tool_constraint(
-            expected=generation, original=policy, added=guard
+            expected=generation, original=policy, added=(guard, *holds)
         )
         return None
+
+    def _holds(self, command: list[str], adding: str | None) -> tuple[str, ...]:
+        """Keep the other index plugins at their installed versions while one plugin changes.
+
+        The receipt names them without a version, so a reinstall would upgrade each to the newest release as a side
+        effect. These are transient: `hz system update` still moves them. Whatever `adding` names is what the person
+        asked to change, so it stays free.
+        """
+        if not self._installation.is_tool or command[1:3] != ["tool", "install"]:
+            return ()
+        changing: set[str] = distributions_in_spec(adding) if adding else set()
+        names: list[str] = []
+        for index, part in enumerate(command):
+            if part == "--with":
+                requirement = Requirement(command[index + 1])
+                name = canonicalize_name(requirement.name)
+                if not requirement.url and not requirement.specifier and name not in changing:
+                    names.append(name)
+        versions = self._installation.installed_versions(names) if names else {}
+        return tuple(f"{name}=={versions[name]}" for name in names if name in versions)
 
     def _remember_package_change(self, generation: str | None) -> None:
         """Bind only a successfully checked and recorded package change to its original observation.
