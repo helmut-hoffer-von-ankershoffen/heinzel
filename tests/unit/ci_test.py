@@ -1188,3 +1188,11 @@ def test_site_only_agrees_with_the_pre_push_scope_and_runs_its_tests():
     assert any(step.get("run", "").startswith("make test-site") for step in jobs["site-tests"]["steps"])
     recipe = (REPO / "Makefile").read_text(encoding="utf-8").split("\ntest-site:", 1)[1].split("\n\n", 1)[0]
     assert set(scoped.MARKDOWN_TESTS) <= set(recipe.replace('"', " ").split())
+
+
+def test_release_versions_ignore_edge_tags_and_stay_under_plugin_caps():
+    """An unanchored pattern read `edge-v1.2.3.dev4` as a release; a feature must stay under plugins' `<0.10` caps."""
+    cliff = tomllib.loads((REPO / "pyproject.toml").read_text(encoding="utf-8"))["tool"]["git-cliff"]
+    assert cliff["git"]["tag_pattern"].startswith("^v")
+    assert cliff["bump"]["features_always_bump_minor"] is False
+    assert cliff["bump"]["breaking_always_bump_major"] is False

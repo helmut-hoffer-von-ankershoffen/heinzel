@@ -8,6 +8,7 @@ import { useConfig, useSetSetting } from "@/api/queries";
 import { t } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { RestartAndApply } from "@/lifecycle/RestartAndApply";
+import { ChannelStatement } from "./ChannelStatement";
 import { SchemaValue } from "./SchemaValue";
 import { controlFor, type JsonSchema, toToml, unwrap } from "./settingSchema";
 import { inWords } from "./settingsSections";
@@ -123,6 +124,7 @@ export function Row({ setting }: { setting: SchemaSettingInfo }) {
             </label>
           )}
           <p className="mt-0.5 text-sm text-muted-foreground">{setting.description}</p>
+          {setting.key === "update_channel" && <ChannelStatement value={setting.value} />}
           {fromEnv && <p className="mt-1 text-xs text-warn">{t("settings.fromEnv", { env: setting.env })}</p>}
           {save.error && (
             <p role="alert" className="mt-1 text-xs text-bad">
