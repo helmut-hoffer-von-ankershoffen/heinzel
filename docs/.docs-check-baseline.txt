@@ -17,7 +17,6 @@ docs/PLUGIN_AUTHORING.md:command
 docs/PLUGIN_AUTHORING.md:paragraph
 docs/PRIVATE_WEB_SHARING.md:command
 docs/PRIVATE_WEB_SHARING.md:paragraph
-docs/README.md:claims
 docs/SCREENSHOT_PLAYBOOK.md:paragraph
 docs/SESSIONS.md:paragraph
 docs/THEMES.md:paragraph
