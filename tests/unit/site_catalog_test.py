@@ -981,3 +981,21 @@ def test_the_machine_readable_catalog_keeps_its_pinned_install_command(tmp_path)
     install = pages.load_snapshot(path)["plugins"][0]["install"]
     assert install.startswith("hz system plugin add ")
     assert "a" * 40 in install
+
+
+def test_imagined_roles_are_short_labelled_and_never_overclaim():
+    assert [role["name"] for role in pages.IMAGINED_ROLES] == ["Pip", "Ada", "Otto"]
+    for role in pages.IMAGINED_ROLES:
+        assert len(role["job"].split()) <= pages.ROLE_WORDS
+        assert not pages.BANNED_CUE.search(role["job"])
+        assert not any(word in role["job"].lower() for word in FORBIDDEN_CUE_WORDS)
+    markup = pages.imagined_roles("")
+    assert "Imagined roles" in markup
+    assert markup.count("HEINZELMAENNCHEN/#not-built-yet") == len(pages.IMAGINED_ROLES)
+    assert "data-heinzel-helper" not in markup
+
+
+def test_the_not_built_yet_target_of_the_imagined_roles_exists():
+    text = (pages.ROOT / "docs" / "HEINZELMAENNCHEN.md").read_text()
+    assert pages.slug("Not built yet") == pages.ROLE_LIMIT.split("#")[1]
+    assert "\n### Not built yet\n" in text

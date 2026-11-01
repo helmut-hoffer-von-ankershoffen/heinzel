@@ -93,6 +93,14 @@ Imagined helpers. Real screens, made-up data. Select an image to zoom.
 </section>
 
 <section class="hz-section" markdown>
+<p class="hz-eyebrow">Imagine your team's helpers</p>
+
+## Three jobs they could take on.
+
+<!-- hz:imagined-roles -->
+</section>
+
+<section class="hz-section" markdown>
 <p class="hz-eyebrow">Your workspace, your way</p>
 
 ## A small core. A growing world.

@@ -385,6 +385,54 @@ def home_gallery(data: Object, page_url: str) -> str:
     return ('<div class="hz-product-stories" markdown="0">' + "".join(result) + "</div>").replace("><", ">\n<")
 
 
+IMAGINED_ROLES: tuple[Object, ...] = (
+    {
+        "art": "timekeeper",
+        "name": "Pip",
+        "job": "Keeps the week in rhythm: zones, check-ins, what needs you today.",
+        "link": "See World Clock",
+        "target": "catalog/heinzel-clock/",
+    },
+    {
+        "art": "draftkeeper",
+        "name": "Ada",
+        "job": "Drafts the weekly report from your tools. You edit and approve.",
+        "link": "See the contract",
+        "target": "HEINZELMAENNCHEN/",
+    },
+    {
+        "art": "reviewer",
+        "name": "Otto",
+        "job": "Puts every proposed action in front of you before it runs.",
+        "link": "See how approval works",
+        "target": "guides/tour/",
+    },
+)
+ROLE_WORDS = 12
+ROLE_LIMIT = "HEINZELMAENNCHEN/#not-built-yet"
+
+
+def imagined_roles(page_url: str) -> str:
+    """Three imagined team jobs, each leaning on a released mechanism and linked to what is not built yet."""
+    limit = href(ROLE_LIMIT, page_url)
+    columns = []
+    for role in IMAGINED_ROLES:
+        art = href(f"assets/website/helper-{role['art']}.svg", page_url)
+        columns.append(
+            '<li class="hz-role">'
+            f'<img src="{art}" alt="" width="96" height="160" loading="lazy">'
+            f'<p class="hz-story-name">{escape(role["name"])}</p>'
+            f'<p class="hz-role-job">{escape(role["job"])}</p>'
+            f'<a href="{href(role["target"], page_url)}">{escape(role["link"])} →</a>'
+            f'<a class="hz-role-limit" href="{limit}">What is not built yet</a></li>'
+        )
+    return (
+        '<div class="hz-roles" markdown="0">'
+        '<p class="hz-role-eyebrow">Imagined roles · drafts stay on your machine</p>'
+        '<ul class="hz-role-list">' + "".join(columns) + "</ul></div>"
+    ).replace("><", ">\n<")
+
+
 def screenshot_gallery(project: Object) -> str:
     """A native swipeable UI/CLI gallery, enhanced with explicit keyboard/button navigation."""
     shots = project.get("screenshots", [])
@@ -1019,6 +1067,7 @@ def on_page_markdown(markdown: str, *, page: Any, config: Any, **_: Any) -> str:
         "catalog": lambda: cards(snapshot, page.url),
         "featured": lambda: cards(snapshot, page.url, featured=True),
         "home-gallery": lambda: home_gallery(snapshot, page.url),
+        "imagined-roles": lambda: imagined_roles(page.url),
         "themes": lambda: theme_gallery(snapshot, page.url),
         "install": lambda: command(snapshot["release"]["install"], "app-install"),
         "install-script": lambda: command(snapshot["release"]["install_script"], "app-install-script"),

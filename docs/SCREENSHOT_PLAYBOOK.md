@@ -34,7 +34,7 @@ are the only guides. Add no new mascots.
 - **Motion.** None yet. When a guide gains an entrance or a cue change, it must be static under
   `prefers-reduced-motion`, never scroll-linked, and never announce itself through `aria-live`.
 - **Imagined jobs.** Anything a character says about a team's future job is labelled "Imagined", links to
-  [what 0.2 does not do yet](HEINZELMAENNCHEN.md#what-02-does-not-do-yet), and never claims autonomous or
+  [what is not built yet](HEINZELMAENNCHEN.md#not-built-yet), and never claims autonomous or
   automatic delivery. Banned in cues: autonomous, automatically, while you sleep, sends, publishes, delivers, and
   any customer or endorsement phrasing.
 
