@@ -17,11 +17,28 @@ from packaging.version import InvalidVersion, Version
 CACHE_FILENAME = "release.json"
 
 
+@dataclass(frozen=True)
+class EdgeRelease:
+    """The newest edge release (ADR 0114): an immutable wheel on GitHub, bound by its digest."""
+
+    version: str
+    wheel: str
+    sha256: str
+
+
 class ReleaseSource:
     """Where the latest release of Heinzelmännchen comes from; the system module provides a subclass (ADR 0031).
 
     A base class rather than a protocol, so that the kernel can inject it by type like any other service.
     """
+
+    def edge_release(self, timeout: float) -> EdgeRelease:
+        """The newest edge release; asked only after someone chose the edge channel.
+
+        Raises:
+            NotImplementedError: Always; subclasses ask their package source.
+        """
+        raise NotImplementedError
 
     def latest_version(self, timeout: float) -> str:
         """The version of the latest release, waiting at most `timeout` seconds per network operation.
@@ -89,11 +106,17 @@ class ReleaseCache:
         checked_at, now = self.checked_at, now or datetime.now(UTC)
         return checked_at is not None and now - max_age < checked_at <= now
 
-    def newer_than(self, current: str) -> str | None:
-        """The latest release last seen if it is newer than `current`, else None."""
+    def newer_than(self, current: str, channel: str = "stable") -> str | None:
+        """The latest release last seen if it is newer than `current`, else None.
+
+        An edge version is only ever news on the edge channel: right after someone goes back to stable, the cache can
+        still hold one (ADR 0114).
+        """
         latest = self.latest
         try:
-            return latest if latest is not None and Version(latest) > Version(current) else None
+            if latest is None or (Version(latest).is_devrelease and channel != "edge"):
+                return None
+            return latest if Version(latest) > Version(current) else None
         except InvalidVersion:
             return None
 

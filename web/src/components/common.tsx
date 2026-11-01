@@ -1,9 +1,9 @@
 // Building blocks every screen uses: a page header, loading and error states, empty states, copyable commands.
-import { Check, Copy, Play } from "lucide-react";
+import { Check, Copy } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { ApiError } from "@/api/client";
+import { RunCommandButton } from "@/components/CommandActions";
 import { t } from "@/i18n";
-import { runInTerminal, runsAsIs } from "@/lib/terminal";
 import { ErrorScreen } from "./ErrorScreen";
 import { Gnome } from "./Gnome";
 import type { Age, HeinzelState } from "./heinzel";
@@ -98,16 +98,7 @@ export function CopyCommand({ command }: { command: string }) {
           {copied ? t("copy.done") : ""}
         </span>
       </Button>
-      <Button
-        variant="ghost"
-        size="sm"
-        className="h-6 px-1.5"
-        onClick={() => runInTerminal(command)}
-        aria-label={t("run.aria", { command })}
-        title={runsAsIs(command) ? t("run.label") : t("run.review")}
-      >
-        <Play aria-hidden />
-      </Button>
+      <RunCommandButton command={command} />
     </span>
   );
 }

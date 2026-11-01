@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help install setup release-local doctor tools-verify check check-fast linux-user-manager-proof preflight fix lint format typecheck test test-parallel commits test-all-pythons test-unit test-integration test-perf test-e2e e2e-prepare test-browser-deps audit licenses secrets template-test template-sync docs attributions fuzz demo terminal-art notifier icons web-build web-dev test-web managed-backend-setup managed-backend-check desktop-electron-test desktop-electron-sandbox desktop-electron-native desktop-electron-package build pypi-clean-build-marker changelog ci-logs pr review sync docs-plugins docs-record docs-site docs-catalog docs-site-check docs-publish-check release clean
+.PHONY: help install setup release-local doctor tools-verify check check-fast linux-user-manager-proof preflight fix lint format typecheck test test-parallel commits test-all-pythons test-unit test-integration test-perf test-notifier test-e2e e2e-prepare test-browser-deps audit licenses secrets template-test template-sync docs attributions fuzz demo terminal-art notifier icons web-build web-dev test-web test-site managed-backend-setup managed-backend-check desktop-electron-test desktop-electron-sandbox desktop-electron-native desktop-electron-package build pypi-clean-build-marker changelog ci-logs pr review sync docs-plugins docs-record docs-site docs-catalog docs-site-check docs-publish-check release clean
 
 # Quiet by default: one line per passing step, the tail of a failing one. VERBOSE=1 streams everything.
 # A step starting with & runs concurrently with the one before it; the first failure cancels the rest.
@@ -74,6 +74,10 @@ check: ## Everything CI checks that runs offline, in parallel: lint, import cont
 linux-user-manager-proof: ## Inspect an existing Linux user manager without starting services; set PROBE_PREFIX
 	uv run python tests/integration/linux_user_manager_probe.py --prefix "$${PROBE_PREFIX:?Set PROBE_PREFIX to an isolated heinzel-probe- name}"
 
+# The pre-push hook (scripts/scoped_checks.py push) narrows UNIT_TARGETS to the tests related to the branch and sets
+# FAST_TYPES to the type checks; by hand both stay empty and this is the full unit run.
+FAST_TYPES ?=
+UNIT_TARGETS ?=
 # Unit tests take every core and have a 5 s budget each; Vitest beside them starved them into timeouts, so it runs after.
 check-fast: ## Seconds-fast feedback for the edit loop: format, lint, contracts, generated files, unit tests
 	@$(WEB) prepare
@@ -85,8 +89,8 @@ check-fast: ## Seconds-fast feedback for the edit loop: format, lint, contracts,
 		"&docs=env -u HZ_SYSTEM_AGENT__SKILL_DIRS uv run python scripts/generate_docs.py --check" \
 		"&demo=uv run --script scripts/demo_tape.py --check" \
 		"&attributions=uv run --quiet --script scripts/attributions.py --check" \
-		$(WEB_LINT) $(WEB_TYPES) \
-		"unit=uv run pytest -m 'unit and not perf' -n auto -x -q --session-timeout=120" $(subst &web-tests,web-tests,$(WEB_TESTS)) $(MANAGED_CHECK)
+		$(FAST_TYPES) $(WEB_LINT) $(WEB_TYPES) \
+		"unit=uv run pytest $(UNIT_TARGETS) -m 'unit and not perf' -n auto -x -q --session-timeout=120" $(subst &web-tests,web-tests,$(WEB_TESTS)) $(MANAGED_CHECK)
 
 preflight: ## What CI checks, before you push: check with coverage, template, build, commits (PREFLIGHT=full adds e2e, audit)
 	@$(WEB) prepare
@@ -183,6 +187,7 @@ test: ## Run unit and integration tests with coverage on 4 workers (offline; wha
 # TEST_LEVELS picks a shard: CI's macOS cells set unit or integration, each under the same session cap.
 TEST_LEVELS ?= unit or integration
 test-parallel: ## Unit and integration tests on 4 workers, stopping at the first failure; no coverage (the CI test matrix)
+	@echo "Runner: $$(getconf _NPROCESSORS_ONLN) CPUs"
 	$(STEPS) "tests=uv run pytest -m '($(TEST_LEVELS)) and not perf' -n 4 -x -q --session-timeout=420 --durations=20"
 
 commits: ## Commit messages since BASE, and $$TITLE and $$BRANCH when set: conventional, no confidential terms
@@ -204,6 +209,9 @@ test-integration: ## Run integration tests
 test-perf: ## Run the performance tests (timing assertions such as linear time); CI only, they flake on a loaded machine
 	$(STEPS) "perf=uv run pytest -m perf -q --session-timeout=120"
 
+test-notifier: ## Real Heinzel Notifier launches leave no process behind (macOS; build it first: make notifier)
+	$(STEPS) "notifier=uv run pytest tests/e2e/notifier_instances_test.py -q -p no:cacheprovider -o timeout=120"
+
 test-browser-deps: ## Install Chromium and WebKit; include Linux host libraries when needed
 	@if [ "$$(uname -s)" = Linux ]; then \
 		$(WEB) exec playwright-core install --with-deps chromium webkit; \
@@ -212,6 +220,7 @@ test-browser-deps: ## Install Chromium and WebKit; include Linux host libraries 
 	fi
 
 test-e2e: e2e-prepare ## Run end-to-end tests (needs network), on 3 workers
+	@echo "Runner: $$(getconf _NPROCESSORS_ONLN) CPUs"
 	$(STEPS) "e2e-readme=uv run pytest -m e2e -n 3 -q --session-timeout=600 -x tests/e2e/docs_test.py::test_readme_instructions" "e2e=uv run pytest -m e2e -n 3 -q --session-timeout=600 -x --deselect=tests/e2e/docs_test.py::test_readme_instructions"
 
 e2e-prepare: ## Prepare current build assets before end-to-end procedure deadlines
@@ -275,6 +284,9 @@ web-build: ## Build the web head's app into src/heinzel/heads/web/static, which 
 
 web-dev: ## The web head with hot reload: its API on a free port, Vite in front of it at the URL printed
 	@$(WEB_PROJECT) dev
+
+test-site: ## Run the tests that read documents and the site (CI's job for a pull request of the site alone)
+	$(STEPS) "site-tests=uv run pytest -n 4 -q --session-timeout=300 tests/unit/documentation_test.py tests/unit/standards_test.py tests/unit/repository_test.py tests/unit/pypi_description_test.py tests/unit/readme_diagnostics_test.py tests/unit/docs_style_test.py tests/unit/site_catalog_test.py tests/unit/site_domain_test.py tests/integration/guides_test.py"
 
 test-web: ## Run the web app's component tests (Vitest, with axe for accessibility)
 	$(STEPS) "web-tests=$(WEB) exec vitest run"

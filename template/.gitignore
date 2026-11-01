@@ -22,3 +22,6 @@ reports/
 .tools/
 # The documentation site `make docs-site` builds (ADR 0058).
 site/
+
+# The privacy plugin's download cache for external images (mkdocs.yml).
+/.cache/

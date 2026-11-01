@@ -7,8 +7,8 @@ Heinzelmännchen (`hz`): a kernel plus modules, each operation exposed as a CLI 
 ## Rules
 
 - A change serves INTENT.md and the accepted ADRs in [docs/adr/](docs/adr/). A new kind of let, a new head, a new
-  dependency or a change that contradicts an ADR gets a new ADR first (skill `write-adr`). When a pull request builds an ADR, add its number to the ADR's `implemented-by` front matter
-  and run `make docs`; the index table is generated, never hand-edited.
+  dependency or a change that contradicts an ADR gets a new ADR first (skill `write-adr`). When a pull request builds an ADR, add its number to the ADR's `implemented-by` front matter,
+  set `implementation` (`built`, `partial` or `planned`) from what the code now does, and run `make docs`; the index table is generated, never hand-edited.
 - Every test file sets exactly one level, `pytestmark = pytest.mark.unit` (or `integration`, `e2e`); the suite
   refuses anything else. Definitions: [CODING_STANDARDS.md#tests](docs/CODING_STANDARDS.md#tests).
 - Pull requests only: branch from `origin/main`, never stack pull requests, open with `make pr`. Conventional commits
@@ -63,8 +63,10 @@ options are in [docs/CLI_REFERENCE.md](docs/CLI_REFERENCE.md).
 - Core-root PR preflight, agent completion and pre-push hooks select owning checks for plugin-only changes.
   Mixed/core changes retain core checks. The pre-push hook also scopes by path (`scripts/scoped_checks.py push`):
   Markdown and site templates alone run the documentation checks and the tests that read documents, `web/` alone the
-  web checks, everything else `make check-fast` in full; `make check-fast` itself stays the full run, and CI always
-  runs the full gate. On a heavily loaded machine the unit step can hit the session
+  web checks, and Python changes run `make check-fast` plus mypy and pyright with only the unit tests related to the
+  change (`scripts/related_tests.py`: the import graph, test names and scripts a test mentions); configuration, the
+  lockfile and `conftest.py` cannot be mapped and run all unit tests. `make check-fast` by hand stays the full run, and
+  CI always runs the full gate. On a heavily loaded machine the unit step can hit the session
   timeout; wait for the load to drop and push again. `NO_PREFLIGHT=1 make pr` skips only the preflight, never a
   hook, and is for timeouts in tests you didn't touch, after review.
 - UI changes must follow [Mobile UI](docs/CODING_STANDARDS.md#mobile-ui): use the shared viewport primitives and

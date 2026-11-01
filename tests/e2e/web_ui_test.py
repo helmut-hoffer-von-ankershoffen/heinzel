@@ -257,6 +257,28 @@ def _start_ui(env: dict[str, str], port: int) -> tuple[subprocess.Popen[str], st
     return ui, url
 
 
+def _browser_ready(engine: str) -> list[str]:
+    """Build the web app, install the engine, and return the command that runs a web tool."""
+    web_build.ensure_built()
+    run = [sys.executable, str(REPO / "scripts" / "web_build.py")]
+    subprocess.run(
+        [*run, "exec", "playwright-core", "install", engine], cwd=REPO, check=True, timeout=900, capture_output=True
+    )
+    return run
+
+
+def _node(run: list[str], script: str, *args: str) -> subprocess.CompletedProcess[str]:
+    """Run one browser driver of web/e2e and capture what it printed."""
+    return subprocess.run(
+        [*run, "exec", "node", f"e2e/{script}.mjs", *args],
+        cwd=REPO,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=200,
+    )
+
+
 def _stop_ui(ui: subprocess.Popen[str]) -> None:
     ui.send_signal(signal.SIGINT)  # Ctrl-C, as in a terminal
     try:
@@ -367,6 +389,123 @@ def test_plugin_install_confirmation_opens_in_the_viewport_under_its_own_row(env
     assert driven.returncode == 0, driven.stderr + driven.stdout
     result = json.loads(driven.stdout.strip().splitlines()[-1])
     assert [item["name"] for item in result["confirmations"]] == ["desktop", "phone"]
+
+
+@pytest.mark.timeout(900)
+@pytest.mark.parametrize("engine", ["chromium", "webkit"])
+def test_the_apps_own_restart_keeps_a_paired_browser_signed_in(environment, tmp_path, engine):
+    """`POST /api/restart` re-executes hz in place: the app reopens signed in, with no link, from the same profile."""
+    env, _ = environment
+    web_build.ensure_built()
+    run = [sys.executable, str(REPO / "scripts" / "web_build.py")]
+    subprocess.run(
+        [*run, "exec", "playwright-core", "install", engine], cwd=REPO, check=True, timeout=900, capture_output=True
+    )
+    profile = tmp_path / "browser-profile"
+    port = _free_port()
+
+    def drive(step: str, url: str) -> dict[str, object]:
+        driven = subprocess.run(
+            [*run, "exec", "node", "e2e/device-reopen.mjs", engine, str(profile), step, url],
+            cwd=REPO,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=180,
+        )
+        assert driven.returncode == 0, driven.stderr + driven.stdout
+        return json.loads(driven.stdout.strip().splitlines()[-1])
+
+    ui, link = _start_ui(env, port)
+    try:
+        assert drive("pair", link)["device"] is True
+        restarted = drive("restart", f"http://127.0.0.1:{port}/")
+        assert restarted["signedIn"] is True, restarted
+        assert restarted["afterRestart"] is True, restarted
+    finally:
+        _stop_ui(ui)
+
+
+@pytest.mark.timeout(900)
+def test_a_plugin_installed_outside_the_running_app_offers_restart_and_apply_in_the_footer(environment, tmp_path):
+    """After a terminal install while `hz ui` runs, the app itself says which plugin and offers the restart."""
+    env, _ = environment
+    web_build.ensure_built()
+    run = [sys.executable, str(REPO / "scripts" / "web_build.py")]
+    subprocess.run(
+        [*run, "exec", "playwright-core", "install", "chromium"], cwd=REPO, check=True, timeout=600, capture_output=True
+    )
+    # A throwaway installation of the built wheel: `hz system plugin develop` changes only this environment.
+    wheels = tmp_path / "wheels"
+    subprocess.run(["uv", "build", "--quiet", "--wheel", "--out-dir", str(wheels)], cwd=REPO, check=True, timeout=600)
+    venv = tmp_path / "venv"
+    subprocess.run(["uv", "venv", "--quiet", str(venv)], check=True, timeout=120)
+    wheel = next(wheels.glob("*.whl"))
+    subprocess.run(
+        ["uv", "pip", "install", "--quiet", "--python", str(venv / "bin" / "python"), str(wheel)],
+        check=True,
+        timeout=600,
+    )
+    plugin = tmp_path / "heinzel-sidecar"
+    (plugin / "src" / "heinzel_sidecar").mkdir(parents=True)
+    (plugin / "pyproject.toml").write_text(
+        '[project]\nname = "heinzel-sidecar"\nversion = "1.0.0"\ndescription = "A plugin installed outside the app."\n'
+        'requires-python = ">=3.12"\ndependencies = []\n'
+        '[project.entry-points."heinzel.modules"]\nsidecar = "heinzel_sidecar"\n'
+        '[build-system]\nrequires = ["hatchling"]\nbuild-backend = "hatchling.build"\n'
+        '[tool.hatch.build.targets.wheel]\npackages = ["src/heinzel_sidecar"]\n',
+        encoding="utf-8",
+    )
+    (plugin / "src" / "heinzel_sidecar" / "__init__.py").write_text(
+        'from heinzel import Module\n\nmodule = Module("sidecar", "A plugin installed outside the app.")\n\n\n'
+        '@module.operation\ndef ping() -> int:\n    """Answer with one."""\n    return 1\n',
+        encoding="utf-8",
+    )
+    shots = Path(os.environ.get("HZ_SCREENSHOTS", tmp_path / "screenshots"))
+    hz = venv / "bin" / "hz"
+    ui = subprocess.Popen(
+        [str(hz), "ui", "--port", "0", "--no-browser"],
+        cwd=tmp_path,
+        env=env,
+        stderr=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        assert ui.stdout is not None
+        url = ui.stdout.readline().strip()
+        assert url.startswith("http://127.0.0.1:")
+        driven = subprocess.run(
+            [*run, "exec", "node", "e2e/plugins-pending.mjs", url, str(hz), str(plugin), str(shots)],
+            cwd=REPO,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=400,
+        )
+    finally:
+        ui.terminate()
+        ui.wait(30)
+        for stream in (ui.stdout, ui.stderr):
+            if stream is not None:
+                stream.close()
+    assert driven.returncode == 0, driven.stderr + driven.stdout
+    assert json.loads(driven.stdout.strip().splitlines()[-1]) == {"pending": True}
+
+
+@pytest.mark.timeout(600)
+def test_a_refused_sign_in_offers_a_paste_field_that_signs_in_with_the_printed_link(environment, tmp_path):
+    """An installed app has no address bar: the sign-in page takes the printed link and rejects another address."""
+    env, _ = environment
+    run = _browser_ready("chromium")
+    ui, url = _start_ui(env, _free_port())
+    try:
+        driven = _node(run, "signin-paste", url, str(tmp_path))
+    finally:
+        _stop_ui(ui)
+    assert driven.returncode == 0, driven.stderr
+    assert json.loads(driven.stdout.strip().splitlines()[-1]) == {"pasted": True}
 
 
 @pytest.mark.timeout(600)

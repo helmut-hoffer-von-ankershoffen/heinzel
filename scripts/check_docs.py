@@ -32,7 +32,6 @@ GENERATED = (
     "docs/CLI_REFERENCE.md",
     "docs/MODULES.md",
     "docs/CONFIGURATION.md",
-    "docs/plugins/*",
     "docs/catalog/*",
     "docs/_data/*",
     "docs/research/*",
@@ -53,6 +52,7 @@ LINK_TARGET = re.compile(r"(\]\()[^)\s]*")
 HZ_COMMAND = re.compile(r"(?<![\w./$~-])hz((?:[ \t]+[^\s`|;&)<>]+)*)")
 WORD = re.compile(r"[a-z][a-z0-9_-]*$")
 ISO_DATE = re.compile(r"\b20\d\d-\d\d-\d\d\b")
+AMENDMENT_NOTE = re.compile(r"Amended 20\d\d-\d\d-\d\d: ")
 VERSION = re.compile(r"(?<![\w.])0\.\d+\.\d+(?![\w]|\.\d)")
 BLOCK_START = re.compile(r"^\s*(?:[-*+]\s|\d+[.)]\s|>|<|!!!|\?\?\?|:::|\[[^\]]+\]:|\s{4})")
 ABBREVIATION = re.compile(r"\b(e\.g|i\.e|etc|vs|cf|approx)\.", re.IGNORECASE)
@@ -178,14 +178,17 @@ def pattern_findings(path: str, lines: list[str]) -> list[Finding]:
 
 
 def date_and_version_findings(doc: Document) -> list[Finding]:
-    """ISO dates in prose and semantic versions anywhere outside front matter."""
+    """ISO dates in prose and semantic versions anywhere outside front matter.
+
+    An ADR may carry a dated amendment note: a line that starts `Amended YYYY-MM-DD:` (ADR 0001).
+    """
     found: list[Finding] = []
     adr = doc.path.startswith("docs/adr/")
     for number, (prose, body) in enumerate(zip(doc.prose, doc.body, strict=True), start=1):
         found += [
             Finding(doc.path, number, "date", f"date in prose: {m[0]}; documentation is not dated", m[0])
             for m in ISO_DATE.finditer(prose)
-            if not (adr and number <= doc.front)
+            if not (adr and number <= doc.front) and not (adr and AMENDMENT_NOTE.match(prose))
         ]
         if matches(doc.path, VERSION_SCOPE):
             found += [

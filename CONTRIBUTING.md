@@ -149,7 +149,7 @@ The GIF at the top of the README is rendered by [VHS](https://github.com/charmbr
 `docs/assets/demo.tape`. That tape is generated (`make fix`, and `make check` fails while it is stale) from
 `docs/assets/demo-intro.tape` (settings, install, `hz --version`, `hz system info`) and the snippets modules contribute.
 A built-in module or a first-party plugin adds its part as a `demo.tape` next to its `__init__.py`; abridged from
-`plugins/heinzel-clock/src/heinzel_clock/demo.tape`:
+[`plugins/heinzel-clock/src/heinzel_clock/demo.tape` in heinzel-plugins](https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/blob/main/plugins/heinzel-clock/src/heinzel_clock/demo.tape):
 
 ```
 # The clock plugin in the README demo: add it, show the clocks, then the same as JSON into jq.

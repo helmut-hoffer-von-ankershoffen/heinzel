@@ -1,6 +1,7 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup, configure } from "@testing-library/react";
 import { afterEach, vi } from "vitest";
+import { resetOperationRun } from "@/lib/operationRun";
 import { splash } from "@/splash/store";
 
 // The API is mocked and answers at once, so a findBy or waitFor only waits for this process's CPU. At Testing Library's
@@ -12,6 +13,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
   sessionStorage.clear();
   localStorage.clear();
+  resetOperationRun();
   splash.reset(); // the page's splash store, which the query cache, the theme and a restart report to
 });
 
