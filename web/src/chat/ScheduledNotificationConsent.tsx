@@ -107,9 +107,7 @@ export function ScheduledNotificationConsent({
         />{" "}
         Allow this agent to queue local notifications during these scheduled turns.
       </label>
-      <p>
-        {t("scheduledNotify.note")}
-      </p>
+      <p>{t("scheduledNotify.note")}</p>
       {enabled && (
         <div className="space-y-2">
           <label className="block">

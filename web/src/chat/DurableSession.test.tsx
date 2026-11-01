@@ -1798,8 +1798,7 @@ it("shows only owner-session associations and recorded review states in the agen
   renderAt(`/?chat=${sessionId}`);
   const link = await screen.findByRole("link", { name: /Google Doc/ });
   expect(link).toHaveAttribute("href", ref);
-  expect(screen.getByText(/agent management are unverified/)).toBeInTheDocument();
-  expect(screen.getByText(/Recent agent edits are not available/)).toBeInTheDocument();
+  expect(screen.getAllByText(/hz has not checked your access/).length).toBeGreaterThan(0);
   expect(screen.getByText("Weekly notes")).toBeInTheDocument();
   expect(screen.getByText("Status: Waiting for approval")).toBeInTheDocument();
   expect(screen.getByText("Draft: Proposed draft")).toBeInTheDocument();

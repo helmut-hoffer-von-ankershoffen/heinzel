@@ -124,7 +124,7 @@ describe("the Workflow screen", () => {
     });
     const { container } = renderAt("/contracts");
     expect(await screen.findByRole("button", { name: /^weekly-report.*, Suggested contract$/ })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /^team-project.*, Asset type$/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^team-project.*, Artifact type$/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^tracker.*, System$/ })).toBeInTheDocument();
     expect(screen.getByText(/1 templates your playbooks suggest/)).toBeInTheDocument();
     expect(screen.queryByText("Your workflow starts with a contract")).not.toBeInTheDocument();
@@ -142,10 +142,10 @@ describe("the Workflow screen", () => {
     renderAt("/contracts");
     await screen.findByRole("button", { name: /^weekly-report.*, Suggested contract$/ });
     expect(calls.some((call) => call.url.includes("/heinzel/discover"))).toBe(false);
-    expect(screen.queryByRole("button", { name: /Discovered asset/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Discovered artifact/ })).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Discover" }));
     expect(
-      await screen.findByRole("button", { name: /^Payments weekly report.*, Discovered asset$/ }),
+      await screen.findByRole("button", { name: /^Payments weekly report.*, Discovered artifact$/ }),
     ).toBeInTheDocument();
     expect(screen.getByText(/Discovery found 1 candidates/)).toBeInTheDocument();
   });

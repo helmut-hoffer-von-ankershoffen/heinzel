@@ -233,9 +233,7 @@ export function AgentProposal({ sessionId }: { sessionId: string }) {
         </>
       )}
       {recovery.blocked && <p role="alert">The pending proposal could not be recovered; no new proposal was sent.</p>}
-      {error && (
-        <p role="alert">{t("proposal.confirmError")}</p>
-      )}
+      {error && <p role="alert">{t("proposal.confirmError")}</p>}
     </section>
   );
 }

@@ -228,7 +228,8 @@ const en = {
     "Use SKILL.md plus text under references/, templates/ or assets/, and Python files under scripts/. Up to 16 files; each at most 24 KiB and the encoded form under 47 KiB.",
   "schedules.intro":
     "Set how often this helper runs under its accepted terms. Approval is separate. This path uses the selected Claude subscription and has unknown cost. Connected reads need separate approval and are included only when you select them below.",
-  "schedules.suggestedReads": "Suggested reads: {reads}. These give no access. Choose an already approved read separately.",
+  "schedules.suggestedReads":
+    "Suggested reads: {reads}. These give no access. Choose an already approved read separately.",
   "scheduledNotify.note":
     "Optional and off by default. At most one attempt per turn. Content may appear on this device; queued does not mean shown. Item identities come from the provider and do not guarantee complete source history.",
   "audio.visualizerHelp":
@@ -573,8 +574,7 @@ const en = {
   "contract.drafts": "{count} drafts so far",
   "org.title": "Org chart",
   "org.intro": "Your manager and direct reports as the directory capability has them. Guesses are marked as guesses.",
-  "org.notYet":
-    "Reporting lines are guessed from your calendar. Connect a calendar in Settings to see them.",
+  "org.notYet": "Reporting lines are guessed from your calendar. Connect a calendar in Settings to see them.",
   "team.title": "Team roster",
   "team.none": "You aren't in a team yet. Join your team's repository, or create one:",
   "team.handle": "Handle",

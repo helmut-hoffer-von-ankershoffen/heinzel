@@ -28,7 +28,7 @@ describe("scheduled agent proposal", () => {
     });
     const user = userEvent.setup();
     render(<AgentProposal sessionId={sessionId} />);
-    expect(await screen.findByText(/They do not start an agent or grant approval/)).toBeInTheDocument();
+    expect(await screen.findByText(/They do not start a helper or give approval/)).toBeInTheDocument();
     await user.type(await screen.findByLabelText("Instructions"), "Review the project");
     await user.click(screen.getByRole("button", { name: "Propose terms" }));
     expect(await screen.findByText("Revision 1 · Proposed")).toBeInTheDocument();
@@ -100,6 +100,6 @@ it("labels subscription terms honestly and does not convert them to an API budge
   });
   render(<AgentProposal sessionId={sessionId} />);
   expect(await screen.findByText(/Subscription plan · cost unknown/)).toBeInTheDocument();
-  expect(screen.getByText(/Ask your Heinzel in chat to revise/)).toBeInTheDocument();
+  expect(screen.getByText(/Ask your helper in chat to revise/)).toBeInTheDocument();
   expect(screen.queryByLabelText("Maximum USD per turn")).not.toBeInTheDocument();
 });

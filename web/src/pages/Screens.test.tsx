@@ -7,7 +7,7 @@ describe("Organisation", () => {
   it("says why there is no org chart yet and what to look at", async () => {
     mockApi(shell);
     const { container } = renderAt("/org");
-    expect(await screen.findByText("hz system capability list")).toBeInTheDocument();
+    expect(await screen.findByText(/Reporting lines are guessed from your calendar/)).toBeInTheDocument();
     await expectAccessible(container);
   });
 

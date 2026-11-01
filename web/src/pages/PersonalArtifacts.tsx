@@ -56,9 +56,7 @@ export function PersonalArtifactLinks({ sessionId, compact = false }: { sessionI
       <h3 id={headingId} className="font-medium">
         {compact ? "Associated files" : "Local associations"}
       </h3>
-      {compact && (
-        <p className="text-xs text-muted-foreground">{t("artifacts.note")}</p>
-      )}
+      {compact && <p className="text-xs text-muted-foreground">{t("artifacts.note")}</p>}
       {error ? (
         <p role="alert">Associations could not be loaded or validated.</p>
       ) : artifacts === null ? (

@@ -265,7 +265,9 @@ export function AgentSchedules({ sessionId }: { sessionId: string }) {
                 {suggestion.data.suggested_reads.length > 0 && (
                   <p className="break-words">
                     {t("schedules.suggestedReads", {
-                      reads: suggestion.data.suggested_reads.map((read) => `${read.capability}.${read.method}`).join(", "),
+                      reads: suggestion.data.suggested_reads
+                        .map((read) => `${read.capability}.${read.method}`)
+                        .join(", "),
                     })}
                   </p>
                 )}

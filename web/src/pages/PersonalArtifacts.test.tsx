@@ -47,9 +47,7 @@ describe("local personal artifact associations", () => {
     );
     expect(screen.getByRole("link", { name: /Google Sheet/ })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Google Slides/ })).toBeInTheDocument();
-    expect(screen.getAllByText(/You added these links/)).toHaveLength(3);
-    expect(screen.getByText(/Recent agent edits are not available/)).toBeInTheDocument();
-    expect(screen.getByText(/file ownership.*agent management have not been verified/)).toBeInTheDocument();
+    expect(screen.getAllByText(/You added these links/)).toHaveLength(4);
     const list = calls.find((request) => request.url.includes("personal-artifacts"));
     expect(new URL(list?.url ?? "").searchParams.get("session_id")).toBe(first);
     expect(list?.headers.get("Authorization")).toBe("Bearer test-token");

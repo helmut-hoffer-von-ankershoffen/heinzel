@@ -86,7 +86,7 @@ describe("the flow summary", () => {
   it("says when every promise is kept, and how many are late", () => {
     const graph = { ...team(), summary: undefined };
     const kept = { ...graph, edges: graph.edges.map((edge) => ({ ...edge, state: "on_time" as const })) };
-    expect(summarise(kept)).toEqual({ text: "Team graph: every promise kept", tone: "ok" });
+    expect(summarise(kept)).toEqual({ text: "Team graph: every contract kept", tone: "ok" });
     const late = {
       ...graph,
       edges: graph.edges.map((edge) => (edge.relation === "writes" ? { ...edge, state: "late" as const } : edge)),

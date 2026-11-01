@@ -68,7 +68,7 @@ describe("Shell", () => {
     const { container } = renderAt("/doctor"); // Home is the chat itself, so it has no chat sidebar
     expect(screen.getByRole("link", { name: "Today" })).toHaveAttribute("href", "/");
     const navigation = screen.getByRole("navigation", { name: "Main" });
-    for (const name of ["Workflow", "Org chart", "Team roster", "Types", "Artifacts"]) {
+    for (const name of ["Workflow", "Org chart", "Team roster", "Types", "Inventory"]) {
       expect(await within(navigation).findByRole("link", { name })).toBeInTheDocument();
     }
     expect(within(navigation).getByRole("button", { name: "Artifacts" })).toBeInTheDocument(); // asset types, assets
@@ -92,7 +92,7 @@ describe("Shell", () => {
     expect(within(navigation).queryByRole("link", { name: "Doctor" })).not.toBeInTheDocument(); // hz itself: account menu
     expect(within(navigation).getByRole("link", { name: "Team roster" })).toBeInTheDocument();
     expect(await within(navigation).findByRole("link", { name: "Weekly digest" })).toBeInTheDocument();
-    for (const name of ["Workflow", "Org chart", "Types", "Artifacts"]) {
+    for (const name of ["Workflow", "Org chart", "Types", "Inventory"]) {
       expect(within(navigation).queryByRole("link", { name })).not.toBeInTheDocument();
     }
     expect(within(navigation).queryByText("Artifacts")).not.toBeInTheDocument();
