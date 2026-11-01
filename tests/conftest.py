@@ -63,6 +63,9 @@ def make_kernel(settings: Settings) -> Callable[..., Kernel]:
 _ROOT = Path(__file__).resolve().parents[1]
 _NODE = re.compile(r"tests/e2e/[A-Za-z0-9_./:-]+\Z")
 _TYPE = re.compile(r"(?:^|\n)(?:[A-Za-z_]\w*\.)*([A-Za-z_]\w*(?:Error|Exception)|Failed)(?::|\Z)")
+# A browser driver's own stack and the Playwright call that timed out: fixed shapes that hold no value from the failure.
+_DRIVER_FRAME = re.compile(r"\b((?:web|desktop)/e2e/[A-Za-z0-9_./-]+\.mjs:[0-9]+)(?::[0-9]+)?")
+_DRIVER_TIMEOUT = re.compile(r"\b([a-z][A-Za-z]*\.[a-z][A-Za-z]*: Timeout [0-9]+ms exceeded)")
 _ALLOWED_TYPES = frozenset(
     {"AssertionError", "ValueError", "TypeError", "RuntimeError", "TimeoutError", "OSError", "Failed"}
 )
@@ -98,6 +101,15 @@ def _frames(report: object) -> tuple[list[str], str]:
     return result[-12:], kind
 
 
+def _driver_lines(report: object) -> list[str]:
+    """What a failing browser driver was doing, so the line survives a session limit that cuts off pytest's summary."""
+    text = str(getattr(report, "longrepr", ""))
+    frames = list(dict.fromkeys(_DRIVER_FRAME.findall(text)))[:8]
+    return [f"E2E driver {found}" for found in dict.fromkeys(_DRIVER_TIMEOUT.findall(text))] + [
+        f"E2E driver frame {frame}" for frame in frames
+    ]
+
+
 def _emit(value: str) -> None:
     sys.stdout.write(value + "\n")
     sys.stdout.flush()
@@ -124,6 +136,8 @@ class _Diagnostics:
             _emit(f"E2E failure {_node(nodeid)} phase={phase} seconds={seconds:.3f} type={kind}")
             for frame in frames:
                 _emit(f"E2E frame {frame}")
+            for line in _driver_lines(report):
+                _emit(line)
         if phase == "teardown":
             _emit(f"E2E end {_node(nodeid)} seconds={self._durations.pop(nodeid, 0.0):.3f}")
 
