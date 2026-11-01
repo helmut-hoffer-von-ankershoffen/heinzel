@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Providers, queryClient } from "@/App";
 import { expectAccessible } from "@/test/render";
-import { ModuleHeader, PluginsSection, sourceLabel } from "./PluginsSection";
+import { CandidateDetails, ModuleHeader, PluginsSection, sourceLabel } from "./PluginsSection";
 
 const PINNED = `heinzel-crm @ git+https://github.com/acme-example/heinzel-crm@${"b".repeat(40)}`;
 
