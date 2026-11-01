@@ -177,6 +177,13 @@ jobs:
           python-version: "3.14"
       - run: uv sync --no-dev --group test # UV_FROZEN: exactly the lockfile
       - run: make test
+      - name: Record the total for the merge gate
+        run: uv run coverage report --format=total --precision=2 > coverage-total.txt
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: coverage-total
+          path: coverage-total.txt
+          retention-days: 7
       - name: Report coverage on pull requests and publish the badge
         # The action only understands pull_request, push and schedule events; dispatched runs (release PRs) skip it.
         if: github.event_name != 'workflow_dispatch'
