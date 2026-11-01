@@ -11,8 +11,10 @@ on:
 permissions:
   contents: read
 
+# Every commit on main gets its own group, so a later push never replaces a queued run or cancels a running one and
+# each main commit ends with a CI result. Pull requests share one group per ref and cancel superseded runs.
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
