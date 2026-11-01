@@ -2595,6 +2595,7 @@ $ hz system plugin [OPTIONS] COMMAND [ARGS]...
 * `list`: (expert) List installed plugins, enabled...
 * `new`: (expert) Scaffold a plugin repository from...
 * `operation`: (expert) Read the status and result of a...
+* `pending`: (expert) List plugins changed on this...
 * `remove`: (expert) Remove a plugin.
 * `sdk`: (expert) Export the versioned plugin view...
 * `search`: (expert) Find plugins to install:...
@@ -2813,6 +2814,22 @@ $ hz system plugin operation [OPTIONS] {operation_id}
 **Arguments**:
 
 * `operation_id`: Receipt id from a plugin preview.  [required]
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system plugin pending`
+
+(expert) List plugins changed on this machine since this server started: what a restart would load.
+
+**Usage**:
+
+```console
+$ hz system plugin pending [OPTIONS]
+```
 
 **Options**:
 
