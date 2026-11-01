@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
-    <title>Coverage for src/heinzel/modules/system/_render.py: 99%</title>
+    <title>Coverage for src/heinzel/modules/system/_render.py: 96%</title>
     <link rel="icon" sizes="32x32" href="favicon_32_cb_c827f16f.png">
     <link rel="stylesheet" href="style_cb_4667309f.css" type="text/css">
     <script src="coverage_html_cb_54cfdca1.js" defer></script>
@@ -12,7 +12,7 @@
     <div class="content">
         <h1>
             <span class="text">Coverage for </span><b>src<span class="sep">/</span>heinzel<span class="sep">/</span>modules<span class="sep">/</span>system<span class="sep">/</span>_render.py</b>:
-            <span class="pc_cov">99%</span>
+            <span class="pc_cov">96%</span>
         </h1>
         <aside id="help_panel_wrapper">
             <input id="help_panel_state" type="checkbox">
@@ -55,19 +55,19 @@
             </div>
         </aside>
         <h2>
-            <span class="text">53 statements &nbsp;</span>
-            <button type="button" class="run button_toggle_run" value="run" data-shortcut="r" title="Toggle lines run">53<span class="text"> run</span></button>
-            <button type="button" class="mis show_mis button_toggle_mis" value="mis" data-shortcut="m" title="Toggle lines missing">0<span class="text"> missing</span></button>
+            <span class="text">56 statements &nbsp;</span>
+            <button type="button" class="run button_toggle_run" value="run" data-shortcut="r" title="Toggle lines run">54<span class="text"> run</span></button>
+            <button type="button" class="mis show_mis button_toggle_mis" value="mis" data-shortcut="m" title="Toggle lines missing">2<span class="text"> missing</span></button>
             <button type="button" class="exc show_exc button_toggle_exc" value="exc" data-shortcut="x" title="Toggle lines excluded">0<span class="text"> excluded</span></button>
             <button type="button" class="par run show_par button_toggle_par" value="par" data-shortcut="p" title="Toggle lines partially run">1<span class="text"> partial</span></button>
         </h2>
         <p class="text">
             <a id="prevFileLink" class="nav" href="z_889d5778a48e99c5__metadata_identity_py.html">&#xab; prev</a> &nbsp; &nbsp;
             <a id="indexLink" class="nav" href="index.html">&Hat; index</a> &nbsp; &nbsp;
-            <a id="nextFileLink" class="nav" href="z_889d5778a48e99c5__update_py.html">&#xbb; next</a>
+            <a id="nextFileLink" class="nav" href="z_889d5778a48e99c5__service_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.17.0">coverage.py v7.17.0</a>,
-            created at 2026-11-01 06:13 +0000
+            created at 2026-11-01 06:21 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -93,7 +93,7 @@
     <p class="run"><span class="n"><a id="t9" href="#t9">9</a></span><span class="t"><span class="key">from</span> <span class="nam">rich</span><span class="op">.</span><span class="nam">table</span> <span class="key">import</span> <span class="nam">Table</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t10" href="#t10">10</a></span><span class="t"><span class="key">from</span> <span class="nam">rich</span><span class="op">.</span><span class="nam">text</span> <span class="key">import</span> <span class="nam">Text</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t11" href="#t11">11</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t12" href="#t12">12</a></span><span class="t"><span class="key">from</span> <span class="nam">heinzel</span><span class="op">.</span><span class="nam">modules</span><span class="op">.</span><span class="nam">system</span><span class="op">.</span><span class="nam">_models</span> <span class="key">import</span> <span class="nam">ModuleInfo</span><span class="op">,</span> <span class="nam">ReleaseCheck</span><span class="op">,</span> <span class="nam">SystemInfo</span><span class="op">,</span> <span class="nam">UpdateResult</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t12" href="#t12">12</a></span><span class="t"><span class="key">from</span> <span class="nam">heinzel</span><span class="op">.</span><span class="nam">modules</span><span class="op">.</span><span class="nam">system</span><span class="op">.</span><span class="nam">_models</span> <span class="key">import</span> <span class="nam">ChannelReport</span><span class="op">,</span> <span class="nam">ModuleInfo</span><span class="op">,</span> <span class="nam">ReleaseCheck</span><span class="op">,</span> <span class="nam">SystemInfo</span><span class="op">,</span> <span class="nam">UpdateResult</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t13" href="#t13">13</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t14" href="#t14">14</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t15" href="#t15">15</a></span><span class="t"><span class="key">def</span> <span class="nam">render_modules</span><span class="op">(</span><span class="nam">modules</span><span class="op">:</span> <span class="nam">list</span><span class="op">[</span><span class="nam">ModuleInfo</span><span class="op">]</span><span class="op">)</span> <span class="op">-&gt;</span> <span class="nam">RenderableType</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
@@ -153,20 +153,26 @@
     <p class="run"><span class="n"><a id="t69" href="#t69">69</a></span><span class="t">    <span class="key">return</span> <span class="nam">Text</span><span class="op">(</span><span class="fst">f&quot;</span><span class="fst">hz </span><span class="op">{</span><span class="nam">check</span><span class="op">.</span><span class="nam">current</span><span class="op">}</span><span class="fst"> is up to date; the latest release is </span><span class="op">{</span><span class="nam">check</span><span class="op">.</span><span class="nam">latest</span><span class="op">}</span><span class="fst">.</span><span class="fst">&quot;</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t70" href="#t70">70</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t71" href="#t71">71</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t72" href="#t72">72</a></span><span class="t"><span class="key">def</span> <span class="nam">render_update</span><span class="op">(</span><span class="nam">result</span><span class="op">:</span> <span class="nam">UpdateResult</span><span class="op">)</span> <span class="op">-&gt;</span> <span class="nam">RenderableType</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t73" href="#t73">73</a></span><span class="t">    <span class="str">&quot;&quot;&quot;What the update did, or what the installation is pinned to and the command that moves it.&quot;&quot;&quot;</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t74" href="#t74">74</a></span><span class="t">    <span class="nam">unchanged</span> <span class="op">=</span> <span class="op">[</span><span class="nam">p</span><span class="op">.</span><span class="nam">distribution</span> <span class="key">for</span> <span class="nam">p</span> <span class="key">in</span> <span class="nam">result</span><span class="op">.</span><span class="nam">plugins</span> <span class="key">if</span> <span class="nam">p</span><span class="op">.</span><span class="nam">status</span> <span class="op">==</span> <span class="str">&quot;unchanged&quot;</span><span class="op">]</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t75" href="#t75">75</a></span><span class="t">    <span class="key">return</span> <span class="nam">Text</span><span class="op">(</span><span class="str">&quot;\n&quot;</span><span class="op">.</span><span class="nam">join</span><span class="op">(</span><span class="op">[</span><span class="nam">result</span><span class="op">.</span><span class="nam">message</span><span class="op">,</span> <span class="op">*</span><span class="op">(</span><span class="op">[</span><span class="fst">f&quot;</span><span class="fst">Plugins unchanged: </span><span class="op">{</span><span class="str">&#x27;, &#x27;</span><span class="op">.</span><span class="nam">join</span><span class="op">(</span><span class="nam">unchanged</span><span class="op">)</span><span class="op">}</span><span class="fst">.</span><span class="fst">&quot;</span><span class="op">]</span> <span class="key">if</span> <span class="nam">unchanged</span> <span class="key">else</span> <span class="op">[</span><span class="op">]</span><span class="op">)</span><span class="op">]</span><span class="op">)</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t72" href="#t72">72</a></span><span class="t"><span class="key">def</span> <span class="nam">render_channel</span><span class="op">(</span><span class="nam">report</span><span class="op">:</span> <span class="nam">ChannelReport</span><span class="op">)</span> <span class="op">-&gt;</span> <span class="nam">RenderableType</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t73" href="#t73">73</a></span><span class="t">    <span class="str">&quot;&quot;&quot;The channel and what a switch changes, with how to confirm one that hasn&#x27;t happened.&quot;&quot;&quot;</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis show_mis"><span class="n"><a id="t74" href="#t74">74</a></span><span class="t">    <span class="nam">done</span> <span class="op">=</span> <span class="fst">f&quot;</span><span class="fst">Switched to </span><span class="op">{</span><span class="nam">report</span><span class="op">.</span><span class="nam">channel</span><span class="op">}</span><span class="fst">.</span><span class="fst">&quot;</span> <span class="key">if</span> <span class="nam">report</span><span class="op">.</span><span class="nam">changed</span> <span class="key">else</span> <span class="str">&quot;&quot;</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis show_mis"><span class="n"><a id="t75" href="#t75">75</a></span><span class="t">    <span class="key">return</span> <span class="nam">Text</span><span class="op">(</span><span class="str">&quot;\n&quot;</span><span class="op">.</span><span class="nam">join</span><span class="op">(</span><span class="nam">filter</span><span class="op">(</span><span class="key">None</span><span class="op">,</span> <span class="op">[</span><span class="nam">report</span><span class="op">.</span><span class="nam">statement</span><span class="op">,</span> <span class="nam">done</span><span class="op">]</span><span class="op">)</span><span class="op">)</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t76" href="#t76">76</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t77" href="#t77">77</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t78" href="#t78">78</a></span><span class="t"><span class="key">def</span> <span class="nam">render_update</span><span class="op">(</span><span class="nam">result</span><span class="op">:</span> <span class="nam">UpdateResult</span><span class="op">)</span> <span class="op">-&gt;</span> <span class="nam">RenderableType</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t79" href="#t79">79</a></span><span class="t">    <span class="str">&quot;&quot;&quot;What the update did, or what the installation is pinned to and the command that moves it.&quot;&quot;&quot;</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t80" href="#t80">80</a></span><span class="t">    <span class="nam">unchanged</span> <span class="op">=</span> <span class="op">[</span><span class="nam">p</span><span class="op">.</span><span class="nam">distribution</span> <span class="key">for</span> <span class="nam">p</span> <span class="key">in</span> <span class="nam">result</span><span class="op">.</span><span class="nam">plugins</span> <span class="key">if</span> <span class="nam">p</span><span class="op">.</span><span class="nam">status</span> <span class="op">==</span> <span class="str">&quot;unchanged&quot;</span><span class="op">]</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t81" href="#t81">81</a></span><span class="t">    <span class="key">return</span> <span class="nam">Text</span><span class="op">(</span><span class="str">&quot;\n&quot;</span><span class="op">.</span><span class="nam">join</span><span class="op">(</span><span class="op">[</span><span class="nam">result</span><span class="op">.</span><span class="nam">message</span><span class="op">,</span> <span class="op">*</span><span class="op">(</span><span class="op">[</span><span class="fst">f&quot;</span><span class="fst">Plugins unchanged: </span><span class="op">{</span><span class="str">&#x27;, &#x27;</span><span class="op">.</span><span class="nam">join</span><span class="op">(</span><span class="nam">unchanged</span><span class="op">)</span><span class="op">}</span><span class="fst">.</span><span class="fst">&quot;</span><span class="op">]</span> <span class="key">if</span> <span class="nam">unchanged</span> <span class="key">else</span> <span class="op">[</span><span class="op">]</span><span class="op">)</span><span class="op">]</span><span class="op">)</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
 </main>
 <footer>
     <div class="content">
         <p>
             <a class="nav" href="z_889d5778a48e99c5__metadata_identity_py.html">&#xab; prev</a> &nbsp; &nbsp;
             <a class="nav" href="index.html">&Hat; index</a> &nbsp; &nbsp;
-            <a class="nav" href="z_889d5778a48e99c5__update_py.html">&#xbb; next</a>
+            <a class="nav" href="z_889d5778a48e99c5__service_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.17.0">coverage.py v7.17.0</a>,
-            created at 2026-11-01 06:13 +0000
+            created at 2026-11-01 06:21 +0000
         </p>
     </div>
 </footer>

@@ -67,7 +67,7 @@
             <a id="nextFileLink" class="nav" href="z_117df5041f6859bf__render_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.17.0">coverage.py v7.17.0</a>,
-            created at 2026-11-01 06:13 +0000
+            created at 2026-11-01 06:21 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -101,7 +101,7 @@
     <p class="run"><span class="n"><a id="t17" href="#t17">17</a></span><span class="t"><span class="key">from</span> <span class="nam">heinzel</span> <span class="key">import</span> <span class="nam">HeinzelError</span><span class="op">,</span> <span class="nam">Module</span><span class="op">,</span> <span class="nam">ModuleSettings</span><span class="op">,</span> <span class="nam">__version__</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t18" href="#t18">18</a></span><span class="t"><span class="key">from</span> <span class="nam">heinzel</span><span class="op">.</span><span class="nam">kernel</span> <span class="key">import</span> <span class="nam">Installation</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t19" href="#t19">19</a></span><span class="t"><span class="key">from</span> <span class="nam">heinzel</span><span class="op">.</span><span class="nam">modules</span><span class="op">.</span><span class="nam">system</span><span class="op">.</span><span class="nam">_models</span> <span class="key">import</span> <span class="nam">ReleaseNotes</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t20" href="#t20">20</a></span><span class="t"><span class="key">from</span> <span class="nam">heinzel</span><span class="op">.</span><span class="nam">modules</span><span class="op">.</span><span class="nam">system</span><span class="op">.</span><span class="nam">_service</span> <span class="key">import</span> <span class="nam">RELEASE_TIMEOUT</span><span class="op">,</span> <span class="nam">clean</span><span class="op">,</span> <span class="nam">github_releases</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t20" href="#t20">20</a></span><span class="t"><span class="key">from</span> <span class="nam">heinzel</span><span class="op">.</span><span class="nam">modules</span><span class="op">.</span><span class="nam">system</span><span class="op">.</span><span class="nam">_service</span> <span class="key">import</span> <span class="nam">RELEASE_TIMEOUT</span><span class="op">,</span> <span class="nam">clean</span><span class="op">,</span> <span class="nam">installed_releases</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t21" href="#t21">21</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t22" href="#t22">22</a></span><span class="t"><span class="nam">FILENAME</span> <span class="op">=</span> <span class="str">&quot;CHANGELOG.md&quot;</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t23" href="#t23">23</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
@@ -205,7 +205,7 @@
     <p class="run"><span class="n"><a id="t121" href="#t121">121</a></span><span class="t">    <span class="key">except</span> <span class="nam">InvalidVersion</span> <span class="key">as</span> <span class="nam">exc</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t122" href="#t122">122</a></span><span class="t">        <span class="nam">msg</span> <span class="op">=</span> <span class="fst">f&quot;</span><span class="fst">hz </span><span class="op">{</span><span class="nam">__version__</span><span class="op">}</span><span class="fst"> is no release version, so no release is newer or older than it.</span><span class="fst">&quot;</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t123" href="#t123">123</a></span><span class="t">        <span class="key">raise</span> <span class="nam">HeinzelError</span><span class="op">(</span><span class="nam">msg</span><span class="op">)</span> <span class="key">from</span> <span class="nam">exc</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t124" href="#t124">124</a></span><span class="t">    <span class="nam">releases</span> <span class="op">=</span> <span class="nam">github_releases</span><span class="op">(</span><span class="nam">installation</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t124" href="#t124">124</a></span><span class="t">    <span class="nam">releases</span> <span class="op">=</span> <span class="nam">installed_releases</span><span class="op">(</span><span class="nam">installation</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t125" href="#t125">125</a></span><span class="t">    <span class="key">try</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t126" href="#t126">126</a></span><span class="t">        <span class="key">return</span> <span class="nam">releases</span><span class="op">.</span><span class="nam">newer_than</span><span class="op">(</span><span class="nam">__version__</span><span class="op">,</span> <span class="nam">RELEASE_TIMEOUT</span><span class="op">,</span> <span class="nam">token</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t127" href="#t127">127</a></span><span class="t">    <span class="com"># Offline, rate-limited or an odd answer: one clear error, never a traceback.</span>&nbsp;</span><span class="r"></span></p>
@@ -232,7 +232,7 @@
             <a class="nav" href="z_117df5041f6859bf__render_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.17.0">coverage.py v7.17.0</a>,
-            created at 2026-11-01 06:13 +0000
+            created at 2026-11-01 06:21 +0000
         </p>
     </div>
 </footer>
