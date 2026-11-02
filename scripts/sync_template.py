@@ -113,6 +113,7 @@ def makefile() -> str:
         "desktop-electron-sandbox",
         "desktop-electron-native",
         "desktop-electron-package",
+        "test-macos-specific",  # the core's notifier, launchd and Finder tests
     }
     text = re.sub(
         r"(?m)^\.PHONY:.*$",
@@ -121,8 +122,9 @@ def makefile() -> str:
     )
     text = re.sub(r"(?m)^desktop-electron-(?:test|sandbox|native|package):[^\n]*\n(?:\t[^\n]*\n)*", "", text)
     # Heinzel Notifier, the core's macOS notifier app (ADR 0043): plugins have none.
+    # Likewise the macOS-specific tests: the notifier, launchd service and Finder code are the core's.
     text = re.sub(r"(?m)^(\.PHONY:.*?) notifier\b", r"\1", text)
-    text = re.sub(r"\nnotifier:.*?\n(?:\t.*\n)+", "\n", text)
+    text = re.sub(r"\n(?:notifier|test-macos-specific):.*?\n(?:\t.*\n)+", "\n", text)
     # The terminal art is drawn from the web app's drawing: plugins have none.
     text = re.sub(r"(?m)^(\.PHONY:.*?) terminal-art\b", r"\1", text)
     text = re.sub(r"\nterminal-art:.*?\n(?:\t.*\n)+", "\n", text)
@@ -198,7 +200,7 @@ def ci_workflow() -> str:
     )
     text = re.sub(r"\n      - name: Unpack Heinzel Notifier into the package\n[^\n]*\n[^\n]*", "", text)
     text = re.sub(r"\n      - name: Check the wheel ships Heinzel Notifier\n[^\n]*\n[^\n]*", "", text)
-    text = text.replace(", notifier, electron, build]", ", build]")
+    text = text.replace(", notifier, macos-specific, electron, build]", ", build]")
     # Consumer compatibility belongs to core's public-contract release, never a plugin's own edit loop.
     text = re.sub(r"\n  consumer-(?:plan|check):\n.*?(?=\n  [a-z-]+:)", "\n", text, flags=re.DOTALL)
     text = re.sub(r"\n  local-plugin-(?:plan|check):\n.*?(?=\n  [a-z-]+:)", "\n", text, flags=re.DOTALL)
@@ -210,6 +212,7 @@ def ci_workflow() -> str:
         "site-tests",
         "template",
         "notifier",
+        "macos-specific",
         "electron",
         "consumer-plan",
         "consumer-check",
@@ -267,6 +270,7 @@ def pyproject() -> str:
         'no deadline or selection change.",\n',
         "",
     )
+    tools = re.sub(r' {4}"macos_specific: [^\n]*\n', "", tools)  # the core's notifier, launchd service and Finder tests
     tools = re.sub(r'\nextend-exclude = \["template", "plugins"[^\]]*\][^\n]*', "", tools)
     tools = tools.replace(
         'extend-exclude = ["ATTRIBUTIONS.md", "site", "plugins"]', 'extend-exclude = ["ATTRIBUTIONS.md", "site"]'

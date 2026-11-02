@@ -199,6 +199,7 @@ markers = [
     "long_running: Tests with a timeout >= 5 min.",
     "e2e_early: Hint to start a long E2E case in an early xdist worker batch; no deadline or selection change.",
     "perf: Performance tests that assert on elapsed time (linear time, a budget). Additional to the level marker; excluded from make check-fast, test, test-parallel and test-all-pythons, run by make test-perf in CI only, because load makes them flake.",
+    "macos_specific: Additional to the level marker. Exercises macOS behaviour only (the notifier, the launchd daemon service, Finder, process birth); CI runs these serially on macOS as the required macOS-specific tests job. They stay in the broader jobs too.",
 ]
 
 [tool.coverage.run]

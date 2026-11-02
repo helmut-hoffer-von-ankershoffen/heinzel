@@ -62,6 +62,7 @@ def test_request_fence_uses_boottime_and_matching_time_namespace(monkeypatch):
     assert birth.request_fence("linux") is None
 
 
+@pytest.mark.macos_specific
 def test_macos_witness_uses_held_child_and_orders_actual_self_identifier(monkeypatch):
     commands = []
 
@@ -101,6 +102,7 @@ def test_macos_witness_uses_held_child_and_orders_actual_self_identifier(monkeyp
     assert not birth.after_request(fence, {**actual, "ticks": 101})
 
 
+@pytest.mark.macos_specific
 def test_macos_refuses_foreign_parent_and_still_reaps_owned_witness(monkeypatch):
     events = []
 
@@ -128,6 +130,7 @@ def test_macos_refuses_foreign_parent_and_still_reaps_owned_witness(monkeypatch)
     assert events == ["close", "reap"]
 
 
+@pytest.mark.macos_specific
 def test_macos_witness_unavailable_when_child_cannot_launch(monkeypatch):
     def denied(*_args, **_kwargs):
         msg = "denied"

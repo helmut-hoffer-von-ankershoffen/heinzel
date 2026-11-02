@@ -159,6 +159,7 @@ def make(make_kernel, settings, tmp_path, bin_dir):
 # Installing
 
 
+@pytest.mark.macos_specific
 def test_install_on_macos_writes_and_bootstraps_the_launch_agent(make, bin_dir, tmp_path):
     runner = Runner(bin_dir)
     result = make(runner=runner).install(timedelta(minutes=10))
@@ -170,6 +171,7 @@ def test_install_on_macos_writes_and_bootstraps_the_launch_agent(make, bin_dir, 
     assert (result.interval_minutes, result.dry_run) == (10, False)
 
 
+@pytest.mark.macos_specific
 def test_install_hints_at_the_notifier_for_login_items_while_it_is_missing(make):
     assert make(notifier=False).install(timedelta(minutes=10)).hint == (
         "Install the notifier to show Heinzelmännchen with its icon in Login Items: hz system notify install"
@@ -214,6 +216,7 @@ def test_install_needs_the_uv_tool_shim(make, bin_dir):
     assert make().install(timedelta(minutes=5), dry_run=True).executable == bin_dir / "hz"
 
 
+@pytest.mark.macos_specific
 def test_install_reports_failures_of_uv_and_launchctl(make, bin_dir):
     with pytest.raises(HeinzelError, match="uv tool dir --bin"):
         make(runner=Runner(bin_dir, {"uv": 2})).install(timedelta(minutes=5))
@@ -271,6 +274,7 @@ def test_install_tells_each_real_step_in_order(make, bin_dir):
     ]
 
 
+@pytest.mark.macos_specific
 def test_install_leaves_out_the_notifier_step_without_one_and_off_macos(make, bin_dir):
     mac = make(runner=Runner(bin_dir))
     phased = progress_of(mac)
@@ -282,6 +286,7 @@ def test_install_leaves_out_the_notifier_step_without_one_and_off_macos(make, bi
     assert {event["id"] for event in phased.events} == {"unit", "load", "verify"}
 
 
+@pytest.mark.macos_specific
 def test_a_notifier_problem_is_a_warning_and_the_daemon_stays_installed(make, bin_dir, tmp_path):
     service = make(runner=Runner(bin_dir), install_notifier=lambda: "Xcode tools are missing")
     phased = progress_of(service)
@@ -1044,6 +1049,7 @@ def test_a_daemon_started_by_an_older_hz_is_flagged_until_current_service_tick(m
     assert (service.status().version, service.status().version_mismatch) == (__version__, False)
 
 
+@pytest.mark.macos_specific
 def test_launchd_service_pid_is_read_from_its_running_job(make, bin_dir, monkeypatch):
     service = make(runner=Runner(bin_dir))
     output = f'{{\n\t"Label" = "{LABEL}";\n\t"PID" = {os.getpid()};\n}}\n'
@@ -1072,6 +1078,7 @@ def test_systemd_service_pid_is_read_from_main_pid(make, bin_dir, monkeypatch):
     assert service._service_manager_pid() == 417
 
 
+@pytest.mark.macos_specific
 @pytest.mark.parametrize(
     "output",
     [
@@ -1310,6 +1317,7 @@ def test_boot_identity_reads_bounded_linux_file_without_running_a_command(tmp_pa
     assert _platform_boot_identity("linux", Refuses(), boot) is None
 
 
+@pytest.mark.macos_specific
 def test_boot_identity_uses_fixed_readonly_macos_query_and_rejects_failure():
     from heinzel.modules.system.daemon._service import _platform_boot_identity
 
