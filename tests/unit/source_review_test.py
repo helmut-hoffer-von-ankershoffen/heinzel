@@ -203,6 +203,29 @@ def test_payload_holds_both_sides_of_renames_and_deletions_and_never_the_checkou
     assert payload == source_review.build_payload(repo_config(root, base, head))[0]
 
 
+def test_reading_sources_costs_a_fixed_number_of_git_processes(repo, monkeypatch):
+    # Each Git call is a process, and on macOS `/usr/bin/git` is an xcrun shim: three calls per path and revision
+    # pushed small payloads past the 5 s unit limit on CI's macOS runners.
+    root, base, _ = repo
+    for index in range(20):
+        (root / f"many{index}.py").write_text(f"print({index})\n")
+    git_in(root, "add", "-A")
+    git_in(root, "commit", "-qm", "many")
+    head = git_in(root, "rev-parse", "HEAD")
+    calls = []
+    real = source_review.run_bounded
+
+    def counted(command, **kwargs):
+        calls.append(command)
+        return real(command, **kwargs)
+
+    monkeypatch.setattr(source_review, "run_bounded", counted)
+    payload, _, names = source_review.build_payload(repo_config(root, base, head))
+    assert len(names) == 24
+    assert json.loads(payload)["sources"][f"{head}:many19.py"]["text"] == "print(19)\n"
+    assert len(calls) <= 6, [command[3:5] for command in calls]
+
+
 def test_binary_and_oversized_sources_are_refused(repo, monkeypatch):
     root, base, head = repo
     (root / "blob.bin").write_bytes(b"a\0b")
@@ -240,7 +263,7 @@ def test_the_model_gets_no_tools_and_the_unchanged_limits():
 def test_the_model_sees_only_its_key(tmp_path, monkeypatch):
     fake = tmp_path / "fake_cli"
     fake.write_text(
-        "#!/usr/bin/python3\nimport json,os,sys\n"
+        f"#!{sys.executable}\nimport json,os,sys\n"
         "assert 'GH_TOKEN' not in os.environ and os.environ['ANTHROPIC_API_KEY']=='k'\n"
         "assert json.load(sys.stdin)['head']\n"
         "print(json.dumps({'type':'result'}))\n"
