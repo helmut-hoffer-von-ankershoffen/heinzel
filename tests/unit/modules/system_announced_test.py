@@ -408,7 +408,7 @@ def test_an_announced_plugin_that_is_not_installed_installs_nothing(tmp_path, mo
 # The trial start ------------------------------------------------------------------------------------------------------
 
 TRIAL_SERVER = """
-import http.server, json, os, pathlib, sys
+import http.server, json, os, pathlib, socketserver, sys
 for variable in ("HZ_STATE_DIR", "HZ_DATA_DIR", "HZ_CACHE_DIR", "HZ_LOG_DIR"):
     pathlib.Path(os.environ[variable], "written-by-the-trial").write_text("x")
 config = pathlib.Path(os.environ["HZ_CONFIG_HOME"], "hz.toml")
@@ -422,7 +422,12 @@ class Lifecycle(http.server.BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-server = http.server.HTTPServer(("127.0.0.1", 0), Lifecycle)
+class LoopbackHTTPServer(http.server.HTTPServer):
+    def server_bind(self):  # HTTPServer would ask DNS for a display name, which can stall for seconds on macOS
+        socketserver.TCPServer.server_bind(self)
+        self.server_name, self.server_port = self.server_address[:2]
+
+server = LoopbackHTTPServer(("127.0.0.1", 0), Lifecycle)
 print(f"http://127.0.0.1:{server.server_port}/#token=t", flush=True)
 try:
     server.serve_forever()
