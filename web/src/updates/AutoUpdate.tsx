@@ -27,15 +27,23 @@ export function secondsLeft(status: AutoUpdateStatus | undefined, receivedAt: nu
 
 export function AutoUpdate() {
   const client = useQueryClient();
-  // Turning the setting on or off, here or in another place, asks the server again at once.
   const { on } = useAutoUpdateSetting();
+  // A setting cached as "off" can be enabled in another window or the CLI without this window knowing. Keep
+  // polling every 2 s, also in the background, so each window can show the server's 30-second warning in time.
   const query = useQuery({
-    queryKey: [...KEY, on],
+    queryKey: KEY,
     queryFn: ({ signal }) => call("GET", "", signal),
-    // Every 2 s while anything is pending, so a countdown shows within 2 of its 30 seconds; a minute when off.
-    refetchInterval: (state) => (state.state.data?.phase === "off" ? 60_000 : 2_000),
+    refetchInterval: 2_000,
+    refetchIntervalInBackground: true,
     retry: false,
   });
+  // A setting change observed by this window asks the server again at once.
+  const previous = useRef(on);
+  useEffect(() => {
+    if (previous.current === on) return;
+    previous.current = on;
+    void client.invalidateQueries({ queryKey: KEY, exact: true });
+  }, [client, on]);
   const status = query.data;
   const [now, setNow] = useState(() => Date.now());
   const [busy, setBusy] = useState(false);
@@ -75,7 +83,7 @@ export function AutoUpdate() {
   const act = async (path: "/postpone" | "/dismiss") => {
     setBusy(true);
     try {
-      client.setQueryData([...KEY, on], await call("POST", path));
+      client.setQueryData(KEY, await call("POST", path));
     } catch {
       await query.refetch();
     } finally {

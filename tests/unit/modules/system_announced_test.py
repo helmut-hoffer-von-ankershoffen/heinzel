@@ -407,6 +407,8 @@ def test_an_announced_plugin_that_is_not_installed_installs_nothing(tmp_path, mo
 
 # The trial start ------------------------------------------------------------------------------------------------------
 
+# The stand-in server starts as `python -I -S`: no site-packages to scan, which on a loaded macOS runner took the child
+# longer to print its link than the unit test's 5 seconds (main run 41473262545). It needs only the standard library.
 TRIAL_SERVER = """
 import http.server, json, os, pathlib, socketserver, sys
 for variable in ("HZ_STATE_DIR", "HZ_DATA_DIR", "HZ_CACHE_DIR", "HZ_LOG_DIR"):
@@ -449,7 +451,9 @@ def test_a_trial_start_runs_on_throwaway_folders_and_leaves_the_live_ones_untouc
     script = tmp_path / "trial.py"
     script.write_text(TRIAL_SERVER)
 
-    assert announced.trial_start("9.9.9", timeout=30, command=[sys.executable, str(script), str(seen)]) is True
+    assert (
+        announced.trial_start("9.9.9", timeout=30, command=[sys.executable, "-I", "-S", str(script), str(seen)]) is True
+    )
 
     assert (live["config"] / "hz.toml").read_text() == "[hz]\nui_port = 8737\n"
     assert [p.name for f in live.values() for p in f.iterdir()] == ["hz.toml"]  # nothing written anywhere live
@@ -463,7 +467,10 @@ def test_a_trial_start_runs_on_throwaway_folders_and_leaves_the_live_ones_untouc
 def test_a_trial_start_that_answers_another_version_fails(tmp_path):
     seen, script = tmp_path / "seen.json", tmp_path / "trial.py"
     script.write_text(TRIAL_SERVER)
-    assert announced.trial_start("1.0.0", timeout=30, command=[sys.executable, str(script), str(seen)]) is False
+    assert (
+        announced.trial_start("1.0.0", timeout=30, command=[sys.executable, "-I", "-S", str(script), str(seen)])
+        is False
+    )
 
 
 def test_the_receipt_follows_a_git_plugins_branch_again_and_nothing_else_changes():
