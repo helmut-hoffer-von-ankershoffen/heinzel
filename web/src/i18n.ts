@@ -1070,6 +1070,8 @@ const en = {
   "autoUpdate.reconnect": "This window reconnects by itself when hz is back.",
   "autoUpdate.ok": "OK",
   "autoUpdate.setting": "Automatic updates",
+  "autoUpdate.byHand":
+    "Update by hand: {plugins}. They come from git, a folder or a URL, so hz doesn't update itself while they are installed.",
   "autoUpdate.settingHelp":
     "Installs new versions of hz and its plugins by itself, after a 30-second warning you can postpone; never during a chat answer or a running job.",
 } as const;

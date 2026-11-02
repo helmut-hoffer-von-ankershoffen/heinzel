@@ -1,18 +1,21 @@
 """The system module: what is installed and how it is configured."""
 
+from datetime import UTC, datetime, timedelta
 from typing import Annotated, Literal
 
 from pydantic import Field
 
 from heinzel import Kernel, Module
 from heinzel.kernel import (
+    KERNEL_SECTION,
     CoreMetadataVerifier,
     DaemonInstallationLifecycle,
     Installation,
     PluginReleases,
     ReleaseSource,
+    Settings,
 )
-from heinzel.modules.system._announced import ToolSnapshot, trial_start
+from heinzel.modules.system._announced import Announcement, ToolSnapshot, trial_start
 from heinzel.modules.system._metadata_identity import CoreMetadataIdentity
 from heinzel.modules.system._models import (
     AnnouncedUpdate,
@@ -127,20 +130,27 @@ def apply_announced(
     Raises:
         HeinzelError: If the installation can't update itself, before anything was installed.
     """
-    announced = dict(item.split("==", 1) for item in plugins)
-    return service.apply_announced(
-        core, announced, commit=commit, folder=kernel.settings.state_dir / "auto-update", trial=trial_start
+    now = datetime.now(UTC)
+    settings = kernel.config.reread().settings(Settings, KERNEL_SECTION)
+    announcement = Announcement(
+        core=core,
+        plugins=dict(item.split("==", 1) for item in plugins),
+        commit=commit,
+        exclude_newer=now - timedelta(hours=settings.auto_update_plugin_min_age_hours),
+        exclude_newer_core=now - timedelta(hours=settings.auto_update_min_age_hours),
     )
+    return service.apply_announced(announcement, folder=kernel.settings.state_dir / "auto-update", trial=trial_start)
 
 
 @module.operation(private=True, read_only=False, heads={"auto-update"}, audience="everyday")
 def recover_announced(installation: Installation, kernel: Kernel) -> bool:
     """Finish putting back an automatic update that stopped half way (ADR 0116); whether there was one.
 
-    The web app's server asks once when it starts. Every entry still in the copy moves into the tool folder.
+    The web app's server asks once when it starts, holding the apply lock. A copy left behind is the truth: the
+    process that took it died before the update ended, so the tool folder goes back to it.
     """
     folder = kernel.settings.state_dir / "auto-update"
-    if not installation.is_tool or not (folder / "after-update").is_dir():
+    if not installation.is_tool or not (folder / "before-update").is_dir():
         return False
     ToolSnapshot(installation.prefix.resolve(strict=True), folder / "before-update", folder / "after-update").recover()
     return True

@@ -1,7 +1,7 @@
 """Installing exactly the announced versions, the trial start and putting everything back (ADR 0116).
 
-Nothing here runs uv or an installed hz: the uv run is a function that changes files in a temporary tool folder, and
-continuity is the real fingerprint of that folder (ADR 0108).
+Nothing here runs uv or an installed hz: the uv run is a function that changes the metadata in a temporary tool
+folder, and continuity is the real fingerprint of that folder (ADR 0108).
 """
 
 import errno
@@ -9,24 +9,44 @@ import json
 import os
 import sys
 from contextlib import contextmanager, nullcontext
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 
 from heinzel import HeinzelError, Progress
 from heinzel.kernel import DaemonHandoverPlan, DaemonHandoverRequest, Installation
+from heinzel.kernel._installation import _core_by_tag
 from heinzel.modules.system import _announced as announced
-from heinzel.modules.system._announced import ToolSnapshot
+from heinzel.modules.system._announced import Announcement, ToolSnapshot, environment_versions
 from heinzel.modules.system._update import UpdateService
 
 pytestmark = pytest.mark.unit
+SITE = Path("lib", "python3.13", "site-packages")
+REPO = "https://github.com/org/heinzel"
+TAG_COMMIT = "c" * 40
 
 
 # The tool folder ------------------------------------------------------------------------------------------------------
 
 
-def tool_folder(tmp_path):
-    """A uv tool folder with hz 1.0.0 and one plugin, its receipt and entry point, as the continuity tests build it."""
+def install(prefix: Path, versions: dict[str, str]) -> None:
+    """What uv leaves: one dist-info folder per distribution, and hz's code naming its version."""
+    site = prefix / SITE
+    for info in site.glob("*.dist-info"):
+        for file in info.iterdir():
+            file.unlink()
+        info.rmdir()
+    for name, version in versions.items():
+        info = site / f"{name.replace('-', '_')}-{version}.dist-info"
+        info.mkdir(parents=True)
+        (info / "METADATA").write_text(f"Metadata-Version: 2.1\nName: {name}\nVersion: {version}\n")
+    (site / "heinzel").mkdir(exist_ok=True)
+    (site / "heinzel" / "__init__.py").write_text(f"hz {versions['heinzel']}")
+
+
+def tool_folder(tmp_path, plugin='{ name = "heinzel-clock" }', core='{ name = "heinzel" }'):
+    """A uv tool folder with hz 1.0.0, a plugin and a dependency, its receipt and entry point."""
     prefix = tmp_path / "tools" / "heinzel"
     (prefix / "bin").mkdir(parents=True)
     (prefix / "bin" / "hz").write_text("entrypoint")
@@ -34,12 +54,10 @@ def tool_folder(tmp_path):
     bin_dir.mkdir()
     (bin_dir / "hz").symlink_to(prefix / "bin" / "hz")
     (prefix / "uv-receipt.toml").write_text(
-        '[tool]\nrequirements = [{ name = "heinzel" }, { name = "heinzel-clock" }]\nentrypoints = [{ name = "hz", '
+        f'[tool]\nrequirements = [{core}, {plugin}]\nentrypoints = [{{ name = "hz", '
         "install-path = " + repr(str(bin_dir / "hz")) + " }]\n"
     )
-    package = prefix / "lib" / "site-packages" / "heinzel"
-    package.mkdir(parents=True)
-    (package / "__init__.py").write_text("hz 1.0.0")
+    install(prefix, {"heinzel": "1.0.0", "heinzel-clock": "1.0.0", "urllib3": "2.0.0"})
     return prefix
 
 
@@ -55,8 +73,7 @@ def test_putting_back_keeps_the_tool_folder_and_its_content_byte_for_byte(tmp_pa
     prefix = tool_folder(tmp_path)
     before, inode = contents(prefix), prefix.stat().st_ino
     snapshot = ToolSnapshot.take(prefix, tmp_path / "state")
-    (prefix / "lib" / "site-packages" / "heinzel" / "__init__.py").write_text("hz 9.9.9")  # the update
-    (prefix / "lib" / "new.txt").write_text("new")
+    install(prefix, {"heinzel": "9.9.9", "heinzel-clock": "1.0.0", "urllib3": "2.8.0"})  # the update
     snapshot.restore()
     assert contents(prefix) == before
     assert prefix.stat().st_ino == inode  # the folder itself was never replaced
@@ -68,7 +85,7 @@ def test_a_put_back_that_stopped_half_way_is_finished_by_recover(tmp_path, monke
     prefix = tool_folder(tmp_path)
     before = contents(prefix)
     snapshot = ToolSnapshot.take(prefix, tmp_path / "state")
-    (prefix / "lib" / "site-packages" / "heinzel" / "__init__.py").write_text("hz 9.9.9")
+    install(prefix, {"heinzel": "9.9.9", "heinzel-clock": "1.0.0", "urllib3": "2.0.0"})
     renamed, real = [], Path.rename
 
     def rename(self, target):
@@ -83,6 +100,38 @@ def test_a_put_back_that_stopped_half_way_is_finished_by_recover(tmp_path, monke
     monkeypatch.setattr(Path, "rename", real)
     snapshot.recover()  # as the next start does
     assert contents(prefix) == before
+
+
+@pytest.mark.parametrize("killed", ["right after the copy", "right after the install"])
+def test_a_process_killed_during_its_update_is_put_back_by_the_next_start(tmp_path, killed):
+    prefix = tool_folder(tmp_path)
+    tool = Installation(Progress(), prefix=prefix, uv="unused")
+    tool.record_startup_state(expected=tool.startup_fingerprint())
+    before = contents(prefix)
+    ToolSnapshot.take(prefix, tmp_path / "state")
+    if killed == "right after the install":
+        install(prefix, {"heinzel": "9.9.9", "heinzel-clock": "1.0.0", "urllib3": "2.0.0"})
+    # The process is gone. The next `hz ui` finds the copy and nothing else (system.recover-announced):
+    ToolSnapshot(prefix, tmp_path / "state" / "before-update", tmp_path / "state" / "after-update").recover()
+    assert contents(prefix) == before
+    assert tool.startup_state_matches()
+    assert list((tmp_path / "state").iterdir()) == []
+
+
+def test_a_copy_cut_short_is_never_put_back(tmp_path, monkeypatch):
+    prefix = tool_folder(tmp_path)
+    real = announced.shutil.copytree
+
+    def cut(source, target, **kwargs):
+        raise OSError(errno.ENOSPC, "no space left")
+
+    monkeypatch.setattr(announced.shutil, "copytree", cut)
+    with pytest.raises(OSError, match="no space"):
+        ToolSnapshot.take(prefix, tmp_path / "state")
+    monkeypatch.setattr(announced.shutil, "copytree", real)
+    before = contents(prefix)
+    ToolSnapshot(prefix, tmp_path / "state" / "before-update", tmp_path / "state" / "after-update").recover()
+    assert contents(prefix) == before  # only a complete copy is the truth
 
 
 def test_the_copy_must_be_on_the_tool_folders_disk(tmp_path, monkeypatch):
@@ -140,18 +189,21 @@ class Releases:
         return "9.9.9"
 
 
-def service(tmp_path, monkeypatch, *, installs=None):
-    """An update service on the tool folder whose uv run writes `installs` (distribution to version) into it."""
-    prefix = tool_folder(tmp_path)
+CUTOFF = datetime(2026, 11, 1, 9, 0, tzinfo=UTC)
+CORE_CUTOFF = datetime(2026, 11, 2, 3, 0, tzinfo=UTC)
+
+
+def service(tmp_path, monkeypatch, *, moves=None, **folder):
+    """An update service on the tool folder; its uv obeys the exact constraints, then moves what `moves` names."""
+    prefix = tool_folder(tmp_path, **folder)
     tool = Installation(Progress(), prefix=prefix, uv="unused")
     tool.record_startup_state(expected=tool.startup_fingerprint())
-    runs = []
-    versions = {"heinzel": "1.0.0", "heinzel-clock": "1.0.0"}
+    runs, retagged = [], []
 
     def run(command, failure, activity, environment=None, *, additional_constraints=()):
         runs.append((command, additional_constraints))
-        versions.update(installs if installs is not None else dict(c.split("==") for c in additional_constraints))
-        (prefix / "lib" / "site-packages" / "heinzel" / "__init__.py").write_text(f"hz {versions['heinzel']}")
+        held = dict(c.split("==") for c in additional_constraints)
+        install(prefix, {**held, **(moves or {})})
 
     def never(*args, **kwargs):
         pytest.fail("an installed hz ran")
@@ -160,36 +212,55 @@ def service(tmp_path, monkeypatch, *, installs=None):
     monkeypatch.setattr(tool, "run", run)
     monkeypatch.setattr(tool, "hz", never)
     monkeypatch.setattr(tool, "installed_core_version", lambda: "1.0.0")
-    monkeypatch.setattr(tool, "installed_versions", lambda names: {n: versions[n] for n in names if n in versions})
+    monkeypatch.setattr(tool, "installed_versions", lambda names: environment_versions(prefix))
     monkeypatch.setattr(
         tool, "tool_install_command", lambda core, plugins, refresh=False: ["uv", "tool", "install", core, *plugins]
     )
     monkeypatch.setattr(tool, "validate_install_constraints", lambda selected, constraints: None)
-    monkeypatch.setattr(tool, "verify_installed_requirements", lambda *a, **k: dict(versions))
+    monkeypatch.setattr(tool, "verify_installed_requirements", lambda *a, **k: {})
     monkeypatch.setattr(tool, "remove_transient_tool_constraint", lambda *, expected, original, added: expected)
+    monkeypatch.setattr(
+        tool, "name_core_by_tag", lambda *, expected, commit, tag: retagged.append((commit, tag)) or expected
+    )
+    monkeypatch.setattr(announced, "installed_commit", lambda prefix: TAG_COMMIT)
+    monkeypatch.setattr("heinzel.modules.system._update.installed_commit", lambda prefix: TAG_COMMIT)
     lifecycle = Lifecycle()
-    return UpdateService(tool, Releases(), lifecycle=lifecycle), tool, lifecycle, runs
+    update = UpdateService(tool, Releases(), lifecycle=lifecycle)
+    update.retagged = retagged
+    return update, tool, lifecycle, runs
 
 
-def test_exactly_the_announced_versions_go_in_as_constraints_and_nothing_installed_runs(tmp_path, monkeypatch):
+def news(core="9.9.9", plugins=None, commit=None):
+    return Announcement(core, plugins or {}, commit, exclude_newer=CUTOFF, exclude_newer_core=CORE_CUTOFF)
+
+
+def test_everything_is_held_but_the_announced_versions_and_nothing_installed_runs(tmp_path, monkeypatch):
     update, _, lifecycle, runs = service(tmp_path, monkeypatch)
     started = []
     result = update.apply_announced(
-        "9.9.9", {}, current="1.0.0", folder=tmp_path / "state", trial=lambda v: started.append(v) or True
+        news(), current="1.0.0", folder=tmp_path / "state", trial=lambda v: started.append(v) or True
     )
     assert (result.updated, result.after, started) == (True, "9.9.9", ["9.9.9"])
     command, constraints = runs[0]
-    assert command[3:] == ["heinzel", "heinzel-clock"]  # the receipt's requirements, no versions in them
-    assert constraints == ("heinzel==9.9.9", "heinzel-clock==1.0.0")  # every plugin held where it is
-    assert lifecycle.requested == 1
-    assert not lifecycle.pending
+    assert command[3:5] == ["heinzel", "heinzel-clock"]  # the receipt's requirements, no versions in them
+    assert set(constraints) == {"heinzel==9.9.9", "heinzel-clock==1.0.0", "urllib3==2.0.0"}  # dependencies too
+    assert "--refresh" not in command
+    assert command[5:] == [
+        "--refresh-package",
+        "heinzel",  # only what was announced is asked again
+        "--exclude-newer",
+        "2026-11-01T09:00:00Z",  # anything new resolves only among uploads as old as the minimum age
+        "--exclude-newer-package",
+        "heinzel=2026-11-02T03:00:00Z",
+    ]
+    assert (lifecycle.requested, lifecycle.pending) == (1, False)
 
 
-def test_other_versions_than_announced_are_put_back_and_continuity_holds(tmp_path, monkeypatch):
-    update, tool, lifecycle, _ = service(tmp_path, monkeypatch, installs={"heinzel": "9.9.10"})
-    result = update.apply_announced("9.9.9", {}, current="1.0.0", folder=tmp_path / "state", trial=lambda v: True)
+def test_a_dependency_that_moves_is_put_back_and_continuity_holds(tmp_path, monkeypatch):
+    update, tool, lifecycle, _ = service(tmp_path, monkeypatch, moves={"urllib3": "2.8.0"})
+    result = update.apply_announced(news(), current="1.0.0", folder=tmp_path / "state", trial=lambda v: True)
     assert (result.updated, result.restored, result.refused) == (False, True, False)
-    assert "heinzel 9.9.10 instead of 9.9.9" in result.message
+    assert "urllib3 2.8.0 instead of 2.0.0" in result.message
     assert tool.startup_state_matches()  # the standard app starts as before
     assert not lifecycle.pending  # the mutation completed: no handover is left pending
 
@@ -198,7 +269,7 @@ def test_an_update_that_does_not_start_is_put_back_and_refused(tmp_path, monkeyp
     update, tool, lifecycle, _ = service(tmp_path, monkeypatch)
     before = contents(tool.prefix)
     result = update.apply_announced(
-        "9.9.9", {"heinzel-clock": "2.0.0"}, current="1.0.0", folder=tmp_path / "state", trial=lambda v: False
+        news(plugins={"heinzel-clock": "2.0.0"}), current="1.0.0", folder=tmp_path / "state", trial=lambda v: False
     )
     assert (result.updated, result.restored, result.refused) == (False, True, True)
     assert contents(tool.prefix) == before
@@ -206,10 +277,51 @@ def test_an_update_that_does_not_start_is_put_back_and_refused(tmp_path, monkeyp
     assert not lifecycle.pending
 
 
+@pytest.mark.parametrize(
+    "plugin",
+    [
+        '{ name = "heinzel-crm", git = "https://example.test/crm?rev=main" }',
+        '{ name = "heinzel-crm", directory = "/home/ada/crm" }',
+        '{ name = "heinzel-crm", url = "https://example.test/heinzel_crm-1.0-py3-none-any.whl" }',
+    ],
+)
+def test_a_plugin_from_git_a_folder_or_a_url_is_never_reinstalled(tmp_path, monkeypatch, plugin):
+    update, _, _, runs = service(tmp_path, monkeypatch, plugin=plugin)
+    with pytest.raises(HeinzelError, match="updated by hand: heinzel-crm"):
+        update.apply_announced(news(), folder=tmp_path / "state", trial=lambda v: True)
+    assert runs == []
+
+
+def test_a_release_tag_installs_the_commit_it_named_and_the_receipt_names_the_tag(tmp_path, monkeypatch):
+    core = f'{{ name = "heinzel", git = "{REPO}?rev=v1.0.0" }}'
+    update, _, _, runs = service(tmp_path, monkeypatch, core=core)
+    result = update.apply_announced(
+        news(commit=TAG_COMMIT), current="1.0.0", folder=tmp_path / "state", trial=lambda v: True
+    )
+    assert result.updated
+    assert runs[0][0][3] == f"heinzel @ git+{REPO}@{TAG_COMMIT}"  # the commit, not the tag that could move
+    assert update.retagged == [(TAG_COMMIT, "v9.9.9")]
+
+
+def test_a_release_tag_with_no_recorded_commit_is_updated_by_hand(tmp_path, monkeypatch):
+    core = f'{{ name = "heinzel", git = "{REPO}?rev=v1.0.0" }}'
+    update, _, _, runs = service(tmp_path, monkeypatch, core=core)
+    result = update.apply_announced(news(commit=None), current="1.0.0", folder=tmp_path / "state", trial=lambda v: True)
+    assert (result.updated, result.refused, runs) == (False, True, [])
+    assert "update it by hand" in result.message
+
+
+def test_the_receipt_names_the_tag_again_and_nothing_else_changes():
+    receipt = f'[tool]\nrequirements = [{{ name = "heinzel", git = "{REPO}?rev={TAG_COMMIT}" }}]\n'.encode()
+    assert _core_by_tag(receipt, TAG_COMMIT, "v9.9.9").decode() == receipt.decode().replace(TAG_COMMIT, "v9.9.9")
+    with pytest.raises(HeinzelError):
+        _core_by_tag(receipt, "d" * 40, "v9.9.9")
+
+
 def test_an_announced_plugin_that_is_not_installed_installs_nothing(tmp_path, monkeypatch):
     update, _, _, runs = service(tmp_path, monkeypatch)
     with pytest.raises(HeinzelError, match="aren't installed: heinzel-other"):
-        update.apply_announced("9.9.9", {"heinzel-other": "1.0"}, folder=tmp_path / "state", trial=lambda v: True)
+        update.apply_announced(news(plugins={"heinzel-other": "1.0"}), folder=tmp_path / "state", trial=lambda v: True)
     assert runs == []
 
 

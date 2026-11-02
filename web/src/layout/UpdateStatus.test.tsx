@@ -216,3 +216,16 @@ it("disables the footer switch and says so while update checks are off", async (
   expect(toggle).toHaveAttribute("aria-checked", "false");
   expect(screen.getByText(line)).toBeInTheDocument();
 });
+
+it("names the plugins from git or a folder that are updated by hand", async () => {
+  mockApi({
+    ...shell,
+    "/api/update-status": status,
+    "/api/system/config/show": config,
+    "/api/auto-update": { phase: "off", development: null, held: null, by_hand: ["heinzel-crm"] },
+  });
+  const user = userEvent.setup();
+  renderAt("/");
+  await user.click(await screen.findByRole("button", { name: "Update available, warning" }));
+  expect(await screen.findByText(/^Update by hand: heinzel-crm\./)).toBeInTheDocument();
+});

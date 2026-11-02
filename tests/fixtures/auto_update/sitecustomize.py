@@ -46,9 +46,10 @@ if FOLDER:
     def release(self: object, name: str, version: str, timeout: float) -> PluginRelease:
         return PluginRelease(version, LONG_AGO)
 
-    def apply_announced(self: object, core: str | None, plugins: object, **kwargs: Any) -> AnnouncedUpdate:
+    def apply_announced(self: object, announced: Any, **kwargs: Any) -> AnnouncedUpdate:
         """Instead of uv: record what would be installed, then the real trial start of this hz."""
-        applied.write_text(f"fake update applied: {core} {dict(plugins)}\n", encoding="utf-8")  # type: ignore[call-overload]
+        what = f"{announced.core} {dict(announced.plugins)}"
+        applied.write_text(f"fake update applied: {what}\n", encoding="utf-8")
         started = kwargs["trial"](__version__)
         return AnnouncedUpdate(
             updated=started, after=__version__, restored=not started, refused=not started, message="Fake update."
@@ -62,7 +63,7 @@ if FOLDER:
         return datetime.now(UTC) + timedelta(seconds=ahead)
 
     def core_pin(self: object) -> CorePin:
-        return CorePin("release", "heinzel", ref="v0.1.0")
+        return CorePin("release", "heinzel", ref="v0.1.0", git="https://github.com/org/heinzel")
 
     _service.GitHubReleases.latest_version = latest_version  # type: ignore[method-assign]
     _plugin_releases.PyPIPluginReleases.newer = newer  # type: ignore[method-assign]

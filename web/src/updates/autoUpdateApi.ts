@@ -20,6 +20,8 @@ export type AutoUpdateStatus = {
   development?: string | null;
   /** The line both switches show, disabled: development, or update checks off. */
   held?: string | null;
+  /** Installed plugins from git, a folder or a URL: automatic updates never touch them; a person updates them. */
+  by_hand?: string[];
 };
 
 export const KEY = ["web", "auto-update"] as const;
@@ -40,6 +42,12 @@ export async function call(method: "GET" | "POST", path: string, signal?: AbortS
 /** The one line both switches show, disabled, when the setting can't turn updates on here: this hz runs for
  * development, or update checks are off. Null when the switch works. It is asked again when update checks change. */
 export function useAutoUpdateHeld(): string | null {
+  const status = useAutoUpdateFacts();
+  return status?.held ?? status?.development ?? null;
+}
+
+/** What the server says about this installation, asked once and again when update checks change. */
+export function useAutoUpdateFacts(): AutoUpdateStatus | undefined {
   const config = useConfig();
   const checks = config.data?.settings.find((entry) => entry.section === "hz" && entry.key === "update_check");
   const query = useQuery({
@@ -48,5 +56,5 @@ export function useAutoUpdateHeld(): string | null {
     staleTime: Number.POSITIVE_INFINITY, // development facts don't change while the server runs; checks are in the key
     retry: false,
   });
-  return query.data?.held ?? query.data?.development ?? null;
+  return query.data;
 }

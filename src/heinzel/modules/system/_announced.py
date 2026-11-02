@@ -13,6 +13,7 @@ import contextlib
 import importlib.metadata
 import json
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -23,6 +24,7 @@ import urllib.parse
 import urllib.request
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import cast
 
@@ -52,6 +54,36 @@ def installed_commit(prefix: Path) -> str | None:
     return None
 
 
+def environment_versions(prefix: Path) -> dict[str, str]:
+    """Every distribution installed in the tool folder with its version, by canonical name, from metadata on disk.
+
+    What automatic updates hold where it is: everything but the announced versions (ADR 0116).
+    """
+    paths = [str(path) for path in prefix.glob("lib/python*/site-packages")]
+    found: dict[str, str] = {}
+    for distribution in importlib.metadata.distributions(path=paths):
+        name = distribution.metadata["Name"]
+        if name:
+            found[re.sub(r"[-_.]+", "-", name).lower()] = distribution.version
+    return dict(sorted(found.items()))
+
+
+@dataclass(frozen=True)
+class Announcement:
+    """What automatic updates announced and may install (ADR 0116): exact versions, and how old what resolves may be."""
+
+    core: str | None
+    """The announced hz version; None to keep the running one."""
+    plugins: Mapping[str, str]
+    """Announced index plugins, by canonical name, mapped to their version."""
+    commit: str | None = None
+    """The commit hz's release tag named when it was announced."""
+    exclude_newer: datetime | None = None
+    """Nothing uploaded after this resolves, unless pinned: the plugins' minimum age, for every package."""
+    exclude_newer_core: datetime | None = None
+    """The same for hz itself: hz's minimum age."""
+
+
 @dataclass(frozen=True)
 class ToolSnapshot:
     """The tool folder `prefix` as it was, copied to `copy`; `aside` takes what an update left while it is put back."""
@@ -69,23 +101,25 @@ class ToolSnapshot:
             OSError: If it can't be copied, for example for lack of space; nothing may be installed then.
         """
         snapshot = cls(prefix, folder / "before-update", folder / "after-update")
-        snapshot.recover()
-        for stale in (snapshot.copy, snapshot.aside):
+        snapshot.recover()  # a copy left by a process that died during its update is the truth: put it back first
+        partial = folder / "before-update.partial"
+        for stale in (snapshot.aside, partial):
             if stale.exists():
                 shutil.rmtree(stale)
         folder.mkdir(parents=True, exist_ok=True)
         if folder.stat().st_dev != prefix.stat().st_dev:
             msg = "The state folder is on another disk than hz, so an update couldn't be put back; nothing installed."
             raise HeinzelError(msg)
-        snapshot.copy.mkdir()
+        partial.mkdir()
         for source in sorted(prefix.iterdir()):
             if source.name in KEPT:
                 continue
-            target = snapshot.copy / source.name
+            target = partial / source.name
             if source.is_dir() and not source.is_symlink():
                 shutil.copytree(source, target, symlinks=True)
             else:
                 shutil.copy2(source, target, follow_symlinks=False)
+        partial.rename(snapshot.copy)  # only a complete copy is ever put back
         return snapshot
 
     def restore(self) -> None:
@@ -100,13 +134,19 @@ class ToolSnapshot:
         self.recover()
 
     def recover(self) -> None:
-        """Finish a put-back that stopped half way; nothing happens unless one began (`aside` exists).
+        """Put the copy back if one is left; the copy is the truth, and nothing happens without one.
+
+        A copy is left after a put-back that stopped half way, or by a process that died between taking the copy and
+        the end of its update, untrialed new version and all.
+
+        Only the process that holds the update (the apply lock, or none running) may call it.
 
         Raises:
             OSError: If an entry can't be moved.
         """
-        if not self.aside.is_dir() or not self.copy.is_dir():
+        if not self.copy.is_dir():
             return
+        self.aside.mkdir(exist_ok=True)
         moved_in = self.aside / MOVED_ASIDE
         if not moved_in.exists():
             for entry in sorted(self.prefix.iterdir()):

@@ -269,6 +269,10 @@ class AutoUpdateStatus(BaseModel):
         default=None,
         description="Why this hz runs for development, so it never updates itself and both switches are disabled.",
     )
+    by_hand: list[str] = Field(
+        default_factory=list[str],
+        description="Installed plugins from git, a folder or a URL, which only a person updates.",
+    )
     held: str | None = Field(
         default=None,
         description="The one line both switches show, disabled, when the setting can't turn updates on here: "
@@ -512,17 +516,39 @@ class AutoUpdater:
             )
         if settings.update_channel != "stable":
             return "Automatic updates follow the stable channel only; this installation follows another."
+        return self._installation_reason()
+
+    def _installation_reason(self) -> str | None:
+        """Why this installation can't update itself; None when it can."""
         if self._restart is None:
             return "This server can't restart itself, so it can't update itself."
-        return None if self._follows_releases() else PINNED
+        if not self._follows_releases():
+            return PINNED
+        if by_hand := self.by_hand():
+            which = "it" if len(by_hand) == 1 else "them"
+            return (
+                f"{', '.join(by_hand)} came from git, a folder or a URL, so update {which} by hand; "
+                "hz updates itself again once only plugins from PyPI are installed."
+            )
+        return None
 
     def _follows_releases(self) -> bool:
+        """Whether hz follows release tags or the package index: the installations `system.apply-announced` holds."""
         pin = self._kernel.resolve(Installation).core_pin()
         return pin is not None and (
-            pin.kind in {"release", "default"}
-            or (pin.kind == "index" and not (pin.ref or "").startswith("=="))  # `==`: pinned on purpose
-            or (pin.kind, pin.ref) == ("ref", "main")
+            (pin.kind == "release" and pin.git is not None)
+            or (pin.kind in {"index", "default"} and pin.git is None and not (pin.ref or "").startswith("=="))
         )
+
+    def by_hand(self) -> list[str]:
+        """Installed plugins from git, a folder or a URL: never updated or refreshed automatically, only by hand.
+
+        A reinstall would build them anew from their source, which no announced version holds (ADR 0116).
+        """
+        try:
+            return sorted(pin.name for pin in self._kernel.resolve(Installation).plugin_pins() if pin.kind != "index")
+        except Exception:  # noqa: BLE001 - an unreadable receipt holds updates as well
+            return ["the plugins (the uv receipt can't be read)"]
 
     def busy(self) -> bool:
         """Whether a chat answer, an install or a daemon job is running now."""
@@ -676,7 +702,19 @@ class AutoUpdater:
         )
 
     def _recover(self) -> None:
-        """Finish putting back an update that stopped half way, before anything else (`system.recover_announced`)."""
+        """Put back an update that a dead process left half done, before anything else (`system.recover-announced`).
+
+        Only while no other `hz ui` on this state folder applies one: its copy is in use.
+        """
+        handle = _try_lock(self._apply_lock)
+        if handle is None:
+            return
+        try:
+            self._recover_with_lock()
+        finally:
+            _unlock(handle)
+
+    def _recover_with_lock(self) -> None:
         for record, operation in self._kernel.lets(OperationLet):
             if record.qualname == UPDATE_MODULE and operation.name == RECOVER_OPERATION:
                 try:
@@ -718,6 +756,7 @@ class AutoUpdater:
                 message=None if self.development is not None else plan.message,
                 development=self.development,
                 held=self.development or (reason if reason == CHECKS_OFF else None),
+                by_hand=[] if self.development is not None else self.by_hand(),
             )
 
     def postpone(self) -> AutoUpdateStatus:

@@ -335,6 +335,36 @@ def _remove_transient_constraint(raw: bytes, original: ToolConstraintPolicy, add
         return replacement
 
 
+_RETAG_ERROR = "The installed core isn't the commit the release tag named; inspect the uv receipt."
+
+
+def _core_by_tag(raw: bytes, commit: str, tag: str) -> bytes:
+    """The receipt with its core's git `rev` moved from `commit` to `tag`, and nothing else changed.
+
+    Raises:
+        HeinzelError: If the core isn't from git at exactly `commit`.
+    """
+    try:
+        data = tomllib.loads(raw.decode("utf-8"))
+        document = tomlkit.parse(raw.decode("utf-8"))
+        entries = (cast("Any", document["tool"])["requirements"], data["tool"]["requirements"])
+        parts = urlsplit(str(entries[1][0]["git"]))
+        query = parse_qs(parts.query)
+        if query.get("rev") != [commit] or set(query) - {"rev", "subdirectory"}:
+            raise HeinzelError(_RETAG_ERROR)
+        query["rev"] = [tag]
+        url = urlunsplit(parts._replace(query="&".join(f"{k}={v[0]}" for k, v in sorted(query.items()))))
+        for current in entries:
+            current[0]["git"] = url
+        replacement = tomlkit.dumps(document).encode("utf-8")
+        if tomllib.loads(replacement.decode("utf-8")) != data:
+            raise HeinzelError(_RETAG_ERROR)
+    except (KeyError, IndexError, TypeError, ValueError, UnicodeError) as exc:
+        raise HeinzelError(_RETAG_ERROR) from exc
+    else:
+        return replacement
+
+
 def _expected_overrides(overrides: Mapping[str, Path]) -> dict[str, str]:
     expected: dict[str, str] = {}
     for name, path in overrides.items():
@@ -578,6 +608,26 @@ class Installation:
         if self.startup_fingerprint() != before:
             raise HeinzelError(_CONSTRAINT_ERROR)
         return result
+
+    def name_core_by_tag(self, *, expected: str, commit: str, tag: str) -> str:
+        """Name the core in the receipt by its release `tag` again after it was installed from that tag's `commit`.
+
+        An automatic update installs the exact commit a tag named when it was announced (ADR 0116); the receipt goes
+        on following release tags, so the next update moves on from `tag`.
+
+        Raises:
+            HeinzelError: If the receipt's core isn't from git at `commit`, or anything else would change.
+            OSError: If the private receipt replacement cannot be synchronized.
+        """
+
+        def transform() -> bytes:
+            try:
+                receipt = _read_tool_receipt_bytes(self.prefix)
+            except ValueError as exc:
+                raise HeinzelError(_RETAG_ERROR) from exc
+            return _core_by_tag(receipt, commit, tag)
+
+        return _installation_continuity.replace_receipt(self.prefix, self._continuity_authority, expected, transform)
 
     def remove_transient_tool_constraint(
         self, *, expected: str, original: ToolConstraintPolicy, added: str | tuple[str, ...]
