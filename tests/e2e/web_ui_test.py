@@ -244,8 +244,11 @@ def _free_port() -> int:
 
 
 def _start_ui(env: dict[str, str], port: int) -> tuple[subprocess.Popen[str], str]:
+    command = [sys.executable, "-m", "heinzel"]
+    if env.get("HZ_REOPEN_DIAGNOSTICS") == "1":
+        command = [sys.executable, str(REPO / "tests/e2e/_reopen_server.py")]
     ui = subprocess.Popen(
-        [sys.executable, "-m", "heinzel", "ui", "--port", str(port), "--no-browser"],
+        [*command, "ui", "--port", str(port), "--no-browser"],
         cwd=REPO,
         env=env,
         stderr=subprocess.PIPE,
@@ -302,6 +305,8 @@ def _stop_ui(ui: subprocess.Popen[str]) -> None:
 def test_a_paired_browser_reopens_signed_in_without_a_link_after_hz_ui_restarts(environment, tmp_path, engine, mode):
     """Pair once with the printed link; Ctrl-C and a new `hz ui` with a new session token keep it signed in."""
     env, _ = environment
+    if os.environ.get("HZ_REOPEN_DIAGNOSTICS") == "1":
+        env |= {"HZ_REOPEN_DIAGNOSTICS": "1", "HZ_REOPEN_RECEIPTS": str(tmp_path / "requests.jsonl")}
     web_build.ensure_built()
     run = [sys.executable, str(REPO / "scripts" / "web_build.py")]
     subprocess.run(
@@ -319,7 +324,12 @@ def test_a_paired_browser_reopens_signed_in_without_a_link_after_hz_ui_restarts(
             check=False,
             timeout=120,
         )
-        assert driven.returncode == 0, driven.stderr + driven.stdout
+        receipts = ""
+        if driven.returncode and env.get("HZ_REOPEN_RECEIPTS"):
+            receipt_path = Path(env["HZ_REOPEN_RECEIPTS"])
+            if receipt_path.exists():
+                receipts = "\nServer request receipts:\n" + receipt_path.read_text(encoding="utf-8")
+        assert driven.returncode == 0, driven.stderr + driven.stdout + receipts
         return json.loads(driven.stdout.strip().splitlines()[-1])
 
     ui, link = _start_ui(env, port)

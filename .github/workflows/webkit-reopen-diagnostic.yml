@@ -1,0 +1,30 @@
+name: WebKit reopen diagnostic (never merge)
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/webkit-reopen-diagnostic.yml
+      - tests/e2e/_reopen_server.py
+      - tests/e2e/web_ui_test.py
+      - web/e2e/process-samples.mjs
+      - web/e2e/device-reopen.mjs
+
+permissions: {}
+
+jobs:
+  diagnose:
+    if: github.head_ref == 'fix/webkit-reopen-cause'
+    permissions:
+      contents: read
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - run: make test-browser-deps
+      - name: Independent reopen trials, stop on first failure
+        env:
+          HZ_REOPEN_DIAGNOSTICS: "1"
+        run: make -f Makefile.webkit-reopen diagnose

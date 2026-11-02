@@ -1,0 +1,9 @@
+# Diagnostic experiment only; never merge this file or make it a required gate.
+.PHONY: diagnose
+diagnose:
+	@set -e; for trial in $$(seq 1 20); do \
+		echo "Diagnostic trial $$trial of 20"; \
+		uv run pytest -q -x -n 0 --session-timeout=600 \
+		'tests/e2e/web_ui_test.py::test_a_paired_browser_reopens_signed_in_without_a_link_after_hz_ui_restarts[tab-webkit]' \
+		'tests/e2e/web_ui_test.py::test_a_paired_browser_reopens_signed_in_without_a_link_after_hz_ui_restarts[stale-webkit]'; \
+	done

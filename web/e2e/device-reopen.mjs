@@ -2,6 +2,7 @@
 // node device-reopen.mjs ENGINE PROFILE_DIR STEP URL [stale]   STEP: pair | open | restart
 
 import { chromium, webkit } from "playwright-core";
+import { sampleDiagnosticBrowser } from "./process-samples.mjs";
 import { until } from "./until.mjs";
 
 const [engineName, profile, step, url, mode] = process.argv.slice(2);
@@ -72,6 +73,7 @@ async function explain(page) {
     5000,
   );
   note(`document ${documentState}`);
+  await sampleDiagnosticBrowser(note);
 }
 let current;
 try {
