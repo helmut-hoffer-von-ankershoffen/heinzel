@@ -54,11 +54,12 @@ place (ADR 0047, 0083) and runs whether or not a window is open.
   `HEINZEL_AUTO_UPDATE_TEST=1` counts none of the facts; only the end-to-end test of the real flow sets it.
 - The server asks for a newer stable hz release (GitHub) and newer releases of installed plugins (PyPI) every 30
   minutes, with up to 5 minutes of random jitter (the first check 1 to 5 minutes after start).
-- **Only old enough, stable, unyanked releases are announced.** hz counts once its GitHub release is
-  `auto_update_min_age_hours` old (default 6), a plugin once its first PyPI upload is
-  `auto_update_plugin_min_age_hours` old (default 24), so a broken or hijacked release can be withdrawn first; an
-  unknown publish time counts as too new. Pre-releases, drafts and yanked plugin releases never count. The commit
-  that hz's tag names is recorded when hz is announced. `hz system update` on the stable channel never moves onto a
+- **Only old enough, stable, unyanked releases are announced.** A release's age is the last upload of any of its
+  files to PyPI (a file added to an older release later makes it that new). hz counts once its release on PyPI is
+  `auto_update_min_age_hours` old (default 6), a plugin once `auto_update_plugin_min_age_hours` old (default 24), so
+  a broken or hijacked release can be withdrawn first; a release missing from PyPI or of unknown age counts as too
+  new. Pre-releases, GitHub drafts and yanked releases never count. The commit that hz's tag names is recorded when
+  hz is announced. `hz system update` on the stable channel never moves onto a
   pre-release either, not even from one (this amends ADR 0006).
 - When something is newer and nothing is busy (no request that changes state is in flight, no daemon job holds the
   tick lock), it opens a 30-second countdown. A request is in flight until its response body has been sent or
@@ -66,20 +67,31 @@ place (ADR 0047, 0083) and runs whether or not a window is open.
   while it runs on after the browser left. `GET /api/auto-update` tells every window the plan and the seconds
   left; `POST /api/auto-update/postpone` moves the apply time 1 hour later, as often as wanted. Work that starts
   during the countdown cancels it until things are idle again.
-- At the apply time it first copies the whole uv tool environment (hz, every plugin, their dependencies and the
-  receipt) under the state folder; without a copy nothing is installed. It then runs the existing `system.update`
-  operation (hz and plugins together) and checks that the environment holds **exactly the announced versions**: hz
-  and each announced plugin at the announced version, every other plugin unchanged, and hz from git at the commit
-  its tag named when it was announced. Anything else is put back from the copy. If that holds, it starts the newly
-  installed hz as a trial: `hz ui --port 0` with its own token, on a throwaway copy of the configuration and empty
-  state, data, cache and log folders, with update checks off, deleted afterwards, so the live folders are never
-  touched. It waits up to 90 seconds for `/api/lifecycle` to answer with the new version. Only then does it restart
-  in place. Windows reconnect without signing in and reload once the version changed.
-- **Rollback.** If the install fails, installs other versions than announced, or the trial start fails, the server
-  never restarts: it puts the copy back at the same path, so hz and every plugin are exactly as they ran, keeps
-  running, and shows one plain message ("hz X was installed but didn't start, so hz Y and its plugins (…) were put
-  back as they were and keep running."). An update whose trial failed is never tried again; a newer one is. Other
-  failures try again no sooner than 6 hours later. If putting back fails, the message says how to reinstall.
+- At the apply time the tag hz installs from is resolved again; if it names another commit than at announce time,
+  nothing is installed. Then the private operation `system.apply-announced` (no CLI, MCP or REST head offers it)
+  installs **exactly the announced versions** and nothing else:
+  - It copies the uv tool folder (hz, every plugin, their dependencies and the receipt, not the continuity record)
+    under the state folder, which must be on the same disk; without a copy nothing is installed.
+  - It runs `uv tool install` with the receipt's own requirements and, as transient constraints, `heinzel==X` and
+    `plugin==Y` for every plugin: the announced version, or the installed one for a plugin not announced. uv installs
+    exactly these or fails before it changes anything; no newer version is ever resolved. A git-tag install builds
+    that tag, as it always has. The constraints are taken out of the receipt again afterwards.
+  - It verifies by reading the new environment's metadata, never by running it: exactly these versions, and hz from
+    git at the recorded commit.
+  - It starts the newly installed hz as a trial: `hz ui --port 0` with its own token, on a throwaway copy of the
+    configuration and empty state, data, cache and log folders, with update checks off, deleted afterwards, so the
+    live folders are never touched. It waits up to 90 seconds for `/api/lifecycle` to answer with the new version.
+  - Only then is the change recorded (continuity, ADR 0108), the daemon handed over, and the server restarts in
+    place. Windows reconnect without signing in and reload once the version changed.
+- **Rollback.** If uv fails, the metadata or the commit differ, or the trial start fails, nothing restarts. The tool
+  folder itself is never replaced: first everything the update left moves aside, then each entry of the copy moves
+  back into it, each an atomic rename. hz, every plugin and the receipt are byte for byte as they were, so the
+  installation's continuity fingerprint (which binds the folder and the content in it) is the recorded one again,
+  the standard app starts, and the daemon mutation completes with a handover to the same code, none left pending.
+  One plain message says what happened. An update whose trial failed is never tried again; a newer one is. Other
+  failures try again no sooner than 6 hours later. A put-back that stopped half way (an error, a crash) is finished
+  from what is left on disk the next time `hz ui` starts (`system.recover-announced`), or by the next apply; if a
+  crash leaves hz unable to start at all, `uv tool install --reinstall heinzel` repairs it.
 - The plan (what is pending, the apply time, postponements, the last failure and its message, a refused update)
   lives in the server and is saved under the state folder, so it survives a restart.
 - **Two servers on one state folder.** Every change to the plan reads the state file, changes it and writes it back
@@ -90,7 +102,8 @@ place (ADR 0047, 0083) and runs whether or not a window is open.
 ### Consequences
 
 - Good: one owner of the plan; the browser only shows it.
-- Good: no new installer or restart path; the copy and the exact-version check are the only new safety steps.
+- Good: the installer's own guards (lifecycle scope, transient constraints, metadata checks, continuity) do the work;
+  the automatic path only adds exact versions, the copy and the trial start.
 - Bad: nothing updates while `hz ui` is not running; the launchd daemon alone does not update.
 - Good: on by default, yet a developer's checkout, a test run or CI never updates itself.
 - Bad: a version that passes the trial start but fails later in the restart itself (the trial ran the same command)
@@ -98,13 +111,18 @@ place (ADR 0047, 0083) and runs whether or not a window is open.
 - Bad: the copy of the environment costs disk space and a few seconds per update.
 - Bad: PyPI's file hashes are not passed to uv as `--require-hashes`: a uv tool install resolves dependencies anew
   and uv takes required hashes only for every requirement of a fully pinned set. uv still checks the hashes the
-  index serves for each file it downloads; the minimum age and the exact-version check are the defence here.
+  index serves for each file it downloads; the minimum age and the exact versions are the defence here.
+- Bad: a git-tag installation still runs the build backend of the tag it installs; the recorded commit is checked
+  before and after.
 - Bad: a second server on the same state folder that didn't apply keeps running the old version until it restarts.
 
 ### Confirmation
 
 Unit tests of the scheduler fail when a countdown opens while busy, a postpone does not move the apply time by an
-hour, a failure retries sooner than 6 hours, a failed trial start restarts or doesn't put hz and every plugin back,
+hour, a failure retries sooner than 6 hours, a failed trial start restarts, a put-back replaces the tool folder or
+leaves the continuity record unmatched or a handover pending, an interrupted put-back isn't finished, uv is asked for
+anything but exact versions, an installed hz runs before it is verified, a moved tag installs anything, a release's
+age isn't its last upload to PyPI,
 the trial start writes to a live folder, the default is off, update checks off still checks, a release younger than
 its minimum age, a pre-release or one of unknown age is announced, other versions than announced or a moved tag are
 kept, two servers lose each other's changes or both apply, any one development fact leaves updates on, or a faked
