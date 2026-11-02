@@ -226,11 +226,9 @@ export function ContributionToggle({ control, refresh, applySettings }: Props) {
             ? t("contrib.toggle.pending")
             : !actionable(operation)
               ? t("contrib.toggle.unavailable")
-              : !control.checked
-                ? t("contrib.toggle.notReady")
-                : copied
-                  ? t("copy.done")
-                  : null}
+              : copied
+                ? t("copy.done")
+                : null}
       </p>
       {url && (
         <div className="space-y-2">
