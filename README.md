@@ -48,7 +48,7 @@
 | src/heinzel/kernel/\_runner\_snapshot.py                         |       10 |        2 |        0 |        0 |     80% |     27-28 |
 | src/heinzel/kernel/\_session\_io.py                              |      150 |       13 |       24 |        3 |     91% |84-85, 160-162, 164-165, 179-180, 196-199 |
 | src/heinzel/kernel/\_session\_store.py                           |      247 |        5 |       52 |        3 |     97% |245-247, 268-269, 279-\>285 |
-| src/heinzel/kernel/\_settings.py                                 |       69 |        2 |       16 |        2 |     95% |  212, 214 |
+| src/heinzel/kernel/\_settings.py                                 |       69 |        2 |       16 |        2 |     95% |  213, 215 |
 | src/heinzel/kernel/\_skills.py                                   |      380 |       11 |      120 |        2 |     97% |164-166, 375-376, 477-481, 610, 615, 631 |
 | src/heinzel/kernel/\_soundscapes.py                              |      271 |        3 |       70 |        0 |     99% |   105-107 |
 | src/heinzel/kernel/\_source\_loading.py                          |      551 |       92 |      204 |       46 |     81% |52-53, 63-64, 89-90, 96-97, 105-106, 108-109, 179-180, 184-185, 188-189, 201-202, 208-209, 212-213, 242-243, 250-251, 276, 278-279, 287-288, 293-294, 297-300, 342-343, 347-348, 352-353, 379, 386-387, 390-391, 419-420, 439, 451-452, 495-496, 500-\>502, 511-512, 514-\>516, 521-522, 540-541, 545-546, 556-558, 595-596, 619-620, 622-623, 627-628, 630-631, 651-652, 657-\>exit, 718-719, 724-\>727, 740-741, 791-\>794, 806-809, 831-832, 868-869 |
@@ -89,7 +89,7 @@
 | src/heinzel/modules/heinzel/\_model\_admission.py                |       23 |        4 |        8 |        2 |     81% |46-47, 57-58 |
 | src/heinzel/modules/heinzel/\_model\_grants.py                   |      152 |       24 |       38 |       10 |     81% |62-63, 69-70, 94-95, 98-100, 107-108, 120-121, 139-140, 144-145, 155-156, 229-230, 263-265 |
 | src/heinzel/modules/heinzel/\_model\_policy\_operations.py       |       75 |       10 |       14 |        3 |     85% |29, 62-64, 68-69, 85-86, 108-109 |
-| src/heinzel/modules/heinzel/\_models.py                          |      407 |        2 |       74 |        2 |     99% |88, 108, 556-\>554 |
+| src/heinzel/modules/heinzel/\_models.py                          |      407 |        2 |       74 |        2 |     99% |88, 108, 557-\>555 |
 | src/heinzel/modules/heinzel/\_notification\_delivery.py          |      111 |       14 |       26 |        7 |     85% |72-73, 120-121, 180-181, 185-186, 205-206, 209-210, 215-216, 219-\>223 |
 | src/heinzel/modules/heinzel/\_notification\_proposals.py         |       78 |       10 |       18 |        5 |     84% |70-71, 77-78, 102-103, 106-107, 127-128 |
 | src/heinzel/modules/heinzel/\_playbook\_adoption.py              |      106 |        8 |       26 |        3 |     92% |68-70, 163-164, 200-201, 212 |
@@ -111,7 +111,7 @@
 | src/heinzel/modules/heinzel/\_turn\_skill\_adapter.py            |       69 |        7 |       14 |        4 |     87% |55-56, 67-68, 72-73, 85 |
 | src/heinzel/modules/heinzel/\_user\_chat.py                      |      204 |       25 |       48 |       10 |     86% |132-133, 142-143, 148-149, 191-194, 202-204, 254-255, 290-291, 341-342, 366-367, 392-393, 404-405 |
 | src/heinzel/modules/heinzel/\_user\_proposal\_tools.py           |       84 |        2 |       20 |        1 |     97% |   107-108 |
-| src/heinzel/modules/org/\_models.py                              |      127 |        0 |       20 |        1 |     99% | 204-\>209 |
+| src/heinzel/modules/org/\_models.py                              |      127 |        0 |       20 |        1 |     99% | 206-\>211 |
 | src/heinzel/modules/org/\_render.py                              |       36 |        1 |        8 |        1 |     95% |        33 |
 | src/heinzel/modules/org/\_sync.py                                |      180 |        0 |       54 |        1 |     99% |143-\>exit |
 | src/heinzel/modules/system/\_\_init\_\_.py                       |       42 |        8 |        4 |        0 |     74% |   118-125 |
