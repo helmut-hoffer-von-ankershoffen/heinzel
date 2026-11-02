@@ -31,11 +31,18 @@ if FOLDER:
     def released() -> bool:
         return (folder / "release").exists() and not applied.exists()
 
+    seen: list[bool] = []
+    """hz 99.0.0 was answered: the plugin's news comes no sooner, so one check never finds the plugin alone (the
+    server asks about hz first, then the plugins, and the test may publish the release between the two)."""
+
     def latest_version(self: object, timeout: float) -> str:
-        return "99.0.0" if released() else __version__
+        if released():
+            seen.append(True)
+            return "99.0.0"
+        return __version__
 
     def newer(self: object, timeout: float) -> dict[str, str]:
-        return {"heinzel-example": "9.0.0"} if released() else {}
+        return {"heinzel-example": "9.0.0"} if released() and seen else {}
 
     def newer_releases(self: object, timeout: float) -> dict[str, PluginRelease]:
         return {name: PluginRelease(version, LONG_AGO) for name, version in newer(self, timeout).items()}
