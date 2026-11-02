@@ -9,6 +9,7 @@ folder, its tool, executable and cache folders are temporary, and no uv configur
 import base64
 import hashlib
 import shutil
+import subprocess
 import sys
 import tomllib
 import zipfile
@@ -17,8 +18,8 @@ from pathlib import Path
 
 import pytest
 
-from heinzel import Progress
-from heinzel.kernel import Installation
+from heinzel import HeinzelError, Progress
+from heinzel.kernel import Installation, _installation_continuity
 from heinzel.kernel._installation import _run
 from heinzel.modules.system._announced import Announcement, environment_versions
 from heinzel.modules.system._update import UpdateService
@@ -59,6 +60,34 @@ def release(folder: Path, version: str) -> None:
     wheel(folder, "fakedep", version)
 
 
+def private_python(tmp_path: Path) -> str:
+    """An interpreter hz accepts for a tool: in a folder only you can write to, as hz names it to uv (no link).
+
+    The test's own Python, if it qualifies; else (a CI image whose Python folders others may write to) a Python uv
+    installs into a temporary folder. Skipped only if neither can be had.
+    """
+    own = str(Path(sys.executable).resolve())
+    try:
+        _installation_continuity.external_python(Path(own))
+    except HeinzelError:
+        pass
+    else:
+        return own
+    folder = tmp_path / "python"
+    found = subprocess.run(
+        [shutil.which("uv") or "uv", "python", "install", "3.13", "--install-dir", str(folder)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    candidates = sorted(folder.glob("*/bin/python3.13"))
+    if found.returncode != 0 or not candidates:
+        pytest.skip(f"no Python in a private folder for a uv tool here, and uv couldn't install one: {found.stderr}")
+    python = str(candidates[0].resolve())
+    _installation_continuity.external_python(Path(python))
+    return python
+
+
 @pytest.fixture
 def tool(tmp_path, monkeypatch):
     """hz 1.0.0 with heinzel-clock 1.0.0 and fakedep 1.0.0, installed by real uv into temporary folders."""
@@ -82,7 +111,7 @@ def tool(tmp_path, monkeypatch):
             receipt.write_text(text.replace("\n[tool.options]\n\n", "\n").removesuffix("[tool.options]\n"))
         return result
 
-    python = str(Path(sys.executable).resolve())  # as hz names it to uv: the interpreter itself, not a link
+    python = private_python(tmp_path)
     first = runner(["uv", "tool", "install", "--python", python, "heinzel", "--with", "heinzel-clock"])
     assert first.returncode == 0, first.stderr
     prefix = (tmp_path / "tools" / "heinzel").resolve()
