@@ -7,6 +7,7 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
+import yaml
 
 pytestmark = pytest.mark.unit
 
@@ -106,3 +107,15 @@ def test_upload_is_chosen_only_for_a_final_accepted_release(held, final, accepta
         assert acceptance == "passed"
     if final and not held and acceptance != "passed":
         assert chosen == "stop"
+
+
+def test_promotion_is_dark_and_costs_no_runner_until_a_maintainer_activates_it():
+    workflow = yaml.safe_load(
+        (Path(__file__).resolve().parents[2] / ".github/workflows/promote.yml").read_text(encoding="utf-8")
+    )
+    job = workflow["jobs"]["step"]
+    # The schedule starts no job until RELEASE_CHANNELS is stable; a dispatch may only report the step.
+    assert "vars.RELEASE_CHANNELS == 'stable' || github.event_name == 'workflow_dispatch'" in job["if"]
+    take = next(step for step in job["steps"] if step.get("name") == "Take the step")
+    assert take["env"]["ACTIVE"] == "${{ vars.RELEASE_CHANNELS == 'stable' }}"
+    assert 'if [[ "$ACTIVE" != true || "$STEP" == wait ]]' in take["run"]

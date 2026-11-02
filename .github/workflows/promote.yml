@@ -3,7 +3,8 @@ name: Promote to stable
 # Moves one release towards stable, one step per run (ADR 0114). The step comes from scripts/release_promotion.py, from
 # facts read fresh each time, so a failed or interrupted run simply tries again. The only irreversible step dispatches
 # pypi.yml on a final tag whose exact bytes passed acceptance, and pypi.yml checks that again. Dark until the repository
-# variable RELEASE_CHANNELS is `stable`; a dispatch then also runs, but otherwise only reports the step.
+# variable RELEASE_CHANNELS is `stable`: until then the schedule starts no job at all (no runner spent every 10 minutes),
+# and a dispatch only reports the step it would take.
 
 on:
   schedule:
@@ -19,7 +20,9 @@ concurrency:
 jobs:
   step:
     name: Take the next promotion step
-    if: github.repository == 'helmut-hoffer-von-ankershoffen/heinzel'
+    if: >-
+      github.repository == 'helmut-hoffer-von-ankershoffen/heinzel' &&
+      (vars.RELEASE_CHANNELS == 'stable' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
