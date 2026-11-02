@@ -4,6 +4,7 @@ import { createRequire } from "node:module";
 import { join } from "node:path";
 import { chromium, webkit } from "playwright-core";
 import { publishJson } from "./atomic-json.mjs";
+import { until } from "./until.mjs";
 
 const require = createRequire(import.meta.url);
 
@@ -31,6 +32,17 @@ export async function revealChat(page) {
   await page.getByRole("tab", { name: "Chat", exact: true }).press("Enter");
   await page.getByRole("tab", { name: "Chat", exact: true, selected: true }).waitFor();
   await page.getByRole("tabpanel", { name: "Chat", exact: true }).waitFor();
+}
+
+// Opening a disclosure has the same race as the Chat tab: proposals and activity load in above it after a reply, so a
+// click at the summary's position can land on what moved there and leave it closed. Press Enter on the summary, which
+// needs no position, only while it is closed, and require that its details element is open.
+export async function openDisclosure(summary) {
+  const details = summary.locator("xpath=ancestor-or-self::details[1]");
+  if (!(await details.evaluate((node) => node.open))) await summary.press("Enter");
+  await until(() => details.evaluate((node) => node.open), {
+    message: `The disclosure "${await summary.innerText()}" did not open`,
+  });
 }
 
 /** From the app's first load to the first message of a new Heinzel, with setup closed and Chat shown. */
