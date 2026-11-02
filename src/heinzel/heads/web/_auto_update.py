@@ -14,14 +14,16 @@ import json
 import logging
 import os
 import random
+import shutil
 import signal
 import subprocess
 import sys
+import tempfile
 import threading
 import urllib.parse
 import urllib.request
 import weakref
-from collections.abc import AsyncGenerator, AsyncIterable, Awaitable, Callable, Mapping
+from collections.abc import AsyncGenerator, AsyncIterable, Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -44,6 +46,7 @@ from heinzel.kernel import (
     ReleaseCache,
     ReleaseSource,
     Settings,
+    user_config_dir,
 )
 
 log = logging.getLogger(__name__)
@@ -289,37 +292,69 @@ TRIAL_SECONDS = 90.0
 """How long the new version may take to answer before its start counts as failed."""
 
 
-def trial_start(version: str, timeout: float = TRIAL_SECONDS) -> bool:
+TRIAL_DIRECTORIES = {
+    "HZ_STATE_DIR": "state",
+    "HZ_DATA_DIR": "data",
+    "HZ_CACHE_DIR": "cache",
+    "HZ_LOG_DIR": "log",
+    "HZ_SYSTEM_DAEMON__UNIT_DIR": "units",
+}
+"""Where a trial start keeps what it writes: empty folders of its own, never the live ones."""
+
+
+def trial_environment(scratch: Path, environ: Mapping[str, str], config: Path) -> dict[str, str]:
+    """The environment of a trial start: a throwaway copy of the configuration, empty folders for everything else.
+
+    The trial reads the same settings and plugins as the restart would, but anything it writes (state, data, cache,
+    logs, the configuration) lands in `scratch`, which is deleted after it; it neither checks nor installs updates.
+    """
+    env = {key: value for key, value in environ.items() if key != "HEINZEL_UI_RESUME"}
+    copy = scratch / "config"
+    if config.is_dir():
+        shutil.copytree(config, copy, symlinks=True, ignore_dangling_symlinks=True, dirs_exist_ok=True)
+    else:
+        copy.mkdir(parents=True)
+    env["HZ_CONFIG_HOME"] = str(copy)
+    for variable, name in TRIAL_DIRECTORIES.items():
+        (scratch / name).mkdir(parents=True, exist_ok=True)
+        env[variable] = str(scratch / name)
+    env["HZ_AUTO_UPDATE"] = "false"
+    env["HZ_UPDATE_CHECK"] = "false"
+    return env
+
+
+def trial_start(version: str, timeout: float = TRIAL_SECONDS, command: Sequence[str] | None = None) -> bool:
     """Whether the installed hz starts a web app server that answers with `version`, before this one restarts into it.
 
-    It runs `hz ui` as the restart would, on a free port with its own token and automatic updates off, asks
-    `/api/lifecycle` once, and stops it. Nothing of this server is handed over, so a failure changes nothing here.
+    It runs `hz ui` as the restart would, on a free port with its own token, against a throwaway copy of the
+    configuration and empty folders (`trial_environment`), asks `/api/lifecycle` once, then stops it and deletes what
+    it wrote. Nothing of this server or its live folders is touched, so a failure changes nothing here.
     """
-    env = {key: value for key, value in os.environ.items() if key != "HEINZEL_UI_RESUME"}
-    env["HZ_AUTO_UPDATE"] = "false"
-    command = [sys.executable, "-m", "heinzel", "ui", "--port", "0", "--no-browser"]
-    try:
-        child = subprocess.Popen(  # noqa: S603 - this interpreter and fixed arguments
-            command, env=env, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL, text=True
-        )
-    except OSError:
-        return False
-    lines: list[str] = []
-    reader = threading.Thread(target=lambda: lines.append(child.stdout.readline() if child.stdout else ""))
-    reader.daemon = True
-    reader.start()
-    try:
-        reader.join(timeout)
-        return _answers(lines[0] if lines else "", version)
-    finally:
-        child.send_signal(signal.SIGINT)
+    command = list(command or [sys.executable, "-m", "heinzel", "ui", "--port", "0", "--no-browser"])
+    with tempfile.TemporaryDirectory(prefix="hz-trial-") as scratch:
         try:
-            child.wait(15)
-        except subprocess.TimeoutExpired:
-            child.kill()
-            child.wait(15)
-        if child.stdout is not None:
-            child.stdout.close()
+            env = trial_environment(Path(scratch), os.environ, user_config_dir())
+            child = subprocess.Popen(  # noqa: S603 - this interpreter and fixed arguments, or a test's
+                command, env=env, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL, text=True
+            )
+        except OSError:
+            return False
+        lines: list[str] = []
+        reader = threading.Thread(target=lambda: lines.append(child.stdout.readline() if child.stdout else ""))
+        reader.daemon = True
+        reader.start()
+        try:
+            reader.join(timeout)
+            return _answers(lines[0] if lines else "", version)
+        finally:
+            child.send_signal(signal.SIGINT)
+            try:
+                child.wait(15)
+            except subprocess.TimeoutExpired:
+                child.kill()
+                child.wait(15)
+            if child.stdout is not None:
+                child.stdout.close()
 
 
 def _answers(line: str, version: str) -> bool:

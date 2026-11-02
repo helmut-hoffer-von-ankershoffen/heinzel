@@ -2,6 +2,7 @@
 
 import json
 import random
+import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -476,3 +477,59 @@ def test_with_update_checks_off_nothing_is_asked_or_installed_and_the_switches_s
     assert (asked, calls["update"], status.phase) == ([], 0, "off")
     assert status.held == status.reason == auto.CHECKS_OFF
     assert status.development is None
+
+
+# The trial start ------------------------------------------------------------------------------------------------------
+
+TRIAL_SERVER = """
+import http.server, json, os, pathlib, sys
+for variable in ("HZ_STATE_DIR", "HZ_DATA_DIR", "HZ_CACHE_DIR", "HZ_LOG_DIR"):
+    pathlib.Path(os.environ[variable], "written-by-the-trial").write_text("x")
+config = pathlib.Path(os.environ["HZ_CONFIG_HOME"], "hz.toml")
+config.write_text(config.read_text() + "written = true\\n")
+pathlib.Path(sys.argv[1]).write_text(json.dumps(dict(os.environ)))
+
+class Lifecycle(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        body = json.dumps({"version": "9.9.9"}).encode()
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(body)
+
+server = http.server.HTTPServer(("127.0.0.1", 0), Lifecycle)
+print(f"http://127.0.0.1:{server.server_port}/#token=t", flush=True)
+try:
+    server.serve_forever()
+except KeyboardInterrupt:
+    pass
+"""
+
+
+def test_a_trial_start_runs_on_throwaway_folders_and_leaves_the_live_ones_untouched(tmp_path, monkeypatch):
+    live = {name: tmp_path / "live" / name for name in ("config", "state", "data", "cache", "log")}
+    for folder in live.values():
+        folder.mkdir(parents=True)
+    (live["config"] / "hz.toml").write_text("[hz]\nui_port = 8737\n")
+    for name, variable in [("state", "HZ_STATE_DIR"), ("data", "HZ_DATA_DIR"), ("cache", "HZ_CACHE_DIR")]:
+        monkeypatch.setenv(variable, str(live[name]))
+    monkeypatch.setenv("HZ_LOG_DIR", str(live["log"]))
+    monkeypatch.setenv("HZ_CONFIG_HOME", str(live["config"]))
+    seen = tmp_path / "seen.json"
+    script = tmp_path / "trial.py"
+    script.write_text(TRIAL_SERVER)
+
+    assert auto.trial_start("9.9.9", timeout=30, command=[sys.executable, str(script), str(seen)]) is True
+
+    assert (live["config"] / "hz.toml").read_text() == "[hz]\nui_port = 8737\n"
+    assert [p.name for f in live.values() for p in f.iterdir()] == ["hz.toml"]  # nothing written anywhere live
+    env = json.loads(seen.read_text())
+    assert (env["HZ_AUTO_UPDATE"], env["HZ_UPDATE_CHECK"]) == ("false", "false")
+    scratch = Path(env["HZ_STATE_DIR"]).parent
+    assert scratch.name.startswith("hz-trial-")
+    assert not scratch.exists()  # deleted with everything the trial wrote
+
+
+def test_a_trial_start_that_answers_another_version_fails(tmp_path):
+    seen, script = tmp_path / "seen.json", tmp_path / "trial.py"
+    script.write_text(TRIAL_SERVER)
+    assert auto.trial_start("1.0.0", timeout=30, command=[sys.executable, str(script), str(seen)]) is False
