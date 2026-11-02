@@ -34,7 +34,7 @@ def _fetch(url: str, timeout: float) -> Any:  # noqa: ANN401 - free-form JSON
         msg = f"not a PyPI JSON URL: {url}"
         raise ValueError(msg)
     request = urllib.request.Request(url, headers={"User-Agent": f"heinzel/{__version__}"})  # noqa: S310 - https
-    with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310 - https, checked above
+    with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310 - https checked above
         body: bytes = response.read(MAX_BYTES + 1)
     if len(body) > MAX_BYTES:
         msg = f"the answer is larger than {MAX_BYTES} bytes"

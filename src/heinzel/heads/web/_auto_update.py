@@ -148,13 +148,13 @@ def found(plan: Plan, core: str | None, plugins: dict[str, str], now: datetime) 
     """Record what a check found. The same news keeps its times; new news waits for its own window."""
     if core == plan.core and plugins == plan.plugins:
         return
-    was_pending = plan.pending
+    first_news = not plan.pending
     plan.core, plan.plugins = core, dict(plugins)
-    if not plan.pending:
+    if core is None and not plugins:
         plan.window_at = plan.apply_at = None
         plan.postponements = 0
         return
-    if not was_pending:
+    if first_news:
         plan.window_at = max(now, plan.retry_at) if plan.retry_at else now
         plan.apply_at = None
         plan.postponements = 0
@@ -231,6 +231,17 @@ class AutoUpdateStatus(BaseModel):
     message: str | None = Field(description="One plain message about the last automatic update.")
 
 
+def _phase(plan: Plan, reason: str | None) -> Phase:
+    """The phase every window shows for `plan`."""
+    if reason is not None:
+        return "off"
+    if plan.applying or plan.restarting_to:
+        return "applying"
+    if plan.apply_at is not None:
+        return "countdown"
+    return "waiting" if plan.pending else "idle"
+
+
 class Activity:
     """Requests that change state and are still running in this server: a chat answer, an install."""
 
@@ -263,7 +274,7 @@ def _now() -> datetime:
 class AutoUpdater:
     """Runs the plan in the `hz ui` server: checks, countdown, postpone, apply, and the outcome after a restart."""
 
-    def __init__(  # noqa: PLR0913 - the seams tests replace, all by keyword
+    def __init__(  # noqa: PLR0913 - the seams tests replace and all by keyword
         self,
         kernel: Kernel,
         *,
@@ -431,17 +442,7 @@ class AutoUpdater:
         reason = self.reason()
         with self._lock:
             plan = self.plan
-            phase: Phase = (
-                "off"
-                if reason is not None
-                else "applying"
-                if plan.applying or plan.restarting_to
-                else "countdown"
-                if plan.apply_at is not None
-                else "waiting"
-                if plan.pending
-                else "idle"
-            )
+            phase = _phase(plan, reason)
             left = max(0, round((plan.apply_at - now).total_seconds())) if plan.apply_at is not None else None
             return AutoUpdateStatus(
                 enabled=reason is None,
@@ -504,17 +505,19 @@ def add_auto_update(app: FastAPI, updater: AutoUpdater | None) -> None:
             raise HTTPException(status_code=409, detail="This server doesn't run automatic updates.")
         return updater
 
-    @app.get(AUTO_UPDATE_PATH, tags=["web"])
+    refused: dict[int | str, dict[str, Any]] = {409: {"description": "This server doesn't run automatic updates."}}
+
+    @app.get(AUTO_UPDATE_PATH, tags=["web"], responses=refused)
     def status(response: Response) -> AutoUpdateStatus:
         response.headers["Cache-Control"] = "no-store"
         return require().status()
 
-    @app.post(f"{AUTO_UPDATE_PATH}/postpone", tags=["web"])
+    @app.post(f"{AUTO_UPDATE_PATH}/postpone", tags=["web"], responses=refused)
     def postpone_update(response: Response) -> AutoUpdateStatus:
         response.headers["Cache-Control"] = "no-store"
         return require().postpone()
 
-    @app.post(f"{AUTO_UPDATE_PATH}/dismiss", tags=["web"])
+    @app.post(f"{AUTO_UPDATE_PATH}/dismiss", tags=["web"], responses=refused)
     def dismiss_message(response: Response) -> AutoUpdateStatus:
         response.headers["Cache-Control"] = "no-store"
         return require().dismiss()

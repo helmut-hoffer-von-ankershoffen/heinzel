@@ -110,19 +110,19 @@ export function AutoUpdate() {
     );
   if (status.phase === "applying")
     return (
-      <section role="status" className={card}>
+      <output className={`block ${card}`}>
         <p className="font-medium">{t("autoUpdate.applying")}</p>
         <p className="text-muted-foreground">{t("autoUpdate.reconnect")}</p>
-      </section>
+      </output>
     );
   if (status.message)
     return (
-      <section role="status" className={card}>
+      <output className={`block ${card}`}>
         <p>{status.message}</p>
         <Button size="sm" variant="outline" disabled={busy} onClick={() => void act("/dismiss")}>
           {t("autoUpdate.ok")}
         </Button>
-      </section>
+      </output>
     );
   return null;
 }
