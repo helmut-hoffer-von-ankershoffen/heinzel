@@ -14,6 +14,7 @@ import { HeinzelAvatar } from "@/components/HeinzelAvatar";
 import { Prose } from "@/components/Prose";
 import { t } from "@/i18n";
 import { zoneTime } from "@/lib/zoneTime";
+import { AutoUpdate } from "@/updates/AutoUpdate";
 import { DurableHeinzelStatus } from "./DurableHeinzelStatus";
 import { HealthStatus } from "./HealthStatus";
 import { PluginsPending } from "./PluginsPending";
@@ -165,37 +166,40 @@ export function StatusBar() {
   const info = useInfo();
   const now = useNow();
   return (
-    <FooterLayout className="h-[60px] shrink-0 gap-2 overflow-visible border-t-[0.5px] border-foreground/20 px-4 text-ui text-muted-foreground">
-      <FooterPart id="@version" pinned className="mr-auto">
-        {info.data && (
-          <FooterItem
-            label={`v${info.data.version}`}
-            state="off"
-            text={`v${info.data.version}`}
-            align="left"
-            popoverClassName="w-[min(28rem,calc(var(--hz-viewport-width,100vw)_-_2rem))]"
-          >
-            <ReleaseNotes version={info.data.version} />
-          </FooterItem>
-        )}
-      </FooterPart>
-      <FooterPart id="@plugins-pending" pinned priority={110} label={t("pluginsPending.title")}>
-        <PluginsPending />
-      </FooterPart>
-      <FooterPart id="@updates" pinned priority={100} label={t("updates.title")}>
-        <UpdateStatus />
-      </FooterPart>
-      <FooterPart id="@heinzels" priority={70} label={t("nav.heinzelmaennchen")}>
-        <DurableHeinzelStatus />
-      </FooterPart>
-      <FooterPart id="@health" priority={90} label={t("health.title")}>
-        <HealthStatus />
-      </FooterPart>
-      <FooterPart id="@meeting" priority={30}>
-        <MeetingItem now={now} />
-      </FooterPart>
-      <FooterMore />
-      <StatusItems slot="footer" except={NATIVE_FOOTER} measured />
-    </FooterLayout>
+    <>
+      <AutoUpdate />
+      <FooterLayout className="h-[60px] shrink-0 gap-2 overflow-visible border-t-[0.5px] border-foreground/20 px-4 text-ui text-muted-foreground">
+        <FooterPart id="@version" pinned className="mr-auto">
+          {info.data && (
+            <FooterItem
+              label={`v${info.data.version}`}
+              state="off"
+              text={`v${info.data.version}`}
+              align="left"
+              popoverClassName="w-[min(28rem,calc(var(--hz-viewport-width,100vw)_-_2rem))]"
+            >
+              <ReleaseNotes version={info.data.version} />
+            </FooterItem>
+          )}
+        </FooterPart>
+        <FooterPart id="@plugins-pending" pinned priority={110} label={t("pluginsPending.title")}>
+          <PluginsPending />
+        </FooterPart>
+        <FooterPart id="@updates" pinned priority={100} label={t("updates.title")}>
+          <UpdateStatus />
+        </FooterPart>
+        <FooterPart id="@heinzels" priority={70} label={t("nav.heinzelmaennchen")}>
+          <DurableHeinzelStatus />
+        </FooterPart>
+        <FooterPart id="@health" priority={90} label={t("health.title")}>
+          <HealthStatus />
+        </FooterPart>
+        <FooterPart id="@meeting" priority={30}>
+          <MeetingItem now={now} />
+        </FooterPart>
+        <FooterMore />
+        <StatusItems slot="footer" except={NATIVE_FOOTER} measured />
+      </FooterLayout>
+    </>
   );
 }

@@ -1,13 +1,24 @@
 """The system module: what is installed and how it is configured."""
 
+from datetime import UTC, datetime, timedelta
 from typing import Annotated, Literal
 
 from pydantic import Field
 
 from heinzel import Kernel, Module
-from heinzel.kernel import CoreMetadataVerifier, DaemonInstallationLifecycle, Installation, ReleaseSource
+from heinzel.kernel import (
+    KERNEL_SECTION,
+    CoreMetadataVerifier,
+    DaemonInstallationLifecycle,
+    Installation,
+    PluginReleases,
+    ReleaseSource,
+    Settings,
+)
+from heinzel.modules.system._announced import Announcement, ToolSnapshot, trial_start
 from heinzel.modules.system._metadata_identity import CoreMetadataIdentity
 from heinzel.modules.system._models import (
+    AnnouncedUpdate,
     ChannelReport,
     ModuleInfo,
     PluginUpdate,
@@ -16,6 +27,7 @@ from heinzel.modules.system._models import (
     SystemInfo,
     UpdateResult,
 )
+from heinzel.modules.system._plugin_releases import plugin_releases
 from heinzel.modules.system._render import render_channel, render_info, render_modules, render_release, render_update
 from heinzel.modules.system._service import GitHubReleases, SystemService, github_releases
 from heinzel.modules.system._update import UpdateService
@@ -33,6 +45,7 @@ def _update_service(installation: Installation, releases: ReleaseSource, kernel:
 
 module.service(UpdateService, _update_service)
 module.service(ReleaseSource, github_releases)  # what the CLI's hourly update check asks
+module.service(PluginReleases, plugin_releases)  # what automatic updates ask about plugins (ADR 0116)
 
 
 @module.operation(render=render_info)
@@ -96,6 +109,51 @@ def update(
         HeinzelError: If Heinzelmännchen wasn't installed with `uv tool install`, or the update fails.
     """
     return service.update(source, channel=channel or kernel.settings.update_channel)
+
+
+@module.operation(private=True, read_only=False, heads={"auto-update"}, audience="everyday")
+def apply_announced(
+    service: UpdateService,
+    kernel: Kernel,
+    core: Annotated[str | None, Field(description="The announced hz version; none to keep the running one.")] = None,
+    plugins: Annotated[
+        list[str], Field(description="Each announced plugin as `name==version`; every other plugin stays.")
+    ] = [],  # noqa: B006 - never changed
+    commit: Annotated[str | None, Field(description="The commit hz's tag named when it was announced.")] = None,
+) -> AnnouncedUpdate:
+    """Install exactly the announced versions for automatic updates, or put everything back.
+
+    Only the web app's server calls it (ADR 0116): no CLI, MCP or REST head offers it. The versions were announced
+    once they were old enough; uv installs exactly these or nothing, the new hz must start on throwaway folders, and
+    any failure puts the tool folder back as it was.
+
+    Raises:
+        HeinzelError: If the installation can't update itself, before anything was installed.
+    """
+    now = datetime.now(UTC)
+    settings = kernel.config.reread().settings(Settings, KERNEL_SECTION)
+    announcement = Announcement(
+        core=core,
+        plugins=dict(item.split("==", 1) for item in plugins),
+        commit=commit,
+        exclude_newer=now - timedelta(hours=settings.auto_update_plugin_min_age_hours),
+        exclude_newer_core=now - timedelta(hours=settings.auto_update_min_age_hours),
+    )
+    return service.apply_announced(announcement, folder=kernel.settings.state_dir / "auto-update", trial=trial_start)
+
+
+@module.operation(private=True, read_only=False, heads={"auto-update"}, audience="everyday")
+def recover_announced(installation: Installation, kernel: Kernel) -> bool:
+    """Finish putting back an automatic update that stopped half way (ADR 0116); whether there was one.
+
+    The web app's server asks once when it starts, holding the apply lock. A copy left behind is the truth: the
+    process that took it died before the update ended, so the tool folder goes back to it.
+    """
+    folder = kernel.settings.state_dir / "auto-update"
+    if not installation.is_tool or not (folder / "before-update").is_dir():
+        return False
+    ToolSnapshot(installation.prefix.resolve(strict=True), folder / "before-update", folder / "after-update").recover()
+    return True
 
 
 @module.operation(read_only=False, audience="everyday", render=render_channel)

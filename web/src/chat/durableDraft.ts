@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { registerUpdatePreparation } from "@/updates/work";
+import { registerReloadHold, registerUpdatePreparation } from "@/updates/work";
 
 const PREFIX = "hz.durable.composer.";
 const REQUEST_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
@@ -133,6 +133,16 @@ export function useDurableDraft(sessionId: string) {
         write(key, sessionId, stateRef.current);
       }),
     [key, recoveryBlocked, sessionId, storageError],
+  );
+
+  // Unsent text or a message still on its way holds off the reload an automatic update needs.
+  useEffect(
+    () =>
+      registerReloadHold(() => {
+        const current = stateRef.current;
+        return current.text.trim() !== "" || current.pending !== null || current.agentPending !== null;
+      }),
+    [],
   );
 
   return { state, update, storageError, recoveryBlocked, resolveRecovery };

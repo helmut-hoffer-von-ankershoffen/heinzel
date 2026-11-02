@@ -220,7 +220,14 @@ from heinzel.kernel._protocols import (
     free_busy_people,
     plain_addresses,
 )
-from heinzel.kernel._release import EdgeRelease, ReleaseCache, ReleaseSource
+from heinzel.kernel._release import (
+    EdgeRelease,
+    PluginRelease,
+    PluginReleases,
+    ReleaseCache,
+    ReleaseFacts,
+    ReleaseSource,
+)
 from heinzel.kernel._runner_snapshot import RunnerSnapshot, RunnerSnapshotProvider
 from heinzel.kernel._services import ServiceContract
 from heinzel.kernel._session import SessionEvent, SessionHead, SessionProjector, SessionRead
@@ -473,6 +480,8 @@ __all__ = [
     "Person",
     "PlaybookLet",
     "PlaybookSetup",
+    "PluginRelease",
+    "PluginReleases",
     "PostedMessage",
     "Presence",
     "Principal",
@@ -488,6 +497,7 @@ __all__ = [
     "RecommendationKind",
     "Relation",
     "ReleaseCache",
+    "ReleaseFacts",
     "ReleaseSource",
     "ReportingDraft",
     "Requester",

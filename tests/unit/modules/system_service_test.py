@@ -1,6 +1,7 @@
 import io
 import json
 import urllib.error
+from datetime import UTC, datetime
 from types import SimpleNamespace
 
 import pytest
@@ -329,3 +330,19 @@ def test_doctor_says_what_the_release_cache_knows(settings, cache_state, update_
         cache.stamp(error=error)
     check = release_check(settings.model_copy(update={"update_check": update_check}))
     assert (check.name, check.status, (check.detail, check.fix)) == ("release", Status.UP, expected)
+
+
+def test_release_facts_name_the_publish_time_and_the_commit_behind_an_annotated_tag(monkeypatch):
+    answers = {
+        "/releases/tags/v1.2.3": {"published_at": "2026-11-01T08:00:00Z", "prerelease": False, "draft": False},
+        "/git/ref/tags/v1.2.3": {"object": {"type": "tag", "sha": "t" * 40}},
+        f"/git/tags/{'t' * 40}": {"object": {"type": "commit", "sha": "c" * 40}},
+    }
+    monkeypatch.setattr(
+        _github,
+        "get_json",
+        lambda url, token, timeout: answers[url.removeprefix(f"{_github.GITHUB_API}/repos/someone/heinzel")],
+    )
+    facts = GitHubReleases("someone/heinzel").release_facts("1.2.3", 2)
+    assert facts.published_at == datetime(2026, 11, 1, 8, 0, tzinfo=UTC)
+    assert (facts.commit, facts.prerelease) == ("c" * 40, False)
