@@ -8,6 +8,7 @@ import { until } from "./until.mjs";
 const [url, folder] = process.argv.slice(2);
 const browser = await chromium.launch();
 const result = {};
+let watch;
 try {
   const page = await browser.newPage({ viewport: { width: 1100, height: 800 } });
   await page.goto(url);
@@ -21,6 +22,35 @@ try {
       },
       [path, method],
     );
+  // A timeline of the server's plan, every half second, for the failure report: what the server said and when.
+  const timeline = [];
+  const started = Date.now();
+  watch = setInterval(async () => {
+    try {
+      const s = await api("auto-update");
+      const page_ = await page.evaluate(() => ({
+        popupInDom: document.querySelector('[role="alertdialog"]') !== null,
+        rootInert: document.getElementById("root")?.hasAttribute("inert") ?? null,
+        splash: document.getElementById("splash")?.hidden === false,
+        dialogs: [...document.querySelectorAll('[role="dialog"]')].map((d) => d.getAttribute("aria-label") ?? d.id),
+      }));
+      timeline.push({
+        at: Date.now() - started,
+        ...page_,
+        phase: s.phase,
+        reason: s.reason,
+        core: s.core,
+        plugins: s.plugins,
+        left: s.seconds_left,
+        next: s.next_window_at,
+        message: s.message,
+      });
+      if (timeline.length > 120) timeline.shift();
+    } catch (error) {
+      timeline.push({ at: Date.now() - started, error: String(error) });
+    }
+  }, 500);
+  result.timeline = timeline;
   const popup = page.getByRole("alertdialog");
   const seconds = async () => Number((await popup.textContent()).match(/in (\d+) s/)[1]);
 
@@ -120,10 +150,12 @@ try {
   result.message = await message.textContent();
   result.signedIn = (await page.getByRole("contentinfo").count()) > 0;
   result.after = (await api("auto-update")).phase;
+  delete result.timeline; // only for a failure report
   console.log(JSON.stringify(result));
 } catch (error) {
   console.log(JSON.stringify({ ...result, error: String(error) }));
   process.exitCode = 1;
 } finally {
+  clearInterval(watch);
   await browser.close();
 }

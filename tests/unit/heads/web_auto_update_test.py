@@ -660,3 +660,16 @@ def test_a_restart_that_fails_stops_showing_applying_and_says_what_to_do(make_ke
         "hz 9.9.9 is installed, but this server couldn't restart into it, so hz 1.0.0 keeps running. "
         "Restart hz ui to finish the update."
     )
+
+
+def test_the_log_says_what_holds_the_countdown_off_and_when_it_opens(make_kernel, tmp_path, caplog):
+    made, clock, _, _ = updater(make_kernel, tmp_path)
+    made._activity.enter("POST /api/system/config/set")
+    with caplog.at_level("INFO", logger=auto.__name__):
+        advance(made, clock, 5 * 60)
+        made._activity.leave("POST /api/system/config/set")
+        advance(made, clock, 1)
+    lines = [record.getMessage() for record in caplog.records]
+    assert "automatic update found: hz 9.9.9, heinzel-example 2.0.0" in lines
+    assert "automatic update waits for: POST /api/system/config/set" in lines
+    assert lines.index("automatic update waits for nothing") < lines.index("automatic update countdown opened")
