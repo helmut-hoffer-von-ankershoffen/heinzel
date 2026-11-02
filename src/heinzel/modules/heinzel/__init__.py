@@ -60,7 +60,7 @@ from heinzel.modules.heinzel._session_operations import register_session_operati
 
 module = Module(
     "heinzel",
-    "Your Heinzelmännchen: durable agents that keep your team's documents true.",
+    "Your Heinzelmännchen: durable helpers that draft your team's recurring work for your approval.",
     renamed_from="workflow",
 )
 module.settings(HeinzelSettings)

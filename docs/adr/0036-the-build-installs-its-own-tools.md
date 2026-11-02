@@ -75,7 +75,7 @@ one pin that hooks, make and CI share.
   `tools.py run gitleaks`. pyright takes Node.js from the `nodejs-wheel-binaries` wheel (`pyright[nodejs]`).
 - `make doctor` lists the prerequisites, the environment, every tool and the gh login, each missing one with the
   command that fixes it, and fails while something required is missing.
-- CI's `make setup` job runs `make setup` and `make doctor` on ubuntu-latest, ubuntu-24.04-arm, macos-latest and
+- CI's `make setup` job runs `make setup` and `make doctor` on ubuntu-24.04, ubuntu-24.04-arm, macos-latest and
   macos-15-intel, and `make tools-verify` downloads every pinned file of every platform and checks it.
 - Bumping a tool: change its version in `tools.toml` and run `uv run --script scripts/tools.py pin <name>`.
 

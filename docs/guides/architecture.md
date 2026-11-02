@@ -1,16 +1,16 @@
 ---
 title: Architecture tour
-description: Understand Heinzel's kernel, operations, heads, contracts and independently released plugins.
+description: Understand the Heinzelmännchen kernel, operations, heads, contracts and independently released plugins.
 ---
 
 # One capability. Every head.
 
-Heinzel is built around a small kernel, typed operations and public contracts. A feature should not need a
+Heinzelmännchen is built around a small kernel, typed operations and public contracts. A feature should not need a
 second implementation to reach a person in a terminal, an agent through MCP, or an application through REST.
 
 ```mermaid
 flowchart TB
-  accTitle: Heinzel architecture
+  accTitle: Heinzelmännchen architecture
   accDescr {
     People and agents use CLI, MCP, REST and web heads, which use the kernel.
     Core modules and independent plugins use public contracts and extension points.

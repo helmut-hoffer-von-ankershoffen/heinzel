@@ -27,7 +27,7 @@ on this website.
 
 ## Add a good description
 
-The ordinary project name, version, description and Heinzel dependency range already supply a useful entry.
+The ordinary project name, version, description and Heinzelmännchen dependency range already supply a useful entry.
 Add optional owner-maintained presentation metadata to the same `pyproject.toml`:
 
 ```toml

@@ -120,6 +120,7 @@ async function run(redirectOnStart) {
     });
   } catch (error) {
     primary = error;
+    console.error(`Electron phases:\n${await readFile(join(root, "phases"), "utf8").catch(() => "none")}`);
     throw error;
   } finally {
     await preserveCleanupFailure(primary, () => cleanupHarness({ app, electronProcess: processHandle, stopped, root, launchAttempted,

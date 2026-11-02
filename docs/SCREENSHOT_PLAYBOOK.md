@@ -1,6 +1,6 @@
 # Screenshot playbook for humans and agents
 
-Show what someone will gain by trying Heinzel. Capture the real product with fictional data, then review the exact
+Show what someone will gain by trying Heinzelmännchen. Capture the real product with fictional data, then review the exact
 images before publishing. Use this playbook when planning a new gallery or refreshing an existing one.
 
 ## Start with a story

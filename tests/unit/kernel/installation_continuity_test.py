@@ -3,6 +3,7 @@
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -638,3 +639,59 @@ def test_inspection_diagnostic_distinguishes_file_read_and_metadata(tmp_path, mo
             _installation_continuity._regular(fd, hashlib.sha256(), [0, 0])
     finally:
         os.close(fd)
+
+
+def _reads(monkeypatch) -> list[int]:
+    sizes: list[int] = []
+    original = os.read
+
+    def counted(fd, size):
+        data = original(fd, size)
+        sizes.append(len(data))
+        return data
+
+    monkeypatch.setattr(os, "read", counted)
+    return sizes
+
+
+def test_a_repeated_fingerprint_reuses_settled_content_but_still_walks(tool, monkeypatch):
+    monkeypatch.setattr(_installation_continuity, "_SETTLE_NS", 0)
+    first = tool.startup_fingerprint()
+    assert tool.startup_fingerprint() == first
+    reads = _reads(monkeypatch)
+    assert tool.startup_fingerprint() == first
+    assert set(reads) <= {0, (tool.prefix / "uv-receipt.toml").stat().st_size}  # the receipt, read for authority
+    (tool.prefix / "lib/site-packages/example/__init__.py").chmod(0o666)
+    with pytest.raises(HeinzelError, match="unsafe ownership"):
+        tool.startup_fingerprint()
+
+
+def test_a_same_size_rewrite_that_restores_the_mtime_is_read_again(tool, monkeypatch):
+    monkeypatch.setattr(_installation_continuity, "_SETTLE_NS", 0)
+    first = tool.startup_fingerprint()
+    assert tool.startup_fingerprint() == first
+    assert tool.startup_fingerprint() == first
+    target = tool.prefix / "lib/site-packages/example/__init__.py"
+    before = target.stat()
+    time.sleep(0.05)  # past the filesystem's timestamp granularity; ctime can't be set back
+    target.write_text("INITIAL PACKAGE")
+    os.utime(target, ns=(before.st_atime_ns, before.st_mtime_ns))
+    assert tool.startup_fingerprint() != first
+
+
+def test_a_file_too_new_to_tell_a_change_by_is_not_reused(tool, monkeypatch):
+    tool.startup_fingerprint()
+    tool.startup_fingerprint()
+    reads = _reads(monkeypatch)
+    tool.startup_fingerprint()
+    assert reads
+
+
+def test_reuse_expires(tool, monkeypatch):
+    monkeypatch.setattr(_installation_continuity, "_SETTLE_NS", 0)
+    tool.startup_fingerprint()
+    tool.startup_fingerprint()
+    monkeypatch.setattr(_installation_continuity, "_REUSE_NS", -1)
+    reads = _reads(monkeypatch)
+    tool.startup_fingerprint()
+    assert reads

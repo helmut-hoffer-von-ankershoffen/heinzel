@@ -52,7 +52,8 @@ def test_every_e2e_matrix_host_installs_its_engines_before_tests():
     workflow = yaml.safe_load((REPO / ".github/workflows/ci.yml").read_text())
     steps = workflow["jobs"]["e2e"]["steps"]
     setup = next(step for step in steps if step.get("run") == "make test-browser-deps")
-    run = next(step for step in steps if step.get("run") == "make test-e2e")
-    assert "if" not in setup
+    run = next(step for step in steps if step.get("run") == "make test-e2e SUITE=${{ matrix.suite }}")
+    # Only the browser suite needs engines; the tool-install and CLI suite skips the install.
+    assert setup.get("if", "matrix.suite == 'web'") == "matrix.suite == 'web'"
     assert steps.index(setup) < steps.index(run)
     assert "make test-browser-deps" not in (REPO / "template/.github/workflows/ci.yml.jinja").read_text()

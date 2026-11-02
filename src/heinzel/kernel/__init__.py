@@ -110,6 +110,7 @@ from heinzel.kernel._discovery import BUILTIN_PACKAGE, ENTRY_POINT_GROUP, discov
 from heinzel.kernel._duration import MAX_WINDOW, WINDOW_PATTERN, Span, format_duration, parse_duration, parse_window
 from heinzel.kernel._errors import HeinzelError, SubscriptionUsageLimitError
 from heinzel.kernel._exposure import MCP_HTTP, MCP_STDIO, Exposed, exposed, input_schema, restricts
+from heinzel.kernel._features import feature_enabled
 from heinzel.kernel._git import (
     GIT_HARDENING,
     CommandFailed,
@@ -128,6 +129,7 @@ from heinzel.kernel._installation import (
     requirement_from_receipt,
 )
 from heinzel.kernel._jobs import CompiledJobs, JobInactive, tick_interval, using_tick_interval
+from heinzel.kernel._json import jsonable
 from heinzel.kernel._kernel import Kernel, ModuleRecord, Origin
 from heinzel.kernel._layers import (
     Label,
@@ -587,11 +589,13 @@ __all__ = [
     "env_prefix",
     "environment_variable",
     "exposed",
+    "feature_enabled",
     "font_stack_problem",
     "format_duration",
     "free_busy_people",
     "git_command",
     "input_schema",
+    "jsonable",
     "link_problem",
     "operation_path",
     "owns_path",

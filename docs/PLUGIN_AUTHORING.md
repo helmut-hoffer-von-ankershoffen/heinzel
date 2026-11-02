@@ -1,6 +1,6 @@
 # Create and ship a custom plugin
 
-A plugin can live in its own public or private repository. It needs no change in Heinzel core or
+A plugin can live in its own public or private repository. It needs no change in the Heinzelmännchen core or
 `heinzel-plugins`. Start with one operation and one test; add settings, services and views when the feature needs
 them. The same operation supplies CLI, MCP and REST access.
 

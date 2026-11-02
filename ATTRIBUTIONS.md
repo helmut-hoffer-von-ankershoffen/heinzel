@@ -25,7 +25,7 @@ Installed with `hz`: the runtime dependencies of the core and of every first-par
 | [click](#click-850) | 8.5.0 | BSD-3-Clause |
 | [croniter](#croniter-624) | 6.2.4 | MIT |
 | [cryptography](#cryptography-5002) | 50.0.2 | Apache-2.0 OR BSD-3-Clause |
-| [fastapi](#fastapi-01611) | 0.161.1 | MIT |
+| [fastapi](#fastapi-01620) | 0.162.0 | MIT |
 | [genai-prices](#genai-prices-0113) | 0.1.13 | MIT |
 | [griffelib](#griffelib-241) | 2.4.1 | ISC |
 | [h11](#h11-0160) | 0.16.0 | MIT |
@@ -565,7 +565,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 </details>
 
-### fastapi 0.161.1
+### fastapi 0.162.0
 
 - License: MIT
 - Homepage: <https://github.com/fastapi/fastapi>
@@ -3480,8 +3480,8 @@ Bundled into the web app that `hz ui` serves: the production dependencies of [we
 | [d3-timer](#d3-timer-301) | 3.0.1 | ISC |
 | [d3-transition](#d3-transition-301) | 3.0.1 | ISC |
 | [d3-zoom](#d3-zoom-300) | 3.0.0 | ISC |
-| [@dagrejs/dagre](#dagrejsdagre-311) | 3.1.1 | MIT |
-| [@dagrejs/graphlib](#dagrejsgraphlib-405) | 4.0.5 | MIT |
+| [@dagrejs/dagre](#dagrejsdagre-313) | 3.1.3 | MIT |
+| [@dagrejs/graphlib](#dagrejsgraphlib-406) | 4.0.6 | MIT |
 | [debug](#debug-443) | 4.4.3 | MIT |
 | [decode-named-character-reference](#decode-named-character-reference-130) | 1.3.0 | MIT |
 | [dequal](#dequal-203) | 2.0.3 | MIT |
@@ -4417,7 +4417,7 @@ THIS SOFTWARE.
 
 </details>
 
-### @dagrejs/dagre 3.1.1
+### @dagrejs/dagre 3.1.3
 
 - License: MIT
 - Homepage: <https://github.com/dagrejs/dagre#readme>
@@ -4449,7 +4449,7 @@ THE SOFTWARE.
 
 </details>
 
-### @dagrejs/graphlib 4.0.5
+### @dagrejs/graphlib 4.0.6
 
 - License: MIT
 - Homepage: <https://github.com/dagrejs/graphlib#readme>

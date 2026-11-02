@@ -41,9 +41,9 @@ if git remote | grep -qx upstream; then
   repo="$(slug upstream)"
 fi
 
-uv run --quiet cz check --message "$title" >/dev/null
-uv run --quiet --script scripts/check_confidentiality.py --text "$title"
-uv run --quiet --script scripts/check_confidentiality.py --branch
+uv run --quiet --frozen --no-sync --no-build cz check --message "$title" >/dev/null
+uv run --quiet --frozen --no-sync --no-build python scripts/check_confidentiality.py --text "$title"
+uv run --quiet --frozen --no-sync --no-build python scripts/check_confidentiality.py --branch
 git fetch --quiet "$base" main
 # Being behind main is fine: main's own CI gates a release (ADR 0114). Only a real conflict has to be resolved first.
 git merge-tree --write-tree HEAD "$base/main" >/dev/null 2>&1 || { echo "Conflicts with $base/main; run make sync first." >&2; exit 2; }
@@ -87,7 +87,7 @@ tested_head=""
 if [ -z "${NO_PREFLIGHT:-}" ]; then
   tested_head="$(git rev-parse HEAD)"
   if [ -f scripts/scoped_checks.py ]; then
-    uv run --no-project --script scripts/scoped_checks.py preflight --base "$base/main"
+    uv run --frozen --no-sync --no-build python scripts/scoped_checks.py preflight --base "$base/main"
   else
     make --no-print-directory preflight BASE="$base/main"
   fi
@@ -95,7 +95,7 @@ fi
 
 if [ -n "${BODY_FILE:-}" ]; then body="$(cat "$BODY_FILE")"; else body="${BODY:-}"; fi
 [ -n "$body" ] || body="$(git log --reverse --format='- %s' "$base/main..HEAD")"
-uv run --quiet --script scripts/check_confidentiality.py --text "$body"
+uv run --quiet --frozen --no-sync --no-build python scripts/check_confidentiality.py --text "$body"
 
 # Existing automatic merges must be turned off by a maintainer before updating the PR.
 url="$(gh pr list --repo "$repo" --base main --head "$branch" --state open --limit 101 --json url,headRepository \

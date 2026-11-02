@@ -8,6 +8,7 @@ import os
 import re
 import stat
 import subprocess
+import sys
 import tomllib
 import zipfile
 from pathlib import Path
@@ -33,13 +34,19 @@ WORKFLOWS = sorted((REPO / ".github" / "workflows").glob("*.yml"))
 NOT_MAKE = {  # workflow: {start of the step's command: why}
     "*": {"uv sync": "installs what the job needs"},
     "ci.yml": {
-        "uv run --script scripts/check_confidentiality.py --require": "the secret must be configured in this repo",
+        "uv run --no-project --frozen --no-build --python 3.14 python scripts/check_confidentiality.py --require": (
+            "the secret must be configured in this repo"
+        ),
         "unzip -l ": "asserts what the built wheel contains",
         'changed="$(git diff --name-only': "decides from the changed paths whether a pull request builds the macOS app",
         "if compgen -G ": "selects the built core candidate or an independently released artifact for source plugins",
         "for result in $RESULTS": "the CI OK gate aggregates the results of the other jobs",
+        "uv run --no-build coverage report --format=total": "hands the measured total to the merge gate",
         "tar -czf notifier.tar.gz": "packs the app the macOS job built, with its executable bit, for the build job",
         "tar -xzf notifier.tar.gz": "unpacks Heinzel Notifier into the package before the wheel is built",
+    },
+    "merge-gate.yml": {
+        "uv run --no-build --frozen --script scripts/merge_gate.py": "judges by public APIs, from the base branch",
     },
     "acceptance.yml": {
         "uv python install 3.13": "the interpreter the harness runs on",
@@ -49,13 +56,19 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
     },
     "docs.yml": {
         "sudo apt-get update": "fonts for the terminal recordings, from the runner's packages",
-        "uv run --quiet --group docs playwright install-deps": "Chromium's system libraries, from the runner",
+        "uv run --quiet --frozen --no-build --group docs playwright install-deps": (
+            "Chromium's system libraries, from the runner"
+        ),
     },
     "publish.yml": {
         'test "v$(uv version --short)" = "$TAG"': "refuses a tag that doesn't match the project version",
-        "uv run --script scripts/check_confidentiality.py": "scans the tagged tree with the term list from the secret",
+        "uv run --no-project --frozen --no-build --python 3.14 python scripts/check_confidentiality.py": (
+            "scans the tagged tree with the term list from the secret"
+        ),
         'name="$(uv version': "exports the release's CycloneDX bill of materials",
-        "uv run --script scripts/release_notes.py": "writes the release notes",
+        "uv run --no-project --frozen --no-build --python 3.14 python scripts/release_notes.py": (
+            "writes the release notes"
+        ),
         'cp "$BUNDLE"': "attaches the provenance attestation and creates the GitHub release",
         "tar -czf notifier.tar.gz": "packs the app the macOS job built, with its executable bit, for the build job",
         "tar -xzf notifier.tar.gz": "unpacks Heinzel Notifier into the package before the wheel is built",
@@ -77,11 +90,15 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
     "pypi.yml": {
         '[[ "$TAG" =~': "binds publishing to the exact tag and main ancestry before build tooling",
         "gh api ": "verifies the published GitHub release and exports its exact source commit",
-        "uv run --script scripts/check_confidentiality.py --require": "requires the configured release term list",
+        "uv run --no-project --frozen --no-build --python 3.14 python scripts/check_confidentiality.py --require": (
+            "requires the configured release term list"
+        ),
         "tar -czf notifier.tar.gz": "preserves the notifier executable bits and signature across runners",
         "tar -xzf notifier.tar.gz": "restores the notifier from the same validated tag",
         "uv build --package heinzel": "builds only the registered core project, never unpublished workspace plugins",
-        "uv run --script scripts/pypi_release.py artifacts": "checks core metadata and complete packaged payloads",
+        "uv run --no-project --frozen --no-build --python 3.14 python scripts/pypi_release.py artifacts": (
+            "checks core metadata and complete packaged payloads"
+        ),
         "python3 - <<'PY'": "rechecks hashes without checking out or running project code in the OIDC job",
     },
     "release.yml": {
@@ -89,7 +106,8 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
         'test "$PUBLISH" != true || test "$REF" = refs/heads/main': (
             "runs the owning Make commands' same toolkit checks, build, audit and acceptance without core work"
         ),
-        'uv run --no-project --with "$TOOLING" python -m heinzel_plugin_tools.publishing': (
+        'uv run --no-project --frozen --no-build --python 3.14 python scripts/plugin_tooling.py --toolkit "$TOOLING" '
+        "python -m heinzel_plugin_tools.publishing": (
             "publishes the original verified plugin bytes through its protected generic host workflow"
         ),
     },
@@ -97,6 +115,11 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
         'if [[ ! "$INTRO"': "rejects blank dispatch input before checkout or release work",
         "git config user.name": "opens the release pull request as the bot and hands its tag to the next step",
         "gh workflow run ci.yml": "starts CI on the release pull request, which the bot's token doesn't",
+    },
+    "source-review.yml": {
+        ': "source-review dispatch authority"': "refuses any other ref, actor or commit, before checkout",
+        "uv run --no-build --frozen --script scripts/source_review.py": "the guard and the tool-free review",
+        ': "source-review final identity"': "rechecks the pull request and the protected ref on a fresh runner",
     },
     "release-tag.yml": {'tag="v$(uv version --short)"': "tags a merged release commit"},
     "claude-review.yml": {
@@ -136,15 +159,35 @@ def not_through_make(workflow: Path) -> list[str]:
 
 def test_finds_commands_not_run_through_make(tmp_path):
     workflow = tmp_path / "publish.yml"
-    steps = [{"run": "make build"}, {"run": "uv sync"}, {"run": "bash scripts/check_licenses.sh"}]
+    unreviewed = "uv run --no-project --frozen --no-build --python 3.14 python scripts/unreviewed.py"
+    steps = [
+        {"run": "make build"},
+        {"run": "uv sync"},
+        {"run": "bash scripts/check_licenses.sh"},
+        {"run": unreviewed},
+    ]
     workflow.write_text(yaml.safe_dump({"jobs": {"publish": {"steps": [{"uses": "x"}, *steps]}}}), encoding="utf-8")
-    assert not_through_make(workflow) == ["bash scripts/check_licenses.sh"]
+    assert not_through_make(workflow) == ["bash scripts/check_licenses.sh", unreviewed]
 
 
 @pytest.mark.parametrize("workflow", WORKFLOWS, ids=lambda p: p.name)
 def test_workflows_run_checks_through_make(workflow):
     """Locally and in CI the same make targets run, so a green `make check` means a green CI and a good release."""
     assert not_through_make(workflow) == [], "run these through a make target, or add them to NOT_MAKE with a reason"
+
+
+def test_every_main_commit_gets_its_own_ci_run_while_pull_requests_cancel_superseded_runs():
+    concurrency = yaml.safe_load((REPO / ".github/workflows/ci.yml").read_text())["concurrency"]
+
+    def group(ref: str, sha: str) -> str:
+        # Evaluate the one expression shape the group uses: `<cond> && github.sha || github.ref`.
+        expr = concurrency["group"]
+        assert "github.ref == 'refs/heads/main' && github.sha || github.ref" in expr
+        return f"{ref}:{sha}" if ref == "refs/heads/main" else ref
+
+    assert group("refs/heads/main", "a") != group("refs/heads/main", "b")
+    assert group("refs/pull/1/merge", "a") == group("refs/pull/1/merge", "b")
+    assert concurrency["cancel-in-progress"] == "${{ github.event_name == 'pull_request' }}"
 
 
 def test_source_plugin_audits_receive_authoritative_repository_visibility():
@@ -750,9 +793,12 @@ def test_the_release_keeps_changelog_introductions():
         for marker in (
             'cp CHANGELOG.md "$work/previous.md"',
             "git-cliff --offline --tag",
-            'uv run --script scripts/changelog_intros.py "$work/previous.md" CHANGELOG.md --version "$next"',
+            (
+                "uv run --frozen --no-sync --no-build python scripts/changelog_intros.py "
+                '"$work/previous.md" CHANGELOG.md --version "$next"'
+            ),
             "git commit",
-            'uv run --script scripts/release_notes.py "$tag"',
+            'uv run --frozen --no-sync --no-build python scripts/release_notes.py "$tag"',
         )
     )
     assert save < regenerate < restore < commit < notes
@@ -762,7 +808,9 @@ def test_the_release_keeps_changelog_introductions():
     step = next(s for s in release["jobs"]["pull-request"]["steps"] if "release.sh" in s.get("run", ""))
     assert not any("gh pr merge" in s.get("run", "") for s in release["jobs"]["pull-request"]["steps"])
     assert step["env"]["INTRO"] == "${{ inputs.intro }}"
-    assert (REPO / "template" / "scripts" / "changelog_intros.py").resolve() == REPO / "scripts" / "changelog_intros.py"
+    assert (
+        REPO / "template" / "scripts" / "changelog_intros.py.jinja"
+    ).resolve() == REPO / "scripts" / "changelog_intros.py"
 
 
 def test_pushing_runs_check_fast_through_a_hook():
@@ -773,7 +821,7 @@ def test_pushing_runs_check_fast_through_a_hook():
     assert hooks["check-fast"]["stages"] == ["pre-push"]
     assert "pre-push" in config["default_install_hook_types"]
     assert "--hook-type pre-push" in (REPO / "Makefile").read_text(encoding="utf-8")
-    assert (REPO / "template" / ".pre-commit-config.yaml").resolve() == REPO / ".pre-commit-config.yaml"
+    assert (REPO / "template" / ".pre-commit-config.yaml.jinja").resolve() == REPO / ".pre-commit-config.yaml"
 
 
 def test_the_template_audit_runs_in_template_test_ci_and_full_preflight():
@@ -786,6 +834,9 @@ def test_the_template_audit_runs_in_template_test_ci_and_full_preflight():
     assert "template-test" not in (REPO / "template" / "Makefile").read_text(encoding="utf-8")
     assert "TEMPLATE_AUDIT=$(if $(filter full,$(PREFLIGHT)),1) bash scripts/template-test.sh" in makefile
     assert "make audit" in (REPO / "scripts" / "template-test.sh").read_text(encoding="utf-8")
+    script = (REPO / "scripts" / "template-test.sh").read_text(encoding="utf-8")
+    assert "\nuv lock --quiet\nmake setup\n" not in script, "a fresh render must run the documented make setup unlocked"
+    assert "[[ ! -e uv.lock ]]" in script
     ci = "\n".join(commands(REPO / ".github" / "workflows" / "ci.yml"))
     assert "make template-test AUDIT=1" in ci
 
@@ -868,7 +919,7 @@ def test_plugin_ci_has_no_core_only_jobs_and_every_need_exists():
         assert "needs" not in job or needs, f"{name} has an empty needs list"
         for need in [needs] if isinstance(needs, str) else needs:
             assert need in jobs, f"{name} needs {need}"
-    assert jobs["setup"]["strategy"]["matrix"]["os"] == ["ubuntu-latest", "macos-latest"]
+    assert jobs["setup"]["strategy"]["matrix"]["os"] == ["ubuntu-24.04", "macos-latest"]
     assert "if" not in jobs["build"]
 
 
@@ -975,7 +1026,8 @@ def test_e2e_prepares_core_build_before_suite_and_removes_owned_temp(tmp_path, f
         node = "tests/e2e/docs_test.py::test_readme_instructions"
         assert first.endswith(f"-x {node}")
         assert second.endswith(f"-x --deselect={node}")
-        assert first.count("-n 3") == second.count("-n 3") == 1
+        workers = "-n 2" if sys.platform == "darwin" else "-n 3"  # macOS runs fewer workers on its 3 vCPUs
+        assert first.count(workers) == second.count(workers) == 1
         assert first.count("--session-timeout=600") == second.count("--session-timeout=600") == 1
     generated = _template_sync_module().makefile()
     assert "e2e-prepare" not in generated
@@ -1167,3 +1219,24 @@ def test_release_versions_ignore_edge_tags_and_stay_under_plugin_caps():
     assert cliff["git"]["tag_pattern"].startswith("^v")
     assert cliff["bump"]["features_always_bump_minor"] is False
     assert cliff["bump"]["breaking_always_bump_major"] is False
+
+
+def test_macos_specific_tests_are_a_required_serial_job_on_macos():
+    jobs = yaml.safe_load((REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))["jobs"]
+    job = jobs["macos-specific"]
+    assert (job["name"], job["runs-on"]) == ("macOS-specific tests", "macos-latest")
+    assert "macos-specific" in jobs["ci-ok"]["needs"]
+    recipe = (REPO / "Makefile").read_text(encoding="utf-8").split("\ntest-macos-specific:", 1)[1].split("\n\n", 1)[0]
+    assert "-m macos_specific" in recipe
+    assert " -n " not in recipe  # serial: no worker contention for the machine-wide notifier tests
+    assert any(step.get("run") == "make test-macos-specific" for step in job["steps"])
+
+
+def test_macos_cells_are_temporarily_non_blocking_and_linux_cells_still_block():
+    jobs = yaml.safe_load((REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))["jobs"]
+    for name in ("setup", "test", "e2e", "electron"):
+        assert jobs[name]["continue-on-error"] == "${{ startsWith(matrix.os, 'macos') }}", name
+    steps = jobs["ci-ok"]["steps"]
+    script = next(step["run"] for step in steps if "RESULTS" in step.get("env", {}))
+    assert "success | skipped) ;;" in script  # a masked macOS failure reports success; anything else still fails
+    assert "continue-on-error" not in jobs["ci-ok"]

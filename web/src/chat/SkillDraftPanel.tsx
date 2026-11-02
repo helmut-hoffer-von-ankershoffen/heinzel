@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api, type SchemaHeinzelProposeSkillDraftInput, type SchemaSkillDraft } from "@/api/client";
 import { Button } from "@/components/ui/button";
+import { sortedKeys } from "@/lib/sort";
 import { SkillSharingPanel } from "./SkillSharingPanel";
 
 type DraftRequest = SchemaHeinzelProposeSkillDraftInput;
@@ -61,7 +62,7 @@ function valid(request: DraftRequest, sessionId: string): boolean {
 }
 
 function exact(saved: SchemaSkillDraft, request: DraftRequest): boolean {
-  const keys = Object.keys(request.files).sort();
+  const keys = sortedKeys(request.files);
   return (
     saved.session_id === request.session_id &&
     saved.request_id === request.request_id &&

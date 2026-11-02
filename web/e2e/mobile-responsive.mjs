@@ -14,6 +14,7 @@ import { reportMediaFailure, watchMedia } from "./media-diagnostics.mjs";
 // Fixed, credential-free checkpoints for timeout diagnosis; do not interpolate page or URL data.
 function stage(name) {
   console.error(`MOBILE_STAGE:${name}`);
+  console.error(`MOBILE_ELAPSED:${Math.round(performance.now() / 1000)}`);
 }
 stage("launch");
 const [url, shots] = process.argv.slice(2);

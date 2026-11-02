@@ -202,12 +202,12 @@ def palette(theme: Object, mode: str, token: str, fallback: str) -> str:
 
 def theme_art(theme: Object, mode: str) -> str:
     """An original inert UI illustration drawn from a declared palette, never supplier SVG."""
-    background = palette(theme, mode, "background", "#faf8f4")
-    card = palette(theme, mode, "card", "#ffffff")
-    foreground = palette(theme, mode, "foreground", "#242c29")
-    primary = palette(theme, mode, "primary", "#a4462d")
-    sidebar = palette(theme, mode, "sidebar", "#efece5")
-    border = palette(theme, mode, "border", "#d9ddd6")
+    background = palette(theme, mode, "background", "#faf8f3")
+    card = palette(theme, mode, "card", "#fffdf8")
+    foreground = palette(theme, mode, "foreground", "#263b32")
+    primary = palette(theme, mode, "primary", "#a64028")
+    sidebar = palette(theme, mode, "sidebar", "#f3efe4")
+    border = palette(theme, mode, "border", "#d8ddd3")
     return f"""<svg xmlns="http://www.w3.org/2000/svg" width="960" height="600" viewBox="0 0 960 600">
 <title>{escape(theme["title"])} · {mode} palette preview</title>
 <rect width="960" height="600" rx="28" fill="{background}"/>
@@ -251,11 +251,25 @@ stroke-linecap="round"/>
 </g></svg>"""
 
 
+COPY_BUTTON_ICONS = (
+    '<svg class="hz-copy__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" '
+    'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="14" height="14" x="8" y="8" '
+    'rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>'
+    '<svg class="hz-copy__done" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" '
+    'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>'
+    '<span class="hz-visually-hidden" aria-live="polite"></span>'
+)
+
+
 def command(value: str, identity: str) -> str:
-    """An accessible copy control with useful static text when JavaScript is unavailable."""
+    """An accessible copy control: the command stays selectable text when JavaScript is unavailable.
+
+    The button is an icon with its name kept for assistive technology, the same as the app's copy button.
+    """
+    button = f'<button type="button" data-copy="{identity}" aria-label="Copy command" title="Copy">'
     return f"""<div class="hz-command">
 <code id="{identity}">{escape(value)}</code>
-<button type="button" data-copy="{identity}" aria-label="Copy command">Copy</button></div>"""
+{button}{COPY_BUTTON_ICONS}</button></div>"""
 
 
 def cards(data: Object, page_url: str, *, featured: bool = False) -> str:

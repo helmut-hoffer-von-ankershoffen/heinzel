@@ -42,6 +42,7 @@ from heinzel.kernel import (
     exposed,
     format_duration,
     input_schema,
+    jsonable,
 )
 from heinzel.modules.system.plugin._models import PluginInfo
 from heinzel.modules.system.plugin._service import REPOSITORY, PluginService, short_name
@@ -526,7 +527,7 @@ def _playbook(record: ModuleRecord, let: PlaybookLet) -> PlaybookDoc:
             for asset in let.assets
         ],
         templates=[template.name for template in let.templates],
-        defaults=dict(to_jsonable_python(dict(let.defaults))),
+        defaults=dict(jsonable(dict(let.defaults))),
     )
 
 

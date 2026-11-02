@@ -21,7 +21,6 @@ try {
   await field.fill(url);
   await page.getByRole("button", { name: "Sign in again", exact: true }).click();
   await page.getByRole("contentinfo").waitFor({ timeout: 20000 });
-  await page.screenshot({ path: `${shots}/signin-paste-signed-in.png` });
   await page.getByText("Sign in again").first().waitFor({ state: "hidden", timeout: 10000 });
   await page.screenshot({ path: `${shots}/signin-paste-signed-in.png` });
   console.log(JSON.stringify({ pasted: true }));

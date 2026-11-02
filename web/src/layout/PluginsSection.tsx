@@ -685,10 +685,17 @@ function Yours({
   const catalog = usePluginSearch("");
   const [kind, setKind] = useState<PluginKind | null>(null);
   const known = new Map((catalog.data?.plugins ?? []).map((plugin) => [plugin.name, plugin]));
+  const lastSeen = useRef(new Map<string, SchemaPluginInfo>());
   return (
     <Loaded query={plugins}>
       {(list) => {
-        const shown = list.filter(
+        // A removal refreshes the list before its restart. The row holds the confirmation, whose restart is cancelled
+        // if it unmounts, so the row stays until the page reloads.
+        for (const plugin of list) lastSeen.current.set(`yours:${plugin.distribution}`, plugin);
+        const leaving = slot ? lastSeen.current.get(slot.key) : undefined;
+        const current =
+          leaving && !list.some((plugin) => plugin.distribution === leaving.distribution) ? [...list, leaving] : list;
+        const shown = current.filter(
           (plugin) =>
             plugin.distribution.toLowerCase().includes(query.toLowerCase()) &&
             (kind === null || (plugin.kinds ?? []).includes(kind)),

@@ -55,7 +55,7 @@ from heinzel.heads.web._lifecycle import CANT_RESTART as CANT_RESTART
 from heinzel.heads.web._lifecycle import add_lifecycle
 from heinzel.heads.web._pairing import add_pairing
 from heinzel.heads.web._ports import wait_for_port
-from heinzel.heads.web._shutdown import GRACE_SECONDS, Stopping
+from heinzel.heads.web._shutdown import GRACE_SECONDS, KEEP_ALIVE_SECONDS, Stopping
 from heinzel.heads.web._shutdown import server as stopping_server
 from heinzel.heads.web._stream import add_stream
 from heinzel.heads.web._updates import add_updates
@@ -84,7 +84,7 @@ STATIC = Path(__file__).parent / "static"
 """Where the build puts the app (`make web-build`, or the wheel's build hook); not in git."""
 HOST = "127.0.0.1"
 OK = 200
-SPLASH_SCRIPT = "'sha256-pN9jYRjUn1PxYq7efc0qmdmmc/sy6sTVaGnaajkcymU='"
+SPLASH_SCRIPT = "'sha256-JVUEuicvI/AfBERQXDLXpEEPtcrdJe03yief1rkzoEY='"
 """The one inline script allowed, by its hash: the splash's in `web/index.html`, which paints the last theme before the
 app loads (ADR 0046). A test recomputes it from the file, so a changed script fails until this changes with it."""
 CSP = (
@@ -518,7 +518,13 @@ def serve(  # noqa: PLR0913 - all but the kernel by keyword
     except BaseException:
         sock.close()
         raise
-    config = uvicorn.Config(app, log_level="warning", lifespan="off", timeout_graceful_shutdown=GRACE_SECONDS)
+    config = uvicorn.Config(
+        app,
+        log_level="warning",
+        lifespan="off",
+        timeout_graceful_shutdown=GRACE_SECONDS,
+        timeout_keep_alive=KEEP_ALIVE_SECONDS,
+    )
     server = stopping_server(config, stopping)
     url = session_url(bound, token, base)
 

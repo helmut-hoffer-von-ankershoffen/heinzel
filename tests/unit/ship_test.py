@@ -448,3 +448,40 @@ def test_every_argument_of_every_stage_is_described(stage):
     sub = next(a for a in ship.parser()._actions if a.dest == "command")
     for action in sub.choices[stage]._actions:
         assert action.help, f"{stage}: {action.dest} has no help text"
+
+
+def _rules(*required: str) -> str:
+    checks = [{"context": name} for name in required]
+    return json.dumps([{"type": "required_status_checks", "parameters": {"required_status_checks": checks}}])
+
+
+def _pull(state: str = "UNSTABLE") -> dict:
+    return {
+        "mergeStateStatus": state,
+        "statusCheckRollup": [
+            {"name": "CI OK", "status": "COMPLETED", "conclusion": "SUCCESS"},
+            {"name": "merge-gate", "status": "COMPLETED", "conclusion": "FAILURE"},
+        ],
+    }
+
+
+def test_a_merge_gate_main_does_not_require_yet_only_reports(monkeypatch):
+    monkeypatch.setattr(ship, "gh", lambda *_: (0, _rules("CI OK")))
+    assert ship.merge_blocker(ship.without_advisory_gates(_pull(), "o/r")) == ""
+
+
+def test_a_required_merge_gate_blocks(monkeypatch):
+    monkeypatch.setattr(ship, "gh", lambda *_: (0, _rules("CI OK", "merge-gate")))
+    assert ship.merge_blocker(ship.without_advisory_gates(_pull(), "o/r")) == "checks failed: merge-gate"
+
+
+def test_the_gate_blocks_when_the_rules_cannot_be_read(monkeypatch):
+    monkeypatch.setattr(ship, "gh", lambda *_: (1, "boom"))
+    assert ship.merge_blocker(ship.without_advisory_gates(_pull(), "o/r")) == "checks failed: merge-gate"
+
+
+def test_another_failing_check_still_blocks_without_the_gate(monkeypatch):
+    monkeypatch.setattr(ship, "gh", lambda *_: (0, _rules("CI OK")))
+    pull = _pull()
+    pull["statusCheckRollup"].append({"name": "CodeQL", "status": "COMPLETED", "conclusion": "FAILURE"})
+    assert ship.merge_blocker(ship.without_advisory_gates(pull, "o/r")) == "checks failed: CodeQL"
