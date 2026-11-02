@@ -435,15 +435,28 @@ def sound_response(kernel: Kernel, soundscape: str, file: str) -> Response:
     return Response(content, media_type=media_type, headers={"Cache-Control": IMMUTABLE})
 
 
+def _listener_on(host: str, port: int) -> bool:
+    """Whether something accepts connections on `host:port` right now."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        probe.settimeout(1.0)
+        return probe.connect_ex((host, port)) == 0
+
+
 def free_socket(host: str = HOST, port: int = 0) -> socket.socket:
     """A listening socket on `host`; port 0 picks a free one. Bound before the server starts, so no one takes it.
+
+    A fixed port that nothing listens on is bound with SO_REUSEADDR, so connections the last server closed (they
+    linger in TIME_WAIT for a minute on Linux) don't keep a restart from the same port. SO_REUSEADDR would also let
+    macOS bind over another server's port without a word, so a port something listens on is bound without it and
+    stays busy. Windows lets SO_REUSEADDR take over a port, so it never gets the option.
 
     Raises:
         OSError: If the port is taken.
     """
-    # No SO_REUSEADDR: on macOS it would let us bind a port another server already listens on, silently.
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
+        if port and os.name == "posix" and not _listener_on(host, port):
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         sock.bind((host, port))
         sock.listen(128)
     except OSError:

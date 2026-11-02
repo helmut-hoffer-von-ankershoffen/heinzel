@@ -242,25 +242,6 @@ def _free_port() -> int:
         return int(probe.getsockname()[1])
 
 
-def _quiet_port() -> int:
-    """A free port below the ephemeral range.
-
-    A window that keeps retrying a stopped daemon on 127.0.0.1 can pick the daemon's own port as its source port and
-    connect to itself, which holds the port and makes the restart fail to bind. Outside the range that cannot happen.
-    """
-    import random
-    import socket
-
-    for port in random.sample(range(20000, 30000), 200):
-        with socket.socket() as probe:
-            try:
-                probe.bind(("127.0.0.1", port))
-            except OSError:
-                continue
-        return port
-    pytest.fail("no free port below the ephemeral range")
-
-
 def _start_ui(env: dict[str, str], port: int) -> tuple[subprocess.Popen[str], str]:
     ui = subprocess.Popen(
         [sys.executable, "-m", "heinzel", "ui", "--port", str(port), "--no-browser"],
@@ -379,7 +360,7 @@ def test_an_open_app_window_reconnects_when_the_daemon_restarts_on_the_same_port
     """Stop `hz ui` under an open, paired window and start it again: the window recovers and never asks to sign in."""
     env, _ = environment
     run = _browser_ready(engine)
-    port = _quiet_port()
+    port = _free_port()
     ui, link = _start_ui(env, port)
     driver = subprocess.Popen(
         [

@@ -74,3 +74,27 @@ def test_ctrl_c_cancels_the_wait():
 
     with pytest.raises(KeyboardInterrupt):
         wait_for_port(bind, 8737, lambda _text: None, pause=interrupt)
+
+
+def test_a_port_another_server_listens_on_stays_busy():
+    from heinzel.heads.web import free_socket
+
+    with free_socket() as other:
+        port = other.getsockname()[1]
+        with pytest.raises(OSError, match="in use") as raised:
+            free_socket("127.0.0.1", port)
+        assert raised.value.errno == errno.EADDRINUSE
+
+
+def test_a_port_whose_last_server_closed_its_connections_binds_again():
+    from heinzel.heads.web import free_socket
+
+    server = free_socket()
+    port = server.getsockname()[1]
+    with socket.create_connection(("127.0.0.1", port)) as client:
+        served, _ = server.accept()
+        served.close()  # the closing side keeps the port in TIME_WAIT
+        client.recv(1)
+    server.close()
+    with free_socket("127.0.0.1", port) as again:
+        assert again.getsockname()[1] == port
