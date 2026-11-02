@@ -9,7 +9,7 @@ import { commandsIn } from "@/lib/utils";
 export function OrgChart() {
   return (
     <Page title={t("org.title")} intro={t("org.intro")}>
-      <Empty text={t("org.notYet")} commands={["hz system capability list"]} gnome={{ age: "baby" }} />
+      <Empty text={t("org.notYet")} gnome={{ age: "baby" }} />
     </Page>
   );
 }

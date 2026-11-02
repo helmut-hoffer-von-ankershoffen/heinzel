@@ -120,7 +120,7 @@ describe("Daemon Settings", () => {
     else {
       const user = userEvent.setup();
       await user.click(within(controls).getByRole("button", { name: "Install" }));
-      expect(within(screen.getByRole("alertdialog")).getByText(/starts automatically/)).toBeInTheDocument();
+      expect(within(screen.getByRole("alertdialog")).getByText(/starts when you sign in/)).toBeInTheDocument();
       await user.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Install" }));
       await waitFor(() =>
         expect(calls.some((request) => new URL(request.url).pathname.endsWith("/install"))).toBe(true),
@@ -172,7 +172,7 @@ describe("Daemon Settings", () => {
       await user.click(await screen.findByRole("button", { name: label }));
       const dialog = screen.getByRole("alertdialog", { name: `${label} the daemon?` });
       expect(dialog).toHaveTextContent(`hz system daemon ${action}`);
-      expect(dialog).toHaveTextContent("starts automatically");
+      expect(dialog).toHaveTextContent("starts when you sign in");
       expect(calls.filter((request) => request.method === "POST")).toHaveLength(0);
       await user.click(within(dialog).getByRole("button", { name: label }));
       await waitFor(() => expect(calls.filter((request) => request.method === "POST")).toHaveLength(1));
