@@ -253,7 +253,9 @@ def service(tmp_path, monkeypatch, *, moves=None, crm=None, **folder):
     )
     monkeypatch.setattr(tool, "validate_install_constraints", lambda selected, constraints: None)
     monkeypatch.setattr(tool, "verify_installed_requirements", lambda *a, **k: {})
-    monkeypatch.setattr(tool, "remove_transient_tool_constraint", lambda *, expected, original, added: expected)
+    monkeypatch.setattr(
+        tool, "remove_transient_tool_constraint", lambda *, expected, original, added, options: expected
+    )
     monkeypatch.setattr(
         tool, "name_core_by_tag", lambda *, expected, commit, tag: retagged.append((commit, tag)) or expected
     )

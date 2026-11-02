@@ -276,7 +276,7 @@ class UpdateService:
                     )
                     _require_untouched(prefix, untouched)
                     generation = self._installation.remove_transient_tool_constraint(
-                        expected=generation, original=policy, added=guards
+                        expected=generation, original=policy, added=guards, options=_added_options(announced)
                     )
                     if pin.kind == "release":
                         generation = self._installation.name_core_by_tag(
@@ -394,6 +394,7 @@ class UpdateService:
             command += ["--exclude-newer", _stamp(announced.exclude_newer)]
         if announced.exclude_newer_core is not None:
             command += ["--exclude-newer-package", f"heinzel={_stamp(announced.exclude_newer_core)}"]
+        # uv records both in the receipt (`[tool.options]`); `_added_options` names them so they are taken out again.
         self._installation.run(
             command,
             "uv couldn't install exactly the announced versions",
@@ -1359,6 +1360,16 @@ def _require_untouched(prefix: Path, untouched: Mapping[str, object]) -> None:
     if changed := [name for name, was in untouched.items() if installed_identity(prefix, name) != was]:
         msg = f"the plugins updated by hand would have changed: {', '.join(changed)}"
         raise HeinzelError(msg)
+
+
+def _added_options(announced: Announcement) -> dict[str, object]:
+    """The `[tool.options]` uv records for the resolver options an automatic update passes, as uv writes them."""
+    options: dict[str, object] = {}
+    if announced.exclude_newer is not None:
+        options["exclude-newer"] = _stamp(announced.exclude_newer)
+    if announced.exclude_newer_core is not None:
+        options["exclude-newer-package"] = {"heinzel": _stamp(announced.exclude_newer_core)}
+    return options
 
 
 def _stamp(moment: datetime) -> str:

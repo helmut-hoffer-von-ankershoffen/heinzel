@@ -296,6 +296,30 @@ def _transient_entry(added: str) -> str:
     return json.dumps(entry, sort_keys=True, separators=(",", ":"))
 
 
+def _without_added_options(raw: bytes, options: Mapping[str, object]) -> bytes:
+    """The receipt without the `[tool.options]` a mutation added: they must be exactly `options`, nothing more.
+
+    The receipt policy allows no options of its own (`_validate_receipt_policy`), so the table goes as a whole.
+
+    Raises:
+        HeinzelError: If the options differ from `options` in any way.
+    """
+    try:
+        data = tomllib.loads(raw.decode("utf-8"))
+        if data["tool"].get("options") != dict(options):
+            raise HeinzelError(_CONSTRAINT_ERROR)
+        document = tomlkit.parse(raw.decode("utf-8"))
+        del cast("Any", document)["tool"]["options"]
+        del data["tool"]["options"]
+        replacement = tomlkit.dumps(document).encode("utf-8")
+        if tomllib.loads(replacement.decode("utf-8")) != data:
+            raise HeinzelError(_CONSTRAINT_ERROR)
+    except (KeyError, TypeError, ValueError, UnicodeError) as exc:
+        raise HeinzelError(_CONSTRAINT_ERROR) from exc
+    else:
+        return replacement
+
+
 def _remove_transient_constraint(raw: bytes, original: ToolConstraintPolicy, added: tuple[str, ...]) -> bytes:
     """Remove exactly the last, temporary exact-version constraints from a matching receipt.
 
@@ -696,9 +720,17 @@ class Installation:
         return _installation_continuity.replace_receipt(self.prefix, self._continuity_authority, expected, transform)
 
     def remove_transient_tool_constraint(
-        self, *, expected: str, original: ToolConstraintPolicy, added: str | tuple[str, ...]
+        self,
+        *,
+        expected: str,
+        original: ToolConstraintPolicy,
+        added: str | tuple[str, ...],
+        options: Mapping[str, object] | None = None,
     ) -> str:
         """Remove exact-version guards only from the independently verified post-mutation generation.
+
+        uv also records the resolver options a run was given (`[tool.options]`, such as `exclude-newer`); `options`
+        names exactly those this mutation added, and they go too. Anything else in the receipt stays as it is.
 
         Raises:
             HeinzelError: If the receipt, policy or installation generation cannot be verified.
@@ -710,6 +742,8 @@ class Installation:
                 receipt = _read_tool_receipt_bytes(self.prefix)
             except ValueError as exc:
                 raise HeinzelError(_CONSTRAINT_ERROR) from exc
+            if options:
+                receipt = _without_added_options(receipt, options)
             return _remove_transient_constraint(receipt, original, (added,) if isinstance(added, str) else added)
 
         return _installation_continuity.replace_receipt(self.prefix, self._continuity_authority, expected, transform)
