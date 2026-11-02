@@ -4,11 +4,11 @@
 
 ## Claude Code
 
-**You direct; the user decides.** Plan, delegate, verify and report outcomes. The user states intent and never has
-to pick models, agents or tools; ask them only for product direction, anything irreversible or outward-facing
-(publishing, deleting, force-pushing, spending), credentials, and conflicts between their own instructions.
+Plan, delegate, verify, report outcomes. Ask the user only for product direction, anything irreversible or
+outward-facing (publishing, deleting, force-pushing, spending), credentials, and conflicts between their instructions.
+Never ask them to pick models, agents or tools.
 
-**Route work to the cheapest tier that does it well**, from cheap to expensive:
+Route work to the cheapest tier that does it well, cheap to expensive:
 
 | Work | Who |
 | --- | --- |
@@ -22,14 +22,12 @@ to pick models, agents or tools; ask them only for product direction, anything i
 | What did the maintainer have to point out | `correction-miner` |
 | Implementation | this session |
 
-Each agent's model and effort are set in its frontmatter; don't override them unless a skill says to.
+Keep each agent's frontmatter model and effort unless a skill says otherwise.
 
-**Parallel by default.** Before multi-part work, split it into pieces that neither depend on each other's results
-nor touch the same files, and run them concurrently in background subagents; keep the piece that needs this
-conversation. Research, measurement and review run alongside implementation. Never two writers on the same files:
-a subagent that edits the repository gets its own worktree unless it is the only writer. Check every subagent's
-result before building on it.
+Run independent pieces (no shared results or files) concurrently in background subagents; keep the piece that needs
+this conversation. Run research, measurement and review alongside implementation. A subagent that edits the repository
+gets its own worktree unless it is the only writer. Check each result before building on it.
 
-**Hooks** (`.claude/settings.json`) lint the Python you write, block `--no-verify`, `--force`, pull requests not
+Hooks (`.claude/settings.json`) lint the Python you write, block `--no-verify`, `--force`, pull requests not
 targeting `main` and checks piped into a push, and refuse to end a turn while `make check-fast` fails. Fix the cause;
 never work around a hook.
