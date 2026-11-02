@@ -5,21 +5,30 @@ import { connectTerminal } from "@/lib/terminal";
 import { READY_FALLBACK_MS, READY_QUIET_MS, TerminalPanel } from "./TerminalPanel";
 
 const { terminals } = vi.hoisted(() => ({
-  terminals: [] as Array<{ title: (value: string) => void; osc: Map<number, (value: string) => boolean> }>,
+  terminals: [] as Array<{
+    options: { theme?: { background?: string } };
+    title: (value: string) => void;
+    osc: Map<number, (value: string) => boolean>;
+  }>,
 }));
 const { desktopState } = vi.hoisted(() => ({ desktopState: vi.fn(() => "off") }));
 vi.mock("@/notifications/desktop", () => ({ desktopState }));
 vi.mock("@xterm/xterm", () => ({
   Terminal: class {
-    options = {};
-    record = { title: (_value: string) => {}, osc: new Map<number, (value: string) => boolean>() };
+    options: { theme?: { background?: string } } = {};
+    record = {
+      options: this.options,
+      title: (_value: string) => {},
+      osc: new Map<number, (value: string) => boolean>(),
+    };
     parser = {
       registerOscHandler: (id: number, callback: (value: string) => boolean) => {
         this.record.osc.set(id, callback);
         return { dispose() {} };
       },
     };
-    constructor() {
+    constructor(options: object = {}) {
+      Object.assign(this.options, options);
       terminals.push(this.record);
     }
     loadAddon() {}
@@ -188,5 +197,24 @@ describe("terminal tabs", () => {
     act(() => instances[0]?.onclick?.());
     expect(onActivate).toHaveBeenCalledOnce();
     expect(screen.queryByLabelText("New terminal notification")).not.toBeInTheDocument();
+  });
+});
+
+describe("terminal colours", () => {
+  afterEach(() => {
+    document.documentElement.className = "";
+    document.documentElement.removeAttribute("style");
+  });
+
+  it("starts with the active theme's colours and follows a switch of theme or mode", async () => {
+    vi.stubGlobal("WebSocket", Socket);
+    document.documentElement.style.setProperty("--color-background", "#10203a");
+    render(<TerminalPanel onClose={vi.fn()} full={false} onToggleFull={vi.fn()} />);
+    expect(terminals[0]?.options.theme?.background).toBe("#10203a");
+    document.documentElement.style.setProperty("--color-background", "#f4e8d0");
+    await vi.waitFor(() => expect(terminals[0]?.options.theme?.background).toBe("#f4e8d0"));
+    document.documentElement.style.removeProperty("--color-background");
+    document.documentElement.classList.add("dark");
+    await vi.waitFor(() => expect(terminals[0]?.options.theme?.background).toBe("#18231e"));
   });
 });
