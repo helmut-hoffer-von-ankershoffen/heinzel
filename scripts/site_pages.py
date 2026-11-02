@@ -202,12 +202,12 @@ def palette(theme: Object, mode: str, token: str, fallback: str) -> str:
 
 def theme_art(theme: Object, mode: str) -> str:
     """An original inert UI illustration drawn from a declared palette, never supplier SVG."""
-    background = palette(theme, mode, "background", "#faf8f4")
-    card = palette(theme, mode, "card", "#ffffff")
-    foreground = palette(theme, mode, "foreground", "#242c29")
-    primary = palette(theme, mode, "primary", "#a4462d")
-    sidebar = palette(theme, mode, "sidebar", "#efece5")
-    border = palette(theme, mode, "border", "#d9ddd6")
+    background = palette(theme, mode, "background", "#faf8f3")
+    card = palette(theme, mode, "card", "#fffdf8")
+    foreground = palette(theme, mode, "foreground", "#263b32")
+    primary = palette(theme, mode, "primary", "#a64028")
+    sidebar = palette(theme, mode, "sidebar", "#f3efe4")
+    border = palette(theme, mode, "border", "#d8ddd3")
     return f"""<svg xmlns="http://www.w3.org/2000/svg" width="960" height="600" viewBox="0 0 960 600">
 <title>{escape(theme["title"])} · {mode} palette preview</title>
 <rect width="960" height="600" rx="28" fill="{background}"/>

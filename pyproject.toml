@@ -1,6 +1,6 @@
 [project]
 name = "heinzel"
-version = "0.9.11"
+version = "0.9.12"
 description = "An open-source crew of AI helpers that drafts your team's busywork and asks before anything leaves your machine."
 readme = "PYPI.md"
 authors = [{ name = "Helmut Hoffer von Ankershoffen", email = "helmuthva@gmail.com" }]
@@ -51,14 +51,14 @@ test = ["coverage>=7.12", "httpx>=0.28", "hypothesis>=6.140", "jsonschema>=4.26"
 fuzz = ["atheris>=3.1; sys_platform == 'linux' and platform_machine == 'x86_64' and python_version < '3.15'"]
 dev = [
     { include-group = "test" },
-    "bump-my-version>=1.2.4,<2",
+    "bump-my-version>=1.6.7,<2",
     "commitizen>=4.10.0,<5",
     "copier>=9.19",
     "git-cliff>=2.14.0,<3",
     "import-linter>=2.5",
     "mypy>=1.19.0,<3",
     "pip-audit>=2.10.0,<3",
-    "pyright[nodejs]>=1.1.408", # Node.js from a locked wheel, instead of a download at the first run
+    "pyright[nodejs]>=1.1.414", # Node.js from a locked wheel, instead of a download at the first run
     "ruff>=0.14.8,<1",
     "shellcheck-py>=0.10",
     "types-croniter>=6.2.4",
@@ -74,7 +74,7 @@ docs = [
 ]
 
 [build-system]
-requires = ["hatchling>=1.29.0"]
+requires = ["hatchling>=1.32.4"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
@@ -199,6 +199,7 @@ markers = [
     "long_running: Tests with a timeout >= 5 min.",
     "e2e_early: Hint to start a long E2E case in an early xdist worker batch; no deadline or selection change.",
     "perf: Performance tests that assert on elapsed time (linear time, a budget). Additional to the level marker; excluded from make check-fast, test, test-parallel and test-all-pythons, run by make test-perf in CI only, because load makes them flake.",
+    "macos_specific: Additional to the level marker. Exercises macOS behaviour only (the notifier, the launchd daemon service, Finder, process birth); CI runs these serially on macOS as the required macOS-specific tests job. They stay in the broader jobs too.",
 ]
 
 [tool.coverage.run]
@@ -232,7 +233,7 @@ example = "fix(cli): exit with code 1 when an operation fails"
 info = "Conventional commits with the types and scopes in docs/CODING_STANDARDS.md."
 
 [tool.bumpversion]
-current_version = "0.9.11"
+current_version = "0.9.12"
 parse = "(?P<major>\\d+)\\.(?P<minor>\\d+)\\.(?P<patch>\\d+)"
 serialize = ["{major}.{minor}.{patch}"]
 commit = false
@@ -322,6 +323,9 @@ venv = ".venv"
 CPY = "CPY" # ruff rule prefix (flake8-copyright)
 Prompty = "Prompty" # a prompt file format, cited in docs/research/workflow-contracts.md
 intoto = "intoto" # in-toto attestations, as in provenance.intoto.jsonl
+
+[tool.typos.default]
+extend-ignore-re = ['\b[0-9a-f]{7,40}\b'] # commit hashes in the changelog
 
 [tool.typos.files]
 extend-exclude = ["ATTRIBUTIONS.md", "site", "plugins", "docs/impressum.md", "docs/datenschutz.md"] # plugins own their sources and docs; the two German legal pages are not English

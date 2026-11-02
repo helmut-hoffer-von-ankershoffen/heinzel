@@ -115,6 +115,13 @@ class Settings(ModuleSettings):
             },
         },
     )
+    features: Annotated[frozenset[str], NoDecode] = Field(
+        default=frozenset(),
+        title="Preview features",
+        description="Unfinished work to switch on by name; it may change or break. In the environment, separate them "
+        "with commas.",
+        json_schema_extra={"x-expert": True},
+    )
     disabled_modules: Annotated[frozenset[str], NoDecode] = Field(
         default=frozenset(),
         title="Switched-off modules",
@@ -154,7 +161,7 @@ class Settings(ModuleSettings):
         {"api_allowed_hosts", "expert", "ui_allowed_origins", "ui_port", "update_check"}
     )
 
-    @field_validator("disabled_modules", "api_allowed_hosts", mode="before")
+    @field_validator("features", "disabled_modules", "api_allowed_hosts", mode="before")
     @classmethod
     def _split_names(cls, value: object) -> object:
         if isinstance(value, str):
