@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { join } from "node:path";
-import { openChatJourney, revealChat, runDaemonTurn } from "./chat-ready.mjs";
+import { openChatJourney, openDisclosure, revealChat, runDaemonTurn } from "./chat-ready.mjs";
 
 const { axe, browser, context, page, token, url } = await openChatJourney();
 try {
@@ -46,7 +46,7 @@ try {
   await panel.getByRole("button", { name: "Confirm" }).click();
   await panel.getByText(/Recorded state: approved/).waitFor();
   const schedule = page.locator("details").filter({ has: page.getByText("Recurring agent turns", { exact: true }) });
-  await schedule.getByText("Recurring agent turns", { exact: true }).click();
+  await openDisclosure(schedule.getByText("Recurring agent turns", { exact: true }));
   await schedule.getByText(/Suggested interval: every 7 minutes/).waitFor();
   assert.equal(await schedule.getByLabel("Every (minutes)").inputValue(), "5");
   await schedule.getByRole("button", { name: "Use interval in preview" }).click();
@@ -74,10 +74,7 @@ try {
   const session = new URLSearchParams(page.url().split("?")[1]).get("chat");
   assert.ok(session);
   await runDaemonTurn(page, process.argv[4], session);
-  await page
-    .getByText(/Tool activity for this reply/)
-    .nth(2)
-    .click();
+  await openDisclosure(page.getByText(/Tool activity for this reply/).nth(2));
   await page
     .getByText(/connected_read · completed/)
     .first()
@@ -89,7 +86,7 @@ try {
   await panel.getByText(/Recorded state: revoked/).waitFor();
   await page.reload();
   await revealChat(page);
-  await schedule.getByText("Recurring agent turns", { exact: true }).click();
+  await openDisclosure(schedule.getByText("Recurring agent turns", { exact: true }));
   await schedule.getByText(/stale · contract revision/).waitFor();
   assert.equal(await panel.evaluate((node) => node.scrollWidth > node.clientWidth), false);
   console.log(JSON.stringify({ accepted: true }));
