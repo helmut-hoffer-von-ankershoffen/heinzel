@@ -29,9 +29,9 @@ import {
   inWords,
   type Page,
   PLUGINS,
-  pageOf,
   plainSummary,
   resolvePage,
+  settingPage,
   settingsNav,
 } from "./settingsSections";
 import { ThemePreviews } from "./ThemePreviews";
@@ -127,7 +127,7 @@ function Body({ report, query, setQuery, searchRef, section, onSection }: BodyPr
     `${s.section}.${s.key} ${s.section_title ?? ""} ${(s.json_schema as JsonSchema | null | undefined)?.title ?? ""} ${s.description}`.toLowerCase();
   const matching = needle
     ? settings.filter((s) => text(s).includes(needle))
-    : settings.filter((s) => pageOf(s.section, nav.pages)?.id === current);
+    : settings.filter((s) => settingPage(s.section, s.key, nav.pages)?.id === current);
   // Pages found by their name or what is on them (the mode, the AI access, the sound), which aren't schema settings.
   const pageHits = needle
     ? nav.pages.filter((entry) => `${entry.title} ${entry.keywords ?? ""}`.toLowerCase().includes(needle))

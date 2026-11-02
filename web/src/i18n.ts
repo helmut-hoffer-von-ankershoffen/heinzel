@@ -1035,6 +1035,9 @@ const en = {
   "autoUpdate.applying": "Updating hz\u2026",
   "autoUpdate.reconnect": "This window reconnects by itself when hz is back.",
   "autoUpdate.ok": "OK",
+  "autoUpdate.setting": "Automatic updates",
+  "autoUpdate.settingHelp":
+    "Installs new versions of hz and its plugins by itself, after a 30-second warning you can postpone; never during a chat answer or a running job.",
 } as const;
 
 export type MessageKey = keyof typeof en;

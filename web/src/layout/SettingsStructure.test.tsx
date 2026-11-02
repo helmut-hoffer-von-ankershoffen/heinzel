@@ -84,6 +84,17 @@ const report: SchemaConfigReport = {
   settings: [
     ...config.settings,
     {
+      section: "hz",
+      key: "auto_update",
+      value: true,
+      default: true,
+      source: "default",
+      env: "HZ_AUTO_UPDATE",
+      description:
+        "Installs new versions of hz and its plugins by itself, after a 30-second warning you can postpone; never during a chat answer or a running job.",
+      json_schema: { type: "boolean", title: "Automatic updates", default: true, "x-live": true },
+    },
+    {
       section: "github",
       key: "api_url",
       value: "https://api.github.com",
@@ -291,6 +302,24 @@ describe("Settings: Preferences, Customize, This computer", () => {
     const dialog = await screen.findByRole("dialog", { name: "Settings" });
     await user.type(await within(dialog).findByRole("searchbox"), "api_url");
     expect(await within(dialog).findByLabelText("API URL")).toBeInTheDocument();
+  });
+
+  it("puts Automatic updates on the Updates page, finds it by search and saves its switch", async () => {
+    const { calls } = mockApi(answers);
+    const user = userEvent.setup();
+    renderAt("/doctor?settings=updates");
+    const dialog = await screen.findByRole("dialog", { name: "Settings" });
+    const toggle = await within(dialog).findByRole("switch", { name: "Automatic updates" });
+    expect(toggle).toHaveAttribute("aria-checked", "true");
+    expect(dialog).toHaveTextContent("after a 30-second warning you can postpone");
+    await user.click(toggle);
+    await waitFor(() => expect(lastSet(calls)).toBe("false")); // saved at once: no Restart and apply
+    expect(within(dialog).queryByRole("button", { name: "Restart and apply" })).not.toBeInTheDocument();
+    expect(calls.filter((call) => call.url.includes("/system/config/set")).at(-1)?.url).toContain("key=hz.auto_update");
+    await user.click(within(dialog).getByRole("button", { name: "Configuration files" }));
+    expect(within(dialog).queryByRole("switch", { name: "Automatic updates" })).not.toBeInTheDocument();
+    await user.type(await within(dialog).findByRole("searchbox"), "automatic");
+    expect(await within(dialog).findByRole("switch", { name: "Automatic updates" })).toBeInTheDocument();
   });
 
   it("shows a configuration file in Finder through hz system config reveal", async () => {

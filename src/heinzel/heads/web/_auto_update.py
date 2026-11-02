@@ -13,11 +13,16 @@ import json
 import logging
 import os
 import random
+import signal
+import subprocess
+import sys
 import threading
+import urllib.parse
+import urllib.request
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from fastapi import FastAPI, HTTPException, Response
 from packaging.version import Version
@@ -267,6 +272,60 @@ class Activity:
             return self._running > 0
 
 
+TRIAL_SECONDS = 90.0
+"""How long the new version may take to answer before its start counts as failed."""
+
+
+def trial_start(version: str, timeout: float = TRIAL_SECONDS) -> bool:
+    """Whether the installed hz starts a web app server that answers with `version`, before this one restarts into it.
+
+    It runs `hz ui` as the restart would, on a free port with its own token and automatic updates off, asks
+    `/api/lifecycle` once, and stops it. Nothing of this server is handed over, so a failure changes nothing here.
+    """
+    env = {key: value for key, value in os.environ.items() if key != "HEINZEL_UI_RESUME"}
+    env["HZ_AUTO_UPDATE"] = "false"
+    command = [sys.executable, "-m", "heinzel", "ui", "--port", "0", "--no-browser"]
+    try:
+        child = subprocess.Popen(  # noqa: S603 - this interpreter and fixed arguments
+            command, env=env, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL, text=True
+        )
+    except OSError:
+        return False
+    lines: list[str] = []
+    reader = threading.Thread(target=lambda: lines.append(child.stdout.readline() if child.stdout else ""))
+    reader.daemon = True
+    reader.start()
+    try:
+        reader.join(timeout)
+        return _answers(lines[0] if lines else "", version)
+    finally:
+        child.send_signal(signal.SIGINT)
+        try:
+            child.wait(15)
+        except subprocess.TimeoutExpired:
+            child.kill()
+            child.wait(15)
+        if child.stdout is not None:
+            child.stdout.close()
+
+
+def _answers(line: str, version: str) -> bool:
+    """Whether the server whose session link is `line` answers `/api/lifecycle` with `version`."""
+    url = urllib.parse.urlsplit(line.strip())
+    token = urllib.parse.parse_qs(url.fragment).get("token", [""])[0]
+    if url.scheme != "http" or url.hostname != "127.0.0.1" or not token:
+        return False
+    request = urllib.request.Request(
+        f"http://127.0.0.1:{url.port}/api/lifecycle", headers={"Authorization": f"Bearer {token}"}
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=10) as response:  # noqa: S310 - checked above
+            answer: object = json.loads(response.read(64 * 1024))
+    except (OSError, ValueError):
+        return False
+    return isinstance(answer, dict) and cast("dict[str, object]", answer).get("version") == version
+
+
 def _now() -> datetime:
     return datetime.now(UTC)
 
@@ -285,6 +344,8 @@ class AutoUpdater:
         version: str = __version__,
         settings: Callable[[], Settings] | None = None,
         update: Callable[[], object] | None = None,
+        trial: Callable[[str], bool] | None = None,
+        restore: Callable[[str], object] | None = None,
     ) -> None:
         """Load the saved plan and settle a restart that an earlier process started."""
         self._kernel = kernel
@@ -295,6 +356,8 @@ class AutoUpdater:
         self._version = version
         self._read_settings = settings or self._reread
         self._run_update = update or self._update
+        self._trial = trial or trial_start
+        self._restore = restore or self._reinstall
         self._lock = threading.Lock()
         self._stop = threading.Event()
         self._path = kernel.settings.state_dir / "web" / FILENAME
@@ -321,7 +384,8 @@ class AutoUpdater:
         settings = self._read_settings()
         if not settings.auto_update:
             return (
-                "Automatic updates are off. Turn them on in Settings or with hz system config set hz.auto_update true."
+                "Automatic updates are off. Turn them on in the Updates pane, in Settings or with "
+                "hz system config set hz.auto_update true."
             )
         if settings.update_channel != "stable":
             return "Automatic updates follow the stable channel only; this installation follows another."
@@ -404,33 +468,73 @@ class AutoUpdater:
             self._save()
 
     def apply(self) -> None:
-        """Install with the `system.update` operation and restart in place; a failure keeps this version running."""
+        """Install with `system.update`, prove the new version starts, then restart in place.
+
+        Any failure keeps this process, the old version, running. If the new version was installed but doesn't
+        start, the old one is installed again where its source can name it, before anything restarts.
+        """
+        previous = self._previous_source()
         try:
             result = self._run_update()
         except Exception as exc:  # noqa: BLE001 - every failure leaves the old version running and is reported once
             log.warning("automatic update failed: %s", exc)
-            with self._lock:
-                failed(self.plan, failure_message(self._version), self._clock())
-                self._save()
+            self._fail(failure_message(self._version))
             return
         after = getattr(result, "after", None)
         if not getattr(result, "updated", False) or not isinstance(after, str) or self._restart is None:
             # Something newer was announced but the installer changed nothing: say so once and wait, rather than
             # warning every window again at the next check.
-            with self._lock:
-                failed(self.plan, failure_message(self._version), self._clock())
-                self._save()
+            self._fail(failure_message(self._version))
+            return
+        if not self._trial(after):
+            self._fail(self._roll_back(after, previous))
             return
         with self._lock:
             self.plan.restarting_to = after
             self._save()
         self._restart()
 
+    def _fail(self, message: str) -> None:
+        with self._lock:
+            failed(self.plan, message, self._clock())
+            self._save()
+
+    def _previous_source(self) -> str | None:
+        """Where the running version can be installed from again: its release tag; None when that can't be named."""
+        try:
+            pin = self._kernel.resolve(Installation).core_pin()
+            return pin.source_at(pin.ref) if pin is not None and pin.kind == "release" and pin.ref else None
+        except Exception:  # noqa: BLE001 - no source only means no reinstall
+            return None
+
+    def _roll_back(self, after: str, previous: str | None) -> str:
+        """Install the running version again after the new one failed its start; the message that says what happened."""
+        if previous is not None:
+            try:
+                self._restore(previous)
+            except Exception as exc:  # noqa: BLE001 - reported in the message
+                log.warning("restoring hz %s failed: %s", self._version, exc)
+            else:
+                return (
+                    f"hz {after} was installed but didn't start, so hz {self._version} was put back and keeps running. "
+                    "It will try again in 6 hours."
+                )
+        return (
+            f"hz {after} was installed but didn't start. hz {self._version} keeps running until you restart it; "
+            "before that, run hz system update --source with your previous version, or reinstall hz."
+        )
+
+    def _reinstall(self, source: str) -> object:
+        return self._invoke_update(source=source)
+
     def _update(self) -> object:
+        return self._invoke_update(channel="stable")
+
+    def _invoke_update(self, **arguments: str) -> object:
         for record, operation in self._kernel.lets(OperationLet):
             if record.qualname == UPDATE_MODULE and operation.name == UPDATE_OPERATION:
                 with self._kernel.resolve(CurrentUser).local("daemon"):
-                    return self._kernel.invoke(operation, channel="stable")
+                    return self._kernel.invoke(operation, **arguments)
         msg = "The system module is off, so hz can't update itself."
         raise RuntimeError(msg)
 

@@ -66,7 +66,10 @@ export function Row({ setting }: { setting: SchemaSettingInfo }) {
   const wide =
     control.kind === "table" || control.kind === "chips" || (control.kind === "installed" && control.multiple);
   const disabled = fromEnv || save.isPending;
-  const commit = (next: unknown) => setStaged(next);
+  // A live setting needs no restart: the server reads it again by itself, so a change is saved at once.
+  const live = schema?.["x-live"] === true;
+  const commit = (next: unknown) =>
+    live ? save.mutate({ key, value: next === null ? null : asConfig(next) }) : setStaged(next);
   const editor = secret ? (
     <SecretValue id={inputId} disabled={disabled} onCommit={commit} />
   ) : typeof value === "boolean" || control.kind === "switch" ? (

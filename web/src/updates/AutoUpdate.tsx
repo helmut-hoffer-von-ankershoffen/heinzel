@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { token } from "@/api/token";
 import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
+import { useAutoUpdateSetting } from "./AutoUpdateToggle";
 import { updateTransport } from "./controller";
 
 export type AutoUpdateStatus = {
@@ -52,8 +53,10 @@ export function secondsLeft(status: AutoUpdateStatus | undefined, receivedAt: nu
 
 export function AutoUpdate() {
   const client = useQueryClient();
+  // Turning the setting on or off, here or in another place, asks the server again at once.
+  const { on } = useAutoUpdateSetting();
   const query = useQuery({
-    queryKey: KEY,
+    queryKey: [...KEY, on],
     queryFn: ({ signal }) => call("GET", "", signal),
     // Every 2 s while anything is pending, so a countdown shows within 2 of its 30 seconds; a minute when off.
     refetchInterval: (state) => (state.state.data?.phase === "off" ? 60_000 : 2_000),
@@ -83,7 +86,7 @@ export function AutoUpdate() {
   const act = async (path: "/postpone" | "/dismiss") => {
     setBusy(true);
     try {
-      client.setQueryData(KEY, await call("POST", path));
+      client.setQueryData([...KEY, on], await call("POST", path));
     } catch {
       await query.refetch();
     } finally {

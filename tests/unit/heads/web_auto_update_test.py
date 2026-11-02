@@ -161,13 +161,18 @@ class Result:
         self.updated, self.after = updated, after
 
 
-def updater(make_kernel, tmp_path, *, on=True, channel="stable", outcome=None, restart=True, pin="release"):  # noqa: PLR0913 - one option per condition
+def updater(  # noqa: PLR0913 - one option per condition
+    make_kernel, tmp_path, *, on=True, channel="stable", outcome=None, restart=True, pin="release", starts=True
+):
     settings = Settings(state_dir=tmp_path / "state", cache_dir=tmp_path / "cache")
     kernel = make_kernel(builtins=True, settings_=settings)
-    kernel.bind(Installation, Receipt(CorePin(pin, "heinzel", ref="v0.1.0"), tmp_path))
+    kernel.bind(
+        Installation, Receipt(CorePin(pin, "heinzel", ref="v0.1.0", git="https://github.com/org/heinzel"), tmp_path)
+    )
     kernel.bind(ReleaseSource, Releases())
     kernel.bind(PluginReleases, Plugins())
     clock, calls = Clock(), {"restart": 0, "update": 0}
+    restored: list[str] = []
 
     def update():
         calls["update"] += 1
@@ -186,7 +191,10 @@ def updater(make_kernel, tmp_path, *, on=True, channel="stable", outcome=None, r
         version="1.0.0",
         settings=lambda: settings.model_copy(update={"auto_update": on, "update_channel": channel}),
         update=update,
+        trial=lambda version: starts and version == "9.9.9",
+        restore=restored.append,
     )
+    made.restored = restored
     return made, clock, calls, kernel
 
 
@@ -312,3 +320,39 @@ def test_the_endpoints_are_behind_the_token_and_share_one_plan(make_kernel, tmp_
     postponed = client.post("/api/auto-update/postpone", headers=AUTH).json()
     assert postponed["postponements"] == 1
     assert client.get("/api/auto-update", headers=AUTH).json()["postponements"] == 1
+
+
+def test_automatic_updates_are_on_by_default_for_new_and_existing_installations():
+    assert Settings().auto_update is True
+    assert Settings.model_fields["auto_update"].title == "Automatic updates"
+
+
+def test_a_new_version_that_does_not_start_is_never_restarted_into_and_the_old_one_is_put_back(make_kernel, tmp_path):
+    made, clock, calls, _ = updater(make_kernel, tmp_path, starts=False)
+    advance(made, clock, 5 * 60)
+    advance(made, clock, 30)
+    assert calls == {"restart": 0, "update": 1}
+    assert made.restored == ["git+https://github.com/org/heinzel@v0.1.0"]
+    status = made.status()
+    assert status.message == (
+        "hz 9.9.9 was installed but didn't start, so hz 1.0.0 was put back and keeps running. "
+        "It will try again in 6 hours."
+    )
+    assert made.plan.retry_at == clock.now + timedelta(hours=6)
+    assert made.plan.restarting_to is None
+
+
+def test_without_a_release_tag_to_go_back_to_the_message_says_how_to_recover(make_kernel, tmp_path):
+    made, clock, calls, _ = updater(make_kernel, tmp_path, starts=False, pin="index")
+    advance(made, clock, 5 * 60)
+    advance(made, clock, 30)
+    assert calls["restart"] == 0
+    assert made.restored == []
+    assert "keeps running until you restart it" in (made.status().message or "")
+
+
+def test_a_trial_start_needs_the_new_server_to_answer_with_the_new_version():
+    assert auto._answers("", "1.0.0") is False
+    assert auto._answers("http://example.test:1/#token=x", "1.0.0") is False
+    assert auto._answers("http://127.0.0.1:1/", "1.0.0") is False  # no token
+    assert auto._answers("http://127.0.0.1:1/#token=x", "1.0.0") is False  # nothing listens
