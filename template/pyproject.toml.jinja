@@ -32,12 +32,12 @@ Issues = "https://github.com/[[ github_owner ]]/[[ project_name ]]/issues"
 test = ["heinzel==[[ heinzel_version ]]", "editables>=0.5", "coverage>=7.12", "httpx>=0.28", "pytest>=9.0.3,<10", "pytest-timeout>=2.4.0,<3", "pytest-xdist>=3.8"]
 dev = [
     { include-group = "test" },
-    "bump-my-version>=1.2.4,<2",
+    "bump-my-version>=1.6.7,<2",
     "commitizen>=4.10.0,<5",
     "git-cliff>=2.14.0,<3",
     "mypy>=1.19.0,<3",
     "pip-audit>=2.10.0,<3",
-    "pyright[nodejs]>=1.1.408", # Node.js from a locked wheel, instead of a download at the first run
+    "pyright[nodejs]>=1.1.414", # Node.js from a locked wheel, instead of a download at the first run
     "ruff>=0.14.8,<1",
     "shellcheck-py>=0.10",
     "types-pyyaml>=6.0.12",
