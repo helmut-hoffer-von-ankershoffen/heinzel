@@ -45,6 +45,7 @@ MAX_FINDINGS, MAX_LIMITATIONS = 30, 12
 MIN_LIMITATION, MAX_LIMITATION = 10, 1000
 MAX_PATH, MIN_FINDING, MAX_FINDING = 300, 20, 2000
 TREE_FIELDS = 3
+UNREADABLE = "Source is binary or unreadable"
 SHA = re.compile(r"[a-f0-9]{40}")
 SEVERITIES = ("Critical", "Required", "Optional")
 VERDICTS = ("GO", "NO-GO", "INCOMPLETE")
@@ -482,14 +483,12 @@ def blob_sizes(config: Config, blobs: list[str]) -> dict[str, int]:
     )
     lines = raw.decode("ascii", "strict").split("\n")
     if len(lines) != len(blobs) + 1 or lines[-1]:
-        msg = "Source is binary or unreadable"
-        raise ReviewError(msg)
+        raise ReviewError(UNREADABLE)
     sizes: dict[str, int] = {}
     for blob, line in zip(blobs, lines, strict=False):
         parts = line.split()
         if len(parts) != TREE_FIELDS or parts[:2] != [blob, "blob"] or not parts[2].isdigit():
-            msg = "Source is binary or unreadable"
-            raise ReviewError(msg)
+            raise ReviewError(UNREADABLE)
         sizes[blob] = int(parts[2])
     return sizes
 
@@ -510,14 +509,28 @@ def blob_texts(config: Config, sizes: dict[str, int]) -> dict[str, bytes]:
         newline = raw.find(b"\n", position)
         start, end = newline + 1, newline + 1 + sizes[blob]
         if newline < 0 or raw[position:newline] != f"{blob} blob {sizes[blob]}".encode() or raw[end : end + 1] != b"\n":
-            msg = "Source is binary or unreadable"
-            raise ReviewError(msg)
+            raise ReviewError(UNREADABLE)
         texts[blob] = raw[start:end]
         position = end + 1
     if position != len(raw):
-        msg = "Source is binary or unreadable"
-        raise ReviewError(msg)
+        raise ReviewError(UNREADABLE)
     return texts
+
+
+def source_record(data: bytes, *, omit: bool) -> dict[str, str]:
+    """One blob as review input: its digest, and its text unless it is omitted.
+
+    Raises:
+        ReviewError: If it is not UTF-8 text.
+    """
+    try:
+        text = data.decode("utf-8", "strict")
+    except UnicodeDecodeError as error:
+        raise ReviewError(UNREADABLE) from error
+    if "\0" in text:
+        raise ReviewError(UNREADABLE)
+    digest = hashlib.sha256(data).hexdigest()
+    return {"sha256": digest, "omitted": "generated"} if omit else {"sha256": digest, "text": text}
 
 
 def read_sources(config: Config, names: list[str], *, proven: bool) -> dict[str, dict[str, str] | None]:
@@ -532,42 +545,20 @@ def read_sources(config: Config, names: list[str], *, proven: bool) -> dict[str,
     paths = sorted({*names, *CONTEXT})
     revs = (config.base, config.head)
     trees = {rev: tree_blobs(config, rev, paths) for rev in revs}
-    blobs = sorted({blob for tree in trees.values() for blob in tree.values()})
+    entries = [
+        (f"{rev}:{path}", proven and path in GENERATED_PAIR, trees[rev].get(path)) for rev in revs for path in paths
+    ]
+    blobs = sorted({blob for _, _, blob in entries if blob})
     sizes = blob_sizes(config, blobs) if blobs else {}
     taken = 0
-    for rev in revs:
-        for path in paths:
-            blob = trees[rev].get(path)
-            if blob is None:
-                continue
-            omit = proven and path in GENERATED_PAIR
-            if (not omit and taken + sizes[blob] > MAX_PAYLOAD) or sizes[blob] > MAX_GENERATED:
-                msg = "Source exceeds bound"
-                raise ReviewError(msg)
-            taken += 0 if omit else sizes[blob]
+    for _, omit, blob in entries:
+        size = sizes[blob] if blob else 0
+        taken += 0 if omit else size
+        if taken > MAX_PAYLOAD or size > MAX_GENERATED:
+            msg = "Source exceeds bound"
+            raise ReviewError(msg)
     texts = blob_texts(config, sizes) if sizes else {}
-    sources: dict[str, dict[str, str] | None] = {}
-    for rev in revs:
-        for path in paths:
-            blob = trees[rev].get(path)
-            data = texts[blob] if blob else None
-            if data is None:
-                sources[f"{rev}:{path}"] = None
-                continue
-            try:
-                text = data.decode("utf-8", "strict")
-            except UnicodeDecodeError as error:
-                msg = "Source is binary or unreadable"
-                raise ReviewError(msg) from error
-            if "\0" in text:
-                msg = "Source is binary or unreadable"
-                raise ReviewError(msg)
-            digest = hashlib.sha256(data).hexdigest()
-            omit = proven and path in GENERATED_PAIR
-            sources[f"{rev}:{path}"] = (
-                {"sha256": digest, "omitted": "generated"} if omit else {"sha256": digest, "text": text}
-            )
-    return sources
+    return {key: source_record(texts[blob], omit=omit) if blob else None for key, omit, blob in entries}
 
 
 def build_payload(config: Config) -> tuple[bytes, dict[str, Any], list[str]]:
