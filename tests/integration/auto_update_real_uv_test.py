@@ -11,7 +11,6 @@ import hashlib
 import shutil
 import subprocess
 import sys
-import tomllib
 import zipfile
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -102,19 +101,25 @@ def tool(tmp_path, monkeypatch):
     offline = ["--no-index", "--find-links", str(wheels)]
 
     def runner(command, environment=None):
-        """Real uv, offline; the receipt then forgets the offline options, as an install from PyPI records none."""
+        """Real uv, offline; the receipt then forgets the two offline flags (only those lines), as a PyPI install
+        records neither. Anything else uv writes, an empty `[tool.options]` table included, stays for the test to see.
+        """
         result = _run([*command, *offline] if command[1:3] == ["tool", "install"] else command, environment)
         receipt = tmp_path / "tools" / "heinzel" / "uv-receipt.toml"
         if receipt.is_file():
             text = receipt.read_text()
             for line in ("no-index = true\n", f'find-links = ["{wheels.as_uri()}"]\n'):
                 text = text.replace(line, "")
-            receipt.write_text(text.replace("\n[tool.options]\n\n", "\n").removesuffix("[tool.options]\n"))
+            receipt.write_text(text)
         return result
 
     python = private_python(tmp_path)
     first = runner(["uv", "tool", "install", "--python", python, "heinzel", "--with", "heinzel-clock"])
     assert first.returncode == 0, first.stderr
+    # Setup only: the first install is to look as one from PyPI does, with no `[tool.options]` table at all.
+    receipt = tmp_path / "tools" / "heinzel" / "uv-receipt.toml"
+    receipt.write_text(receipt.read_text().replace("\n[tool.options]\n", "\n").rstrip("\n") + "\n")
+    assert "[tool.options]" not in receipt.read_text()
     prefix = (tmp_path / "tools" / "heinzel").resolve()
     installation = Installation(Progress(), prefix=prefix, uv=shutil.which("uv"), runner=runner)
     installation.record_startup_state(expected=installation.startup_fingerprint())
@@ -135,13 +140,15 @@ def apply(installation, tmp_path, *, starts):
 
 
 def test_real_uv_installs_exactly_the_announced_versions_and_the_receipt_stays_clean(tool, tmp_path):
-    before = tomllib.loads((tool.prefix / "uv-receipt.toml").read_text())
+    before = (tool.prefix / "uv-receipt.toml").read_bytes()
     result = apply(tool, tmp_path, starts=True)
     assert result.updated, result.message
     versions = environment_versions(tool.prefix)
     assert (versions["heinzel"], versions["heinzel-clock"]) == ("2.0.0", "2.0.0")
     assert versions["fakedep"] == "1.0.0"  # a dependency is held where it was, though 2.0.0 is there
-    assert tomllib.loads((tool.prefix / "uv-receipt.toml").read_text()) == before  # no constraints, no options
+    after = (tool.prefix / "uv-receipt.toml").read_bytes()
+    assert b"[tool.options]" not in after  # not even an empty table is left
+    assert after == before  # no constraints, no options: byte for byte the receipt it was
 
 
 def test_real_uv_puts_everything_back_when_the_new_version_does_not_start(tool, tmp_path):

@@ -1,10 +1,26 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Providers, queryClient } from "@/App";
+import { useDurableDraft } from "@/chat/durableDraft";
 import { expectAccessible, mockApi } from "@/test/render";
 import { AutoUpdate, type AutoUpdateStatus, secondsLeft, updateSummary } from "./AutoUpdate";
 import { updateTransport } from "./controller";
+import { useUpdateDraft } from "./draft";
 import { registerReloadHold } from "./work";
+
+/** A composer on the real hook the chat page uses, so the real reload hold is what is tested. */
+function UpdateComposer() {
+  const { message, setMessage } = useUpdateDraft("route:/", null);
+  return <textarea aria-label="Message" value={message} onChange={(event) => setMessage(event.target.value)} />;
+}
+
+/** The same on the durable session composer's real hook. */
+function DurableComposer() {
+  const { state, update } = useDurableDraft("session-1");
+  return (
+    <textarea aria-label="Message" value={state.text} onChange={(event) => update({ text: event.target.value })} />
+  );
+}
 
 const base: AutoUpdateStatus = {
   enabled: true,
@@ -117,6 +133,35 @@ describe("automatic updates", () => {
     await vi.waitFor(() => expect(reload).toHaveBeenCalledOnce(), { timeout: 3000 });
     release();
   });
+
+  it.each(["update draft", "durable draft"])(
+    "keeps the page while a real %s composer has unsent text, and reloads once it is cleared",
+    async (kind) => {
+      const reload = vi.spyOn(updateTransport, "reload").mockImplementation(() => undefined);
+      vi.spyOn(updateTransport, "clean").mockResolvedValue(undefined);
+      let version = "1.0.0";
+      const client = queryClient();
+      sessionStorage.setItem("hz.token", "test-token");
+      mockApi({ "/api/auto-update": () => ({ ...base, phase: "idle", version, seconds_left: null }) });
+      render(
+        <Providers client={client}>
+          {kind === "update draft" ? <UpdateComposer /> : <DurableComposer />}
+          <AutoUpdate />
+        </Providers>,
+      );
+      const box = screen.getByRole("textbox", { name: "Message" });
+      fireEvent.change(box, { target: { value: "Half a thought" } });
+      await vi.waitFor(() => expect(client.getQueryData(["web", "auto-update", true])).toBeDefined());
+      version = "1.1.0"; // the server restarted on the new version
+      await act(() => client.refetchQueries({ queryKey: ["web", "auto-update"] }));
+      expect(await screen.findByRole("status")).toHaveTextContent("Reload to finish the update.");
+      await new Promise((resolve) => setTimeout(resolve, 1200));
+      expect(reload).not.toHaveBeenCalled();
+      expect(box).toHaveValue("Half a thought");
+      fireEvent.change(box, { target: { value: "" } }); // sent or cleared
+      await vi.waitFor(() => expect(reload).toHaveBeenCalledOnce(), { timeout: 3000 });
+    },
+  );
 
   it("counts down between polls from what the server said", () => {
     expect(secondsLeft(base, 1_000, 11_500)).toBe(20);
