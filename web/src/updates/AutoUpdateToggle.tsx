@@ -28,7 +28,7 @@ export function AutoUpdateToggle() {
         <p id={labelId}>{t("autoUpdate.setting")}</p>
         <p className="text-xs text-muted-foreground">{development ?? t("autoUpdate.settingHelp")}</p>
         {development === null && byHand.length > 0 && (
-          <p className="text-xs text-warn">{t("autoUpdate.byHand", { plugins: byHand.join(", ") })}</p>
+          <p className="text-xs text-muted-foreground">{t("autoUpdate.byHand", { plugins: byHand.join(", ") })}</p>
         )}
         {save.error && (
           <p role="alert" className="text-xs text-bad">

@@ -522,15 +522,7 @@ class AutoUpdater:
         """Why this installation can't update itself; None when it can."""
         if self._restart is None:
             return "This server can't restart itself, so it can't update itself."
-        if not self._follows_releases():
-            return PINNED
-        if by_hand := self.by_hand():
-            which = "it" if len(by_hand) == 1 else "them"
-            return (
-                f"{', '.join(by_hand)} came from git, a folder or a URL, so update {which} by hand; "
-                "hz updates itself again once only plugins from PyPI are installed."
-            )
-        return None
+        return None if self._follows_releases() else PINNED
 
     def _follows_releases(self) -> bool:
         """Whether hz follows release tags or the package index: the installations `system.apply-announced` holds."""
@@ -541,9 +533,9 @@ class AutoUpdater:
         )
 
     def by_hand(self) -> list[str]:
-        """Installed plugins from git, a folder or a URL: never updated or refreshed automatically, only by hand.
+        """Installed plugins from git, a folder or a URL: automatic updates leave them exactly as they are (ADR 0116).
 
-        A reinstall would build them anew from their source, which no announced version holds (ADR 0116).
+        hz and the plugins from PyPI update around them; a person updates these.
         """
         try:
             return sorted(pin.name for pin in self._kernel.resolve(Installation).plugin_pins() if pin.kind != "index")

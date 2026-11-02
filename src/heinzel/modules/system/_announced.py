@@ -28,6 +28,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import cast
 
+from packaging.requirements import InvalidRequirement, Requirement
+
 from heinzel.kernel import HeinzelError, user_config_dir
 
 MOVED_ASIDE = ".everything-the-update-left-is-here"
@@ -66,6 +68,55 @@ def environment_versions(prefix: Path) -> dict[str, str]:
         if name:
             found[re.sub(r"[-_.]+", "-", name).lower()] = distribution.version
     return dict(sorted(found.items()))
+
+
+def _distribution(prefix: Path, name: str) -> importlib.metadata.Distribution | None:
+    paths = [str(path) for path in prefix.glob("lib/python*/site-packages")]
+    for distribution in importlib.metadata.distributions(path=paths):
+        if re.sub(r"[-_.]+", "-", distribution.metadata["Name"] or "").lower() == name:
+            return distribution
+    return None
+
+
+def installed_identity(prefix: Path, name: str) -> tuple[str, str, str] | None:
+    """What a plugin is, as installed: its version, its files' hashes (`RECORD`) and its source (`direct_url.json`).
+
+    Equal before and after an update means not one of its files changed.
+    """
+    distribution = _distribution(prefix, name)
+    if distribution is None:
+        return None
+    return (
+        distribution.version,
+        distribution.read_text("RECORD") or "",
+        distribution.read_text("direct_url.json") or "",
+    )
+
+
+def plugin_commit(prefix: Path, name: str) -> str | None:
+    """The commit a plugin from git is installed from, as its `direct_url.json` says; None if it doesn't say."""
+    distribution = _distribution(prefix, name)
+    text = distribution.read_text("direct_url.json") if distribution is not None else None
+    try:
+        data: object = json.loads(text) if text else None
+    except ValueError:
+        return None
+    vcs: object = cast("dict[str, object]", data).get("vcs_info") if isinstance(data, dict) else None
+    commit: object = cast("dict[str, object]", vcs).get("commit_id") if isinstance(vcs, dict) else None
+    return commit if isinstance(commit, str) else None
+
+
+def allows_core(prefix: Path, name: str, version: str) -> bool:
+    """Whether the installed plugin `name` declares it works with hz `version` (its `Requires-Dist: heinzel...`)."""
+    distribution = _distribution(prefix, name)
+    for line in (distribution.requires or []) if distribution is not None else []:
+        try:
+            requirement = Requirement(line)
+        except InvalidRequirement:
+            continue
+        if requirement.name.lower() == "heinzel" and requirement.marker is None:
+            return requirement.specifier.contains(version, prereleases=True)
+    return True
 
 
 @dataclass(frozen=True)

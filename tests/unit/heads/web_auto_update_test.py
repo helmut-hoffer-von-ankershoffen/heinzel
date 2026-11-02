@@ -587,7 +587,7 @@ def test_the_server_finds_the_system_operations_it_calls(make_kernel):
     assert (auto.UPDATE_MODULE, auto.RECOVER_OPERATION) in found
 
 
-def test_a_plugin_from_git_or_a_folder_holds_automatic_updates_and_is_named(make_kernel, tmp_path):
+def test_a_plugin_from_git_or_a_folder_is_named_to_update_by_hand_while_the_rest_updates(make_kernel, tmp_path):
     made, clock, calls, kernel = updater(make_kernel, tmp_path)
     receipt = Receipt(CorePin("release", "heinzel", ref="v0.1.0", git="https://github.com/org/heinzel"), tmp_path)
     receipt.plugin_pins = lambda: [
@@ -595,10 +595,11 @@ def test_a_plugin_from_git_or_a_folder_holds_automatic_updates_and_is_named(make
         CorePin("ref", "heinzel-crm @ git+https://example.test/crm@main", ref="main", name="heinzel-crm"),
     ]
     kernel.bind(Installation, receipt)
-    advance(made, clock, 10 * 60)
-    status = made.status()
-    assert (calls["update"], status.phase, status.by_hand) == (0, "off", ["heinzel-crm"])
-    assert "heinzel-crm came from git, a folder or a URL, so update it by hand" in (status.reason or "")
+    advance(made, clock, 5 * 60)
+    assert made.status().by_hand == ["heinzel-crm"]
+    advance(made, clock, 30)
+    assert calls == {"restart": 1, "update": 1}  # hz and the plugins from PyPI update all the same
+    assert made.applied[0]["plugins"] == {"heinzel-example": "2.0.0"}
 
 
 def test_a_left_copy_is_put_back_at_start_only_while_no_other_server_applies(make_kernel, tmp_path, monkeypatch):

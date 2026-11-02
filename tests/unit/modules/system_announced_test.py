@@ -30,8 +30,19 @@ TAG_COMMIT = "c" * 40
 # The tool folder ------------------------------------------------------------------------------------------------------
 
 
-def install(prefix: Path, versions: dict[str, str]) -> None:
-    """What uv leaves: one dist-info folder per distribution, and hz's code naming its version."""
+CRM_COMMIT = "a" * 40
+CRM = {
+    "METADATA": "Metadata-Version: 2.1\nName: heinzel-crm\nVersion: 0.3.0\nRequires-Dist: heinzel>=1\n",
+    "RECORD": "heinzel_crm/__init__.py,sha256=abc,10\n",
+    "direct_url.json": json.dumps(
+        {"url": "https://example.test/crm", "vcs_info": {"vcs": "git", "commit_id": CRM_COMMIT}}
+    ),
+}
+"""A plugin from git as uv installs it: its metadata, the hashes of its files and the commit it came from."""
+
+
+def install(prefix: Path, versions: dict[str, str], files: dict[str, dict[str, str]] | None = None) -> None:
+    """What uv leaves: a dist-info folder per distribution (with `files` for some), and hz's code with its version."""
     site = prefix / SITE
     for info in site.glob("*.dist-info"):
         for file in info.iterdir():
@@ -41,11 +52,13 @@ def install(prefix: Path, versions: dict[str, str]) -> None:
         info = site / f"{name.replace('-', '_')}-{version}.dist-info"
         info.mkdir(parents=True)
         (info / "METADATA").write_text(f"Metadata-Version: 2.1\nName: {name}\nVersion: {version}\n")
+        for file, text in (files or {}).get(name, {}).items():
+            (info / file).write_text(text)
     (site / "heinzel").mkdir(exist_ok=True)
     (site / "heinzel" / "__init__.py").write_text(f"hz {versions['heinzel']}")
 
 
-def tool_folder(tmp_path, plugin='{ name = "heinzel-clock" }', core='{ name = "heinzel" }'):
+def tool_folder(tmp_path, plugin="", core='{ name = "heinzel" }'):
     """A uv tool folder with hz 1.0.0, a plugin and a dependency, its receipt and entry point."""
     prefix = tmp_path / "tools" / "heinzel"
     (prefix / "bin").mkdir(parents=True)
@@ -54,7 +67,8 @@ def tool_folder(tmp_path, plugin='{ name = "heinzel-clock" }', core='{ name = "h
     bin_dir.mkdir()
     (bin_dir / "hz").symlink_to(prefix / "bin" / "hz")
     (prefix / "uv-receipt.toml").write_text(
-        f'[tool]\nrequirements = [{core}, {plugin}]\nentrypoints = [{{ name = "hz", '
+        f'[tool]\nrequirements = [{core}, {{ name = "heinzel-clock" }}{", " + plugin if plugin else ""}]'
+        '\nentrypoints = [{ name = "hz", '
         "install-path = " + repr(str(bin_dir / "hz")) + " }]\n"
     )
     install(prefix, {"heinzel": "1.0.0", "heinzel-clock": "1.0.0", "urllib3": "2.0.0"})
@@ -193,9 +207,16 @@ CUTOFF = datetime(2026, 11, 1, 9, 0, tzinfo=UTC)
 CORE_CUTOFF = datetime(2026, 11, 2, 3, 0, tzinfo=UTC)
 
 
-def service(tmp_path, monkeypatch, *, moves=None, **folder):
-    """An update service on the tool folder; its uv obeys the exact constraints, then moves what `moves` names."""
+def service(tmp_path, monkeypatch, *, moves=None, crm=None, **folder):
+    """An update service on the tool folder; its uv obeys the exact constraints, then moves what `moves` names.
+
+    With `crm` (its dist-info files), the plugin heinzel-crm from git is installed too, and uv leaves it as it was
+    unless `moves` names it.
+    """
     prefix = tool_folder(tmp_path, **folder)
+    files = {"heinzel-crm": crm} if crm else {}
+    if crm:
+        install(prefix, {**environment_versions(prefix), "heinzel-crm": "0.3.0"}, files)
     tool = Installation(Progress(), prefix=prefix, uv="unused")
     tool.record_startup_state(expected=tool.startup_fingerprint())
     runs, retagged = [], []
@@ -203,7 +224,12 @@ def service(tmp_path, monkeypatch, *, moves=None, **folder):
     def run(command, failure, activity, environment=None, *, additional_constraints=()):
         runs.append((command, additional_constraints))
         held = dict(c.split("==") for c in additional_constraints)
-        install(prefix, {**held, **(moves or {})})
+        changed = (
+            {"heinzel-crm": {**CRM, "RECORD": "heinzel_crm/__init__.py,sha256=new,12\n"}}
+            if moves and "heinzel-crm" in moves
+            else files
+        )
+        install(prefix, {**held, **{k: v for k, v in (moves or {}).items() if k != "heinzel-crm"}}, changed)
 
     def never(*args, **kwargs):
         pytest.fail("an installed hz ran")
@@ -214,13 +240,27 @@ def service(tmp_path, monkeypatch, *, moves=None, **folder):
     monkeypatch.setattr(tool, "installed_core_version", lambda: "1.0.0")
     monkeypatch.setattr(tool, "installed_versions", lambda names: environment_versions(prefix))
     monkeypatch.setattr(
-        tool, "tool_install_command", lambda core, plugins, refresh=False: ["uv", "tool", "install", core, *plugins]
+        tool,
+        "tool_install_command",
+        lambda core, plugins, refresh=False, reinstall=True: [
+            "uv",
+            "tool",
+            "install",
+            *(["--reinstall"] if reinstall else []),
+            core,
+            *plugins,
+        ],
     )
     monkeypatch.setattr(tool, "validate_install_constraints", lambda selected, constraints: None)
     monkeypatch.setattr(tool, "verify_installed_requirements", lambda *a, **k: {})
     monkeypatch.setattr(tool, "remove_transient_tool_constraint", lambda *, expected, original, added: expected)
     monkeypatch.setattr(
         tool, "name_core_by_tag", lambda *, expected, commit, tag: retagged.append((commit, tag)) or expected
+    )
+    monkeypatch.setattr(
+        tool,
+        "restore_receipt_requirements",
+        lambda *, expected, original, names: retagged.append(("receipt", tuple(names))) or expected,
     )
     monkeypatch.setattr(announced, "installed_commit", lambda prefix: TAG_COMMIT)
     monkeypatch.setattr("heinzel.modules.system._update.installed_commit", lambda prefix: TAG_COMMIT)
@@ -245,9 +285,12 @@ def test_everything_is_held_but_the_announced_versions_and_nothing_installed_run
     assert command[3:5] == ["heinzel", "heinzel-clock"]  # the receipt's requirements, no versions in them
     assert set(constraints) == {"heinzel==9.9.9", "heinzel-clock==1.0.0", "urllib3==2.0.0"}  # dependencies too
     assert "--refresh" not in command
+    assert "--reinstall" not in command
     assert command[5:] == [
         "--refresh-package",
-        "heinzel",  # only what was announced is asked again
+        "heinzel",  # only what was announced is asked again and reinstalled
+        "--reinstall-package",
+        "heinzel",
         "--exclude-newer",
         "2026-11-01T09:00:00Z",  # anything new resolves only among uploads as old as the minimum age
         "--exclude-newer-package",
@@ -277,19 +320,54 @@ def test_an_update_that_does_not_start_is_put_back_and_refused(tmp_path, monkeyp
     assert not lifecycle.pending
 
 
-@pytest.mark.parametrize(
-    "plugin",
-    [
-        '{ name = "heinzel-crm", git = "https://example.test/crm?rev=main" }',
-        '{ name = "heinzel-crm", directory = "/home/ada/crm" }',
-        '{ name = "heinzel-crm", url = "https://example.test/heinzel_crm-1.0-py3-none-any.whl" }',
-    ],
-)
-def test_a_plugin_from_git_a_folder_or_a_url_is_never_reinstalled(tmp_path, monkeypatch, plugin):
-    update, _, _, runs = service(tmp_path, monkeypatch, plugin=plugin)
-    with pytest.raises(HeinzelError, match="updated by hand: heinzel-crm"):
-        update.apply_announced(news(), folder=tmp_path / "state", trial=lambda v: True)
-    assert runs == []
+GIT_CRM = '{ name = "heinzel-crm", git = "https://example.test/crm?rev=main" }'
+
+
+def crm_files(prefix: Path) -> dict[str, str]:
+    info = next((prefix / SITE).glob("heinzel_crm-*.dist-info"))
+    return {file.name: file.read_text() for file in sorted(info.iterdir())}
+
+
+@pytest.mark.parametrize("starts", [True, False])
+def test_a_plugin_from_git_stays_exactly_as_installed_while_hz_and_pypi_plugins_update(tmp_path, monkeypatch, starts):
+    update, tool, _, runs = service(tmp_path, monkeypatch, crm=CRM, plugin=GIT_CRM)
+    before = crm_files(tool.prefix)
+    result = update.apply_announced(
+        news(plugins={"heinzel-clock": "2.0.0"}), current="1.0.0", folder=tmp_path / "state", trial=lambda v: starts
+    )
+    assert (result.updated, result.restored) == (starts, not starts)
+    command, constraints = runs[0]
+    assert f"heinzel-crm @ git+https://example.test/crm@{CRM_COMMIT}" in command  # its installed commit, not main
+    assert "--reinstall" not in command
+    assert "--refresh" not in command
+    moving = [command[i + 1] for i, part in enumerate(command) if part in {"--refresh-package", "--reinstall-package"}]
+    assert sorted(set(moving)) == ["heinzel", "heinzel-clock"]  # never heinzel-crm: no new build of it
+    assert "heinzel-crm==0.3.0" in constraints
+    assert crm_files(tool.prefix) == before  # not one of its files changed, after the update or the put-back
+    if starts:
+        assert ("receipt", ("heinzel-crm",)) in update.retagged  # the receipt follows main again
+
+
+def test_an_update_that_would_change_a_plugin_from_git_is_put_back(tmp_path, monkeypatch):
+    update, tool, lifecycle, _ = service(tmp_path, monkeypatch, crm=CRM, plugin=GIT_CRM, moves={"heinzel-crm": "0.3.0"})
+    before = crm_files(tool.prefix)
+    result = update.apply_announced(news(), current="1.0.0", folder=tmp_path / "state", trial=lambda v: True)
+    assert (result.updated, result.restored) == (False, True)
+    assert "heinzel-crm" in result.message
+    assert crm_files(tool.prefix) == before
+    assert not lifecycle.pending
+
+
+def test_a_plugin_from_git_that_does_not_allow_the_new_hz_stops_the_update_in_one_line(tmp_path, monkeypatch):
+    capped = {**CRM, "METADATA": CRM["METADATA"].replace("heinzel>=1", "heinzel<2,>=1")}
+    update, tool, _, runs = service(tmp_path, monkeypatch, crm=capped, plugin=GIT_CRM)
+    before = crm_files(tool.prefix)
+    result = update.apply_announced(news(), current="1.0.0", folder=tmp_path / "state", trial=lambda v: True)
+    assert (result.updated, runs) == (False, [])
+    assert result.message == (
+        "heinzel-crm, a plugin updated by hand, doesn't allow hz 9.9.9. Update it first; hz isn't updated by itself."
+    )
+    assert crm_files(tool.prefix) == before
 
 
 def test_a_release_tag_installs_the_commit_it_named_and_the_receipt_names_the_tag(tmp_path, monkeypatch):
@@ -308,7 +386,7 @@ def test_a_release_tag_with_no_recorded_commit_is_updated_by_hand(tmp_path, monk
     update, _, _, runs = service(tmp_path, monkeypatch, core=core)
     result = update.apply_announced(news(commit=None), current="1.0.0", folder=tmp_path / "state", trial=lambda v: True)
     assert (result.updated, result.refused, runs) == (False, True, [])
-    assert "update it by hand" in result.message
+    assert result.message.endswith("hz isn't updated by itself.")
 
 
 def test_the_receipt_names_the_tag_again_and_nothing_else_changes():
@@ -320,7 +398,7 @@ def test_the_receipt_names_the_tag_again_and_nothing_else_changes():
 
 def test_an_announced_plugin_that_is_not_installed_installs_nothing(tmp_path, monkeypatch):
     update, _, _, runs = service(tmp_path, monkeypatch)
-    with pytest.raises(HeinzelError, match="aren't installed: heinzel-other"):
+    with pytest.raises(HeinzelError, match="aren't installed from PyPI: heinzel-other"):
         update.apply_announced(news(plugins={"heinzel-other": "1.0"}), folder=tmp_path / "state", trial=lambda v: True)
     assert runs == []
 
@@ -379,3 +457,14 @@ def test_a_trial_start_that_answers_another_version_fails(tmp_path):
     seen, script = tmp_path / "seen.json", tmp_path / "trial.py"
     script.write_text(TRIAL_SERVER)
     assert announced.trial_start("1.0.0", timeout=30, command=[sys.executable, str(script), str(seen)]) is False
+
+
+def test_the_receipt_follows_a_git_plugins_branch_again_and_nothing_else_changes():
+    from heinzel.kernel._installation import _requirements_from
+
+    original = (
+        '[tool]\nrequirements = [{ name = "heinzel" }, '
+        '{ name = "heinzel-crm", git = "https://example.test/crm?rev=main" }]\n'
+    )
+    pinned = original.replace("rev=main", f"rev={CRM_COMMIT}").encode()
+    assert _requirements_from(pinned, original.encode(), ["heinzel-crm"]).decode() == original

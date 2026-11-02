@@ -41,7 +41,15 @@ from heinzel.kernel import (
     ToolConstraintPolicy,
     subprocess_environment,
 )
-from heinzel.modules.system._announced import Announcement, ToolSnapshot, environment_versions, installed_commit
+from heinzel.modules.system._announced import (
+    Announcement,
+    ToolSnapshot,
+    allows_core,
+    environment_versions,
+    installed_commit,
+    installed_identity,
+    plugin_commit,
+)
 from heinzel.modules.system._models import AnnouncedUpdate, PluginUpdate, UpdateResult
 from heinzel.modules.system._service import DEFAULT_REPOSITORY, RELEASE_TIMEOUT
 from heinzel.modules.system.plugin._sources import git_credentials
@@ -242,14 +250,17 @@ class UpdateService:
         selection = self._announced_selection(target, announced)
         if isinstance(selection, AnnouncedUpdate):
             return selection
-        pin, core_requirement, plugin_pins, names = selection
+        pin, core_requirement, plugin_pins, names = selection.pin, selection.core, selection.plugins, selection.names
+        prefix = self._installation.prefix.resolve(strict=True)
         with self._mutation() as scope:
             plan = scope.capture() if scope is not None else None
             with self._installation.tool_transaction():
                 expected, guards, policy = self._prepare_announced(
                     (pin, plugin_pins, names), announced.plugins, current, target, scope
                 )
-                specs = [plugin.requirement for plugin in plugin_pins]
+                specs = selection.specs
+                original_receipt = self._installation.receipt()
+                untouched = {name: installed_identity(prefix, name) for name in selection.by_hand}
                 constraints = (*self._installation.tool_constraints(), *guards)
                 try:
                     self._installation.validate_install_constraints([core_requirement, *specs], constraints)
@@ -263,12 +274,17 @@ class UpdateService:
                     generation = self._install_announced(
                         [core_requirement, *specs], (guards, constraints), expected, announced
                     )
+                    _require_untouched(prefix, untouched)
                     generation = self._installation.remove_transient_tool_constraint(
                         expected=generation, original=policy, added=guards
                     )
                     if pin.kind == "release":
                         generation = self._installation.name_core_by_tag(
                             expected=generation, commit=core_requirement.rsplit("@", 1)[1], tag=f"v{target}"
+                        )
+                    if selection.held_at_commit:  # they follow their branch or tag again, as before
+                        generation = self._installation.restore_receipt_requirements(
+                            expected=generation, original=original_receipt, names=selection.held_at_commit
                         )
                 except (HeinzelError, OSError) as exc:
                     return self._put_back(snapshot, (scope, plan), before, current, f"{exc}", refused=False)
@@ -290,50 +306,72 @@ class UpdateService:
                     updated=True, after=target, restored=False, refused=False, message=f"Installed hz {target}."
                 )
 
-    def _announced_selection(
-        self, target: str, announced: Announcement
-    ) -> tuple[CorePin, str, list[CorePin], list[str]] | AnnouncedUpdate:
-        """The core pin, the exact core requirement, the plugin pins and their names, before anything changes.
+    def _announced_selection(self, target: str, announced: Announcement) -> "_Selection | AnnouncedUpdate":
+        """What goes into uv, before anything changes: the exact core, and every plugin as it must stay or move.
 
-        An answer instead when hz from a release tag has no commit to install: that update is made by hand.
+        Plugins from git, a folder or a URL are updated by hand: they go in exactly as installed (one from git at its
+        installed commit), are never refreshed or reinstalled, and must be unchanged afterwards. An answer instead
+        when hz from a release tag has no commit to install, or a plugin updated by hand doesn't allow the new hz.
 
         Raises:
-            HeinzelError: If the installation isn't a uv tool from a release tag or the package index, has a plugin
-                from git, a folder or a URL, or an announced plugin isn't installed.
+            HeinzelError: If the installation isn't a uv tool from a release tag or the package index, a plugin from
+                git has no commit to hold it to, or an announced plugin isn't an installed one from PyPI.
         """
         pin = self._installation.core_pin()
         if pin is None or not self._installation.requirements():
             msg = "Heinzelmännchen wasn't installed with `uv tool install`; it can't update itself."
             raise HeinzelError(msg)
-        plugin_pins = self._installation.plugin_pins()
-        if by_hand := [plugin.name for plugin in plugin_pins if plugin.kind != "index"]:
-            msg = f"Plugins from git, a folder or a URL are updated by hand: {', '.join(by_hand)}."
-            raise HeinzelError(msg)
+        prefix = self._installation.prefix.resolve(strict=True)
         if pin.kind == "release" and pin.git:
-            commit = (
-                announced.commit
-                if announced.core is not None
-                else installed_commit(self._installation.prefix.resolve(strict=True))
-            )
+            commit = announced.commit if announced.core is not None else installed_commit(prefix)
             if commit is None:
-                return AnnouncedUpdate(
-                    updated=False,
-                    after=target,
-                    restored=False,
-                    refused=True,
-                    message=f"The release tag of hz {target} names no commit to hold it to, so update it by hand.",
-                )
+                return _by_hand(target, f"The release tag of hz {target} names no commit to hold it to")
             core_requirement = pin.at(commit)
         elif pin.kind in ("index", "default") and pin.git is None:
             core_requirement = pin.requirement
         else:
             msg = "Only installations from release tags or the package index update themselves."
             raise HeinzelError(msg)
+        plugin_pins = self._installation.plugin_pins()
+        plugins = self._announced_plugins(prefix, plugin_pins, target, announced)
+        if isinstance(plugins, AnnouncedUpdate):
+            return plugins
+        names, specs, by_hand, held_at_commit = plugins
+        return _Selection(pin, core_requirement, plugin_pins, names, specs, by_hand, held_at_commit)
+
+    @staticmethod
+    def _announced_plugins(
+        prefix: Path, plugin_pins: list[CorePin], target: str, announced: Announcement
+    ) -> tuple[list[str], list[str], list[str], list[str]] | AnnouncedUpdate:
+        """Each plugin's name and requirement for uv, those updated by hand, and those held at their git commit.
+
+        Raises:
+            HeinzelError: If a plugin from git has no commit to hold it to, or an announced plugin isn't an installed
+                one from PyPI.
+        """
         names: list[str] = [str(canonicalize_name(Requirement(plugin.requirement).name)) for plugin in plugin_pins]
-        if missing := sorted(set(announced.plugins) - set(names)):
-            msg = f"Announced plugins aren't installed: {', '.join(missing)}."
+        indexed = {name for name, plugin in zip(names, plugin_pins, strict=True) if plugin.kind == "index"}
+        if missing := sorted(set(announced.plugins) - indexed):
+            msg = f"Announced plugins aren't installed from PyPI: {', '.join(missing)}."
             raise HeinzelError(msg)
-        return pin, core_requirement, plugin_pins, names
+        specs: list[str] = []
+        held_at_commit: list[str] = []
+        for name, plugin in zip(names, plugin_pins, strict=True):
+            if plugin.kind == "index":
+                specs.append(plugin.requirement)
+                continue
+            if not allows_core(prefix, name, target):
+                return _by_hand(target, f"{name}, a plugin updated by hand, doesn't allow hz {target}. Update it first")
+            if plugin.git is None:
+                specs.append(plugin.requirement)
+                continue
+            commit = plugin_commit(prefix, name)
+            if commit is None:
+                msg = f"{name} came from git but doesn't say from which commit; update it by hand."
+                raise HeinzelError(msg)
+            specs.append(plugin.at(commit))
+            held_at_commit.append(name)
+        return names, specs, sorted(set(names) - indexed), held_at_commit
 
     def _install_announced(
         self,
@@ -348,10 +386,10 @@ class UpdateService:
             HeinzelError: If uv fails, or the metadata names other versions or another commit than announced.
         """
         guards, constraints = policy
-        command = self._installation.tool_install_command(requirements[0], requirements[1:])
+        command = self._installation.tool_install_command(requirements[0], requirements[1:], reinstall=False)
         moving = (["heinzel"] if announced.core else []) + list(announced.plugins)
-        for name in moving:
-            command += ["--refresh-package", name]
+        for name in moving:  # only what was announced is asked again and reinstalled; the rest stays as it is
+            command += ["--refresh-package", name, "--reinstall-package", name]
         if announced.exclude_newer is not None:
             command += ["--exclude-newer", _stamp(announced.exclude_newer)]
         if announced.exclude_newer_core is not None:
@@ -1287,6 +1325,40 @@ def _with_summary(message: str, updates: list[PluginUpdate]) -> str:
         elif update.status == "failed":
             lines.append(f"Plugin {update.distribution}: failed. {update.reason}")
     return "\n".join([message, *lines])
+
+
+@dataclass(frozen=True)
+class _Selection:
+    """What `apply_announced` hands uv, decided before anything changes."""
+
+    pin: CorePin
+    core: str
+    plugins: list[CorePin]
+    names: list[str]
+    specs: list[str]
+    """Every plugin's requirement: as the receipt has it, or a plugin from git at its installed commit."""
+    by_hand: list[str]
+    """Plugins from git, a folder or a URL: never refreshed or reinstalled, unchanged afterwards."""
+    held_at_commit: list[str]
+    """Plugins from git held at their installed commit while installing; the receipt names their ref again after."""
+
+
+def _by_hand(version: str, why: str) -> AnnouncedUpdate:
+    """The one-line answer for an update that is made by hand; nothing was installed."""
+    return AnnouncedUpdate(
+        updated=False, after=version, restored=False, refused=True, message=f"{why}; hz isn't updated by itself."
+    )
+
+
+def _require_untouched(prefix: Path, untouched: Mapping[str, object]) -> None:
+    """Every plugin updated by hand must be exactly as before: same version, same files, same source.
+
+    Raises:
+        HeinzelError: If one changed.
+    """
+    if changed := [name for name, was in untouched.items() if installed_identity(prefix, name) != was]:
+        msg = f"the plugins updated by hand would have changed: {', '.join(changed)}"
+        raise HeinzelError(msg)
 
 
 def _stamp(moment: datetime) -> str:

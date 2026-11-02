@@ -335,7 +335,42 @@ def _remove_transient_constraint(raw: bytes, original: ToolConstraintPolicy, add
         return replacement
 
 
+_RECEIPT_ERROR = "The uv receipt's requirements couldn't be put back as they were; inspect the receipt."
 _RETAG_ERROR = "The installed core isn't the commit the release tag named; inspect the uv receipt."
+
+
+def _requirements_from(raw: bytes, original: bytes, names: Sequence[str]) -> bytes:
+    """The receipt `raw` with the requirement entries for `names` exactly as in `original`, nothing else changed.
+
+    Raises:
+        HeinzelError: If an entry is missing, or anything else would change.
+    """
+    wanted = {canonicalize_name(name) for name in names}
+    try:
+        data = tomllib.loads(raw.decode("utf-8"))
+        previous = cast("Any", tomlkit.parse(original.decode("utf-8")))["tool"]["requirements"]
+        before = {canonicalize_name(str(entry["name"])): entry for entry in previous}
+        plain = {
+            canonicalize_name(str(e["name"])): e
+            for e in tomllib.loads(original.decode("utf-8"))["tool"]["requirements"]
+        }
+        document = tomlkit.parse(raw.decode("utf-8"))
+        entries = cast("Any", document)["tool"]["requirements"]
+        for index, entry in enumerate(list(entries)):
+            name = canonicalize_name(str(entry["name"]))
+            if name in wanted:
+                entries[index] = before[name]
+        for index, entry in enumerate(data["tool"]["requirements"]):
+            name = canonicalize_name(str(entry["name"]))
+            if name in wanted:
+                data["tool"]["requirements"][index] = plain[name]
+        replacement = tomlkit.dumps(document).encode("utf-8")
+        if tomllib.loads(replacement.decode("utf-8")) != data:
+            raise HeinzelError(_RECEIPT_ERROR)
+    except (KeyError, IndexError, TypeError, ValueError, UnicodeError) as exc:
+        raise HeinzelError(_RECEIPT_ERROR) from exc
+    else:
+        return replacement
 
 
 def _core_by_tag(raw: bytes, commit: str, tag: str) -> bytes:
@@ -609,6 +644,37 @@ class Installation:
             raise HeinzelError(_CONSTRAINT_ERROR)
         return result
 
+    def receipt(self) -> bytes:
+        """The uv receipt as it is now, read without following a symlink.
+
+        Raises:
+            HeinzelError: If it can't be read safely.
+        """
+        try:
+            return _read_tool_receipt_bytes(self.prefix)
+        except ValueError as exc:
+            raise HeinzelError(_RECEIPT_ERROR) from exc
+
+    def restore_receipt_requirements(self, *, expected: str, original: bytes, names: Sequence[str]) -> str:
+        """Put the receipt's requirements for `names` back as `original` had them, changing nothing else.
+
+        Automatic updates hold a plugin from git at its installed commit while they install (ADR 0116); the receipt
+        then follows the branch or tag it followed before.
+
+        Raises:
+            HeinzelError: If anything but those requirements would change.
+            OSError: If the private receipt replacement cannot be synchronized.
+        """
+
+        def transform() -> bytes:
+            try:
+                receipt = _read_tool_receipt_bytes(self.prefix)
+            except ValueError as exc:
+                raise HeinzelError(_RECEIPT_ERROR) from exc
+            return _requirements_from(receipt, original, names)
+
+        return _installation_continuity.replace_receipt(self.prefix, self._continuity_authority, expected, transform)
+
     def name_core_by_tag(self, *, expected: str, commit: str, tag: str) -> str:
         """Name the core in the receipt by its release `tag` again after it was installed from that tag's `commit`.
 
@@ -783,11 +849,14 @@ class Installation:
         """
         return _core_requirement(source)
 
-    def tool_install_command(self, core: str, plugins: Sequence[str], *, refresh: bool = False) -> list[str]:
+    def tool_install_command(
+        self, core: str, plugins: Sequence[str], *, refresh: bool = False, reinstall: bool = True
+    ) -> list[str]:
         """Reinstall the tool environment from `core` with `plugins`, on the Python Heinzelmännchen runs on.
 
         With `refresh` uv asks the indexes and git remotes again instead of trusting its cache, so a branch is
-        resolved to its newest commit and an index to its newest release.
+        resolved to its newest commit and an index to its newest release. Without `reinstall`, what is installed and
+        still satisfies the requirements stays as it is (automatic updates, ADR 0116).
         """
         requirement = _core_requirement(core)
         scope = self._tool_scope.get()
@@ -796,7 +865,7 @@ class Installation:
             self.uv,
             "tool",
             "install",
-            "--reinstall",
+            *(["--reinstall"] if reinstall else []),
             *(["--refresh"] if refresh else []),
             "--python",
             python,

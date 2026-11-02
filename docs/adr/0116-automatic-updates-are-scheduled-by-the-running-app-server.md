@@ -76,15 +76,19 @@ place (ADR 0047, 0083) and runs whether or not a window is open.
   - It runs `uv tool install` with the receipt's own requirements and, as transient constraints, every distribution
     in the tool folder at its installed version (dependencies too), except `heinzel==X` and each announced
     `plugin==Y`. uv installs exactly these or fails before it changes anything. Only the announced packages are asked
-    again (`--refresh-package`, never `--refresh`); a dependency the new versions need that isn't installed yet
+    again and reinstalled (`--refresh-package`, `--reinstall-package`, never `--refresh` or `--reinstall`); a dependency the new versions need that isn't installed yet
     resolves only among uploads older than the plugins' minimum age (`--exclude-newer`, and hz's own age for hz).
     The constraints are taken out of the receipt again afterwards.
   - hz from a release tag is installed from the commit the tag named when it was announced, never the tag, and the
     receipt names the tag again afterwards, so later updates go on following release tags. Without a recorded
     commit (also for a plugins-only update, the installed commit), the update is made by hand.
-  - **Plugins from git, a folder or a URL are never updated or refreshed automatically.** A reinstall would build
-    them anew from a source no announced version holds, so while one is installed automatic updates are held, and
-    the Updates pane names it to be updated by hand.
+  - **Plugins from git, a folder or a URL are never updated, refreshed or reinstalled automatically**, but they
+    don't hold the rest: hz and the plugins from PyPI update around them. Each goes into uv exactly as installed: one
+    from git at its installed commit (the receipt follows its branch or tag again afterwards), held at its version,
+    never named for refresh or reinstall, so what is installed satisfies it and nothing is built. Afterwards its
+    version, the hashes of all its files (`RECORD`) and its source (`direct_url.json`) must be exactly as before, or
+    everything is put back. If a new hz doesn't fit the range such a plugin declares for `heinzel`, nothing is
+    installed and one line says to update the plugin first. The Updates pane names them: "Update by hand: …".
   - It verifies by reading the new environment's metadata, never by running it: exactly these versions, and hz from
     git at the recorded commit.
   - It starts the newly installed hz as a trial: `hz ui --port 0` with its own token, on a throwaway copy of the
@@ -124,8 +128,8 @@ place (ADR 0047, 0083) and runs whether or not a window is open.
   index serves for each file it downloads; the minimum age and the exact versions are the defence here.
 - Bad: a git-tag installation still runs the build backend of the commit it installs, the one recorded at announce
   time.
-- Bad: anyone with a plugin from git, a folder or a URL gets no automatic updates until it is removed or comes from
-  PyPI.
+- Bad: a plugin from a folder whose source changed since it was installed can make uv rebuild it; the file check
+  then puts everything back, and that update is made by hand.
 - Bad: an update whose new version needs a newer dependency than the installed one can't apply automatically; it
   fails before installing, says so, and is made by hand.
 - Bad: a second server on the same state folder that didn't apply keeps running the old version until it restarts.
@@ -136,7 +140,8 @@ Unit tests of the scheduler fail when a countdown opens while busy, a postpone d
 hour, a failure retries sooner than 6 hours, a failed trial start restarts, a put-back replaces the tool folder or
 leaves the continuity record unmatched or a handover pending, an interrupted put-back isn't finished, uv is asked for
 anything but exact versions for every installed distribution, `--refresh` or a missing `--exclude-newer` is passed,
-a plugin from git, a folder or a URL is reinstalled, a tag rather than its recorded commit is installed, a copy left
+a plugin from git, a folder or a URL is refreshed, reinstalled or changed by an update or a put-back, or holds the
+rest, a new hz outside such a plugin's declared range installs anything, a tag rather than its recorded commit is installed, a copy left
 by a killed process isn't put back, a partial copy is, an installed hz runs before it is verified, a moved tag
 installs anything, a release's age isn't its last upload to PyPI,
 the trial start writes to a live folder, the default is off, update checks off still checks, a release younger than
