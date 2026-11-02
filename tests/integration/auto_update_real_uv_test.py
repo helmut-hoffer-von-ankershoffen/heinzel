@@ -8,12 +8,15 @@ folder, its tool, executable and cache folders are temporary, and no uv configur
 
 import base64
 import hashlib
+import os
 import shutil
 import subprocess
 import sys
 import zipfile
+from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import NoReturn
 
 import pytest
 
@@ -23,10 +26,21 @@ from heinzel.kernel._installation import _run
 from heinzel.modules.system._announced import Announcement, environment_versions
 from heinzel.modules.system._update import UpdateService
 
-pytestmark = [
-    pytest.mark.integration,
-    pytest.mark.skipif(shutil.which("uv") is None, reason="uv isn't installed, so there is no real uv to test with"),
-]
+pytestmark = pytest.mark.integration
+
+
+def unavailable(reason: str, environ: Mapping[str, str] | None = None) -> NoReturn:
+    """Skip locally, but fail in CI: this test guards the real-uv update path, so it must never skip unseen there."""
+    env = os.environ if environ is None else environ
+    if env.get("CI"):
+        pytest.fail(reason)
+    pytest.skip(reason)
+
+
+@pytest.fixture(autouse=True)
+def needs_uv():
+    if shutil.which("uv") is None:
+        unavailable("uv isn't installed, so there is no real uv to test with")
 
 
 def wheel(folder: Path, name: str, version: str, requires: tuple[str, ...] = (), script: str | None = None) -> None:
@@ -82,7 +96,7 @@ def private_python(tmp_path: Path) -> str:
     )
     candidates = sorted(folder.glob("*/bin/python3.13"))
     if found.returncode != 0 or not candidates:
-        pytest.skip(f"no Python in a private folder for a uv tool here, and uv couldn't install one: {found.stderr}")
+        unavailable(f"no Python in a private folder for a uv tool here, and uv couldn't install one: {found.stderr}")
     python = str(candidates[0].resolve())
     _installation_continuity.external_python(Path(python))
     return python
@@ -159,3 +173,9 @@ def test_real_uv_puts_everything_back_when_the_new_version_does_not_start(tool, 
     assert (versions["heinzel"], versions["heinzel-clock"], versions["fakedep"]) == ("1.0.0", "1.0.0", "1.0.0")
     assert (tool.prefix / "uv-receipt.toml").read_bytes() == receipt
     assert tool.startup_state_matches()
+
+
+@pytest.mark.parametrize(("environ", "outcome"), [({"CI": "true"}, pytest.fail.Exception), ({}, pytest.skip.Exception)])
+def test_without_uv_or_a_python_the_test_fails_in_ci_and_skips_elsewhere(environ, outcome):
+    with pytest.raises(outcome, match="no real uv"):
+        unavailable("uv isn't installed, so there is no real uv to test with", environ)
