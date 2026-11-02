@@ -593,41 +593,59 @@ class AutoUpdater:
             self.apply()
 
     def check(self, now: datetime) -> None:
-        """Ask for a newer stable hz and newer plugins old enough to install; a failed check changes nothing.
+        """Ask for a newer stable hz and newer plugins old enough to install; what can't be asked stays as it was.
 
         A release counts only once its last file on PyPI is as old as `auto_update_min_age_hours` (hz) or
-        `auto_update_plugin_min_age_hours` (plugins), and never as a pre-release, a draft or a yanked one; the commit
-        hz's tag names now is recorded, so a tag moved later is refused at apply time and once installed.
+        `auto_update_plugin_min_age_hours` (plugins), and never as a pre-release, a draft or a yanked one. For hz from
+        a release tag, the commit its tag names now is recorded, so a tag moved later is refused at apply time and
+        once installed. hz and the plugins are asked apart: GitHub or PyPI failing for one keeps the other's news.
         """
         settings = self._read_settings()
-        core: str | None = None
-        commit: str | None = None
-        plugins: dict[str, str] = {}
         try:
-            source = self._kernel.resolve(ReleaseSource)
-            latest = source.latest_version(TIMEOUT)
-            ReleaseCache(self._kernel.settings.cache_dir).remember(latest, now)
-            version = Version(latest)
-            if not (version.is_prerelease or version.is_devrelease) and version > Version(self._version):
-                facts = source.release_facts(str(version), TIMEOUT)
-                index = self._kernel.resolve(PluginReleases) if self._kernel.provides(PluginReleases) else None
-                uploaded = index.release("heinzel", str(version), TIMEOUT) if index is not None else None
-                age = uploaded.uploaded_at if uploaded is not None else None
-                if not facts.prerelease and _old_enough(age, settings.auto_update_min_age_hours, now):
-                    core, commit = str(version), facts.commit
-            if self._kernel.provides(PluginReleases):
-                plugins = {
-                    name: release.version
-                    for name, release in self._kernel.resolve(PluginReleases).newer_releases(TIMEOUT).items()
-                    if _old_enough(release.uploaded_at, settings.auto_update_plugin_min_age_hours, now)
-                }
-        except Exception as exc:  # noqa: BLE001 - offline or rate-limited: try at the next check
-            log.info("automatic update check failed: %s", exc)
-            return
+            core, commit = self._check_core(settings, now)
+        except Exception as exc:  # noqa: BLE001 - offline or rate-limited: keep what hz's last check found
+            log.info("automatic update check of hz failed: %s", exc)
+            core, commit = self.plan.core, self.plan.commit
+        try:
+            plugins = self._check_plugins(settings, now)
+        except Exception as exc:  # noqa: BLE001 - the same for the plugins
+            log.info("automatic update check of the plugins failed: %s", exc)
+            plugins = dict(self.plan.plugins)
         with self._editing() as plan:
             found(plan, core, plugins, now)
             if plan.core == core:
                 plan.commit = commit
+
+    def _check_core(self, settings: Settings, now: datetime) -> tuple[str | None, str | None]:
+        """A newer stable hz old enough to install, and the commit its tag names for an installation from a tag."""
+        source = self._kernel.resolve(ReleaseSource)
+        latest = source.latest_version(TIMEOUT)
+        ReleaseCache(self._kernel.settings.cache_dir).remember(latest, now)
+        version = Version(latest)
+        if version.is_prerelease or version.is_devrelease or version <= Version(self._version):
+            return None, None
+        index = self._kernel.resolve(PluginReleases) if self._kernel.provides(PluginReleases) else None
+        uploaded = index.release("heinzel", str(version), TIMEOUT) if index is not None else None
+        if not _old_enough(uploaded.uploaded_at if uploaded else None, settings.auto_update_min_age_hours, now):
+            return None, None
+        if not self._from_tag():
+            return str(version), None  # from PyPI: its release there is what counts, GitHub isn't asked again
+        facts = source.release_facts(str(version), TIMEOUT)
+        return (None, None) if facts.prerelease else (str(version), facts.commit)
+
+    def _check_plugins(self, settings: Settings, now: datetime) -> dict[str, str]:
+        if not self._kernel.provides(PluginReleases):
+            return {}
+        return {
+            name: release.version
+            for name, release in self._kernel.resolve(PluginReleases).newer_releases(TIMEOUT).items()
+            if _old_enough(release.uploaded_at, settings.auto_update_plugin_min_age_hours, now)
+        }
+
+    def _from_tag(self) -> bool:
+        """Whether hz is installed from a release tag (else from PyPI)."""
+        pin = self._kernel.resolve(Installation).core_pin()
+        return pin is not None and pin.kind == "release" and pin.git is not None
 
     def apply(self) -> None:
         """Install exactly the announced versions (`system.apply_announced`), then restart in place.
@@ -668,7 +686,14 @@ class AutoUpdater:
             return
         with self._editing() as plan:
             plan.restarting_to = after
-        self._restart()  # the apply lock stays held until this process is replaced
+        try:
+            self._restart()  # the apply lock stays held until this process is replaced
+        except Exception as exc:  # noqa: BLE001 - the windows must stop showing "applying" and say what to do
+            log.warning("restarting into hz %s failed: %s", after, exc)
+            self._fail(
+                f"hz {after} is installed, but this server couldn't restart into it, so hz {self._version} keeps "
+                "running. Restart hz ui to finish the update."
+            )
 
     def _fail(self, message: str) -> None:
         with self._editing() as plan:
@@ -679,7 +704,7 @@ class AutoUpdater:
     def _tag_moved(self, news: dict[str, Any]) -> str | None:
         """Why hz's tag can't be trusted now: it names another commit than when announced, or can't be asked."""
         core, commit = news["core"], news["commit"]
-        if core is None or commit is None:
+        if core is None or commit is None or not self._from_tag():  # from PyPI: no tag, GitHub isn't asked
             return None
         try:
             now = self._kernel.resolve(ReleaseSource).release_facts(core, TIMEOUT).commit

@@ -1,5 +1,6 @@
 """Automatic updates: the server's schedule, postpone, idle wait, apply and failure (ADR 0116)."""
 
+import errno
 import json
 import random
 from datetime import UTC, datetime, timedelta
@@ -615,3 +616,47 @@ def test_a_left_copy_is_put_back_at_start_only_while_no_other_server_applies(mak
     finally:
         auto._unlock(holder)
     assert asked == [True]  # the other server's copy is in use
+
+
+class GitHubDown(Releases):
+    def latest_version(self, timeout):
+        raise OSError(errno.ECONNREFUSED, "rate-limited")
+
+    def release_facts(self, version, timeout):
+        raise OSError(errno.ECONNREFUSED, "rate-limited")
+
+
+def test_github_failing_for_hz_keeps_the_plugins_news(make_kernel, tmp_path):
+    made, clock, _, kernel = updater(make_kernel, tmp_path)
+    kernel.bind(ReleaseSource, GitHubDown())
+    advance(made, clock, 5 * 60)
+    assert (made.plan.core, made.plan.plugins) == (None, {"heinzel-example": "2.0.0"})
+
+
+def test_hz_from_pypi_never_asks_github_for_its_tag(make_kernel, tmp_path):
+    made, clock, calls, kernel = updater(make_kernel, tmp_path, pin="index")
+    kernel.bind(Installation, Receipt(CorePin("index", "heinzel"), tmp_path))
+    facts_down = Releases()
+    facts_down.release_facts = GitHubDown().release_facts
+    kernel.bind(ReleaseSource, facts_down)
+    advance(made, clock, 5 * 60)
+    assert (made.plan.core, made.plan.commit) == ("9.9.9", None)
+    advance(made, clock, 30)
+    assert calls == {"restart": 1, "update": 1}  # a GitHub rate limit doesn't stop it at apply time either
+
+
+def test_a_restart_that_fails_stops_showing_applying_and_says_what_to_do(make_kernel, tmp_path):
+    made, clock, _, _ = updater(make_kernel, tmp_path)
+
+    def broken():
+        raise OSError(errno.EADDRINUSE, "port taken")
+
+    made._restart = broken
+    advance(made, clock, 5 * 60)
+    advance(made, clock, 30)
+    status = made.status()
+    assert status.phase == "waiting"
+    assert status.message == (
+        "hz 9.9.9 is installed, but this server couldn't restart into it, so hz 1.0.0 keeps running. "
+        "Restart hz ui to finish the update."
+    )
