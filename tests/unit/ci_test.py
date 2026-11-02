@@ -124,7 +124,7 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
     "release-tag.yml": {'tag="v$(uv version --short)"': "tags a merged release commit"},
     "claude-review.yml": {
         'files="$(git diff': "picks the review tier from the changed files",
-        "uv run --script scripts/review_outcome.py": "judges the review attempt; the job has no project environment",
+        "python3 scripts/review_outcome.py": "judges the review attempt with the standard library",
         'gh api "repos/${GITHUB_REPOSITORY}/check-runs"': "reports a review that could not run as a neutral check",
         'if [[ "$VERDICT" == reviewed ]]': "the review check passes only on a review",
     },

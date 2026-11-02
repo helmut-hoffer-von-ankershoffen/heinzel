@@ -80,14 +80,11 @@ jobs:
             Use the review skill on this pull request (compare against origin/${{ github.base_ref }}).
             Post the merged findings and the GO / NO-GO verdict as one pull request comment.
             The comment is public: never quote a confidential term, refer to it by file and line.
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
-        with:
-          enable-cache: false
       - name: Judge the review
         id: verdict
         env:
           OUTCOME: ${{ steps.full.outcome != 'skipped' && steps.full.outcome || steps.light.outcome }}
-        run: uv run --script scripts/review_outcome.py "$OUTCOME"
+        run: python3 scripts/review_outcome.py "$OUTCOME"
       - name: Report a review that could not run as a neutral check
         if: steps.verdict.outputs.verdict == 'skipped'
         env:
