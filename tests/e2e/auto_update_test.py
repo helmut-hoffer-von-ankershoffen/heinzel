@@ -33,7 +33,8 @@ def _free_port() -> int:
 
 
 @pytest.mark.timeout(900)
-def test_countdown_postpone_and_apply_with_a_fake_newer_release(tmp_path):
+@pytest.mark.parametrize("attempt", range(6))  # DIAGNOSTIC ONLY: never merged; repeats to catch the rare failure
+def test_countdown_postpone_and_apply_with_a_fake_newer_release(tmp_path, attempt):
     web_build.ensure_built()
     run = [sys.executable, str(REPO / "scripts" / "web_build.py")]
     subprocess.run(
