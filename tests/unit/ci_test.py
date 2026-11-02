@@ -6,6 +6,7 @@ import io
 import json
 import os
 import re
+import runpy
 import stat
 import subprocess
 import sys
@@ -878,6 +879,31 @@ def test_closed_code_scanning_threads_are_still_resolved_in_core():
     assert len(cleanup) == 1
     assert "if" not in cleanup[0]
     assert '[ "$state" != open ] || continue' in cleanup[0]["run"]
+
+
+def test_template_installed_cli_uses_its_own_daemon_unit_directory(tmp_path, tmp_path_factory, monkeypatch):
+    source = REPO / "template/tests/e2e/install_test.py.jinja"
+    namespace = runpy.run_path(str(source))
+    inherited_units = tmp_path / "user-units"
+    monkeypatch.setenv("HZ_SYSTEM_DAEMON__UNIT_DIR", str(inherited_units))
+    monkeypatch.setenv("PLUGIN_TEST_WHEEL", str(tmp_path / "plugin.whl"))
+    monkeypatch.setattr("shutil.which", lambda _name: "/isolated/uv")
+    calls = []
+
+    def run(command, **kwargs):
+        calls.append((command, kwargs["env"]))
+        return subprocess.CompletedProcess(command, 0, stdout="{}", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", run)
+    cli = namespace["hz"].__wrapped__(tmp_path_factory)
+    cli("system", "plugin", "remove", "example", "--json")
+
+    assert len(calls) == 3
+    root = Path(calls[0][1]["UV_TOOL_DIR"]).parent
+    for _command, env in calls:
+        units = env.get("HZ_SYSTEM_DAEMON__UNIT_DIR")
+        assert units == str(root / "units")
+        assert units != str(inherited_units)
 
 
 def test_claude_review_prefers_the_api_key():
