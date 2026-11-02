@@ -7,12 +7,15 @@
 The terms never live in the repository: a list in a public repository, even hashed, gives them away. They come from
 `$CONFIDENTIAL_TERMS` (newline-separated; CI sets it from the repository secret of the same name) or from the file
 `$CONFIDENTIAL_TERMS_FILE`, default `~/.config/heinzel-dev/confidential-terms`. One term per line, `#` comments.
+`--push` scans what a push sends (the pre-push hook): the messages, author lines, paths and added lines of every
+commit in the range, old ones included.
 Findings name the location and the term's number, never the term, because CI logs of a public repository are public.
 
-Matching is case-insensitive after Unicode normalization (NFKC, invisible characters removed). Words of six letters or
-more match anywhere, also inside identifiers (`term_cli`, `termdb`); shorter ones, typically first names, only where
-no letter touches them, so they don't fire inside ordinary words. The words of a phrase may be joined by anything
-that isn't a letter or digit, line breaks included, or by nothing. Binary files are scanned through their printable
+Matching is case-insensitive after Unicode normalization (NFKC, invisible characters removed), and always whole-word:
+a term matches only where no letter or digit touches it, so it never fires inside an ordinary word (a short term in
+`minimal`), but does inside punctuation, markdown and identifiers split by `_` or `-` (`term_cli`, `**term**`,
+`term's`). The words of a phrase may be joined by anything that isn't a letter or digit, line breaks included, or by
+nothing. Binary files are scanned through their printable
 strings, as `strings` would show them.
 
 `--identity` also refuses an email git made up from the machine's name (`name@Some-MacBook-Air.local`), with or
@@ -41,8 +44,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 DEFAULT_TERMS_FILE = Path("~/.config/heinzel-dev/confidential-terms")
-ANYWHERE = 6  # words at least this long match inside other words too
-NOT_A_LETTER_BEFORE, NOT_A_LETTER_AFTER = r"(?<![^\W\d_])", r"(?![^\W\d_])"
+# A word boundary that counts `_` as punctuation (`\b` does not): no letter or digit may touch the term.
+NOT_ALNUM_BEFORE, NOT_ALNUM_AFTER = r"(?<![^\W_])", r"(?![^\W_])"
 PRINTABLE = re.compile(rb"[\x20-\x7e]{4,}")
 # Domains that name a machine or a home or company network, not a mailbox; git builds such an email from the hostname
 # when user.email isn't set.
@@ -81,9 +84,7 @@ def patterns(terms: Iterable[str]) -> list[re.Pattern[str]]:
     for term in terms:
         words = normalize(term).split()
         body = r"[\W_]*".join(map(re.escape, words))
-        if len(words) > 1 or len(words[0]) < ANYWHERE:
-            body = NOT_A_LETTER_BEFORE + body + NOT_A_LETTER_AFTER
-        compiled.append(re.compile(body, re.IGNORECASE))
+        compiled.append(re.compile(NOT_ALNUM_BEFORE + body + NOT_ALNUM_AFTER, re.IGNORECASE))
     return compiled
 
 
@@ -145,6 +146,60 @@ def _range(text: str) -> list[str]:
     return [_revision(text)]
 
 
+def _push_range() -> list[str]:
+    """What a push sends.
+
+    That is `$PRE_COMMIT_FROM_REF..$PRE_COMMIT_TO_REF` as the pre-push hook sets them, else every commit of HEAD that
+    no remote branch has yet. Nothing is exempt: old commits in the range are scanned like new ones.
+    """
+    start, end = os.environ.get("PRE_COMMIT_FROM_REF", ""), os.environ.get("PRE_COMMIT_TO_REF") or "HEAD"
+    if start and set(start) != {"0"}:
+        return [f"{_revision(start)}..{_revision(end)}"]
+    return [_revision(end), "--not", "--remotes"]
+
+
+def added_lines(diff: str) -> Iterator[tuple[str, list[tuple[int, str]]]]:
+    """The added lines of a zero-context diff, per file, with their line numbers in the new file.
+
+    Yields:
+        `(path, [(line number, text)])` for each file with added lines.
+    """
+    path, found, number = "", [], 0
+    for line in diff.splitlines():
+        if line.startswith("+++ "):
+            if found:
+                yield path, found
+            path, found = line[4:].removeprefix("b/"), []
+        elif hunk := re.match(r"@@ -\S+ \+(\d+)", line):
+            number = int(hunk[1])
+        elif line.startswith("+") and not line.startswith("+++"):
+            found.append((number, line[1:]))
+            number += 1
+    if found:
+        yield path, found
+
+
+def _push_sources() -> Iterator[tuple[str, str]]:
+    """The messages, author lines, paths and added content of the commits being pushed.
+
+    Yields:
+        `(where, text)` pairs to scan.
+    """
+    for sha in _git("rev-list", *_push_range(), "--").split():
+        yield f"commit {sha[:12]}", _git("log", "-1", "--format=%an <%ae>%n%cn <%ce>%n%B", sha)
+        for path in _git("diff-tree", "--no-commit-id", "--name-only", "-r", "-z", "--root", sha).split("\0"):
+            if path:
+                yield f"commit {sha[:12]} {path} (path)", path
+        diff = _git("diff-tree", "-p", "-U0", "--no-color", "--no-renames", "--root", sha)
+        for path, lines in added_lines(diff):
+            # Each added line sits on its real line number, so a finding names the right line; lines between are a
+            # filler no phrase can span.
+            rows = ["0"] * lines[-1][0]
+            for number, text in lines:
+                rows[number - 1] = text
+            yield f"commit {sha[:12]} {path}", "\n".join(rows)
+
+
 def _read(path: Path) -> str | None:
     """A file's text; for a binary file its printable strings, one per line; `None` if unreadable."""
     try:
@@ -186,6 +241,12 @@ def identity_problems() -> list[str]:
     return problems
 
 
+def _identities() -> Iterator[tuple[str, str]]:
+    for role in ("author", "committer"):
+        with contextlib.suppress(subprocess.CalledProcessError):  # no identity: git refuses to commit anyway
+            yield role, _git("var", f"GIT_{role.upper()}_IDENT")
+
+
 def sources(args: argparse.Namespace) -> Iterator[tuple[str, str]]:
     """Collect what the command line selects.
 
@@ -197,12 +258,12 @@ def sources(args: argparse.Namespace) -> Iterator[tuple[str, str]]:
     elif args.messages:
         for sha in _git("rev-list", "--end-of-options", *_range(args.messages), "--").split():
             yield f"commit {sha[:12]}", _git("log", "-1", "--format=%an <%ae>%n%cn <%ce>%n%B", sha)
+    elif args.push:
+        yield from _push_sources()
     elif args.branch:
         yield "branch", _git("rev-parse", "--abbrev-ref", "HEAD")
     elif args.identity:
-        for role in ("author", "committer"):
-            with contextlib.suppress(subprocess.CalledProcessError):  # no identity: git refuses to commit anyway
-                yield role, _git("var", f"GIT_{role.upper()}_IDENT")
+        yield from _identities()
     elif args.text is not None:
         yield "text", args.text
     else:
@@ -222,6 +283,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--text")
     parser.add_argument("--identity", action="store_true")
     parser.add_argument("--branch", action="store_true")
+    parser.add_argument("--push", action="store_true", help="the commits being pushed: messages, paths, added content")
     parser.add_argument("--require", action="store_true")
     args = parser.parse_args(argv)
     if args.messages:

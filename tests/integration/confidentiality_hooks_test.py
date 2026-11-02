@@ -104,7 +104,7 @@ def commits(repo: Path, files: dict[str, bytes], message: str = "docs: harmless"
     [
         ({"README.md": b"We use Acme.\n"}, "docs: harmless", {}),
         ({"app.py": b"globex_client = 1\n"}, "docs: harmless", {}),
-        ({"README.md": b"see globexdb\n"}, "docs: harmless", {}),
+        ({"README.md": b"see [globex]-db\n"}, "docs: harmless", {}),
         ({"README.md": b"the Project\nZebra team\n"}, "docs: harmless", {}),
         ({"README.md": "glo\u200bbex\n".encode()}, "docs: harmless", {}),
         ({"logo.png": b"\x89PNG\0\0tEXt\0made by Acme\0"}, "docs: harmless", {}),
@@ -115,7 +115,7 @@ def commits(repo: Path, files: dict[str, bytes], message: str = "docs: harmless"
     ids=[
         "text",
         "identifier",
-        "glued",
+        "punctuated",
         "phrase-across-lines",
         "zero-width",
         "binary",
@@ -129,11 +129,49 @@ def test_leaks_are_refused(repo, files, message, env):
 
 
 def test_clean_commits_and_ordinary_words_pass(repo):
-    assert commits(repo, {"README.md": b"A small macmenu with a zebra.\n"})
+    assert commits(repo, {"README.md": b"A small macmenu with a zebra, minimal globexdb and acmeish.\n"})
 
 
 def test_branch_names_are_checked_on_push(repo):
     git(repo, "switch", "-q", "-c", "feat/acme-support")
     assert git(repo, "push", "-q", "origin", "HEAD").returncode != 0
     git(repo, "switch", "-q", "-c", "feat/innocent")
+    assert git(repo, "push", "-q", "origin", "HEAD").returncode == 0
+
+
+def _unchecked_commit(repo: Path, files: dict[str, bytes], message: str) -> None:
+    """A commit made without the hooks, as an older or foreign one would be: the push hook must still catch it."""
+    for name, content in files.items():
+        (repo / name).write_bytes(content)
+    git(repo, "add", "-A")
+    done = git(repo, "-c", "core.hooksPath=/dev/null", "commit", "-q", "-m", message)
+    assert done.returncode == 0, done.stderr
+
+
+@pytest.mark.parametrize(
+    ("files", "message"),
+    [({"README.md": b"ok\n"}, "docs: the Acme plan"), ({"notes.md": b"ok\n\nsee **Project\nZebra**\n"}, "docs: notes")],
+    ids=["message", "added-content"],
+)
+def test_a_push_with_a_hit_in_its_commits_is_blocked_and_names_no_term(repo, files, message):
+    git(repo, "switch", "-q", "-c", "feat/innocent")
+    _unchecked_commit(repo, files, message)
+    result = git(repo, "push", "-q", "origin", "HEAD")
+    assert result.returncode != 0
+    assert "confidential term #" in result.stderr + result.stdout
+    assert not {"acme", "zebra"} & set((result.stderr + result.stdout).lower().split())
+
+
+def test_a_hit_in_an_older_commit_of_the_pushed_range_blocks_too(repo):
+    git(repo, "switch", "-q", "-c", "feat/innocent")
+    _unchecked_commit(repo, {"a.md": b"ok\n"}, "docs: globex")
+    _unchecked_commit(repo, {"b.md": b"fine\n"}, "docs: harmless")
+    assert git(repo, "push", "-q", "origin", "HEAD").returncode != 0
+
+
+def test_a_push_of_clean_commits_with_ordinary_words_passes(repo):
+    git(repo, "switch", "-q", "-c", "feat/innocent")
+    _unchecked_commit(repo, {"a.md": b"an acmeish, minimal globexdb\n"}, "docs: a minimal acmeish note")
+    assert git(repo, "push", "-q", "origin", "HEAD").returncode == 0
+    _unchecked_commit(repo, {"b.md": b"more\n"}, "docs: more")
     assert git(repo, "push", "-q", "origin", "HEAD").returncode == 0
