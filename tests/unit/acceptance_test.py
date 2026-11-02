@@ -1,5 +1,6 @@
 """The acceptance harness's verdict logic, without network or installs (scripts/acceptance/)."""
 
+import argparse
 import importlib.util
 import json
 from pathlib import Path
@@ -235,3 +236,11 @@ def test_a_result_holding_an_object_still_writes(tmp_path):
 
 def test_the_injected_fixture_is_valid_python():
     compile(harness.FIXTURE, "fixture", "exec")
+
+
+def test_a_public_preflight_never_accepts_an_edge_version(tmp_path, monkeypatch):
+    monkeypatch.setattr(harness, "EDGE_CANDIDATE", None)
+    args = argparse.Namespace(expect_version="1.2.4.dev5", expect_app_version="1.2.4.dev5")
+    with pytest.raises(harness.StepFailed, match="must be final"):
+        harness.preflight(args, tmp_path)
+    assert harness.EDGE_CANDIDATE is None
