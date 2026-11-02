@@ -7,7 +7,7 @@ restart in place becomes. They are active only when HZ_E2E_FAKE_RELEASE names a 
   "installs" them; the server checks every two seconds;
 - `system.update` writes `applied` in that folder instead of running uv, and reports the running version;
 - the server's clock runs ahead by the seconds in `clock` there, so the test can skip a postponed hour;
-- the installation counts as a uv tool on a release tag.
+- the installation counts as a uv tool on a release tag, whose environment is the folder `env` there.
 """
 
 import os
@@ -19,6 +19,7 @@ FOLDER = os.environ.get("HZ_E2E_FAKE_RELEASE")
 if FOLDER:
     from heinzel import __version__
     from heinzel.heads.web import _auto_update
+    from heinzel.heads.web._rollback import ToolSnapshot
     from heinzel.kernel import CorePin, Installation
     from heinzel.modules.system import _plugin_releases, _service, _update
     from heinzel.modules.system._models import UpdateResult
@@ -64,4 +65,10 @@ if FOLDER:
     _auto_update.FIRST_CHECK = (timedelta(seconds=1), timedelta(seconds=2))
     _auto_update.CHECK_EVERY = timedelta(seconds=2)
     _auto_update.JITTER = timedelta(0)
+
+    def take_snapshot(self: object) -> ToolSnapshot:
+        (folder / "env").mkdir(exist_ok=True)
+        return ToolSnapshot.take(folder / "env", folder / "env-before-update")
+
     Installation.core_pin = core_pin  # type: ignore[method-assign]
+    _auto_update.AutoUpdater._take_snapshot = take_snapshot  # type: ignore[method-assign]

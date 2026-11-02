@@ -1,5 +1,6 @@
 """Automatic updates: the server's schedule, postpone, idle wait, apply and failure (ADR 0116)."""
 
+import errno
 import json
 import random
 import sys
@@ -174,6 +175,7 @@ def updater(  # noqa: PLR0913 - one option per condition
     pin="release",
     starts=True,
     checks=True,
+    restore_fails=False,
 ):
     settings = Settings(state_dir=tmp_path / "state", cache_dir=tmp_path / "cache")
     kernel = make_kernel(builtins=True, settings_=settings)
@@ -184,6 +186,18 @@ def updater(  # noqa: PLR0913 - one option per condition
     kernel.bind(PluginReleases, Plugins())
     clock, calls = Clock(), {"restart": 0, "update": 0}
     restored: list[str] = []
+
+    class Snapshot:
+        def __init__(self):
+            self.versions = {"heinzel": "1.0.0", "heinzel-example": "1.0.0"}
+
+        def restore(self):
+            if restore_fails:
+                raise OSError(errno.ENOSPC, "disk full")
+            restored.append("restored")
+
+        def discard(self):
+            restored.append("discarded")
 
     def update():
         calls["update"] += 1
@@ -205,7 +219,7 @@ def updater(  # noqa: PLR0913 - one option per condition
         ),
         update=update,
         trial=lambda version: starts and version == "9.9.9",
-        restore=restored.append,
+        snapshot=Snapshot,
         development=None,  # an installed hz; the development facts have their own tests
     )
     made.restored = restored
@@ -346,43 +360,56 @@ def test_automatic_updates_are_on_by_default_for_new_and_existing_installations(
     assert Settings.model_fields["auto_update"].title == "Automatic updates"
 
 
-def test_a_new_version_that_does_not_start_is_never_restarted_into_and_the_old_one_is_put_back(make_kernel, tmp_path):
+def test_a_new_version_that_does_not_start_is_never_restarted_into_and_hz_and_plugins_are_put_back(
+    make_kernel, tmp_path
+):
     made, clock, calls, _ = updater(make_kernel, tmp_path, starts=False)
     advance(made, clock, 5 * 60)
     advance(made, clock, 30)
     assert calls == {"restart": 0, "update": 1}
-    assert made.restored == ["git+https://github.com/org/heinzel@v0.1.0"]
+    assert made.restored == ["restored", "discarded"]
     status = made.status()
     assert status.message == (
-        "hz 9.9.9 was installed but didn't start, so hz 1.0.0 was put back and keeps running. "
-        "It will try again in 6 hours."
+        "hz 9.9.9 was installed but didn't start, so hz 1.0.0 and its plugins (heinzel-example 1.0.0) were put back "
+        "as they were and keep running. That update won't be tried again; a newer one will."
     )
-    assert made.plan.retry_at == clock.now + timedelta(hours=6)
     assert made.plan.restarting_to is None
+    # The same news is never applied again, however often it is announced; newer news is.
+    for _ in range(20):
+        advance(made, clock, 30 * 60)
+    assert calls["update"] == 1
+    assert made.status().phase == "idle"
+    auto.found(made.plan, "9.9.10", {}, clock.now)
+    assert made.plan.pending
 
 
-def test_from_the_package_index_the_running_version_is_put_back_and_held_until_a_person_updates(make_kernel, tmp_path):
-    made, clock, calls, kernel = updater(make_kernel, tmp_path, starts=False, pin="index")
-    kernel.bind(Installation, Receipt(CorePin("index", "heinzel"), tmp_path))
+def test_a_failed_install_puts_everything_back_too(make_kernel, tmp_path):
+    made, clock, _, _ = updater(make_kernel, tmp_path, outcome=RuntimeError("uv failed half way"))
+    advance(made, clock, 5 * 60)
+    advance(made, clock, 30)
+    assert made.restored == ["restored", "discarded"]
+    assert made.status().message == auto.failure_message("1.0.0")
+
+
+def test_without_a_copy_nothing_is_installed(make_kernel, tmp_path):
+    made, clock, calls, _ = updater(make_kernel, tmp_path)
+
+    def no_copy():
+        raise OSError(errno.ENOSPC, "no space left")
+
+    made._snapshot = no_copy
+    advance(made, clock, 5 * 60)
+    advance(made, clock, 30)
+    assert calls == {"restart": 0, "update": 0}
+    assert made.status().message == auto.failure_message("1.0.0")
+
+
+def test_when_putting_back_fails_the_message_says_how_to_recover(make_kernel, tmp_path):
+    made, clock, calls, _ = updater(make_kernel, tmp_path, starts=False, restore_fails=True)
     advance(made, clock, 5 * 60)
     advance(made, clock, 30)
     assert calls["restart"] == 0
-    assert made.restored == ["heinzel==1.0.0"]
-    assert "hz 1.0.0 was put back" in (made.status().message or "")
-    kernel.bind(Installation, Receipt(CorePin("index", "heinzel", ref="==1.0.0"), tmp_path))
-    assert "pinned" in (made.reason() or "")  # held there: no update loop back to the version that didn't start
-
-
-def test_without_a_version_to_go_back_to_the_message_says_how_to_recover(make_kernel, tmp_path):
-    made, clock, calls, kernel = updater(make_kernel, tmp_path, starts=False)
-    kernel.bind(
-        Installation, Receipt(CorePin("ref", "heinzel", ref="main", git="https://github.com/org/heinzel"), tmp_path)
-    )
-    advance(made, clock, 5 * 60)
-    advance(made, clock, 30)
-    assert calls["restart"] == 0
-    assert made.restored == []
-    assert "keeps running until you restart it" in (made.status().message or "")
+    assert "uv tool install --reinstall heinzel" in (made.status().message or "")
 
 
 def test_a_trial_start_needs_the_new_server_to_answer_with_the_new_version():
@@ -533,3 +560,36 @@ def test_a_trial_start_that_answers_another_version_fails(tmp_path):
     seen, script = tmp_path / "seen.json", tmp_path / "trial.py"
     script.write_text(TRIAL_SERVER)
     assert auto.trial_start("1.0.0", timeout=30, command=[sys.executable, str(script), str(seen)]) is False
+
+
+# The copy of the environment ------------------------------------------------------------------------------------------
+
+
+def environment(prefix: Path, versions: dict[str, str]) -> None:
+    site = prefix / "lib" / "python3.13" / "site-packages"
+    if site.exists():
+        import shutil
+
+        shutil.rmtree(site)
+    for name, version in versions.items():
+        info = site / f"{name.replace('-', '_')}-{version}.dist-info"
+        info.mkdir(parents=True)
+        (info / "METADATA").write_text(f"Metadata-Version: 2.1\nName: {name}\nVersion: {version}\n")
+    (prefix / "uv-receipt.toml").write_text(repr(versions))
+
+
+def test_the_copy_records_and_puts_back_exactly_hz_and_every_plugin(tmp_path):
+    from heinzel.heads.web._rollback import ToolSnapshot, installed_versions
+
+    prefix = tmp_path / "tools" / "heinzel"
+    before = {"heinzel": "1.0.0", "heinzel-clock": "0.9.3", "heinzel-theme": "0.1.2"}
+    environment(prefix, before)
+    snapshot = ToolSnapshot.take(prefix, tmp_path / "state" / "copy")
+    assert snapshot.versions == before
+    environment(prefix, {"heinzel": "9.9.9", "heinzel-clock": "1.0.0", "heinzel-theme": "0.2.0"})  # the update
+    snapshot.restore()
+    assert installed_versions(prefix) == before
+    assert (prefix / "uv-receipt.toml").read_text() == repr(before)
+    assert [p.name for p in (tmp_path / "tools").iterdir()] == ["heinzel"]  # nothing left beside it
+    snapshot.discard()
+    assert not (tmp_path / "state" / "copy").exists()

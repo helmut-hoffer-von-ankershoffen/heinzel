@@ -35,6 +35,7 @@ from pydantic import BaseModel, Field
 
 from heinzel import __version__
 from heinzel.heads._stream import WORK
+from heinzel.heads.web._rollback import ToolSnapshot
 from heinzel.kernel import (
     KERNEL_SECTION,
     CurrentUser,
@@ -95,6 +96,8 @@ class Plan:
     """The update runs now."""
     restarting_to: str | None = None
     """The version a restart in place is expected to load, saved before restarting."""
+    refused: dict[str, Any] | None = None
+    """News that was installed but didn't start, and was put back: never applied again; newer news is."""
 
     @property
     def pending(self) -> bool:
@@ -116,6 +119,7 @@ class Plan:
             "retry_at": stamp(self.retry_at),
             "message": self.message,
             "restarting_to": self.restarting_to,
+            "refused": self.refused,
         }
 
     @classmethod
@@ -153,11 +157,31 @@ class Plan:
             retry_at=when("retry_at"),
             message=text("message"),
             restarting_to=text("restarting_to"),
+            refused=_news(values.get("refused")),
         )
 
 
+def _news(value: object) -> dict[str, Any] | None:
+    if not isinstance(value, dict):
+        return None
+    news = cast("dict[str, Any]", value)
+    plugins: object = news.get("plugins")
+    core: object = news.get("core")
+    return {
+        "core": core if isinstance(core, str) else None,
+        "plugins": {str(k): str(v) for k, v in cast("dict[object, object]", plugins).items()}
+        if isinstance(plugins, dict)
+        else {},
+    }
+
+
 def found(plan: Plan, core: str | None, plugins: dict[str, str], now: datetime) -> None:
-    """Record what a check found. The same news keeps its times; new news waits for its own window."""
+    """Record what a check found. The same news keeps its times; new news waits for its own window.
+
+    News that was put back after it didn't start counts as no news, so the same broken release is never retried.
+    """
+    if plan.refused == {"core": core, "plugins": dict(plugins)}:
+        core, plugins = None, {}
     if core == plan.core and plugins == plan.plugins:
         return
     first_news = not plan.pending
@@ -471,7 +495,7 @@ class AutoUpdater:
         settings: Callable[[], Settings] | None = None,
         update: Callable[[], object] | None = None,
         trial: Callable[[str], bool] | None = None,
-        restore: Callable[[str], object] | None = None,
+        snapshot: Callable[[], ToolSnapshot] | None = None,
         development: Callable[[Path], str | None] | str | None = development_reason,
     ) -> None:
         """Load the saved plan and settle a restart that an earlier process started.
@@ -488,15 +512,17 @@ class AutoUpdater:
         self._read_settings = settings or self._reread
         self._run_update = update or self._update
         self._trial = trial or trial_start
-        self._restore = restore or self._reinstall
+        self._snapshot = snapshot or self._take_snapshot
         self.development = development(kernel.settings.state_dir) if callable(development) else development
         self._lock = threading.Lock()
         self._stop = threading.Event()
         self._path = kernel.settings.state_dir / "web" / FILENAME
+        self._copy = kernel.settings.state_dir / "web" / "before-update"
         self.plan = self._load()
         now = self._clock()
         self._next_check = now + self._between(*FIRST_CHECK)
         if self.plan.restarting_to is not None:
+            shutil.rmtree(self._copy, ignore_errors=True)  # the restart happened: the copy is no longer needed
             if self.plan.restarting_to == version:
                 done(self.plan, f"hz is up to date: {version}, updated automatically.")
             else:
@@ -533,7 +559,7 @@ class AutoUpdater:
         pin = self._kernel.resolve(Installation).core_pin()
         return pin is not None and (
             pin.kind in {"release", "default"}
-            or (pin.kind == "index" and not (pin.ref or "").startswith("=="))  # `==` after a rollback: held on purpose
+            or (pin.kind == "index" and not (pin.ref or "").startswith("=="))  # `==`: pinned on purpose
             or (pin.kind, pin.ref) == ("ref", "main")
         )
 
@@ -609,26 +635,33 @@ class AutoUpdater:
             self._save()
 
     def apply(self) -> None:
-        """Install with `system.update`, prove the new version starts, then restart in place.
+        """Copy the environment, install with `system.update`, prove the new version starts, then restart in place.
 
-        Any failure keeps this process, the old version, running. If the new version was installed but doesn't
-        start, the old one is installed again where its source can name it, before anything restarts.
+        Any failure keeps this process, the old version, running; once the install began, the copy puts hz and every
+        plugin back exactly as they were before anything restarts.
         """
-        previous = self._previous_source()
+        try:
+            snapshot = self._snapshot()
+        except Exception as exc:  # noqa: BLE001 - without a way back nothing is installed
+            log.warning("automatic update skipped, no copy to go back to: %s", exc)
+            self._fail(failure_message(self._version))
+            return
+        news = {"core": self.plan.core, "plugins": dict(self.plan.plugins)}
         try:
             result = self._run_update()
         except Exception as exc:  # noqa: BLE001 - every failure leaves the old version running and is reported once
             log.warning("automatic update failed: %s", exc)
-            self._fail(failure_message(self._version))
+            self._fail(self._roll_back(snapshot, None, news) or failure_message(self._version))
             return
         after = getattr(result, "after", None)
         if not getattr(result, "updated", False) or not isinstance(after, str) or self._restart is None:
             # Something newer was announced but the installer changed nothing: say so once and wait, rather than
             # warning every window again at the next check.
+            snapshot.discard()
             self._fail(failure_message(self._version))
             return
         if not self._trial(after):
-            self._fail(self._roll_back(after, previous))
+            self._fail(self._roll_back(snapshot, after, news) or failure_message(self._version))
             return
         with self._lock:
             self.plan.restarting_to = after
@@ -640,47 +673,35 @@ class AutoUpdater:
             failed(self.plan, message, self._clock())
             self._save()
 
-    def _previous_source(self) -> str | None:
-        """Where the running version can be installed again: its release tag, or this version from the index.
+    def _take_snapshot(self) -> ToolSnapshot:
+        installation = self._kernel.resolve(Installation)
+        if not installation.is_tool:
+            msg = "hz isn't a uv tool, so there is no environment to copy."
+            raise RuntimeError(msg)
+        return ToolSnapshot.take(installation.prefix.resolve(), self._copy)
 
-        None when that can't be named (an edge wheel, a branch).
-        """
+    def _roll_back(self, snapshot: ToolSnapshot, after: str | None, news: dict[str, Any]) -> str | None:
+        """Put hz and every plugin back from `snapshot`; the message that says what happened, None if not needed."""
         try:
-            pin = self._kernel.resolve(Installation).core_pin()
-        except Exception:  # noqa: BLE001 - no source only means no reinstall
+            snapshot.restore()
+        except Exception as exc:  # noqa: BLE001 - reported in the message
+            log.warning("putting hz %s back failed: %s", self._version, exc)
+            return (
+                f"hz {after or 'the update'} didn't work and hz {self._version} couldn't be put back; it keeps running "
+                "until you restart it. Reinstall hz before that: uv tool install --reinstall heinzel"
+            )
+        finally:
+            snapshot.discard()
+        if after is None:
             return None
-        if pin is None:
-            return None
-        if pin.kind == "release" and pin.ref and pin.git:
-            return pin.source_at(pin.ref)
-        if pin.kind in {"index", "default"} and pin.git is None:
-            return f"{pin.name}=={self._version}"
-        return None
-
-    def _roll_back(self, after: str, previous: str | None) -> str:
-        """Install the running version again after the new one failed its start; the message that says what happened."""
-        if previous is not None:
-            try:
-                self._restore(previous)
-            except Exception as exc:  # noqa: BLE001 - reported in the message
-                log.warning("restoring hz %s failed: %s", self._version, exc)
-            else:
-                if "==" in previous:  # from the package index: held at this version until a person updates
-                    return (
-                        f"hz {after} was installed but didn't start, so hz {self._version} was put back and keeps "
-                        "running. Automatic updates wait until you update by hand: hz system update --source heinzel"
-                    )
-                return (
-                    f"hz {after} was installed but didn't start, so hz {self._version} was put back and keeps running. "
-                    "It will try again in 6 hours."
-                )
+        with self._lock:
+            self.plan.refused = news
+        plugins = ", ".join(f"{name} {version}" for name, version in snapshot.versions.items() if name != "heinzel")
         return (
-            f"hz {after} was installed but didn't start. hz {self._version} keeps running until you restart it; "
-            "before that, run hz system update --source with your previous version, or reinstall hz."
+            f"hz {after} was installed but didn't start, so hz {self._version}"
+            f"{f' and its plugins ({plugins})' if plugins else ''} were put back as they were and keep running. "
+            "That update won't be tried again; a newer one will."
         )
-
-    def _reinstall(self, source: str) -> object:
-        return self._invoke_update(source=source)
 
     def _update(self) -> object:
         return self._invoke_update(channel="stable")
