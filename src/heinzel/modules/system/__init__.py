@@ -118,7 +118,7 @@ def apply_announced(
     ] = [],  # noqa: B006 - never changed
     commit: Annotated[str | None, Field(description="The commit hz's tag named when it was announced.")] = None,
 ) -> AnnouncedUpdate:
-    """Install exactly the announced versions, as the web app's automatic updates do, or put everything back.
+    """Install exactly the announced versions for automatic updates, or put everything back.
 
     Only the web app's server calls it (ADR 0116): no CLI, MCP or REST head offers it. The versions were announced
     once they were old enough; uv installs exactly these or nothing, the new hz must start on throwaway folders, and
