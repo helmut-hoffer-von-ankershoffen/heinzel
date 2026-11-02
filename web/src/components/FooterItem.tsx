@@ -43,6 +43,8 @@ export function FooterItem({
   align = "right",
   className,
   popoverClassName,
+  paneName,
+  hideHeading = false,
 }: {
   /** What it says, as its accessible name and the pane's heading. */
   label: string;
@@ -64,6 +66,10 @@ export function FooterItem({
   className?: string;
   /** Optional pane width for content that needs more room than the standard compact footer popover. */
   popoverClassName?: string;
+  /** The pane's accessible name, when it differs from `label` (a live value's time changes every second). */
+  paneName?: string;
+  /** No visible heading, when the trigger already shows the same words. */
+  hideHeading?: boolean;
 }) {
   const [hovered, setHovered] = useState(false);
   const [focused, setFocused] = useState(false);
@@ -227,15 +233,17 @@ export function FooterItem({
             onFocus={() => setFocused(true)}
           >
             <section
-              aria-label={label}
+              aria-label={paneName ?? label}
               className={cn(
                 "w-72 max-w-full rounded-xl border border-border bg-popover p-2 text-sm text-foreground shadow-xl",
                 popoverClassName,
               )}
             >
-              <p className="px-1.5 py-1 font-medium">
-                <span className="min-w-0">{label}</span>
-              </p>
+              {!hideHeading && (
+                <p className="px-1.5 py-1 font-medium">
+                  <span className="min-w-0">{label}</span>
+                </p>
+              )}
               {children}
             </section>
           </div>,
