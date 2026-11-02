@@ -8,7 +8,7 @@ import { useConfig, useSetSetting } from "@/api/queries";
 import { t } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { RestartAndApply } from "@/lifecycle/RestartAndApply";
-import { useAutoUpdateDevelopment } from "@/updates/autoUpdateApi";
+import { useAutoUpdateHeld } from "@/updates/autoUpdateApi";
 import { ChannelStatement } from "./ChannelStatement";
 import { SchemaValue } from "./SchemaValue";
 import { controlFor, type JsonSchema, toToml, unwrap } from "./settingSchema";
@@ -61,7 +61,7 @@ export function Row({ setting }: { setting: SchemaSettingInfo }) {
 
 /** Automatic updates never run while hz runs for development: its switch is off, disabled, and says why. */
 function AutoUpdateRow({ setting }: { setting: SchemaSettingInfo }) {
-  return <SettingRowEditor setting={setting} managed={useAutoUpdateDevelopment()} />;
+  return <SettingRowEditor setting={setting} managed={useAutoUpdateHeld()} />;
 }
 
 function SettingRowEditor({ setting, managed }: { setting: SchemaSettingInfo; managed: string | null }) {

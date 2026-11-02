@@ -163,7 +163,16 @@ class Result:
 
 
 def updater(  # noqa: PLR0913 - one option per condition
-    make_kernel, tmp_path, *, on=True, channel="stable", outcome=None, restart=True, pin="release", starts=True
+    make_kernel,
+    tmp_path,
+    *,
+    on=True,
+    channel="stable",
+    outcome=None,
+    restart=True,
+    pin="release",
+    starts=True,
+    checks=True,
 ):
     settings = Settings(state_dir=tmp_path / "state", cache_dir=tmp_path / "cache")
     kernel = make_kernel(builtins=True, settings_=settings)
@@ -190,7 +199,9 @@ def updater(  # noqa: PLR0913 - one option per condition
         clock=clock,
         rng=random.Random(1),  # noqa: S311 - jitter in a test, not a secret
         version="1.0.0",
-        settings=lambda: settings.model_copy(update={"auto_update": on, "update_channel": channel}),
+        settings=lambda: settings.model_copy(
+            update={"auto_update": on, "update_channel": channel, "update_check": checks}
+        ),
         update=update,
         trial=lambda version: starts and version == "9.9.9",
         restore=restored.append,
@@ -452,3 +463,16 @@ def test_while_developing_nothing_is_checked_scheduled_or_shown_and_the_switches
     monkeypatch.setattr("threading.Thread", lambda *_, **named: started.append(named))
     made.start()
     assert started == []  # no background loop at all
+
+
+def test_with_update_checks_off_nothing_is_asked_or_installed_and_the_switches_say_why(make_kernel, tmp_path):
+    made, clock, calls, kernel = updater(make_kernel, tmp_path, checks=False)
+    asked = []
+    kernel.bind(
+        ReleaseSource, type("Asked", (Releases,), {"latest_version": lambda _, t: asked.append(t) or "9.9.9"})()
+    )
+    advance(made, clock, 10 * 60)
+    status = made.status()
+    assert (asked, calls["update"], status.phase) == ([], 0, "off")
+    assert status.held == status.reason == auto.CHECKS_OFF
+    assert status.development is None

@@ -242,6 +242,11 @@ class AutoUpdateStatus(BaseModel):
         default=None,
         description="Why this hz runs for development, so it never updates itself and both switches are disabled.",
     )
+    held: str | None = Field(
+        default=None,
+        description="The one line both switches show, disabled, when the setting can't turn updates on here: "
+        "development, or update checks off.",
+    )
 
 
 def _phase(plan: Plan, reason: str | None) -> Phase:
@@ -338,6 +343,9 @@ SOURCE_CHECKOUT = "Updates are managed by your source checkout."
 """What both switches say when hz runs from a source checkout or an editable install."""
 DEVELOPMENT = "Automatic updates are off while hz runs for development or tests."
 """What both switches say when another development fact holds: tests, CI, a dev server or make, a test state folder."""
+PINNED = "This installation is pinned or isn't a uv tool, so it can't update itself."
+CHECKS_OFF = "Update checks are off, so hz neither looks for updates nor installs them by itself."
+"""What both switches say while `update_check` is off: no automatic update without a check."""
 TEST_OVERRIDE = "HEINZEL_AUTO_UPDATE_TEST"
 """Set to 1 by a test that drives the real automatic-update flow: none of the development facts below count then."""
 DEVELOPMENT_VARIABLES = (
@@ -473,6 +481,8 @@ class AutoUpdater:
         if self.development is not None:
             return self.development
         settings = self._read_settings()
+        if not settings.update_check:
+            return CHECKS_OFF
         if not settings.auto_update:
             return (
                 "Automatic updates are off. Turn them on in the Updates pane, in Settings or with "
@@ -482,15 +492,15 @@ class AutoUpdater:
             return "Automatic updates follow the stable channel only; this installation follows another."
         if self._restart is None:
             return "This server can't restart itself, so it can't update itself."
+        return None if self._follows_releases() else PINNED
+
+    def _follows_releases(self) -> bool:
         pin = self._kernel.resolve(Installation).core_pin()
-        follows = pin is not None and (
+        return pin is not None and (
             pin.kind in {"release", "default"}
             or (pin.kind == "index" and not (pin.ref or "").startswith("=="))  # `==` after a rollback: held on purpose
             or (pin.kind, pin.ref) == ("ref", "main")
         )
-        if not follows:
-            return "This installation is pinned or isn't a uv tool, so it can't update itself."
-        return None
 
     def busy(self) -> bool:
         """Whether a chat answer, an install or a daemon job is running now."""
@@ -671,6 +681,7 @@ class AutoUpdater:
                 postponements=plan.postponements,
                 message=None if self.development is not None else plan.message,
                 development=self.development,
+                held=self.development or (reason if reason == CHECKS_OFF else None),
             )
 
     def postpone(self) -> AutoUpdateStatus:

@@ -123,11 +123,15 @@ to. Having reviewed the source code (the Python package, the web interface and t
   [ADR 0031](adr/0031-update-check.md)). GitHub receives your IP address and the identifier `heinzel/<version>`; no
   access token is sent. The check does not run in CI environments. Turn it off with the
   `update_check` setting or `HZ_UPDATE_CHECK=false`.
-- **Automatic updates (on; turn them off in the footer's Updates pane or in Settings).** While it runs, the web app's
-  server asks `github.com` for the latest stable release and `pypi.org` for each plugin installed from PyPI every half
-  hour, sending the same identifier and the plugin names, then installs what is newer after a 30-second warning. It
-  never asks while hz runs from a source checkout, under tests or in CI. Turn it off with the `auto_update` setting or
-  `HZ_AUTO_UPDATE=false` ([ADR 0116](adr/0116-automatic-updates-are-scheduled-by-the-running-app-server.md)).
+- **Automatic updates (on; turn them off in the footer's Updates pane or in Settings).** While the web app's server
+  (`hz ui`) runs, it fetches release metadata every 30 minutes (plus up to 5 minutes at random): the latest stable
+  release from `github.com` (`api.github.com` as a fallback) and, for each plugin installed from PyPI, its release list
+  from `pypi.org`. These requests carry your IP address, the identifier `heinzel/<version>` and the plugin names; no
+  token, nothing about you or your data. When something newer is old enough, it downloads and installs it from the same
+  places after a 30-second warning. It contacts nothing while hz runs from a source checkout, under tests or in CI.
+  Turn it off with the `auto_update` setting or `HZ_AUTO_UPDATE=false`; with `update_check` off
+  (`HZ_UPDATE_CHECK=false`) there are no checks at all, so no automatic updates either
+  ([ADR 0116](adr/0116-automatic-updates-are-scheduled-by-the-running-app-server.md)).
 - **Plugin catalog and search (on your action).** The plugin area queries `api.github.com` for plugin repositories (the
   search term is part of the request); adding a plugin from PyPI sends the package name to `pypi.org`. If the GitHub CLI
   `gh` is installed, the GitHub queries run with your login there. Commands such as `hz system release` and

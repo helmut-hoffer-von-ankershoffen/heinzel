@@ -6,7 +6,7 @@ import { useId } from "react";
 import { useConfig, useSetSetting } from "@/api/queries";
 import { t } from "@/i18n";
 import { Switch } from "@/layout/SettingControls";
-import { useAutoUpdateDevelopment } from "./autoUpdateApi";
+import { useAutoUpdateHeld } from "./autoUpdateApi";
 
 /** The setting in effect: on unless someone turned it off (its default is on). */
 export function useAutoUpdateSetting(): { on: boolean; known: boolean; fromEnv: boolean } {
@@ -18,7 +18,7 @@ export function useAutoUpdateSetting(): { on: boolean; known: boolean; fromEnv: 
 
 export function AutoUpdateToggle() {
   const { on, known, fromEnv } = useAutoUpdateSetting();
-  const development = useAutoUpdateDevelopment();
+  const development = useAutoUpdateHeld();
   const save = useSetSetting();
   const labelId = useId();
   return (

@@ -199,3 +199,20 @@ it("disables the footer switch and says why while hz runs from a source checkout
   expect(toggle).toHaveAttribute("aria-checked", "false");
   expect(screen.getByText("Updates are managed by your source checkout.")).toBeInTheDocument();
 });
+
+it("disables the footer switch and says so while update checks are off", async () => {
+  const line = "Update checks are off, so hz neither looks for updates nor installs them by itself.";
+  mockApi({
+    ...shell,
+    "/api/update-status": status,
+    "/api/system/config/show": config,
+    "/api/auto-update": { phase: "off", development: null, held: line },
+  });
+  const user = userEvent.setup();
+  renderAt("/");
+  await user.click(await screen.findByRole("button", { name: "Update available, warning" }));
+  const toggle = await screen.findByRole("switch", { name: "Automatic updates" });
+  await waitFor(() => expect(toggle).toBeDisabled());
+  expect(toggle).toHaveAttribute("aria-checked", "false");
+  expect(screen.getByText(line)).toBeInTheDocument();
+});
