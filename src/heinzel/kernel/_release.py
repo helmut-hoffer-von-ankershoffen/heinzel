@@ -26,6 +26,27 @@ class EdgeRelease:
     sha256: str
 
 
+@dataclass(frozen=True)
+class ReleaseFacts:
+    """What automatic updates check about a release before installing it (ADR 0116)."""
+
+    version: str
+    published_at: datetime | None
+    """When it was published; None when the source can't tell, which counts as too new."""
+    commit: str | None = None
+    """The commit its tag names, recorded when it is announced and checked once it is installed."""
+    prerelease: bool = False
+
+
+@dataclass(frozen=True)
+class PluginRelease:
+    """A newer stable, unyanked release of a plugin, with when it was uploaded (ADR 0116)."""
+
+    version: str
+    uploaded_at: datetime | None
+    """When its first file was uploaded; None when the index can't tell, which counts as too new."""
+
+
 class ReleaseSource:
     """Where the latest release of Heinzelmännchen comes from; the system module provides a subclass (ADR 0031).
 
@@ -46,6 +67,14 @@ class ReleaseSource:
         Raises:
             NotImplementedError: Always; subclasses ask their package source and raise anything when it can't tell,
                 which `ReleaseCache.refresh` records as a failure.
+        """
+        raise NotImplementedError
+
+    def release_facts(self, version: str, timeout: float) -> ReleaseFacts:
+        """When release `version` was published and which commit its tag names, for automatic updates.
+
+        Raises:
+            NotImplementedError: Always; subclasses ask their package source and raise anything when it can't tell.
         """
         raise NotImplementedError
 
@@ -75,6 +104,10 @@ class PluginReleases:
         """
         del timeout
         return {}
+
+    def newer_releases(self, timeout: float) -> dict[str, PluginRelease]:
+        """Like `newer`, with when each release was uploaded; this base class can't tell, so none counts as old."""
+        return {name: PluginRelease(version, None) for name, version in self.newer(timeout).items()}
 
 
 @dataclass(frozen=True, slots=True)

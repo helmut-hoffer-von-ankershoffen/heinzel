@@ -14,7 +14,7 @@ from heinzel import Settings
 from heinzel.heads import web
 from heinzel.heads.web import _auto_update as auto
 from heinzel.heads.web._auto_update import Activity, AutoUpdater, Plan
-from heinzel.kernel import CorePin, Installation, PluginReleases, ReleaseSource
+from heinzel.kernel import CorePin, Installation, PluginRelease, PluginReleases, ReleaseFacts, ReleaseSource
 
 pytestmark = pytest.mark.unit
 START = datetime(2026, 11, 2, 9, 0, tzinfo=UTC)
@@ -129,17 +129,26 @@ def test_only_requests_that_change_state_count_as_work():
 # The server's updater -------------------------------------------------------------------------------------------------
 
 
+COMMIT = "c" * 40
+
+
 class Releases(ReleaseSource):
-    def __init__(self, latest="9.9.9"):
-        self.latest = latest
+    def __init__(self, latest="9.9.9", published=START - timedelta(days=7), prerelease=False):
+        self.latest, self.published, self.prerelease = latest, published, prerelease
 
     def latest_version(self, timeout):
         return self.latest
 
+    def release_facts(self, version, timeout):
+        return ReleaseFacts(version, self.published, COMMIT, prerelease=self.prerelease)
+
 
 class Plugins(PluginReleases):
-    def newer(self, timeout):
-        return {"heinzel-example": "2.0.0"}
+    def __init__(self, uploaded=START - timedelta(days=7)):
+        self.uploaded = uploaded
+
+    def newer_releases(self, timeout):
+        return {"heinzel-example": PluginRelease("2.0.0", self.uploaded)}
 
 
 class Receipt(Installation):
@@ -176,6 +185,8 @@ def updater(  # noqa: PLR0913 - one option per condition
     starts=True,
     checks=True,
     restore_fails=False,
+    installed=None,
+    commit=COMMIT,
 ):
     settings = Settings(state_dir=tmp_path / "state", cache_dir=tmp_path / "cache")
     kernel = make_kernel(builtins=True, settings_=settings)
@@ -198,6 +209,12 @@ def updater(  # noqa: PLR0913 - one option per condition
 
         def discard(self):
             restored.append("discarded")
+
+        def installed_now(self, names):
+            return installed or {"heinzel": "9.9.9", "heinzel-example": "2.0.0"}  # what was announced
+
+        def commit_now(self):
+            return commit
 
     def update():
         calls["update"] += 1
@@ -584,12 +601,64 @@ def test_the_copy_records_and_puts_back_exactly_hz_and_every_plugin(tmp_path):
     prefix = tmp_path / "tools" / "heinzel"
     before = {"heinzel": "1.0.0", "heinzel-clock": "0.9.3", "heinzel-theme": "0.1.2"}
     environment(prefix, before)
-    snapshot = ToolSnapshot.take(prefix, tmp_path / "state" / "copy")
+    snapshot = ToolSnapshot.take(prefix, tmp_path / "state" / "copy", ["heinzel_clock", "Heinzel.Theme"])
     assert snapshot.versions == before
     environment(prefix, {"heinzel": "9.9.9", "heinzel-clock": "1.0.0", "heinzel-theme": "0.2.0"})  # the update
     snapshot.restore()
-    assert installed_versions(prefix) == before
+    assert installed_versions(prefix, before) == before
     assert (prefix / "uv-receipt.toml").read_text() == repr(before)
     assert [p.name for p in (tmp_path / "tools").iterdir()] == ["heinzel"]  # nothing left beside it
     snapshot.discard()
     assert not (tmp_path / "state" / "copy").exists()
+
+
+# Only what was announced, once old enough -----------------------------------------------------------------------------
+
+
+def test_a_release_counts_only_once_old_enough_hz_after_6_hours_plugins_after_24(make_kernel, tmp_path):
+    assert (Settings().auto_update_min_age_hours, Settings().auto_update_plugin_min_age_hours) == (6, 24)
+    made, clock, calls, kernel = updater(make_kernel, tmp_path)
+    kernel.bind(ReleaseSource, Releases(published=START))
+    kernel.bind(PluginReleases, Plugins(uploaded=START))
+    advance(made, clock, 5 * 60)
+    assert made.status().phase == "idle"  # both brand new
+    clock.now = START + timedelta(hours=6, minutes=1)
+    made.check(clock.now)
+    assert (made.plan.core, made.plan.plugins) == ("9.9.9", {})  # hz is old enough, the plugin is not
+    clock.now = START + timedelta(hours=24, minutes=1)
+    made.check(clock.now)
+    assert made.plan.plugins == {"heinzel-example": "2.0.0"}
+    assert calls["update"] == 0
+
+
+@pytest.mark.parametrize(
+    "releases", [Releases(prerelease=True), Releases(published=None), Releases(latest="10.0.0rc1")]
+)
+def test_a_pre_release_or_one_of_unknown_age_is_never_announced(make_kernel, tmp_path, releases):
+    made, clock, _, kernel = updater(make_kernel, tmp_path)
+    kernel.bind(ReleaseSource, releases)
+    advance(made, clock, 5 * 60)
+    assert made.plan.core is None
+
+
+def test_an_update_that_installs_other_versions_than_announced_is_put_back(make_kernel, tmp_path):
+    made, clock, calls, _ = updater(make_kernel, tmp_path, installed={"heinzel": "9.9.10", "heinzel-example": "2.0.0"})
+    advance(made, clock, 5 * 60)
+    advance(made, clock, 30)
+    assert calls == {"restart": 0, "update": 1}
+    assert made.restored == ["restored", "discarded"]
+    assert made.status().message == (
+        "The automatic update would have installed heinzel 9.9.10 instead of 9.9.9, so hz 1.0.0 and its plugins "
+        "were put back as they were. It will try again in 6 hours."
+    )
+    assert made.plan.refused is None  # not the release's fault: tried again later
+
+
+def test_a_tag_moved_since_it_was_announced_is_put_back(make_kernel, tmp_path):
+    made, clock, calls, _ = updater(make_kernel, tmp_path, commit="d" * 40)
+    advance(made, clock, 5 * 60)
+    assert made.plan.commit == COMMIT
+    advance(made, clock, 30)
+    assert calls["restart"] == 0
+    assert made.restored == ["restored", "discarded"]
+    assert "from commit dddddddddddd instead of cccccccccccc" in (made.status().message or "")

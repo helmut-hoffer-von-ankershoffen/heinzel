@@ -1010,8 +1010,12 @@ class UpdateService:
         return expected is not None and self._original_generation() == expected
 
     def _latest(self, current: str) -> str:
-        """The highest release, pre-releases included only when `current` is one."""
-        return self._releases.highest_version(RELEASE_TIMEOUT, prereleases=_version(current).is_prerelease)
+        """The highest stable release: never a pre-release, even when one is installed (ADR 0116 amends ADR 0006).
+
+        Edge builds are GitHub pre-releases (ADR 0114); the stable channel must never move onto one by itself.
+        """
+        del current
+        return self._releases.highest_version(RELEASE_TIMEOUT, prereleases=False)
 
     def _version(self) -> str:
         """The version a fresh `hz` reports: the installation as it is now, not as this process loaded it.

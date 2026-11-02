@@ -168,8 +168,8 @@ def test_never_moves_back_to_a_lower_release(tmp_path):
     assert uv.commands == []
 
 
-@pytest.mark.parametrize(("current", "prereleases"), [("0.2.0", False), ("0.5.0rc1", True)])
-def test_pre_releases_count_only_when_one_is_installed(tmp_path, current, prereleases):
+@pytest.mark.parametrize(("current", "prereleases"), [("0.2.0", False), ("0.5.0rc1", False)])
+def test_the_stable_channel_never_moves_to_a_pre_release_even_from_one(tmp_path, current, prereleases):
     releases = FakeReleases("9.0.0")
     UpdateService(installation(tmp_path, f'git = "{REPO}?rev=v{current}"', FakeUv(current)), releases).update(
         current=current

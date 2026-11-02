@@ -30,6 +30,7 @@ from pathlib import Path
 from typing import Any, Literal, cast
 
 from fastapi import FastAPI, HTTPException, Response
+from packaging.requirements import Requirement
 from packaging.version import Version
 from pydantic import BaseModel, Field
 
@@ -96,6 +97,8 @@ class Plan:
     """The update runs now."""
     restarting_to: str | None = None
     """The version a restart in place is expected to load, saved before restarting."""
+    commit: str | None = None
+    """The commit the announced hz release's tag named when it was announced; checked once it is installed."""
     refused: dict[str, Any] | None = None
     """News that was installed but didn't start, and was put back: never applied again; newer news is."""
 
@@ -120,6 +123,7 @@ class Plan:
             "message": self.message,
             "restarting_to": self.restarting_to,
             "refused": self.refused,
+            "commit": self.commit,
         }
 
     @classmethod
@@ -158,6 +162,7 @@ class Plan:
             message=text("message"),
             restarting_to=text("restarting_to"),
             refused=_news(values.get("refused")),
+            commit=text("commit"),
         )
 
 
@@ -476,6 +481,13 @@ def development_reason(
     return None
 
 
+def _old_enough(published: datetime | None, hours: int, now: datetime) -> bool:
+    """Whether a release published at `published` is at least `hours` old; an unknown time counts as too new."""
+    if hours <= 0:
+        return True
+    return published is not None and now - published >= timedelta(hours=hours)
+
+
 def _now() -> datetime:
     return datetime.now(UTC)
 
@@ -616,22 +628,38 @@ class AutoUpdater:
             self.apply()
 
     def check(self, now: datetime) -> None:
-        """Ask for a newer stable hz and newer plugins; a failed check changes nothing."""
+        """Ask for a newer stable hz and newer plugins old enough to install; a failed check changes nothing.
+
+        A release counts only once it is as old as `auto_update_min_age_hours` (hz) or
+        `auto_update_plugin_min_age_hours` (plugins), and never as a pre-release or a yanked one; the commit hz's tag
+        names now is recorded, so a tag moved later is noticed once installed.
+        """
+        settings = self._read_settings()
         core: str | None = None
+        commit: str | None = None
         plugins: dict[str, str] = {}
         try:
-            latest = self._kernel.resolve(ReleaseSource).latest_version(TIMEOUT)
+            source = self._kernel.resolve(ReleaseSource)
+            latest = source.latest_version(TIMEOUT)
             ReleaseCache(self._kernel.settings.cache_dir).remember(latest, now)
             version = Version(latest)
             if not (version.is_prerelease or version.is_devrelease) and version > Version(self._version):
-                core = str(version)
+                facts = source.release_facts(str(version), TIMEOUT)
+                if not facts.prerelease and _old_enough(facts.published_at, settings.auto_update_min_age_hours, now):
+                    core, commit = str(version), facts.commit
             if self._kernel.provides(PluginReleases):
-                plugins = self._kernel.resolve(PluginReleases).newer(TIMEOUT)
+                plugins = {
+                    name: release.version
+                    for name, release in self._kernel.resolve(PluginReleases).newer_releases(TIMEOUT).items()
+                    if _old_enough(release.uploaded_at, settings.auto_update_plugin_min_age_hours, now)
+                }
         except Exception as exc:  # noqa: BLE001 - offline or rate-limited: try at the next check
             log.info("automatic update check failed: %s", exc)
             return
         with self._lock:
             found(self.plan, core, plugins, now)
+            if self.plan.core == core:
+                self.plan.commit = commit
             self._save()
 
     def apply(self) -> None:
@@ -660,6 +688,9 @@ class AutoUpdater:
             snapshot.discard()
             self._fail(failure_message(self._version))
             return
+        if (mismatch := self._mismatch(snapshot, news)) is not None:
+            self._fail(self._roll_back(snapshot, None, news) or mismatch)
+            return
         if not self._trial(after):
             self._fail(self._roll_back(snapshot, after, news) or failure_message(self._version))
             return
@@ -673,12 +704,39 @@ class AutoUpdater:
             failed(self.plan, message, self._clock())
             self._save()
 
+    def _mismatch(self, snapshot: ToolSnapshot, news: dict[str, Any]) -> str | None:
+        """What the update installed other than announced; None when it installed exactly the announced versions.
+
+        hz and the announced plugins must be at the announced versions, every other plugin where it was, and hz
+        from git at the commit its tag named when it was announced.
+        """
+        expected = dict(snapshot.versions)
+        if news["core"] is not None:
+            expected["heinzel"] = news["core"]
+        expected.update(news["plugins"])
+        installed = snapshot.installed_now(expected)
+        differ = sorted(
+            f"{name} {installed.get(name, 'nothing')} instead of {version}"
+            for name, version in expected.items()
+            if installed.get(name) != version
+        )
+        commit = snapshot.commit_now()
+        if news["core"] is not None and self.plan.commit and commit and commit != self.plan.commit:
+            differ.append(f"hz from commit {commit[:12]} instead of {self.plan.commit[:12]}, which its tag named")
+        if not differ:
+            return None
+        return (
+            f"The automatic update would have installed {', '.join(differ)}, so hz {self._version} and its plugins "
+            "were put back as they were. It will try again in 6 hours."
+        )
+
     def _take_snapshot(self) -> ToolSnapshot:
         installation = self._kernel.resolve(Installation)
         if not installation.is_tool:
             msg = "hz isn't a uv tool, so there is no environment to copy."
             raise RuntimeError(msg)
-        return ToolSnapshot.take(installation.prefix.resolve(), self._copy)
+        plugins = [Requirement(pin.requirement).name for pin in installation.plugin_pins()]
+        return ToolSnapshot.take(installation.prefix.resolve(), self._copy, plugins)
 
     def _roll_back(self, snapshot: ToolSnapshot, after: str | None, news: dict[str, Any]) -> str | None:
         """Put hz and every plugin back from `snapshot`; the message that says what happened, None if not needed."""
