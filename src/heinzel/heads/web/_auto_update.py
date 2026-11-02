@@ -9,6 +9,8 @@ installer when it fails) and the restart in place on the same port. The head nev
 operation, the release sources and the daemon status through the kernel.
 """
 
+import contextlib
+import fcntl
 import importlib.metadata
 import json
 import logging
@@ -23,11 +25,12 @@ import threading
 import urllib.parse
 import urllib.request
 import weakref
-from collections.abc import AsyncGenerator, AsyncIterable, Awaitable, Callable, Mapping, Sequence
+from collections.abc import AsyncGenerator, AsyncIterable, Awaitable, Callable, Iterator, Mapping, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import IO, Any, Literal, cast
 
 from fastapi import FastAPI, HTTPException, Response
 from packaging.requirements import Requirement
@@ -127,8 +130,8 @@ class Plan:
         }
 
     @classmethod
-    def from_json(cls, data: object) -> "Plan":
-        """A plan from the state file; anything unreadable starts afresh."""
+    def from_json(cls, data: object, *, fresh: bool = False) -> "Plan":
+        """A plan from the state file; anything unreadable starts afresh; `fresh` at a server's start."""
         if not isinstance(data, dict):
             return cls()
         values: dict[str, Any] = dict(data)  # pyright: ignore[reportUnknownArgumentType] - free-form JSON
@@ -156,7 +159,8 @@ class Plan:
             core=text("core"),
             plugins=plugins,
             window_at=when("window_at"),
-            apply_at=None,  # a countdown never survives a restart: the windows must see it again
+            # A countdown never survives a restart: the windows must see it again. Another server's countdown does.
+            apply_at=None if fresh else when("apply_at"),
             postponements=count if isinstance(count, int) and count >= 0 else 0,
             retry_at=when("retry_at"),
             message=text("message"),
@@ -488,6 +492,45 @@ def _old_enough(published: datetime | None, hours: int, now: datetime) -> bool:
     return published is not None and now - published >= timedelta(hours=hours)
 
 
+@contextmanager
+def _locked(path: Path) -> Iterator[None]:
+    """Hold an exclusive lock on `path` for the block; without a writable state folder, go on without one."""
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        handle = path.open("a", encoding="utf-8")
+    except OSError:
+        yield
+        return
+    with handle:
+        fcntl.flock(handle, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(handle, fcntl.LOCK_UN)
+
+
+def _try_lock(path: Path) -> IO[str] | None:
+    """An exclusive lock on `path` if no other holder has it, kept until released or this process ends."""
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        handle = path.open("a", encoding="utf-8")
+    except OSError:
+        return None
+    try:
+        fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        handle.close()
+        return None
+    return handle
+
+
+def _unlock(handle: IO[str] | None) -> None:
+    if handle is not None and not handle.closed:
+        with contextlib.suppress(OSError):
+            fcntl.flock(handle, fcntl.LOCK_UN)
+        handle.close()
+
+
 def _now() -> datetime:
     return datetime.now(UTC)
 
@@ -528,18 +571,23 @@ class AutoUpdater:
         self.development = development(kernel.settings.state_dir) if callable(development) else development
         self._lock = threading.Lock()
         self._stop = threading.Event()
-        self._path = kernel.settings.state_dir / "web" / FILENAME
-        self._copy = kernel.settings.state_dir / "web" / "before-update"
-        self.plan = self._load()
+        folder = kernel.settings.state_dir / "web"
+        self._path = folder / FILENAME
+        self._copy = folder / "before-update"
+        self._plan_lock = folder / "auto-update.lock"
+        self._apply_lock = folder / "auto-update-apply.lock"
+        self._applying: IO[str] | None = None
+        """Held from the start of an apply until this process ends, so no other `hz ui` applies meanwhile."""
+        self.plan = self._read(fresh=True) or Plan()
         now = self._clock()
         self._next_check = now + self._between(*FIRST_CHECK)
         if self.plan.restarting_to is not None:
             shutil.rmtree(self._copy, ignore_errors=True)  # the restart happened: the copy is no longer needed
-            if self.plan.restarting_to == version:
-                done(self.plan, f"hz is up to date: {version}, updated automatically.")
-            else:
-                failed(self.plan, failure_message(version), now)
-            self._save()
+            with self._editing() as plan:
+                if plan.restarting_to == version:
+                    done(plan, f"hz is up to date: {version}, updated automatically.")
+                elif plan.restarting_to is not None:
+                    failed(plan, failure_message(version), now)
 
     # Settings and conditions ----------------------------------------------------------------------------------------
 
@@ -610,20 +658,18 @@ class AutoUpdater:
         """One look at the plan: check when due, open or cancel the countdown, apply when it ends."""
         now = self._clock()
         if self.reason() is not None:
-            with self._lock:
-                if self.plan.apply_at is not None:
-                    self.plan.apply_at = None
+            if self.plan.apply_at is not None:
+                with self._editing() as plan:
+                    plan.apply_at = None
             return
         if now >= self._next_check:
             self._next_check = now + CHECK_EVERY + self._between(timedelta(0), JITTER)
             self.check(now)
-        with self._lock:
-            before = self.plan.to_json()
-            due = step(self.plan, now, busy=self.busy())
+        busy = self.busy()
+        with self._editing() as plan:
+            due = step(plan, now, busy=busy)
             if due:
-                self.plan.applying = True
-            if self.plan.to_json() != before:
-                self._save()
+                plan.applying = True
         if due:
             self.apply()
 
@@ -656,11 +702,10 @@ class AutoUpdater:
         except Exception as exc:  # noqa: BLE001 - offline or rate-limited: try at the next check
             log.info("automatic update check failed: %s", exc)
             return
-        with self._lock:
-            found(self.plan, core, plugins, now)
-            if self.plan.core == core:
-                self.plan.commit = commit
-            self._save()
+        with self._editing() as plan:
+            found(plan, core, plugins, now)
+            if plan.core == core:
+                plan.commit = commit
 
     def apply(self) -> None:
         """Copy the environment, install with `system.update`, prove the new version starts, then restart in place.
@@ -668,6 +713,17 @@ class AutoUpdater:
         Any failure keeps this process, the old version, running; once the install began, the copy puts hz and every
         plugin back exactly as they were before anything restarts.
         """
+        if self._applying is None and (handle := _try_lock(self._apply_lock)) is not None:
+            self._applying = handle
+            weakref.finalize(self, _unlock, handle)  # closed with this updater at the latest
+        if self._applying is None:
+            # Another `hz ui` on this state folder applies now: it restarts with the news, this one waits.
+            log.info("automatic update left to another server that is applying it")
+            with self._editing() as plan:
+                plan.applying = False
+                plan.apply_at = None
+                plan.window_at = self._clock() + POSTPONE
+            return
         try:
             snapshot = self._snapshot()
         except Exception as exc:  # noqa: BLE001 - without a way back nothing is installed
@@ -694,15 +750,15 @@ class AutoUpdater:
         if not self._trial(after):
             self._fail(self._roll_back(snapshot, after, news) or failure_message(self._version))
             return
-        with self._lock:
-            self.plan.restarting_to = after
-            self._save()
-        self._restart()
+        with self._editing() as plan:
+            plan.restarting_to = after
+        self._restart()  # the apply lock stays held until this process is replaced
 
     def _fail(self, message: str) -> None:
-        with self._lock:
-            failed(self.plan, message, self._clock())
-            self._save()
+        with self._editing() as plan:
+            failed(plan, message, self._clock())
+        _unlock(self._applying)
+        self._applying = None
 
     def _mismatch(self, snapshot: ToolSnapshot, news: dict[str, Any]) -> str | None:
         """What the update installed other than announced; None when it installed exactly the announced versions.
@@ -752,8 +808,8 @@ class AutoUpdater:
             snapshot.discard()
         if after is None:
             return None
-        with self._lock:
-            self.plan.refused = news
+        with self._editing() as plan:
+            plan.refused = news
         plugins = ", ".join(f"{name} {version}" for name, version in snapshot.versions.items() if name != "heinzel")
         return (
             f"hz {after} was installed but didn't start, so hz {self._version}"
@@ -800,16 +856,14 @@ class AutoUpdater:
 
     def postpone(self) -> AutoUpdateStatus:
         """Put the update off by an hour, for every window."""
-        with self._lock:
-            postpone(self.plan, self._clock())
-            self._save()
+        with self._editing() as plan:
+            postpone(plan, self._clock())
         return self.status()
 
     def dismiss(self) -> AutoUpdateStatus:
         """The message was read, in one window for all of them."""
-        with self._lock:
-            self.plan.message = None
-            self._save()
+        with self._editing() as plan:
+            plan.message = None
         return self.status()
 
     # State file ------------------------------------------------------------------------------------------------------
@@ -817,11 +871,32 @@ class AutoUpdater:
     def _between(self, low: timedelta, high: timedelta) -> timedelta:
         return low + (high - low) * self._random.random()
 
-    def _load(self) -> Plan:
+    def _read(self, *, fresh: bool = False) -> Plan | None:
         try:
-            return Plan.from_json(json.loads(self._path.read_text(encoding="utf-8")))
+            return Plan.from_json(json.loads(self._path.read_text(encoding="utf-8")), fresh=fresh)
         except (OSError, ValueError):
-            return Plan()
+            return None
+
+    @contextmanager
+    def _editing(self) -> Iterator[Plan]:
+        """The plan as the state file has it now, to change and save, under a lock every `hz ui` takes.
+
+        Two servers on one state folder each change the latest plan, never their own older copy, so neither undoes
+        the other's postpone, dismissal or news (no last writer wins). What only this process knows (that it applies
+        now) stays as it is.
+
+        Yields:
+            The latest plan, saved after the block if it changed.
+        """
+        with self._lock, _locked(self._plan_lock):
+            latest = self._read()
+            if latest is not None:
+                latest.applying = self.plan.applying
+                self.plan = latest
+            before = self.plan.to_json()
+            yield self.plan
+            if self.plan.to_json() != before:
+                self._save()
 
     def _save(self) -> None:
         """Replace the state file at once; an unwritable state folder only costs what survives a restart."""

@@ -106,10 +106,11 @@ def test_the_plan_survives_the_state_file_but_a_countdown_does_not():
     auto.step(plan, START, busy=False)
     auto.postpone(plan, START)
     auto.step(plan, plan.window_at, busy=False)
-    loaded = Plan.from_json(json.loads(json.dumps(plan.to_json())))
+    loaded = Plan.from_json(json.loads(json.dumps(plan.to_json())), fresh=True)  # as a server starts
     assert (loaded.core, loaded.plugins, loaded.postponements) == ("9.9.9", {"heinzel-example": "2.0.0"}, 1)
     assert loaded.window_at == plan.window_at
     assert loaded.apply_at is None
+    assert Plan.from_json(plan.to_json()).apply_at == plan.apply_at  # another server's countdown is kept
     assert Plan.from_json("garbage") == Plan()
     assert Plan.from_json({"postponements": -3, "window_at": "not a time"}) == Plan()
 
@@ -662,3 +663,58 @@ def test_a_tag_moved_since_it_was_announced_is_put_back(make_kernel, tmp_path):
     assert calls["restart"] == 0
     assert made.restored == ["restored", "discarded"]
     assert "from commit dddddddddddd instead of cccccccccccc" in (made.status().message or "")
+
+
+# Two servers on one state folder --------------------------------------------------------------------------------------
+
+
+def twin(made, kernel, clock, calls):
+    """A second `hz ui` on the same state folder, as after starting it twice."""
+
+    def update():
+        calls["update"] += 1
+        return Result(updated=True, after="9.9.9")
+
+    return AutoUpdater(
+        kernel,
+        restart=lambda: None,
+        clock=clock,
+        version="1.0.0",
+        settings=made._read_settings,
+        update=update,
+        trial=lambda version: True,
+        snapshot=made._snapshot,
+        development=None,
+    )
+
+
+def test_two_servers_change_the_same_plan_and_neither_undoes_the_other(make_kernel, tmp_path):
+    made, clock, _, kernel = updater(make_kernel, tmp_path)
+    advance(made, clock, 5 * 60)  # news, and a countdown, on disk
+    with made._editing() as plan:
+        plan.message = "hz is up to date: 1.0.0, updated automatically."
+    other = twin(made, kernel, clock, {"update": 0})
+    stale = other.plan.to_json()
+    made.postpone()  # in one window of the first server
+    assert other.plan.to_json() == stale  # the second still holds the plan from before
+    other.dismiss()  # in a window of the second
+    saved = Plan.from_json(json.loads((tmp_path / "state" / "web" / "auto-update.json").read_text()))
+    assert (saved.postponements, saved.message) == (1, None)  # both changes, neither lost
+    assert made.status().postponements == other.status().postponements == 1
+
+
+def test_only_one_server_applies_while_the_other_waits(make_kernel, tmp_path):
+    made, clock, calls, kernel = updater(make_kernel, tmp_path)
+    other_calls = {"update": 0}
+    other = twin(made, kernel, clock, other_calls)
+    holder = auto._try_lock(tmp_path / "state" / "web" / "auto-update-apply.lock")  # the first server applies now
+    assert holder is not None
+    try:
+        other._next_check = clock.now
+        advance(other, clock, 1)
+        advance(other, clock, 30)
+        assert other_calls["update"] == 0
+        assert other.plan.window_at == clock.now + timedelta(hours=1)  # it looks again later, after the restart
+    finally:
+        auto._unlock(holder)
+    assert calls["update"] == 0
