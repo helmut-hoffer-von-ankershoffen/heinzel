@@ -123,15 +123,25 @@ to. Having reviewed the source code (the Python package, the web interface and t
   [ADR 0031](adr/0031-update-check.md)). GitHub receives your IP address and the identifier `heinzel/<version>`; no
   access token is sent. The check does not run in CI environments. Turn it off with the
   `update_check` setting or `HZ_UPDATE_CHECK=false`.
-- **Automatic updates (on; turn them off in the footer's Updates pane or in Settings).** While the web app's server
-  (`hz ui`) runs, it fetches release metadata every 30 minutes (plus up to 5 minutes at random): the latest stable
-  release from `github.com` (`api.github.com` as a fallback) and, for each plugin installed from PyPI, its release list
-  from `pypi.org`. These requests carry your IP address, the identifier `heinzel/<version>` and the plugin names; no
-  token, nothing about you or your data. When something newer is old enough, it downloads and installs it from the same
-  places after a 30-second warning. It contacts nothing while hz runs from a source checkout, under tests or in CI.
-  Turn it off with the `auto_update` setting or `HZ_AUTO_UPDATE=false`; with `update_check` off
-  (`HZ_UPDATE_CHECK=false`) there are no checks at all, so no automatic updates either
-  ([ADR 0116](adr/0116-automatic-updates-are-scheduled-by-the-running-app-server.md)).
+- **Automatic updates (on; turn them off in the footer's Updates pane or in Settings).** Only while the web app's
+  server (`hz ui`) runs, and only for an installed hz (never from a source checkout, under tests or in CI). Every 30
+  minutes (plus up to 5 at random; the first 1 to 5 minutes after it starts) it asks:
+  - `github.com`: one `HEAD` of the repository's `releases/latest` page, for the latest release's version; only if
+    that fails, one GET to `api.github.com` for the same.
+  - `pypi.org`: one GET for each plugin installed from PyPI (its release list), and, only when a newer hz exists, one
+    GET for that hz release (when its files were uploaded).
+  - `api.github.com`: only for an hz installed from a release tag and only when a newer one exists, up to three GETs
+    (the release, its tag, and the tag object) for the commit the tag names; again up to three right before
+    installing.
+  - When installing, after a 30-second warning: `uv` downloads exactly the announced versions from PyPI (`pypi.org`,
+    `files.pythonhosted.org`) or, for hz from a release tag, from `github.com`. It may also contact the git remote of a
+    plugin you installed from git, to find the commit already installed; it installs nothing new from there.
+  - What is sent: hz's own requests carry what any HTTP request does (your IP address) and the User-Agent
+    `heinzel/<version>`; their addresses name the repository, the packages and the versions. No token, account,
+    identifier or data of yours.
+  - Turn automatic updates off with the `auto_update` setting or `HZ_AUTO_UPDATE=false`. With `update_check` off
+    (`HZ_UPDATE_CHECK=false`), none of these requests is made
+    ([ADR 0116](adr/0116-automatic-updates-are-scheduled-by-the-running-app-server.md)).
 - **Plugin catalog and search (on your action).** The plugin area queries `api.github.com` for plugin repositories (the
   search term is part of the request); adding a plugin from PyPI sends the package name to `pypi.org`. If the GitHub CLI
   `gh` is installed, the GitHub queries run with your login there. Commands such as `hz system release` and
