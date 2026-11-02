@@ -50,7 +50,7 @@ from fastapi.staticfiles import StaticFiles
 from heinzel.heads import api
 from heinzel.heads._stream import StreamProgress
 from heinzel.heads.web import _terminal
-from heinzel.heads.web._auto_update import Activity, AutoUpdater, add_auto_update, counts_as_work
+from heinzel.heads.web._auto_update import Activity, AutoUpdater, add_auto_update, as_work, counts_as_work
 from heinzel.heads.web._devices import Devices
 from heinzel.heads.web._lifecycle import CANT_RESTART as CANT_RESTART
 from heinzel.heads.web._lifecycle import add_lifecycle
@@ -216,11 +216,8 @@ def build(  # noqa: PLR0913 - all but the kernel by keyword
         ):
             response: Response = JSONResponse(status_code=api.FORBIDDEN, content={"error": problem})
         elif counts_as_work(request.method, request.url.path):
-            activity.enter()  # a running chat answer or install holds off an automatic update (ADR 0116)
-            try:
-                response = await call_next(request)
-            finally:
-                activity.leave()
+            # A chat answer or install holds off an automatic update (ADR 0116) until its body has been sent.
+            response = await as_work(activity, call_next, request)
         else:
             response = await call_next(request)
         secure(response, request.url.path)

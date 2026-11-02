@@ -20,7 +20,8 @@ import sys
 import threading
 import urllib.parse
 import urllib.request
-from collections.abc import Callable, Mapping
+import weakref
+from collections.abc import AsyncGenerator, AsyncIterable, Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -31,6 +32,7 @@ from packaging.version import Version
 from pydantic import BaseModel, Field
 
 from heinzel import __version__
+from heinzel.heads._stream import WORK
 from heinzel.kernel import (
     KERNEL_SECTION,
     CurrentUser,
@@ -734,6 +736,56 @@ def add_auto_update(app: FastAPI, updater: AutoUpdater | None) -> None:
     def dismiss_message(response: Response) -> AutoUpdateStatus:
         response.headers["Cache-Control"] = "no-store"
         return require().dismiss()
+
+
+def held_until_sent(response: Response, leave: Callable[[], None]) -> Response:
+    """`response`, calling `leave` once its body has been sent, the browser left, or the body was dropped unsent.
+
+    A middleware's `call_next` returns when the headers go out; a streamed chat turn runs while its body streams, so
+    the work it holds off an automatic update for ends only then.
+    """
+    body: AsyncIterable[Any] | None = getattr(response, "body_iterator", None)
+    if body is None:
+        leave()
+        return response
+    lock, left = threading.Lock(), [False]
+
+    def done() -> None:
+        with lock:
+            if left[0]:
+                return
+            left[0] = True
+        leave()
+
+    async def held() -> AsyncGenerator[Any]:
+        try:
+            async for chunk in body:
+                yield chunk
+        finally:
+            done()
+
+    wrapped = held()
+    weakref.finalize(wrapped, done)  # never iterated (the browser left before the first byte): still let go
+    setattr(response, "body_iterator", wrapped)  # noqa: B010 - only streamed responses have it
+    return response
+
+
+async def as_work[R](activity: Activity, call_next: Callable[[R], Awaitable[Response]], request: R) -> Response:
+    """Run a request that changes state as work: from its start until its response body has ended.
+
+    A streamed chat turn runs while its body streams, and its operation's thread can outlive the stream when the
+    browser leaves; `WORK` lets the stream hold the activity for that thread as well.
+    """
+    activity.enter()
+    token = WORK.set((activity.enter, activity.leave))
+    try:
+        response = await call_next(request)
+    except BaseException:
+        activity.leave()
+        raise
+    finally:
+        WORK.reset(token)
+    return held_until_sent(response, activity.leave)
 
 
 def counts_as_work(method: str, path: str) -> bool:
