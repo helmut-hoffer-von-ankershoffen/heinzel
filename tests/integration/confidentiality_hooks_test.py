@@ -9,6 +9,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import uuid
 from pathlib import Path
 
 import pytest
@@ -104,6 +105,7 @@ def commits(repo: Path, files: dict[str, bytes], message: str = "docs: harmless"
     [
         ({"README.md": b"We use Acme.\n"}, "docs: harmless", {}),
         ({"app.py": b"globex_client = 1\n"}, "docs: harmless", {}),
+        ({"README.md": b"see globexdb\n"}, "docs: harmless", {}),
         ({"README.md": b"see [globex]-db\n"}, "docs: harmless", {}),
         ({"README.md": b"the Project\nZebra team\n"}, "docs: harmless", {}),
         ({"README.md": "glo\u200bbex\n".encode()}, "docs: harmless", {}),
@@ -115,6 +117,7 @@ def commits(repo: Path, files: dict[str, bytes], message: str = "docs: harmless"
     ids=[
         "text",
         "identifier",
+        "glued",
         "punctuated",
         "phrase-across-lines",
         "zero-width",
@@ -129,7 +132,7 @@ def test_leaks_are_refused(repo, files, message, env):
 
 
 def test_clean_commits_and_ordinary_words_pass(repo):
-    assert commits(repo, {"README.md": b"A small macmenu with a zebra, minimal globexdb and acmeish.\n"})
+    assert commits(repo, {"README.md": b"A small macmenu with a zebra, minimal and acmeish.\n"})
 
 
 def test_branch_names_are_checked_on_push(repo):
@@ -137,6 +140,13 @@ def test_branch_names_are_checked_on_push(repo):
     assert git(repo, "push", "-q", "origin", "HEAD").returncode != 0
     git(repo, "switch", "-q", "-c", "feat/innocent")
     assert git(repo, "push", "-q", "origin", "HEAD").returncode == 0
+
+
+def _new_branch(repo: Path, name: str = "", base: str = "") -> str:
+    """A branch with a name no earlier test pushed (the remote is shared), so a refusal is the hook's, not git's."""
+    name = name or "feat/t-" + uuid.uuid4().hex[:8]
+    git(repo, "switch", "-q", "-c", name, *([base] if base else []))
+    return name
 
 
 def _unchecked_commit(repo: Path, files: dict[str, bytes], message: str) -> None:
@@ -154,7 +164,7 @@ def _unchecked_commit(repo: Path, files: dict[str, bytes], message: str) -> None
     ids=["message", "added-content"],
 )
 def test_a_push_with_a_hit_in_its_commits_is_blocked_and_names_no_term(repo, files, message):
-    git(repo, "switch", "-q", "-c", "feat/innocent")
+    _new_branch(repo)
     _unchecked_commit(repo, files, message)
     result = git(repo, "push", "-q", "origin", "HEAD")
     assert result.returncode != 0
@@ -163,15 +173,63 @@ def test_a_push_with_a_hit_in_its_commits_is_blocked_and_names_no_term(repo, fil
 
 
 def test_a_hit_in_an_older_commit_of_the_pushed_range_blocks_too(repo):
-    git(repo, "switch", "-q", "-c", "feat/innocent")
+    _new_branch(repo)
     _unchecked_commit(repo, {"a.md": b"ok\n"}, "docs: globex")
     _unchecked_commit(repo, {"b.md": b"fine\n"}, "docs: harmless")
     assert git(repo, "push", "-q", "origin", "HEAD").returncode != 0
 
 
 def test_a_push_of_clean_commits_with_ordinary_words_passes(repo):
-    git(repo, "switch", "-q", "-c", "feat/innocent")
-    _unchecked_commit(repo, {"a.md": b"an acmeish, minimal globexdb\n"}, "docs: a minimal acmeish note")
+    _new_branch(repo)
+    _unchecked_commit(repo, {"a.md": b"an acmeish, minimal note\n"}, "docs: a minimal acmeish note")
     assert git(repo, "push", "-q", "origin", "HEAD").returncode == 0
     _unchecked_commit(repo, {"b.md": b"more\n"}, "docs: more")
     assert git(repo, "push", "-q", "origin", "HEAD").returncode == 0
+
+
+def _pushes(repo: Path, *refspec: str) -> subprocess.CompletedProcess[str]:
+    return git(repo, "push", "-q", "origin", *refspec)
+
+
+def _no_term_printed(result: subprocess.CompletedProcess[str]) -> bool:
+    words = set((result.stderr + result.stdout).lower().replace(":", " ").split())
+    return not {"acme", "globex", "zebra"} & words
+
+
+@pytest.mark.parametrize(
+    "content",
+    [b"++ acme\n", b"+++ acme\n", b"-- globex\n", b"ok\n\x00\x01 made by acme \x02\n"],
+    ids=["pp", "ppp", "dashes", "binary"],
+)
+def test_lines_that_look_like_diff_headers_and_binary_content_are_scanned(repo, content):
+    _new_branch(repo)
+    _unchecked_commit(repo, {"a.bin": content}, "docs: harmless")
+    result = _pushes(repo, "HEAD")
+    assert result.returncode != 0
+    assert "confidential term #" in result.stderr + result.stdout
+    assert _no_term_printed(result)
+
+
+def test_a_term_added_while_resolving_a_merge_is_scanned(repo):
+    first = _new_branch(repo)
+    _unchecked_commit(repo, {"f.md": b"one\n"}, "docs: a")
+    git(repo, "switch", "-q", "-c", "feat/b-" + uuid.uuid4().hex[:6], "initial")
+    _unchecked_commit(repo, {"g.md": b"two\n"}, "docs: b")
+    merge = git(repo, "-c", "core.hooksPath=/dev/null", "merge", "-q", "--no-ff", "--no-commit", first)
+    assert merge.returncode == 0, merge.stderr
+    (repo / "h.md").write_text("resolved by acme\n", encoding="utf-8")
+    git(repo, "add", "-A")
+    done = git(repo, "-c", "core.hooksPath=/dev/null", "commit", "-q", "-m", "docs: merge a")
+    assert done.returncode == 0, done.stderr
+    result = _pushes(repo, "HEAD")
+    assert result.returncode != 0
+    assert _no_term_printed(result)
+
+
+def test_the_pushed_ref_is_scanned_not_the_checked_out_branch(repo):
+    leaky = _new_branch(repo)
+    _unchecked_commit(repo, {"a.md": b"ok\n"}, "docs: acme")
+    clean = _new_branch(repo, base="initial")
+    blocked = _pushes(repo, f"{leaky}:refs/heads/feat/other-{uuid.uuid4().hex[:6]}")
+    assert blocked.returncode != 0
+    assert _pushes(repo, clean).returncode == 0

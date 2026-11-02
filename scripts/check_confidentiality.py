@@ -11,12 +11,12 @@ The terms never live in the repository: a list in a public repository, even hash
 commit in the range, old ones included.
 Findings name the location and the term's number, never the term, because CI logs of a public repository are public.
 
-Matching is case-insensitive after Unicode normalization (NFKC, invisible characters removed), and always whole-word:
-a term matches only where no letter or digit touches it, so it never fires inside an ordinary word (a short term in
-`minimal`), but does inside punctuation, markdown and identifiers split by `_` or `-` (`term_cli`, `**term**`,
-`term's`). The words of a phrase may be joined by anything that isn't a letter or digit, line breaks included, or by
-nothing. Binary files are scanned through their printable
-strings, as `strings` would show them.
+Matching is case-insensitive after Unicode normalization (NFKC, invisible characters removed). Words of six letters or
+more match anywhere, also inside identifiers (`TermCorp`, `termdb`, `term2024`); shorter ones, typically first names,
+and phrases only where no letter touches them, so they never fire inside an ordinary word (a short term in
+`minimal`), but do next to punctuation, markdown, digits and `_` (`**term**`, `term's`, `term_cli`). The words of a
+phrase may be joined by anything that isn't a letter or digit, line breaks included, or by nothing. Binary files are
+scanned through their printable strings, as `strings` would show them.
 
 `--identity` also refuses an email git made up from the machine's name (`name@Some-MacBook-Air.local`), with or
 without terms: it names a machine, not a mailbox, and would be published with every commit.
@@ -44,8 +44,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 DEFAULT_TERMS_FILE = Path("~/.config/heinzel-dev/confidential-terms")
-# A word boundary that counts `_` as punctuation (`\b` does not): no letter or digit may touch the term.
-NOT_ALNUM_BEFORE, NOT_ALNUM_AFTER = r"(?<![^\W_])", r"(?![^\W_])"
+ANYWHERE = 6  # single words at least this long match inside other words too
+NOT_A_LETTER_BEFORE, NOT_A_LETTER_AFTER = r"(?<![^\W\d_])", r"(?![^\W\d_])"
 PRINTABLE = re.compile(rb"[\x20-\x7e]{4,}")
 # Domains that name a machine or a home or company network, not a mailbox; git builds such an email from the hostname
 # when user.email isn't set.
@@ -84,7 +84,9 @@ def patterns(terms: Iterable[str]) -> list[re.Pattern[str]]:
     for term in terms:
         words = normalize(term).split()
         body = r"[\W_]*".join(map(re.escape, words))
-        compiled.append(re.compile(NOT_ALNUM_BEFORE + body + NOT_ALNUM_AFTER, re.IGNORECASE))
+        if len(words) > 1 or len(words[0]) < ANYWHERE:
+            body = NOT_A_LETTER_BEFORE + body + NOT_A_LETTER_AFTER
+        compiled.append(re.compile(body, re.IGNORECASE))
     return compiled
 
 
@@ -115,7 +117,9 @@ def _git(*args: str) -> str:
         msg = "Git is required to inspect repository content"
         raise RuntimeError(msg)
     # Fixed Git operations with operand boundaries
-    return subprocess.run([executable, *args], check=True, capture_output=True, text=True, timeout=60).stdout  # noqa: S603
+    return subprocess.run(  # noqa: S603
+        [executable, *args], check=True, capture_output=True, text=True, errors="replace", timeout=60
+    ).stdout
 
 
 def _revision(name: str) -> str:
@@ -146,35 +150,86 @@ def _range(text: str) -> list[str]:
     return [_revision(text)]
 
 
-def _push_range() -> list[str]:
-    """What a push sends.
+def _known(sha: str) -> bool:
+    try:
+        _git("cat-file", "-e", f"{_revision(sha)}^{{commit}}")
+    except (ValueError, subprocess.CalledProcessError):
+        return False
+    return True
 
-    That is `$PRE_COMMIT_FROM_REF..$PRE_COMMIT_TO_REF` as the pre-push hook sets them, else every commit of HEAD that
-    no remote branch has yet. Nothing is exempt: old commits in the range are scanned like new ones.
+
+def _pushed_refs() -> list[tuple[str, str]]:
+    """The `(local sha, remote sha)` of each ref git is about to push, from the pre-push hook's standard input."""
+    if sys.stdin is None or sys.stdin.isatty():
+        return []
+    sha = r"[0-9a-f]{40}|[0-9a-f]{64}"
+    refs = []
+    for line in sys.stdin.read().splitlines():
+        parts = line.split()
+        if len(parts) == 4 and re.fullmatch(sha, parts[1]) and re.fullmatch(sha, parts[3]):  # noqa: PLR2004
+            refs.append((parts[1], parts[3]))
+    return refs
+
+
+def _push_range() -> list[str]:
+    """What a push sends: the commits reachable from what is pushed that the remote has not got.
+
+    The ref and sha come from the hook's standard input (so `git push origin other:name` scans `other`, not HEAD); else
+    from `$PRE_COMMIT_FROM_REF` and `$PRE_COMMIT_TO_REF`; else HEAD. A new ref counts every commit no remote branch
+    has. Nothing is exempt: old commits in the range are scanned like new ones.
     """
-    start, end = os.environ.get("PRE_COMMIT_FROM_REF", ""), os.environ.get("PRE_COMMIT_TO_REF") or "HEAD"
-    if start and set(start) != {"0"}:
-        return [f"{_revision(start)}..{_revision(end)}"]
-    return [_revision(end), "--not", "--remotes"]
+    tips, bases = [], []
+    for local, remote in _pushed_refs():
+        if set(local) != {"0"}:  # a deletion sends no commits
+            tips.append(_revision(local))
+        if set(remote) != {"0"} and _known(remote):
+            bases.append(_revision(remote))
+    if not tips:
+        start, end = os.environ.get("PRE_COMMIT_FROM_REF", ""), os.environ.get("PRE_COMMIT_TO_REF") or "HEAD"
+        tips = [_revision(end)]
+        if start and set(start) != {"0"} and _known(start):
+            bases = [_revision(start)]
+    return [*tips, "--not", *bases, "--remotes"]
+
+
+def _hunk(header: re.Match[str]) -> tuple[int, int, int]:
+    """Old line count, first new line and new line count of a hunk header (a missing count is 1)."""
+    old, first, new = header.groups(default="1")
+    return int(old), int(first), int(new)
+
+
+def _body_line(line: str) -> tuple[bool, int, int]:
+    """Whether a hunk body line is an added one, and how many old and new lines it uses."""
+    if line.startswith("+"):
+        return True, 0, 1
+    if line.startswith("-"):
+        return False, 1, 0
+    return (False, 0, 0) if line.startswith("\\") else (False, 1, 1)
 
 
 def added_lines(diff: str) -> Iterator[tuple[str, list[tuple[int, str]]]]:
     """The added lines of a zero-context diff, per file, with their line numbers in the new file.
 
+    Hunks are read by their line counts, so an added line that looks like a header (`++ text`) stays content.
+
     Yields:
         `(path, [(line number, text)])` for each file with added lines.
     """
-    path, found, number = "", [], 0
-    for line in diff.splitlines():
-        if line.startswith("+++ "):
+    path, found, number, old_left, new_left = "", [], 0, 0, 0
+    for line in diff.split("\n"):
+        if old_left > 0 or new_left > 0:
+            added, old_used, new_used = _body_line(line)
+            if added:
+                found.append((number, line[1:]))
+            old_left, new_left, number = old_left - old_used, new_left - new_used, number + new_used
+        elif line.startswith("diff --git "):
             if found:
                 yield path, found
-            path, found = line[4:].removeprefix("b/"), []
-        elif hunk := re.match(r"@@ -\S+ \+(\d+)", line):
-            number = int(hunk[1])
-        elif line.startswith("+") and not line.startswith("+++"):
-            found.append((number, line[1:]))
-            number += 1
+            path, found = "", []
+        elif line.startswith("+++ "):
+            path = line[4:].removeprefix("b/")
+        elif hunk := re.match(r"@@ -\d+(?:,(\d+))? \+(\d+)(?:,(\d+))? @@", line):
+            old_left, number, new_left = _hunk(hunk)
     if found:
         yield path, found
 
@@ -182,22 +237,28 @@ def added_lines(diff: str) -> Iterator[tuple[str, list[tuple[int, str]]]]:
 def _push_sources() -> Iterator[tuple[str, str]]:
     """The messages, author lines, paths and added content of the commits being pushed.
 
+    Merges are diffed against each parent and binary files as text, so nothing added escapes.
+
     Yields:
         `(where, text)` pairs to scan.
     """
     for sha in _git("rev-list", *_push_range(), "--").split():
         yield f"commit {sha[:12]}", _git("log", "-1", "--format=%an <%ae>%n%cn <%ce>%n%B", sha)
-        for path in _git("diff-tree", "--no-commit-id", "--name-only", "-r", "-z", "--root", sha).split("\0"):
+        names = _git("diff-tree", "--no-commit-id", "--name-only", "-r", "-m", "-z", "--root", sha)
+        for path in dict.fromkeys(names.split("\0")):
             if path:
-                yield f"commit {sha[:12]} {path} (path)", path
-        diff = _git("diff-tree", "-p", "-U0", "--no-color", "--no-renames", "--root", sha)
-        for path, lines in added_lines(diff):
+                yield f"commit {sha[:12]} (path)", path
+        diff = _git(
+            "-c", "core.quotepath=false", "diff-tree", "-p", "-m", "--text", "-U0", "--no-color", "--no-renames",
+            "--no-commit-id", "--root", sha,
+        )  # fmt: skip
+        for index, (_, lines) in enumerate(added_lines(diff), start=1):
             # Each added line sits on its real line number, so a finding names the right line; lines between are a
-            # filler no phrase can span.
+            # filler no phrase can span. The file is named by its number in the commit, never by text read from it.
             rows = ["0"] * lines[-1][0]
             for number, text in lines:
                 rows[number - 1] = text
-            yield f"commit {sha[:12]} {path}", "\n".join(rows)
+            yield f"commit {sha[:12]} changed file {index}", "\n".join(rows)
 
 
 def _read(path: Path) -> str | None:

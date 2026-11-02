@@ -33,20 +33,21 @@ def findings(terms, text):
     return sorted((f.line, f.term) for f in confidentiality.scan("f", text, confidentiality.patterns(terms)))
 
 
-def test_a_term_inside_a_longer_word_does_not_match():
-    text = "acmeish and subacme\nacme2 and 2acme\nminimal"
+def test_a_short_term_inside_a_longer_word_does_not_match():
+    text = "acmeish and subacme\nminimal\nAcmeCorp"
     assert findings(["acme"], text) == []
-    assert findings(["mini", "globex"], "minimal\nglobexdb\nunglobex\nminimum") == []
+    assert findings(["mini"], "minimal\nminimum") == []
 
 
-def test_the_term_alone_or_next_to_punctuation_and_markdown_matches():
-    text = "ACME\nwe, acme.\n**acme**\n`acme`\n[acme](x)\n(acme)\nacme's\nacme_cli\nmy-acme-cli\n# acme\n> acme: yes"
-    assert findings(["acme"], text) == [(n, 1) for n in range(1, 12)]
+def test_the_term_alone_or_next_to_punctuation_digits_and_markdown_matches():
+    text = "ACME\nwe, acme.\n**acme**\n`acme`\n[acme](x)\n(acme)\nacme's\nacme_cli\nmy-acme-cli\n# acme\n"
+    text += "> acme: yes\nacme2\n2acme"
+    assert findings(["acme"], text) == [(n, 1) for n in range(1, 14)]
 
 
-def test_long_terms_are_whole_word_too():
-    text = "globexdb\nmy_globex_cli\nGLOBEX\nunglobex\n[globex]"
-    assert findings(["globex"], text) == [(2, 1), (3, 1), (5, 1)]
+def test_long_terms_match_anywhere_also_inside_identifiers_and_next_to_digits():
+    text = "globexdb\nmy_globex_cli\nGLOBEX\nunglobex\n[globex]\nGlobexCorp\nglobex2024\n2globex\nmyGlobexDb"
+    assert findings(["globex"], text) == [(n, 1) for n in range(1, 10)]
 
 
 def test_a_finding_per_term_and_line_with_the_right_number():
@@ -59,7 +60,7 @@ def test_phrases_match_across_separators_and_line_breaks_or_glued():
 
 
 def test_a_phrase_does_not_match_inside_longer_words_or_with_a_word_missing():
-    text = "reproject zebras\nproject zebra2\nproject\nx\nzebra\nthe *project zebra*, yes"
+    text = "reproject zebras\nproject zebras\nproject\nx\nzebra\nthe *project zebra*, yes"
     assert findings(["project zebra"], text) == [(6, 1)]
 
 

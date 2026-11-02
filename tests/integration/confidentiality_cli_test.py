@@ -128,5 +128,5 @@ def test_push_range_scans_added_lines_with_their_line_numbers(tmp_path):
         timeout=10,
     )
     assert result.returncode == 1
-    assert "doc.md:3: confidential term #1" in result.stderr
+    assert "changed file 1:3: confidential term #1" in result.stderr
     assert "fictional-sensitive-marker" not in result.stderr
