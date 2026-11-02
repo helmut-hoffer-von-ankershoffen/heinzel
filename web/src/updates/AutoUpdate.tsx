@@ -3,40 +3,13 @@
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
-import { token } from "@/api/token";
 import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
 import { useAutoUpdateSetting } from "./AutoUpdateToggle";
+import { type AutoUpdateStatus, call, KEY } from "./autoUpdateApi";
 import { updateTransport } from "./controller";
 
-export type AutoUpdateStatus = {
-  enabled: boolean;
-  reason: string | null;
-  phase: "off" | "idle" | "waiting" | "countdown" | "applying";
-  version: string;
-  core: string | null;
-  plugins: Record<string, string>;
-  seconds_left: number | null;
-  apply_at: string | null;
-  next_window_at: string | null;
-  postponements: number;
-  message: string | null;
-};
-
-const KEY = ["web", "auto-update"] as const;
-
-async function call(method: "GET" | "POST", path: string, signal?: AbortSignal): Promise<AutoUpdateStatus> {
-  const response = await fetch(
-    new Request(new URL(`/api/auto-update${path}`, window.location.origin), {
-      method,
-      cache: "no-store",
-      signal,
-      headers: { Authorization: `Bearer ${token() ?? ""}` },
-    }),
-  );
-  if (!response.ok) throw new Error(`Automatic updates answered ${response.status}.`);
-  return (await response.json()) as AutoUpdateStatus;
-}
+export type { AutoUpdateStatus } from "./autoUpdateApi";
 
 /** What will be updated, in plain words. */
 export function updateSummary(status: AutoUpdateStatus): string {

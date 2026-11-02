@@ -322,6 +322,22 @@ describe("Settings: Preferences, Customize, This computer", () => {
     expect(await within(dialog).findByRole("switch", { name: "Automatic updates" })).toBeInTheDocument();
   });
 
+  it("disables Automatic updates and says why while hz runs from a source checkout", async () => {
+    const { calls } = mockApi({
+      ...answers,
+      "/api/auto-update": { phase: "off", development: "Updates are managed by your source checkout." },
+    });
+    const user = userEvent.setup();
+    renderAt("/doctor?settings=updates");
+    const dialog = await screen.findByRole("dialog", { name: "Settings" });
+    const toggle = await within(dialog).findByRole("switch", { name: "Automatic updates" });
+    await waitFor(() => expect(toggle).toBeDisabled());
+    expect(toggle).toHaveAttribute("aria-checked", "false");
+    expect(dialog).toHaveTextContent("Updates are managed by your source checkout.");
+    await user.click(toggle);
+    expect(calls.some((call) => call.url.includes("/system/config/set"))).toBe(false);
+  });
+
   it("shows a configuration file in Finder through hz system config reveal", async () => {
     const { calls } = mockApi(answers);
     const user = userEvent.setup();

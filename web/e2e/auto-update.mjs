@@ -24,6 +24,49 @@ try {
   const popup = page.getByRole("alertdialog");
   const seconds = async () => Number((await popup.textContent()).match(/in (\d+) s/)[1]);
 
+  // Both switches are one setting, on by default: off in the footer's Updates pane shows off in Settings → Updates,
+  // and on there shows on in the pane, without a reload.
+  const checked = async (control, value) =>
+    until(async () => (await control.getAttribute("aria-checked")) === value, {
+      timeout: 15000,
+      interval: 200,
+      message: `The switch didn't show ${value}`,
+    });
+  // A fresh state folder opens the first-run wizard over the app: close it, as a person would.
+  const wizard = page.getByRole("dialog", { name: "Set up hz" });
+  await page.waitForTimeout(1500);
+  if (await wizard.isVisible()) {
+    await wizard.getByRole("button", { name: "Close setup" }).click();
+    await wizard.waitFor({ state: "hidden", timeout: 15000 });
+  }
+  const updates = page.getByRole("button", { name: /^(Up to date|Update available|Updates)/ });
+  await updates.click();
+  const footerSwitch = page.getByRole("switch", { name: "Automatic updates" });
+  await footerSwitch.waitFor({ timeout: 15000 });
+  await checked(footerSwitch, "true");
+  result.footerEnabled = await footerSwitch.isEnabled();
+  await footerSwitch.click();
+  await checked(footerSwitch, "false");
+  await page.keyboard.press("Escape");
+  // Open Settings → Updates in this window, as a link in the app does: no reload, the same query cache.
+  await page.evaluate(() => {
+    history.pushState(null, "", "/?settings=updates");
+    dispatchEvent(new PopStateEvent("popstate"));
+  });
+  const settings = page.getByRole("dialog", { name: "Settings" });
+  await settings.waitFor({ timeout: 15000 });
+  const settingsSwitch = settings.getByRole("switch", { name: "Automatic updates" });
+  await checked(settingsSwitch, "false");
+  result.settingsShowsFooterOff = true;
+  await settingsSwitch.click();
+  await checked(settingsSwitch, "true");
+  await page.keyboard.press("Escape");
+  await settings.waitFor({ state: "hidden", timeout: 15000 });
+  await updates.click();
+  await checked(footerSwitch, "true");
+  result.footerShowsSettingsOn = true;
+  await page.keyboard.press("Escape");
+
   // Publish the fake release once the app is ready: a check finds it within seconds; the countdown starts at 30.
   writeFileSync(`${folder}/release`, "99.0.0\n");
   await popup.waitFor({ timeout: 60000 });

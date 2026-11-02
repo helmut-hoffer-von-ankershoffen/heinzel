@@ -50,7 +50,9 @@ def test_countdown_postpone_and_apply_with_a_fake_newer_release(tmp_path):
         "HZ_LOG_DIR": str(tmp_path / "log"),
         "HZ_SYSTEM_DAEMON__UNIT_DIR": str(tmp_path / "units"),
         "HZ_SYSTEM_CREDENTIAL__BACKEND": "environment",
-        "HZ_AUTO_UPDATE": "true",
+        # On by default: no HZ_AUTO_UPDATE, so both switches can change it. This hz runs from a checkout under pytest,
+        # which is development; the test override lets it drive the real flow all the same.
+        "HEINZEL_AUTO_UPDATE_TEST": "1",
         "HZ_UPDATE_CHANNEL": "stable",
         "HZ_E2E_FAKE_RELEASE": str(fake),
         "PYTHONPATH": str(REPO / "tests" / "fixtures" / "auto_update"),
@@ -89,6 +91,9 @@ def test_countdown_postpone_and_apply_with_a_fake_newer_release(tmp_path):
                 stream.close()
     assert driven.returncode == 0, driven.stderr + driven.stdout
     result = json.loads(driven.stdout.strip().splitlines()[-1])
+    assert result["footerEnabled"] is True
+    assert result["settingsShowsFooterOff"] is True
+    assert result["footerShowsSettingsOn"] is True
     assert "hz updates itself in" in result["text"]
     assert "hz 99.0.0, heinzel-example 9.0.0" in result["text"]
     assert result["buttons"] == ["Postpone 1 hour"]

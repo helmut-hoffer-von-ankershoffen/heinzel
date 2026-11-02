@@ -3,6 +3,7 @@
 import json
 import random
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -193,6 +194,7 @@ def updater(  # noqa: PLR0913 - one option per condition
         update=update,
         trial=lambda version: starts and version == "9.9.9",
         restore=restored.append,
+        development=None,  # an installed hz; the development facts have their own tests
     )
     made.restored = restored
     return made, clock, calls, kernel
@@ -233,7 +235,9 @@ def test_a_postpone_from_any_window_holds_for_every_window_and_a_reload(make_ker
     advance(made, clock, 60)
     assert calls["update"] == 0
     # A second server object, as after a reload of the plan from the state file, sees the same postponement.
-    again = AutoUpdater(kernel, restart=lambda: None, clock=clock, version="1.0.0", settings=made._read_settings)
+    again = AutoUpdater(
+        kernel, restart=lambda: None, development=None, clock=clock, version="1.0.0", settings=made._read_settings
+    )
     assert again.plan.postponements == 1
     assert again.plan.window_at == status.next_window_at
 
@@ -294,12 +298,14 @@ def test_after_the_restart_the_new_version_reports_success_or_the_old_one_report
     advance(made, clock, 5 * 60)
     advance(made, clock, 30)
     settings = made._read_settings
-    after = AutoUpdater(kernel, restart=lambda: None, clock=clock, version="9.9.9", settings=settings)
+    after = AutoUpdater(kernel, restart=lambda: None, development=None, clock=clock, version="9.9.9", settings=settings)
     assert after.status().message == "hz is up to date: 9.9.9, updated automatically."
     assert not after.plan.pending
     made.plan.restarting_to = "9.9.9"
     made._save()
-    still_old = AutoUpdater(kernel, restart=lambda: None, clock=clock, version="1.0.0", settings=settings)
+    still_old = AutoUpdater(
+        kernel, restart=lambda: None, development=None, clock=clock, version="1.0.0", settings=settings
+    )
     assert still_old.status().message == auto.failure_message("1.0.0")
     assert still_old.plan.retry_at == clock.now + timedelta(hours=6)
 
@@ -314,6 +320,7 @@ def test_the_endpoints_are_behind_the_token_and_share_one_plan(make_kernel, tmp_
     assert answer.status_code == 200
     assert answer.headers["Cache-Control"] == "no-store"
     assert answer.json()["phase"] == "off"
+    assert answer.json()["development"] == auto.SOURCE_CHECKOUT  # these tests run from a checkout
     made: AutoUpdater = app.state.auto_update
     auto.found(made.plan, "9.9.9", {}, datetime.now(UTC))
     auto.step(made.plan, datetime.now(UTC), busy=False)
@@ -342,8 +349,23 @@ def test_a_new_version_that_does_not_start_is_never_restarted_into_and_the_old_o
     assert made.plan.restarting_to is None
 
 
-def test_without_a_release_tag_to_go_back_to_the_message_says_how_to_recover(make_kernel, tmp_path):
-    made, clock, calls, _ = updater(make_kernel, tmp_path, starts=False, pin="index")
+def test_from_the_package_index_the_running_version_is_put_back_and_held_until_a_person_updates(make_kernel, tmp_path):
+    made, clock, calls, kernel = updater(make_kernel, tmp_path, starts=False, pin="index")
+    kernel.bind(Installation, Receipt(CorePin("index", "heinzel"), tmp_path))
+    advance(made, clock, 5 * 60)
+    advance(made, clock, 30)
+    assert calls["restart"] == 0
+    assert made.restored == ["heinzel==1.0.0"]
+    assert "hz 1.0.0 was put back" in (made.status().message or "")
+    kernel.bind(Installation, Receipt(CorePin("index", "heinzel", ref="==1.0.0"), tmp_path))
+    assert "pinned" in (made.reason() or "")  # held there: no update loop back to the version that didn't start
+
+
+def test_without_a_version_to_go_back_to_the_message_says_how_to_recover(make_kernel, tmp_path):
+    made, clock, calls, kernel = updater(make_kernel, tmp_path, starts=False)
+    kernel.bind(
+        Installation, Receipt(CorePin("ref", "heinzel", ref="main", git="https://github.com/org/heinzel"), tmp_path)
+    )
     advance(made, clock, 5 * 60)
     advance(made, clock, 30)
     assert calls["restart"] == 0
@@ -356,3 +378,77 @@ def test_a_trial_start_needs_the_new_server_to_answer_with_the_new_version():
     assert auto._answers("http://example.test:1/#token=x", "1.0.0") is False
     assert auto._answers("http://127.0.0.1:1/", "1.0.0") is False  # no token
     assert auto._answers("http://127.0.0.1:1/#token=x", "1.0.0") is False  # nothing listens
+
+
+# Development: judged by facts, never by a setting ---------------------------------------------------------------------
+
+INSTALLED = {
+    "package": Path("/tools/heinzel/lib/python3.13/site-packages/heinzel"),
+    "prefix": Path("/tools/heinzel"),
+    "editable": lambda: False,
+}
+
+
+def installed_state(tmp_path, monkeypatch):
+    """A state folder that is the user's default, as for an installed hz started by its person."""
+    state = tmp_path / "home-state"
+    monkeypatch.setattr(auto, "_default_state_dir", lambda: state)
+    return state
+
+
+def test_an_installed_hz_with_the_users_state_folder_is_not_development(tmp_path, monkeypatch):
+    state = installed_state(tmp_path, monkeypatch)
+    assert auto.development_reason(state, environ={"HOME": "/home/x"}, **INSTALLED) is None
+
+
+@pytest.mark.parametrize(
+    "variable",
+    ["HZ_DEV", "HZ_TEST", "CI", "PYTEST_CURRENT_TEST", "TEST_WORKER_INDEX", "MAKELEVEL", "npm_lifecycle_event"],
+)
+def test_a_development_test_ci_or_dev_server_variable_means_development(tmp_path, monkeypatch, variable):
+    state = installed_state(tmp_path, monkeypatch)
+    assert auto.development_reason(state, environ={variable: "1"}, **INSTALLED) == auto.DEVELOPMENT
+
+
+def test_a_state_folder_other_than_the_users_default_means_development(tmp_path, monkeypatch):
+    installed_state(tmp_path, monkeypatch)
+    assert auto.development_reason(tmp_path / "other", environ={}, **INSTALLED) == auto.DEVELOPMENT
+
+
+def test_a_source_tree_an_editable_install_or_a_checkouts_environment_means_development(tmp_path, monkeypatch):
+    state = installed_state(tmp_path, monkeypatch)
+    source = {**INSTALLED, "package": tmp_path / "src" / "heinzel"}
+    assert auto.development_reason(state, environ={}, **source) == auto.SOURCE_CHECKOUT
+    editable = {**INSTALLED, "editable": lambda: True}
+    assert auto.development_reason(state, environ={}, **editable) == auto.SOURCE_CHECKOUT
+    (tmp_path / "checkout" / ".git").mkdir(parents=True)
+    in_checkout = {**INSTALLED, "prefix": tmp_path / "checkout" / ".venv"}
+    assert auto.development_reason(state, environ={}, **in_checkout) == auto.SOURCE_CHECKOUT
+
+
+def test_the_test_override_counts_none_of_the_facts(tmp_path):
+    environ = {"HEINZEL_AUTO_UPDATE_TEST": "1", "CI": "true", "PYTEST_CURRENT_TEST": "x"}
+    assert auto.development_reason(tmp_path, environ=environ, package=tmp_path / "src" / "heinzel") is None
+
+
+def test_this_test_run_counts_as_development():
+    assert auto.development_reason(auto._default_state_dir()) is not None
+
+
+def test_while_developing_nothing_is_checked_scheduled_or_shown_and_the_switches_say_why(
+    make_kernel, tmp_path, monkeypatch
+):
+    made, clock, calls, _ = updater(make_kernel, tmp_path)
+    made.development = auto.SOURCE_CHECKOUT
+    made.plan.message = "an earlier message"
+    advance(made, clock, 10 * 60)
+    advance(made, clock, 60)
+    status = made.status()
+    assert calls == {"restart": 0, "update": 0}
+    assert not made.plan.pending  # never checked
+    assert (status.phase, status.enabled, status.message) == ("off", False, None)
+    assert status.development == status.reason == "Updates are managed by your source checkout."
+    started = []
+    monkeypatch.setattr("threading.Thread", lambda *_, **named: started.append(named))
+    made.start()
+    assert started == []  # no background loop at all

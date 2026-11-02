@@ -8,6 +8,7 @@ import { useConfig, useSetSetting } from "@/api/queries";
 import { t } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { RestartAndApply } from "@/lifecycle/RestartAndApply";
+import { useAutoUpdateDevelopment } from "@/updates/autoUpdateApi";
 import { ChannelStatement } from "./ChannelStatement";
 import { SchemaValue } from "./SchemaValue";
 import { controlFor, type JsonSchema, toToml, unwrap } from "./settingSchema";
@@ -48,7 +49,22 @@ function asConfig(value: unknown): string {
   return typeof value === "string" ? value : toToml(value);
 }
 
+const AUTO_UPDATE = "hz.auto_update";
+
 export function Row({ setting }: { setting: SchemaSettingInfo }) {
+  return `${setting.section}.${setting.key}` === AUTO_UPDATE ? (
+    <AutoUpdateRow setting={setting} />
+  ) : (
+    <SettingRowEditor setting={setting} managed={null} />
+  );
+}
+
+/** Automatic updates never run while hz runs for development: its switch is off, disabled, and says why. */
+function AutoUpdateRow({ setting }: { setting: SchemaSettingInfo }) {
+  return <SettingRowEditor setting={setting} managed={useAutoUpdateDevelopment()} />;
+}
+
+function SettingRowEditor({ setting, managed }: { setting: SchemaSettingInfo; managed: string | null }) {
   const save = useSetSetting();
   const [staged, setStaged] = useState<unknown | undefined>(undefined);
   const [editorVersion, setEditorVersion] = useState(0);
@@ -65,7 +81,7 @@ export function Row({ setting }: { setting: SchemaSettingInfo }) {
   // Lists get the row's whole width, under the label; single values sit on its right.
   const wide =
     control.kind === "table" || control.kind === "chips" || (control.kind === "installed" && control.multiple);
-  const disabled = fromEnv || save.isPending;
+  const disabled = fromEnv || managed !== null || save.isPending;
   // A live setting needs no restart: the server reads it again by itself, so a change is saved at once.
   const live = schema?.["x-live"] === true;
   const commit = (next: unknown) =>
@@ -73,7 +89,7 @@ export function Row({ setting }: { setting: SchemaSettingInfo }) {
   const editor = secret ? (
     <SecretValue id={inputId} disabled={disabled} onCommit={commit} />
   ) : typeof value === "boolean" || control.kind === "switch" ? (
-    <Switch id={inputId} on={value === true} disabled={disabled} onToggle={() => commit(!value)} />
+    <Switch id={inputId} on={value === true && managed === null} disabled={disabled} onToggle={() => commit(!value)} />
   ) : schema && control.kind !== "text" ? (
     <SchemaValue
       id={wide ? undefined : inputId}
@@ -126,7 +142,7 @@ export function Row({ setting }: { setting: SchemaSettingInfo }) {
               {title}
             </label>
           )}
-          <p className="mt-0.5 text-sm text-muted-foreground">{setting.description}</p>
+          <p className="mt-0.5 text-sm text-muted-foreground">{managed ?? setting.description}</p>
           {setting.key === "update_channel" && <ChannelStatement value={setting.value} />}
           {fromEnv && <p className="mt-1 text-xs text-warn">{t("settings.fromEnv", { env: setting.env })}</p>}
           {save.error && (
