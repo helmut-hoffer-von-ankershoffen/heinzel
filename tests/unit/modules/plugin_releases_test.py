@@ -51,7 +51,7 @@ def test_no_index_plugins_asks_nothing():
     assert PyPIPluginReleases(Receipt([], {}), fetch).newer(5.0) == {}
 
 
-def test_a_yanked_release_is_never_offered_and_the_upload_time_comes_with_the_release():
+def test_a_yanked_release_is_never_offered_and_its_age_is_its_last_upload():
     def fetch(url, timeout):
         return {
             "releases": {
@@ -68,5 +68,23 @@ def test_a_yanked_release_is_never_offered_and_the_upload_time_comes_with_the_re
 
     releases = PyPIPluginReleases(Receipt([CorePin("index", "heinzel-x")], {"heinzel-x": "1.0.0"}), fetch)
     assert releases.newer_releases(5.0) == {
-        "heinzel-x": PluginRelease("1.1.0", datetime(2026, 11, 1, 9, 0, tzinfo=UTC)),  # the first upload
+        "heinzel-x": PluginRelease("1.1.0", datetime(2026, 11, 1, 10, 0, tzinfo=UTC)),  # the last upload
     }
+
+
+def test_one_release_is_as_old_as_its_last_file_and_a_yanked_one_is_none():
+    asked = []
+
+    def fetch(url, timeout):
+        asked.append(url)
+        return {
+            "urls": [
+                {"upload_time_iso_8601": "2026-10-01T08:00:00Z", "yanked": False},
+                {"upload_time_iso_8601": "2026-11-02T08:00:00Z", "yanked": "x" in url},  # added today
+            ]
+        }
+
+    releases = PyPIPluginReleases(Receipt([], {}), fetch)
+    assert releases.release("heinzel", "1.2.3", 5.0) == PluginRelease("1.2.3", datetime(2026, 11, 2, 8, tzinfo=UTC))
+    assert asked == ["https://pypi.org/pypi/heinzel/1.2.3/json"]
+    assert releases.release("heinzel-x", "1.0.0", 5.0) is None

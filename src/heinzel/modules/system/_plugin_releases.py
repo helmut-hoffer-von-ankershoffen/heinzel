@@ -91,7 +91,10 @@ class PyPIPluginReleases(PluginReleases):
         return newer
 
     def _latest(self, name: str, timeout: float) -> PluginRelease | None:
-        """The highest stable release on PyPI none of whose files is yanked, with its first upload time."""
+        """The highest stable release on PyPI none of whose files is yanked, with its last upload time.
+
+        The last one: a file added today to an older release is as new as today.
+        """
         data: object = self._fetch(f"{PYPI}/pypi/{urllib.parse.quote(name)}/json", timeout)
         releases = cast("dict[str, object]", data).get("releases") if isinstance(data, dict) else None
         if not isinstance(releases, dict):
@@ -106,8 +109,21 @@ class PyPIPluginReleases(PluginReleases):
             if parsed.is_prerelease or parsed.is_devrelease or uploads is None:
                 continue
             if best is None or parsed > best[0]:
-                best = (parsed, min(uploads, default=None))
+                best = (parsed, max(uploads, default=None))
         return None if best is None else PluginRelease(str(best[0]), best[1])
+
+    def release(self, name: str, version: str, timeout: float) -> PluginRelease | None:
+        """Release `version` of `name` on PyPI with its last upload time; None if it's missing, yanked or has no files.
+
+        Raises:
+            OSError: If PyPI can't be reached or answers with an error.
+            ValueError: If the answer is too large or not JSON.
+        """
+        url = f"{PYPI}/pypi/{urllib.parse.quote(name)}/{urllib.parse.quote(version)}/json"
+        data: object = self._fetch(url, timeout)
+        files = cast("dict[str, object]", data).get("urls") if isinstance(data, dict) else None
+        uploads = _uploads(files)
+        return None if not uploads else PluginRelease(version, max(uploads))
 
 
 def _uploads(files: object) -> list[datetime] | None:

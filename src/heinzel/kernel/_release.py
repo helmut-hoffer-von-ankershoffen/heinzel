@@ -44,7 +44,7 @@ class PluginRelease:
 
     version: str
     uploaded_at: datetime | None
-    """When its first file was uploaded; None when the index can't tell, which counts as too new."""
+    """When its last file was uploaded; None when the index can't tell, which counts as too new."""
 
 
 class ReleaseSource:
@@ -104,6 +104,14 @@ class PluginReleases:
         """
         del timeout
         return {}
+
+    def release(self, name: str, version: str, timeout: float) -> PluginRelease | None:
+        """Release `version` of distribution `name` on the package index with its last upload time (hz's own too).
+
+        None when the index has no such unyanked release, which counts as too new; this base class never has one.
+        """
+        del name, version, timeout
+        return None
 
     def newer_releases(self, timeout: float) -> dict[str, PluginRelease]:
         """Like `newer`, with when each release was uploaded; this base class can't tell, so none counts as old."""
