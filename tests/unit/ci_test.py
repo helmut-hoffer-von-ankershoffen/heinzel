@@ -99,7 +99,10 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
         "gh workflow run ci.yml": "starts CI on the release pull request, which the bot's token doesn't",
     },
     "release-tag.yml": {'tag="v$(uv version --short)"': "tags a merged release commit"},
-    "claude-review.yml": {'files="$(git diff': "picks the review tier from the changed files"},
+    "claude-review.yml": {
+        'files="$(git diff': "picks the review tier from the changed files",
+        "uv run --script scripts/review_outcome.py": "judges a failed review; the job has no project environment",
+    },
     "update-prs.yml": {
         "gh pr list": "updates auto-merging pull requests with main",
         "threads='query(": "resolves the review threads of closed code-scanning alerts on auto-merging pull requests",

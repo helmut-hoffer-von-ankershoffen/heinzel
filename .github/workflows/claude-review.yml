@@ -5,6 +5,7 @@ name: Claude review
 # falls back to the secret CLAUDE_CODE_OAUTH_TOKEN (from `claude setup-token`), which runs on a Claude subscription.
 # Pull requests from forks get no secrets, so they are skipped, and so are events sent by bots (the action refuses
 # them): the update-prs merge of main into a branch, a release pull request opened by the bot.
+# A review that can't start on an external limit (credit, usage, rate, overload) warns and passes; other failures stay red.
 
 on:
   pull_request:
@@ -46,7 +47,9 @@ jobs:
           else tier=full; fi
           echo "tier=$tier" >> "$GITHUB_OUTPUT"
           echo "Review tier: $tier"
-      - if: steps.tier.outputs.tier == 'light'
+      - id: light
+        if: steps.tier.outputs.tier == 'light'
+        continue-on-error: true # judged by the last step
         uses: anthropics/claude-code-action@925afb53776cf1a2b738c6bdbed37b4d4000ef13 # v1.0.262
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -57,7 +60,9 @@ jobs:
             This pull request only changes documentation. Run the docs-reviewer agent on it (compare against
             origin/${{ github.base_ref }}) and post its findings and verdict as one pull request comment.
             The comment is public: never quote a confidential term, refer to it by file and line.
-      - if: steps.tier.outputs.tier == 'full'
+      - id: full
+        if: steps.tier.outputs.tier == 'full'
+        continue-on-error: true # judged by the last step
         uses: anthropics/claude-code-action@925afb53776cf1a2b738c6bdbed37b4d4000ef13 # v1.0.262
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -68,3 +73,10 @@ jobs:
             Use the review skill on this pull request (compare against origin/${{ github.base_ref }}).
             Post the merged findings and the GO / NO-GO verdict as one pull request comment.
             The comment is public: never quote a confidential term, refer to it by file and line.
+      - if: ${{ !cancelled() && (steps.light.outcome == 'failure' || steps.full.outcome == 'failure') }}
+        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          enable-cache: false
+      - name: Judge a failed review
+        if: ${{ !cancelled() && (steps.light.outcome == 'failure' || steps.full.outcome == 'failure') }}
+        run: uv run --script scripts/review_outcome.py "$RUNNER_TEMP/claude-execution-output.json"
