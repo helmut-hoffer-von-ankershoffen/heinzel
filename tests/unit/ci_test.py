@@ -859,6 +859,27 @@ def test_claude_review_skips_events_sent_by_bots():
         assert clause in condition
 
 
+def test_core_keeps_tested_pull_request_heads_while_plugins_keep_branch_updates():
+    workflow = yaml.safe_load((REPO / ".github/workflows/update-prs.yml").read_text(encoding="utf-8"))
+    steps = workflow["jobs"]["update"]["steps"]
+    branch_updates = [step for step in steps if "gh pr update-branch" in step.get("run", "")]
+
+    assert len(branch_updates) == 1
+    assert branch_updates[0].get("if") == "github.repository != 'helmut-hoffer-von-ankershoffen/heinzel'"
+    assert "select(.autoMergeRequest != null and (.isCrossRepository | not))" in branch_updates[0]["run"]
+    assert "actions/runs/$run/approve" in branch_updates[0]["run"]
+
+
+def test_closed_code_scanning_threads_are_still_resolved_in_core():
+    workflow = yaml.safe_load((REPO / ".github/workflows/update-prs.yml").read_text(encoding="utf-8"))
+    steps = workflow["jobs"]["update"]["steps"]
+    cleanup = [step for step in steps if "resolveReviewThread" in step.get("run", "")]
+
+    assert len(cleanup) == 1
+    assert "if" not in cleanup[0]
+    assert '[ "$state" != open ] || continue' in cleanup[0]["run"]
+
+
 def test_claude_review_prefers_the_api_key():
     """Each review step authenticates with ANTHROPIC_API_KEY and uses the subscription token only without one."""
     spec = yaml.safe_load((REPO / ".github" / "workflows" / "claude-review.yml").read_text(encoding="utf-8"))
