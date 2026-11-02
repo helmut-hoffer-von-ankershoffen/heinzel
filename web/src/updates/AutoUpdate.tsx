@@ -28,18 +28,16 @@ export function secondsLeft(status: AutoUpdateStatus | undefined, receivedAt: nu
 export function AutoUpdate() {
   const client = useQueryClient();
   const { on } = useAutoUpdateSetting();
-  // One plan, one query. How often it is asked follows this window's setting, never the last answer: a poll that
-  // saw "off" while the setting was being switched back on must not slow the next ones to once a minute (it hid the
-  // countdown for that minute). Every 2 s while on, so a countdown shows within 2 of its 30 seconds, also in a
-  // window in the background; a minute when off.
+  // A setting cached as "off" can be enabled in another window or the CLI without this window knowing. Keep
+  // polling every 2 s, also in the background, so each window can show the server's 30-second warning in time.
   const query = useQuery({
     queryKey: KEY,
     queryFn: ({ signal }) => call("GET", "", signal),
-    refetchInterval: on ? 2_000 : 60_000,
+    refetchInterval: 2_000,
     refetchIntervalInBackground: true,
     retry: false,
   });
-  // Turning the setting on or off, here or in another place, asks the server again at once.
+  // A setting change observed by this window asks the server again at once.
   const previous = useRef(on);
   useEffect(() => {
     if (previous.current === on) return;

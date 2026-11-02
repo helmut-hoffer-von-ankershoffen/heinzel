@@ -5,6 +5,7 @@ import { Providers, queryClient } from "@/App";
 import { keys } from "@/api/queries";
 import { mockApi } from "@/test/render";
 import { AutoUpdate, type AutoUpdateStatus } from "./AutoUpdate";
+import { KEY } from "./autoUpdateApi";
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -50,3 +51,22 @@ it("shows the countdown after the setting went off and on, though a poll saw it 
   await act(() => client.invalidateQueries({ queryKey: keys.config }));
   expect(await screen.findByRole("alertdialog", {}, { timeout: 5000 })).toHaveTextContent("hz updates itself in");
 }, 15000);
+
+it("shows a countdown enabled in another window while this window still has the off setting cached", async () => {
+  let server: AutoUpdateStatus = { ...idle, phase: "off", enabled: false, reason: "Automatic updates are off." };
+  const config = setting(false);
+  const client = queryClient();
+  sessionStorage.setItem("hz.token", "test-token");
+  mockApi({ "/api/auto-update": () => server, "/api/system/config/show": () => config });
+  render(
+    <Providers client={client}>
+      <AutoUpdate />
+    </Providers>,
+  );
+  await vi.waitFor(() => expect(client.getQueryData(keys.config)).toEqual(config));
+  await vi.waitFor(() => expect(client.getQueryData(KEY)).toEqual(server));
+  // Another window or the CLI enables updates. This window gets no config invalidation or focus event.
+  server = { ...idle, phase: "countdown", core: "9.9.9", seconds_left: 30, apply_at: "2026-11-02T09:00:30Z" };
+  expect(await screen.findByRole("alertdialog", {}, { timeout: 5000 })).toHaveTextContent("hz updates itself in");
+  expect(client.getQueryData(keys.config)).toEqual(config);
+}, 10000);
