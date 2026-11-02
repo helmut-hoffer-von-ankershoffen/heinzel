@@ -49,10 +49,12 @@ try {
   await checked(footerSwitch, "false");
   await page.keyboard.press("Escape");
   // Open Settings → Updates in this window, as a link in the app does: no reload, the same query cache.
-  await page.evaluate(() => {
-    history.pushState(null, "", "/?settings=updates");
-    dispatchEvent(new PopStateEvent("popstate"));
-  });
+  const go = (path) =>
+    page.evaluate((to) => {
+      history.pushState(null, "", to);
+      dispatchEvent(new PopStateEvent("popstate"));
+    }, path);
+  await go("/?settings=updates");
   const settings = page.getByRole("dialog", { name: "Settings" });
   await settings.waitFor({ timeout: 15000 });
   const settingsSwitch = settings.getByRole("switch", { name: "Automatic updates" });
@@ -60,7 +62,7 @@ try {
   result.settingsShowsFooterOff = true;
   await settingsSwitch.click();
   await checked(settingsSwitch, "true");
-  await page.keyboard.press("Escape");
+  await go("/"); // Settings is open while the URL has `?settings`: leaving it closes the dialog, as a link does
   await settings.waitFor({ state: "hidden", timeout: 15000 });
   await updates.click();
   await checked(footerSwitch, "true");
