@@ -411,7 +411,10 @@ def test_an_open_app_window_reconnects_when_the_daemon_restarts_on_the_same_port
         driver.stdin.write("started\n")
         driver.stdin.flush()
         result = json.loads(answer())
-        assert result == {"restarted": True, "stayedSignedIn": True, "askedToSignIn": False, "reopened": True}, result
+        if result != {"restarted": True, "stayedSignedIn": True, "askedToSignIn": False, "reopened": True}:
+            driver.wait(60)
+            reader.join(30)
+            pytest.fail(f"{result}\nwhat the window went through:\n{''.join(said)}")
         assert driver.wait(60) == 0
     finally:
         driver.kill()
