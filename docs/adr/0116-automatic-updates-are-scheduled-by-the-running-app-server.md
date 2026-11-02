@@ -53,7 +53,10 @@ place (ADR 0047, 0083) and runs whether or not a window is open.
   development or tests). An installed wheel or uv tool install with the default state folder keeps the default on.
   `HEINZEL_AUTO_UPDATE_TEST=1` counts none of the facts; only the end-to-end test of the real flow sets it.
 - The server asks for a newer stable hz release (GitHub) and newer releases of installed plugins (PyPI) every 30
-  minutes, with up to 5 minutes of random jitter (the first check 1 to 5 minutes after start).
+  minutes, with up to 5 minutes of random jitter (the first check 1 to 5 minutes after start). hz and the plugins are
+  asked apart: a GitHub or PyPI error about one keeps the other's news. GitHub is asked about hz's tag only for an
+  installation from a release tag, at announce time and again right before installing; the privacy page lists every
+  request.
 - **Only old enough, stable, unyanked releases are announced.** A release's age is the last upload of any of its
   files to PyPI (a file added to an older release later makes it that new). hz counts once its release on PyPI is
   `auto_update_min_age_hours` old (default 6), a plugin once `auto_update_plugin_min_age_hours` old (default 24), so
@@ -78,7 +81,10 @@ place (ADR 0047, 0083) and runs whether or not a window is open.
     `plugin==Y`. uv installs exactly these or fails before it changes anything. Only the announced packages are asked
     again and reinstalled (`--refresh-package`, `--reinstall-package`, never `--refresh` or `--reinstall`); a dependency the new versions need that isn't installed yet
     resolves only among uploads older than the plugins' minimum age (`--exclude-newer`, and hz's own age for hz).
-    The constraints are taken out of the receipt again afterwards.
+    The constraints, and the resolver options uv records for this run in the receipt's `[tool.options]`
+    (`exclude-newer`, `exclude-newer-package`), are taken out of the receipt again afterwards, exactly as added; the
+    rest of the receipt stays as it was. An integration test runs this against real uv, offline, in temporary tool
+    folders.
   - hz from a release tag is installed from the commit the tag named when it was announced, never the tag, and the
     receipt names the tag again afterwards, so later updates go on following release tags. Without a recorded
     commit (also for a plugins-only update, the installed commit), the update is made by hand.
@@ -95,7 +101,10 @@ place (ADR 0047, 0083) and runs whether or not a window is open.
     configuration and empty state, data, cache and log folders, with update checks off, deleted afterwards, so the
     live folders are never touched. It waits up to 90 seconds for `/api/lifecycle` to answer with the new version.
   - Only then is the change recorded (continuity, ADR 0108), the daemon handed over, and the server restarts in
-    place. Windows reconnect without signing in and reload once the version changed.
+    place. If the restart itself fails, the new version stays installed, the old one keeps running, and every window
+    says to restart hz ui to finish. Windows reconnect without signing in and reload once the version changed, but
+    not while a composer has unsent text or a turn runs: the window says "Reload to finish the update" and reloads
+    by itself once they are idle.
 - **Rollback.** If uv fails, the metadata or the commit differ, or the trial start fails, nothing restarts. The tool
   folder itself is never replaced: first everything the update left moves aside, then each entry of the copy moves
   back into it, each an atomic rename. hz, every plugin and the receipt are byte for byte as they were, so the
