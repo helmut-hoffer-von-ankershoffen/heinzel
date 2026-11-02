@@ -70,7 +70,7 @@ def makefile() -> str:
     text = text.replace(", and the README's intro; PLUGIN=name", "; PLUGIN=name")
     text = text.replace("scripts/docs_record.py --intro $(if", "scripts/docs_record.py $(if")
     # Steps only Heinzelmännchen has: import contracts, the template, demo tape, ATTRIBUTIONS.md (never a last step).
-    text = re.sub(r'\n\t\t"&?(contracts|template|demo|attributions|docs-check)=[^\n]*', "", text)
+    text = re.sub(r'\n\t\t"&?(contracts|template|demo|attributions|docs-check|design)=[^\n]*', "", text)
     text = text.replace("uv build --all-packages", "uv build")
     text = text.replace("lint, import contracts, types, tests", "lint, types, tests")
     text = text.replace(
@@ -79,8 +79,8 @@ def makefile() -> str:
     text = text.replace("check with coverage, template, build", "check with coverage, build")
     text = text.replace("lint, architecture contracts and workflows", "lint and workflows")
     # Public product catalog and its browser suite are core website tooling, not plugin template dependencies.
-    text = text.replace(" docs-catalog docs-site-check", "")
-    text = re.sub(r"\n(docs-catalog|docs-site-check):.*?\n(?:\t.*\n)+", "\n", text)
+    text = text.replace(" docs-catalog docs-site-check", "").replace(" design-check", "")  # design: core app only
+    text = re.sub(r"\n(docs-catalog|docs-site-check|design-check):.*?\n(?:\t.*\n)+", "\n", text)
     # The web head's app (web/, ADR 0039): plugins bring operations, not UI.
     text = text.replace(" web-build web-dev test-web test-site", "").replace(" test-browser-deps", "")
     text = re.sub(r"\n# The web head's app in web/.*?\nWEB_TESTS := [^\n]*", "", text, flags=re.DOTALL)

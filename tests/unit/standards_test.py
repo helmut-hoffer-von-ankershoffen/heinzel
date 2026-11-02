@@ -94,6 +94,8 @@ CORE_ONLY = {  # path: why plugins don't get it
     "scripts/site_catalog.py": "public product website aggregation, never a standalone plugin build (ADR 0098)",
     "scripts/adr_index.py": "renders the core ADR index and pages; plugins have no ADRs",
     "scripts/site_pages.py": "renders the product's public ecosystem catalog, not plugin-owned docs (ADR 0098)",
+    "scripts/design_tokens.py": "keeps the core app's default theme and its product site on one token file",
+    "scripts/design_check.py": "checks computed styles of the core app and product site against design/tokens.json",
     "scripts/site_check.py": "accepts the core product website with its locked web axe tooling (ADR 0098)",
     "scripts/check_docs.py": "checks the core's documents and UI copy; plugins keep their own docs tooling",
     "scripts/site_privacy.py": "lists the hosts the core product website may contact for its check (ADR 0098)",

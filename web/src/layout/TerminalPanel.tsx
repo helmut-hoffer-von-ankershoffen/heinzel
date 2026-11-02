@@ -16,13 +16,13 @@ import { desktopState } from "@/notifications/desktop";
 
 /** The palette of the dark theme, so the terminal reads as part of the app. */
 const theme = {
-  background: "#181818",
-  foreground: "#ececec",
-  cursor: "#d97757",
-  cursorAccent: "#181818",
-  selectionBackground: "#d9775755",
-  black: "#272727",
-  brightBlack: "#6b6b6b",
+  background: "#18231e",
+  foreground: "#e9ede5",
+  cursor: "#ffb398",
+  cursorAccent: "#18231e",
+  selectionBackground: "#ffb39855",
+  black: "#2b3b31",
+  brightBlack: "#56675e",
 };
 
 type CursorStyle = "block" | "bar" | "underline";

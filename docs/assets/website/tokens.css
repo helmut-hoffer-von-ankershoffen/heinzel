@@ -1,0 +1,63 @@
+/* generated from design/tokens.json by scripts/design_tokens.py; do not edit */
+
+:root {
+  --color-background: #faf8f3;
+  --color-foreground: #263b32;
+  --color-muted: #eee8db;
+  --color-muted-foreground: #56675e;
+  --color-card: #fffdf8;
+  --color-border: #d8ddd3;
+  --color-primary: #a64028;
+  --color-primary-foreground: #fffdf8;
+  --color-accent: #eee8db;
+  --color-accent-foreground: #263b32;
+  --color-ok: #1f7444;
+  --color-warn: #8a5c00;
+  --color-bad: #b4372d;
+  --color-ring: #a64028;
+  --color-sidebar: #f3efe4;
+  --color-popover: #fffdf8;
+  --color-input: #fffdf8;
+  --color-icon: #4a5b52;
+  --color-switch: #2f7bf6;
+  --color-main-tint: #faf8f300;
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, monospace;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+  --page-max: 896px;
+  --home-max: 1200px;
+  --target: 44px;
+}
+[data-md-color-scheme="slate"] {
+  --color-background: #18231e;
+  --color-foreground: #e9ede5;
+  --color-muted: #2b3b31;
+  --color-muted-foreground: #b4c3b5;
+  --color-card: #213128;
+  --color-border: #405347;
+  --color-primary: #ffb398;
+  --color-primary-foreground: #18231e;
+  --color-accent: #34463b;
+  --color-accent-foreground: #e9ede5;
+  --color-ok: #7cc39a;
+  --color-warn: #e0b45f;
+  --color-bad: #e5806f;
+  --color-ring: #ffb398;
+  --color-sidebar: #1e2b25;
+  --color-popover: #2b3b31;
+  --color-input: #2b3b31;
+  --color-icon: #b4c3b5;
+  --color-main-tint: #18231e00;
+}
+:root,
+[data-md-color-scheme] {
+  --md-default-bg-color: var(--color-background);
+  --md-default-fg-color: var(--color-foreground);
+  --md-default-fg-color--light: var(--color-muted-foreground);
+  --md-primary-fg-color: var(--color-primary);
+  --md-accent-fg-color: var(--color-primary);
+  --md-code-bg-color: var(--color-card);
+  --md-code-fg-color: var(--color-foreground);
+  --md-typeset-a-color: var(--color-primary);
+}
