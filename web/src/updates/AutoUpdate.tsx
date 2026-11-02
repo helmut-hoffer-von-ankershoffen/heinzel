@@ -8,6 +8,7 @@ import { t } from "@/i18n";
 import { useAutoUpdateSetting } from "./AutoUpdateToggle";
 import { type AutoUpdateStatus, call, KEY } from "./autoUpdateApi";
 import { updateTransport } from "./controller";
+import { reloadHeld } from "./work";
 
 export type { AutoUpdateStatus } from "./autoUpdateApi";
 
@@ -39,6 +40,8 @@ export function AutoUpdate() {
   const [now, setNow] = useState(() => Date.now());
   const [busy, setBusy] = useState(false);
   const loaded = useRef<string | null>(null);
+  // A new version is running, but unsent text or a running turn holds the reload until the composer is idle.
+  const [reloadWaiting, setReloadWaiting] = useState(false);
   useEffect(() => {
     if (status?.phase !== "countdown") return;
     const tick = window.setInterval(() => setNow(Date.now()), 250);
@@ -50,12 +53,25 @@ export function AutoUpdate() {
     if (loaded.current === null) loaded.current = status.version;
     else if (loaded.current !== status.version) {
       loaded.current = status.version;
+      setReloadWaiting(true);
+    }
+  }, [status]);
+  useEffect(() => {
+    if (!reloadWaiting) return;
+    const reload = () => {
+      if (reloadHeld()) return false;
       void updateTransport
         .clean()
         .catch(() => undefined)
         .finally(() => updateTransport.reload());
-    }
-  }, [status]);
+      return true;
+    };
+    if (reload()) return;
+    const wait = window.setInterval(() => {
+      if (reload()) window.clearInterval(wait);
+    }, 1000);
+    return () => window.clearInterval(wait);
+  }, [reloadWaiting]);
   const act = async (path: "/postpone" | "/dismiss") => {
     setBusy(true);
     try {
@@ -67,6 +83,12 @@ export function AutoUpdate() {
     }
   };
   if (!status) return null;
+  if (reloadWaiting && reloadHeld())
+    return (
+      <output className="pointer-events-auto fixed right-4 bottom-[76px] z-[calc(var(--layer-modal,60)_+_10)] block w-[min(24rem,calc(var(--hz-viewport-width,100vw)_-_2rem))] rounded-xl border border-foreground/20 bg-background p-4 text-sm text-foreground shadow-lg">
+        <p>{t("autoUpdate.reloadLater")}</p>
+      </output>
+    );
   const left = secondsLeft(status, query.dataUpdatedAt, now);
   const card =
     "pointer-events-auto fixed right-4 bottom-[76px] z-[calc(var(--layer-modal,60)_+_10)] w-[min(24rem,calc(var(--hz-viewport-width,100vw)_-_2rem))] " +

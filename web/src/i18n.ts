@@ -1067,6 +1067,8 @@ const en = {
   "autoUpdate.how": "hz restarts in place. This window reconnects by itself, and you stay signed in.",
   "autoUpdate.postpone": "Postpone 1 hour",
   "autoUpdate.applying": "Updating hz\u2026",
+  "autoUpdate.reloadLater":
+    "Reload to finish the update. This window reloads by itself once your message is sent and the answer is done.",
   "autoUpdate.reconnect": "This window reconnects by itself when hz is back.",
   "autoUpdate.ok": "OK",
   "autoUpdate.setting": "Automatic updates",

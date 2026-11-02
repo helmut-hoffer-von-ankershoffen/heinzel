@@ -4,6 +4,7 @@ import { Providers, queryClient } from "@/App";
 import { expectAccessible, mockApi } from "@/test/render";
 import { AutoUpdate, type AutoUpdateStatus, secondsLeft, updateSummary } from "./AutoUpdate";
 import { updateTransport } from "./controller";
+import { registerReloadHold } from "./work";
 
 const base: AutoUpdateStatus = {
   enabled: true,
@@ -90,6 +91,31 @@ describe("automatic updates", () => {
     version = "1.1.0";
     await act(() => client.refetchQueries({ queryKey: ["web", "auto-update"] }));
     await vi.waitFor(() => expect(reload).toHaveBeenCalledOnce());
+  });
+
+  it("waits to reload while the composer has unsent text or a turn runs, then reloads once idle", async () => {
+    const reload = vi.spyOn(updateTransport, "reload").mockImplementation(() => undefined);
+    vi.spyOn(updateTransport, "clean").mockResolvedValue(undefined);
+    let typing = true;
+    const release = registerReloadHold(() => typing);
+    let version = "1.0.0";
+    const client = queryClient();
+    sessionStorage.setItem("hz.token", "test-token");
+    mockApi({ "/api/auto-update": () => ({ ...base, phase: "idle", version, seconds_left: null }) });
+    render(
+      <Providers client={client}>
+        <AutoUpdate />
+      </Providers>,
+    );
+    await vi.waitFor(() => expect(client.getQueryData(["web", "auto-update", true])).toBeDefined());
+    version = "1.1.0";
+    await act(() => client.refetchQueries({ queryKey: ["web", "auto-update"] }));
+    expect(await screen.findByRole("status")).toHaveTextContent("Reload to finish the update.");
+    await new Promise((resolve) => setTimeout(resolve, 1200));
+    expect(reload).not.toHaveBeenCalled(); // the unsent text stays
+    typing = false; // sent, and the answer is done
+    await vi.waitFor(() => expect(reload).toHaveBeenCalledOnce(), { timeout: 3000 });
+    release();
   });
 
   it("counts down between polls from what the server said", () => {
