@@ -350,6 +350,59 @@ def test_a_paired_browser_reopens_signed_in_without_a_link_after_hz_ui_restarts(
         _stop_ui(ui)
 
 
+@pytest.mark.timeout(900)
+@pytest.mark.parametrize("engine", ["chromium", "webkit"])
+def test_an_open_app_window_reconnects_when_the_daemon_restarts_on_the_same_port(environment, tmp_path, engine):
+    """Stop `hz ui` under an open, paired window and start it again: the window recovers and never asks to sign in."""
+    env, _ = environment
+    run = _browser_ready(engine)
+    port = _free_port()
+    ui, link = _start_ui(env, port)
+    driver = subprocess.Popen(
+        [
+            *run,
+            "exec",
+            "node",
+            "e2e/device-live-restart.mjs",
+            engine,
+            str(tmp_path / "profile"),
+            link,
+            f"http://127.0.0.1:{port}/",
+        ],
+        cwd=REPO,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    assert driver.stdin is not None
+    assert driver.stdout is not None
+
+    def expect(line: str) -> None:
+        got = driver.stdout.readline().strip()
+        assert got == line, got + (driver.stderr.read() if driver.poll() is not None and driver.stderr else "")
+
+    try:
+        expect("READY")
+        _stop_ui(ui)
+        driver.stdin.write("stopped\n")
+        driver.stdin.flush()
+        expect("DOWN")
+        ui, new_link = _start_ui(env, port)  # a new session token on the same port, so the same origin
+        assert new_link != link
+        driver.stdin.write("started\n")
+        driver.stdin.flush()
+        result = json.loads(driver.stdout.readline())
+        assert result == {"restarted": True, "stayedSignedIn": True, "askedToSignIn": False, "reopened": True}, result
+        assert driver.wait(60) == 0
+    finally:
+        driver.kill()
+        for stream in (driver.stdin, driver.stdout, driver.stderr):
+            if stream is not None:
+                stream.close()
+        _stop_ui(ui)
+
+
 @pytest.mark.timeout(600)
 def test_plugin_install_confirmation_opens_in_the_viewport_under_its_own_row(environment, tmp_path):
     """Install on a row low in Discover shows its confirmation next to the click, focused, on desktop and phone."""
