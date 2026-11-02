@@ -174,8 +174,14 @@ export const PAGES: Page[] = [
     title: "Updates",
     icon: RefreshCw,
     heading: "computer",
-    // `hz.auto_update` is a kernel setting, but people look for it with the other update choices.
-    owns: ["system.changelog", "system.plugin", "hz.auto_update"],
+    // The automatic-update settings are kernel settings, but people look for them with the other update choices.
+    owns: [
+      "system.changelog",
+      "system.plugin",
+      "hz.auto_update",
+      "hz.auto_update_min_age_hours",
+      "hz.auto_update_plugin_min_age_hours",
+    ],
     keywords: "release notes github token automatic updates",
   },
   { id: "system", title: "System", icon: Cpu, heading: "computer", owns: ["system"], keywords: "directory" },
