@@ -193,7 +193,9 @@ On `main`, the Demo workflow re-renders it on macOS whenever the tape changes, a
 - **Confidentiality:** the repository is public and generic; examples use made-up names, and nothing may name a
   company, customer, colleague or internal project. Maintainers check against a private list of terms
   (`~/.config/heinzel-dev/confidential-terms`, or `$CONFIDENTIAL_TERMS_FILE`; without one the check is skipped
-  locally). Credentials are a separate check: gitleaks runs on every commit and over the whole history in CI.
+  locally). A short term (under six letters) or phrase matches only where no letter touches it, so it never fires inside
+  `minimal`; a longer one matches anywhere. The commit-msg hook checks the message, the pre-push hook the messages and added lines of every commit
+  being pushed, and CI the pull request's commits. Credentials are a separate check: gitleaks runs on every commit and over the whole history in CI.
 - **Coding agents:** Claude Code, Cursor, Codex, GitHub Copilot, Windsurf and Zed read [AGENTS.md](AGENTS.md) by
   themselves (Claude Code through CLAUDE.md); Gemini CLI needs `"context": {"fileName": ["AGENTS.md"]}` in its
   settings, Aider `read: AGENTS.md` in `.aider.conf.yml`.
