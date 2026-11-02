@@ -32,7 +32,10 @@ CALLERS = [
     *sorted((REPO / "scripts").glob("*.sh")),
     *sorted((REPO / ".github" / "workflows").glob("*.yml")),
 ]
-CALL = re.compile(r"(?P<runner>\buv run(?P<flags>(?: -[\w-]+)*)(?P<python> python3?)? )?scripts/(?P<name>[\w-]+\.py)\b")
+CALL = re.compile(
+    r"(?P<runner>\buv run(?P<flags>(?: --python [0-9]+(?:\.[0-9]+)?| -[\w-]+)*)(?P<python> python3?)? )?"
+    r"scripts/(?P<name>[\w-]+\.py)\b"
+)
 FILE_TEST = re.compile(r"\[\s+-[ef]\s+(['\"]?)scripts/[\w-]+\.py\1\s+\]")
 
 
@@ -76,7 +79,7 @@ def metadata_problems(script: Path) -> list[str]:
     return problems
 
 
-def call_problems(text: str, standalone: set[str], bound: set[str]) -> list[str]:
+def call_problems(text: str, standalone: set[str], bound: set[str], stdlib: set[str] | None = None) -> list[str]:
     """Calls that run a script the wrong way: standalone ones with `uv run --script`, project-bound ones with
     `uv run python`."""
     problems = []
@@ -86,7 +89,18 @@ def call_problems(text: str, standalone: set[str], bound: set[str]) -> list[str]
         code = FILE_TEST.sub("", line.split(" #", 1)[0])  # A shell file-existence predicate doesn't execute the file.
         for call in CALL.finditer(code):
             name, flags = call["name"], (call["flags"] or "").split()
-            if name in standalone and (not call["runner"] or call["python"] or "--script" not in flags):
+            isolated_stdlib = (
+                name in (stdlib or set())
+                and call["runner"]
+                and call["python"]
+                and "--no-build" in flags
+                and ({"--frozen", "--no-sync"} <= set(flags) or {"--no-project", "--python", "3.14"} <= set(flags))
+            )
+            if (
+                name in standalone
+                and not isolated_stdlib
+                and (not call["runner"] or call["python"] or "--script" not in flags)
+            ):
                 problems.append(f"{call.group()}: run it as `uv run --script scripts/{name}`")
             if name in bound and (not call["runner"] or not call["python"] or "--script" in flags):
                 problems.append(f"{call.group()}: run it as `uv run python scripts/{name}` (it imports heinzel)")
@@ -128,4 +142,17 @@ def test_finds_scripts_run_the_wrong_way():
 def test_callers_run_scripts_the_way_they_declare(caller):
     standalone = {script.name for script in SCRIPTS if not project_bound(script)}
     bound = {script.name for script in SCRIPTS if project_bound(script)}
-    assert call_problems(caller.read_text(encoding="utf-8"), standalone, bound) == []
+    stdlib = {script.name for script in SCRIPTS if (inline_metadata(script) or {}).get("dependencies") == []}
+    assert call_problems(caller.read_text(encoding="utf-8"), standalone, bound, stdlib) == []
+
+
+@pytest.mark.parametrize(
+    "launcher",
+    ["uv run --no-project --frozen --no-build --python 3.14 python", "uv run --frozen --no-sync --no-build python"],
+)
+def test_hardened_python_launchers_only_bypass_script_resolution_for_stdlib(launcher):
+    standalone = {"plain.py", "dependency.py"}
+    stdlib = {"plain.py"}
+    assert call_problems(f"{launcher} scripts/plain.py", standalone, set(), stdlib) == []
+    assert len(call_problems(f"{launcher} scripts/dependency.py", standalone, set(), stdlib)) == 1
+    assert len(call_problems("uv run python scripts/plain.py", standalone, set(), stdlib)) == 1

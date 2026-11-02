@@ -87,10 +87,15 @@ def repository_files() -> list[str]:
 
 SHARED = [".claude", ".github/workflows", "scripts"]
 CORE_ONLY = {  # path: why plugins don't get it
+    "scripts/merge_gate.py": "judges a public repo's SonarCloud project; a new plugin has none until it is set up",
+    "scripts/merge_gate.py.lock": "the lock of scripts/merge_gate.py, which plugins don't get by default",
+    ".github/workflows/merge-gate.yml": "runs scripts/merge_gate.py, which plugins don't get by default",
     "scripts/site_characters.mjs": "draws product-site guides from core artwork; standalone plugins own their art",
     "scripts/site_catalog.py": "public product website aggregation, never a standalone plugin build (ADR 0098)",
     "scripts/adr_index.py": "renders the core ADR index and pages; plugins have no ADRs",
     "scripts/site_pages.py": "renders the product's public ecosystem catalog, not plugin-owned docs (ADR 0098)",
+    "scripts/design_tokens.py": "keeps the core app's default theme and its product site on one token file",
+    "scripts/design_check.py": "checks computed styles of the core app and product site against design/tokens.json",
     "scripts/site_check.py": "accepts the core product website with its locked web axe tooling (ADR 0098)",
     "scripts/check_docs.py": "checks the core's documents and UI copy; plugins keep their own docs tooling",
     "scripts/site_privacy.py": "lists the hosts the core product website may contact for its check (ADR 0098)",
@@ -119,6 +124,12 @@ CORE_ONLY = {  # path: why plugins don't get it
     "scripts/scoped_checks.py": "routes Core-root checks; owning and governed plugins already check their own project",
     "scripts/related_tests.py": "maps the core pre-push diff to its related unit tests; plugins run their own",
     "scripts/template_pyproject_head.toml.tmpl": "input of sync_template.py",
+    "scripts/review_tier.py": "picks the source review tier of a core change from its paths; plugins have none",
+    "scripts/review.sh": "dispatches the core's protected source review (`make review`); plugins have none",
+    "scripts/source_review.py.lock": "locks that script for the review workflow",
+    "scripts/review_tier.py.lock": "locks the tier decision for the review command",
+    "scripts/source_review.py": "guard and runner of the core's protected source review workflow; plugins have none",
+    ".github/workflows/source-review.yml": "runs only on the core's protected review ref, with its own secret",
     "scripts/web.py": "the web head's typed client and dev server (web/, ADR 0039); plugins bring no UI",
     "scripts/web_build.py": "runs and builds the web head's app (web/, ADR 0039); plugins bring no UI",
     ".github/workflows/acceptance.yml": "installs the published core with the public commands on hosted runners",
@@ -504,6 +515,26 @@ def test_standalone_commands_workflows_and_journey_pin_one_immutable_toolkit():
     pins.append(hook["args"][0].rsplit(" ", 1)[-1])
     assert len(pins) == 7
     assert matching_toolkit_pins(pins)
+    bootstrap = _load(REPO / "scripts/plugin_tooling.py")
+    assert bootstrap.TOOLKIT.rsplit(" ", 1)[-1] == pins[0]
+    requirements = (REPO / "scripts/plugin-tooling-requirements.txt").read_text().splitlines()
+    entries = [line for line in requirements if line and not line.startswith("#")]
+    assert len(entries) == 3
+    toolkit_url, toolkit_digest = pins[0].split("#sha256=")
+    assert entries[0] == f"heinzel-plugin-tools @ {toolkit_url} --hash=sha256:{toolkit_digest}"
+    lock = tomllib.loads((REPO / "uv.lock").read_text())
+    packages = {package["name"]: package for package in lock["package"]}
+    assert {entry.split("==", 1)[0] for entry in entries[1:]} == {"packaging", "typos"}
+    for entry in entries[1:]:
+        requirement, *hashes = entry.split()
+        assert re.fullmatch(r"(?:packaging|typos)==[0-9.]+", requirement)
+        assert hashes
+        assert all(re.fullmatch(r"--hash=sha256:[a-f0-9]{64}", value) for value in hashes)
+        name, version = requirement.split("==")
+        assert packages[name]["version"] == version
+        assert {value.removeprefix("--hash=") for value in hashes} <= {
+            wheel["hash"] for wheel in packages[name]["wheels"]
+        }
 
 
 def test_plugin_only_pushes_and_commits_use_owning_checks_instead_of_core_checks():
@@ -589,3 +620,12 @@ def test_plugins_start_at_the_version_their_release_process_knows():
         assert project, path.name
         assert bump, path.name
         assert project.group(1) == bump.group(1), path.name
+
+
+def test_scripts_shared_with_the_template_render_to_their_own_bytes():
+    """A `.jinja` symlink keeps Sonar from seeing a second copy; Copier must then leave its content as it is."""
+    twins = [p for d in ("template/scripts", "starter/scripts") for p in (REPO / d).glob("*.jinja")]
+    assert twins
+    for twin in twins:
+        assert twin.is_symlink(), twin
+        assert not re.search(r"\[\[|\[%|\[#", twin.read_text(encoding="utf-8")), f"Copier would render {twin}"

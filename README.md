@@ -10,7 +10,7 @@
 [![Python](https://img.shields.io/badge/python-3.12%20%7C%203.13%20%7C%203.14%20%7C%203.15-blue)](pyproject.toml)
 [![Quality Gate Status](https://img.shields.io/sonar/quality_gate/helmut-hoffer-von-ankershoffen_heinzel?server=https://sonarcloud.io&label=Quality%20Gate%20Status)](https://sonarcloud.io/summary/overall?id=helmut-hoffer-von-ankershoffen_heinzel)
 [![Security Rating](https://sonarcloud.io/api/project_badges/measure?project=helmut-hoffer-von-ankershoffen_heinzel&metric=security_rating)](https://sonarcloud.io/summary/overall?id=helmut-hoffer-von-ankershoffen_heinzel)
-[![License: MIT](https://img.shields.io/badge/license-MIT-brightgreen)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/license-MIT-44bb00)](LICENSE)
 <!-- badges:end -->
 
 [**Install & explore →**](https://heinzel.team/) · [Plugin catalog](https://heinzel.team/CATALOG/) · [Build a plugin](docs/PLUGIN_AUTHORING.md)
@@ -22,7 +22,7 @@
   </picture>
 </p>
 
-**An open-source crew of AI helpers that does your team's busywork and asks before anything leaves your machine.**
+**Heinzelmännchen is an open-source crew of AI helpers that drafts your team's busywork and asks before anything leaves your machine.**
 Each Heinzelmännchen keeps one promise: the Friday report, the tracker update, the meeting brief. It reads your tools
 with *your* logins, drafts the work, and waits for your yes. Nothing is published, sent or spent without it. Like the
 [Heinzelmännchen of Cologne](https://en.wikipedia.org/wiki/Heinzelm%C3%A4nnchen), who finished the town's work at
@@ -238,14 +238,14 @@ and a REST endpoint (`hz system serve api`) at once. Coding agents use whichever
 or the MCP tools. People who'd rather click run `hz ui`: a web app on localhost, for this session only, with a
 navigation tree of settings, contracts, your team, inventory and the doctor's fixes, and a chat with your agent runner
 that says what it may cost before it runs. Modules can also advertise jobs that
-`hz system daemon install` runs in the background on a schedule, under launchd or systemd, unattended and with your
+`hz system daemon install` runs in the background on a schedule, under launchd or systemd, with your
 rights; `hz system daemon pause` and `uninstall` stop them (see [SECURITY.md](SECURITY.md)). Built in today:
 
 <!-- modules:start -->
 - [`ai`](docs/MODULES.md#ai) — How hz reaches AI, and what it spends: tokens and cost per run.
 - [`ai.access`](docs/MODULES.md#aiaccess) — Pick how hz reaches AI: Claude Code, your company's gateway, or an option a plugin adds.
 - [`graph`](docs/MODULES.md#graph) — Are your team's promises kept? Artifacts and Heinzelmännchen, and where the flow waits.
-- [`heinzel`](docs/MODULES.md#heinzel) — Your Heinzelmännchen: durable agents that keep your team's documents true.
+- [`heinzel`](docs/MODULES.md#heinzel) — Your Heinzelmännchen: durable helpers that draft your team's recurring work for your approval.
 - [`org`](docs/MODULES.md#org) — Your profile, and the team, org and company you work with.
 - [`report`](docs/MODULES.md#report) — Telemetry: log what a Heinzelmännchen did, for your team's graph (`hz report published <id> <url>`).
 - [`system`](docs/MODULES.md#system) — Inspect, configure, diagnose and update Heinzelmännchen itself.
@@ -311,14 +311,14 @@ core artifact:
 Company plugins live in their own `heinzel-*` repositories, scaffolded with `hz system plugin new`.
 
 Workflows are Markdown files, not code: a `<name>.prose.md` contract in your workflows directory (or your team's
-state repository) names the capabilities it reads, the inputs to fetch and the agent's limits, and its body says what
+state repository) names the capabilities it reads, the inputs to fetch and the helper's limits, and its body says what
 the draft must achieve. Drafts are saved locally; nothing is published by itself.
 
 ```bash
 hz heinzel new weekly-digest             # a starter contract, valid as written, with comments; creates the directory
 hz heinzel check                         # every problem by file and line
 hz heinzel show weekly-digest            # what it requires, what is bound, whether it is ready, what to run next
-hz heinzel wake weekly-digest --dry-run   # the packet the agent would get; nothing is spent
+hz heinzel wake weekly-digest --dry-run   # the packet the helper would get; nothing is spent
 hz heinzel wake weekly-digest             # draft it now; then `hz heinzel drafts`
 ```
 
@@ -427,9 +427,8 @@ security issues privately, as [SECURITY.md](SECURITY.md) describes.
 Heinzelmännchen is free and open-source software under the [MIT license](LICENSE). The packages it ships keep their
 own licenses, listed in [ATTRIBUTIONS.md](ATTRIBUTIONS.md).
 
-The website [heinzel.team](https://heinzel.team/) carries an [imprint](https://heinzel.team/imprint/)
-([Impressum](https://heinzel.team/impressum/)) and a [privacy notice](https://heinzel.team/privacy/)
-([Datenschutzerklärung](https://heinzel.team/datenschutz/)); the German texts prevail. The website sets no cookies and
+The website [heinzel.team](https://heinzel.team/) carries an [imprint](https://heinzel.team/imprint/) and a
+[privacy notice](https://heinzel.team/privacy/). The website sets no cookies and
 loads nothing from third parties, and the app sends no telemetry.
 
 Presence and adoption stay local by default. Opt in to a personal state repository with `hz system config set system.state.personal <repository>`, then inspect `hz system state status` ([state repository design](docs/adr/0081-state-repositories-one-writer-per-branch-the-daemon-pushes.md)).

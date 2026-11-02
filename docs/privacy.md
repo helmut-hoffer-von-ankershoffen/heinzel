@@ -1,12 +1,11 @@
 ---
 title: Privacy notice
-description: What data is processed when you visit heinzel.team or use the hz app (English translation; the German version prevails).
+description: What data is processed when you visit heinzel.team or use the hz app.
 ---
 
 # Privacy notice
 
-*Deutsch: [Datenschutzerklärung](datenschutz.md). The German version is the legally relevant one and prevails if the
-two differ; this page is a translation for information. Status: 31 October 2026.*
+*Status: 1 November 2026.*
 
 ## In short
 
@@ -32,7 +31,7 @@ Use the same address for any data protection question.
 ## 2. What we process ourselves
 
 The website consists of static files. We run no server of our own, keep no access logs of our own and do not analyse
-visits. The only data we receive ourselves is what you write to us (section 5).
+visits. The only data we receive ourselves is what you write to us (section 5), and, in future, reports you explicitly send (section 10).
 
 ## 3. Hosting on GitHub Pages
 
@@ -143,7 +142,31 @@ We have not examined the behaviour of third-party plugins, of programs the app c
 `git`) or of services you connect; their own privacy notices apply. If you use the app for other people, you are
 responsible for their data yourself.
 
-## 10. Your rights
+## 10. Reports from the app (not available yet)
+
+**This feature does not exist yet.** Today no part of the app or the website processes such a report. This section says
+what will apply once it ships. We will change it, with the status above, at that point.
+
+In future you can send a report to the maintainer from the app, the command line, the MCP server or the API, for
+example about a bug or a wish. Then:
+
+- *What is sent:* the text of your report and, if you choose, a screenshot or a selected element of the interface.
+  You see exactly what will be sent beforehand and approve it explicitly. Nothing leaves without your approval.
+- *Nothing automatic:* there are no automatic reports, no crash reports and no telemetry. A report exists only when
+  you trigger it.
+- *Purpose:* to read and answer the report and to fix the problem or consider the suggestion.
+- *Storage:* privately by the maintainer, on their own systems in Germany. Reports are not placed in public issue
+  trackers.
+- *Legal basis:* your consent, Art. 6(1)(a) GDPR, which you give by sending. You may withdraw it at any time with
+  effect for the future (Art. 7(3) GDPR).
+- *Retention:* up to 12 months after the report is closed, then we delete it. <!-- LAWYER: retention period is a proposal -->
+- *Deletion:* write to [helmut@heinzel.team](mailto:helmut@heinzel.team) naming the report, and we delete it sooner.
+
+The existing `hz report` command is unrelated: it only writes a local log (section 9).
+
+Screenshots can show third parties' data or your work. Check the preview before you send.
+
+## 11. Your rights
 
 You have the right against the controller to:
 
@@ -160,12 +183,12 @@ at [helmut@heinzel.team](mailto:helmut@heinzel.team).
 You also have the right to lodge a complaint with a data protection supervisory authority (Art. 77 GDPR), in particular
 in the Member State of your habitual residence, place of work or the place of the alleged infringement.
 
-## 11. Obligation to provide data, automated decisions
+## 12. Obligation to provide data, automated decisions
 
 You are not obliged to provide us with data. A website cannot technically be delivered without an IP address. There is
 no automated decision-making, including profiling (Art. 22 GDPR).
 
-## 12. Changes
+## 13. Changes
 
 We update this notice when the website or the law changes. The status at the top of this page applies; the change history
 is in the

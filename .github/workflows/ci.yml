@@ -22,8 +22,13 @@ env:
   FORCE_COLOR: "1"
 
 # GitHub-hosted macOS runners are the scarce resource, so a pull request runs macOS on the newest Python only, one
-# `make setup` and the notifier app when its sources change. The broad platform matrix runs off pull requests.
+# `make setup`, the macOS end-to-end suite on every pull request that is not site-only, and the notifier app when its
+# sources change. The broad platform matrix runs off pull requests.
 # Provider-specific integration checks live with their owning plugins.
+# TEMPORARY (owner's decision): a macOS failure must not block merges or releases while the pull request queue drains and
+# macOS is fixed step by step. Matrix jobs with a macOS cell set `continue-on-error` for those cells only, so the cell still
+# runs and its failure is visible in the job's log and annotations, but the job reports success to `CI OK`. Linux cells still
+# fail the workflow. Remove every `continue-on-error` line once macOS has 20 clean runs in a row.
 jobs:
   changes:
     name: Changed paths
@@ -154,7 +159,7 @@ jobs:
         if: github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork
         env:
           CONFIDENTIAL_TERMS: ${{ secrets.CONFIDENTIAL_TERMS }}
-        run: uv run --script scripts/check_confidentiality.py --require --text ""
+        run: uv run --no-project --frozen --no-build --python 3.14 python scripts/check_confidentiality.py --require --text ""
       - run: make lint
         env:
           CONFIDENTIAL_TERMS: ${{ secrets.CONFIDENTIAL_TERMS }}
@@ -182,6 +187,7 @@ jobs:
     # What a contributor runs on a fresh machine, on each platform scripts/tools.toml pins: `make setup` installs
     # everything the build needs, relying only on git, make and uv, and `make doctor` confirms it.
     runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ startsWith(matrix.os, 'macos') }} # TEMPORARY: macOS may fail without failing CI OK; remove at 20 clean macOS runs
     timeout-minutes: 10
     strategy:
       fail-fast: false
@@ -224,6 +230,7 @@ jobs:
     if: needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true'
     name: Test (${{ matrix.os }}, Python ${{ matrix.python }}${{ matrix.levels && format(', {0}', matrix.levels) || '' }})
     runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ startsWith(matrix.os, 'macos') }} # TEMPORARY: macOS may fail without failing CI OK; remove at 20 clean macOS runs
     timeout-minutes: 10
     strategy:
       fail-fast: ${{ github.event_name == 'pull_request' }} # a red cell is enough to know on a pull request
@@ -244,8 +251,14 @@ jobs:
           cache-dependency-glob: uv.lock
           save-cache: ${{ github.ref == 'refs/heads/main' }} # pull requests reuse main's cache
           python-version: ${{ matrix.python }}
-      - name: Install what the tests need, and no more
-        run: uv sync --no-dev --group test # UV_FROZEN: exactly the lockfile
+      - name: Install wheel dependencies
+        if: matrix.python != '3.15'
+        run: uv sync --frozen --no-build --no-dev --group test
+      - name: Install Python 3.15 dependencies with the verified PyYAML compatibility build
+        if: matrix.python == '3.15'
+        run: |
+          uv sync --frozen --no-build --no-dev --group test --no-install-package pyyaml
+          bash scripts/bootstrap-pyyaml.sh
       - name: Inspect the Linux user manager without starting services
         if: matrix.os == 'ubuntu-24.04' && matrix.python == '3.14'
         env:
@@ -281,8 +294,15 @@ jobs:
           cache-dependency-glob: uv.lock
           save-cache: ${{ github.ref == 'refs/heads/main' }} # pull requests reuse main's cache
           python-version: "3.14"
-      - run: uv sync --no-dev --group test # UV_FROZEN: exactly the lockfile
+      - run: uv sync --frozen --no-build --no-dev --group test
       - run: make test
+      - name: Record the total for the merge gate
+        run: uv run --no-build coverage report --format=total --precision=2 > coverage-total.txt
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: coverage-total
+          path: coverage-total.txt
+          retention-days: 7
       - name: Report coverage on pull requests and publish the badge
         # The action only understands pull_request, push and schedule events; dispatched runs (release PRs) skip it.
         if: github.event_name != 'workflow_dispatch'
@@ -312,7 +332,7 @@ jobs:
           cache-dependency-glob: uv.lock
           save-cache: ${{ github.ref == 'refs/heads/main' }} # pull requests reuse main's cache
           python-version: "3.14"
-      - run: uv sync --no-dev --group test # UV_FROZEN: exactly the lockfile
+      - run: uv sync --frozen --no-build --no-dev --group test
       - run: make test-perf
 
   site-tests:
@@ -338,11 +358,12 @@ jobs:
     needs: changes
     if: needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true'
     runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ startsWith(matrix.os, 'macos') }} # TEMPORARY: macOS may fail without failing CI OK; remove at 20 clean macOS runs
     timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
-        os: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-24.04"]' || '["ubuntu-24.04","macos-latest"]') }}
+        os: [ubuntu-24.04, macos-latest] # macOS on pull requests too: main must not be the first place it runs
         # Two jobs per OS so the browser tests and the tool-install and CLI tests stop competing for 3 vCPUs
         suite: [cli, web]
     steps:
@@ -413,11 +434,37 @@ jobs:
           name: notifier
           path: notifier.tar.gz
 
+  macos-specific:
+    name: macOS-specific tests
+    needs: changes
+    if: needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true'
+    runs-on: macos-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+          save-cache: ${{ github.ref == 'refs/heads/main' }} # pull requests reuse main's cache
+      - name: Install what the tests need, and no more
+        run: uv sync --frozen --no-build --no-dev --group test # exactly the lockfile, no setup scripts
+      - run: make notifier # the real-launch tests skip without the built app
+      # Serial on purpose (no -n): the notifier tests share one machine-wide bundle id, and contention must not hit them.
+      - name: Tests that only exercise macOS behaviour (marker macos_specific)
+        env:
+          UV_NO_SYNC: "1"
+          VERBOSE: "1"
+        run: make test-macos-specific
+
   electron:
     name: Electron (${{ matrix.os }})
     needs: changes
     if: needs.changes.outputs.electron == 'true'
     runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ startsWith(matrix.os, 'macos') }} # TEMPORARY: macOS may fail without failing CI OK; remove at 20 clean macOS runs
     timeout-minutes: 15
     strategy:
       fail-fast: false
@@ -574,7 +621,7 @@ jobs:
           if compgen -G 'candidate/heinzel-*.whl' >/dev/null; then
             echo "wheel=$(realpath candidate/heinzel-*.whl)" >> "$GITHUB_OUTPUT"
           else
-            uv run --no-project --script .plugin-tooling/scripts/core_artifact.py
+            uv run --no-project --frozen --no-build --python 3.14 python .plugin-tooling/scripts/core_artifact.py
           fi
       - name: Check, audit, build and accept only this plugin
         env:
@@ -646,7 +693,7 @@ jobs:
   ci-ok:
     name: CI OK
     if: always()
-    needs: [dependency-review, commits, changes, lint, secrets, setup, audit, test, coverage, perf, site-tests, e2e, template, notifier, electron, build, core-wheel, local-plugin-plan, local-plugin-check, consumer-plan, consumer-check]
+    needs: [dependency-review, commits, changes, lint, secrets, setup, audit, test, coverage, perf, site-tests, e2e, template, notifier, macos-specific, electron, build, core-wheel, local-plugin-plan, local-plugin-check, consumer-plan, consumer-check]
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     steps:

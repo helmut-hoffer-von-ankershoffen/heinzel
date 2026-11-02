@@ -236,15 +236,25 @@
       if (button.dataset.ready) return;
       button.dataset.ready = 'true';
       button.hidden = false;
+      // Icon only, like the app's copy button: a check for a moment, the name announced politely, then back.
+      const live = button.querySelector('[aria-live]');
+      const say = (label, state) => {
+        button.setAttribute('aria-label', label);
+        button.title = label;
+        if (live) live.textContent = label;
+        if (state) button.dataset.state = state;
+        else delete button.dataset.state;
+      };
+      let revert = 0;
       button.addEventListener('click', async () => {
         const code = document.getElementById(button.dataset.copy);
+        clearTimeout(revert);
         try {
           await navigator.clipboard.writeText(code.textContent);
-          button.textContent = 'Copied';
-          button.setAttribute('aria-label', 'Copied command');
+          say('Copied', 'copied');
+          revert = setTimeout(() => say('Copy command'), 1500);
         } catch {
-          button.textContent = 'Select command';
-          button.setAttribute('aria-label', 'Select command');
+          say('Select command');
           const selection = window.getSelection();
           const range = document.createRange();
           range.selectNodeContents(code);

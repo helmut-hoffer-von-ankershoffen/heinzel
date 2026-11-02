@@ -7,6 +7,7 @@ permission, and it starts a process exactly as a notification does.
 
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -16,6 +17,7 @@ from heinzel.modules.system.notify._macos import BUNDLED, REAL_ENV, NotifierApp,
 
 pytestmark = [
     pytest.mark.e2e,
+    pytest.mark.macos_specific,
     pytest.mark.skipif(sys.platform != "darwin", reason="Heinzel Notifier is a macOS app"),
     pytest.mark.skipif(tree_digest(BUNDLED) is None, reason="the app isn't built: make notifier"),
 ]
@@ -24,7 +26,17 @@ LAUNCHES = 15
 
 
 @pytest.fixture
-def app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+def exclusive():
+    """One at a time on this machine: the bundle id is machine-wide, so `instances()` sees other workers' launches."""
+    import fcntl
+
+    with (Path(tempfile.gettempdir()) / "heinzel-notifier-e2e.lock").open("w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        yield
+
+
+@pytest.fixture
+def app(exclusive, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv(REAL_ENV, "1")  # this test, and only this one, may start the real app
     app = NotifierApp(tmp_path / "home", bundled=BUNDLED)
     assert app.ensure().state in {"installed", "current"}

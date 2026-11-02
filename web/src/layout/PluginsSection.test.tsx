@@ -521,6 +521,36 @@ describe("PluginsSection", () => {
     },
   );
 
+  it("still restarts when the removed plugin's row has already left the refreshed list", async () => {
+    let removed = false;
+    const calls = serve((url) => {
+      if (url.pathname === "/api/stream/system/plugin/remove") {
+        removed = true;
+        return { body: change("remove", true, { distribution: "heinzel-clock", plugins: [] }) };
+      }
+      if (url.pathname === "/api/system/plugin/list" && removed) return { body: [] };
+      return base(url);
+    });
+    // The list answers first and the lifecycle read that precedes the restart later, as on a real server.
+    const answer = vi.mocked(fetch).getMockImplementation();
+    if (!answer) throw new Error("missing fetch fixture");
+    vi.mocked(fetch).mockImplementation(async (request) => {
+      if (removed && new URL((request as Request).url).pathname.startsWith("/api/lifecycle")) {
+        await new Promise((resolve) => setTimeout(resolve, 200));
+      }
+      return answer(request);
+    });
+    const user = userEvent.setup();
+    const reload = vi.fn();
+    show({ reload, restartInterval: 1 });
+    await user.click(await screen.findByRole("button", { name: "Remove heinzel-clock" }));
+    const card = await screen.findByRole("group", { name: /Remove heinzel-clock/ });
+    await user.click(within(card).getByRole("button", { name: "Restart and apply" }));
+    await user.click(await screen.findByRole("button", { name: "Restart and apply Plugins" }));
+    await waitFor(() => expect(reload).toHaveBeenCalledOnce(), { timeout: 10_000 });
+    expect(calls.filter((call) => new URL(call.url).pathname === "/api/restart")).toHaveLength(1);
+  });
+
   it("does not repeat an uncertain removal in the same confirmation", async () => {
     const calls = serve((url) => {
       if (url.pathname === "/api/stream/system/plugin/remove") {

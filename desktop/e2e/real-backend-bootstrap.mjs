@@ -1,7 +1,7 @@
 // Test-only bootstrap: isolate Electron before its single-instance lock and observe only owned child metadata.
 import { app, dialog } from "electron";
 import childProcess from "node:child_process";
-import { writeFileSync } from "node:fs";
+import { appendFileSync, writeFileSync } from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
 import { join } from "node:path";
 
@@ -17,12 +17,24 @@ writeFileSync(join(root, "electron-paths"), JSON.stringify({
 }), { mode: 0o600 });
 dialog.showErrorBox = (title) => writeFileSync(join(root, "error-title"), title, { mode: 0o600 });
 
+// What the app did and when, with no URL or token, so a launch that never exits says where it stopped.
+const phase = (text) => appendFileSync(join(root, "phases"), `${Math.round(performance.now())} ${text}\n`, { mode: 0o600 });
+for (const name of ["ready", "before-quit", "will-quit", "quit", "window-all-closed"]) app.on(name, () => phase(`app ${name}`));
+app.on("child-process-gone", (_event, details) => phase(`app child-process-gone ${details.type} ${details.reason}`));
+app.on("web-contents-created", (_event, contents) => {
+  phase("page created");
+  for (const name of ["did-start-loading", "will-redirect", "did-fail-load", "did-stop-loading", "did-finish-load", "destroyed"])
+    contents.on(name, () => phase(`page ${name}`));
+});
+
 const spawn = childProcess.spawn;
 childProcess.spawn = function observeOwned(command, args, options) {
   const child = spawn(command, args, options);
   if (command === "hz" && JSON.stringify(args) === JSON.stringify(["ui", "--port", "0", "--no-browser"])) {
     globalThis.ownedTestChild = child;
     writeFileSync(join(root, "owned-pid"), String(child.pid), { mode: 0o600 });
+    phase("service started");
+    child.once("exit", (code, signal) => phase(`service exit ${code} ${signal}`));
     child.once("exit", (code, signal) => writeFileSync(join(root, "owned-exit"), JSON.stringify({ code, signal }), { mode: 0o600 }));
     let pending = "";
     child.stdout.on("data", (chunk) => {

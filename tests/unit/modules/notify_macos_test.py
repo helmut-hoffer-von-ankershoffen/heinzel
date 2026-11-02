@@ -25,7 +25,7 @@ from heinzel.modules.system.notify._macos import (
     tree_digest,
 )
 
-pytestmark = pytest.mark.unit
+pytestmark = [pytest.mark.unit, pytest.mark.macos_specific]
 
 ROOT = Path(__file__).resolve().parents[3]
 

@@ -58,6 +58,7 @@ from heinzel.modules.heinzel._session_models import (
 )
 from heinzel.modules.heinzel._session_protocol import SessionRepository
 
+_VISIBLE_KINDS = {"message.accepted", "message.replied", "agent.schedule-failed"}
 _ORIGIN = TypeAdapter(MessageOrigin)
 _REQUEST = TypeAdapter(RequestId)
 _SESSION_ID = TypeAdapter(SessionId)
@@ -1641,6 +1642,16 @@ class SessionCrud(ApprovalIssuer):
             except ValidationError:
                 msg = "This message checkpoint has invalid acceptance provenance"
                 raise HeinzelError(msg) from None
+        if event.kind == "agent.schedule-failed":
+            return SessionMessage(
+                id=message_id,
+                seq=event.seq,
+                role="system",
+                origin="daemon",
+                at=event.ts,
+                status="failed",
+                text=f"A scheduled turn did not run: {event.data.get('reason')}",
+            )
         try:
             value = self.read_body(session_id, event)
         except FileNotFoundError:
@@ -1692,9 +1703,7 @@ class SessionCrud(ApprovalIssuer):
         contracts = self._contracts(session_id, events)
         schedule = self._schedule_view(session_id, events)
         approved = next((item.version for item in reversed(contracts) if item.status == "approved"), None)
-        messages = [
-            event for event in events if event.seq > after and event.kind in {"message.accepted", "message.replied"}
-        ]
+        messages = [event for event in events if event.seq > after and event.kind in _VISIBLE_KINDS]
         page = messages[:limit]
         more = len(messages) > limit
         next_cursor = None
@@ -1737,11 +1746,7 @@ class SessionCrud(ApprovalIssuer):
             msg = f"Choose between 1 and {MAX_RECENT_HISTORY} recent messages"
             raise HeinzelError(msg)
         events = self.repository.control_read(session_id).events
-        messages = [
-            self.read_message(session_id, event)
-            for event in events
-            if event.kind in {"message.accepted", "message.replied"}
-        ]
+        messages = [self.read_message(session_id, event) for event in events if event.kind in _VISIBLE_KINDS]
         return messages[-limit:]
 
     def listing(self) -> SessionList:

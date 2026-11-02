@@ -61,6 +61,7 @@ def test_a_test_nothing_can_pop_up_says_so_and_what_fixes_each_way(settings, tmp
     }
 
 
+@pytest.mark.macos_specific
 def test_a_missing_notifier_and_daemon_name_their_install_commands(settings, tmp_path):
     service = heinzel(settings, tmp_path, "not-determined", installed=False)
     service.daemon = lambda: DaemonState(installed=False, loaded=False, paused=False)
@@ -83,6 +84,7 @@ def test_an_open_web_app_pops_it_up(settings):
     assert (tested.pops_up, states(tested)["web"]) == (True, ("ready", None))
 
 
+@pytest.mark.macos_specific
 def test_a_ticking_daemon_hands_it_to_a_native_notifier_that_can(settings):
     service = plain(settings)
     service.daemon = lambda: DaemonState(installed=True, loaded=True, paused=False)
@@ -111,6 +113,7 @@ def test_native_pop_ups_turned_off_are_a_channel_to_turn_on(settings):
     )
 
 
+@pytest.mark.macos_specific
 def test_the_notification_settings_open_on_macos_only(settings):
     service = plain(settings)
     opened: list[list[str]] = []

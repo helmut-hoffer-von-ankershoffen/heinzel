@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { _electron as electron } from '../../web/node_modules/playwright-core/index.mjs';
-import { withTimeout } from './harness-cleanup.mjs';
+import { retainEvidence, withTimeout } from './harness-cleanup.mjs';
 import { diagnosePermissionClick } from './permission-diagnostics.mjs';
 
 const directory = process.env.HZ_TEST_ELECTRON_DIR ?? fileURLToPath(new URL('../node_modules/electron/', import.meta.url));
@@ -72,5 +72,5 @@ try {
   }
   await new Promise((resolve) => server.close(resolve));
   if (safeToRemove) await rm(root, {recursive: true, force: true});
-  else throw new Error(`Electron shutdown uncertain; evidence retained at ${root}`);
+  else retainEvidence(`Electron shutdown uncertain; evidence retained at ${root}`);
 }

@@ -271,7 +271,9 @@ def badges(
             if sonar
             else []
         ),
-        ("License: MIT", f"{shield}/badge/license-MIT-brightgreen", "LICENSE"),
+        # Static, always-true badges use 44bb00 (design/tokens.json, badge-green); status badges keep the provider's
+        # colour, so a failure stays red.
+        ("License: MIT", f"{shield}/badge/license-MIT-44bb00", "LICENSE"),
     ]
     return "\n".join(f"[![{alt}]({image})]({link})" for alt, image, link in items)
 

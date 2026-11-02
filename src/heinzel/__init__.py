@@ -1,4 +1,6 @@
-"""Heinzelmännchen: an open-source, AI-driven operating system for product development teams.
+"""Heinzelmännchen is an open-source crew of AI helpers that drafts your team's busywork.
+
+It asks before anything leaves your machine.
 
 The public API for module and plugin authors is re-exported here, so `from heinzel import Module` is all a plugin needs.
 """
