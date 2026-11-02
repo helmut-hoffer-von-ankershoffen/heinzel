@@ -316,3 +316,30 @@ def test_plugin_navigation_cannot_restart_an_expired_change_budget(monkeypatch):
     assert harness.ui_remaining(200, 30) == 30
     with pytest.raises(harness.StepFailed, match="deadline passed"):
         harness.ui_remaining(100, 60)
+
+
+@pytest.mark.parametrize("field", ["accept_wheel_sha256", "accept_profile_sha256"])
+def test_a_public_release_snapshot_rejects_replaced_bytes(field, tmp_path, monkeypatch):
+    """A later release must not satisfy acceptance of the coordinator's pinned bytes."""
+    version = "1.2.3"
+    wheel = b"published wheel"
+    wheel_hash = harness.sha256(wheel)
+    profile = {"format": 2, "core_version": version, "artifacts": [{"name": "heinzel", "sha256": wheel_hash}]}
+    profile_bytes = json.dumps(profile).encode()
+    metadata = {
+        "info": {"version": version},
+        "urls": [{"packagetype": "bdist_wheel", "digests": {"sha256": wheel_hash}}],
+    }
+    monkeypatch.setattr(harness, "latest_app_version", lambda: version)
+    monkeypatch.setattr(
+        harness, "fetch", lambda url, *a: json.dumps(metadata).encode() if "pypi.org" in url else profile_bytes
+    )
+    args = argparse.Namespace(
+        expect_version=version,
+        expect_app_version=version,
+        accept_wheel_sha256=wheel_hash,
+        accept_profile_sha256=harness.sha256(profile_bytes),
+    )
+    setattr(args, field, "0" * 64)
+    with pytest.raises(harness.StepFailed, match="differs from the accepted hash"):
+        harness.preflight(args, tmp_path)
