@@ -673,3 +673,23 @@ def test_the_log_says_what_holds_the_countdown_off_and_when_it_opens(make_kernel
     assert "automatic update found: hz 9.9.9, heinzel-example 2.0.0" in lines
     assert "automatic update waits for: POST /api/system/config/set" in lines
     assert lines.index("automatic update waits for nothing") < lines.index("automatic update countdown opened")
+
+
+def test_turning_automatic_updates_on_checks_at_once_not_at_the_next_half_hour(make_kernel, tmp_path):
+    made, clock, _, _ = updater(make_kernel, tmp_path)
+    advance(made, clock, 5 * 60)  # the first check: nothing announced yet would wait half an hour for the next
+    made.plan.core = None
+    made._save()
+    on = [False]
+    made._read_settings = lambda: Settings(
+        state_dir=tmp_path / "state", cache_dir=tmp_path / "cache", auto_update=on[0], update_check=True
+    )
+    advance(made, clock, 60)  # off
+    assert made.status().phase == "off"
+    checked = []
+    real = made.check
+    made.check = lambda now: checked.append(now) or real(now)
+    on[0] = True
+    assert made.reason() is None
+    advance(made, clock, 1)  # turned on, a minute after the last check
+    assert checked == [clock.now]

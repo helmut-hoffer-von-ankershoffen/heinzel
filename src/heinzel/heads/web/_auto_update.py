@@ -495,6 +495,8 @@ class AutoUpdater:
         self._path = folder / FILENAME
         self._plan_lock = folder / "auto-update.lock"
         self._apply_lock = folder / "auto-update-apply.lock"
+        self._held = False
+        """Automatic updates couldn't run at the last look; once they can, the next look checks at once."""
         self._waited: list[str] = []
         """What held the countdown off at the last look, so the log says it once per change."""
         self._applying: IO[str] | None = None
@@ -598,10 +600,14 @@ class AutoUpdater:
         """One look at the plan: check when due, open or cancel the countdown, apply when it ends."""
         now = self._clock()
         if self.reason() is not None:
+            self._held = True
             if self.plan.apply_at is not None:
                 with self._editing() as plan:
                     plan.apply_at = None
             return
+        if self._held:  # just turned on (or update checks on again): look now, not at the next half hour
+            self._held = False
+            self._next_check = now
         if now >= self._next_check:
             self._next_check = now + CHECK_EVERY + self._between(timedelta(0), JITTER)
             self.check(now)
