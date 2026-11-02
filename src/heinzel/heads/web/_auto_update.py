@@ -25,7 +25,7 @@ import threading
 import urllib.parse
 import urllib.request
 import weakref
-from collections.abc import AsyncGenerator, AsyncIterable, Awaitable, Callable, Iterator, Mapping, Sequence
+from collections.abc import AsyncGenerator, AsyncIterable, Awaitable, Callable, Generator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
@@ -493,7 +493,7 @@ def _old_enough(published: datetime | None, hours: int, now: datetime) -> bool:
 
 
 @contextmanager
-def _locked(path: Path) -> Iterator[None]:
+def _locked(path: Path) -> Generator[None]:
     """Hold an exclusive lock on `path` for the block; without a writable state folder, go on without one."""
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -878,7 +878,7 @@ class AutoUpdater:
             return None
 
     @contextmanager
-    def _editing(self) -> Iterator[Plan]:
+    def _editing(self) -> Generator[Plan]:
         """The plan as the state file has it now, to change and save, under a lock every `hz ui` takes.
 
         Two servers on one state folder each change the latest plan, never their own older copy, so neither undoes

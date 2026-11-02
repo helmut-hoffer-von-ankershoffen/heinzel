@@ -99,8 +99,10 @@ try {
   await popup.waitFor({ timeout: 30000 });
   result.returned = true;
 
-  // Not clicked: the popup closes and the server applies, then restarts in place.
+  // Not clicked: the popup closes and the server applies, then restarts in place. The first countdown already ran
+  // its course on the real clock; this one skips 25 of its 30 seconds on the server's clock.
   const instance = (await api("lifecycle")).instance;
+  writeFileSync(`${folder}/clock`, String(3600 + 25));
   await popup.waitFor({ state: "hidden", timeout: 60000 });
   await until(
     async () => {
