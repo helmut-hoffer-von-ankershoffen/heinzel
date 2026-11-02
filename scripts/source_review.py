@@ -19,6 +19,7 @@ import re
 import signal
 import subprocess
 import sys
+import tempfile
 import threading
 import urllib.request
 from collections.abc import Callable, Mapping
@@ -44,6 +45,7 @@ MAX_FINDINGS, MAX_LIMITATIONS = 30, 12
 MIN_LIMITATION, MAX_LIMITATION = 10, 1000
 MAX_PATH, MIN_FINDING, MAX_FINDING = 300, 20, 2000
 TREE_FIELDS = 3
+UNREADABLE = "Source is binary or unreadable"
 SHA = re.compile(r"[a-f0-9]{40}")
 SEVERITIES = ("Critical", "Required", "Optional")
 VERDICTS = ("GO", "NO-GO", "INCOMPLETE")
@@ -245,14 +247,21 @@ def run_bounded(  # noqa: PLR0913 - one call shape for every child
     return process.returncode, bytes(output)
 
 
-def git(config: Config, *args: str, limit: int = 1_000_000, timeout: float = 30) -> bytes:
-    """Read bounded Git data from the workspace.
+def git(config: Config, *args: str, limit: int = 1_000_000, timeout: float = 30, request: bytes | None = None) -> bytes:
+    """Read bounded Git data from the workspace; `request` is written to its standard input.
 
     Raises:
         ReviewError: If Git fails.
     """
     env = {**GIT_ENV, "HOME": str(config.temp)}
-    code, out = run_bounded(["/usr/bin/git", "-C", str(config.workspace), *args], limit=limit, timeout=timeout, env=env)
+    command = ["/usr/bin/git", "-C", str(config.workspace), *args]
+    if request is None:
+        code, out = run_bounded(command, limit=limit, timeout=timeout, env=env)
+    else:
+        with tempfile.TemporaryFile(dir=config.temp) as stream:
+            stream.write(request)
+            stream.seek(0)
+            code, out = run_bounded(command, limit=limit, timeout=timeout, env=env, stdin=stream)
     if code:
         msg = f"Git {args[0]} failed"
         raise ReviewError(msg)
@@ -426,41 +435,130 @@ def generated_pair_proven(config: Config, names: list[str]) -> bool:
     return bool(runs) and all(run.get("status") == "completed" and run.get("conclusion") == "success" for run in runs)
 
 
-def read_source(config: Config, rev: str, path: str, taken: int, *, digest_only: bool = False) -> dict[str, str] | None:
-    """One exact blob at a revision, or None when the path is absent there; `digest_only` omits its text.
+def tree_blobs(config: Config, rev: str, paths: list[str]) -> dict[str, str]:
+    """The blob id of each path present at a revision, from one Git call.
 
     Raises:
-        ReviewError: If the entry is not a plain text blob or the payload bound would be exceeded.
+        ReviewError: If an entry is not a plain blob, is ambiguous, or names a path that was not asked for.
     """
-    entry = git(config, "ls-tree", "-z", rev, "--", ":(literal)" + path, limit=4096)
-    if not entry:
-        return None
-    if not entry.endswith(b"\0") or entry.count(b"\0") != 1:
+    raw = git(config, "ls-tree", "-z", rev, "--", *(":(literal)" + path for path in paths), limit=4096 * len(paths))
+    if raw and not raw.endswith(b"\0"):
         msg = "Ambiguous source tree entry"
         raise ReviewError(msg)
-    header, separator, entry_path = entry[:-1].partition(b"\t")
-    parts = header.decode("ascii", "strict").split()
-    if not separator or entry_path.decode("utf-8", "strict") != path:
-        msg = "Source tree path mismatch"
-        raise ReviewError(msg)
-    if (
-        len(parts) != TREE_FIELDS
-        or parts[0] not in {"100644", "100755"}
-        or parts[1] != "blob"
-        or not SHA.fullmatch(parts[2])
-    ):
-        msg = "Unsupported source object"
-        raise ReviewError(msg)
-    size = git(config, "cat-file", "-s", parts[2], limit=64).strip()
-    if not size.isdigit() or (not digest_only and taken + int(size) > MAX_PAYLOAD) or int(size) > MAX_GENERATED:
-        msg = "Source exceeds bound"
-        raise ReviewError(msg)
-    data = git(config, "cat-file", "blob", parts[2], limit=int(size) + 1)
-    if len(data) != int(size) or b"\0" in data:
-        msg = "Source is binary or unreadable"
-        raise ReviewError(msg)
+    found: dict[str, str] = {}
+    for entry in raw.split(b"\0")[:-1]:
+        header, separator, entry_path = entry.partition(b"\t")
+        parts = header.decode("ascii", "strict").split()
+        path = entry_path.decode("utf-8", "strict")
+        if not separator or path not in paths:
+            msg = "Source tree path mismatch"
+            raise ReviewError(msg)
+        if path in found:
+            msg = "Ambiguous source tree entry"
+            raise ReviewError(msg)
+        if (
+            len(parts) != TREE_FIELDS
+            or parts[0] not in {"100644", "100755"}
+            or parts[1] != "blob"
+            or not SHA.fullmatch(parts[2])
+        ):
+            msg = "Unsupported source object"
+            raise ReviewError(msg)
+        found[path] = parts[2]
+    return found
+
+
+def blob_sizes(config: Config, blobs: list[str]) -> dict[str, int]:
+    """The size of each blob, from one Git call.
+
+    Raises:
+        ReviewError: If any answer is not the blob that was asked for.
+    """
+    raw = git(
+        config,
+        "cat-file",
+        "--batch-check",
+        request="".join(f"{blob}\n" for blob in blobs).encode(),
+        limit=128 * len(blobs),
+    )
+    lines = raw.decode("ascii", "strict").split("\n")
+    if len(lines) != len(blobs) + 1 or lines[-1]:
+        raise ReviewError(UNREADABLE)
+    sizes: dict[str, int] = {}
+    for blob, line in zip(blobs, lines, strict=False):
+        parts = line.split()
+        if len(parts) != TREE_FIELDS or parts[:2] != [blob, "blob"] or not parts[2].isdigit():
+            raise ReviewError(UNREADABLE)
+        sizes[blob] = int(parts[2])
+    return sizes
+
+
+def blob_texts(config: Config, sizes: dict[str, int]) -> dict[str, bytes]:
+    """The exact bytes of each blob, from one Git call, checked against the sizes read before.
+
+    Raises:
+        ReviewError: If the output is not exactly those blobs.
+    """
+    blobs = list(sizes)
+    request = "".join(f"{blob}\n" for blob in blobs).encode()
+    limit = sum(sizes.values()) + 128 * len(blobs)
+    raw = git(config, "cat-file", "--batch", request=request, limit=limit)
+    texts: dict[str, bytes] = {}
+    position = 0
+    for blob in blobs:
+        newline = raw.find(b"\n", position)
+        start, end = newline + 1, newline + 1 + sizes[blob]
+        if newline < 0 or raw[position:newline] != f"{blob} blob {sizes[blob]}".encode() or raw[end : end + 1] != b"\n":
+            raise ReviewError(UNREADABLE)
+        texts[blob] = raw[start:end]
+        position = end + 1
+    if position != len(raw):
+        raise ReviewError(UNREADABLE)
+    return texts
+
+
+def source_record(data: bytes, *, omit: bool) -> dict[str, str]:
+    """One blob as review input: its digest, and its text unless it is omitted.
+
+    Raises:
+        ReviewError: If it is not UTF-8 text.
+    """
+    try:
+        text = data.decode("utf-8", "strict")
+    except UnicodeDecodeError as error:
+        raise ReviewError(UNREADABLE) from error
+    if "\0" in text:
+        raise ReviewError(UNREADABLE)
     digest = hashlib.sha256(data).hexdigest()
-    return {"sha256": digest, "omitted": "generated"} if digest_only else {"sha256": digest, "text": data.decode()}
+    return {"sha256": digest, "omitted": "generated"} if omit else {"sha256": digest, "text": text}
+
+
+def read_sources(config: Config, names: list[str], *, proven: bool) -> dict[str, dict[str, str] | None]:
+    """Every changed and context path at both revisions, or None where absent; the proven pair as digests only.
+
+    Git is called a fixed number of times however many paths there are: each call is a process, and per-path calls
+    made payloads slow where Git is a shim (macOS's `/usr/bin/git`).
+
+    Raises:
+        ReviewError: If an entry is not a plain text blob or the payload bound would be exceeded.
+    """
+    paths = sorted({*names, *CONTEXT})
+    revs = (config.base, config.head)
+    trees = {rev: tree_blobs(config, rev, paths) for rev in revs}
+    entries = [
+        (f"{rev}:{path}", proven and path in GENERATED_PAIR, trees[rev].get(path)) for rev in revs for path in paths
+    ]
+    blobs = sorted({blob for _, _, blob in entries if blob})
+    sizes = blob_sizes(config, blobs) if blobs else {}
+    taken = 0
+    for _, omit, blob in entries:
+        size = sizes[blob] if blob else 0
+        taken += 0 if omit else size
+        if taken > MAX_PAYLOAD or size > MAX_GENERATED:
+            msg = "Source exceeds bound"
+            raise ReviewError(msg)
+    texts = blob_texts(config, sizes) if sizes else {}
+    return {key: source_record(texts[blob], omit=omit) if blob else None for key, omit, blob in entries}
 
 
 def build_payload(config: Config) -> tuple[bytes, dict[str, Any], list[str]]:
@@ -471,13 +569,7 @@ def build_payload(config: Config) -> tuple[bytes, dict[str, Any], list[str]]:
     """
     names = changed_paths(config)
     proven = generated_pair_proven(config, names)
-    sources: dict[str, dict[str, str] | None] = {}
-    taken = 0
-    for rev in (config.base, config.head):
-        for path in sorted({*names, *CONTEXT}):
-            omit = proven and path in GENERATED_PAIR
-            sources[f"{rev}:{path}"] = record = read_source(config, rev, path, taken, digest_only=omit)
-            taken += len(record["text"].encode()) if record and not omit else 0
+    sources = read_sources(config, names, proven=proven)
     if any(sources[f"{config.base}:{name}"] is None and sources[f"{config.head}:{name}"] is None for name in names):
         msg = "Changed file absent in both trees"
         raise ReviewError(msg)

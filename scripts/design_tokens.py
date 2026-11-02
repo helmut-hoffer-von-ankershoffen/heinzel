@@ -21,6 +21,7 @@ from heinzel.kernel._themes import DEFAULT_THEME
 ROOT = Path(__file__).resolve().parents[1]
 TOKENS = ROOT / "design" / "tokens.json"
 INDEX_CSS = ROOT / "web" / "src" / "index.css"
+TERMINAL_TS = ROOT / "web" / "src" / "lib" / "terminalTheme.ts"
 AVATAR_TS = ROOT / "web" / "src" / "components" / "heinzel.ts"
 WEBSITE = ROOT / "docs" / "assets" / "website"
 TOKENS_CSS = WEBSITE / "tokens.css"
@@ -247,6 +248,28 @@ def check_avatar(data: dict) -> list[str]:
     return problems
 
 
+def check_terminal(data: dict) -> list[str]:
+    """The ANSI hues in terminalTheme.ts (blue, magenta, cyan, [light, dark]) against the `terminal-*` tokens."""
+    source = TERMINAL_TS.read_text(encoding="utf-8")
+    palette = colours(data)
+    body = re.search(r"const HUES = \{(.*?)\} as const", source, re.DOTALL)
+    found = {
+        f"terminal-{name}": (light, dark)
+        for name, light, dark in re.findall(
+            r'(\w+): \["(#[0-9A-Fa-f]{6})", "(#[0-9A-Fa-f]{6})"\]', body.group(1) if body else ""
+        )
+    }
+    wanted = {name for name in palette if name.startswith("terminal-")}
+    problems = [f"terminalTheme.ts has no {name}" for name in sorted(wanted - found.keys())]
+    problems += [f"terminalTheme.ts {name} has no token" for name in sorted(found.keys() - wanted)]
+    problems += [
+        f"terminalTheme.ts {name}: {found[name]!r}, tokens say {palette[name]!r}"
+        for name in sorted(found.keys() & wanted)
+        if tuple(v.lower() for v in found[name]) != tuple(v.lower() for v in palette[name])
+    ]
+    return problems
+
+
 def check_first_paint(data: dict) -> list[str]:
     """The splash's inline colours, the browser's theme colour and the manifest follow the tokens."""
     palette = colours(data)
@@ -326,6 +349,7 @@ def problems_found() -> list[str]:
         *check_index_css(data),
         *check_default_theme(data),
         *check_avatar(data),
+        *check_terminal(data),
         *check_first_paint(data),
         *check_generated(data),
         *check_site_styles(),
