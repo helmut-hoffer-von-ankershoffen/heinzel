@@ -71,11 +71,20 @@ place (ADR 0047, 0083) and runs whether or not a window is open.
   nothing is installed. Then the private operation `system.apply-announced` (no CLI, MCP or REST head offers it)
   installs **exactly the announced versions** and nothing else:
   - It copies the uv tool folder (hz, every plugin, their dependencies and the receipt, not the continuity record)
-    under the state folder, which must be on the same disk; without a copy nothing is installed.
-  - It runs `uv tool install` with the receipt's own requirements and, as transient constraints, `heinzel==X` and
-    `plugin==Y` for every plugin: the announced version, or the installed one for a plugin not announced. uv installs
-    exactly these or fails before it changes anything; no newer version is ever resolved. A git-tag install builds
-    that tag, as it always has. The constraints are taken out of the receipt again afterwards.
+    under the state folder, which must be on the same disk; the copy counts only once it is complete and renamed
+    into place. Without a copy nothing is installed.
+  - It runs `uv tool install` with the receipt's own requirements and, as transient constraints, every distribution
+    in the tool folder at its installed version (dependencies too), except `heinzel==X` and each announced
+    `plugin==Y`. uv installs exactly these or fails before it changes anything. Only the announced packages are asked
+    again (`--refresh-package`, never `--refresh`); a dependency the new versions need that isn't installed yet
+    resolves only among uploads older than the plugins' minimum age (`--exclude-newer`, and hz's own age for hz).
+    The constraints are taken out of the receipt again afterwards.
+  - hz from a release tag is installed from the commit the tag named when it was announced, never the tag, and the
+    receipt names the tag again afterwards, so later updates go on following release tags. Without a recorded
+    commit (also for a plugins-only update, the installed commit), the update is made by hand.
+  - **Plugins from git, a folder or a URL are never updated or refreshed automatically.** A reinstall would build
+    them anew from a source no announced version holds, so while one is installed automatic updates are held, and
+    the Updates pane names it to be updated by hand.
   - It verifies by reading the new environment's metadata, never by running it: exactly these versions, and hz from
     git at the recorded commit.
   - It starts the newly installed hz as a trial: `hz ui --port 0` with its own token, on a throwaway copy of the
@@ -89,9 +98,10 @@ place (ADR 0047, 0083) and runs whether or not a window is open.
   installation's continuity fingerprint (which binds the folder and the content in it) is the recorded one again,
   the standard app starts, and the daemon mutation completes with a handover to the same code, none left pending.
   One plain message says what happened. An update whose trial failed is never tried again; a newer one is. Other
-  failures try again no sooner than 6 hours later. A put-back that stopped half way (an error, a crash) is finished
-  from what is left on disk the next time `hz ui` starts (`system.recover-announced`), or by the next apply; if a
-  crash leaves hz unable to start at all, `uv tool install --reinstall heinzel` repairs it.
+  failures try again no sooner than 6 hours later. **A copy left on disk is the truth:** if the process died after
+  taking it, during the install, or half way through putting it back, the next `hz ui` start puts it back
+  (`system.recover-announced`, only while no other server holds the apply lock), as does the next apply. If a crash
+  leaves hz unable to start at all, `uv tool install --reinstall heinzel` repairs it.
 - The plan (what is pending, the apply time, postponements, the last failure and its message, a refused update)
   lives in the server and is saved under the state folder, so it survives a restart.
 - **Two servers on one state folder.** Every change to the plan reads the state file, changes it and writes it back
@@ -112,8 +122,12 @@ place (ADR 0047, 0083) and runs whether or not a window is open.
 - Bad: PyPI's file hashes are not passed to uv as `--require-hashes`: a uv tool install resolves dependencies anew
   and uv takes required hashes only for every requirement of a fully pinned set. uv still checks the hashes the
   index serves for each file it downloads; the minimum age and the exact versions are the defence here.
-- Bad: a git-tag installation still runs the build backend of the tag it installs; the recorded commit is checked
-  before and after.
+- Bad: a git-tag installation still runs the build backend of the commit it installs, the one recorded at announce
+  time.
+- Bad: anyone with a plugin from git, a folder or a URL gets no automatic updates until it is removed or comes from
+  PyPI.
+- Bad: an update whose new version needs a newer dependency than the installed one can't apply automatically; it
+  fails before installing, says so, and is made by hand.
 - Bad: a second server on the same state folder that didn't apply keeps running the old version until it restarts.
 
 ### Confirmation
@@ -121,8 +135,10 @@ place (ADR 0047, 0083) and runs whether or not a window is open.
 Unit tests of the scheduler fail when a countdown opens while busy, a postpone does not move the apply time by an
 hour, a failure retries sooner than 6 hours, a failed trial start restarts, a put-back replaces the tool folder or
 leaves the continuity record unmatched or a handover pending, an interrupted put-back isn't finished, uv is asked for
-anything but exact versions, an installed hz runs before it is verified, a moved tag installs anything, a release's
-age isn't its last upload to PyPI,
+anything but exact versions for every installed distribution, `--refresh` or a missing `--exclude-newer` is passed,
+a plugin from git, a folder or a URL is reinstalled, a tag rather than its recorded commit is installed, a copy left
+by a killed process isn't put back, a partial copy is, an installed hz runs before it is verified, a moved tag
+installs anything, a release's age isn't its last upload to PyPI,
 the trial start writes to a live folder, the default is off, update checks off still checks, a release younger than
 its minimum age, a pre-release or one of unknown age is announced, other versions than announced or a moved tag are
 kept, two servers lose each other's changes or both apply, any one development fact leaves updates on, or a faked
