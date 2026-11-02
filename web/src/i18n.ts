@@ -134,7 +134,6 @@ const en = {
   "contrib.toggle.copyFailed": "Could not copy the link.",
   "contrib.toggle.failed": "The change could not be completed.",
   "contrib.toggle.unavailable": "This control is unavailable; refresh its status.",
-  "contrib.toggle.notReady": "The service is not verified ready.",
   "lifecycle.action": "Restart and apply",
   "lifecycle.targetAction": "Restart and apply {target}",
   "lifecycle.question": "Restart the server to apply {target}?",

@@ -66,6 +66,13 @@ repos:
         pass_filenames: false
         always_run: true
         stages: [pre-push]
+      - id: confidentiality-push
+        name: confidential terms in the commits being pushed
+        entry: uv run --script scripts/check_confidentiality.py --push
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-push]
       - id: confidentiality-commit-msg
         name: confidential terms in the commit message
         entry: uv run --script scripts/check_confidentiality.py --commit-msg

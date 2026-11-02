@@ -104,3 +104,29 @@ def test_anything_but_a_revision_is_refused_before_git_reads_it(tmp_path, operan
     )
     assert result.returncode == 2
     assert not (tmp_path / "x").exists()
+
+
+def test_push_range_scans_added_lines_with_their_line_numbers(tmp_path):
+    previous = _repo_with_a_marked_commit(tmp_path)
+    (tmp_path / "doc.md").write_text("one\ntwo\n**fictional-sensitive-marker**\n", encoding="utf-8")
+    git = [str(shutil.which("git")), "-c", "commit.gpgsign=false"]
+    subprocess.run([*git, "add", "-A"], cwd=tmp_path, check=True, timeout=10)
+    subprocess.run([*git, "commit", "-q", "-m", "docs: harmless"], cwd=tmp_path, check=True, timeout=10)
+    env = {
+        **{key: value for key, value in os.environ.items() if not key.startswith("GIT_")},
+        "CONFIDENTIAL_TERMS": "fictional-sensitive-marker",
+        "PRE_COMMIT_FROM_REF": previous,
+        "PRE_COMMIT_TO_REF": "HEAD",
+    }
+    result = subprocess.run(
+        [sys.executable, str(SCRIPT), "--push"],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=10,
+    )
+    assert result.returncode == 1
+    assert "changed file 1:3: confidential term #1" in result.stderr
+    assert "fictional-sensitive-marker" not in result.stderr

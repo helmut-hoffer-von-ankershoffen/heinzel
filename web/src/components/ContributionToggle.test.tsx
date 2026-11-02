@@ -59,6 +59,12 @@ describe("generic provider toggle", () => {
     expect(screen.getByRole("switch", { name: "Share this service" })).toHaveAttribute("aria-checked", String(checked));
     expect(screen.getByText(checked ? "On" : "Off")).toBeVisible();
   });
+  it("says nothing about readiness when the toggle is simply off", () => {
+    show(control({ checked: false, requested: false }));
+    expect(screen.getByText("Off")).toBeVisible();
+    expect(screen.getByRole("status")).toBeEmptyDOMElement();
+    expect(screen.queryByText(/not verified/i)).not.toBeInTheDocument();
+  });
   it("one gesture sends the host-built private JSON call without query or a second confirmation", async () => {
     const user = userEvent.setup();
     const value = control({
