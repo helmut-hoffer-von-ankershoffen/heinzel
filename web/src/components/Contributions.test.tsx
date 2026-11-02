@@ -170,6 +170,37 @@ describe("Contributions", () => {
     },
   );
 
+  it("names a footer clock's pane by its zone, without a heading that repeats the time", async () => {
+    mockApi({
+      ...answers,
+      "/api/system/ui/status": [
+        {
+          ...entry,
+          id: "clock:world",
+          slots: { footer: true },
+          item: {
+            text: "Berlin",
+            tone: "neutral",
+            presentation: "value",
+            live: { kind: "clock", zone: "Europe/Berlin" },
+            detail: [
+              { text: "Berlin", badge: "Primary", tone: "neutral", live: { kind: "clock", zone: "Europe/Berlin" } },
+              { text: "New York", tone: "neutral", live: { kind: "clock", zone: "America/New_York" } },
+            ],
+            actions: [{ label: "Open", effect: { kind: "command", command: "hz clock", runs: true } }],
+          },
+        },
+      ],
+    });
+    const user = userEvent.setup();
+    renderAt("/doctor");
+    await user.hover(await screen.findByRole("button", { name: /^Berlin \d\d:\d\d:\d\d/ }));
+    const pane = await screen.findByRole("region", { name: "Berlin" });
+    expect(within(pane).queryByText(/^Berlin \d\d:\d\d:\d\d$/)).not.toBeInTheDocument();
+    expect(within(pane).getByText("New York")).toBeInTheDocument();
+    expect(within(pane).getByRole("button", { name: "Open" })).toBeInTheDocument();
+  });
+
   it("asks before a write and runs exactly the call the server built", async () => {
     const { calls } = mockApi({ ...answers, "/api/stream/acme/sync": () => eventStream([]) });
     const user = userEvent.setup();
