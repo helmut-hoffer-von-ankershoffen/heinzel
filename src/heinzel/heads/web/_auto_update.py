@@ -297,23 +297,32 @@ class Activity:
     def __init__(self) -> None:
         """Nothing running yet."""
         self._lock = threading.Lock()
-        self._running = 0
+        self._running: dict[str, int] = {}
 
-    def enter(self) -> None:
-        """One more request is running."""
+    def enter(self, what: str = "a request") -> None:
+        """One more request is running; `what` names it (`POST /api/...`) for the log."""
         with self._lock:
-            self._running += 1
+            self._running[what] = self._running.get(what, 0) + 1
 
-    def leave(self) -> None:
+    def leave(self, what: str = "a request") -> None:
         """One request finished."""
         with self._lock:
-            self._running = max(0, self._running - 1)
+            count = self._running.get(what, 0) - 1
+            if count > 0:
+                self._running[what] = count
+            else:
+                self._running.pop(what, None)
 
     @property
     def busy(self) -> bool:
         """Whether any is running."""
         with self._lock:
-            return self._running > 0
+            return bool(self._running)
+
+    def running(self) -> list[str]:
+        """What is running, by name, for the log."""
+        with self._lock:
+            return sorted(self._running)
 
 
 SOURCE_CHECKOUT = "Updates are managed by your source checkout."
@@ -392,6 +401,12 @@ def development_reason(
     except OSError:
         return DEVELOPMENT
     return None
+
+
+def update_summary(plan: Plan) -> str:
+    """What a plan installs, in plain words, for the log."""
+    parts = [f"hz {plan.core}"] if plan.core else []
+    return ", ".join([*parts, *(f"{name} {version}" for name, version in plan.plugins.items())])
 
 
 def _old_enough(published: datetime | None, hours: int, now: datetime) -> bool:
@@ -480,6 +495,10 @@ class AutoUpdater:
         self._path = folder / FILENAME
         self._plan_lock = folder / "auto-update.lock"
         self._apply_lock = folder / "auto-update-apply.lock"
+        self._held = False
+        """Automatic updates couldn't run at the last look; once they can, the next look checks at once."""
+        self._waited: list[str] = []
+        """What held the countdown off at the last look, so the log says it once per change."""
         self._applying: IO[str] | None = None
         """Held from the start of an apply until this process ends, so no other `hz ui` applies meanwhile."""
         self.plan = self._read(fresh=True) or Plan()
@@ -544,14 +563,18 @@ class AutoUpdater:
 
     def busy(self) -> bool:
         """Whether a chat answer, an install or a daemon job is running now."""
-        if self._activity.busy:
-            return True
+        return bool(self.waiting_for())
+
+    def waiting_for(self) -> list[str]:
+        """What holds off the countdown now, by name: requests that change state, or a daemon job."""
+        running = self._activity.running()
         if self._kernel.provides(DaemonAttestation):
             try:
-                return self._kernel.resolve(DaemonAttestation).job_running()
-            except Exception:  # noqa: BLE001 - an unknown daemon state must not block updates for good
-                return False
-        return False
+                if self._kernel.resolve(DaemonAttestation).job_running():
+                    running.append("a daemon job")
+            except Exception:
+                log.debug("the daemon's tick lock couldn't be read", exc_info=True)
+        return running
 
     # The loop --------------------------------------------------------------------------------------------------------
 
@@ -577,19 +600,30 @@ class AutoUpdater:
         """One look at the plan: check when due, open or cancel the countdown, apply when it ends."""
         now = self._clock()
         if self.reason() is not None:
+            self._held = True
             if self.plan.apply_at is not None:
                 with self._editing() as plan:
                     plan.apply_at = None
             return
+        if self._held:  # just turned on (or update checks on again): look now, not at the next half hour
+            self._held = False
+            self._next_check = now
         if now >= self._next_check:
             self._next_check = now + CHECK_EVERY + self._between(timedelta(0), JITTER)
             self.check(now)
-        busy = self.busy()
+        waiting = self.waiting_for()
+        if waiting != self._waited:  # what holds the countdown off, in the log once per change
+            self._waited = waiting
+            log.info("automatic update %s", f"waits for: {', '.join(waiting)}" if waiting else "waits for nothing")
         with self._editing() as plan:
-            due = step(plan, now, busy=busy)
+            counting = plan.apply_at
+            due = step(plan, now, busy=bool(waiting))
             if due:
                 plan.applying = True
+            elif plan.apply_at != counting:
+                log.info("automatic update countdown %s", "opened" if plan.apply_at else "held off")
         if due:
+            log.info("automatic update applies now: %s", update_summary(plan))
             self.apply()
 
     def check(self, now: datetime) -> None:
@@ -612,9 +646,12 @@ class AutoUpdater:
             log.info("automatic update check of the plugins failed: %s", exc)
             plugins = dict(self.plan.plugins)
         with self._editing() as plan:
+            before = (plan.core, dict(plan.plugins))
             found(plan, core, plugins, now)
             if plan.core == core:
                 plan.commit = commit
+            if (plan.core, plan.plugins) != before:
+                log.info("automatic update found: %s", update_summary(plan) or "nothing newer")
 
     def _check_core(self, settings: Settings, now: datetime) -> tuple[str | None, str | None]:
         """A newer stable hz old enough to install, and the commit its tag names for an installation from a tag."""
@@ -898,16 +935,18 @@ async def as_work[R](activity: Activity, call_next: Callable[[R], Awaitable[Resp
     A streamed chat turn runs while its body streams, and its operation's thread can outlive the stream when the
     browser leaves; `WORK` lets the stream hold the activity for that thread as well.
     """
-    activity.enter()
-    token = WORK.set((activity.enter, activity.leave))
+    url = getattr(request, "url", None)
+    what = f"{getattr(request, 'method', 'POST')} {getattr(url, 'path', '')}".strip()
+    activity.enter(what)
+    token = WORK.set((lambda: activity.enter(what), lambda: activity.leave(what)))
     try:
         response = await call_next(request)
     except BaseException:
-        activity.leave()
+        activity.leave(what)
         raise
     finally:
         WORK.reset(token)
-    return held_until_sent(response, activity.leave)
+    return held_until_sent(response, lambda: activity.leave(what))
 
 
 def counts_as_work(method: str, path: str) -> bool:

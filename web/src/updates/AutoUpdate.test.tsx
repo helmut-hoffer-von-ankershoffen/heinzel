@@ -123,7 +123,7 @@ describe("automatic updates", () => {
         <AutoUpdate />
       </Providers>,
     );
-    await vi.waitFor(() => expect(client.getQueryData(["web", "auto-update", true])).toBeDefined());
+    await vi.waitFor(() => expect(client.getQueryData(["web", "auto-update"])).toBeDefined());
     version = "1.1.0";
     await act(() => client.refetchQueries({ queryKey: ["web", "auto-update"] }));
     expect(await screen.findByRole("status")).toHaveTextContent("Reload to finish the update.");
@@ -151,7 +151,7 @@ describe("automatic updates", () => {
       );
       const box = screen.getByRole("textbox", { name: "Message" });
       fireEvent.change(box, { target: { value: "Half a thought" } });
-      await vi.waitFor(() => expect(client.getQueryData(["web", "auto-update", true])).toBeDefined());
+      await vi.waitFor(() => expect(client.getQueryData(["web", "auto-update"])).toBeDefined());
       version = "1.1.0"; // the server restarted on the new version
       await act(() => client.refetchQueries({ queryKey: ["web", "auto-update"] }));
       expect(await screen.findByRole("status")).toHaveTextContent("Reload to finish the update.");
