@@ -174,8 +174,15 @@ export const PAGES: Page[] = [
     title: "Updates",
     icon: RefreshCw,
     heading: "computer",
-    owns: ["system.changelog", "system.plugin"],
-    keywords: "release notes github token",
+    // The automatic-update settings are kernel settings, but people look for them with the other update choices.
+    owns: [
+      "system.changelog",
+      "system.plugin",
+      "hz.auto_update",
+      "hz.auto_update_min_age_hours",
+      "hz.auto_update_plugin_min_age_hours",
+    ],
+    keywords: "release notes github token automatic updates",
   },
   { id: "system", title: "System", icon: Cpu, heading: "computer", owns: ["system"], keywords: "directory" },
 ];
@@ -205,6 +212,13 @@ export function pageOf(section: string, pages: Page[]): Page | undefined {
     }
   }
   return best ?? pages.find((page) => page.owns.length === 0 && page.id === group(section));
+}
+
+/** The page of one setting: a page that owns exactly `section.key` (a single kernel setting placed by what it is
+ * about), else the page of its section. */
+export function settingPage(section: string, key: string, pages: Page[]): Page | undefined {
+  const exact = `${section}.${key}`;
+  return pages.find((page) => page.owns.includes(exact)) ?? pageOf(section, pages);
 }
 
 export type SettingsNav = {

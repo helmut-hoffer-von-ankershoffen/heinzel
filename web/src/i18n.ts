@@ -1062,6 +1062,20 @@ const en = {
   "updates.unknown": "Update availability is unavailable.",
   "updates.failed": "The update could not be verified. Inspect the installation before trying again.",
   "updates.verify": "Verify update again",
+  "autoUpdate.countdown": "hz updates itself in {seconds} s",
+  "autoUpdate.what": "Installing: {what}.",
+  "autoUpdate.how": "hz restarts in place. This window reconnects by itself, and you stay signed in.",
+  "autoUpdate.postpone": "Postpone 1 hour",
+  "autoUpdate.applying": "Updating hz\u2026",
+  "autoUpdate.reloadLater":
+    "Reload to finish the update. This window reloads by itself once your message is sent and the answer is done.",
+  "autoUpdate.reconnect": "This window reconnects by itself when hz is back.",
+  "autoUpdate.ok": "OK",
+  "autoUpdate.setting": "Automatic updates",
+  "autoUpdate.byHand":
+    "Update by hand: {plugins}. They come from git, a folder or a URL; automatic updates leave them as they are.",
+  "autoUpdate.settingHelp":
+    "Installs new versions of hz and its plugins by itself, after a 30-second warning you can postpone; never during a chat answer or a running job.",
 } as const;
 
 export type MessageKey = keyof typeof en;

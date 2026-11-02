@@ -50,6 +50,7 @@ from fastapi.staticfiles import StaticFiles
 from heinzel.heads import api
 from heinzel.heads._stream import StreamProgress
 from heinzel.heads.web import _terminal
+from heinzel.heads.web._auto_update import Activity, AutoUpdater, add_auto_update, as_work, counts_as_work
 from heinzel.heads.web._devices import Devices
 from heinzel.heads.web._lifecycle import CANT_RESTART as CANT_RESTART
 from heinzel.heads.web._lifecycle import add_lifecycle
@@ -201,6 +202,7 @@ def build(  # noqa: PLR0913 - all but the kernel by keyword
     )
     kernel.bind(LocalWebRuntime, runtime)
     kernel.bind(Progress, StreamProgress())  # operations' events reach the stream of the request that runs them
+    activity = Activity()
 
     @app.middleware("http")
     async def guarded(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
@@ -213,6 +215,9 @@ def build(  # noqa: PLR0913 - all but the kernel by keyword
             host_help=api.WEB_HOST_HELP,
         ):
             response: Response = JSONResponse(status_code=api.FORBIDDEN, content={"error": problem})
+        elif counts_as_work(request.method, request.url.path):
+            # A chat answer or install holds off an automatic update (ADR 0116) until its body has been sent.
+            response = await as_work(activity, call_next, request)
         else:
             response = await call_next(request)
         secure(response, request.url.path)
@@ -240,6 +245,8 @@ def build(  # noqa: PLR0913 - all but the kernel by keyword
     )
     add_pairing(endpoints, paired)
     add_updates(endpoints, kernel, static, restartable=restart is not None)
+    app.state.auto_update = AutoUpdater(kernel, restart=restart, activity=activity)
+    add_auto_update(endpoints, app.state.auto_update)
     add_stream(endpoints, kernel, stopping)  # behind the same middleware: Host, Origin and the token
 
     add_views(app, kernel)
@@ -552,9 +559,12 @@ def serve(  # noqa: PLR0913 - all but the kernel by keyword
                 webbrowser.open(url)
 
     threading.Thread(target=when_started, daemon=True).start()
+    updater: AutoUpdater = app.state.auto_update
+    updater.start()
     try:
         server.run(sockets=[sock])
     finally:
+        updater.stop()
         sock.close()
     if handover and not stopping.interrupted:  # Ctrl-C while restarting stops it
         command = [sys.executable, "-m", "heinzel", *sys.argv[1:]]

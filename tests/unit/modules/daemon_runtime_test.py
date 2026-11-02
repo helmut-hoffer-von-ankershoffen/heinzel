@@ -9,7 +9,16 @@ import pytest
 
 from heinzel import HeinzelError
 from heinzel.modules.system.daemon import _runtime
-from heinzel.modules.system.daemon._runtime import TickLog, describe, lock, private_dir, tail, within, write_private
+from heinzel.modules.system.daemon._runtime import (
+    TickLog,
+    describe,
+    held,
+    lock,
+    private_dir,
+    tail,
+    within,
+    write_private,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -134,3 +143,15 @@ def test_tail_of_a_missing_log_is_empty(tmp_path):
 def test_closing_an_unused_log_is_fine(tmp_path):
     TickLog(tmp_path / "daemon.jsonl", "t", lambda: AT).close()
     assert not (tmp_path / "daemon.jsonl").exists()
+
+
+def test_held_sees_a_running_tick_without_taking_or_creating_the_lock(tmp_path):
+    path = tmp_path / "tick.lock"
+    assert held(path) is False
+    assert not path.exists()  # a probe never creates the lock file
+    with lock(path) as acquired:
+        assert acquired
+        assert held(path) is True  # a tick holds it: automatic updates wait (ADR 0116)
+    assert held(path) is False
+    with lock(path) as acquired:  # the probe left nothing held
+        assert acquired

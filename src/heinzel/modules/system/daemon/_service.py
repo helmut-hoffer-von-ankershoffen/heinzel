@@ -82,6 +82,7 @@ from heinzel.modules.system.daemon._runtime import (
     TickLog,
     TimeLimit,
     describe,
+    held,
     lock,
     lock_until_finished,
     private_dir,
@@ -1529,6 +1530,10 @@ class DaemonService:
         return Uninstalled(removed=paths, commands=commands)
 
     # Inspecting ------------------------------------------------------------------------------------------------------
+
+    def job_running(self) -> bool:
+        """Whether a tick holds the tick lock now, i.e. is running jobs (ADR 0116)."""
+        return held(self.state_dir / "tick.lock")
 
     def status(self) -> DaemonStatus:
         """Installed, loaded, paused, last tick and failing jobs; runs launchctl or systemctl only when installed."""

@@ -152,6 +152,28 @@ def lock(path: Path) -> Generator[bool]:
             fcntl.flock(handle, fcntl.LOCK_UN)
 
 
+def held(path: Path) -> bool:
+    """Whether another process holds the lock on `path` right now; never waits and never creates the file.
+
+    A shared probe conflicts only with an exclusive holder, so two probes never see each other.
+    """
+    try:
+        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+    except OSError:
+        return False
+    try:
+        fcntl.flock(descriptor, fcntl.LOCK_SH | fcntl.LOCK_NB)
+    except BlockingIOError:
+        return True
+    except OSError:
+        return False
+    else:
+        fcntl.flock(descriptor, fcntl.LOCK_UN)
+        return False
+    finally:
+        os.close(descriptor)
+
+
 @contextmanager
 def lock_until_finished(path: Path, pending: Callable[[], Sequence[threading.Thread]]) -> Generator[bool]:
     """Hold the lifecycle lock until this tick's abandoned job threads actually finish.
