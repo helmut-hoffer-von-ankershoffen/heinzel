@@ -28,6 +28,21 @@ def no_live_notifications(monkeypatch):
     monkeypatch.setattr(NotifyService, "post_native", lambda _self: 0)
 
 
+@pytest.fixture
+def unrelated_host_daemon(make_kernel, settings, monkeypatch, tmp_path):
+    """A daemon outside the test's configured unit directory must never cause a service-manager probe."""
+    monkeypatch.setenv("HOME", str(tmp_path / "host-home"))
+    host_daemon = DaemonService(make_kernel(builtins=True), settings, DaemonSettings())
+    for path in host_daemon._unit_paths():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("unrelated host unit", encoding="utf-8")
+
+    def reject_host_probe(_self):
+        pytest.fail("the replay test must not probe the host service manager")
+
+    monkeypatch.setattr(DaemonService, "_loaded", reject_host_probe)
+
+
 def approve_schedule(call, session, schedule, request_id, action="activate"):
     """Stage and explicitly confirm an exact schedule preview through chat's human boundary."""
     staged = call(
@@ -102,7 +117,9 @@ def kill_after_legacy_receipt_compaction(state_dir, session_id, contract_version
 
 
 @pytest.mark.parametrize("evicted", [False, True])
-def test_check_in_dispatch_replays_intended_slot_after_interrupted_receipt(make_kernel, settings, monkeypatch, evicted):
+def test_check_in_dispatch_replays_intended_slot_after_interrupted_receipt(
+    make_kernel, settings, monkeypatch, unrelated_host_daemon, evicted
+):
     runner = CliRunner()
     now = datetime(2026, 10, 25, 12, 6, tzinfo=UTC)
 
@@ -111,10 +128,13 @@ def test_check_in_dispatch_replays_intended_slot_after_interrupted_receipt(make_
         session_crud = kernel.resolve(SessionCrud)
         session_crud.clock = lambda: now.replace(minute=4)
         session_crud.repository.clock = lambda: now.replace(minute=4)
-        kernel.bind(DaemonService, DaemonService(kernel, settings, DaemonSettings(), clock=lambda: now, zone=UTC))
+        kernel.bind(
+            DaemonService, DaemonService(kernel, settings, kernel.resolve(DaemonSettings), clock=lambda: now, zone=UTC)
+        )
         return kernel
 
     kernel = make()
+    assert kernel.resolve(DaemonService).unit_dir == Path(os.environ["HZ_SYSTEM_DAEMON__UNIT_DIR"])
     notifications = kernel.resolve(Notifications)
     notifications.settings = notifications.settings.model_copy(update={"repeat_hours": 0})
 
@@ -172,7 +192,10 @@ def test_check_in_payload_survives_rename_during_replay_and_next_slot_uses_new_n
         crud = kernel.resolve(SessionCrud)
         crud.clock = lambda: time[0].replace(minute=4)
         crud.repository.clock = lambda: time[0].replace(minute=4)
-        kernel.bind(DaemonService, DaemonService(kernel, settings, DaemonSettings(), clock=lambda: time[0], zone=UTC))
+        kernel.bind(
+            DaemonService,
+            DaemonService(kernel, settings, kernel.resolve(DaemonSettings), clock=lambda: time[0], zone=UTC),
+        )
         return kernel
 
     kernel = make()
@@ -239,7 +262,9 @@ def test_foreground_daemon_compiles_owned_check_in_and_reports_failed_notice(mak
     session_crud = kernel.resolve(SessionCrud)
     session_crud.clock = lambda: now.replace(minute=4)
     session_crud.repository.clock = lambda: now.replace(minute=4)
-    kernel.bind(DaemonService, DaemonService(kernel, settings, DaemonSettings(), clock=lambda: now, zone=UTC))
+    kernel.bind(
+        DaemonService, DaemonService(kernel, settings, kernel.resolve(DaemonSettings), clock=lambda: now, zone=UTC)
+    )
 
     def call(*args):
         result = runner.invoke(build(kernel), [*args, "--json"])
@@ -279,7 +304,7 @@ def test_tick_never_dispatches_a_slot_from_before_activation_or_resume(make_kern
     session_crud = kernel.resolve(SessionCrud)
     session_crud.clock = lambda: time[0]
     session_crud.repository.clock = lambda: time[0]
-    daemon = DaemonService(kernel, settings, DaemonSettings(), clock=lambda: time[0], zone=UTC)
+    daemon = DaemonService(kernel, settings, kernel.resolve(DaemonSettings), clock=lambda: time[0], zone=UTC)
     kernel.bind(DaemonService, daemon)
 
     def call(*args):
@@ -317,7 +342,9 @@ def test_manual_wake_cannot_dispatch_a_scheduled_check_in(make_kernel, settings,
     session_crud = kernel.resolve(SessionCrud)
     session_crud.clock = lambda: now.replace(minute=4)
     session_crud.repository.clock = lambda: now.replace(minute=4)
-    kernel.bind(DaemonService, DaemonService(kernel, settings, DaemonSettings(), clock=lambda: now, zone=UTC))
+    kernel.bind(
+        DaemonService, DaemonService(kernel, settings, kernel.resolve(DaemonSettings), clock=lambda: now, zone=UTC)
+    )
 
     def call(*args):
         result = runner.invoke(build(kernel), [*args, "--json"])
@@ -345,7 +372,9 @@ def test_outbox_recovers_or_fails_closed_after_notice_before_outbox_ack(make_ker
         crud = kernel.resolve(SessionCrud)
         crud.clock = lambda: now.replace(minute=4)
         crud.repository.clock = lambda: now.replace(minute=4)
-        kernel.bind(DaemonService, DaemonService(kernel, settings, DaemonSettings(), clock=lambda: now, zone=UTC))
+        kernel.bind(
+            DaemonService, DaemonService(kernel, settings, kernel.resolve(DaemonSettings), clock=lambda: now, zone=UTC)
+        )
         notices = kernel.resolve(Notifications)
         notices.settings = notices.settings.model_copy(update={"repeat_hours": 0})
         return kernel
@@ -807,7 +836,9 @@ def test_slow_daemon_cadence_fails_check_in_instead_of_dropping_slots(make_kerne
     crud = kernel.resolve(SessionCrud)
     crud.clock = lambda: now.replace(minute=4)
     crud.repository.clock = lambda: now.replace(minute=4)
-    kernel.bind(DaemonService, DaemonService(kernel, settings, DaemonSettings(), clock=lambda: now, zone=UTC))
+    kernel.bind(
+        DaemonService, DaemonService(kernel, settings, kernel.resolve(DaemonSettings), clock=lambda: now, zone=UTC)
+    )
 
     def call(*args):
         result = runner.invoke(build(kernel), [*args, "--json"])
