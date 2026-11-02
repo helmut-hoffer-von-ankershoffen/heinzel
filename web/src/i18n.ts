@@ -1028,6 +1028,13 @@ const en = {
   "updates.unknown": "Update availability is unavailable.",
   "updates.failed": "The update could not be verified. Inspect the installation before trying again.",
   "updates.verify": "Verify update again",
+  "autoUpdate.countdown": "hz updates itself in {seconds} s",
+  "autoUpdate.what": "Installing: {what}.",
+  "autoUpdate.how": "hz restarts in place. This window reconnects by itself, and you stay signed in.",
+  "autoUpdate.postpone": "Postpone 1 hour",
+  "autoUpdate.applying": "Updating hz\u2026",
+  "autoUpdate.reconnect": "This window reconnects by itself when hz is back.",
+  "autoUpdate.ok": "OK",
 } as const;
 
 export type MessageKey = keyof typeof en;

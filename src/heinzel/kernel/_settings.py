@@ -101,6 +101,13 @@ class Settings(ModuleSettings):
         description="Look for a newer release at most once an hour and mention it after a command's output. The "
         "check sends nothing about you, and never runs in CI or in JSON, MCP or REST output.",
     )
+    auto_update: bool = Field(
+        default=False,
+        title="Automatic updates",
+        description="While the web app's server runs, look for a newer stable hz and newer plugins every half hour "
+        "and install them by themselves. Every open window gets 30 seconds' warning and can put it off by an hour. "
+        "Nothing is updated during a chat answer or a running job.",
+    )
     update_channel: Annotated[Literal["stable", "edge", "main"], BeforeValidator(_update_channel)] = Field(
         default="stable",
         title="Update channel",
@@ -158,7 +165,7 @@ class Settings(ModuleSettings):
     )
 
     ignored_in_project: ClassVar[frozenset[str]] = frozenset(
-        {"api_allowed_hosts", "expert", "ui_allowed_origins", "ui_port", "update_check"}
+        {"api_allowed_hosts", "auto_update", "expert", "ui_allowed_origins", "ui_port", "update_check"}
     )
 
     @field_validator("features", "disabled_modules", "api_allowed_hosts", mode="before")

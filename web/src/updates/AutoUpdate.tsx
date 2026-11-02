@@ -1,0 +1,128 @@
+// Automatic updates (ADR 0116): the server owns the plan; this only shows it. Every window polls the same
+// `GET /api/auto-update`, so two windows agree and a reload shows what is left of the countdown.
+
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useRef, useState } from "react";
+import { token } from "@/api/token";
+import { Button } from "@/components/ui/button";
+import { t } from "@/i18n";
+import { updateTransport } from "./controller";
+
+export type AutoUpdateStatus = {
+  enabled: boolean;
+  reason: string | null;
+  phase: "off" | "idle" | "waiting" | "countdown" | "applying";
+  version: string;
+  core: string | null;
+  plugins: Record<string, string>;
+  seconds_left: number | null;
+  apply_at: string | null;
+  next_window_at: string | null;
+  postponements: number;
+  message: string | null;
+};
+
+const KEY = ["web", "auto-update"] as const;
+
+async function call(method: "GET" | "POST", path: string, signal?: AbortSignal): Promise<AutoUpdateStatus> {
+  const response = await fetch(
+    new Request(new URL(`/api/auto-update${path}`, window.location.origin), {
+      method,
+      cache: "no-store",
+      signal,
+      headers: { Authorization: `Bearer ${token() ?? ""}` },
+    }),
+  );
+  if (!response.ok) throw new Error(`Automatic updates answered ${response.status}.`);
+  return (await response.json()) as AutoUpdateStatus;
+}
+
+/** What will be updated, in plain words. */
+export function updateSummary(status: AutoUpdateStatus): string {
+  const plugins = Object.entries(status.plugins).map(([name, version]) => `${name} ${version}`);
+  const parts = [...(status.core ? [`hz ${status.core}`] : []), ...plugins];
+  return parts.join(", ");
+}
+
+/** Seconds left now, counted down locally between polls from what the server said and when it said it. */
+export function secondsLeft(status: AutoUpdateStatus | undefined, receivedAt: number, now: number): number | null {
+  if (status?.phase !== "countdown" || status.seconds_left == null) return null;
+  return Math.max(0, status.seconds_left - Math.floor(Math.max(0, now - receivedAt) / 1000));
+}
+
+export function AutoUpdate() {
+  const client = useQueryClient();
+  const query = useQuery({
+    queryKey: KEY,
+    queryFn: ({ signal }) => call("GET", "", signal),
+    // Every 2 s while anything is pending, so a countdown shows within 2 of its 30 seconds; a minute when off.
+    refetchInterval: (state) => (state.state.data?.phase === "off" ? 60_000 : 2_000),
+    retry: false,
+  });
+  const status = query.data;
+  const [now, setNow] = useState(() => Date.now());
+  const [busy, setBusy] = useState(false);
+  const loaded = useRef<string | null>(null);
+  useEffect(() => {
+    if (status?.phase !== "countdown") return;
+    const tick = window.setInterval(() => setNow(Date.now()), 250);
+    return () => window.clearInterval(tick);
+  }, [status?.phase]);
+  useEffect(() => {
+    if (!status) return;
+    // The server restarted on a new version: load its app instead of running old code against it.
+    if (loaded.current === null) loaded.current = status.version;
+    else if (loaded.current !== status.version) {
+      loaded.current = status.version;
+      void updateTransport
+        .clean()
+        .catch(() => undefined)
+        .finally(() => updateTransport.reload());
+    }
+  }, [status]);
+  const act = async (path: "/postpone" | "/dismiss") => {
+    setBusy(true);
+    try {
+      client.setQueryData(KEY, await call("POST", path));
+    } catch {
+      await query.refetch();
+    } finally {
+      setBusy(false);
+    }
+  };
+  if (!status) return null;
+  const left = secondsLeft(status, query.dataUpdatedAt, now);
+  const card =
+    "pointer-events-auto fixed right-4 bottom-[76px] z-[calc(var(--layer-modal,60)_+_10)] w-[min(24rem,calc(var(--hz-viewport-width,100vw)_-_2rem))] " +
+    "space-y-2 rounded-xl border border-foreground/20 bg-background p-4 text-sm text-foreground shadow-lg";
+  if (status.phase === "countdown" && left != null)
+    return (
+      <section role="alertdialog" aria-labelledby="hz-auto-update-title" aria-live="polite" className={card}>
+        <h2 id="hz-auto-update-title" className="font-medium">
+          {t("autoUpdate.countdown", { seconds: left })}
+        </h2>
+        <p>{t("autoUpdate.what", { what: updateSummary(status) })}</p>
+        <p className="text-muted-foreground">{t("autoUpdate.how")}</p>
+        <Button size="sm" variant="outline" disabled={busy} onClick={() => void act("/postpone")}>
+          {t("autoUpdate.postpone")}
+        </Button>
+      </section>
+    );
+  if (status.phase === "applying")
+    return (
+      <section role="status" className={card}>
+        <p className="font-medium">{t("autoUpdate.applying")}</p>
+        <p className="text-muted-foreground">{t("autoUpdate.reconnect")}</p>
+      </section>
+    );
+  if (status.message)
+    return (
+      <section role="status" className={card}>
+        <p>{status.message}</p>
+        <Button size="sm" variant="outline" disabled={busy} onClick={() => void act("/dismiss")}>
+          {t("autoUpdate.ok")}
+        </Button>
+      </section>
+    );
+  return null;
+}

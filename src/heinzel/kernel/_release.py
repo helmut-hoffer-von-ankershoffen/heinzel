@@ -61,6 +61,22 @@ class ReleaseSource:
         raise NotImplementedError
 
 
+class PluginReleases:
+    """Newer releases of installed plugins; the system module provides a subclass (ADR 0116).
+
+    A base class rather than a protocol, so that the kernel can inject it by type like `ReleaseSource`.
+    """
+
+    def newer(self, timeout: float) -> dict[str, str]:
+        """Each installed plugin with a newer stable release, by distribution name, mapped to that version.
+
+        Plugins whose source can't say (a git branch, a local folder) are left out. Waits at most `timeout` seconds
+        per network operation and may raise anything when the source can't be asked.
+        """
+        del timeout
+        return {}
+
+
 @dataclass(frozen=True, slots=True)
 class ReleaseCache:
     """The latest release last seen, in the cache directory (setting `cache_dir`); losing it only loses the hint."""

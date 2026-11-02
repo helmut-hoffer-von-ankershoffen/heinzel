@@ -1281,8 +1281,10 @@ def test_attestation_boundary_exposes_scoped_handover_and_rejects_forged_snapsho
     from heinzel.modules.system.daemon import _attestation, _installation_lifecycle
 
     service = make()
-    assert [field.name for field in fields(DaemonAttestation)] == ["status"]
+    # Read-only facts only: the status, and whether a tick runs jobs now (automatic updates wait, ADR 0116).
+    assert [field.name for field in fields(DaemonAttestation)] == ["status", "job_running"]
     assert _attestation(service).status().installed is False
+    assert _attestation(service).job_running() is False
     boundary = _installation_lifecycle(service)
     snapshot = boundary.capture()
     assert not boundary.request(snapshot).requested

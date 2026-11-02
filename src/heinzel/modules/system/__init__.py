@@ -5,7 +5,13 @@ from typing import Annotated, Literal
 from pydantic import Field
 
 from heinzel import Kernel, Module
-from heinzel.kernel import CoreMetadataVerifier, DaemonInstallationLifecycle, Installation, ReleaseSource
+from heinzel.kernel import (
+    CoreMetadataVerifier,
+    DaemonInstallationLifecycle,
+    Installation,
+    PluginReleases,
+    ReleaseSource,
+)
 from heinzel.modules.system._metadata_identity import CoreMetadataIdentity
 from heinzel.modules.system._models import (
     ChannelReport,
@@ -16,6 +22,7 @@ from heinzel.modules.system._models import (
     SystemInfo,
     UpdateResult,
 )
+from heinzel.modules.system._plugin_releases import plugin_releases
 from heinzel.modules.system._render import render_channel, render_info, render_modules, render_release, render_update
 from heinzel.modules.system._service import GitHubReleases, SystemService, github_releases
 from heinzel.modules.system._update import UpdateService
@@ -33,6 +40,7 @@ def _update_service(installation: Installation, releases: ReleaseSource, kernel:
 
 module.service(UpdateService, _update_service)
 module.service(ReleaseSource, github_releases)  # what the CLI's hourly update check asks (ADR 0031)
+module.service(PluginReleases, plugin_releases)  # what automatic updates ask about plugins (ADR 0116)
 
 
 @module.operation(render=render_info)

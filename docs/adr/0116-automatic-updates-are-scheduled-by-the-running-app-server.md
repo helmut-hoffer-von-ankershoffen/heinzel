@@ -36,7 +36,7 @@ Chosen option: **the `hz ui` server owns the schedule**, because it already serv
 place (ADR 0047, 0083) and runs whether or not a window is open.
 
 - The kernel setting `auto_update` ("Automatic updates", default off, user-level only) turns it on, in Settings or
-  with `hz system config set auto_update true`. It runs only on the stable channel, on a restartable `hz ui`, on an
+  with `hz system config set hz.auto_update true`. It runs only on the stable channel, on a restartable `hz ui`, on an
   installation the web update supports.
 - The server asks for a newer stable hz release and newer releases of installed plugins every 30 minutes, with up to
   5 minutes of random jitter (the first check 1 to 5 minutes after start).
