@@ -39,6 +39,7 @@ install: ## Install what the build needs: Python with every dependency group (.v
 
 setup: install ## Install what the build needs, and the git hooks (prek: lint on commit, conventional commits)
 	@uv tool run --from prek==0.5.7 prek install --hook-type pre-commit --hook-type commit-msg --hook-type pre-push >/dev/null
+	@uv run --quiet --script scripts/install_push_hook.py
 	@echo "✓ git hooks: pre-commit, commit-msg, pre-push"
 
 doctor: ## What the build needs, what is missing, and the command that fixes it
