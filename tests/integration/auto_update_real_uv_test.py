@@ -79,6 +79,7 @@ def private_python(tmp_path: Path) -> str:
         capture_output=True,
         text=True,
         check=False,
+        timeout=300,  # one download of a Python build
     )
     candidates = sorted(folder.glob("*/bin/python3.13"))
     if found.returncode != 0 or not candidates:
