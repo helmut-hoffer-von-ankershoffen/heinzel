@@ -106,4 +106,4 @@ def test_countdown_postpone_and_apply_with_a_fake_newer_release(tmp_path):
     assert "updated automatically" in result["message"]
     assert result["signedIn"] is True
     assert result["after"] == "idle"
-    assert (fake / "applied").read_text() == "fake update applied\n"
+    assert (fake / "applied").read_text() == "fake update applied: 99.0.0 {'heinzel-example': '9.0.0'}\n"

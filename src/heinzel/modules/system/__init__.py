@@ -12,8 +12,10 @@ from heinzel.kernel import (
     PluginReleases,
     ReleaseSource,
 )
+from heinzel.modules.system._announced import ToolSnapshot, trial_start
 from heinzel.modules.system._metadata_identity import CoreMetadataIdentity
 from heinzel.modules.system._models import (
+    AnnouncedUpdate,
     ChannelReport,
     ModuleInfo,
     PluginUpdate,
@@ -104,6 +106,44 @@ def update(
         HeinzelError: If Heinzelmännchen wasn't installed with `uv tool install`, or the update fails.
     """
     return service.update(source, channel=channel or kernel.settings.update_channel)
+
+
+@module.operation(private=True, read_only=False, heads={"auto-update"}, audience="everyday")
+def apply_announced(
+    service: UpdateService,
+    kernel: Kernel,
+    core: Annotated[str | None, Field(description="The announced hz version; none to keep the running one.")] = None,
+    plugins: Annotated[
+        list[str], Field(description="Each announced plugin as `name==version`; every other plugin stays.")
+    ] = [],  # noqa: B006 - never changed
+    commit: Annotated[str | None, Field(description="The commit hz's tag named when it was announced.")] = None,
+) -> AnnouncedUpdate:
+    """Install exactly the announced versions, as the web app's automatic updates do, or put everything back.
+
+    Only the web app's server calls it (ADR 0116): no CLI, MCP or REST head offers it. The versions were announced
+    once they were old enough; uv installs exactly these or nothing, the new hz must start on throwaway folders, and
+    any failure puts the tool folder back as it was.
+
+    Raises:
+        HeinzelError: If the installation can't update itself, before anything was installed.
+    """
+    announced = dict(item.split("==", 1) for item in plugins)
+    return service.apply_announced(
+        core, announced, commit=commit, folder=kernel.settings.state_dir / "auto-update", trial=trial_start
+    )
+
+
+@module.operation(private=True, read_only=False, heads={"auto-update"}, audience="everyday")
+def recover_announced(installation: Installation, kernel: Kernel) -> bool:
+    """Finish putting back an automatic update that stopped half way (ADR 0116); whether there was one.
+
+    The web app's server asks once when it starts. Every entry still in the copy moves into the tool folder.
+    """
+    folder = kernel.settings.state_dir / "auto-update"
+    if not installation.is_tool or not (folder / "after-update").is_dir():
+        return False
+    ToolSnapshot(installation.prefix.resolve(strict=True), folder / "before-update", folder / "after-update").recover()
+    return True
 
 
 @module.operation(read_only=False, audience="everyday", render=render_channel)

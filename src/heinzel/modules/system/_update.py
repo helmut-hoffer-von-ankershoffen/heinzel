@@ -19,7 +19,7 @@ import json
 import re
 import shlex
 import tempfile
-from collections.abc import Generator, Mapping, Sequence
+from collections.abc import Callable, Generator, Mapping, Sequence
 from contextlib import AbstractContextManager, contextmanager, nullcontext
 from dataclasses import dataclass
 from pathlib import Path
@@ -37,9 +37,11 @@ from heinzel.kernel import (
     DaemonMutationScope,
     Installation,
     ReleaseSource,
+    ToolConstraintPolicy,
     subprocess_environment,
 )
-from heinzel.modules.system._models import PluginUpdate, UpdateResult
+from heinzel.modules.system._announced import ToolSnapshot, installed_commit
+from heinzel.modules.system._models import AnnouncedUpdate, PluginUpdate, UpdateResult
 from heinzel.modules.system._service import DEFAULT_REPOSITORY, RELEASE_TIMEOUT
 from heinzel.modules.system.plugin._sources import git_credentials
 
@@ -209,6 +211,210 @@ class UpdateService:
             message = f"{result.message}\nThe daemon handover was requested; a fresh service tick is pending."
             return result.model_copy(update={"message": message})
         return result
+
+    def apply_announced(  # noqa: PLR0913 - what was announced, where the copy goes and how the start is proven
+        self,
+        core: str | None,
+        plugins: Mapping[str, str],
+        *,
+        current: str = __version__,
+        commit: str | None = None,
+        folder: Path,
+        trial: Callable[[str], bool],
+    ) -> AnnouncedUpdate:
+        """Install exactly the announced versions, prove the new hz starts, or put everything back (ADR 0116).
+
+        hz goes in at `core` (or stays at `current`), each plugin in `plugins` at its announced version and every
+        other plugin at the version it has: all as exact transient constraints, so uv installs exactly these or
+        nothing, and never resolves a newer one. The receipt keeps its requirements; the constraints are taken out
+        again. Nothing installed is executed to verify it: the metadata of the new environment must name exactly these
+        versions, and hz from git must be at `commit`, the one its tag named when it was announced. Then `trial`
+        starts the new hz on throwaway folders. Any failure after the copy puts the tool folder
+        back from it (`ToolSnapshot`), so its continuity record matches again and the daemon mutation completes with
+        no handover pending.
+
+        Raises:
+            HeinzelError: If the installation can't be updated this way, before anything was installed.
+            OSError: If the copy can't be taken; nothing was installed.
+        """
+        pin, core_requirement, plugin_pins, names = self._announced_selection(core or current, plugins)
+        target = core or current
+        with self._mutation() as scope:
+            plan = scope.capture() if scope is not None else None
+            with self._installation.tool_transaction():
+                expected, guards, policy = self._prepare_announced(
+                    (pin, plugin_pins, names), plugins, current, target, scope
+                )
+                specs = [plugin.requirement for plugin in plugin_pins]
+                constraints = (*self._installation.tool_constraints(), *guards)
+                try:
+                    self._installation.validate_install_constraints([core_requirement, *specs], constraints)
+                    snapshot = ToolSnapshot.take(self._installation.prefix.resolve(strict=True), folder)
+                except (HeinzelError, OSError):
+                    if scope is not None:
+                        self._abort_or_leave_pending(scope)
+                    raise
+                before = self._installation.startup_fingerprint()
+                try:
+                    generation = self._install_announced(
+                        [core_requirement, *specs], guards, constraints, (expected, commit)
+                    )
+                    generation = self._installation.remove_transient_tool_constraint(
+                        expected=generation, original=policy, added=guards
+                    )
+                except (HeinzelError, OSError) as exc:
+                    return self._put_back(snapshot, (scope, plan), before, current, f"{exc}", refused=False)
+                if not trial(target):
+                    return self._put_back(snapshot, (scope, plan), before, current, None, refused=target)
+                snapshot.discard()
+                result = UpdateResult(
+                    before=current, after=target, latest=core, pinned_to=None, updated=True, message="", next=[]
+                )
+                if scope is not None and plan is not None:
+                    self._finish_mutation(scope, plan, generation, result)
+                return AnnouncedUpdate(
+                    updated=True, after=target, restored=False, refused=False, message=f"Installed hz {target}."
+                )
+
+    def _announced_selection(
+        self, target: str, plugins: Mapping[str, str]
+    ) -> tuple[CorePin, str, list[CorePin], list[str]]:
+        """The core pin, the core requirement at `target`, the plugin pins and their names, before anything changes.
+
+        Raises:
+            HeinzelError: If the installation isn't a uv tool from a release tag or the package index, or an announced
+                plugin isn't installed.
+        """
+        pin = self._installation.core_pin()
+        if pin is None or not self._installation.requirements():
+            msg = "Heinzelmännchen wasn't installed with `uv tool install`; it can't update itself."
+            raise HeinzelError(msg)
+        if pin.kind == "release":
+            core_requirement = pin.at(f"v{target}")
+        elif pin.kind in ("index", "default") and pin.git is None:
+            core_requirement = pin.requirement
+        else:
+            msg = "Only installations from release tags or the package index update themselves."
+            raise HeinzelError(msg)
+        plugin_pins = self._installation.plugin_pins()
+        names: list[str] = [str(canonicalize_name(Requirement(plugin.requirement).name)) for plugin in plugin_pins]
+        if missing := sorted(set(plugins) - set(names)):
+            msg = f"Announced plugins aren't installed: {', '.join(missing)}."
+            raise HeinzelError(msg)
+        return pin, core_requirement, plugin_pins, names
+
+    def _install_announced(
+        self,
+        requirements: list[str],
+        guards: tuple[str, ...],
+        constraints: tuple[str, ...],
+        announced: tuple[dict[str, str], str | None],
+    ) -> str:
+        """Run uv with the exact versions as constraints, then read the new metadata; the generation installed.
+
+        Raises:
+            HeinzelError: If uv fails, or the metadata names other versions or another commit than announced.
+        """
+        expected, commit = announced
+        self._installation.run(
+            self._installation.tool_install_command(requirements[0], requirements[1:], refresh=True),
+            "uv couldn't install exactly the announced versions",
+            f"Installing hz {expected['heinzel']}",
+            git_credentials(subprocess_environment()),
+            additional_constraints=guards,
+        )
+        generation = self._installation.startup_fingerprint()
+        self._installation.verify_installed_requirements(
+            requirements, expected_version=expected["heinzel"], constraints=constraints
+        )
+        found = self._installation.installed_versions(list(expected))
+        if differ := [
+            f"{name} {found.get(name, 'nothing')} instead of {version}"
+            for name, version in expected.items()
+            if found.get(name) != version
+        ]:
+            msg = f"uv installed {', '.join(differ)}"
+            raise HeinzelError(msg)
+        installed = installed_commit(self._installation.prefix.resolve(strict=True))
+        if commit is not None and installed is not None and installed != commit:
+            msg = f"hz came from commit {installed[:12]}, not {commit[:12]}, which its tag named when announced"
+            raise HeinzelError(msg)
+        return generation
+
+    def _prepare_announced(
+        self,
+        selection: tuple[CorePin, list[CorePin], list[str]],
+        plugins: Mapping[str, str],
+        current: str,
+        target: str,
+        scope: DaemonMutationScope | None,
+    ) -> tuple[dict[str, str], tuple[str, ...], ToolConstraintPolicy]:
+        """The exact versions to install, as constraints, and the receipt's own policy to keep; read, never run.
+
+        Raises:
+            HeinzelError: If the selection, the running version or the installed versions can't be verified.
+        """
+        pin, plugin_pins, names = selection
+        self._verify_selection(pin, plugin_pins, scope)
+        try:
+            self._require_running_version(current)
+            installed = self._installation.installed_versions(names)
+            expected = {"heinzel": target}
+            expected.update({name: installed[name] for name in names if name in installed})
+            expected.update(plugins)
+            policy = self._installation.capture_tool_constraint_policy()
+        except HeinzelError:
+            if scope is not None:
+                self._abort_or_leave_pending(scope)
+            raise
+        return expected, tuple(f"{name}=={version}" for name, version in expected.items()), policy
+
+    def _put_back(  # noqa: PLR0913 - the copy, the mutation, what it was and why
+        self,
+        snapshot: ToolSnapshot,
+        lifecycle: tuple[DaemonMutationScope | None, DaemonHandoverPlan | None],
+        before: str,
+        current: str,
+        why: str | None,
+        *,
+        refused: str | Literal[False],
+    ) -> AnnouncedUpdate:
+        """Put the tool folder back from `snapshot`; its continuity matches again and the mutation completes.
+
+        Raises:
+            HeinzelError: If it can't be put back, or isn't as it was afterwards; explicit recovery is required.
+        """
+        scope, plan = lifecycle
+        try:
+            snapshot.restore()
+        except OSError as exc:
+            msg = (
+                f"The update didn't work and hz {current} couldn't be put back ({exc}). It keeps running until you "
+                "restart it; reinstall it before that: uv tool install --reinstall heinzel"
+            )
+            raise HeinzelError(msg) from exc
+        generation = self._installation.startup_fingerprint()
+        if generation != before:
+            msg = "The installation isn't as it was after putting it back; explicit recovery is required."
+            raise HeinzelError(msg)
+        if scope is not None and plan is not None:
+            # The folder is as it was, byte for byte, but not inode for inode: the mutation completes with the
+            # original generation, its record stays valid, and the daemon is handed over to the same code.
+            if scope.checkpoint_matched:
+                self._installation.record_startup_state(expected=generation)
+            scope.verified_complete(generation)
+            scope.request(plan)
+        if refused:
+            message = (
+                f"hz {refused} was installed but didn't start, so hz {current} and its plugins were put back as they "
+                "were and keep running. That update won't be tried again; a newer one will."
+            )
+        else:
+            message = (
+                f"The automatic update didn't install exactly the announced versions ({why}), so hz {current} and its "
+                "plugins were put back as they were and keep running. It will try again in 6 hours."
+            )
+        return AnnouncedUpdate(updated=False, after=current, restored=True, refused=bool(refused), message=message)
 
     def update(
         self, source: str | None = None, current: str = __version__, channel: UpdateChannel = "stable"

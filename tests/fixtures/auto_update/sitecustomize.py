@@ -5,24 +5,24 @@ restart in place becomes. They are active only when HZ_E2E_FAKE_RELEASE names a 
 
 - once the test writes `release` there, the newest stable release is 99.0.0 and a plugin has 9.0.0, until an update
   "installs" them; the server checks every two seconds;
-- `system.update` writes `applied` in that folder instead of running uv, and reports the running version;
+- `system.apply_announced` writes `applied` in that folder instead of running uv, then starts this hz as its trial;
 - the server's clock runs ahead by the seconds in `clock` there, so the test can skip a postponed hour;
-- the installation counts as a uv tool on a release tag, whose environment is the folder `env` there.
+- the installation counts as a uv tool on a release tag.
 """
 
 import os
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 FOLDER = os.environ.get("HZ_E2E_FAKE_RELEASE")
 
 if FOLDER:
     from heinzel import __version__
     from heinzel.heads.web import _auto_update
-    from heinzel.heads.web._rollback import ToolSnapshot
     from heinzel.kernel import CorePin, Installation, PluginRelease, ReleaseFacts
     from heinzel.modules.system import _plugin_releases, _service, _update
-    from heinzel.modules.system._models import UpdateResult
+    from heinzel.modules.system._models import AnnouncedUpdate
 
     folder = Path(FOLDER)
     LONG_AGO = datetime(2026, 1, 1, tzinfo=UTC)  # old enough for any minimum age
@@ -43,21 +43,15 @@ if FOLDER:
     def release_facts(self: object, version: str, timeout: float) -> ReleaseFacts:
         return ReleaseFacts(version, LONG_AGO, None)
 
-    def update(self: object, *args: object, **kwargs: object) -> UpdateResult:
-        applied.write_text("fake update applied\n", encoding="utf-8")
-        site = folder / "env" / "lib" / "python3" / "site-packages"
-        for name, version in (("heinzel", "99.0.0"), ("heinzel_example", "9.0.0")):  # exactly what was announced
-            info = site / f"{name}-{version}.dist-info"
-            info.mkdir(parents=True, exist_ok=True)
-            (info / "METADATA").write_text(f"Metadata-Version: 2.1\nName: {name}\nVersion: {version}\n")
-        return UpdateResult(
-            before=__version__,
-            after=__version__,
-            latest=None,
-            pinned_to=None,
-            updated=True,
-            message="Fake update for the end-to-end test.",
-            next=[],
+    def release(self: object, name: str, version: str, timeout: float) -> PluginRelease:
+        return PluginRelease(version, LONG_AGO)
+
+    def apply_announced(self: object, core: str | None, plugins: object, **kwargs: Any) -> AnnouncedUpdate:
+        """Instead of uv: record what would be installed, then the real trial start of this hz."""
+        applied.write_text(f"fake update applied: {core} {dict(plugins)}\n", encoding="utf-8")  # type: ignore[call-overload]
+        started = kwargs["trial"](__version__)
+        return AnnouncedUpdate(
+            updated=started, after=__version__, restored=not started, refused=not started, message="Fake update."
         )
 
     def now() -> datetime:
@@ -74,15 +68,11 @@ if FOLDER:
     _plugin_releases.PyPIPluginReleases.newer = newer  # type: ignore[method-assign]
     _plugin_releases.PyPIPluginReleases.newer_releases = newer_releases  # type: ignore[method-assign]
     _service.GitHubReleases.release_facts = release_facts  # type: ignore[method-assign]
-    _update.UpdateService.update = update  # type: ignore[method-assign]
+    _update.UpdateService.apply_announced = apply_announced  # type: ignore[method-assign]
+    _plugin_releases.PyPIPluginReleases.release = release  # type: ignore[method-assign]
     _auto_update._now = now
     _auto_update.FIRST_CHECK = (timedelta(seconds=1), timedelta(seconds=2))
     _auto_update.CHECK_EVERY = timedelta(seconds=2)
     _auto_update.JITTER = timedelta(0)
 
-    def take_snapshot(self: object) -> ToolSnapshot:
-        (folder / "env").mkdir(exist_ok=True)
-        return ToolSnapshot.take(folder / "env", folder / "env-before-update", ["heinzel-example"])
-
     Installation.core_pin = core_pin  # type: ignore[method-assign]
-    _auto_update.AutoUpdater._take_snapshot = take_snapshot  # type: ignore[method-assign]

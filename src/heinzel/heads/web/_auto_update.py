@@ -16,16 +16,10 @@ import json
 import logging
 import os
 import random
-import shutil
-import signal
-import subprocess
 import sys
-import tempfile
 import threading
-import urllib.parse
-import urllib.request
 import weakref
-from collections.abc import AsyncGenerator, AsyncIterable, Awaitable, Callable, Generator, Mapping, Sequence
+from collections.abc import AsyncGenerator, AsyncIterable, Awaitable, Callable, Generator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
@@ -33,13 +27,11 @@ from pathlib import Path
 from typing import IO, Any, Literal, cast
 
 from fastapi import FastAPI, HTTPException, Response
-from packaging.requirements import Requirement
 from packaging.version import Version
 from pydantic import BaseModel, Field
 
 from heinzel import __version__
 from heinzel.heads._stream import WORK
-from heinzel.heads.web._rollback import ToolSnapshot
 from heinzel.kernel import (
     KERNEL_SECTION,
     CurrentUser,
@@ -51,7 +43,6 @@ from heinzel.kernel import (
     ReleaseCache,
     ReleaseSource,
     Settings,
-    user_config_dir,
 )
 
 log = logging.getLogger(__name__)
@@ -74,7 +65,7 @@ STEP_SECONDS = 1.0
 """How often the server looks at its plan."""
 FILENAME = "auto-update.json"
 
-UPDATE_MODULE, UPDATE_OPERATION = "system", "update"
+UPDATE_MODULE, UPDATE_OPERATION, RECOVER_OPERATION = "system", "apply-announced", "recover-announced"
 
 type Phase = Literal["off", "idle", "waiting", "countdown", "applying"]
 
@@ -321,92 +312,6 @@ class Activity:
             return self._running > 0
 
 
-TRIAL_SECONDS = 90.0
-"""How long the new version may take to answer before its start counts as failed."""
-
-
-TRIAL_DIRECTORIES = {
-    "HZ_STATE_DIR": "state",
-    "HZ_DATA_DIR": "data",
-    "HZ_CACHE_DIR": "cache",
-    "HZ_LOG_DIR": "log",
-    "HZ_SYSTEM_DAEMON__UNIT_DIR": "units",
-}
-"""Where a trial start keeps what it writes: empty folders of its own, never the live ones."""
-
-
-def trial_environment(scratch: Path, environ: Mapping[str, str], config: Path) -> dict[str, str]:
-    """The environment of a trial start: a throwaway copy of the configuration, empty folders for everything else.
-
-    The trial reads the same settings and plugins as the restart would, but anything it writes (state, data, cache,
-    logs, the configuration) lands in `scratch`, which is deleted after it; it neither checks nor installs updates.
-    """
-    env = {key: value for key, value in environ.items() if key != "HEINZEL_UI_RESUME"}
-    copy = scratch / "config"
-    if config.is_dir():
-        shutil.copytree(config, copy, symlinks=True, ignore_dangling_symlinks=True, dirs_exist_ok=True)
-    else:
-        copy.mkdir(parents=True)
-    env["HZ_CONFIG_HOME"] = str(copy)
-    for variable, name in TRIAL_DIRECTORIES.items():
-        (scratch / name).mkdir(parents=True, exist_ok=True)
-        env[variable] = str(scratch / name)
-    env["HZ_AUTO_UPDATE"] = "false"
-    env["HZ_UPDATE_CHECK"] = "false"
-    return env
-
-
-def trial_start(version: str, timeout: float = TRIAL_SECONDS, command: Sequence[str] | None = None) -> bool:
-    """Whether the installed hz starts a web app server that answers with `version`, before this one restarts into it.
-
-    It runs `hz ui` as the restart would, on a free port with its own token, against a throwaway copy of the
-    configuration and empty folders (`trial_environment`), asks `/api/lifecycle` once, then stops it and deletes what
-    it wrote. Nothing of this server or its live folders is touched, so a failure changes nothing here.
-    """
-    command = list(command or [sys.executable, "-m", "heinzel", "ui", "--port", "0", "--no-browser"])
-    with tempfile.TemporaryDirectory(prefix="hz-trial-") as scratch:
-        try:
-            env = trial_environment(Path(scratch), os.environ, user_config_dir())
-            child = subprocess.Popen(  # noqa: S603 - this interpreter and fixed arguments, or a test's
-                command, env=env, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL, text=True
-            )
-        except OSError:
-            return False
-        lines: list[str] = []
-        reader = threading.Thread(target=lambda: lines.append(child.stdout.readline() if child.stdout else ""))
-        reader.daemon = True
-        reader.start()
-        try:
-            reader.join(timeout)
-            return _answers(lines[0] if lines else "", version)
-        finally:
-            child.send_signal(signal.SIGINT)
-            try:
-                child.wait(15)
-            except subprocess.TimeoutExpired:
-                child.kill()
-                child.wait(15)
-            if child.stdout is not None:
-                child.stdout.close()
-
-
-def _answers(line: str, version: str) -> bool:
-    """Whether the server whose session link is `line` answers `/api/lifecycle` with `version`."""
-    url = urllib.parse.urlsplit(line.strip())
-    token = urllib.parse.parse_qs(url.fragment).get("token", [""])[0]
-    if url.scheme != "http" or url.hostname != "127.0.0.1" or not token:
-        return False
-    request = urllib.request.Request(
-        f"http://127.0.0.1:{url.port}/api/lifecycle", headers={"Authorization": f"Bearer {token}"}
-    )
-    try:
-        with urllib.request.urlopen(request, timeout=10) as response:  # noqa: S310 - checked above
-            answer: object = json.loads(response.read(64 * 1024))
-    except (OSError, ValueError):
-        return False
-    return isinstance(answer, dict) and cast("dict[str, object]", answer).get("version") == version
-
-
 SOURCE_CHECKOUT = "Updates are managed by your source checkout."
 """What both switches say when hz runs from a source checkout or an editable install."""
 DEVELOPMENT = "Automatic updates are off while hz runs for development or tests."
@@ -548,9 +453,7 @@ class AutoUpdater:
         rng: random.Random | None = None,
         version: str = __version__,
         settings: Callable[[], Settings] | None = None,
-        update: Callable[[], object] | None = None,
-        trial: Callable[[str], bool] | None = None,
-        snapshot: Callable[[], ToolSnapshot] | None = None,
+        update: Callable[[dict[str, Any]], object] | None = None,
         development: Callable[[Path], str | None] | str | None = development_reason,
     ) -> None:
         """Load the saved plan and settle a restart that an earlier process started.
@@ -566,14 +469,11 @@ class AutoUpdater:
         self._version = version
         self._read_settings = settings or self._reread
         self._run_update = update or self._update
-        self._trial = trial or trial_start
-        self._snapshot = snapshot or self._take_snapshot
         self.development = development(kernel.settings.state_dir) if callable(development) else development
         self._lock = threading.Lock()
         self._stop = threading.Event()
         folder = kernel.settings.state_dir / "web"
         self._path = folder / FILENAME
-        self._copy = folder / "before-update"
         self._plan_lock = folder / "auto-update.lock"
         self._apply_lock = folder / "auto-update-apply.lock"
         self._applying: IO[str] | None = None
@@ -581,8 +481,9 @@ class AutoUpdater:
         self.plan = self._read(fresh=True) or Plan()
         now = self._clock()
         self._next_check = now + self._between(*FIRST_CHECK)
+        if self.development is None:
+            self._recover()
         if self.plan.restarting_to is not None:
-            shutil.rmtree(self._copy, ignore_errors=True)  # the restart happened: the copy is no longer needed
             with self._editing() as plan:
                 if plan.restarting_to == version:
                     done(plan, f"hz is up to date: {version}, updated automatically.")
@@ -676,9 +577,9 @@ class AutoUpdater:
     def check(self, now: datetime) -> None:
         """Ask for a newer stable hz and newer plugins old enough to install; a failed check changes nothing.
 
-        A release counts only once it is as old as `auto_update_min_age_hours` (hz) or
-        `auto_update_plugin_min_age_hours` (plugins), and never as a pre-release or a yanked one; the commit hz's tag
-        names now is recorded, so a tag moved later is noticed once installed.
+        A release counts only once its last file on PyPI is as old as `auto_update_min_age_hours` (hz) or
+        `auto_update_plugin_min_age_hours` (plugins), and never as a pre-release, a draft or a yanked one; the commit
+        hz's tag names now is recorded, so a tag moved later is refused at apply time and once installed.
         """
         settings = self._read_settings()
         core: str | None = None
@@ -691,7 +592,10 @@ class AutoUpdater:
             version = Version(latest)
             if not (version.is_prerelease or version.is_devrelease) and version > Version(self._version):
                 facts = source.release_facts(str(version), TIMEOUT)
-                if not facts.prerelease and _old_enough(facts.published_at, settings.auto_update_min_age_hours, now):
+                index = self._kernel.resolve(PluginReleases) if self._kernel.provides(PluginReleases) else None
+                uploaded = index.release("heinzel", str(version), TIMEOUT) if index is not None else None
+                age = uploaded.uploaded_at if uploaded is not None else None
+                if not facts.prerelease and _old_enough(age, settings.auto_update_min_age_hours, now):
                     core, commit = str(version), facts.commit
             if self._kernel.provides(PluginReleases):
                 plugins = {
@@ -708,10 +612,12 @@ class AutoUpdater:
                 plan.commit = commit
 
     def apply(self) -> None:
-        """Copy the environment, install with `system.update`, prove the new version starts, then restart in place.
+        """Install exactly the announced versions (`system.apply_announced`), then restart in place.
 
-        Any failure keeps this process, the old version, running; once the install began, the copy puts hz and every
-        plugin back exactly as they were before anything restarts.
+        The operation copies the tool folder, installs exactly these versions or nothing, reads their metadata, starts
+        the new hz on throwaway folders, and on any failure puts everything back. Before that, the tag hz is installed
+        from must still name the commit it named when it was announced. Any failure keeps this process, the old
+        version, running.
         """
         if self._applying is None and (handle := _try_lock(self._apply_lock)) is not None:
             self._applying = handle
@@ -724,31 +630,23 @@ class AutoUpdater:
                 plan.apply_at = None
                 plan.window_at = self._clock() + POSTPONE
             return
-        try:
-            snapshot = self._snapshot()
-        except Exception as exc:  # noqa: BLE001 - without a way back nothing is installed
-            log.warning("automatic update skipped, no copy to go back to: %s", exc)
-            self._fail(failure_message(self._version))
+        news: dict[str, Any] = {"core": self.plan.core, "plugins": dict(self.plan.plugins), "commit": self.plan.commit}
+        if (moved := self._tag_moved(news)) is not None:
+            self._fail(moved)
             return
-        news = {"core": self.plan.core, "plugins": dict(self.plan.plugins)}
         try:
-            result = self._run_update()
+            result = self._run_update(news)
         except Exception as exc:  # noqa: BLE001 - every failure leaves the old version running and is reported once
             log.warning("automatic update failed: %s", exc)
-            self._fail(self._roll_back(snapshot, None, news) or failure_message(self._version))
-            return
-        after = getattr(result, "after", None)
-        if not getattr(result, "updated", False) or not isinstance(after, str) or self._restart is None:
-            # Something newer was announced but the installer changed nothing: say so once and wait, rather than
-            # warning every window again at the next check.
-            snapshot.discard()
             self._fail(failure_message(self._version))
             return
-        if (mismatch := self._mismatch(snapshot, news)) is not None:
-            self._fail(self._roll_back(snapshot, None, news) or mismatch)
-            return
-        if not self._trial(after):
-            self._fail(self._roll_back(snapshot, after, news) or failure_message(self._version))
+        after = getattr(result, "after", None)
+        message = getattr(result, "message", None) or failure_message(self._version)
+        if getattr(result, "refused", False):
+            with self._editing() as plan:
+                plan.refused = {"core": news["core"], "plugins": news["plugins"]}
+        if not getattr(result, "updated", False) or not isinstance(after, str) or self._restart is None:
+            self._fail(message)
             return
         with self._editing() as plan:
             plan.restarting_to = after
@@ -760,71 +658,39 @@ class AutoUpdater:
         _unlock(self._applying)
         self._applying = None
 
-    def _mismatch(self, snapshot: ToolSnapshot, news: dict[str, Any]) -> str | None:
-        """What the update installed other than announced; None when it installed exactly the announced versions.
-
-        hz and the announced plugins must be at the announced versions, every other plugin where it was, and hz
-        from git at the commit its tag named when it was announced.
-        """
-        expected = dict(snapshot.versions)
-        if news["core"] is not None:
-            expected["heinzel"] = news["core"]
-        expected.update(news["plugins"])
-        installed = snapshot.installed_now(expected)
-        differ = sorted(
-            f"{name} {installed.get(name, 'nothing')} instead of {version}"
-            for name, version in expected.items()
-            if installed.get(name) != version
-        )
-        commit = snapshot.commit_now()
-        if news["core"] is not None and self.plan.commit and commit and commit != self.plan.commit:
-            differ.append(f"hz from commit {commit[:12]} instead of {self.plan.commit[:12]}, which its tag named")
-        if not differ:
+    def _tag_moved(self, news: dict[str, Any]) -> str | None:
+        """Why hz's tag can't be trusted now: it names another commit than when announced, or can't be asked."""
+        core, commit = news["core"], news["commit"]
+        if core is None or commit is None:
             return None
-        return (
-            f"The automatic update would have installed {', '.join(differ)}, so hz {self._version} and its plugins "
-            "were put back as they were. It will try again in 6 hours."
-        )
-
-    def _take_snapshot(self) -> ToolSnapshot:
-        installation = self._kernel.resolve(Installation)
-        if not installation.is_tool:
-            msg = "hz isn't a uv tool, so there is no environment to copy."
-            raise RuntimeError(msg)
-        plugins = [Requirement(pin.requirement).name for pin in installation.plugin_pins()]
-        return ToolSnapshot.take(installation.prefix.resolve(), self._copy, plugins)
-
-    def _roll_back(self, snapshot: ToolSnapshot, after: str | None, news: dict[str, Any]) -> str | None:
-        """Put hz and every plugin back from `snapshot`; the message that says what happened, None if not needed."""
         try:
-            snapshot.restore()
-        except Exception as exc:  # noqa: BLE001 - reported in the message
-            log.warning("putting hz %s back failed: %s", self._version, exc)
-            return (
-                f"hz {after or 'the update'} didn't work and hz {self._version} couldn't be put back; it keeps running "
-                "until you restart it. Reinstall hz before that: uv tool install --reinstall heinzel"
-            )
-        finally:
-            snapshot.discard()
-        if after is None:
+            now = self._kernel.resolve(ReleaseSource).release_facts(core, TIMEOUT).commit
+        except Exception as exc:  # noqa: BLE001 - offline: not now, and say so
+            log.info("automatic update: the tag of hz %s couldn't be asked: %s", core, exc)
+            return failure_message(self._version)
+        if now == commit:
             return None
-        with self._editing() as plan:
-            plan.refused = news
-        plugins = ", ".join(f"{name} {version}" for name, version in snapshot.versions.items() if name != "heinzel")
         return (
-            f"hz {after} was installed but didn't start, so hz {self._version}"
-            f"{f' and its plugins ({plugins})' if plugins else ''} were put back as they were and keep running. "
-            "That update won't be tried again; a newer one will."
+            f"The tag of hz {core} names another commit than when it was announced, so nothing was installed and "
+            f"hz {self._version} keeps running. It will look again in 6 hours."
         )
 
-    def _update(self) -> object:
-        return self._invoke_update(channel="stable")
+    def _recover(self) -> None:
+        """Finish putting back an update that stopped half way, before anything else (`system.recover_announced`)."""
+        for record, operation in self._kernel.lets(OperationLet):
+            if record.qualname == UPDATE_MODULE and operation.name == RECOVER_OPERATION:
+                try:
+                    with self._kernel.resolve(CurrentUser).local("daemon"):
+                        self._kernel.invoke(operation)
+                except Exception:
+                    log.exception("finishing an interrupted automatic update failed")
 
-    def _invoke_update(self, **arguments: str) -> object:
+    def _update(self, news: dict[str, Any]) -> object:
+        plugins = [f"{name}=={version}" for name, version in news["plugins"].items()]
         for record, operation in self._kernel.lets(OperationLet):
             if record.qualname == UPDATE_MODULE and operation.name == UPDATE_OPERATION:
                 with self._kernel.resolve(CurrentUser).local("daemon"):
-                    return self._kernel.invoke(operation, **arguments)
+                    return self._kernel.invoke(operation, core=news["core"], plugins=plugins, commit=news["commit"])
         msg = "The system module is off, so hz can't update itself."
         raise RuntimeError(msg)
 
