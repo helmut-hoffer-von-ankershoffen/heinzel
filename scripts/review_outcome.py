@@ -10,7 +10,9 @@ limit, a crash, a run that cost something, no readable result) or `none` (no rev
 outputs `verdict` and `reason`; the workflow reports `skipped` as a neutral check and fails the review check on
 `failed`, so a review that did not run never passes. The action hides the error text from its log; this prints it.
 
-Usage: python3 scripts/review_outcome.py STEP_OUTCOME EXECUTION_FILE
+The execution file is the one the action writes, `$RUNNER_TEMP/claude-execution-output.json`.
+
+Usage: python3 scripts/review_outcome.py STEP_OUTCOME
 """
 
 import json
@@ -24,7 +26,8 @@ EXTERNAL_LIMIT = re.compile(
     re.IGNORECASE,
 )
 MAX_SHOWN = 300
-ARGS = 3
+ARGS = 2
+EXECUTION_FILE = "claude-execution-output.json"
 
 
 def one_line(text: object) -> str:
@@ -73,7 +76,7 @@ def main(argv: list[str]) -> int:
     if len(argv) != ARGS:
         print(__doc__, file=sys.stderr)
         return 2
-    kind, reason = verdict(argv[1], Path(argv[2]))
+    kind, reason = verdict(argv[1], Path(os.environ.get("RUNNER_TEMP", ".")) / EXECUTION_FILE)
     output = os.environ.get("GITHUB_OUTPUT")
     if output:
         with Path(output).open("a", encoding="utf-8") as out:

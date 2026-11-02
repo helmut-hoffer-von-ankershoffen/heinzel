@@ -87,7 +87,7 @@ jobs:
         id: verdict
         env:
           OUTCOME: ${{ steps.full.outcome != 'skipped' && steps.full.outcome || steps.light.outcome }}
-        run: uv run --script scripts/review_outcome.py "$OUTCOME" "$RUNNER_TEMP/claude-execution-output.json"
+        run: uv run --script scripts/review_outcome.py "$OUTCOME"
       - name: Report a review that could not run as a neutral check
         if: steps.verdict.outputs.verdict == 'skipped'
         env:

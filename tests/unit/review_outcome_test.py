@@ -19,7 +19,7 @@ CREDIT = "Credit balance is too low"  # the text of every failed review since 20
 
 
 def execution_file(tmp_path: Path, text: str, *, cost: float = 0, is_error: bool = True) -> Path:
-    path = tmp_path / "execution.json"
+    path = tmp_path / "claude-execution-output.json"
     result = {"type": "result", "subtype": "success", "is_error": is_error, "total_cost_usd": cost, "result": text}
     path.write_text(json.dumps([{"type": "system"}, result]), encoding="utf-8")
     return path
@@ -28,7 +28,8 @@ def execution_file(tmp_path: Path, text: str, *, cost: float = 0, is_error: bool
 def judge(tmp_path, monkeypatch, outcome: str, path: Path) -> dict[str, str]:
     output = tmp_path / "output"
     monkeypatch.setenv("GITHUB_OUTPUT", str(output))
-    assert review_outcome.main(["", outcome, str(path)]) == 0
+    monkeypatch.setenv("RUNNER_TEMP", str(path.parent))
+    assert review_outcome.main(["", outcome]) == 0
     return dict(line.split("=", 1) for line in output.read_text(encoding="utf-8").splitlines())
 
 
@@ -61,17 +62,18 @@ def test_a_limit_after_real_work_fails(tmp_path, monkeypatch):
 
 
 def test_a_missing_or_broken_execution_file_fails(tmp_path, monkeypatch):
-    assert judge(tmp_path, monkeypatch, "failure", tmp_path / "absent.json") == {
+    assert judge(tmp_path, monkeypatch, "failure", tmp_path / "absent" / "claude-execution-output.json") == {
         "verdict": "failed",
         "reason": "no result message",
     }
-    broken = tmp_path / "broken.json"
+    broken = tmp_path / "broken" / "claude-execution-output.json"
+    broken.parent.mkdir()
     broken.write_text("{", encoding="utf-8")
     assert judge(tmp_path, monkeypatch, "failure", broken)["verdict"] == "failed"
 
 
 def test_only_a_successful_step_is_a_review(tmp_path, monkeypatch):
-    absent = tmp_path / "absent.json"
+    absent = tmp_path / "absent" / "claude-execution-output.json"
     assert judge(tmp_path, monkeypatch, "success", absent)["verdict"] == "reviewed"
     assert judge(tmp_path, monkeypatch, "skipped", absent)["verdict"] == "none"
 
@@ -92,7 +94,7 @@ def test_the_summary_says_what_happened(tmp_path, monkeypatch):
 
 
 def test_a_wrong_call_is_a_usage_error():
-    assert review_outcome.main(["", "failure"]) == 2
+    assert review_outcome.main(["", "failure", "extra"]) == 2
 
 
 # the workflow
@@ -113,9 +115,7 @@ def test_every_review_attempt_is_judged_by_its_execution_file():
     assert judged["env"]["OUTCOME"] == (
         "${{ steps.full.outcome != 'skipped' && steps.full.outcome || steps.light.outcome }}"
     )
-    assert judged["run"] == (
-        'uv run --script scripts/review_outcome.py "$OUTCOME" "$RUNNER_TEMP/claude-execution-output.json"'
-    )
+    assert judged["run"] == ('uv run --script scripts/review_outcome.py "$OUTCOME"')
 
 
 def test_a_skipped_review_is_a_neutral_check_with_its_reason():
