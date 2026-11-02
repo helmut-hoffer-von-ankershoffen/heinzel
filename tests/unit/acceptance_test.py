@@ -331,9 +331,11 @@ def test_a_public_release_snapshot_rejects_replaced_bytes(field, tmp_path, monke
         "urls": [{"packagetype": "bdist_wheel", "digests": {"sha256": wheel_hash}}],
     }
     monkeypatch.setattr(harness, "latest_app_version", lambda: version)
-    monkeypatch.setattr(
-        harness, "fetch", lambda url, *a: json.dumps(metadata).encode() if "pypi.org" in url else profile_bytes
-    )
+    responses = {
+        "https://pypi.org/pypi/heinzel/json": json.dumps(metadata).encode(),
+        f"{harness.COLLECTION}/releases/download/app-v{version}/standard.json": profile_bytes,
+    }
+    monkeypatch.setattr(harness, "fetch", lambda url, *a: responses[url])
     args = argparse.Namespace(
         expect_version=version,
         expect_app_version=version,
