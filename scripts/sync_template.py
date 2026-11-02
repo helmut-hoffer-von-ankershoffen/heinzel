@@ -187,8 +187,8 @@ def ci_workflow() -> str:
     text = re.sub(r"(?m)^    if: .*needs\.changes\.outputs\.core[^\n]*\n", "", text)
     # A plugin has no browser E2E files to split off, so its E2E job stays one per OS.
     text = text.replace("End-to-end ${{ matrix.suite }} (", "End-to-end (")
-    text = re.sub(r"(?m)^        # Two jobs per OS[^\n]*\n        suite: \[cli, web\]\n", "", text)
-    text = re.sub(r"(?m)^        if: matrix\.suite == 'web'\n", "", text)
+    text = re.sub(r"(?m)^        # Three jobs per OS[^\n]*\n        suite: \[cli, web-1, web-2\]\n", "", text)
+    text = re.sub(r"(?m)^        if: startsWith\(matrix\.suite, 'web'\)\n", "", text)
     text = text.replace("make test-e2e SUITE=${{ matrix.suite }}", "make test-e2e")
     text = text.replace("    needs: notifier\n", "")
     text = re.sub(r"    if: \$\{\{ !cancelled\(\) && needs\.notifier\.result[^\n]*\n", "", text)

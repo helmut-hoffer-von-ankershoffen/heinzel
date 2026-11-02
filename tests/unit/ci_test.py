@@ -122,7 +122,14 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
         ': "source-review final identity"': "rechecks the pull request and the protected ref on a fresh runner",
     },
     "release-tag.yml": {'tag="v$(uv version --short)"': "tags a merged release commit"},
-    "claude-review.yml": {'files="$(git diff': "picks the review tier from the changed files"},
+    "claude-review.yml": {
+        'files="$(git diff': "picks the review tier from the changed files",
+        "uv run --no-project --frozen --no-build --python 3.14 python scripts/review_outcome.py": (
+            "judges the review attempt; the job has no project environment"
+        ),
+        'gh api "repos/${GITHUB_REPOSITORY}/check-runs"': "reports a review that could not run as a neutral check",
+        'if [[ "$VERDICT" == reviewed ]]': "the review check passes only on a review",
+    },
     "update-prs.yml": {
         "gh pr list": "updates auto-merging pull requests with main",
         "threads='query(": "resolves the review threads of closed code-scanning alerts on auto-merging pull requests",
@@ -841,7 +848,8 @@ def test_the_template_audit_runs_in_template_test_ci_and_full_preflight():
 def test_claude_review_skips_events_sent_by_bots():
     """The action refuses bot-triggered runs (update-prs merges, release pull requests), so the job must not start."""
     spec = yaml.safe_load((REPO / ".github" / "workflows" / "claude-review.yml").read_text(encoding="utf-8"))
-    condition = spec["jobs"]["review"]["if"]
+    condition = spec["jobs"]["attempt"]["if"]
+    assert spec["jobs"]["review"]["needs"] == "attempt"
     for clause in (
         "vars.CLAUDE_REVIEW == 'true'",
         "github.event.sender.type != 'Bot'",
@@ -854,7 +862,7 @@ def test_claude_review_skips_events_sent_by_bots():
 def test_claude_review_prefers_the_api_key():
     """Each review step authenticates with ANTHROPIC_API_KEY and uses the subscription token only without one."""
     spec = yaml.safe_load((REPO / ".github" / "workflows" / "claude-review.yml").read_text(encoding="utf-8"))
-    actions = [step for step in spec["jobs"]["review"]["steps"] if "claude-code-action" in step.get("uses", "")]
+    actions = [step for step in spec["jobs"]["attempt"]["steps"] if "claude-code-action" in step.get("uses", "")]
     assert actions
     for step in actions:
         assert step["with"]["anthropic_api_key"] == "${{ secrets.ANTHROPIC_API_KEY }}"
