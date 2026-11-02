@@ -190,9 +190,11 @@ test: ## Run unit and integration tests with coverage on 4 workers (offline; wha
 # Leave headroom under CI's 10-minute job timeout for the full unit/integration suite on slower runners.
 # TEST_LEVELS picks a shard: CI's macOS cells set unit or integration, each under the same session cap.
 TEST_LEVELS ?= unit or integration
-test-parallel: ## Unit and integration tests on 4 workers, stopping at the first failure; no coverage (the CI test matrix)
+# macOS runners have 3 vCPUs shared with browsers and subprocesses; fewer workers keep the fixed time budgets honest there.
+PARALLEL_WORKERS := $(if $(filter Darwin,$(shell uname -s)),3,4)
+test-parallel: ## Unit and integration tests on 4 workers (3 on macOS), stopping at the first failure; no coverage (the CI test matrix)
 	@echo "Runner: $$(getconf _NPROCESSORS_ONLN) CPUs"
-	$(STEPS) "tests=uv run pytest -m '($(TEST_LEVELS)) and not perf' -n 4 -x -q --session-timeout=420 --durations=20"
+	$(STEPS) "tests=uv run pytest -m '($(TEST_LEVELS)) and not perf' -n $(PARALLEL_WORKERS) -x -q --session-timeout=420 --durations=20"
 
 commits: ## Commit messages since BASE, and $$TITLE and $$BRANCH when set: conventional, no confidential terms
 	$(STEPS) \
@@ -229,10 +231,11 @@ test-browser-deps: ## Install Chromium and WebKit; include Linux host libraries 
 # The browser E2E files (Playwright, the mounted web app) compete with the tool-install and CLI ones for CPU, so CI runs
 # the two halves as separate jobs. A file counts as browser when it mentions Playwright or the shared browser helpers.
 E2E_WEB := $(sort $(shell grep -lE 'playwright|_browser_result|_mounted|web_build' tests/e2e/*_test.py 2>/dev/null))
-E2E_PYTEST := uv run pytest -m e2e -n 3 -q --session-timeout=600 -x
+E2E_WORKERS := $(if $(filter Darwin,$(shell uname -s)),2,3)
+E2E_PYTEST := uv run pytest -m e2e -n $(E2E_WORKERS) -q --session-timeout=600 -x
 E2E_SELECT := $(if $(filter cli,$(SUITE)),$(foreach f,$(E2E_WEB), --ignore=$(f)))$(if $(filter web,$(SUITE)),$(foreach f,$(E2E_WEB), $(f)))
 
-test-e2e: e2e-prepare ## Run end-to-end tests (needs network), on 3 workers; SUITE=cli (tool install, CLI) or SUITE=web (browser) runs half
+test-e2e: e2e-prepare ## Run end-to-end tests (needs network), on 3 workers (2 on macOS); SUITE=cli (tool install, CLI) or SUITE=web (browser) runs half
 	@echo "Runner: $$(getconf _NPROCESSORS_ONLN) CPUs"
 	$(STEPS) $(if $(filter web,$(SUITE)),,"e2e-readme=$(E2E_PYTEST) tests/e2e/docs_test.py::test_readme_instructions") "e2e=$(E2E_PYTEST)$(E2E_SELECT) --deselect=tests/e2e/docs_test.py::test_readme_instructions"
 
