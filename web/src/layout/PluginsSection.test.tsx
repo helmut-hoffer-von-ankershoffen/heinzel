@@ -45,12 +45,12 @@ let confirmedStreamDelay = 0;
 
 describe("plugin source labels", () => {
   it.each([
-    ["https://github.com/helmut-hoffer-von-ankershoffen/heinzel/tree/main/plugins/heinzel-clock", null, "First-Party"],
-    ["https://github.com/HELMUT-HOFFER-VON-ANKERSHOFFEN/HEINZEL.git", null, "First-Party"],
+    ["https://github.com/helmut-hoffer-von-ankershoffen/heinzel/tree/main/plugins/heinzel-clock", null, "First-party"],
+    ["https://github.com/HELMUT-HOFFER-VON-ANKERSHOFFEN/HEINZEL.git", null, "First-party"],
     [
       "https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/tree/main/plugins/heinzel-clock",
       null,
-      "First-Party",
+      "First-party",
     ],
     ["https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins-fork", true, "Private"],
     ["https://github.com/helmut-hoffer-von-ankershoffen/heinzel-contrib", null, "Community"],
@@ -99,7 +99,7 @@ describe("plugin source labels", () => {
       />,
     );
     expect(screen.getByRole("button", { name: "Community" })).toBeInTheDocument();
-    expect(screen.queryByText("First-Party")).not.toBeInTheDocument();
+    expect(screen.queryByText("First-party")).not.toBeInTheDocument();
   });
 });
 
@@ -650,7 +650,7 @@ describe("PluginsSection", () => {
     const labels = (await screen.findAllByRole("listitem")).map((row) => row.textContent);
     expect(labels.some((text) => text?.includes("Community"))).toBe(true);
     expect(labels.some((text) => text?.includes("Custom"))).toBe(true);
-    expect(labels.some((text) => text?.includes("First-Party"))).toBe(true);
+    expect(labels.some((text) => text?.includes("First-party"))).toBe(true);
     const row = (name: string) => screen.getByText(name, { exact: true }).closest("li") as HTMLElement;
     expect(within(row("Reference")).getByText("Custom")).toBeInTheDocument();
     expect(within(row("Private tools")).getByText("Private")).toBeInTheDocument();

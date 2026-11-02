@@ -40,14 +40,14 @@ class PluginSettings(ModuleSettings):
         title="GitHub token",
         description="A GitHub token for searching plugins and reading a repository before adding "
         "a plugin from it, when the GitHub CLI isn't installed; both work without one "
-        "at a lower rate limit. Also read from GH_TOKEN or GITHUB_TOKEN, and sent to "
+        "at a lower rate limit. Also read from GH_TOKEN or GITHUB_TOKEN, and used with "
         "GitHub only.",
         json_schema_extra={"x-expert": True},
     )
 
 
 class PluginLayer(BaseModel):
-    """A layer a plugin's module declares (ADR 0040)."""
+    """A layer a plugin's module declares."""
 
     module: str = Field(description="The layer's module name, e.g. `acme-payments`.")
     parent: str | None = Field(description="The layer above it; none for the root (the company).")
@@ -78,7 +78,7 @@ class PluginInfo(BaseModel):
     revision: str | None = Field(default=None, description="The git commit installed, for a git source.")
     homepage: str | None = Field(default=None, description="Its source repository, from its metadata.")
     first_party: bool = Field(
-        default=False, description="Whether its recorded origin is an official maintainer repository (ADR 0094)."
+        default=False, description="Whether its recorded origin is an official maintainer repository."
     )
     private_repository: bool | None = Field(
         default=None,
@@ -88,18 +88,16 @@ class PluginInfo(BaseModel):
         default=True, description="Whether its modules are loaded; `hz system plugin disable` switches it off."
     )
     error: str | None = Field(default=None, description="Why it failed to load, if it did.")
-    layers: list[PluginLayer] = Field(
-        default_factory=list[PluginLayer], description="Layers its modules declare (ADR 0040)."
-    )
+    layers: list[PluginLayer] = Field(default_factory=list[PluginLayer], description="Layers its modules declare.")
     capabilities: list[str] = Field(
         default_factory=list, description="Adapters it brings, as `<adapter>:<capability>`, e.g. `github:tracker`."
     )
     playbooks: list[str] = Field(
-        default_factory=list, description="Modules that bring a playbook (ADR 0037); empty while it is disabled."
+        default_factory=list, description="Modules that bring a playbook; empty while it is disabled."
     )
     themes: list[str] = Field(
         default_factory=list,
-        description="Names of the themes its modules offer for the web app (`module.theme`, ADR 0044), sorted; "
+        description="Names of the themes its modules offer for the web app (`module.theme`), sorted; "
         "`hz system theme use <name>` picks one.",
     )
     kinds: list[PluginKind] = Field(
@@ -107,7 +105,7 @@ class PluginInfo(BaseModel):
         description="What the plugin is, any of four, always in this order: `connector` when it brings adapters "
         "(`capabilities` isn't empty); `theme` when it offers themes; `capability` when it has an operation of its "
         "own besides the `info` every plugin from the template gets (e.g. `hz clock`); `playbook` when it ships one. "
-        "In the web app `Capability` means such a feature of its own, while `capabilities` above, like ADR 0028, names "
+        "In the web app `Capability` means such a feature of its own, while `capabilities` above names "
         "the integration interfaces (tracker, calendar, ...) a connector implements.",
     )
 
@@ -115,7 +113,7 @@ class PluginInfo(BaseModel):
 class AvailablePlugin(BaseModel):
     """A plugin one can install with `hz system plugin add`."""
 
-    name: str = Field(description="Distribution name, `heinzel-<name>` by convention (ADR 0025).")
+    name: str = Field(description="Distribution name, `heinzel-<name>` by convention.")
     short_name: str = Field(
         description="The name without `heinzel-`: its command group (`hz <short_name>`); for first-party plugins "
         "also what `hz system plugin add` takes."

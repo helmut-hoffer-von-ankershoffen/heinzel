@@ -32,7 +32,7 @@ def _update_service(installation: Installation, releases: ReleaseSource, kernel:
 
 
 module.service(UpdateService, _update_service)
-module.service(ReleaseSource, github_releases)  # what the CLI's hourly update check asks (ADR 0031)
+module.service(ReleaseSource, github_releases)  # what the CLI's hourly update check asks
 
 
 @module.operation(render=render_info)
@@ -52,7 +52,7 @@ def release(service: SystemService, installation: Installation) -> ReleaseCheck:
     """Ask where Heinzelmännchen was installed from for its latest release, and whether to update.
 
     One unauthenticated GET to the GitHub releases API of the repository in the uv tool receipt (or the default
-    repository) with only a `heinzel/<version>` User-Agent (ADR 0031); offline or rate-limited, the result carries a
+    repository) with only a `heinzel/<version>` User-Agent; offline or rate-limited, the result carries a
     warning. Always asks, even when the hourly check (setting `update_check`) asked a minute ago; the answer is
     cached for the update notice.
     """

@@ -24,7 +24,7 @@ from heinzel.modules.graph._models import GraphSettings, State, TeamGraphDocumen
 from heinzel.modules.graph._render import render_graph
 from heinzel.modules.graph._service import GraphService, HzGraph
 
-module = Module("graph", "Are your team's promises kept? Artifacts and Heinzelmännchen, and where the flow waits.")
+module = Module("graph", "Are your team's contracts kept? Artifacts and Heinzelmännchen, and where the flow waits.")
 module.settings(GraphSettings)
 module.service(GraphService)
 module.provides("team-graph", modes={"read"}, name="hz-graph")(HzGraph)
@@ -53,7 +53,7 @@ def graph(
         datetime | None, Field(description="The graph as of this time, ISO 8601 with offset; now by default.")
     ] = None,
 ) -> TeamGraphDocument:
-    """Show your team's promises: who keeps which artifact, how each promise stands, where the flow waits."""
+    """Show your team's contracts: who keeps which artifact, how each stands, where the flow waits."""
     return service.graph(artifact=artifact, heinzel=heinzel, state=state, at=at)
 
 
