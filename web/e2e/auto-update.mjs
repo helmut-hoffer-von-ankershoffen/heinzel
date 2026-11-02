@@ -101,7 +101,15 @@ try {
 
   // Publish the fake release once the app is ready: a check finds it within seconds; the countdown starts at 30.
   writeFileSync(`${folder}/release`, "99.0.0\n");
-  await popup.waitFor({ timeout: 60000 });
+  // The same 60 seconds as before, split: first the server's own plan must reach its countdown, then the window
+  // must show it. A failure then says which side didn't: the scheduler, or the page.
+  await until(async () => (await api("auto-update")).phase === "countdown", {
+    timeout: 50000,
+    interval: 250,
+    message: "The server's plan never reached its countdown after the release was published",
+  });
+  result.serverCountdown = true;
+  await popup.waitFor({ timeout: 10000 });
   result.text = await popup.textContent();
   result.first = await seconds();
   result.buttons = await popup.getByRole("button").allTextContents();
