@@ -46,6 +46,7 @@ class World:
         self.badge = "92%"
         self.now = 0.0
         self.artifacts = 1
+        self.queue_until = 0.0  # while now is below this, another check at this head waits for a runner
 
     def read(self, url: str, _headers: dict | None = None) -> Any:  # noqa: PLR0911 - one answer per endpoint
         if self.down:
@@ -67,7 +68,8 @@ class World:
         if url.endswith("commits/main"):
             return {"sha": self.main_sha}
         if "check-runs" in url:
-            return {"check_runs": [self.job] if self.job else []}
+            waiting = [{"name": "Tests", "status": "queued"}] if self.now < self.queue_until else []
+            return {"check_runs": ([self.job] if self.job else []) + waiting}
         if "/artifacts" in url:
             return {"artifacts": [{"archive_download_url": "https://api/zip"}] * self.artifacts}
         if "endpoint.json" in url:
@@ -188,6 +190,48 @@ def test_coverage_waits_for_the_job_then_fails_closed():
     with pytest.raises(merge_gate.UnavailableError, match="the Coverage job"):
         gate.run_coverage("Coverage", 80.0)
     assert world.now >= merge_gate.COVERAGE_WAIT
+
+
+def test_runner_queue_time_does_not_count_against_the_coverage_wait():
+    world = World()
+    ready = merge_gate.COVERAGE_WAIT * 2
+    world.queue_until = ready
+    world.job = None
+    gate = world.gate()
+    real = gate.read
+
+    def read(url: str, headers: dict | None = None) -> Any:
+        if world.now >= ready:
+            world.job = {**World().job}
+        return real(url, headers)
+
+    gate.read = read
+    assert gate.run_coverage("Coverage", 80.0) == []
+    assert world.now >= ready
+
+
+def test_a_queue_that_never_clears_still_fails_closed():
+    world = World()
+    world.queue_until = float("inf")
+    world.job = None
+    with pytest.raises(merge_gate.UnavailableError, match="gave up waiting"):
+        world.gate().run_coverage("Coverage", 80.0)
+    assert world.now >= merge_gate.QUEUE_CAP
+
+
+def test_queue_time_does_not_count_against_sonars_wait():
+    world = World()
+    world.pull_sha = "old"
+    world.queue_until = merge_gate.SONAR_WAIT * 2
+    gate = world.gate()
+
+    def analysis_lands(seconds: float) -> None:
+        world.tick(seconds)
+        if world.now >= merge_gate.SONAR_WAIT * 2:
+            world.pull_sha = HEAD
+
+    gate.sleep = analysis_lands
+    assert gate.run_sonar() == []
 
 
 def test_a_failed_coverage_job_fails_the_gate():
