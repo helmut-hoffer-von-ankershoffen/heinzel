@@ -1229,11 +1229,23 @@ def test_macos_specific_tests_are_a_required_serial_job_on_macos():
     assert any(step.get("run") == "make test-macos-specific" for step in job["steps"])
 
 
-def test_macos_cells_are_temporarily_non_blocking_and_linux_cells_still_block():
-    jobs = yaml.safe_load((REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))["jobs"]
-    for name in ("setup", "test", "e2e", "electron"):
-        assert jobs[name]["continue-on-error"] == "${{ startsWith(matrix.os, 'macos') }}", name
-    steps = jobs["ci-ok"]["steps"]
-    script = next(step["run"] for step in steps if "RESULTS" in step.get("env", {}))
-    assert "success | skipped) ;;" in script  # a masked macOS failure reports success; anything else still fails
-    assert "continue-on-error" not in jobs["ci-ok"]
+def test_no_job_is_non_blocking_so_a_macos_failure_fails_ci_ok():
+    workflow = (REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    jobs = yaml.safe_load(workflow)["jobs"]
+    for name, job in jobs.items():
+        assert job.get("continue-on-error", False) is False, f"{name} must not be non-blocking"
+        for step in job.get("steps", []):
+            assert step.get("continue-on-error", False) is False, (
+                f"{name}: step {step.get('name')} must not be non-blocking"
+            )
+    macos_jobs = [
+        name
+        for name, job in jobs.items()
+        if "macos" in str(job.get("runs-on", "")) or "macos" in str(job.get("strategy", ""))
+    ]
+    assert {"setup", "test", "e2e", "electron", "macos-specific", "notifier"} <= set(macos_jobs)
+    script = next(step["run"] for step in jobs["ci-ok"]["steps"] if "RESULTS" in step.get("env", {}))
+    assert "success | skipped) ;;" in script  # anything else, a failed macOS job included, fails CI OK
+    assert all(name in jobs["ci-ok"]["needs"] for name in macos_jobs if name != "setup"), (
+        "every macOS job must gate CI OK"
+    )
