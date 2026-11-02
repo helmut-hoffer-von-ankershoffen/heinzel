@@ -347,7 +347,7 @@ def _core_by_tag(raw: bytes, commit: str, tag: str) -> bytes:
     try:
         data = tomllib.loads(raw.decode("utf-8"))
         document = tomlkit.parse(raw.decode("utf-8"))
-        entries = (cast("Any", document["tool"])["requirements"], data["tool"]["requirements"])
+        entries = (document["tool"]["requirements"], data["tool"]["requirements"])
         parts = urlsplit(str(entries[1][0]["git"]))
         query = parse_qs(parts.query)
         if query.get("rev") != [commit] or set(query) - {"rev", "subdirectory"}:
