@@ -190,6 +190,7 @@ hz system config show          # configuration files, settings in effect, their 
 hz system config set hz.log_level INFO
 hz system release              # is there a newer release? (asks GitHub now; hz checks hourly on its own)
 hz system update               # update, keeping plugins
+hz system config set hz.auto_update false  # stop the running web app updating hz and plugins by itself
 hz system agent install               # install the skills for coding agents
 ```
 

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { FooterItem } from "@/components/FooterItem";
 import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
+import { AutoUpdateToggle } from "@/updates/AutoUpdateToggle";
 import { finishUpdate, pendingUpdate, readUpdateStatus, startUpdate } from "@/updates/controller";
 
 /** Inspect the pane first; its update button uses the existing installer and verified lifecycle. */
@@ -116,6 +117,7 @@ export function UpdateStatus() {
             {problem}
           </p>
         )}
+        <AutoUpdateToggle />
         {recovery && (
           <Button size="sm" variant="outline" disabled={busy} onClick={() => void run(true)}>
             {t("updates.verify")}

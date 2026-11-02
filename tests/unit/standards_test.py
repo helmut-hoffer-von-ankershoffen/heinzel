@@ -215,6 +215,8 @@ NOT_SETTINGS = {  # names or prefixes that aren't settings of Heinzelmännchen's
     "HZ_WORKFLOW__": "the heinzel module's old prefix, read for one minor release (ADR 0051)",
     "HZ_A_B__": "the variable prefix of a module named `a-b`, in a test of env_prefix",
     "HZ_SYSTEM_CHANGELOG__": "the variable prefix of a nested module, in a test of env_prefix",
+    "HZ_DEV": "a development fact that keeps automatic updates off, checked by presence in a list (ADR 0116)",
+    "HZ_TEST": "a development fact that keeps automatic updates off, checked by presence in a list (ADR 0116)",
 }
 
 

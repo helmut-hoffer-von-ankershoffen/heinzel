@@ -108,3 +108,13 @@ class UpdateResult(BaseModel):
         description="What happened to each installed plugin: upgraded together with hz, unchanged or failed. A plugin "
         "that doesn't allow the new hz never blocks it.",
     )
+
+
+class AnnouncedUpdate(BaseModel):
+    """What an automatic update of exactly the announced versions did (ADR 0116)."""
+
+    updated: bool = Field(description="Whether the announced versions are installed now and the new hz started.")
+    after: str = Field(description="The hz version installed now.")
+    restored: bool = Field(description="Whether hz and every plugin were put back as they were.")
+    refused: bool = Field(description="Whether the update installed but didn't start: it is never tried again.")
+    message: str = Field(description="What happened, in one plain message.")
