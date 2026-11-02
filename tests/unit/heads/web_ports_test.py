@@ -98,3 +98,27 @@ def test_a_port_whose_last_server_closed_its_connections_binds_again():
     server.close()
     with free_socket("127.0.0.1", port) as again:
         assert again.getsockname()[1] == port
+
+
+def test_windows_never_gets_the_reuse_option(monkeypatch):
+    from heinzel.heads import web
+
+    options = []
+    real = socket.socket.setsockopt
+    monkeypatch.setattr(web.sys, "platform", "win32")
+    monkeypatch.setattr(socket.socket, "setsockopt", lambda self, *a: options.append(a) or real(self, *a))
+    with web.free_socket("127.0.0.1", 0) as _, socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+    with web.free_socket("127.0.0.1", port):
+        pass
+    assert not [o for o in options if o[1] == socket.SO_REUSEADDR]
+
+
+def test_a_second_bind_to_a_listening_port_says_the_port_is_in_use():
+    from heinzel.heads.web import free_socket
+
+    with free_socket() as other:
+        port = other.getsockname()[1]
+        with pytest.raises(HeinzelError, match="still in use"):
+            wait_for_port(lambda: free_socket("127.0.0.1", port), port, lambda _: None, timeout=0)

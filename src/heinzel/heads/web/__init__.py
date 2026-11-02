@@ -455,7 +455,9 @@ def free_socket(host: str = HOST, port: int = 0) -> socket.socket:
     """
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
-        if port and os.name == "posix" and not _listener_on(host, port):
+        # Never on Windows: there SO_REUSEADDR lets another process bind a port in use (a hijack), so it keeps the
+        # exclusive default. Elsewhere it only frees TIME_WAIT ports, and the probe above guards macOS.
+        if port and sys.platform != "win32" and not _listener_on(host, port):
             sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         sock.bind((host, port))
         sock.listen(128)
