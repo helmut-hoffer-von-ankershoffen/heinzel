@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { probeServer } from "@/splash/Splash";
 import { dropRefusedDevice, dropStaleSession } from "./device";
 import { DEVICE_KEY, deviceToken, sessionToken } from "./token";
 
@@ -45,6 +46,27 @@ describe("a window that outlived hz ui", () => {
     dropRefusedDevice(401, "old-session", reload);
     expect(reload).toHaveBeenCalledOnce();
     expect(sessionToken()).toBeNull();
+  });
+
+  it("never tells a paired window to sign in again while it moves to its device token", async () => {
+    sessionStorage.setItem("hz.token", "old-session");
+    localStorage.setItem(DEVICE_KEY, "hzd_device");
+    const sent: (string | null)[] = [];
+    vi.stubGlobal("fetch", async (request: Request) => {
+      const bearer = request.headers.get("Authorization");
+      sent.push(bearer);
+      return bearer === "Bearer hzd_device"
+        ? Response.json({ version: "0.9.1" })
+        : Response.json({ error: "refused" }, { status: 401 });
+    });
+    expect((await probeServer()).kind).toBe("ok");
+    expect(sent).toEqual(["Bearer old-session", "Bearer hzd_device"]);
+    // A refused device token, with nothing left to ask with, is the one that asks to sign in.
+    sent.length = 0;
+    expect((await probeServer()).kind).toBe("ok");
+    localStorage.setItem(DEVICE_KEY, "hzd_revoked");
+    expect((await probeServer()).kind).toBe("refused");
+    expect(sent).toEqual(["Bearer hzd_device", "Bearer hzd_revoked"]);
   });
 
   it("drops a revoked device token only when no session token is in use", () => {

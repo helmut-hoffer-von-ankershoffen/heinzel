@@ -14,6 +14,7 @@ import signal
 import subprocess
 import sys
 import textwrap
+import threading
 import time
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
@@ -253,6 +254,10 @@ def _start_ui(env: dict[str, str], port: int) -> tuple[subprocess.Popen[str], st
     )
     assert ui.stdout is not None
     url = ui.stdout.readline().strip()
+    if not url:  # it exited before printing a link: keep why in the failure
+        ui.wait(30)
+        assert ui.stderr is not None
+        pytest.fail(f"hz ui exited {ui.returncode} without a link: {ui.stderr.read()}")
     assert url.startswith(f"http://127.0.0.1:{port}/#token="), url
     return ui, url
 
@@ -347,6 +352,77 @@ def test_a_paired_browser_reopens_signed_in_without_a_link_after_hz_ui_restarts(
         refused = drive("open", origin)
         assert refused["signedIn"] is False, refused
     finally:
+        _stop_ui(ui)
+
+
+@pytest.mark.timeout(900)
+@pytest.mark.parametrize("engine", ["chromium", "webkit"])
+def test_an_open_app_window_reconnects_when_the_daemon_restarts_on_the_same_port(environment, tmp_path, engine):
+    """Stop `hz ui` under an open, paired window and start it again: the window recovers and never asks to sign in."""
+    env, _ = environment
+    run = _browser_ready(engine)
+    port = _free_port()
+    ui, link = _start_ui(env, port)
+    driver = subprocess.Popen(
+        [
+            *run,
+            "exec",
+            "node",
+            "e2e/device-live-restart.mjs",
+            engine,
+            str(tmp_path / "profile"),
+            link,
+            f"http://127.0.0.1:{port}/",
+        ],
+        cwd=REPO,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    assert driver.stdin is not None
+    assert driver.stdout is not None
+    assert driver.stderr is not None
+    # Read the driver's stderr as it comes, so a full pipe never stalls it and a driver that dies says why.
+    said: list[str] = []
+    reader = threading.Thread(target=lambda: said.extend(driver.stderr), daemon=True)
+    reader.start()
+
+    def answer() -> str:
+        got = driver.stdout.readline()
+        if not got:  # the driver ended before answering
+            driver.wait(30)
+            reader.join(30)
+            pytest.fail(f"the browser driver exited {driver.returncode} without answering: {''.join(said)}")
+        return got.strip()
+
+    def expect(line: str) -> None:
+        got = answer()
+        assert got == line, got + "".join(said)
+
+    try:
+        expect("READY")
+        _stop_ui(ui)
+        driver.stdin.write("stopped\n")
+        driver.stdin.flush()
+        expect("DOWN")
+        ui, new_link = _start_ui(env, port)  # a new session token on the same port, so the same origin
+        assert new_link != link
+        driver.stdin.write("started\n")
+        driver.stdin.flush()
+        result = json.loads(answer())
+        if result != {"restarted": True, "stayedSignedIn": True, "askedToSignIn": False, "reopened": True}:
+            driver.wait(60)
+            reader.join(30)
+            pytest.fail(f"{result}\nwhat the window went through:\n{''.join(said)}")
+        assert driver.wait(60) == 0
+    finally:
+        driver.kill()
+        driver.wait(30)
+        reader.join(30)  # stderr is at its end once the driver is gone; close it only after the reader let go
+        for stream in (driver.stdin, driver.stdout, driver.stderr):
+            if stream is not None:
+                stream.close()
         _stop_ui(ui)
 
 

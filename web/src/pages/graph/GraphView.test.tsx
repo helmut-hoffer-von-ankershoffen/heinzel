@@ -43,7 +43,7 @@ describe("the Team graph screen", () => {
     expect(costas).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /^Tracker update: priya.*Waiting for approval/ })).toBeInTheDocument();
     // Each promise, for screen readers too.
-    const promises = screen.getByRole("list", { name: "Promises" });
+    const promises = screen.getByRole("list", { name: "Contracts" });
     expect(within(promises).getByText("mira-report reads Tracker update: Offline")).toBeInTheDocument();
     await expectAccessible(container);
   });
@@ -51,7 +51,7 @@ describe("the Team graph screen", () => {
   it("explains every state and kind of node in the legend", async () => {
     mockApi(withGraph);
     renderAt("/graph");
-    const states = await screen.findByRole("list", { name: "Promise states" });
+    const states = await screen.findByRole("list", { name: "Contract states" });
     expect(
       within(states)
         .getAllByRole("listitem")

@@ -3,6 +3,7 @@ import { useState } from "react";
 import { api, problem, type SchemaChatAction, type SchemaChatSession, type SchemaReadSetSelection } from "@/api/client";
 import { ActionCard } from "@/chat/Conversation";
 import { Button } from "@/components/ui/button";
+import { t } from "@/i18n";
 
 async function result<T>(call: Promise<{ data?: T; error?: unknown; response: Response }>): Promise<T> {
   const { data, error, response } = await call;
@@ -396,15 +397,10 @@ function OwnedReadSetReview({ sessionId, owner, onAsk }: { sessionId: string; ow
           Review state could not be loaded. Restore browser storage and reopen this conversation before making changes.
         </p>
       )}
-      <p>
-        Choose up to four sources to review together. Suggestions do not grant access. Your approval applies to these
-        sources in direct chat; it does not enable scheduled access.
-      </p>
+      <p>{t("readSet.intro")}</p>
       {!suggestion.data && !suggestion.isError && (
         <div>
-          <p>
-            Tell your Heinzel in the chat which information you want to use, and ask it to suggest sources for review.
-          </p>
+          <p>{t("readSet.askHelper")}</p>
           {onAsk && (
             <Button type="button" size="sm" variant="outline" onClick={onAsk}>
               Ask about sources
@@ -547,7 +543,7 @@ function OwnedReadSetReview({ sessionId, owner, onAsk }: { sessionId: string; ow
       )}
       {proposal.data && approval.isError && <p>No current set approval could be verified.</p>}
       {(action?.status === "running" || action?.status === "uncertain") && !uncertain && (
-        <p role="alert">The outcome needs inspection; confirmation will not be repeated automatically.</p>
+        <p role="alert">{t("readSet.outcomeUnclear")}</p>
       )}
       {action?.status === "running" && !uncertain && (
         <Button type="button" size="sm" disabled={busy} onClick={inspect}>
@@ -561,7 +557,7 @@ function OwnedReadSetReview({ sessionId, owner, onAsk }: { sessionId: string; ow
       )}
       {uncertain && (
         <div role="alert">
-          <p>The decision outcome needs inspection; it will not be repeated automatically.</p>
+          <p>{t("readSet.decisionUnclear")}</p>
           <Button type="button" size="sm" disabled={busy || !action} onClick={inspect}>
             Check decision outcome
           </Button>

@@ -7,6 +7,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExter
 import { createPortal } from "react-dom";
 import { api } from "@/api/client";
 import { usePlayful } from "@/api/queries";
+import { token } from "@/api/token";
 import { HeinzelAvatar } from "@/components/HeinzelAvatar";
 import { Button } from "@/components/ui/button";
 import { CodeInput } from "@/components/ui/code-input";
@@ -43,8 +44,12 @@ export type ProbeResult = { kind: "ok"; info: unknown } | { kind: "refused" } | 
 /** Ask hz who it is (`/system/info`, with the token): answered, refused the token, or not there. */
 export async function probeServer(): Promise<ProbeResult> {
   try {
+    const sent = token();
     const { data, response } = await api.GET("/system/info");
-    if (response.status === 401) return { kind: "refused" };
+    // The session token of an `hz ui` that has since restarted: the client dropped it for this browser's device token
+    // (dropRefusedDevice), so ask again with that before telling a paired window to sign in. Once only: a refused
+    // device token is dropped too, and nothing is left to ask with.
+    if (response.status === 401) return token() && token() !== sent ? probeServer() : { kind: "refused" };
     // A proxy's gateway error: the hz behind it (`make web-dev`) is stopped. Any other status is hz answering, a 500
     // too: the screens say what it means.
     if (unreachableError({ status: response.status })) return { kind: "unreachable" };
