@@ -12,11 +12,10 @@ commit in the range, old ones included.
 Findings name the location and the term's number, never the term, because CI logs of a public repository are public.
 
 Matching is case-insensitive after Unicode normalization (NFKC, invisible characters removed). Words of six letters or
-more match anywhere, also inside identifiers (`TermCorp`, `termdb`, `term2024`); shorter ones, typically first names,
-and phrases only where no letter touches them, so they never fire inside an ordinary word (a short term in
-`minimal`), but do next to punctuation, markdown, digits and `_` (`**term**`, `term's`, `term_cli`). The words of a
-phrase may be joined by anything that isn't a letter or digit, line breaks included, or by nothing. Binary files are
-scanned through their printable strings, as `strings` would show them.
+more match anywhere, also inside identifiers (`term_cli`, `termdb`); shorter ones, typically first names, only where
+no letter touches them, so they don't fire inside ordinary words. The words of a phrase may be joined by anything
+that isn't a letter or digit, line breaks included, or by nothing. Binary files are scanned through their printable
+strings, as `strings` would show them.
 
 `--identity` also refuses an email git made up from the machine's name (`name@Some-MacBook-Air.local`), with or
 without terms: it names a machine, not a mailbox, and would be published with every commit.
@@ -44,7 +43,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 DEFAULT_TERMS_FILE = Path("~/.config/heinzel-dev/confidential-terms")
-ANYWHERE = 6  # single words at least this long match inside other words too
+ANYWHERE = 6  # words at least this long match inside other words too
 NOT_A_LETTER_BEFORE, NOT_A_LETTER_AFTER = r"(?<![^\W\d_])", r"(?![^\W\d_])"
 PRINTABLE = re.compile(rb"[\x20-\x7e]{4,}")
 # Domains that name a machine or a home or company network, not a mailbox; git builds such an email from the hostname
@@ -186,7 +185,9 @@ def _push_range() -> list[str]:
             bases.append(_revision(remote))
     if not tips:
         start, end = os.environ.get("PRE_COMMIT_FROM_REF", ""), os.environ.get("PRE_COMMIT_TO_REF") or "HEAD"
-        tips = [_revision(end)]
+        # Under prek the variables name the first pushed ref only and standard input is empty, so every local branch
+        # no remote has yet is scanned too: a second ref of `git push origin a b` or `--all` cannot slip through.
+        tips = [_revision(end), "--branches"]
         if start and set(start) != {"0"} and _known(start):
             bases = [_revision(start)]
     return [*tips, "--not", *bases, "--remotes"]

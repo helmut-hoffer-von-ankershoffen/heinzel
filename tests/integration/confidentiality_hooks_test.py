@@ -233,3 +233,14 @@ def test_the_pushed_ref_is_scanned_not_the_checked_out_branch(repo):
     blocked = _pushes(repo, f"{leaky}:refs/heads/feat/other-{uuid.uuid4().hex[:6]}")
     assert blocked.returncode != 0
     assert _pushes(repo, clean).returncode == 0
+
+
+def test_every_ref_of_a_push_is_scanned_not_only_the_first(repo):
+    clean = _new_branch(repo)
+    _unchecked_commit(repo, {"a.md": b"ok\n"}, "docs: harmless")
+    leaky = _new_branch(repo, base="initial")
+    _unchecked_commit(repo, {"b.md": b"see acme\n"}, "docs: harmless")
+    result = _pushes(repo, clean, leaky)
+    assert result.returncode != 0
+    assert "confidential term #" in result.stderr + result.stdout
+    assert _no_term_printed(result)
