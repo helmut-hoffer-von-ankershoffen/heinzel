@@ -7,7 +7,7 @@ test that lists one model and answers one chat completion. No test reaches a rea
 import json
 import threading
 from collections.abc import Iterator
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler
 from typing import ClassVar
 
 import pytest
@@ -15,6 +15,7 @@ from typer.testing import CliRunner
 
 from heinzel import Config, Kernel
 from heinzel.heads.cli import build
+from tests.fixtures.local_http import LoopbackThreadingHTTPServer
 
 pytestmark = pytest.mark.integration
 
@@ -63,11 +64,9 @@ class Server(BaseHTTPRequestHandler):
 
 
 @pytest.fixture
-def endpoint(monkeypatch: pytest.MonkeyPatch) -> Iterator[str]:
-    # HTTPServer resolves its display name during bind; this local fake must never ask DNS.
-    monkeypatch.setattr("socket.getfqdn", lambda name: name)
+def endpoint() -> Iterator[str]:
     Server.seen = []
-    server = ThreadingHTTPServer(("127.0.0.1", 0), Server)
+    server = LoopbackThreadingHTTPServer(("127.0.0.1", 0), Server)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     yield f"http://127.0.0.1:{server.server_address[1]}/v1"
