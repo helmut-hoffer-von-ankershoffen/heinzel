@@ -14,6 +14,7 @@ import signal
 import subprocess
 import sys
 import textwrap
+import threading
 import time
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
@@ -381,10 +382,23 @@ def test_an_open_app_window_reconnects_when_the_daemon_restarts_on_the_same_port
     )
     assert driver.stdin is not None
     assert driver.stdout is not None
+    assert driver.stderr is not None
+    # Read the driver's stderr as it comes, so a full pipe never stalls it and a driver that dies says why.
+    said: list[str] = []
+    reader = threading.Thread(target=lambda: said.extend(driver.stderr), daemon=True)
+    reader.start()
+
+    def answer() -> str:
+        got = driver.stdout.readline()
+        if not got:  # the driver ended before answering
+            driver.wait(30)
+            reader.join(30)
+            pytest.fail(f"the browser driver exited {driver.returncode} without answering: {''.join(said)}")
+        return got.strip()
 
     def expect(line: str) -> None:
-        got = driver.stdout.readline().strip()
-        assert got == line, got + (driver.stderr.read() if driver.poll() is not None and driver.stderr else "")
+        got = answer()
+        assert got == line, got + "".join(said)
 
     try:
         expect("READY")
@@ -396,11 +410,13 @@ def test_an_open_app_window_reconnects_when_the_daemon_restarts_on_the_same_port
         assert new_link != link
         driver.stdin.write("started\n")
         driver.stdin.flush()
-        result = json.loads(driver.stdout.readline())
+        result = json.loads(answer())
         assert result == {"restarted": True, "stayedSignedIn": True, "askedToSignIn": False, "reopened": True}, result
         assert driver.wait(60) == 0
     finally:
         driver.kill()
+        driver.wait(30)
+        reader.join(30)  # stderr is at its end once the driver is gone; close it only after the reader let go
         for stream in (driver.stdin, driver.stdout, driver.stderr):
             if stream is not None:
                 stream.close()
