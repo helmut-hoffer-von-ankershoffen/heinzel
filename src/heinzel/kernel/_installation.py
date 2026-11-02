@@ -311,7 +311,8 @@ def _without_added_options(raw: bytes, options: Mapping[str, object]) -> bytes:
         document = tomlkit.parse(raw.decode("utf-8"))
         del cast("Any", document)["tool"]["options"]
         del data["tool"]["options"]
-        replacement = tomlkit.dumps(document).encode("utf-8")
+        # uv separates the table with a blank line; without it the receipt ends as uv writes one with no options.
+        replacement = (tomlkit.dumps(document).rstrip("\n") + "\n").encode("utf-8")
         if tomllib.loads(replacement.decode("utf-8")) != data:
             raise HeinzelError(_CONSTRAINT_ERROR)
     except (KeyError, TypeError, ValueError, UnicodeError) as exc:
