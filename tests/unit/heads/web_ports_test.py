@@ -89,8 +89,12 @@ def test_a_port_another_server_listens_on_stays_busy():
 def test_a_port_whose_last_server_closed_its_connections_binds_again():
     from heinzel.heads.web import free_socket
 
-    server = free_socket()
-    port = server.getsockname()[1]
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+    # A fixed port, as the daemon binds it: on Linux a lingering connection only lets the port be rebound when the
+    # socket it came from also had SO_REUSEADDR.
+    server = free_socket("127.0.0.1", port)
     with socket.create_connection(("127.0.0.1", port)) as client:
         served, _ = server.accept()
         served.close()  # the closing side keeps the port in TIME_WAIT
