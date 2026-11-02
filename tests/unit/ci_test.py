@@ -8,6 +8,7 @@ import os
 import re
 import stat
 import subprocess
+import sys
 import tomllib
 import zipfile
 from pathlib import Path
@@ -114,6 +115,11 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
         'if [[ ! "$INTRO"': "rejects blank dispatch input before checkout or release work",
         "git config user.name": "opens the release pull request as the bot and hands its tag to the next step",
         "gh workflow run ci.yml": "starts CI on the release pull request, which the bot's token doesn't",
+    },
+    "source-review.yml": {
+        ': "source-review dispatch authority"': "refuses any other ref, actor or commit, before checkout",
+        "uv run --no-build --frozen --script scripts/source_review.py": "the guard and the tool-free review",
+        ': "source-review final identity"': "rechecks the pull request and the protected ref on a fresh runner",
     },
     "release-tag.yml": {'tag="v$(uv version --short)"': "tags a merged release commit"},
     "claude-review.yml": {'files="$(git diff': "picks the review tier from the changed files"},
@@ -1017,7 +1023,8 @@ def test_e2e_prepares_core_build_before_suite_and_removes_owned_temp(tmp_path, f
         node = "tests/e2e/docs_test.py::test_readme_instructions"
         assert first.endswith(f"-x {node}")
         assert second.endswith(f"-x --deselect={node}")
-        assert first.count("-n 3") == second.count("-n 3") == 1
+        workers = "-n 2" if sys.platform == "darwin" else "-n 3"  # macOS runs fewer workers on its 3 vCPUs
+        assert first.count(workers) == second.count(workers) == 1
         assert first.count("--session-timeout=600") == second.count("--session-timeout=600") == 1
     generated = _template_sync_module().makefile()
     assert "e2e-prepare" not in generated
@@ -1209,6 +1216,17 @@ def test_release_versions_ignore_edge_tags_and_stay_under_plugin_caps():
     assert cliff["git"]["tag_pattern"].startswith("^v")
     assert cliff["bump"]["features_always_bump_minor"] is False
     assert cliff["bump"]["breaking_always_bump_major"] is False
+
+
+def test_macos_specific_tests_are_a_required_serial_job_on_macos():
+    jobs = yaml.safe_load((REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))["jobs"]
+    job = jobs["macos-specific"]
+    assert (job["name"], job["runs-on"]) == ("macOS-specific tests", "macos-latest")
+    assert "macos-specific" in jobs["ci-ok"]["needs"]
+    recipe = (REPO / "Makefile").read_text(encoding="utf-8").split("\ntest-macos-specific:", 1)[1].split("\n\n", 1)[0]
+    assert "-m macos_specific" in recipe
+    assert " -n " not in recipe  # serial: no worker contention for the machine-wide notifier tests
+    assert any(step.get("run") == "make test-macos-specific" for step in job["steps"])
 
 
 def test_macos_cells_are_temporarily_non_blocking_and_linux_cells_still_block():

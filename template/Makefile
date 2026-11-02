@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help install setup release-local doctor tools-verify check check-fast preflight fix lint format typecheck test test-parallel commits test-all-pythons test-unit test-integration test-perf test-notifier test-e2e audit licenses secrets build pypi-clean-build-marker changelog ci-logs pr sync docs-plugins docs-record docs-site docs-publish-check release clean update-template preview
+.PHONY: help install setup release-local doctor tools-verify check check-fast preflight fix lint format typecheck test test-parallel commits test-all-pythons test-unit test-integration test-perf test-notifier test-e2e audit licenses secrets build pypi-clean-build-marker changelog ci-logs pr review sync docs-plugins docs-record docs-site docs-publish-check release clean update-template preview
 
 # Quiet by default: one line per passing step, the tail of a failing one. VERBOSE=1 streams everything.
 # A step starting with & runs concurrently with the one before it; the first failure cancels the rest.
@@ -99,9 +99,11 @@ test: ## Run unit and integration tests with coverage on 4 workers (offline; wha
 # Leave headroom under CI's 10-minute job timeout for the full unit/integration suite on slower runners.
 # TEST_LEVELS picks a shard: CI's macOS cells set unit or integration, each under the same session cap.
 TEST_LEVELS ?= unit or integration
-test-parallel: ## Unit and integration tests on 4 workers, stopping at the first failure; no coverage (the CI test matrix)
+# macOS runners have 3 vCPUs shared with browsers and subprocesses; fewer workers keep the fixed time budgets honest there.
+PARALLEL_WORKERS := $(if $(filter Darwin,$(shell uname -s)),3,4)
+test-parallel: ## Unit and integration tests on 4 workers (3 on macOS), stopping at the first failure; no coverage (the CI test matrix)
 	@echo "Runner: $$(getconf _NPROCESSORS_ONLN) CPUs"
-	$(STEPS) "tests=uv run pytest -m '($(TEST_LEVELS)) and not perf' -n 4 -x -q --session-timeout=420 --durations=20"
+	$(STEPS) "tests=uv run pytest -m '($(TEST_LEVELS)) and not perf' -n $(PARALLEL_WORKERS) -x -q --session-timeout=420 --durations=20"
 
 commits: ## Commit messages since BASE, and $$TITLE and $$BRANCH when set: conventional, no confidential terms
 	$(STEPS) \

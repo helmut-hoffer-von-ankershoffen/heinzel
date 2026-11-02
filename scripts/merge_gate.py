@@ -39,7 +39,11 @@ GITHUB = "https://api.github.com"
 RATINGS = {"reliability_rating": "reliability", "security_rating": "security", "sqale_rating": "maintainability"}
 LETTERS = {"1.0": "A", "2.0": "B", "3.0": "C", "4.0": "D", "5.0": "E"}
 SONAR_WAIT = 1800  # seconds; analysis normally takes minutes
-COVERAGE_WAIT = 2700  # seconds; the CI job has to get a runner first
+COVERAGE_WAIT = 2700  # seconds of waiting that isn't queue time: the CI job running, not waiting for a runner
+QUEUE_CAP = (
+    14400  # seconds; queue time isn't counted against a deadline, but a runner pool that never answers still ends
+)
+QUEUED = ("queued", "waiting", "pending")
 POLL = 30
 ARTIFACT = "coverage-total"
 MAX_ARTIFACT = 64 * 1024
@@ -123,15 +127,35 @@ class Gate:
         headers = {"Authorization": f"Bearer {self.token}", "Accept": "application/vnd.github+json"}
         return self.read(f"{GITHUB}/repos/{self.repo}/{path}", headers)
 
+    def queued(self) -> bool:
+        """True while any check at this head is waiting for a runner. Unreadable counts as not queued, fails closed."""
+        if not self.head:
+            return False
+        try:
+            runs = self.github(f"commits/{self.head}/check-runs?per_page=100&filter=latest").get("check_runs", [])
+        except UnavailableError:
+            return False
+        return any(r.get("status") in QUEUED for r in runs)
+
     def wait(self, what: str, seconds: float, step: Callable[[], Any]) -> Any:  # noqa: ANN401 - what step returns
         """step() until it returns something other than None.
+
+        The deadline only runs while nothing at this head waits for a runner: a slow runner pool is not an answer
+        from the service being waited for. Queue time is capped by QUEUE_CAP, then the gate fails closed anyway.
 
         Raises:
             UnavailableError: The deadline passed.
         """
-        deadline = self.clock() + seconds
+        started = self.clock()
+        deadline = started + seconds
+        before = started
         last = ""
         while True:
+            now = self.clock()
+            if self.queued() and now - started < QUEUE_CAP:
+                deadline += now - before
+                last = "CI is waiting for a runner"
+            before = now
             try:
                 answer = step()
                 if answer is not None:

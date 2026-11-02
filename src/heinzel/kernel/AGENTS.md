@@ -1,72 +1,24 @@
 # AGENTS.md — kernel
 
 Every module and plugin depends on this package; its public API is `hz` and `heinzel.kernel` (`__init__.py`). Treat a
-change like a library release: an ADR for a new concept, unit tests for every branch.
+change like a library release: an ADR for a new concept, unit tests for every branch. A file's docstring names its
+purpose and ADR; read it before editing.
 
-- `_module.py` — `Module` and its decorators (`operation`, `job`, `service`, `settings`, `info`, `health`,
-  `credential`, `provides`, `setup`, `playbook`, `layer`, `theme`, `soundscape`, `skill`; `requires=` on modules, operations and jobs;
-  `optional=True` on a read-only operation that degrades without its own requirements).
-- `_protocols.py` — integration capability protocols (`CodeHost`, `Tracker`, `Documents`, `Chat`, `Meetings`,
-  `Calendar`, `Mail`, `Directory`, `TeamGraph`; `MailQuery`, the mail query syntax) and their models; `_directory.py` —
-  `draft_reporting_lines`, the seam setup steps and roster drafting call (fallback adapter:
-  `system.directory`); `_text.py` — `clean_text`, which adapters apply to every string they return, and
-  `redact_emails`, which keeps addresses out of prompts;
-  `_json.py` — `jsonable`, a value's JSON form that refuses what has none instead of stringifying it;
-  `_agents.py` — the `AgentRunner` protocol, `AgentResult` and `McpServer` (ADR 0029; adapters live in
-  `system.runner`); `_chat.py` — `ActionGate` and `ProposedCall`, where a chat's agent proposes what only the person's
-  confirmation runs (ADR 0045; provided by `system.runner.chat`, asked for by the MCP head);
-  `_capabilities.py` — the capability registry with each method's mode and requirement strings;
-  `_bindings.py` — `[capabilities]` bindings; `Capabilities` (kernel-internal) hands requesters mode-gated
-  handles, modules get the read-only `CapabilityView` (ADR 0028); `Kernel.handle_for` gives the compiling module's
-  jobs read handles only.
-- `_credentials.py` — `Credentials`, the only way to secrets (ADR 0030), and the environment backend.
-- `_session.py`, `_session_store.py`, `_session_io.py` — `SessionStore`, provider-independent checkpoint envelopes,
-  private turn bodies and the derived SQLite index (ADR 0049); a module owns the event vocabulary and projection.
-- `_lets.py` — let types, `Check`/`Status` and `CatchUp`. A new let kind needs a head, the kernel, a `system`
-  submodule or the built-in module that owns the concept to consume it (`JobLet`: `system.daemon`; `PlaybookLet`:
-  `workflow`, ADR 0037; `ThemeLet`: `system.theme`, ADR 0044; `SignalLet`: `system.theme`, ADR 0060; `SoundscapeLet`:
-  `system.sound`, ADR 0058; `StatusLet`, `ActionLet`, `WidgetLet`: `system.ui`, ADR 0056; `SkillLet`: `system.skill`,
-  ADR 0061).
-- `_contributions.py` — what a module adds to the web app as data (ADR 0056): `StatusItem`, the widget shapes
-  (`CardWidget`, `ListWidget`, `MetricWidget`, `ProgressWidget`, `GraphicWidget`), the effects (`Navigate`, `OpenUrl`, `RunOperation`,
-  `RunCommand`), `Tone`, `Icon`, `Slot`, the link grammar (`link_problem`) and the lets `module.status`,
-  `module.action` and `module.widget` declare, each a view over one of the module's read-only operations;
-  `_paths.py` — `operation_path`, the one path every head gives an operation.
-- `_themes.py` — `Theme`, `ThemeColours`, `ThemeFont`, `ThemeLogo` and `ThemeLet` (`module.theme`), the grammar every
-  value passes before it becomes a CSS custom property, the checks of a theme's font files and SVG logos
-  (`ThemeLogoFiles`), `ThemeFonts` (the web head serves fonts and logos through it, `system.theme` implements it),
-  `DEFAULT_THEME`, the built-in look, and `DEFAULT_LOGO`, its logo in `assets/theme/`: data plugins ship (ADR 0044);
-  `ThemeVariant`, `ThemeBackdrop` and the contrast check of every variant (ADR 0060). `_theme_signals.py` — the
-  closed signal vocabulary (`Daypart`, `Weather`), `ThemeSignals`, `SignalLet` (`@module.signals`, read by
-  `system.theme`) and `daypart`.
-- `_soundscapes.py` — `Soundscape`, `SoundLayer`, `SoundEarcon`, `SoundStream` and `SoundscapeLet`
-  (`module.soundscape`), the checks of a soundscape's audio files, `STREAM_PROVIDERS` (the only hosts a stream may
-  come from), `SoundAssets` (the web head serves audio and widens its page's CSP through it, `system.sound` implements
-  it) and `ThemeChoice` (the theme in effect, implemented by `system.theme`): data plugins ship (ADR 0058);
-  `_signals.py` — `SIGNALS`, the names a soundscape layer can follow; `daypart` is `_theme_signals.py`'s.
-- `_skills.py` — `Skill`, `SkillFile` and `SkillLet` (`module.skill`), the checks of a skill's directory at import and
-  on every read (`read_skill`, `read_skill_file`, descriptor-relative opens), and the read-only `Skills` service with
-  `skill_tools` and `skill_instructions` for Pydantic AI turns: data plugins ship, consumed by `system.skill`
-  (ADR 0061).
-- `_playbooks.py` — `PlaybookLet` (`module.playbook`), `AssetType`, `DiscoveryHint`, `ContractTemplate` and the
-  `PlaybookSetup` service: data plugins contribute, consumed by `workflow` (ADR 0037).
-- `_layers.py` — `LayerLet` (`module.layer`), the checked tree `Layers` (`Kernel.layers()`), the person's
-  `LayerStack` general to specific (`Kernel.layer_stack()`, built afresh per call) with its recommendations most
-  specific first, and `ORG_SITE_PRECEDENCE`, the one, private seam for the open org-site question (`team_decides`,
-  ADR 0040); consumed by
-  `system.layer`, `workflow`'s playbook setup and the CLI's setup order.
-- `_jobs.py` — `CompiledJobs`, a service, not a let: jobs compiled from data (workflow contracts, ADR 0021);
-  `Kernel.compiled_jobs()` compiles them afresh on every call, and `system.daemon` runs them too.
-- `_discovery.py` — package walk + `heinzel.modules` entry points; plugin failures are collected, built-in ones raise.
-- `_kernel.py` — registration (pluggy), disabled modules, `lets()`, injection (`call`, `resolve`, `bind`, `available`).
-- `_boot.py` — `boot()`, the only place that ties configuration, discovery and the kernel together.
-- `_config.py`, `_settings.py` — layered TOML + env configuration (`ignored_in_project`: fields a project
-  `hz.toml` can't set); `_installation.py` — the uv tool environment;
-  `_progress.py` — head-agnostic progress; `_duration.py` — `parse_duration` (`5m`); `_release.py` —
-  `ReleaseCache` and `ReleaseSource`, the latest release last seen and who asks for it (ADR 0031); `_org.py` —
-  `OrgContext`, where the person's team repository is checked out, what it recommends and which layer the
-  team is (provided by `team`), and `TeamPromises`, what each team contract promises (provided by `workflow`);
-  `_telemetry.py` — `TelemetryEntry`, one strictly checked metadata entry of a Heinzelmännchen's log, and
-  `TelemetryLog`, the team's entries (provided by `telemetry`; read by `graph`, ADR 0054);
-  `_prompter.py` — `Prompter`, head-agnostic questions for setup steps, and `ScriptedPrompter` (ADR 0032;
-  the CLI head runs the steps); `ConfigEditor` in `_config.py` is implemented by `system.config`.
+- A new let kind needs a consumer: a head, the kernel, a `system` submodule or the built-in module that owns the
+  concept (`_lets.py`: `JobLet` → `system.daemon`, `PlaybookLet` → `workflow`, `ThemeLet`/`SignalLet` →
+  `system.theme`, `SoundscapeLet` → `system.sound`, `StatusLet`/`ActionLet`/`WidgetLet` → `system.ui`, `SkillLet` →
+  `system.skill`).
+- Get secrets only through `Credentials` (ADR 0030).
+- Modules get the read-only `CapabilityView`; `Capabilities` is kernel-internal. `Kernel.handle_for` gives the
+  compiling module's jobs read handles only (ADR 0028).
+- Adapters pass every string they return through `clean_text`; `redact_emails` keeps addresses out of prompts.
+- `jsonable` refuses values with no JSON form; don't stringify them.
+- Only `boot()` ties configuration, discovery and the kernel together.
+- Themes and soundscapes are data plugins ship: pass values through the grammar and file checks in `_themes.py` and
+  `_soundscapes.py` before they become CSS or audio; stream hosts come only from `STREAM_PROVIDERS` (ADR 0044, 0058).
+- `ORG_SITE_PRECEDENCE` in `_layers.py` is the one private seam for the open org-site question (ADR 0040).
+- Fields a project `hz.toml` can't set are listed in `ignored_in_project` (`_settings.py`).
+- Chat agents only propose calls (`ActionGate`, `ProposedCall`); the person's confirmation runs them (ADR 0045).
+- A module owns its session event vocabulary and projection; the kernel stores envelopes (`_session*.py`, ADR 0049).
+- Declare `requires=` on modules, operations and jobs; mark a read-only operation `optional=True` if it degrades
+  without its requirements (`_module.py`).

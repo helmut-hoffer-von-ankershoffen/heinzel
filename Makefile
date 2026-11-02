@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help install setup release-local doctor tools-verify check check-fast linux-user-manager-proof preflight fix lint format typecheck test test-parallel commits test-all-pythons test-unit test-integration test-perf test-notifier test-e2e e2e-prepare test-browser-deps audit licenses secrets template-test template-sync docs attributions fuzz demo terminal-art notifier icons web-build web-dev test-web test-site managed-backend-setup managed-backend-check desktop-electron-test desktop-electron-sandbox desktop-electron-native desktop-electron-package build pypi-clean-build-marker changelog ci-logs pr sync docs-plugins docs-record docs-site docs-catalog docs-site-check docs-publish-check release clean
+.PHONY: help install setup release-local doctor tools-verify check check-fast linux-user-manager-proof preflight fix lint format typecheck test test-parallel commits test-all-pythons test-unit test-integration test-perf test-macos-specific test-notifier test-e2e e2e-prepare test-browser-deps audit licenses secrets template-test template-sync docs attributions fuzz demo terminal-art notifier icons web-build web-dev test-web test-site managed-backend-setup managed-backend-check desktop-electron-test desktop-electron-sandbox desktop-electron-native desktop-electron-package build pypi-clean-build-marker changelog ci-logs pr review sync docs-plugins docs-record docs-site docs-catalog docs-site-check docs-publish-check design-check release clean
 
 # Quiet by default: one line per passing step, the tail of a failing one. VERBOSE=1 streams everything.
 # A step starting with & runs concurrently with the one before it; the first failure cancels the rest.
@@ -18,6 +18,7 @@ LINT := \
 		"contracts=uv run lint-imports" \
 		"&template=uv run --script scripts/sync_template.py --check" \
 		"&docs=env -u HZ_SYSTEM_AGENT__SKILL_DIRS uv run python scripts/generate_docs.py --check" \
+		"&design=uv run python scripts/design_tokens.py --check" \
 		"&demo=uv run --script scripts/demo_tape.py --check" \
 		"&attributions=uv run --quiet --script scripts/attributions.py --check" \
 		"&zizmor=uv run zizmor --offline --quiet .github/workflows" \
@@ -88,6 +89,7 @@ check-fast: ## Seconds-fast feedback for the edit loop: format, lint, contracts,
 		"&contracts=uv run lint-imports" \
 		"&template=uv run --script scripts/sync_template.py --check" \
 		"&docs=env -u HZ_SYSTEM_AGENT__SKILL_DIRS uv run python scripts/generate_docs.py --check" \
+		"&design=uv run python scripts/design_tokens.py --check" \
 		"&demo=uv run --script scripts/demo_tape.py --check" \
 		"&attributions=uv run --quiet --script scripts/attributions.py --check" \
 		$(FAST_TYPES) $(WEB_LINT) $(WEB_TYPES) \
@@ -107,6 +109,7 @@ fix: ## Fix what tools can fix: lockfile, formatting, lint autofixes, generated 
 		"lock=uv lock --quiet" \
 		"template=uv run --script scripts/sync_template.py" \
 		"&docs=env -u HZ_SYSTEM_AGENT__SKILL_DIRS uv run python scripts/generate_docs.py" \
+		"&design=uv run python scripts/design_tokens.py" \
 		"&web-client=$(WEB_PROJECT_CLEAN) client" \
 		"&demo=uv run --script scripts/demo_tape.py" \
 		"&attributions=uv run --quiet --script scripts/attributions.py" \
@@ -187,9 +190,11 @@ test: ## Run unit and integration tests with coverage on 4 workers (offline; wha
 # Leave headroom under CI's 10-minute job timeout for the full unit/integration suite on slower runners.
 # TEST_LEVELS picks a shard: CI's macOS cells set unit or integration, each under the same session cap.
 TEST_LEVELS ?= unit or integration
-test-parallel: ## Unit and integration tests on 4 workers, stopping at the first failure; no coverage (the CI test matrix)
+# macOS runners have 3 vCPUs shared with browsers and subprocesses; fewer workers keep the fixed time budgets honest there.
+PARALLEL_WORKERS := $(if $(filter Darwin,$(shell uname -s)),3,4)
+test-parallel: ## Unit and integration tests on 4 workers (3 on macOS), stopping at the first failure; no coverage (the CI test matrix)
 	@echo "Runner: $$(getconf _NPROCESSORS_ONLN) CPUs"
-	$(STEPS) "tests=uv run pytest -m '($(TEST_LEVELS)) and not perf' -n 4 -x -q --session-timeout=420 --durations=20"
+	$(STEPS) "tests=uv run pytest -m '($(TEST_LEVELS)) and not perf' -n $(PARALLEL_WORKERS) -x -q --session-timeout=420 --durations=20"
 
 commits: ## Commit messages since BASE, and $$TITLE and $$BRANCH when set: conventional, no confidential terms
 	$(STEPS) \
@@ -210,6 +215,9 @@ test-integration: ## Run integration tests
 test-perf: ## Run the performance tests (timing assertions such as linear time); CI only, they flake on a loaded machine
 	$(STEPS) "perf=uv run pytest -m perf -q --session-timeout=120"
 
+test-macos-specific: ## Tests that exercise only macOS behaviour, serially (CI's required macOS job; build the notifier first: make notifier)
+	$(STEPS) "macos=uv run pytest -m macos_specific -q -p no:cacheprovider --durations=10 --session-timeout=420"
+
 test-notifier: ## Real Heinzel Notifier launches leave no process behind (macOS; build it first: make notifier)
 	$(STEPS) "notifier=uv run pytest tests/e2e/notifier_instances_test.py -q -p no:cacheprovider -o timeout=120"
 
@@ -223,10 +231,11 @@ test-browser-deps: ## Install Chromium and WebKit; include Linux host libraries 
 # The browser E2E files (Playwright, the mounted web app) compete with the tool-install and CLI ones for CPU, so CI runs
 # the two halves as separate jobs. A file counts as browser when it mentions Playwright or the shared browser helpers.
 E2E_WEB := $(sort $(shell grep -lE 'playwright|_browser_result|_mounted|web_build' tests/e2e/*_test.py 2>/dev/null))
-E2E_PYTEST := uv run pytest -m e2e -n 3 -q --session-timeout=600 -x
+E2E_WORKERS := $(if $(filter Darwin,$(shell uname -s)),2,3)
+E2E_PYTEST := uv run pytest -m e2e -n $(E2E_WORKERS) -q --session-timeout=600 -x
 E2E_SELECT := $(if $(filter cli,$(SUITE)),$(foreach f,$(E2E_WEB), --ignore=$(f)))$(if $(filter web,$(SUITE)),$(foreach f,$(E2E_WEB), $(f)))
 
-test-e2e: e2e-prepare ## Run end-to-end tests (needs network), on 3 workers; SUITE=cli (tool install, CLI) or SUITE=web (browser) runs half
+test-e2e: e2e-prepare ## Run end-to-end tests (needs network), on 3 workers (2 on macOS); SUITE=cli (tool install, CLI) or SUITE=web (browser) runs half
 	@echo "Runner: $$(getconf _NPROCESSORS_ONLN) CPUs"
 	$(STEPS) $(if $(filter web,$(SUITE)),,"e2e-readme=$(E2E_PYTEST) tests/e2e/docs_test.py::test_readme_instructions") "e2e=$(E2E_PYTEST)$(E2E_SELECT) --deselect=tests/e2e/docs_test.py::test_readme_instructions"
 
@@ -277,6 +286,11 @@ docs-site-check: docs-site ## Check the built site's catalog, keyboard flow, mob
 	uv run --quiet --script scripts/site_check.py
 	uv run --quiet --script scripts/check_docs.py --site site/
 
+design-check: docs-site ## Check computed styles in a browser: the built site and the running app against design/tokens.json
+	$(WEB) install
+	uv run --quiet --script scripts/site_check.py --install
+	uv run --quiet --script scripts/design_check.py
+
 docs-publish-check: ## Validate publication with fresh public metadata, or build a standalone plugin's ordinary docs
 	@if [ -f docs/catalog-sources.toml ]; then \
 		if [ "$${REFRESH_PUBLIC:-false}" = true ]; then $(MAKE) docs-catalog || exit $$?; else unset HZ_SITE_CATALOG; fi; \
@@ -322,6 +336,9 @@ ci-logs: ## The failing steps of the latest CI run of this branch (waits for a r
 
 pr: ## Push this branch and open a pull request for review: make pr TITLE="feat: ..." (DRAFT=1: draft; BODY=... or BODY_FILE=path: a new PR's description)
 	@bash scripts/pr.sh "$(TITLE)"
+
+review: ## Source review of pull request PR=<n> by a tool-free model on the protected ref; the tier (scripts/review_tier.py) decides, docs/tests-only costs nothing; needs REVIEW_TRUSTED
+	@bash scripts/review.sh "$(PR)"
 
 sync: ## Rebase this branch onto the latest main (upstream's, in a fork)
 	@git fetch --quiet $(REMOTE) && git rebase --quiet $(REMOTE)/main && git log --oneline $(REMOTE)/main..HEAD
