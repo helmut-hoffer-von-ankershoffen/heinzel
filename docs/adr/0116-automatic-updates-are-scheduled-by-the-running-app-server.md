@@ -1,9 +1,10 @@
 ---
 status: proposed
 date: 2026-11-02
-implementation: planned
+implementation: built
 decision-makers: maintainer
 related: 0031, 0047, 0083, 0085, 0114
+implemented-by: 452
 ---
 
 # 0116: Automatic updates are scheduled by the running app server
@@ -71,4 +72,4 @@ Implementing pull requests:
 
 | Pull request | What it builds |
 | --- | --- |
-| this ADR's pull request | setting, scheduler, endpoints, popup, tests |
+| #452 | setting, scheduler, endpoints, popup, unit and end-to-end tests |

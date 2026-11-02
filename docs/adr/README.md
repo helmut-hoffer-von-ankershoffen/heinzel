@@ -112,7 +112,7 @@ Status says whether we agreed. The second line of the Status column says whether
 | [0111](0111-plugins-recommend-the-default-theme-with-a-core-recovery-fallback.md) Plugins recommend the default theme with a Core recovery fallback | proposed · 30 Oct<br>built | [#304](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/304) | amends [0044](0044-themes-are-data-a-plugin-ships.md), [0095](0095-standard-heinzel-theme-owns-bundled-soundscapes.md) |
 | [0114](0114-green-main-releases-to-edge-and-acceptance-promotes-to-stable.md) Green main releases to edge, and acceptance promotes to stable | proposed · 31 Oct<br>partial |  | amends [0013](0013-pull-request-based-development-and-releases.md "release pull requests can merge without a person"), [0079](0079-core-pypi-trusted-publishing-is-isolated-from-builds.md "reviewed workflow code can dispatch the upload"), [0110](0110-one-versionless-launcher-installs-and-opens-the-standard-app.md "discovery stays stable, and edge is opt-in") |
 | [0115](0115-merge-unfinished-work-dark-behind-named-feature-flags.md) Merge unfinished work dark behind named feature flags | accepted · 1 Nov<br>built | [#354](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/354) |  |
-| [0116](0116-automatic-updates-are-scheduled-by-the-running-app-server.md) Automatic updates are scheduled by the running app server | proposed · 2 Nov<br>planned |  |  |
+| [0116](0116-automatic-updates-are-scheduled-by-the-running-app-server.md) Automatic updates are scheduled by the running app server | proposed · 2 Nov<br>built | [#452](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/452) |  |
 
 </div>
 <!-- adr-index:end -->
