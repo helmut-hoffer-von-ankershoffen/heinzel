@@ -124,7 +124,8 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
     "release-tag.yml": {'tag="v$(uv version --short)"': "tags a merged release commit"},
     "claude-review.yml": {
         'files="$(git diff': "picks the review tier from the changed files",
-        "uv run --script scripts/review_outcome.py": "judges a failed review; the job has no project environment",
+        "uv run --script scripts/review_outcome.py": "probes the API and judges a failed review; no project needed",
+        'gh api "repos/${GITHUB_REPOSITORY}/check-runs"': "reports a review that could not run as a neutral check",
     },
     "update-prs.yml": {
         "gh pr list": "updates auto-merging pull requests with main",
@@ -844,7 +845,8 @@ def test_the_template_audit_runs_in_template_test_ci_and_full_preflight():
 def test_claude_review_skips_events_sent_by_bots():
     """The action refuses bot-triggered runs (update-prs merges, release pull requests), so the job must not start."""
     spec = yaml.safe_load((REPO / ".github" / "workflows" / "claude-review.yml").read_text(encoding="utf-8"))
-    condition = spec["jobs"]["review"]["if"]
+    condition = spec["jobs"]["preflight"]["if"]
+    assert spec["jobs"]["review"]["needs"] == "preflight"
     for clause in (
         "vars.CLAUDE_REVIEW == 'true'",
         "github.event.sender.type != 'Bot'",
