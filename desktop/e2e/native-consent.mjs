@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { delimiter, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { _electron as electron } from '../../web/node_modules/playwright-core/index.mjs';
-import { withTimeout } from './harness-cleanup.mjs';
+import { retainEvidence, withTimeout } from './harness-cleanup.mjs';
 const dir = process.env.HZ_TEST_ELECTRON_DIR ?? fileURLToPath(new URL('../node_modules/electron/', import.meta.url));
 if (!isAbsolute(dir) || JSON.parse(await readFile(join(dir, 'package.json'), 'utf8')).version !== '45.0.0') throw new Error('Electron 45 required');
 const dist = join(dir, 'dist');
@@ -56,5 +56,5 @@ try {
   }
   await new Promise((ok) => server.close(ok));
   if (safe) await rm(root,{recursive:true,force:true});
-  else throw new Error(`Shutdown uncertain; evidence retained at ${root}`);
+  else retainEvidence(`Shutdown uncertain; evidence retained at ${root}`);
 }

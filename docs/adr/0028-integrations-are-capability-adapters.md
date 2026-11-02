@@ -1,6 +1,7 @@
 ---
 status: proposed
 date: 2026-10-23
+implementation: built
 amends: 0024
 amends-0024: the directory is a capability
 amended-by: 0049, 0055, 0059

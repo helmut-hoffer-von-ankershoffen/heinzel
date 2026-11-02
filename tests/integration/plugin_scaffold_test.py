@@ -35,10 +35,21 @@ def test_starter_make_bootstraps_its_pinned_toolkit_without_overrides(tmp_path):
     )
     assert result.returncode == 0, result.stderr
     arguments = result.stdout.splitlines()
-    assert arguments[:4] == ["run", "--quiet", "--no-project", "--with"]
-    assert arguments[4].startswith("heinzel-plugin-tools @ https://github.com/")
-    assert "#sha256=" in arguments[4]
-    assert arguments[5:] == ["hz-plugin", "setup"]
+    assert arguments[:9] == [
+        "run",
+        "--quiet",
+        "--no-project",
+        "--frozen",
+        "--no-build",
+        "--python",
+        "3.14",
+        "python",
+        "scripts/plugin_tooling.py",
+    ]
+    assert arguments[9] == "--toolkit"
+    assert arguments[10].startswith("heinzel-plugin-tools @ https://github.com/")
+    assert "#sha256=" in arguments[10]
+    assert arguments[11:] == ["hz-plugin", "setup"]
 
 
 @pytest.mark.parametrize("option", ["TOOLING", "CORE", "TAG", "REGISTRY"])
@@ -113,3 +124,72 @@ def test_dependency_validator_refuses_stale_metadata_without_rewriting_its_lock(
     )
     assert result.returncode != 0
     assert (tmp_path / "uv.lock").read_bytes() == lock
+
+
+def test_fresh_governed_setup_creates_its_lock_before_frozen_install(tmp_path):
+    """The rendered Makefile owns initial resolution; an author never needs a preliminary uv lock."""
+    import json
+    import tomllib
+
+    # CI's test jobs install only the test group; the dev group's copier is there for `make check` and the template
+    # acceptance job, which runs this same fresh setup for real (scripts/template-test.sh).
+    run_copy = pytest.importorskip("copier").run_copy
+
+    repository = Path(__file__).resolve().parents[2]
+    source = tmp_path / "template-source"
+    source.mkdir()
+    shutil.copy(repository / "copier.yml", source / "copier.yml")
+    shutil.copytree(repository / "template", source / "template")
+    destination = tmp_path / "governed"
+    run_copy(
+        str(source),
+        destination,
+        data={"preset": "governed", "plugin_name": "harbor"},
+        defaults=True,
+        quiet=True,
+        vcs_ref="HEAD",
+    )
+    assert not (destination / "uv.lock").exists()
+    tools = tmp_path / "bin"
+    tools.mkdir()
+    trace = tmp_path / "commands.jsonl"
+    uv = tools / "uv"
+    uv.write_text(
+        f"#!{sys.executable}\n"
+        "import json,os,sys,tomllib\nfrom pathlib import Path\n"
+        "args=sys.argv[1:]\n"
+        "with Path(os.environ['TRACE']).open('a') as out: out.write(json.dumps(args)+'\\n')\n"
+        "project=tomllib.loads(Path('pyproject.toml').read_text())['project']\n"
+        "lock=Path('uv.lock')\n"
+        "if args[0]=='lock':\n"
+        "    assert not lock.exists(), 'setup must preserve an existing lock'\n"
+        "    lock.write_text('version = 1\\nrevision = 3\\n[[package]]\\nname = '+json.dumps(project['name'])"
+        "+'\\nversion = '+json.dumps(project['version'])+'\\nsource = { editable = '+json.dumps('.')+' }\\n')\n"
+        "elif args[0]=='sync':\n"
+        "    assert '--frozen' in args, 'installation must enforce the resolved lock'\n"
+        "    record=tomllib.loads(lock.read_text())['package'][0]\n"
+        "    assert (record['name'],record['version'])==(project['name'],project['version'])\n"
+    )
+    uv.chmod(0o755)
+    environment = {
+        key: value
+        for key, value in os.environ.items()
+        if not key.startswith(("GIT_", "UV_")) and key not in {"MAKEFLAGS", "MAKELEVEL", "MFLAGS", "VIRTUAL_ENV"}
+    }
+    environment.update(PATH=f"{tools}{os.pathsep}{os.environ['PATH']}", TRACE=str(trace))
+    for _ in range(2):
+        result = subprocess.run(
+            [str(shutil.which("make")), "setup"],
+            cwd=destination,
+            env=environment,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=20,
+        )
+        assert result.returncode == 0, result.stderr
+    commands = [json.loads(line) for line in trace.read_text().splitlines()]
+    assert commands[0] == ["lock", "--quiet"]
+    assert sum(command[0] == "lock" for command in commands) == 1
+    assert sum(command[0] == "sync" for command in commands) == 2
+    assert tomllib.loads((destination / "uv.lock").read_text())["package"][0]["name"] == "heinzel-harbor"

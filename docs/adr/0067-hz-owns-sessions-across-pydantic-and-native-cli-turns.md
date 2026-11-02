@@ -1,6 +1,7 @@
 ---
 status: proposed
 date: 2026-10-25
+implementation: partial
 decision-makers: maintainer (direction), architect (implementation)
 amends: 0050
 related: 0028, 0029, 0030, 0049, 0057, 0061

@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Providers, queryClient } from "@/App";
 import { expectAccessible } from "@/test/render";
-import { ModuleHeader, PluginsSection, sourceLabel } from "./PluginsSection";
+import { CandidateDetails, ModuleHeader, PluginsSection, sourceLabel } from "./PluginsSection";
 
 const PINNED = `heinzel-crm @ git+https://github.com/acme-example/heinzel-crm@${"b".repeat(40)}`;
 
@@ -37,7 +37,7 @@ const candidate = {
   first_party: false,
   private: true,
   revision: "b".repeat(40),
-  installed_version: null,
+  installed_version: null as string | null,
   warnings: ["It is named crm-tools, not heinzel-<name> as plugins are (ADR 0025)."],
 };
 let receiptCount = 0;
@@ -45,12 +45,12 @@ let confirmedStreamDelay = 0;
 
 describe("plugin source labels", () => {
   it.each([
-    ["https://github.com/helmut-hoffer-von-ankershoffen/heinzel/tree/main/plugins/heinzel-clock", null, "First-Party"],
-    ["https://github.com/HELMUT-HOFFER-VON-ANKERSHOFFEN/HEINZEL.git", null, "First-Party"],
+    ["https://github.com/helmut-hoffer-von-ankershoffen/heinzel/tree/main/plugins/heinzel-clock", null, "First-party"],
+    ["https://github.com/HELMUT-HOFFER-VON-ANKERSHOFFEN/HEINZEL.git", null, "First-party"],
     [
       "https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/tree/main/plugins/heinzel-clock",
       null,
-      "First-Party",
+      "First-party",
     ],
     ["https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins-fork", true, "Private"],
     ["https://github.com/helmut-hoffer-von-ankershoffen/heinzel-contrib", null, "Community"],
@@ -99,7 +99,7 @@ describe("plugin source labels", () => {
       />,
     );
     expect(screen.getByRole("button", { name: "Community" })).toBeInTheDocument();
-    expect(screen.queryByText("First-Party")).not.toBeInTheDocument();
+    expect(screen.queryByText("First-party")).not.toBeInTheDocument();
   });
 });
 
@@ -236,6 +236,7 @@ function show(props: Parameters<typeof PluginsSection>[0] = {}) {
 }
 
 beforeEach(() => {
+  window.history.replaceState(null, "", "/");
   sessionStorage.clear();
   receiptCount = 0;
   confirmedStreamDelay = 0;
@@ -244,6 +245,12 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("PluginsSection", () => {
+  it("says outright which installed version a plugin replaces, without opening the details", () => {
+    render(<CandidateDetails candidate={{ ...candidate, source: "git", installed_version: "0.9.3" }} />);
+    const line = screen.getByText(/Replaces 0\.9\.3/);
+    expect(line.closest("details")).toBeNull();
+  });
+
   it("does not call an uncompleted backend reply an installed plugin or restart the server", async () => {
     const calls = serve((url) =>
       url.pathname === "/api/system/plugin/add" || url.pathname === "/api/stream/system/plugin/add"
@@ -514,6 +521,36 @@ describe("PluginsSection", () => {
     },
   );
 
+  it("still restarts when the removed plugin's row has already left the refreshed list", async () => {
+    let removed = false;
+    const calls = serve((url) => {
+      if (url.pathname === "/api/stream/system/plugin/remove") {
+        removed = true;
+        return { body: change("remove", true, { distribution: "heinzel-clock", plugins: [] }) };
+      }
+      if (url.pathname === "/api/system/plugin/list" && removed) return { body: [] };
+      return base(url);
+    });
+    // The list answers first and the lifecycle read that precedes the restart later, as on a real server.
+    const answer = vi.mocked(fetch).getMockImplementation();
+    if (!answer) throw new Error("missing fetch fixture");
+    vi.mocked(fetch).mockImplementation(async (request) => {
+      if (removed && new URL((request as Request).url).pathname.startsWith("/api/lifecycle")) {
+        await new Promise((resolve) => setTimeout(resolve, 200));
+      }
+      return answer(request);
+    });
+    const user = userEvent.setup();
+    const reload = vi.fn();
+    show({ reload, restartInterval: 1 });
+    await user.click(await screen.findByRole("button", { name: "Remove heinzel-clock" }));
+    const card = await screen.findByRole("group", { name: /Remove heinzel-clock/ });
+    await user.click(within(card).getByRole("button", { name: "Restart and apply" }));
+    await user.click(await screen.findByRole("button", { name: "Restart and apply Plugins" }));
+    await waitFor(() => expect(reload).toHaveBeenCalledOnce(), { timeout: 10_000 });
+    expect(calls.filter((call) => new URL(call.url).pathname === "/api/restart")).toHaveLength(1);
+  });
+
   it("does not repeat an uncertain removal in the same confirmation", async () => {
     const calls = serve((url) => {
       if (url.pathname === "/api/stream/system/plugin/remove") {
@@ -613,7 +650,7 @@ describe("PluginsSection", () => {
     const labels = (await screen.findAllByRole("listitem")).map((row) => row.textContent);
     expect(labels.some((text) => text?.includes("Community"))).toBe(true);
     expect(labels.some((text) => text?.includes("Custom"))).toBe(true);
-    expect(labels.some((text) => text?.includes("First-Party"))).toBe(true);
+    expect(labels.some((text) => text?.includes("First-party"))).toBe(true);
     const row = (name: string) => screen.getByText(name, { exact: true }).closest("li") as HTMLElement;
     expect(within(row("Reference")).getByText("Custom")).toBeInTheDocument();
     expect(within(row("Private tools")).getByText("Private")).toBeInTheDocument();
@@ -648,6 +685,63 @@ describe("PluginsSection", () => {
     await user.click(await screen.findByRole("button", { name: "Restart and apply Plugins" }));
     await waitFor(() => expect(adds()).toHaveLength(4));
     expect(spec(3)).toBe(PINNED);
+  });
+
+  it("opens the confirmation under the clicked Discover row, focused, one at a time, with provenance collapsed", async () => {
+    const entry = (name: string) => ({
+      name: `heinzel-${name}`,
+      short_name: name,
+      description: `The ${name} plugin.`,
+      source: "github",
+      community: true,
+      install_spec: `heinzel-${name}`,
+      url: `https://example.org/${name}`,
+      repository_url: `https://github.com/acme-example/heinzel-${name}`,
+      private_repository: false,
+      stars: null,
+      installed: false,
+    });
+    serve((url) => {
+      if (url.pathname === "/api/system/plugin/search") {
+        return { body: { plugins: ["aa", "bb", "cc"].map(entry), warnings: [] } };
+      }
+      if (url.pathname === "/api/system/plugin/add") return { body: change("add", false) };
+      return base(url);
+    });
+    const user = userEvent.setup();
+    show({ restartInterval: 1 });
+    await user.click(screen.getByRole("tab", { name: "Discover" }));
+    const rows = await screen.findAllByRole("listitem");
+    expect(rows).toHaveLength(3);
+    const row = rows[2] as HTMLElement;
+    const install = within(row).getByRole("button", { name: "Install" });
+    await user.click(install);
+    const card = await screen.findByRole("group", { name: /Install this plugin/ });
+    expect(row).toContainElement(card);
+    expect(screen.getAllByRole("group", { name: /Install this plugin/ })).toHaveLength(1);
+    expect(card.closest("[data-plugin-confirm]")).toHaveFocus();
+    expect(within(row).getByRole("button", { name: "Install" })).toHaveAttribute("aria-expanded", "true");
+    expect(card.querySelector("details")).not.toHaveAttribute("open");
+    expect(screen.getByRole("tab", { name: "Installed" })).toBeDisabled();
+    await user.click(within(card).getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("group", { name: /Install this plugin/ })).not.toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Installed" })).toBeEnabled();
+  });
+
+  it("keeps the tab in the address so a reload returns to it", async () => {
+    window.history.replaceState(null, "", "/");
+    serve((url) =>
+      url.pathname === "/api/system/plugin/search" ? { body: { plugins: [], warnings: [] } } : base(url),
+    );
+    const user = userEvent.setup();
+    const first = show({ restartInterval: 1 });
+    await user.click(screen.getByRole("tab", { name: "Discover" }));
+    expect(window.location.search).toBe("?plugins=discover");
+    first.unmount();
+    show({ restartInterval: 1 });
+    expect(screen.getByRole("tab", { name: "Discover" })).toHaveAttribute("aria-selected", "true");
+    await user.click(screen.getByRole("tab", { name: "Installed" }));
+    expect(window.location.search).toBe("");
   });
 
   it("says why a source is refused and installs nothing", async () => {

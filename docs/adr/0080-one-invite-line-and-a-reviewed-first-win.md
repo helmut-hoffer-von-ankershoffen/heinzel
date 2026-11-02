@@ -1,6 +1,7 @@
 ---
 status: proposed
 date: 2026-10-25
+implementation: partial
 decision-makers: maintainer, architect and security reviewer
 amends: 0018, 0024
 related: 0006, 0012, 0014, 0017, 0020, 0021, 0025, 0028, 0030, 0032, 0035, 0037, 0040, 0049, 0068

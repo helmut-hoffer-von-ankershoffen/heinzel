@@ -6,7 +6,7 @@ import type { Edge } from "@xyflow/react";
 import { Check, Copy } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { problem } from "@/api/client";
-import { useInfo } from "@/api/queries";
+import { useInfo, useSetting } from "@/api/queries";
 import { token } from "@/api/token";
 import { Empty, Loaded } from "@/components/common";
 import { GraphCanvas } from "@/components/graph/GraphCanvas";
@@ -158,9 +158,12 @@ function TeamGraphBody({ graph }: { graph: TeamGraph }) {
 
 export function GraphView() {
   const query = useTeamGraph();
+  const team = useSetting("team", "name");
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-5 px-8 pt-4 pb-16">
-      <h1 className="sr-only">{t("nav.teamGraph")}</h1>
+      <h1 className={team ? "text-ui font-medium" : "sr-only"}>
+        {team ? t("teamGraph.titled", { name: team }) : t("nav.teamGraph")}
+      </h1>
       <p className="max-w-2xl text-sm leading-relaxed text-muted-foreground">{t("teamGraph.intro")}</p>
       <Loaded query={query}>
         {(graph) =>

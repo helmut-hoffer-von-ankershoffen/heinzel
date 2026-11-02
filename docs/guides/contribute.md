@@ -1,6 +1,6 @@
 ---
 title: Find your contribution path
-description: Build a plugin, design a theme, improve the docs, or contribute to Heinzel core.
+description: Build a plugin, design a theme, improve the docs, or contribute to the Heinzelmännchen core.
 ---
 
 # Build something useful.

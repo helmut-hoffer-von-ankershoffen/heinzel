@@ -50,12 +50,13 @@ from fastapi.staticfiles import StaticFiles
 from heinzel.heads import api
 from heinzel.heads._stream import StreamProgress
 from heinzel.heads.web import _terminal
+from heinzel.heads.web._auto_update import Activity, AutoUpdater, add_auto_update, as_work, counts_as_work
 from heinzel.heads.web._devices import Devices
 from heinzel.heads.web._lifecycle import CANT_RESTART as CANT_RESTART
 from heinzel.heads.web._lifecycle import add_lifecycle
 from heinzel.heads.web._pairing import add_pairing
 from heinzel.heads.web._ports import wait_for_port
-from heinzel.heads.web._shutdown import GRACE_SECONDS, Stopping
+from heinzel.heads.web._shutdown import GRACE_SECONDS, KEEP_ALIVE_SECONDS, Stopping
 from heinzel.heads.web._shutdown import server as stopping_server
 from heinzel.heads.web._stream import add_stream
 from heinzel.heads.web._updates import add_updates
@@ -84,7 +85,7 @@ STATIC = Path(__file__).parent / "static"
 """Where the build puts the app (`make web-build`, or the wheel's build hook); not in git."""
 HOST = "127.0.0.1"
 OK = 200
-SPLASH_SCRIPT = "'sha256-pN9jYRjUn1PxYq7efc0qmdmmc/sy6sTVaGnaajkcymU='"
+SPLASH_SCRIPT = "'sha256-JVUEuicvI/AfBERQXDLXpEEPtcrdJe03yief1rkzoEY='"
 """The one inline script allowed, by its hash: the splash's in `web/index.html`, which paints the last theme before the
 app loads (ADR 0046). A test recomputes it from the file, so a changed script fails until this changes with it."""
 CSP = (
@@ -201,6 +202,7 @@ def build(  # noqa: PLR0913 - all but the kernel by keyword
     )
     kernel.bind(LocalWebRuntime, runtime)
     kernel.bind(Progress, StreamProgress())  # operations' events reach the stream of the request that runs them
+    activity = Activity()
 
     @app.middleware("http")
     async def guarded(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
@@ -213,6 +215,9 @@ def build(  # noqa: PLR0913 - all but the kernel by keyword
             host_help=api.WEB_HOST_HELP,
         ):
             response: Response = JSONResponse(status_code=api.FORBIDDEN, content={"error": problem})
+        elif counts_as_work(request.method, request.url.path):
+            # A chat answer or install holds off an automatic update (ADR 0116) until its body has been sent.
+            response = await as_work(activity, call_next, request)
         else:
             response = await call_next(request)
         secure(response, request.url.path)
@@ -240,6 +245,8 @@ def build(  # noqa: PLR0913 - all but the kernel by keyword
     )
     add_pairing(endpoints, paired)
     add_updates(endpoints, kernel, static, restartable=restart is not None)
+    app.state.auto_update = AutoUpdater(kernel, restart=restart, activity=activity)
+    add_auto_update(endpoints, app.state.auto_update)
     add_stream(endpoints, kernel, stopping)  # behind the same middleware: Host, Origin and the token
 
     add_views(app, kernel)
@@ -435,15 +442,30 @@ def sound_response(kernel: Kernel, soundscape: str, file: str) -> Response:
     return Response(content, media_type=media_type, headers={"Cache-Control": IMMUTABLE})
 
 
+def _listener_on(host: str, port: int) -> bool:
+    """Whether something accepts connections on `host:port` right now."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        probe.settimeout(1.0)
+        return probe.connect_ex((host, port)) == 0
+
+
 def free_socket(host: str = HOST, port: int = 0) -> socket.socket:
     """A listening socket on `host`; port 0 picks a free one. Bound before the server starts, so no one takes it.
+
+    A fixed port that nothing listens on is bound with SO_REUSEADDR, so connections the last server closed (they
+    linger in TIME_WAIT for a minute on Linux) don't keep a restart from the same port. SO_REUSEADDR would also let
+    macOS bind over another server's port without a word, so a port something listens on is bound without it and
+    stays busy. Windows lets SO_REUSEADDR take over a port, so it never gets the option.
 
     Raises:
         OSError: If the port is taken.
     """
-    # No SO_REUSEADDR: on macOS it would let us bind a port another server already listens on, silently.
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
+        # Never on Windows: there SO_REUSEADDR lets another process bind a port in use (a hijack), so it keeps the
+        # exclusive default. Elsewhere it only frees TIME_WAIT ports, and the probe above guards macOS.
+        if port and sys.platform != "win32" and not _listener_on(host, port):
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         sock.bind((host, port))
         sock.listen(128)
     except OSError:
@@ -518,7 +540,13 @@ def serve(  # noqa: PLR0913 - all but the kernel by keyword
     except BaseException:
         sock.close()
         raise
-    config = uvicorn.Config(app, log_level="warning", lifespan="off", timeout_graceful_shutdown=GRACE_SECONDS)
+    config = uvicorn.Config(
+        app,
+        log_level="warning",
+        lifespan="off",
+        timeout_graceful_shutdown=GRACE_SECONDS,
+        timeout_keep_alive=KEEP_ALIVE_SECONDS,
+    )
     server = stopping_server(config, stopping)
     url = session_url(bound, token, base)
 
@@ -531,9 +559,12 @@ def serve(  # noqa: PLR0913 - all but the kernel by keyword
                 webbrowser.open(url)
 
     threading.Thread(target=when_started, daemon=True).start()
+    updater: AutoUpdater = app.state.auto_update
+    updater.start()
     try:
         server.run(sockets=[sock])
     finally:
+        updater.stop()
         sock.close()
     if handover and not stopping.interrupted:  # Ctrl-C while restarting stops it
         command = [sys.executable, "-m", "heinzel", *sys.argv[1:]]

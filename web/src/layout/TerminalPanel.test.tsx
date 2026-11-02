@@ -1,24 +1,34 @@
 import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { TerminalPanel } from "./TerminalPanel";
+import { connectTerminal } from "@/lib/terminal";
+import { READY_FALLBACK_MS, READY_QUIET_MS, TerminalPanel } from "./TerminalPanel";
 
 const { terminals } = vi.hoisted(() => ({
-  terminals: [] as Array<{ title: (value: string) => void; osc: Map<number, (value: string) => boolean> }>,
+  terminals: [] as Array<{
+    options: { theme?: { background?: string } };
+    title: (value: string) => void;
+    osc: Map<number, (value: string) => boolean>;
+  }>,
 }));
 const { desktopState } = vi.hoisted(() => ({ desktopState: vi.fn(() => "off") }));
 vi.mock("@/notifications/desktop", () => ({ desktopState }));
 vi.mock("@xterm/xterm", () => ({
   Terminal: class {
-    options = {};
-    record = { title: (_value: string) => {}, osc: new Map<number, (value: string) => boolean>() };
+    options: { theme?: { background?: string } } = {};
+    record = {
+      options: this.options,
+      title: (_value: string) => {},
+      osc: new Map<number, (value: string) => boolean>(),
+    };
     parser = {
       registerOscHandler: (id: number, callback: (value: string) => boolean) => {
         this.record.osc.set(id, callback);
         return { dispose() {} };
       },
     };
-    constructor() {
+    constructor(options: object = {}) {
+      Object.assign(this.options, options);
       terminals.push(this.record);
     }
     loadAddon() {}
@@ -34,6 +44,7 @@ vi.mock("@xterm/xterm", () => ({
       return { dispose() {} };
     }
     focus() {}
+    write() {}
     dispose() {}
   },
 }));
@@ -45,6 +56,7 @@ class Socket {
   readyState = 1;
   send = vi.fn();
   close() {}
+  onopen: (() => void) | null = null;
   onmessage: ((event: { data: unknown }) => void) | null = null;
   constructor() {
     Socket.instances.push(this);
@@ -56,6 +68,38 @@ afterEach(() => {
   desktopState.mockReturnValue("off");
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+});
+
+describe("typing a command for the person", () => {
+  afterEach(() => vi.useRealTimers());
+
+  it("waits until the shell has drawn its prompt, or the line would be echoed twice with a stray %", () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("WebSocket", Socket);
+    render(<TerminalPanel onClose={vi.fn()} full={false} onToggleFull={vi.fn()} />);
+    const socket = Socket.instances[0];
+    act(() => socket?.onopen?.());
+    expect(connectTerminal).not.toHaveBeenCalledWith(expect.any(Function));
+    // The shell speaks (its prompt arrives in pieces) and a command may only go once it has been quiet a moment.
+    act(() => socket?.onmessage?.({ data: new ArrayBuffer(8) }));
+    act(() => void vi.advanceTimersByTime(READY_QUIET_MS - 1));
+    act(() => socket?.onmessage?.({ data: new ArrayBuffer(8) }));
+    act(() => void vi.advanceTimersByTime(READY_QUIET_MS - 1));
+    expect(connectTerminal).not.toHaveBeenCalledWith(expect.any(Function));
+    act(() => void vi.advanceTimersByTime(1));
+    expect(connectTerminal).toHaveBeenCalledWith(expect.any(Function));
+  });
+
+  it("does not hold a command back for good when the shell never says anything", () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("WebSocket", Socket);
+    render(<TerminalPanel onClose={vi.fn()} full={false} onToggleFull={vi.fn()} />);
+    act(() => Socket.instances[0]?.onopen?.());
+    act(() => void vi.advanceTimersByTime(READY_FALLBACK_MS - 1));
+    expect(connectTerminal).not.toHaveBeenCalledWith(expect.any(Function));
+    act(() => void vi.advanceTimersByTime(1));
+    expect(connectTerminal).toHaveBeenCalledWith(expect.any(Function));
+  });
 });
 
 describe("terminal tabs", () => {
@@ -153,5 +197,24 @@ describe("terminal tabs", () => {
     act(() => instances[0]?.onclick?.());
     expect(onActivate).toHaveBeenCalledOnce();
     expect(screen.queryByLabelText("New terminal notification")).not.toBeInTheDocument();
+  });
+});
+
+describe("terminal colours", () => {
+  afterEach(() => {
+    document.documentElement.className = "";
+    document.documentElement.removeAttribute("style");
+  });
+
+  it("starts with the active theme's colours and follows a switch of theme or mode", async () => {
+    vi.stubGlobal("WebSocket", Socket);
+    document.documentElement.style.setProperty("--color-background", "#10203a");
+    render(<TerminalPanel onClose={vi.fn()} full={false} onToggleFull={vi.fn()} />);
+    expect(terminals[0]?.options.theme?.background).toBe("#10203a");
+    document.documentElement.style.setProperty("--color-background", "#f4e8d0");
+    await vi.waitFor(() => expect(terminals[0]?.options.theme?.background).toBe("#f4e8d0"));
+    document.documentElement.style.removeProperty("--color-background");
+    document.documentElement.classList.add("dark");
+    await vi.waitFor(() => expect(terminals[0]?.options.theme?.background).toBe("#18231e"));
   });
 });

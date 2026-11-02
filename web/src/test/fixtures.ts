@@ -61,6 +61,7 @@ export const config: SchemaConfigReport = {
 export const profile: SchemaProfile = {
   handle: "mira",
   role: "engineering-manager",
+  retired_role: null,
   timezone: "Europe/Berlin",
   working_hours: "09-18",
   working_hours_set: false,

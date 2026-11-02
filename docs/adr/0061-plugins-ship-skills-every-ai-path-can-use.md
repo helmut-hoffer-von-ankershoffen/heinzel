@@ -1,6 +1,7 @@
 ---
 status: proposed
 date: 2026-10-24
+implementation: partial
 decision-makers: maintainer (direction), architect and security reviewer (shape)
 amends: 0014, 0050
 amends-0014: plugin skills reach Claude Code through hz system skill export

@@ -15,7 +15,9 @@ import hashlib
 import logging
 import os
 import plistlib
+import re
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -42,6 +44,23 @@ BUILD_TIMEOUT = 600
 
 Runner = Callable[..., subprocess.CompletedProcess[str]]
 """Runs a command: `runner(command)` or `runner(command, timeout)`."""
+LABEL_PREFIX = f"application.{IDENTIFIER}."
+"""How launchd names every instance LaunchServices starts of Heinzel Notifier: the exact bundle id, then ids."""
+LSREGISTER = "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+"""LaunchServices' own tool; `-dump` lists every app it knows, `-u <path>` forgets one."""
+REGISTRATION_TIMEOUT = 60
+"""Seconds `lsregister -dump` may take; it prints a few hundred thousand lines."""
+_BLOCK = re.compile(r"^-{20,}$", re.MULTILINE)
+REAL_ENV = "HZ_REAL_NOTIFIER"
+"""A test that must start the real app sets this; any other test that would is refused (see `_launch`)."""
+TESTS_REFUSED = "tests don't launch the real Heinzel Notifier: each copy macOS meets stays registered under its name"
+ALREADY_GONE = "No such process"
+"""What `open -W` says when the app ended before it could wait for it."""
+LIFETIME = 80
+"""Seconds an instance may live: it asks macOS for 60 and posts; a click needs a few. The app ends itself then."""
+STALE_AFTER = 5 * 60
+"""An instance older than this is left over from a build that could not end itself, or a hang."""
+_ETIME = re.compile(r"(?:(?:(?P<d>\d+)-)?(?P<h>\d+):)?(?P<m>\d+):(?P<s>\d+)")
 
 
 def source_version(sources: Path = SOURCES) -> str:
@@ -88,6 +107,30 @@ def run(command: Sequence[str], timeout: float = TIMEOUT) -> subprocess.Complete
 
 
 @dataclass(frozen=True, slots=True)
+class Instance:
+    """One running Heinzel Notifier process, as launchd lists it by its exact bundle id."""
+
+    pid: int
+    label: str
+    seconds: int | None
+    """How long it has run, None when `ps` couldn't say."""
+
+    @property
+    def stale(self) -> bool:
+        """Whether it has run longer than any notification needs (`STALE_AFTER`); unknown age counts as stale."""
+        return self.seconds is None or self.seconds > STALE_AFTER
+
+
+def parse_etime(text: str) -> int | None:
+    """Seconds in `ps`'s `[[dd-]hh:]mm:ss`; None if it isn't that."""
+    match = _ETIME.fullmatch(text.strip())
+    if match is None:
+        return None
+    parts = {name: int(value or 0) for name, value in match.groupdict().items()}
+    return ((parts["d"] * 24 + parts["h"]) * 60 + parts["m"]) * 60 + parts["s"]
+
+
+@dataclass(frozen=True, slots=True)
 class Install:
     """Where the app is installed and whether it matches the bundled one."""
 
@@ -100,7 +143,7 @@ class Install:
 class NotifierApp:
     """The bundled app and its installed copy; every command goes through `runner`, so tests run none."""
 
-    def __init__(
+    def __init__(  # noqa: PLR0913 - the seams tests replace; all defaulted
         self,
         home: Path | None = None,
         *,
@@ -108,6 +151,7 @@ class NotifierApp:
         runner: Runner = run,
         open_command: str = "/usr/bin/open",
         build_script: Path | None = BUILD_SCRIPT,
+        kill: Callable[[int, int], None] = os.kill,
     ) -> None:
         """Install into `home`/Applications (the user's home by default) from `bundled`."""
         self.bundled = bundled
@@ -115,6 +159,7 @@ class NotifierApp:
         self._runner = runner
         self._open = open_command
         self._build_script = build_script
+        self._kill = kill
 
     @property
     def available(self) -> bool:
@@ -197,6 +242,85 @@ class NotifierApp:
         result = self._runner(["/usr/bin/xattr", "-p", QUARANTINE, str(self.path)])
         return result.returncode == 0
 
+    def instances(self) -> list[Instance]:
+        """The Heinzel Notifier processes running now, found by the bundle id in launchd's label, never by a name.
+
+        `launchctl list` names what LaunchServices started `application.<bundle id>.<ids>`; only labels with exactly
+        this app's bundle id and a live pid count, so no other process is ever matched.
+        """
+        listed = self._runner(["/bin/launchctl", "list"])
+        if listed.returncode != 0:
+            return []
+        found: list[Instance] = []
+        for line in listed.stdout.splitlines():
+            fields = line.split("\t")
+            if len(fields) != 3 or not fields[2].startswith(LABEL_PREFIX) or not fields[0].isdecimal():  # noqa: PLR2004
+                continue
+            pid = int(fields[0])
+            aged = self._runner(["/bin/ps", "-o", "etime=", "-p", str(pid)])
+            found.append(Instance(pid, fields[2], parse_etime(aged.stdout) if aged.returncode == 0 else None))
+        return found
+
+    def registered(self) -> list[Path]:
+        """Every app LaunchServices knows by this bundle id, wherever it is or was.
+
+        macOS registers a copy the first time it is launched from a new path. A test, a build in a worktree or a
+        staging folder leaves one each, and System Settings > Notifications lists them all under one name.
+        """
+        dumped = self._runner([LSREGISTER, "-dump"], REGISTRATION_TIMEOUT)
+        if dumped.returncode != 0:
+            return []
+        paths: list[Path] = []
+        for block in _BLOCK.split(dumped.stdout):
+            path: str | None = None
+            ours = False
+            for line in block.splitlines():
+                field, _, value = line.partition(":")
+                if field == "path":
+                    path = value.strip().rpartition(" (0x")[0] or None  # `<path> (0x<id>)`
+                elif field == "identifier":
+                    ours = value.strip() == IDENTIFIER
+            if path is not None and ours:
+                paths.append(Path(path))
+        return paths
+
+    def unregister_strays(self) -> int:
+        """Make LaunchServices forget every copy of this app except the installed one; how many were forgotten.
+
+        Only paths registered under this app's exact bundle id are touched, and the files are left alone: a copy in
+        a worktree is a build, not ours to delete.
+        """
+        forgotten = 0
+        for path in self.registered():
+            if path == self.path:
+                continue
+            if self._runner([LSREGISTER, "-u", str(path)], TIMEOUT).returncode == 0:
+                forgotten += 1
+        return forgotten
+
+    def forget(self) -> None:
+        """Make LaunchServices forget the installed copy, for a test that installed one in a temporary home."""
+        self._runner([LSREGISTER, "-u", str(self.path)], TIMEOUT)
+
+    def clean(self, *, older_than: int = STALE_AFTER) -> int:
+        """End the instances that have run longer than `older_than` seconds; how many were ended.
+
+        Only processes launchd lists under this app's exact bundle id are touched. A notification being posted
+        right now is seconds old and is left alone.
+        """
+        ended = 0
+        for instance in self.instances():
+            if instance.seconds is not None and instance.seconds <= older_than:
+                continue
+            try:
+                self._kill(
+                    instance.pid, signal.SIGKILL
+                )  # the app holds nothing to save; SIGTERM could wait on what hangs
+            except OSError:
+                continue
+            ended += 1
+        return ended
+
     def status(self) -> str:
         """MacOS's answer for the app: `authorized`, `denied`, `not-determined`, `provisional`, or why unknown."""
         return self._launch(["--status"])
@@ -212,6 +336,10 @@ class NotifierApp:
         return self._launch(arguments, ASKING_TIMEOUT if asking else TIMEOUT)
 
     def _launch(self, arguments: list[str], timeout: float = TIMEOUT) -> str:
+        # A test in a temporary home would start an app from a path macOS has never seen, and macOS would list it in
+        # System Settings > Notifications for good: hundreds of "Heinzel Notifier" entries. Fakes are not refused.
+        if self._runner is run and os.environ.get("PYTEST_CURRENT_TEST") and not os.environ.get("HZ_REAL_NOTIFIER"):
+            return f"open failed: {TESTS_REFUSED}"
         with tempfile.TemporaryDirectory(prefix="hz-notifier-") as directory:
             out = Path(directory) / "out"
             out.touch(mode=0o600)
@@ -220,6 +348,7 @@ class NotifierApp:
             said = out.read_text(encoding="utf-8", errors="replace").strip().splitlines()
         if result.returncode == 124 or said[-1:] == ["waiting"]:  # noqa: PLR2004 - timeout(1)'s exit code
             return "waiting: macOS is asking whether to allow Heinzel Notifier's notifications"
-        if result.returncode != 0:
+        # An app that ends at once can be gone before `open -W` starts watching it; it had already written its answer.
+        if result.returncode != 0 and not (said and ALREADY_GONE in result.stderr):
             return f"open failed: {(result.stderr or result.stdout).strip() or f'exit {result.returncode}'}"
         return said[-1] if said else "no answer from Heinzel Notifier"

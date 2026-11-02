@@ -2,6 +2,7 @@
 amended-by: 0094
 status: proposed
 date: 2026-10-25
+implementation: partial
 decision-makers: maintainer (product), architect (technical shape)
 amends: 0056
 related: 0026, 0039, 0044, 0045, 0047, 0058, 0060

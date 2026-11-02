@@ -45,7 +45,7 @@ def notice(kernel: Kernel) -> str | None:
     """The notice that a newer release is available, from the cache only; None if there is none or it is off."""
     if not enabled(kernel):
         return None
-    latest = ReleaseCache(kernel.settings.cache_dir).newer_than(__version__)
+    latest = ReleaseCache(kernel.settings.cache_dir).newer_than(__version__, kernel.settings.update_channel)
     return f"hz {latest} is available (installed {__version__}): hz system update\n{WHATS_NEW}" if latest else None
 
 
@@ -57,7 +57,9 @@ def print_notice(kernel: Kernel, console: Console) -> None:
 
 def changelog_header(kernel: Kernel) -> str | None:
     """The header of `hz system changelog` when a newer release is cached: installed, available, how to see more."""
-    if not enabled(kernel) or not (latest := ReleaseCache(kernel.settings.cache_dir).newer_than(__version__)):
+    if not enabled(kernel) or not (
+        latest := ReleaseCache(kernel.settings.cache_dir).newer_than(__version__, kernel.settings.update_channel)
+    ):
         return None
     return f"You're on hz {__version__}; hz {latest} is available: hz system update. {WHATS_NEW}"
 

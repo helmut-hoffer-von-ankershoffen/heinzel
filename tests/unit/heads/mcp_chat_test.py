@@ -356,7 +356,11 @@ def test_schedule_approval_rejects_a_wrong_terminal_challenge_and_missing_tty(mo
         patcher.setattr(mcp.select, "select", withhold_tty_input)
         with pytest.raises(HeinzelError, match="not confirmed"):
             mcp._confirm_schedule_on_tty(arguments)
-    prompt = os.read(master, 4096).decode("utf-8")
+    # The prompt is written in bounded chunks, so one read can return only the first of them: drain what was written.
+    chunks = b""
+    while select.select([master], [], [], 0.5)[0]:
+        chunks += os.read(master, 4096)
+    prompt = chunks.decode("utf-8")
     os.close(master)
     os.close(slave)
     assert "Ctrl-D" in prompt

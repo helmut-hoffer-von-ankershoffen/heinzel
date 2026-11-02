@@ -81,3 +81,24 @@ def test_unblocked_pull_request_asks_for_no_threads(monkeypatch):
 def test_branch_without_pull_request_has_no_threads(monkeypatch):
     monkeypatch.setattr(ci_logs.subprocess, "run", lambda args, **_: subprocess.CompletedProcess(args, 1, "", "no PR"))
     assert ci_logs.blocking_threads("feat/x") == []
+
+
+def test_the_excerpt_keeps_pytest_error_lines_and_other_failures_with_one_line_of_context():
+    lines = [
+        "setup",
+        "    def test_x():",
+        "E   assert 1 == 2",
+        "after pytest",
+        *("noise" for _ in range(5)),
+        "FAILED tests/x.py::test_x",
+        "tail",
+        "  see E is mid-line",
+    ]
+    assert ci_logs.excerpt(lines) == [
+        "    def test_x():",
+        "E   assert 1 == 2",
+        "after pytest",
+        "noise",
+        "FAILED tests/x.py::test_x",
+        "tail",
+    ]

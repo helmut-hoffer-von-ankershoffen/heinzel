@@ -256,7 +256,7 @@ def test_verified_profile_uses_one_command_for_the_chosen_environment(tmp_path, 
     )
     assert install.main(["--profile", str(file), "--python", "/isolated/bin/python"]) == 0
     [command] = calls
-    assert command[:5] == ["/trusted/bin/uv", "pip", "install", "--python", "/isolated/bin/python"]
+    assert command[:5] == ["/trusted/bin/uv", "pip", "install", "--python=/isolated/bin/python", "--"]
     assert len(command[5:]) == 2
     assert all(Path(path).is_file() for path in command[5:])
 
@@ -297,3 +297,10 @@ def test_package_failure_names_its_phase_without_leaking_sources(tmp_path, monke
     assert ("package verification failed" if problem == "hash" else "package download failed") in message
     assert "secret" not in message
     assert "example.invalid" not in message
+
+
+@pytest.mark.parametrize("version", ["0.9.10.dev57", "0.9.10rc1", "0.9.10a1"])
+def test_default_discovery_can_never_select_an_edge_or_prerelease_app(version):
+    """Every versionless install path resolves through here, and edge is an explicit choice (ADR 0114)."""
+    with pytest.raises(HeinzelError, match="canonical stable"):
+        install._app_release_version(f"{install.PROFILE_TAG}{version}")

@@ -35,6 +35,7 @@ export async function stream<T>(
   query: Query,
   onEvent: (event: StreamEvent) => void,
   signal?: AbortSignal,
+  body?: unknown,
 ): Promise<T> {
   signal?.throwIfAborted();
   const params = new URLSearchParams();
@@ -42,6 +43,7 @@ export async function stream<T>(
   const headers = new Headers();
   const value = token();
   if (value) headers.set("Authorization", `Bearer ${value}`);
+  if (body !== undefined && body !== null) headers.set("Content-Type", "application/json");
   let abort = () => {};
   const interrupted = new Promise<never>((_resolve, reject) => {
     abort = () => reject(signal?.reason ?? new DOMException("Stopped waiting for the operation.", "AbortError"));
@@ -52,7 +54,12 @@ export async function stream<T>(
     const response = await Promise.race([
       globalThis
         .fetch(
-          new Request(`${window.location.origin}/api/stream${path}?${params}`, { method: "POST", headers, signal }),
+          new Request(`${window.location.origin}/api/stream${path}?${params}`, {
+            method: "POST",
+            headers,
+            signal,
+            ...(body !== undefined && body !== null ? { body: JSON.stringify(body) } : {}),
+          }),
         )
         .then((response) => {
           if (signal?.aborted) {

@@ -1,6 +1,7 @@
 ---
 status: proposed
 date: 2026-10-24
+implementation: built
 decision-makers: maintainer
 amends: 0027, 0039, 0046
 amends-0027: fixed allowlisted player origins while a stream is in effect; the player loads only after Play
@@ -176,6 +177,11 @@ themes, and the only third party is one allowlisted host that the person starts 
     - the volume;
     - Follow my theme;
     - Mute during meetings.
+  - **A pick plays and the popover stays** (amended): choosing a soundscape starts it at once, in the click that chose
+    it, and switches over from the one that plays, so Play is a second click only for the pick that is already
+    chosen. Pick and Pause/Play share the popover's header; Escape and a click outside close it. A stream whose host
+    the page does not admit yet reloads the page once (see "The CSP of the page"); the reloaded page opens the
+    popover again and plays the pick, within 30 seconds, with the browser's autoplay rules still in force.
   - **Settings → General** has the full Sound picker, from the same data.
   - **A "now playing" footer item** is deferred: a status item of the status-item lets
     proposed as ADR 0056, off by default, once that lands.

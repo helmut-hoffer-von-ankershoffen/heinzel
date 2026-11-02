@@ -1,6 +1,7 @@
 ---
 status: proposed
 date: 2026-10-24
+implementation: partial
 decision-makers: maintainer (decisions and the open design), architect (shape)
 amends: 0021, 0023, 0038, 0049
 amends-0021: observed edges beside declared ones

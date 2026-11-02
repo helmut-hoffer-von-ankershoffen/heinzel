@@ -1,6 +1,9 @@
 // Commands the app hands to the terminal panel: a command chip's "Run" opens the panel and types the command there.
 // The panel registers a sender once its shell is connected; until then commands wait here.
 
+import { appCallFor } from "./operationCalls";
+import { requestOperation } from "./operationRun";
+
 type Sender = (text: string) => void;
 let sender: Sender | null = null;
 const pending: string[] = [];
@@ -19,8 +22,16 @@ export function runsAsIs(command: string): boolean {
 // biome-ignore lint/suspicious/noControlCharactersInRegex: control characters are what it replaces
 const withoutControls = (text: string) => text.replace(/[\u0000-\u001f\u007f-\u009f]/g, " ");
 
+/** Ask to run `command` in the app when the web head has that operation; false when it does not. */
+function inApp(command: string): boolean {
+  const call = appCallFor(command);
+  if (call) requestOperation(call);
+  return call !== undefined;
+}
+
 /** Type `command` into the terminal, opening it; Enter only when `runsAsIs`. */
 export function runInTerminal(command: string): void {
+  if (inApp(command)) return;
   // A line break or other control character inside would run what comes before it: they become spaces.
   const line = withoutControls(command);
   const text = runsAsIs(line) ? `${line}\r` : line;
@@ -31,6 +42,7 @@ export function runInTerminal(command: string): void {
 
 /** Type `command` into the terminal, opening it, and never press Enter: the person reads it and decides. */
 export function typeInTerminal(command: string): void {
+  if (inApp(command)) return;
   const typed = withoutControls(command);
   if (sender) sender(typed);
   else pending.push(typed);

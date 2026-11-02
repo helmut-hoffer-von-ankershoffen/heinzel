@@ -1,6 +1,7 @@
 ---
 status: accepted
 date: 2026-10-23
+implementation: built
 decision-makers: maintainer
 amended-by: 0058
 related: 0015, 0020

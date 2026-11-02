@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { closeSync, constants, fstatSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
+import { sortedKeys } from "./order.js";
 
 const DIGEST = /^[a-f0-9]{64}$/;
 const VERSION = /^\d+\.\d+\.\d+(?:(?:a|b|rc)\d+)?$/;
@@ -39,7 +40,7 @@ export interface BackendInventory {
 }
 
 const digest = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
-const keys = (value: Record<string, unknown>, expected: string) => Object.keys(value).sort().join(",") === expected;
+const keys = (value: Record<string, unknown>, expected: string) => sortedKeys(value).join(",") === expected;
 const record = (value: unknown): value is Record<string, unknown> =>
   !!value && typeof value === "object" && !Array.isArray(value);
 

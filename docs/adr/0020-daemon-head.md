@@ -1,6 +1,7 @@
 ---
 status: proposed
 date: 2026-10-23
+implementation: partial
 amends: 0010
 amended-by: 0038, 0043, 0049, 0078, 0081
 implemented-by: 7

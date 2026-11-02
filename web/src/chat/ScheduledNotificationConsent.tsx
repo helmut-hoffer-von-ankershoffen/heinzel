@@ -1,4 +1,6 @@
 import type { components } from "@/api/schema";
+import { t } from "@/i18n";
+import { sortedKeys } from "@/lib/sort";
 
 type Policy = components["schemas"]["ScheduledNotificationPolicy"];
 
@@ -25,7 +27,7 @@ export function notificationPolicy(maxPer24h: number, cooldown: number, mode: No
 export function validNotificationPolicy(value: unknown): value is Policy {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const policy = value as Record<string, unknown>;
-  const fields = Object.keys(policy).sort().join(",");
+  const fields = sortedKeys(policy).join(",");
   const common =
     Number.isInteger(policy.max_per_24h) &&
     typeof policy.max_per_24h === "number" &&
@@ -50,7 +52,7 @@ export function validNotificationPolicy(value: unknown): value is Policy {
     return false;
   const item = policy.item_evidence as Record<string, unknown>;
   return (
-    Object.keys(item).sort().join(",") === "deduplicate_by,disclosure" &&
+    sortedKeys(item).join(",") === "deduplicate_by,disclosure" &&
     (item.deduplicate_by === "item" || item.deduplicate_by === "revision") &&
     item.disclosure === ITEM_SCOPE
   );
@@ -106,10 +108,7 @@ export function ScheduledNotificationConsent({
         />{" "}
         Allow this agent to queue local notifications during these scheduled turns.
       </label>
-      <p>
-        Optional and off by default. At most one attempt per turn. Content may appear on this device; queued does not
-        mean shown. Item identities are provider-reported and do not guarantee complete source history.
-      </p>
+      <p>{t("scheduledNotify.note")}</p>
       {enabled && (
         <div className="space-y-2">
           <label className="block">

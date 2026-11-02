@@ -1,5 +1,8 @@
 # Further plugin extraction opportunities
 
+> Historical design research, not current documentation. The linked decision record and the README describe what is
+> available today.
+
 Code audit, 2026-10-29. Resource remains the only additional built-in module extracted for 0.9.1. This is a ranked
 backlog for subsequent work, ordered by useful independence gained against implementation effort and risk. The
 Heinzelmännchen theme/content extraction at rank 3 subsequently joined the approved scope in

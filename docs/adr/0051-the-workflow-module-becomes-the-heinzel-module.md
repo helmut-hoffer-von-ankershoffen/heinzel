@@ -1,6 +1,7 @@
 ---
 status: accepted
 date: 2026-10-24
+implementation: built
 decision-makers: maintainer (names and direction), architect (plan)
 amends: 0021, 0038, 0041, 0045
 amends-0021: operation names

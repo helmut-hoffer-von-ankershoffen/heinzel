@@ -1,6 +1,7 @@
 ---
 status: proposed
 date: 2026-10-25
+implementation: built
 decision-makers: maintainer (the decisions), architect (shape)
 amends: 0020, 0049, 0054
 related: 0024, 0026, 0027

@@ -1,6 +1,7 @@
 ---
 status: proposed
 date: 2026-10-24
+implementation: partial
 decision-makers: maintainer (product), architect (technical shape)
 amends: 0010, 0020, 0021, 0028, 0029, 0038, 0045, 0052
 amends-0010: a turn of a continuous session instead of a session per render

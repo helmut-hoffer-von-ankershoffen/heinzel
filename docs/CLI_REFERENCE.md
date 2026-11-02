@@ -20,8 +20,8 @@ $ hz [OPTIONS] COMMAND [ARGS]...
 
 * `ai`: (expert) How hz reaches AI, and what it...
 * `chat`: Chat with the agent runner in this...
-* `graph`: Show your team&#x27;s promises: who keeps which...
-* `heinzel`: Your Heinzelmännchen: durable agents that...
+* `graph`: Show your team&#x27;s contracts: who keeps...
+* `heinzel`: Your Heinzelmännchen: durable helpers that...
 * `join`: Join a team from its invite line: finds...
 * `org`: Your profile, and the team, org and...
 * `report`: Telemetry: log what a Heinzelmännchen did,...
@@ -570,7 +570,7 @@ $ hz chat show [OPTIONS] {session}
 
 ## `hz graph`
 
-Show your team&#x27;s promises: who keeps which artifact, how each promise stands, where the flow waits.
+Show your team&#x27;s contracts: who keeps which artifact, how each stands, where the flow waits.
 
 **Usage**:
 
@@ -590,7 +590,7 @@ $ hz graph [OPTIONS]
 
 ## `hz heinzel`
 
-Your Heinzelmännchen: durable agents that keep your team&#x27;s documents true.
+Your Heinzelmännchen: durable helpers that draft your team&#x27;s recurring work for your approval.
 
 **Usage**:
 
@@ -791,7 +791,7 @@ $ hz heinzel check [OPTIONS]
 
 ### `hz heinzel discover`
 
-(expert) Find candidates for each playbook&#x27;s asset types through the capabilities you have bound; reads only.
+(expert) Find candidates for each playbook&#x27;s artifact types through your bound capabilities; reads only.
 
 **Usage**:
 
@@ -923,7 +923,7 @@ $ hz heinzel list [OPTIONS]
 
 ### `hz heinzel new`
 
-Write a starter contract, or a playbook&#x27;s template (--template), into your workflows directory.
+Write a starter contract, or a playbook&#x27;s template (--template), into your contracts folder.
 
 **Usage**:
 
@@ -939,7 +939,7 @@ $ hz heinzel new [OPTIONS] {name}
 
 * `--team / --no-team`: Write it into the team repository&#x27;s workflows/ instead of your own directory.  [default: no-team]
 * `--template <str>`: Start from a playbook&#x27;s template contract, `&lt;module&gt;:&lt;name&gt;` (`hz heinzel playbooks` lists them), instead of the blank starter.
-* `--asset <str>`: Fill a template&#x27;s asset placeholder as type=reference, e.g. weekly-report=doc-123 (`hz heinzel discover` finds candidates); repeat for each.
+* `--asset <str>`: Fill a template&#x27;s artifact placeholder as type=reference, e.g. weekly-report=doc-123 (`hz heinzel discover` finds candidates); repeat for each.
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
@@ -988,7 +988,7 @@ $ hz heinzel personal-artifacts [OPTIONS] {session_id}
 
 ### `hz heinzel playbooks`
 
-(expert) List the playbooks plugins contribute: asset types, template contracts and recommended settings.
+(expert) List the playbooks plugins contribute: artifact types, template contracts and recommended settings.
 
 **Usage**:
 
@@ -1630,6 +1630,7 @@ $ hz system [OPTIONS] COMMAND [ARGS]...
 * `agent`: (expert) Install the Heinzelmännchen...
 * `capability`: (expert) Show which adapters serve which...
 * `changelog`: (expert) Show the installed version&#x27;s...
+* `channel`: Show the update channel, or say what...
 * `claude`: (expert) See the MCP servers and skills...
 * `config`: (expert) Show, get, set and initialize...
 * `connector`: (expert) Show whether each connector is...
@@ -1767,6 +1768,24 @@ $ hz system changelog [OPTIONS]
 **Options**:
 
 * `--newer / --no-newer`: Show what the releases newer than the installed version bring instead, newest first; asks GitHub, with GH_TOKEN or GITHUB_TOKEN if set. As JSON: a list of {version, date, notes, url}.  [default: no-newer]
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz system channel`
+
+Show the update channel, or say what switching changes and, with `--yes`, switch.
+
+**Usage**:
+
+```console
+$ hz system channel [OPTIONS]
+```
+
+**Options**:
+
+* `--to <stable|edge|main>`: The channel to move to; without it, shows the current one.
+* `--yes / --no-yes`: Make the change that was described; without it, nothing changes.  [default: no-yes]
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
@@ -2461,6 +2480,7 @@ $ hz system notify [OPTIONS] COMMAND [ARGS]...
 **Commands**:
 
 * `ack`: (expert) Mark notices as shown, so the...
+* `clean`: (expert) End leftover Heinzel Notifier...
 * `install`: (expert) Install the native notifier...
 * `list`: (expert) Show the latest notices, whether...
 * `settings`: (expert) Open the system&#x27;s notification...
@@ -2479,6 +2499,22 @@ $ hz system notify ack [OPTIONS] {ids}
 **Arguments**:
 
 * `ids`: Ids of the notices that were shown, from `list`, separated by commas.  [required]
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system notify clean`
+
+(expert) End leftover Heinzel Notifier processes and make macOS forget its stray copies.
+
+**Usage**:
+
+```console
+$ hz system notify clean [OPTIONS]
+```
 
 **Options**:
 
@@ -2578,6 +2614,7 @@ $ hz system plugin [OPTIONS] COMMAND [ARGS]...
 * `list`: (expert) List installed plugins, enabled...
 * `new`: (expert) Scaffold a plugin repository from...
 * `operation`: (expert) Read the status and result of a...
+* `pending`: (expert) List plugins changed on this...
 * `remove`: (expert) Remove a plugin.
 * `sdk`: (expert) Export the versioned plugin view...
 * `search`: (expert) Find plugins to install:...
@@ -2796,6 +2833,22 @@ $ hz system plugin operation [OPTIONS] {operation_id}
 **Arguments**:
 
 * `operation_id`: Receipt id from a plugin preview.  [required]
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system plugin pending`
+
+(expert) List plugins changed on this machine since this server started: what a restart would load.
+
+**Usage**:
+
+```console
+$ hz system plugin pending [OPTIONS]
+```
 
 **Options**:
 
@@ -3246,7 +3299,7 @@ $ hz system theme list [OPTIONS]
 
 #### `hz system theme signals`
 
-(expert) Show the signals themes follow now: the time of day, and the weather when a plugin publishes it.
+(expert) Show the signals themes follow now: the time of day, and the weather when a plugin provides it.
 
 **Usage**:
 
@@ -3459,7 +3512,7 @@ $ hz system update [OPTIONS]
 **Options**:
 
 * `--source <str>`: Install from here instead, e.g. git+https://github.com/org/heinzel@v1.2.0 or a wheel.
-* `--channel <release|main>`: Follow `release` (the default, setting `update_channel`): the newest release, also from `main` once a release is as new as it; or `main`: its newest commit.
+* `--channel <stable|edge|main|release>`: Follow `stable` (the default, setting `update_channel`; `release` is its earlier name): the newest accepted release, also from `main` or edge once it is as new; `edge`: the newest edge release; or `main`: its newest commit.
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
@@ -3503,7 +3556,7 @@ $ hz team add [OPTIONS] {handle}
 **Options**:
 
 * `--login <str>`: Their GitHub login; an owner needs one.
-* `--role <str>`: Their role: one of engineer, principal, engineering-manager, engineering-leadership, product-manager, product-leadership, program-manager.  [default: engineer]
+* `--role <str>`: Their role: one of engineer, engineering-manager, product-manager, program-manager.  [default: engineer]
 * `--owner / --no-owner`: Make them an owner: they approve roster changes.  [default: no-owner]
 * `--by <str>`: Your own GitHub login, when `gh` isn&#x27;t signed in as you.
 * `--yes / --no-yes`: Carry out the steps that wait for you: remote changes, and making the team yours.  [default: no-yes]
@@ -3549,7 +3602,7 @@ $ hz team join [OPTIONS] {url}
 
 * `--propose / --no-propose`: When the roster doesn&#x27;t list you, open a pull request adding you; owners merge it.  [default: no-propose]
 * `--handle <str>`: Your handle: the roster entry that is you when it has no login yet, or the one to propose.
-* `--role <str>`: Your role when you propose to be added: one of engineer, principal, engineering-manager, engineering-leadership, product-manager, product-leadership, program-manager.  [default: engineer]
+* `--role <str>`: Your role when you propose to be added: one of engineer, engineering-manager, product-manager, program-manager.  [default: engineer]
 * `--login <str>`: Your GitHub login, when `gh` isn&#x27;t signed in; asked of `gh api user` otherwise.
 * `--yes / --no-yes`: Carry out the steps that wait for you: remote changes, and making the team yours.  [default: no-yes]
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
@@ -3574,7 +3627,7 @@ $ hz team new [OPTIONS] {name}
 
 * `--github <str>`: Create it on GitHub as this private repository, owner/name; only on this machine if none.
 * `--roster <str>`: Draft the roster from a GitHub team you can read: github:&lt;org&gt;/&lt;team&gt;, or github:&lt;org&gt;.
-* `--role <str>`: Your role: one of engineer, principal, engineering-manager, engineering-leadership, product-manager, product-leadership, program-manager.  [default: engineering-manager]
+* `--role <str>`: Your role: one of engineer, engineering-manager, product-manager, program-manager.  [default: engineering-manager]
 * `--handle <str>`: Your handle in the team; defaults to your GitHub login.
 * `--login <str>`: Your GitHub login, when `gh` isn&#x27;t signed in; asked of `gh api user` otherwise.
 * `--yes / --no-yes`: Carry out the steps that wait for you: remote changes, and making the team yours.  [default: no-yes]

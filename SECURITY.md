@@ -10,7 +10,7 @@
 [![Python](https://img.shields.io/badge/python-3.12%20%7C%203.13%20%7C%203.14%20%7C%203.15-blue)](pyproject.toml)
 [![Quality Gate Status](https://img.shields.io/sonar/quality_gate/helmut-hoffer-von-ankershoffen_heinzel?server=https://sonarcloud.io&label=Quality%20Gate%20Status)](https://sonarcloud.io/summary/overall?id=helmut-hoffer-von-ankershoffen_heinzel)
 [![Security Rating](https://sonarcloud.io/api/project_badges/measure?project=helmut-hoffer-von-ankershoffen_heinzel&metric=security_rating)](https://sonarcloud.io/summary/overall?id=helmut-hoffer-von-ankershoffen_heinzel)
-[![License: MIT](https://img.shields.io/badge/license-MIT-brightgreen)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/license-MIT-44bb00)](LICENSE)
 <!-- badges:end -->
 
 ## Reporting a vulnerability
@@ -122,7 +122,7 @@ Only the latest release receives security fixes while the project is on 0.x; upd
 Verify a release artifact:
 
 ```bash
-gh attestation verify heinzel-0.1.0-py3-none-any.whl --repo helmut-hoffer-von-ankershoffen/heinzel
+gh attestation verify heinzel-<version>-py3-none-any.whl --repo helmut-hoffer-von-ankershoffen/heinzel
 ```
 
 Plugins created from the template inherit the same hooks, checks and release workflow.

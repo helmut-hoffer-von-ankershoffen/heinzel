@@ -1,5 +1,8 @@
 # Research report: a daemon head for Heinzelmännchen
 
+> Historical design research, not current documentation. The linked decision record and the README describe what is
+> available today.
+
 - Date: 2026-10-23
 - Scope: research only. Decision record: [ADR 0020](../adr/0020-daemon-head.md) (proposed). Nothing is built
   before 0.1.0 is released.

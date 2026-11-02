@@ -1,6 +1,7 @@
 ---
 status: proposed
 date: 2026-10-24
+implementation: planned
 decision-makers: maintainer
 amends: 0010, 0020
 amends-0010: approval in place instead of an approval queue; hz inbox is a view

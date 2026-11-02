@@ -152,6 +152,7 @@ ADRS = sorted(
 )
 ADRS = [adr for adr in ADRS if not adr.name.startswith("0000-")]
 ADR_STATUSES = {"proposed", "accepted", "rejected", "deprecated", "superseded"}
+ADR_IMPLEMENTATIONS = {"built", "partial", "planned"}
 ADR_SECTIONS = [  # docs/adr/0000-template.md; optional ones may sit between these, nothing else may
     "## Context and Problem Statement",
     "## Considered Options",
@@ -174,6 +175,8 @@ def test_adrs_follow_the_template(adr):
     number = adr.name[:4]
     assert meta.get("status") in ADR_STATUSES, "front matter needs a status from the template"
     assert re.fullmatch(r"\d{4}-\d{2}-\d{2}", meta.get("date", "")), "front matter needs date: YYYY-MM-DD"
+    assert meta.get("implementation") in ADR_IMPLEMENTATIONS, "front matter needs implementation: built|partial|planned"
+    assert not ("implemented-by" in meta and meta["implementation"] == "planned"), "a built-by-PR ADR is not planned"
     assert (meta["status"] == "superseded") == ("superseded-by" in meta), "superseded goes with superseded-by"
     assert re.search(rf"^# {number}: \S", text, flags=re.MULTILINE), f"the title must be '# {number}: ...'"
     headings = re.findall(r"^#{2,3} .+$", text, flags=re.MULTILINE)
@@ -322,3 +325,8 @@ def test_operation_summaries_are_one_short_sentence_and_module_names_singular(ma
         if r.module.name.endswith("s") and r.module.name not in PLURAL_MODULE_NAMES
     ]
     assert not problems
+
+
+def test_the_core_hosts_no_generated_plugin_pages():
+    """Plugins document themselves in their own repositories; the catalog is the only plugin index (ADR 0094)."""
+    assert not (Path(__file__).resolve().parents[2] / "docs" / "plugins").exists()

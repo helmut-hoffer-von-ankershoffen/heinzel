@@ -81,7 +81,10 @@ def test_a_crash_before_publish_cannot_leave_a_partial_owner(tmp_path, monkeypat
     assert not (directory / "owner-v1").exists()
     assert not list(directory.glob(".owner-*"))
     monkeypatch.setattr(os, "rename", original)
-    assert CurrentUser(directory).owner() == CurrentUser(directory).owner()
+    first = CurrentUser(directory).owner()
+    second = CurrentUser(directory).owner()
+    assert (directory / "owner-v1").exists()
+    assert second == first
 
 
 def test_scopes_are_copied_before_a_trusted_caller_can_change_them():

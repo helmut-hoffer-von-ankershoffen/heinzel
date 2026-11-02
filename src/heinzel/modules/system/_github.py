@@ -7,6 +7,7 @@ configured). The token, if any, never leaves api.github.com: redirects elsewhere
 import http.client
 import json
 import urllib.error
+import urllib.parse
 import urllib.request
 from typing import Any, override
 
@@ -115,6 +116,51 @@ def _open(request: urllib.request.Request, timeout: float) -> bytes:
             body: bytes = response.read(MAX_BYTES + 1)
             return body
     except http.client.HTTPException as exc:  # e.g. a truncated answer: as unreachable as a refused connection
+        raise OSError(exc) from exc
+
+
+class _AssetRedirects(urllib.request.HTTPRedirectHandler):
+    """A release asset redirects to GitHub's storage: follow only there, and only over HTTPS."""
+
+    @override
+    def redirect_request(
+        self,
+        req: urllib.request.Request,
+        fp: Any,
+        code: int,
+        msg: str,
+        headers: Any,
+        newurl: str,
+    ) -> urllib.request.Request | None:
+        if not asset_host(newurl):
+            raise urllib.error.HTTPError(req.full_url, code, "unexpected asset redirect", headers, fp)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+def asset_host(url: str) -> bool:
+    """Whether `url` is HTTPS on github.com or GitHub's release storage."""
+    parts = urllib.parse.urlsplit(url)
+    host = parts.hostname or ""
+    return parts.scheme == "https" and (host == "github.com" or host.endswith(".githubusercontent.com"))
+
+
+def read_asset(url: str, timeout: float) -> bytes:
+    """A public release asset, without a token; at most `MAX_BYTES` + 1.
+
+    Raises:
+        OSError: If GitHub cannot be reached, answers with an error or redirects elsewhere.
+        ValueError: If `url` is not on github.com over HTTPS.
+    """
+    if not asset_host(url):
+        msg = f"not a GitHub asset URL: {url}"
+        raise ValueError(msg)
+    request = urllib.request.Request(url, headers={"User-Agent": f"heinzel/{__version__}"})  # noqa: S310 - https, checked
+    opener = urllib.request.build_opener(_AssetRedirects)
+    try:
+        with opener.open(request, timeout=timeout) as response:
+            body: bytes = response.read(MAX_BYTES + 1)
+            return body
+    except http.client.HTTPException as exc:
         raise OSError(exc) from exc
 
 

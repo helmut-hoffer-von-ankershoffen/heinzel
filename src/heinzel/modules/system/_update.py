@@ -19,9 +19,10 @@ import json
 import re
 import shlex
 import tempfile
-from collections.abc import Generator, Mapping, Sequence
+from collections.abc import Callable, Generator, Mapping, Sequence
 from contextlib import AbstractContextManager, contextmanager, nullcontext
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
@@ -37,14 +38,27 @@ from heinzel.kernel import (
     DaemonMutationScope,
     Installation,
     ReleaseSource,
+    ToolConstraintPolicy,
     subprocess_environment,
 )
-from heinzel.modules.system._models import PluginUpdate, UpdateResult
+from heinzel.modules.system._announced import (
+    Announcement,
+    ToolSnapshot,
+    allows_core,
+    environment_versions,
+    installed_commit,
+    installed_identity,
+    plugin_commit,
+)
+from heinzel.modules.system._models import AnnouncedUpdate, PluginUpdate, UpdateResult
 from heinzel.modules.system._service import DEFAULT_REPOSITORY, RELEASE_TIMEOUT
 from heinzel.modules.system.plugin._sources import git_credentials
 
 DEFAULT_BRANCH = "main"
 """The repository's default branch: a pin to it is kept in place, the way an install without a ref is."""
+
+type UpdateChannel = Literal["stable", "edge", "main", "release"]
+"""Where updates come from; `release` is the earlier name of stable, still accepted (ADR 0114)."""
 
 PLACEHOLDER_TAG = "vX.Y.Z"
 """Stands in for the latest release tag in a suggested command when the package source couldn't be asked."""
@@ -207,12 +221,293 @@ class UpdateService:
             return result.model_copy(update={"message": message})
         return result
 
+    def apply_announced(
+        self,
+        announced: Announcement,
+        *,
+        current: str = __version__,
+        folder: Path,
+        trial: Callable[[str], bool],
+    ) -> AnnouncedUpdate:
+        """Install exactly the announced versions, prove the new hz starts, or put everything back (ADR 0116).
+
+        Every distribution in the tool folder is held at the version it has, by exact transient constraints, except
+        hz at the announced version (or the running one) and each announced plugin at its own: uv installs exactly
+        these or nothing. Only the announced packages are asked again (`--refresh-package`); a dependency the new
+        versions need that isn't installed yet resolves only among uploads as old as the minimum ages
+        (`--exclude-newer`). hz from a release tag is installed from the commit the tag named when it was announced,
+        and the receipt names the tag again afterwards. Plugins from git, a folder or a URL can't be held this way,
+        so their installation is updated by hand. Nothing installed runs to verify it: its metadata must name exactly
+        these versions. Then `trial` starts the new hz on throwaway folders. Any failure after the copy puts the tool
+        folder back from it (`ToolSnapshot`), so its continuity record matches again and the daemon mutation
+        completes with no handover pending.
+
+        Raises:
+            HeinzelError: If the installation can't be updated this way, before anything was installed.
+            OSError: If the copy can't be taken; nothing was installed.
+        """
+        target = announced.core or current
+        selection = self._announced_selection(target, announced)
+        if isinstance(selection, AnnouncedUpdate):
+            return selection
+        pin, core_requirement, plugin_pins, names = selection.pin, selection.core, selection.plugins, selection.names
+        prefix = self._installation.prefix.resolve(strict=True)
+        with self._mutation() as scope:
+            plan = scope.capture() if scope is not None else None
+            with self._installation.tool_transaction():
+                expected, guards, policy = self._prepare_announced(
+                    (pin, plugin_pins, names), announced.plugins, current, target, scope
+                )
+                specs = selection.specs
+                original_receipt = self._installation.receipt()
+                untouched = {name: installed_identity(prefix, name) for name in selection.by_hand}
+                constraints = (*self._installation.tool_constraints(), *guards)
+                try:
+                    self._installation.validate_install_constraints([core_requirement, *specs], constraints)
+                    snapshot = ToolSnapshot.take(self._installation.prefix.resolve(strict=True), folder)
+                except (HeinzelError, OSError):
+                    if scope is not None:
+                        self._abort_or_leave_pending(scope)
+                    raise
+                before = self._installation.startup_fingerprint()
+                try:
+                    generation = self._install_announced(
+                        [core_requirement, *specs], (guards, constraints), expected, announced
+                    )
+                    _require_untouched(prefix, untouched)
+                    generation = self._installation.remove_transient_tool_constraint(
+                        expected=generation, original=policy, added=guards, options=_added_options(announced)
+                    )
+                    if pin.kind == "release":
+                        generation = self._installation.name_core_by_tag(
+                            expected=generation, commit=core_requirement.rsplit("@", 1)[1], tag=f"v{target}"
+                        )
+                    if selection.held_at_commit:  # they follow their branch or tag again, as before
+                        generation = self._installation.restore_receipt_requirements(
+                            expected=generation, original=original_receipt, names=selection.held_at_commit
+                        )
+                except (HeinzelError, OSError) as exc:
+                    return self._put_back(snapshot, (scope, plan), before, current, f"{exc}", refused=False)
+                if not trial(target):
+                    return self._put_back(snapshot, (scope, plan), before, current, None, refused=target)
+                snapshot.discard()
+                result = UpdateResult(
+                    before=current,
+                    after=target,
+                    latest=announced.core,
+                    pinned_to=None,
+                    updated=True,
+                    message="",
+                    next=[],
+                )
+                if scope is not None and plan is not None:
+                    self._finish_mutation(scope, plan, generation, result)
+                return AnnouncedUpdate(
+                    updated=True, after=target, restored=False, refused=False, message=f"Installed hz {target}."
+                )
+
+    def _announced_selection(self, target: str, announced: Announcement) -> "_Selection | AnnouncedUpdate":
+        """What goes into uv, before anything changes: the exact core, and every plugin as it must stay or move.
+
+        Plugins from git, a folder or a URL are updated by hand: they go in exactly as installed (one from git at its
+        installed commit), are never refreshed or reinstalled, and must be unchanged afterwards. An answer instead
+        when hz from a release tag has no commit to install, or a plugin updated by hand doesn't allow the new hz.
+
+        Raises:
+            HeinzelError: If the installation isn't a uv tool from a release tag or the package index, a plugin from
+                git has no commit to hold it to, or an announced plugin isn't an installed one from PyPI.
+        """
+        pin = self._installation.core_pin()
+        if pin is None or not self._installation.requirements():
+            msg = "Heinzelmännchen wasn't installed with `uv tool install`; it can't update itself."
+            raise HeinzelError(msg)
+        prefix = self._installation.prefix.resolve(strict=True)
+        if pin.kind == "release" and pin.git:
+            commit = announced.commit if announced.core is not None else installed_commit(prefix)
+            if commit is None:
+                return _by_hand(target, f"The release tag of hz {target} names no commit to hold it to")
+            core_requirement = pin.at(commit)
+        elif pin.kind in ("index", "default") and pin.git is None:
+            core_requirement = pin.requirement
+        else:
+            msg = "Only installations from release tags or the package index update themselves."
+            raise HeinzelError(msg)
+        plugin_pins = self._installation.plugin_pins()
+        plugins = self._announced_plugins(prefix, plugin_pins, target, announced)
+        if isinstance(plugins, AnnouncedUpdate):
+            return plugins
+        names, specs, by_hand, held_at_commit = plugins
+        return _Selection(pin, core_requirement, plugin_pins, names, specs, by_hand, held_at_commit)
+
+    @staticmethod
+    def _announced_plugins(
+        prefix: Path, plugin_pins: list[CorePin], target: str, announced: Announcement
+    ) -> tuple[list[str], list[str], list[str], list[str]] | AnnouncedUpdate:
+        """Each plugin's name and requirement for uv, those updated by hand, and those held at their git commit.
+
+        Raises:
+            HeinzelError: If a plugin from git has no commit to hold it to, or an announced plugin isn't an installed
+                one from PyPI.
+        """
+        names: list[str] = [str(canonicalize_name(Requirement(plugin.requirement).name)) for plugin in plugin_pins]
+        indexed = {name for name, plugin in zip(names, plugin_pins, strict=True) if plugin.kind == "index"}
+        if missing := sorted(set(announced.plugins) - indexed):
+            msg = f"Announced plugins aren't installed from PyPI: {', '.join(missing)}."
+            raise HeinzelError(msg)
+        specs: list[str] = []
+        held_at_commit: list[str] = []
+        for name, plugin in zip(names, plugin_pins, strict=True):
+            if plugin.kind == "index":
+                specs.append(plugin.requirement)
+                continue
+            if not allows_core(prefix, name, target):
+                return _by_hand(target, f"{name}, a plugin updated by hand, doesn't allow hz {target}. Update it first")
+            if plugin.git is None:
+                specs.append(plugin.requirement)
+                continue
+            commit = plugin_commit(prefix, name)
+            if commit is None:
+                msg = f"{name} came from git but doesn't say from which commit; update it by hand."
+                raise HeinzelError(msg)
+            specs.append(plugin.at(commit))
+            held_at_commit.append(name)
+        return names, specs, sorted(set(names) - indexed), held_at_commit
+
+    def _install_announced(
+        self,
+        requirements: list[str],
+        policy: tuple[tuple[str, ...], tuple[str, ...]],
+        expected: dict[str, str],
+        announced: Announcement,
+    ) -> str:
+        """Run uv with every version held, then read the new metadata; the generation installed.
+
+        Raises:
+            HeinzelError: If uv fails, or the metadata names other versions or another commit than announced.
+        """
+        guards, constraints = policy
+        command = self._installation.tool_install_command(requirements[0], requirements[1:], reinstall=False)
+        moving = (["heinzel"] if announced.core else []) + list(announced.plugins)
+        for name in moving:  # only what was announced is asked again and reinstalled; the rest stays as it is
+            command += ["--refresh-package", name, "--reinstall-package", name]
+        if announced.exclude_newer is not None:
+            command += ["--exclude-newer", _stamp(announced.exclude_newer)]
+        if announced.exclude_newer_core is not None:
+            command += ["--exclude-newer-package", f"heinzel={_stamp(announced.exclude_newer_core)}"]
+        # uv records both in the receipt (`[tool.options]`); `_added_options` names them so they are taken out again.
+        self._installation.run(
+            command,
+            "uv couldn't install exactly the announced versions",
+            f"Installing hz {expected['heinzel']}",
+            git_credentials(subprocess_environment()),
+            additional_constraints=guards,
+        )
+        generation = self._installation.startup_fingerprint()
+        self._installation.verify_installed_requirements(
+            requirements, expected_version=expected["heinzel"], constraints=constraints
+        )
+        held = dict(constraint.split("==", 1) for constraint in guards)
+        found = environment_versions(self._installation.prefix.resolve(strict=True))
+        if differ := [
+            f"{name} {found.get(name, 'nothing')} instead of {version}"
+            for name, version in held.items()
+            if found.get(name) != version
+        ]:
+            msg = f"uv installed {', '.join(differ)}"
+            raise HeinzelError(msg)
+        installed = installed_commit(self._installation.prefix.resolve(strict=True))
+        commit = requirements[0].rsplit("@", 1)[1] if " @ git+" in requirements[0] else None
+        if commit is not None and installed != commit:
+            msg = f"hz came from commit {(installed or 'none')[:12]}, not {commit[:12]}"
+            raise HeinzelError(msg)
+        return generation
+
+    def _prepare_announced(
+        self,
+        selection: tuple[CorePin, list[CorePin], list[str]],
+        plugins: Mapping[str, str],
+        current: str,
+        target: str,
+        scope: DaemonMutationScope | None,
+    ) -> tuple[dict[str, str], tuple[str, ...], ToolConstraintPolicy]:
+        """What to hold, as exact constraints, and the receipt's own policy to keep; read from disk, never run.
+
+        Every distribution in the tool folder is held at its version, apart from hz and the announced plugins.
+
+        Raises:
+            HeinzelError: If the selection, the running version or the installed versions can't be verified.
+        """
+        pin, plugin_pins, names = selection
+        self._verify_selection(pin, plugin_pins, scope)
+        try:
+            self._require_running_version(current)
+            installed = self._installation.installed_versions(names)
+            expected = {"heinzel": target}
+            expected.update({name: installed[name] for name in names if name in installed})
+            expected.update(plugins)
+            held = environment_versions(self._installation.prefix.resolve(strict=True))
+            held.update(expected)
+            policy = self._installation.capture_tool_constraint_policy()
+        except HeinzelError:
+            if scope is not None:
+                self._abort_or_leave_pending(scope)
+            raise
+        return expected, tuple(f"{name}=={version}" for name, version in held.items()), policy
+
+    def _put_back(  # noqa: PLR0913 - the copy, the mutation, what it was and why
+        self,
+        snapshot: ToolSnapshot,
+        lifecycle: tuple[DaemonMutationScope | None, DaemonHandoverPlan | None],
+        before: str,
+        current: str,
+        why: str | None,
+        *,
+        refused: str | Literal[False],
+    ) -> AnnouncedUpdate:
+        """Put the tool folder back from `snapshot`; its continuity matches again and the mutation completes.
+
+        Raises:
+            HeinzelError: If it can't be put back, or isn't as it was afterwards; explicit recovery is required.
+        """
+        scope, plan = lifecycle
+        try:
+            snapshot.restore()
+        except OSError as exc:
+            msg = (
+                f"The update didn't work and hz {current} couldn't be put back ({exc}). It keeps running until you "
+                "restart it; reinstall it before that: uv tool install --reinstall heinzel"
+            )
+            raise HeinzelError(msg) from exc
+        generation = self._installation.startup_fingerprint()
+        if generation != before:
+            msg = "The installation isn't as it was after putting it back; explicit recovery is required."
+            raise HeinzelError(msg)
+        if scope is not None and plan is not None:
+            # The folder is as it was, byte for byte, but not inode for inode: the mutation completes with the
+            # original generation, its record stays valid, and the daemon is handed over to the same code.
+            if scope.checkpoint_matched:
+                self._installation.record_startup_state(expected=generation)
+            scope.verified_complete(generation)
+            scope.request(plan)
+        if refused:
+            message = (
+                f"hz {refused} was installed but didn't start, so hz {current} and its plugins were put back as they "
+                "were and keep running. That update won't be tried again; a newer one will."
+            )
+        else:
+            message = (
+                f"The automatic update didn't install exactly the announced versions ({why}), so hz {current} and its "
+                "plugins were put back as they were and keep running. It will try again in 6 hours."
+            )
+        return AnnouncedUpdate(updated=False, after=current, restored=True, refused=bool(refused), message=message)
+
     def update(
-        self, source: str | None = None, current: str = __version__, channel: Literal["release", "main"] = "release"
+        self, source: str | None = None, current: str = __version__, channel: UpdateChannel = "stable"
     ) -> UpdateResult:
         """Update to the latest release, or reinstall from `source`; `current` is the version running now.
 
-        `channel` is where the installation follows: the releases (a pin to the newest release tag, which every later
+        `channel` is where the installation follows: `edge` (the newest edge release's wheel, verified by digest) or
+        stable, which `release` also names: the releases (a pin to the newest release tag, which every later
         update follows; an installation on `main` moves there once a release is as new as it, never as a downgrade) or
         `main` (its newest commit).
 
@@ -240,6 +535,14 @@ class UpdateService:
                 generation=generation,
             )
             return self._with_release_hint(pin, result)
+        if channel == "edge":
+            return self._to_edge(pin, plugins, current, generation)
+        return self._to_stable(pin, plugins, current, generation)
+
+    def _to_stable(self, pin: CorePin, plugins: list[CorePin], current: str, generation: str | None) -> UpdateResult:
+        """Follow stable from wherever the installation is pinned."""
+        if pin.is_edge:
+            return self._from_edge(pin, plugins, current, generation)
         if pin.kind == "release":
             return self._to_latest_release(pin, plugins, current, generation)
         if pin.kind == "ref" and pin.ref == DEFAULT_BRANCH:
@@ -256,6 +559,112 @@ class UpdateService:
         if pin.git is not None:
             return pin.at(ref)
         return f"{pin.name} @ git+https://github.com/{DEFAULT_REPOSITORY}@{ref}"
+
+    def _to_edge(self, pin: CorePin, plugins: list[CorePin], current: str, generation: str | None) -> UpdateResult:
+        """Install the newest edge release, unless that would move back or the installation is pinned on purpose.
+
+        Raises:
+            HeinzelError: If the edge pointer can't be read.
+        """
+        if pin.kind in ("commit", "local", "url") and not pin.is_edge:
+            return self._with_plugins(self._pinned(pin, current), pin, plugins, generation)
+        try:
+            edge = self._releases.edge_release(RELEASE_TIMEOUT)
+        # Isolation boundary: whatever the package source raises, the user gets one error with what to do.
+        except Exception as exc:
+            msg = f"Could not ask for the newest edge release ({exc}); hz {current} stays as it is."
+            raise HeinzelError(msg) from exc
+        if Version(edge.version) <= _version(current):
+            message = f"hz {current} is up to date (edge; the newest edge release is {edge.version})."
+            same = UpdateResult(
+                before=current,
+                after=current,
+                latest=edge.version,
+                pinned_to=pin.ref,
+                updated=False,
+                message=message,
+                next=[],
+            )
+            return self._with_plugins(same, pin, plugins, generation)
+        return self._install(
+            f"{pin.name} @ {edge.wheel}#sha256={edge.sha256}",
+            pin,
+            plugins,
+            current=current,
+            latest=edge.version,
+            target=f"edge {edge.version}",
+            channel="edge",
+            generation=generation,
+        )
+
+    def _from_edge(self, pin: CorePin, plugins: list[CorePin], current: str, generation: str | None) -> UpdateResult:
+        """Move to stable once it is at least as new; until then edge stays, because nothing ever downgrades.
+
+        Raises:
+            HeinzelError: If the highest stable release can't be asked for.
+        """
+        try:
+            stable = self._releases.highest_version(RELEASE_TIMEOUT, prereleases=False)
+        # Isolation boundary: whatever the package source raises, the user gets one error with what to do.
+        except Exception as exc:
+            msg = f"Could not ask for the newest stable release ({exc}); hz {current} stays as it is."
+            raise HeinzelError(msg) from exc
+        if Version(stable) < _version(current):
+            message = (
+                f"hz {current} (edge) is newer than stable {stable}, so it stays until stable catches up. Nothing is "
+                "downgraded and your data is unchanged.\nTo follow edge again: hz system channel --to edge --yes"
+            )
+            ahead = UpdateResult(
+                before=current, after=current, latest=stable, pinned_to=pin.ref, updated=False, message=message, next=[]
+            )
+            return self._with_plugins(ahead, pin, plugins, generation)
+        return self._install(
+            f"{pin.name}>={stable}",
+            pin,
+            plugins,
+            current=current,
+            latest=stable,
+            target=f"stable {stable}",
+            channel="stable",
+            generation=generation,
+        )
+
+    def channel_summary(self, selected: UpdateChannel, current: str = __version__) -> str:
+        """Where the next update goes on the chosen channel; asks the network and changes nothing."""
+        chosen = "stable" if selected == "release" else selected
+        return (
+            f"You are on {chosen}. {self._channel_effect(chosen, current).replace('That update', 'The next update', 1)}"
+        )
+
+    def channel_statement(self, selected: UpdateChannel, target: UpdateChannel, current: str = __version__) -> str:
+        """What choosing `target` changes, said before it happens; asks the network and changes nothing."""
+        chosen = "stable" if target == "release" else target
+        if chosen == ("stable" if selected == "release" else selected):
+            return f"You are already on {chosen}, with hz {current}. Nothing changes."
+        lines = [f"Moves from {selected} to {chosen}. Nothing is installed until you run hz system update."]
+        lines.append(self._channel_effect(chosen, current))
+        lines.append("Your settings, plugins and data stay. Switch again at any time; the choice survives updates.")
+        return "\n".join(lines)
+
+    def _channel_effect(self, chosen: str, current: str) -> str:
+        try:
+            if chosen == "edge":
+                newest = self._releases.edge_release(RELEASE_TIMEOUT).version
+                if Version(newest) <= _version(current):
+                    return f"hz {current} stays: the newest edge release, {newest}, is not newer."
+                return f"That update moves hz {current} to edge {newest}: every green change, sooner and less tested."
+            if chosen == "main":
+                return f"That update moves hz {current} to the newest commit of main."
+            stable = self._releases.highest_version(RELEASE_TIMEOUT, prereleases=False)
+        # Isolation boundary: not knowing the versions must not stop the choice; the statement says so.
+        except Exception as exc:  # noqa: BLE001
+            return f"The newest {chosen} version could not be asked for now ({exc})."
+        if Version(stable) < _version(current):
+            return (
+                f"hz {current} is newer than stable {stable}, so it stays until stable catches up. It is never "
+                "downgraded."
+            )
+        return f"That update moves hz {current} to stable {stable}, which has passed acceptance."
 
     def _switch_to_releases(
         self, pin: CorePin, plugins: list[CorePin], current: str, generation: str | None
@@ -463,7 +872,7 @@ class UpdateService:
         metadata = self._installation.verify_installed_requirements(
             selected,
             expected_version=target.removeprefix("v")
-            if target and re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+(?:[a-zA-Z0-9.+-]*)?", target)
+            if target and re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+[a-zA-Z0-9.+-]*", target)
             else None,
             forbidden=tuple(plugin.name for plugin in plugins if modes[canonicalize_name(plugin.name)] == "drop"),
             constraints=captured_constraints,
@@ -892,8 +1301,12 @@ class UpdateService:
         return expected is not None and self._original_generation() == expected
 
     def _latest(self, current: str) -> str:
-        """The highest release, pre-releases included only when `current` is one."""
-        return self._releases.highest_version(RELEASE_TIMEOUT, prereleases=_version(current).is_prerelease)
+        """The highest stable release: never a pre-release, even when one is installed (ADR 0116 amends ADR 0006).
+
+        Edge builds are GitHub pre-releases (ADR 0114); the stable channel must never move onto one by itself.
+        """
+        del current
+        return self._releases.highest_version(RELEASE_TIMEOUT, prereleases=False)
 
     def _version(self) -> str:
         """The version a fresh `hz` reports: the installation as it is now, not as this process loaded it.
@@ -913,6 +1326,55 @@ def _with_summary(message: str, updates: list[PluginUpdate]) -> str:
         elif update.status == "failed":
             lines.append(f"Plugin {update.distribution}: failed. {update.reason}")
     return "\n".join([message, *lines])
+
+
+@dataclass(frozen=True)
+class _Selection:
+    """What `apply_announced` hands uv, decided before anything changes."""
+
+    pin: CorePin
+    core: str
+    plugins: list[CorePin]
+    names: list[str]
+    specs: list[str]
+    """Every plugin's requirement: as the receipt has it, or a plugin from git at its installed commit."""
+    by_hand: list[str]
+    """Plugins from git, a folder or a URL: never refreshed or reinstalled, unchanged afterwards."""
+    held_at_commit: list[str]
+    """Plugins from git held at their installed commit while installing; the receipt names their ref again after."""
+
+
+def _by_hand(version: str, why: str) -> AnnouncedUpdate:
+    """The one-line answer for an update that is made by hand; nothing was installed."""
+    return AnnouncedUpdate(
+        updated=False, after=version, restored=False, refused=True, message=f"{why}; hz isn't updated by itself."
+    )
+
+
+def _require_untouched(prefix: Path, untouched: Mapping[str, object]) -> None:
+    """Every plugin updated by hand must be exactly as before: same version, same files, same source.
+
+    Raises:
+        HeinzelError: If one changed.
+    """
+    if changed := [name for name, was in untouched.items() if installed_identity(prefix, name) != was]:
+        msg = f"the plugins updated by hand would have changed: {', '.join(changed)}"
+        raise HeinzelError(msg)
+
+
+def _added_options(announced: Announcement) -> dict[str, object]:
+    """The `[tool.options]` uv records for the resolver options an automatic update passes, as uv writes them."""
+    options: dict[str, object] = {}
+    if announced.exclude_newer is not None:
+        options["exclude-newer"] = _stamp(announced.exclude_newer)
+    if announced.exclude_newer_core is not None:
+        options["exclude-newer-package"] = {"heinzel": _stamp(announced.exclude_newer_core)}
+    return options
+
+
+def _stamp(moment: datetime) -> str:
+    """A time as uv's `--exclude-newer` takes it: RFC 3339 in UTC."""
+    return moment.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _version(version: str) -> Version:

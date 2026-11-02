@@ -6,6 +6,7 @@ import {
   type SchemaSkillSharingProposal,
 } from "@/api/client";
 import { Button } from "@/components/ui/button";
+import { sortedKeys } from "@/lib/sort";
 
 type Request = SchemaHeinzelProposeSkillSharingInput;
 const id = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
@@ -21,7 +22,7 @@ export function SkillSharingPanel({ draft }: { draft: SchemaSkillDraft }) {
         value.session_id !== draft.session_id ||
         value.draft_request_id !== draft.request_id ||
         value.draft_sha256 !== draft.preview_sha256 ||
-        Object.keys(value).sort().join(",") !== "draft_request_id,draft_sha256,request_id,session_id" ||
+        sortedKeys(value).join(",") !== "draft_request_id,draft_sha256,request_id,session_id" ||
         !id.test(value.request_id)
       )
         return { request: null, blocked: true };

@@ -2,15 +2,17 @@
 # (ADR 0082). `make docs-site` builds it into site/; the Docs workflow deploys it. Nothing here is hand-written
 # content: every page is a file in docs/ or at the root, so GitHub and the site show the same thing.
 site_name: Heinzelmännchen
-site_description: Open-source helpers that keep product development teams running.
+site_description: An open-source crew of AI helpers that drafts your team's busywork and asks before anything leaves your machine.
 site_url: https://heinzel.team/
 repo_url: https://github.com/helmut-hoffer-von-ankershoffen/heinzel
 repo_name: heinzel
 edit_uri: edit/main/docs/
 docs_dir: docs
 site_dir: site
+not_in_nav: |
+  imprint.md
+  privacy.md
 exclude_docs: |
-  plugins/*/assets/*.md
   overrides/
   _data/
   catalog-sources.toml
@@ -20,23 +22,23 @@ theme:
   name: material
   custom_dir: docs/overrides
   font: false
-  logo: assets/website/mark.svg
-  favicon: assets/website/mark.svg
+  logo: assets/website/head.svg
+  favicon: assets/website/head.svg
   language: en
   icon:
     logo: material/account-group-outline
   palette:
     - media: "(prefers-color-scheme: light)"
       scheme: default
-      primary: deep orange
-      accent: deep orange
+      primary: custom
+      accent: custom
       toggle:
         icon: material/weather-night
         name: Switch to dark mode
     - media: "(prefers-color-scheme: dark)"
       scheme: slate
-      primary: deep orange
-      accent: deep orange
+      primary: custom
+      accent: custom
       toggle:
         icon: material/weather-sunny
         name: Switch to light mode
@@ -64,10 +66,20 @@ markdown_extensions:
           class: mermaid
           format: !!python/name:pymdownx.superfences.fence_code_format
 
+extra:
+  generator: false
+
 plugins:
   - search
+  # Visitors' browsers contact only this site: at build time the plugin downloads every external image the pages embed
+  # (the README badges, the plugin screenshots from their repositories) and serves them from assets/external/. The
+  # price is that a badge shows the status of the last build; the Docs workflow rebuilds hourly. Fonts are the
+  # system fonts (theme.font is false), the repository link carries no live GitHub facts (docs/overrides/partials/
+  # source.html), and scripts/site_check.py fails if a page requests any host not listed there with a reason.
+  - privacy
 
 extra_css:
+  - assets/website/tokens.css
   - assets/website/site.css
   - assets/website/trust.css
 extra_javascript:
@@ -81,7 +93,7 @@ hooks:
 nav:
   - Home: README.md
   - Start here:
-      - Install Heinzel: guides/install.md
+      - Install Heinzelmännchen: guides/install.md
       - Your first session: guides/first-steps.md
       - Product tour: guides/tour.md
       - Bootstrap a team: guides/manager.md
@@ -95,6 +107,7 @@ nav:
       - Extension contracts: PLUGINS.md
       - Themes and soundscapes: THEMES.md
       - Publishing: PUBLISHING.md
+      - Branding: BRANDING.md
   - Vision & architecture:
       - Where we are going: VISION.md
       - Architecture tour: guides/architecture.md

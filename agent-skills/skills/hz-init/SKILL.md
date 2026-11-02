@@ -1,6 +1,6 @@
 ---
 name: hz-init
-description: Install or update Heinzelmännchen, the open-source AI-driven operating system for product development teams, on this machine - the hz CLI via uv, chosen plugins, a starter configuration and the Heinzelmännchen skills for coding agents. Use when the user asks to install, set up, initialize, update or repair Heinzelmännchen, or types /hz-init.
+description: Install or update Heinzelmännchen, an open-source crew of AI helpers for product teams, on this machine - the hz CLI via uv, chosen plugins, a starter configuration and the Heinzelmännchen skills for coding agents. Use when the user asks to install, set up, initialize, update or repair Heinzelmännchen, or types /hz-init.
 ---
 
 # hz-init

@@ -1,11 +1,11 @@
-"""The daemon in the status bar (ADR 0056): each state, its tone and the buttons; installing stays the person's act."""
+"""The daemon in the status bar (ADR 0056): each state in plain words, its tone and its buttons."""
 
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
 
-from heinzel import LiveTime, RunCommand, RunOperation, __version__
+from heinzel import LiveTime, RunOperation, __version__
 from heinzel.modules.system.daemon._models import DaemonStatus
 from heinzel.modules.system.daemon._status_item import status_item
 
@@ -37,14 +37,9 @@ def labels(item) -> list[str]:
 
 def test_running_says_when_it_ticks_next():
     item = status_item(daemon(), NOW)
-    assert (item.text, item.tone, labels(item)) == ("Daemon running · next tick", "ok", ["Logs", "Pause", "Uninstall"])
+    assert (item.text, item.tone, labels(item)) == ("Daemon running · next check", "ok", ["Logs", "Pause", "Uninstall"])
     assert item.live == LiveTime(at=NOW + timedelta(minutes=3))
-    assert [line.text for line in item.detail] == [
-        "Jobs: 3",
-        f"Last service tick ran hz {__version__}",
-        f"Unit records hz {__version__}",
-        "Last tick 2 min ago",
-    ]
+    assert [line.text for line in item.detail] == ["Last check 2 min ago", "Jobs: 3", f"Running hz {__version__}"]
 
 
 def test_paused_warns_and_offers_resume():
@@ -55,13 +50,20 @@ def test_paused_warns_and_offers_resume():
     assert resume.operation == "resume"
 
 
-def test_not_installed_offers_install_as_a_command_the_person_runs():
+def test_not_installed_offers_install_as_an_operation_the_person_confirms():
     item = status_item(daemon(installed=False, loaded=False, last_tick=None), NOW)
     assert (item.text, item.tone, labels(item)) == ("Daemon not installed", "neutral", ["Install"])
     install = item.actions[0].effect
-    assert isinstance(install, RunCommand)
-    assert install.command == "hz system daemon install"
-    assert install.runs is False
+    assert isinstance(install, RunOperation)
+    assert install.operation == "install"
+    assert item.detail[0].text == "Keeps your Heinzelmännchen working while the app is closed"
+
+
+def test_uninstall_is_an_operation_too():
+    item = status_item(daemon(), NOW)
+    uninstall = next(action.effect for action in item.actions if action.label == "Uninstall")
+    assert isinstance(uninstall, RunOperation)
+    assert uninstall.operation == "uninstall"
 
 
 @pytest.mark.parametrize(
@@ -82,12 +84,32 @@ def test_failing_jobs_are_listed():
     assert ("Failing: weekly-report", "bad") in [(line.text, line.tone) for line in item.detail]
 
 
-def test_a_long_ago_tick_reads_in_hours_and_none_says_so():
+def test_a_long_ago_tick_reads_in_hours():
     hours = status_item(daemon(last_tick=NOW - timedelta(hours=3), interval_minutes=None), NOW)
-    assert "Last tick 3 h ago" in [line.text for line in hours.detail]
+    assert "Last check 3 h ago" in [line.text for line in hours.detail]
     assert hours.text == "Daemon running"
-    never = status_item(daemon(last_tick=None), NOW)
-    assert "No tick yet" in [line.text for line in never.detail]
+
+
+def test_just_installed_says_it_is_starting_and_when_the_first_check_comes_without_asking_for_a_restart():
+    item = status_item(daemon(last_tick=None, version=None, installed_at=NOW - timedelta(minutes=1), jobs=2), NOW)
+    assert (item.text, item.tone, labels(item)) == (
+        "Daemon starting · first check within 5 min",
+        "neutral",
+        ["Logs", "Pause", "Uninstall"],
+    )
+    assert [line.text for line in item.detail] == ["Waiting for its first check", "Jobs: 2"]
+
+
+def test_an_unknown_version_is_not_a_reason_to_restart():
+    item = status_item(daemon(version=None), NOW)
+    assert labels(item) == ["Logs", "Pause", "Uninstall"]
+    assert (item.text, item.tone) == ("Daemon running · next check", "ok")
+    assert not any("unknown" in line.text or "restart" in line.text for line in item.detail)
+
+
+def test_no_first_check_after_two_intervals_is_not_ticking():
+    item = status_item(daemon(last_tick=None, installed_at=NOW - timedelta(minutes=11)), NOW)
+    assert (item.text, item.tone) == ("Daemon not ticking", "bad")
 
 
 def test_other_platforms_are_unsupported():
@@ -95,29 +117,14 @@ def test_other_platforms_are_unsupported():
     assert (item.text, item.actions) == ("Daemon unsupported here", [])
 
 
-def test_the_version_reported_by_the_last_tick_is_shown():
-    item = status_item(daemon(version=__version__), NOW)
-    assert [line.text for line in item.detail][1] == f"Last service tick ran hz {__version__}"
-    assert (item.text, item.tone, labels(item)) == ("Daemon running · next tick", "ok", ["Logs", "Pause", "Uninstall"])
-
-
-def test_unknown_last_tick_version_offers_a_restart():
-    item = status_item(daemon(version=None), NOW)
-    assert "Service tick version unknown · restart and wait for a tick to record it" in [
-        line.text for line in item.detail
-    ]
-    assert labels(item)[0] == "Restart daemon"
-    assert item.tone == "ok"
-
-
 def test_a_tick_from_an_older_hz_warns_and_offers_a_restart():
     item = status_item(daemon(version="0.0.1", installed_version="0.0.1", version_mismatch=True), NOW)
     assert (item.text, item.tone, labels(item)) == (
-        "Daemon version mismatch · restart and wait for a tick",
+        "Daemon needs a restart · version mismatch",
         "warn",
         ["Restart daemon", "Logs", "Pause", "Uninstall"],
     )  # fmt: skip
-    assert f"Unit 0.0.1; service tick 0.0.1; current {__version__}: restart and wait for tick" in [
+    assert f"Installed for hz 0.0.1; the last check ran 0.0.1; this is {__version__}" in [
         line.text for line in item.detail
     ]
     restart = item.actions[0].effect

@@ -18,11 +18,14 @@ import {
   readSoundList,
   rememberPageFrame,
   SOUND_KEY,
+  takeResume,
   useMeeting,
   useSoundscapes,
 } from "./queries";
 import { StreamPlayer } from "./StreamPlayer";
-import { fail, stop, useSound } from "./store";
+import { fail, pause, resume, soundState, stop, useSound } from "./store";
+
+const SUSPENDED_MS = 1500;
 
 /** How loud, and how fast it gets there: the gain, and the seconds of the fade from what it was. */
 type Level = { gain: number; seconds: number; playing: boolean };
@@ -60,11 +63,21 @@ export function SoundEngine() {
       .then((fresh) => needsReload(fresh) && page.reload())
       .catch(() => undefined);
   }, [theme, client]);
-  // Another soundscape in effect (picked elsewhere, or the theme changed): what played stops.
+  // The page reloaded for a pick (a stream's frame origin changed): play the pick, as the click before asked.
+  const listed = Boolean(list.data);
+  const resumedFor = useRef(false);
+  useEffect(() => {
+    if (!listed || resumedFor.current) return;
+    resumedFor.current = true;
+    const picked = takeResume();
+    if (picked && picked === current?.name) resume(picked);
+  }, [listed, current?.name]);
+  // Another soundscape in effect (picked elsewhere, or the theme changed): what played stops. A pick that plays is
+  // the one thing Play was pressed for, so it stays.
   const name = current?.name ?? null;
   const previous = useRef(name);
   useEffect(() => {
-    if (previous.current !== name) stop();
+    if (previous.current !== name && soundState().soundscape !== name) stop();
     previous.current = name;
   }, [name]);
   const level = useLevel(
@@ -119,12 +132,15 @@ function LayeredPlayer({
     mixer.current = created;
     let cancelled = false; // stopped or switched while loading: what the closed context does next is no failure
     void context.resume();
+    // After a reload there is no gesture yet: a context the browser keeps suspended isn't playing, so say so.
+    const suspended = setTimeout(() => context.state === "suspended" && pause(), SUSPENDED_MS);
     created
       .load((soundscape.layers ?? []) as LayerView[], (soundscape.earcons ?? []) as EarconView[], signals)
       .then(() => !cancelled && setLoaded(true))
       .catch(() => !cancelled && fail(t("sound.cantLoad", { title: soundscape.title })));
     return () => {
       cancelled = true;
+      clearTimeout(suspended);
       mixer.current = null;
       void created.close();
     };

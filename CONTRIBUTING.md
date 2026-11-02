@@ -10,7 +10,7 @@
 [![Python](https://img.shields.io/badge/python-3.12%20%7C%203.13%20%7C%203.14%20%7C%203.15-blue)](pyproject.toml)
 [![Quality Gate Status](https://img.shields.io/sonar/quality_gate/helmut-hoffer-von-ankershoffen_heinzel?server=https://sonarcloud.io&label=Quality%20Gate%20Status)](https://sonarcloud.io/summary/overall?id=helmut-hoffer-von-ankershoffen_heinzel)
 [![Security Rating](https://sonarcloud.io/api/project_badges/measure?project=helmut-hoffer-von-ankershoffen_heinzel&metric=security_rating)](https://sonarcloud.io/summary/overall?id=helmut-hoffer-von-ankershoffen_heinzel)
-[![License: MIT](https://img.shields.io/badge/license-MIT-brightgreen)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/license-MIT-44bb00)](LICENSE)
 <!-- badges:end -->
 
 Thanks for improving Heinzelmännchen. People and coding agents take the same path, and the repository enforces it
@@ -149,7 +149,7 @@ The GIF at the top of the README is rendered by [VHS](https://github.com/charmbr
 `docs/assets/demo.tape`. That tape is generated (`make fix`, and `make check` fails while it is stale) from
 `docs/assets/demo-intro.tape` (settings, install, `hz --version`, `hz system info`) and the snippets modules contribute.
 A built-in module or a first-party plugin adds its part as a `demo.tape` next to its `__init__.py`; abridged from
-`plugins/heinzel-clock/src/heinzel_clock/demo.tape`:
+[`plugins/heinzel-clock/src/heinzel_clock/demo.tape` in heinzel-plugins](https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/blob/main/plugins/heinzel-clock/src/heinzel_clock/demo.tape):
 
 ```
 # The clock plugin in the README demo: add it, show the clocks, then the same as JSON into jq.
@@ -193,7 +193,9 @@ On `main`, the Demo workflow re-renders it on macOS whenever the tape changes, a
 - **Confidentiality:** the repository is public and generic; examples use made-up names, and nothing may name a
   company, customer, colleague or internal project. Maintainers check against a private list of terms
   (`~/.config/heinzel-dev/confidential-terms`, or `$CONFIDENTIAL_TERMS_FILE`; without one the check is skipped
-  locally). Credentials are a separate check: gitleaks runs on every commit and over the whole history in CI.
+  locally). A short term (under six letters) or phrase matches only where no letter touches it, so it never fires inside
+  `minimal`; a longer one matches anywhere. The commit-msg hook checks the message, the pre-push hook the messages and added lines of every commit
+  being pushed, and CI the pull request's commits. Credentials are a separate check: gitleaks runs on every commit and over the whole history in CI.
 - **Coding agents:** Claude Code, Cursor, Codex, GitHub Copilot, Windsurf and Zed read [AGENTS.md](AGENTS.md) by
   themselves (Claude Code through CLAUDE.md); Gemini CLI needs `"context": {"fileName": ["AGENTS.md"]}` in its
   settings, Aider `read: AGENTS.md` in `.aider.conf.yml`.
@@ -223,6 +225,13 @@ earlier releases survive regeneration; hand edits to their entries don't, becaus
 A maintainer reviews the release and verifies all checks on its current head before merging. The merge tags the
 commit, and **Publish** builds wheel and sdist, attests their provenance and creates the GitHub
 release with the changelog section as notes.
+
+**Source review** of a pull request by an independent, tool-free model: `make review PR=<n>` (needs `REVIEW_TRUSTED`,
+the commit of the protected ref `trusted/source-review` that you have read). It chooses a tier from the changed paths
+([scripts/review_tier.py](scripts/review_tier.py): full for installer, authentication, approvals, release and workflow
+code; light for other code; none for documentation, tests and Markdown, which costs nothing), dispatches
+[Source review](.github/workflows/source-review.yml) on that ref and prints the run URL. The run fails closed unless
+the live pull request still has the dispatched head and base, before and after the model; it never runs the target's code.
 
 **Pinned tools** live in [scripts/tools.toml](scripts/tools.toml); to bump one, change its version and run
 `uv run --script scripts/tools.py pin <name>`.

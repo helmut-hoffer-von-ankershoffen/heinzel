@@ -431,7 +431,7 @@ def test_on_a_terminal_the_preview_asks_and_installs_on_yes_and_json_stays_two_s
     accepted = CliRunner().invoke(app, ["system", "plugin", "add", "heinzel-crm"], input="y\n")
     assert accepted.exit_code == 0, accepted.output
     assert "✓ Installed heinzel-crm 1.1.0." in accepted.output
-    assert "Restart hz ui to load it (or click Restart in the app)." in accepted.output
+    assert "click Restart and apply in the footer, or restart hz ui" in accepted.output
     assert len(kernel.runs) == 1
     scripted = CliRunner().invoke(app, ["system", "plugin", "add", "heinzel-crm", "--json"], input="y\n")
     assert '"done": false' in scripted.output

@@ -5,7 +5,7 @@ import type { SchemaSoundList, SchemaSoundscapeView } from "@/api/client";
 import { type FakeContext, fakeAudio } from "@/test/fakeAudio";
 import { acmeTheme, shell, themeList } from "@/test/fixtures";
 import { expectAccessible, mockApi, renderAt } from "@/test/render";
-import { needsReload, page, rememberPageFrame, resetPageFrame } from "./queries";
+import { needsReload, page, pendingResume, rememberPageFrame, resetPageFrame } from "./queries";
 import { duck, resetSound, soundState } from "./store";
 import { rememberYouTubeAccount } from "./stream";
 
@@ -89,7 +89,26 @@ function soundApi(initial: string, picked?: string) {
   });
 }
 
+/** Which speaker the sidebar's button shows: lucide marks its icons by class. */
+const speakerIcon = () => {
+  const icon = screen.getByRole("button", { name: /^Choose a soundscape$/ }).querySelector("svg");
+  return [...(icon?.classList ?? [])].find((name) => /^lucide-volume/.test(name))?.replace("lucide-", "");
+};
+
+/** The layers' files, for a pick that plays at once: any answer decodes in the fake audio. */
+function serveLayers() {
+  const answer = globalThis.fetch;
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (input: Request | URL) => {
+      const url = input instanceof URL ? input : new URL(input.url);
+      return url.pathname.startsWith("/sound-assets/") ? new Response(url.pathname) : answer(input as Request);
+    }),
+  );
+}
+
 afterEach(() => {
+  sessionStorage.clear();
   resetSound();
   resetPageFrame();
   vi.restoreAllMocks();
@@ -194,31 +213,30 @@ describe("Sound", () => {
 
     const dialog = await screen.findByRole("dialog", { name: "Sound" });
     expect(within(dialog).getByRole("switch", { name: "Follow my theme" })).toHaveAttribute("aria-checked", "true");
+    // Picking Rain keeps the picker open, switches over and plays it without a second click.
     await user.click(within(dialog).getByRole("radio", { name: /^Rain/ }));
-    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Sound" })).not.toBeInTheDocument());
-    await waitFor(() => expect(soundState()).toMatchObject({ playing: false, started: false }));
+    await waitFor(() =>
+      expect(api.calls.some((call) => call.url.includes("/sound-assets/rain/layer-0.ogg"))).toBe(true),
+    );
+    expect(screen.getByRole("dialog", { name: "Sound" })).toBeInTheDocument();
+    expect(soundState()).toMatchObject({ playing: true, started: true, soundscape: "rain", problem: null });
     expect(contexts[0]?.close).toHaveBeenCalledOnce();
-
-    await user.click(snowSpeaker);
+    expect(contexts).toHaveLength(2);
+    expect(contexts[1]?.sources).toHaveLength(1);
     const choices = await screen.findByRole("dialog", { name: "Sound" });
     await waitFor(() =>
       expect(within(choices).getByRole("switch", { name: "Follow my theme" })).toHaveAttribute("aria-checked", "false"),
     );
     expect(within(choices).getByRole("radio", { name: /^Rain/ })).toHaveAttribute("aria-checked", "true");
-
-    await playSound(user, "Rain");
-    await waitFor(() =>
-      expect(api.calls.some((call) => call.url.includes("/sound-assets/rain/layer-0.ogg"))).toBe(true),
-    );
-    expect(contexts).toHaveLength(2);
-    expect(contexts[1]?.sources).toHaveLength(1);
-    expect(soundState()).toMatchObject({ playing: true, started: true, problem: null });
+    expect(within(choices).getByRole("button", { name: "Pause Rain" })).toBeInTheDocument();
+    expect(snowSpeaker).toBeInTheDocument();
   });
 
   it.each(["fixture-radio", "rain"])(
     "manual choice %s takes over from the theme, including reselecting its sound",
     async (name) => {
       vi.spyOn(page, "reload").mockImplementation(() => undefined);
+      sessionStorage.clear();
       let manual = false;
       const { calls } = mockApi({
         ...shell,
@@ -233,6 +251,8 @@ describe("Sound", () => {
           return soundList(name);
         },
       });
+      serveLayers();
+      vi.stubGlobal("AudioContext", fakeAudio().Context);
       const user = userEvent.setup();
       renderAt("/");
       await user.click(await speaker(/^Choose a soundscape$/));
@@ -242,20 +262,22 @@ describe("Sound", () => {
         within(dialog).getByRole("radio", { name: name === "fixture-radio" ? /^Fixture radio/ : /^Rain/ }),
       );
       await waitFor(() => expect(calls.some((call) => call.url.includes(`/system/sound/use?name=${name}`))).toBe(true));
-      await waitFor(() => expect(screen.queryByRole("dialog", { name: "Sound" })).not.toBeInTheDocument());
-      await user.pointer({
-        keys: "[MouseRight]",
-        target: await speaker(/^Choose a soundscape$/),
-      });
-      const choices = await screen.findByRole("dialog", { name: "Sound" });
+      // The picker stays open. Rain plays at once; the stream's host needs another page first, which plays it after.
+      expect(screen.getByRole("dialog", { name: "Sound" })).toBeInTheDocument();
+      if (name === "rain") expect(soundState()).toMatchObject({ playing: true, soundscape: "rain" });
+      else {
+        await waitFor(() => expect(page.reload).toHaveBeenCalled());
+        expect(pendingResume()).toBe("fixture-radio");
+        expect(soundState().playing).toBe(false);
+      }
       await waitFor(() =>
-        expect(within(choices).getByRole("switch", { name: "Follow my theme" })).toHaveAttribute(
+        expect(within(dialog).getByRole("switch", { name: "Follow my theme" })).toHaveAttribute(
           "aria-checked",
           "false",
         ),
       );
       expect(
-        within(choices).getByRole("radio", { name: name === "fixture-radio" ? /^Fixture radio/ : /^Rain/ }),
+        within(dialog).getByRole("radio", { name: name === "fixture-radio" ? /^Fixture radio/ : /^Rain/ }),
       ).toHaveAttribute("aria-checked", "true");
     },
   );
@@ -346,6 +368,8 @@ describe("Sound", () => {
   });
 
   it("chooses a soundscape without exposing the Off row or Sound on toggle", async () => {
+    vi.spyOn(page, "reload").mockImplementation(() => undefined);
+    sessionStorage.clear();
     const { calls } = soundApi("off", "fixture-radio");
     const user = userEvent.setup();
     renderAt("/");
@@ -356,6 +380,65 @@ describe("Sound", () => {
     await waitFor(() =>
       expect(calls.some((call) => call.url.includes("/system/sound/use?name=fixture-radio"))).toBe(true),
     );
+    expect(screen.getByRole("dialog", { name: "Sound" })).toBeInTheDocument();
+  });
+
+  it("a pick plays at once, in the click, and keeps the picker open and the keyboard focus on the pick", async () => {
+    soundApi("off", "rain");
+    serveLayers();
+    const { Context, contexts } = fakeAudio();
+    vi.stubGlobal("AudioContext", Context);
+    const user = userEvent.setup();
+    renderAt("/");
+    const dialog = await openSoundChoices(user);
+    const rainChoice = within(dialog).getByRole("radio", { name: /^Rain/ });
+    await user.click(rainChoice);
+    expect(soundState()).toMatchObject({ playing: true, started: true, soundscape: "rain" }); // before the answer
+    expect(screen.getByRole("dialog", { name: "Sound" })).toBeInTheDocument();
+    expect(rainChoice).toHaveFocus();
+    expect(within(dialog).getByRole("button", { name: "Pause Rain" })).toBeInTheDocument();
+    await waitFor(() => expect(contexts).toHaveLength(1));
+    expect(speakerIcon()).toBe("volume-2");
+    await user.click(within(dialog).getByRole("button", { name: "Pause Rain" }));
+    expect(soundState().playing).toBe(false);
+    expect(within(dialog).getByRole("button", { name: "Play Rain" })).toBeInTheDocument();
+    expect(speakerIcon()).toBe("volume-x");
+    await user.click(rainChoice); // the pick that is already chosen plays it again
+    expect(soundState()).toMatchObject({ playing: true, soundscape: "rain" });
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog", { name: "Sound" })).toBeNull();
+    expect(await speaker(/^Choose a soundscape$/)).toHaveFocus();
+  });
+
+  it("a click outside closes the picker and leaves the sound playing", async () => {
+    soundApi("off", "rain");
+    serveLayers();
+    vi.stubGlobal("AudioContext", fakeAudio().Context);
+    const user = userEvent.setup();
+    renderAt("/");
+    const dialog = await openSoundChoices(user);
+    await user.click(within(dialog).getByRole("radio", { name: /^Rain/ }));
+    await user.click(document.body);
+    expect(screen.queryByRole("dialog", { name: "Sound" })).toBeNull();
+    expect(soundState().playing).toBe(true);
+  });
+
+  it("after a pick reloaded the page for a stream's host, the page plays it and opens the picker again", async () => {
+    sessionStorage.setItem("hz.sound.resume", JSON.stringify({ name: "fixture-radio", at: Date.now() }));
+    soundApi("fixture-radio");
+    renderAt("/");
+    expect(await screen.findByRole("dialog", { name: "Sound" })).toBeInTheDocument();
+    await waitFor(() => expect(soundState()).toMatchObject({ playing: true, soundscape: "fixture-radio" }));
+    expect(await screen.findByTitle("Fixture radio player")).toBeInTheDocument();
+    expect(pendingResume()).toBeNull(); // once
+  });
+
+  it("ignores a stale or foreign resume note", async () => {
+    sessionStorage.setItem("hz.sound.resume", JSON.stringify({ name: "fixture-radio", at: Date.now() - 60_000 }));
+    soundApi("fixture-radio");
+    renderAt("/");
+    await speaker(/^Choose a soundscape$/);
+    expect(screen.queryByRole("dialog", { name: "Sound" })).toBeNull();
     expect(soundState().playing).toBe(false);
   });
 

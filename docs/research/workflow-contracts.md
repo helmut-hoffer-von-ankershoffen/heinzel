@@ -1,5 +1,8 @@
 # Research report: workflows as Markdown contracts
 
+> Historical design research, not current documentation. The linked decision record and the README describe what is
+> available today.
+
 - Date: 2026-10-23
 - Scope: research only. Decision record: [ADR 0021](../adr/0021-workflow-contracts.md) (proposed). Builds on ADR 0010 (reactive engine) and ADR 0020
   (daemon head: `JobLet`, `WatchLet`, receipts, approvals, state repository).
@@ -119,15 +122,15 @@ ignored.
 | --- | --- | --- | --- | --- | --- |
 | `name` | slug `^[a-z][a-z0-9-]*$`, ≤64, no `--` | yes | – | Identity within its namespace. Same pattern as `Module` names (`NAME_PATTERN`). Equals the file stem. | no (identity) |
 | `kind` | `responsibility` | yes | – | OpenProse kind. hz v1 serves only responsibilities; `gateway` is a code `WatchLet` in hz. | yes |
-| `id` | Crockford base32, 26 characters | no | – | OpenProse's minted id. When present it keys the ledger, so the contract survives renames; otherwise the qualified name does. Minted by `hz workflow new`. | no |
+| `id` | Crockford base32, 26 characters | no | – | OpenProse's minted id. When present it keys the ledger, so the contract survives renames; otherwise the qualified name does. Minted by `hz heinzel new`. | no |
 | `version` | semver | no | – | Author's provenance, recorded in receipts. | no |
-| `description` | 1–1024 characters | yes | – | What the workflow keeps true, and for whom. Shown by `hz workflow list` and the MCP head. | no |
+| `description` | 1–1024 characters | yes | – | What the workflow keeps true, and for whom. Shown by `hz heinzel list` and the MCP head. | no |
 | `hz.schema` | integer | yes | – | Version of the hz frontmatter schema; drives migration (§3.4). | (format tag) |
 | `hz.title` | ≤80 characters | yes | – | Display name; the `JobLet.summary`. | no |
 | `hz.owner` | GitHub handle `@user` | yes | – | The accountable person (tenet 4). Receives failures and parked jobs. | no |
 | `hz.maintainers` | handles or `@org/team` | no | `[]` | May change the contract (CODEOWNERS is generated from this). | no |
 | `hz.scope` | `personal` \| `team` | yes | – | `personal` runs only on the owner's daemon; `team` runs in Actions or under a lease (ADR 0020 §6). | no |
-| `hz.tags` | slugs, unique | no | `[]` | Filtering (`hz workflow list --tag`). | no |
+| `hz.tags` | slugs, unique | no | `[]` | Filtering (`hz heinzel list --tag`). | no |
 | `hz.schedule` | cron string, `{cron, tz}`, or a list of those | no | – | **Wakes** the job to evaluate. Never forces a render on its own (see `freshness`). `tz` defaults to `[hz] timezone`, then the system zone. | no |
 | `hz.freshness` | duration or `slot` | no | – | Lifetime of the maintained truth; it sets the freshness epoch (Reactor's `valid_until`). `slot` means every schedule slot is a new epoch. | no (epoch is in the memo key) |
 | `hz.on` | input names, or `input.facet` | no | all inputs | Which input changes **wake** the job. Inputs not listed still feed the memo key and are picked up at the next wake. | no |
@@ -198,9 +201,9 @@ facets, as in OpenProse. A `#` title is optional.
 | Deviation | Why |
 | --- | --- |
 | Machine keys in frontmatter (`hz:`) | hz decides whether a job is due at every tick without a model, and lists, validates and exposes contracts through CLI, MCP and REST as typed data. OpenProse frontmatter keys stay untouched, and OpenProse tooling sees one unknown key. |
-| Explicit `contract:` edges instead of Forme's semantic matching of Requires to Maintains | A deterministic DAG that can be reviewed, as in dbt `ref` and CWL wiring. No model on the safety path. A tool can *suggest* edges (`hz workflow graph --suggest`) by pull request. |
+| Explicit `contract:` edges instead of Forme's semantic matching of Requires to Maintains | A deterministic DAG that can be reviewed, as in dbt `ref` and CWL wiring. No model on the safety path. A tool can *suggest* edges (`hz heinzel graph --suggest`) by pull request. |
 | `schedule` in frontmatter | Reactor drops a gateway's `### Schedule` today and calls fixed cadence an anti-pattern. In hz a schedule only *wakes* the job; the memo key still decides, so it is not "cron plus a prompt". Business rhythms ("by Monday 09:00") are real requirements. |
-| `### Done when` instead of postconditions inside Maintains | Easier for humans to read and write. It has the same semantics, and `hz workflow export --prose` folds it back. |
+| `### Done when` instead of postconditions inside Maintains | Easier for humans to read and write. It has the same semantics, and `hz workflow export (removed) --prose` folds it back. |
 | `### Steps` instead of `### Execution` ProseScript | No VM to embed. Guidance is enough for one bounded agent session. |
 | `gateway` kind not authored in Markdown | hz ingress is code (`WatchLet`) with conditional polling and cursors (ADR 0020). |
 | Receipts carry time and actor | Tenet 4. Reactor omits them; ADR 0020 adds them outside the memo key. |
@@ -430,7 +433,7 @@ Validation runs in three stages, all without a model:
 3. Resolution against the booted kernel: providers, operations, policies and the graph.
 
 Errors keep YAML line and column (ruamel node marks), name the pydantic `loc`, carry a stable code and a hint, and
-come as JSON with `--json`. Example output of `hz workflow validate`:
+come as JSON with `--json`. Example output of `hz workflow validate (removed)`:
 
 ```
 workflows/platform-weekly-status.prose.md:31:15  HZC012  hz.publishes[0].action
@@ -456,7 +459,7 @@ workflows/platform-weekly-status.prose.md:58:1   HZC103  ### Requires
 | HZC016 | 1 | error | `on` names an unknown input or facet |
 | HZC017 | 3 | error | A `team` contract reads a personal source (`file:`, a personal mailbox) |
 | HZC018 | 3 | warning | `auto_approve` policy is missing, expired or does not match; publishing falls back to manual approval |
-| HZC019 | 1 | warning | No wake source (no schedule, no inputs): runs only with `hz workflow run` |
+| HZC019 | 1 | warning | No wake source (no schedule, no inputs): runs only with `hz workflow run (removed)` |
 | HZC101 | 2 | error | `### Goal` is missing or empty |
 | HZC102 | 2 | warning | Goal is more than one sentence, or starts with an imperative verb (an activity, not a state) |
 | HZC103 | 2 | error | A frontmatter input or output has no matching body item, or the reverse |
@@ -483,7 +486,7 @@ the graph still runs, unless a contract depends on a broken one.
   meaning do.
 - **Loading:** the loader reads `hz.schema` first, then applies pure migration functions
   (`migrate_1_to_2(dict) -> dict`, …) in order before validation.
-- **Migrated files on disk:** `hz workflow migrate [--write]` rewrites them. For the team state repository it
+- **Migrated files on disk:** `hz workflow migrate (removed) [--write]` rewrites them. For the team state repository it
   opens a pull request.
 - **Support window:** old schemas stay readable for at least two minor releases, with warning HZC003w.
 - **Fingerprints survive migration.** `contract_fingerprint` is computed over the *migrated*, default-filled
@@ -528,7 +531,7 @@ the graph still runs, unless a contract depends on a broken one.
 - **Self-loops** (reading the document you maintain, as in example 3) are allowed only as an input that is **not**
   in `on`. Proposals whose diff against the target is empty are dropped with disposition `no_change`, so the loop
   settles at a fixpoint.
-- `hz workflow graph [--mermaid]` prints the graph.
+- `hz heinzel graph [--mermaid]` prints the graph.
 
 ### 4.3 Fingerprints: what is hashed
 
@@ -566,10 +569,10 @@ canonicalizer generated from those notes is an open question (see Q3).
 
 | Part | Human | Agent at authoring time | Render agent at run time |
 | --- | --- | --- | --- |
-| Goal, Done when, Invariants | writes them; owns the intent | proposes wording through `hz workflow new` or a skill, as a pull request | reads them; never writes them |
-| Requires, Maintains (items, facets, materiality) | reviews | drafts from a description and sample data (`hz workflow new --from "…"`) | reads them; emits facets that conform |
+| Goal, Done when, Invariants | writes them; owns the intent | proposes wording through `hz heinzel new` or a skill, as a pull request | reads them; never writes them |
+| Requires, Maintains (items, facets, materiality) | reviews | drafts from a description and sample data (`hz heinzel new --from "…"`) | reads them; emits facets that conform |
 | Steps | writes or edits | drafts; proposes improvements from `failed` receipts and rejections (the self-improvement loop, as a pull request) | follows them |
-| Frontmatter | reviews | fills it from the body and the discovered modules; `hz workflow validate --fix` resolves mismatches | reads nothing; the kernel uses it |
+| Frontmatter | reviews | fills it from the body and the discovered modules; `hz workflow validate (removed) --fix` resolves mismatches | reads nothing; the kernel uses it |
 
 - **Rule:** registered contracts change only by pull request in the team state repository (CODEOWNERS comes from
   `owner` and `maintainers`), or by file edit for personal contracts.
@@ -943,7 +946,7 @@ Example 6.3 depends on 6.1 through `contract:team/platform-weekly-status#risks`.
 ## 7. Open questions
 
 1. **Model upgrades and re-renders.** Should a change to `agent.model` re-render? Proposal: no. It is recorded in
-   receipts, and `hz workflow rerun --all` is manual.
+   receipts, and `hz workflow rerun (removed) --all` is manual.
 2. **The `on` key.** Keep `on` (matching ADR 0020) and require a YAML 1.2 loader, or rename it to `wake_on` to be
    safe in any loader?
 3. **A deterministic canonicalizer from Material/Immaterial prose**, like Reactor's compile session, or explicit
@@ -955,7 +958,7 @@ Example 6.3 depends on 6.1 through `contract:team/platform-weekly-status#risks`.
    (a future `ValidatorLet`)?
 7. **Distribution:** should plugin contracts be copied into the state repository at registration (pinned), or
    read live from the installed package?
-8. **Exchange with OpenProse:** an `hz workflow export --prose` and import round-trip (fold Done-when into
+8. **Exchange with OpenProse:** an `hz workflow export (removed) --prose` and import round-trip (fold Done-when into
    Maintains postconditions; drop `hz:`).
 9. **Do we need a `function` kind** (reusable sub-renders such as "summarize a pull request"), or are skills
    enough?

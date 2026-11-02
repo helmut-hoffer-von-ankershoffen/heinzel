@@ -105,7 +105,7 @@ def render_change(change: PluginChange) -> RenderableType:
     if change.action == "add" and change.candidate is not None:
         version = f" {change.candidate.version}" if change.candidate.version else ""
         parts.append(Text(f"✓ Installed {change.distribution or 'the plugin'}{version}.", style="green"))
-        parts.append(Text("Restart hz ui to load it (or click Restart in the app)."))
+        parts.append(Text("Open hz and click Restart and apply in the footer, or restart hz ui, to load it."))
         parts.extend(Text(line) for line in _brings(change))
     else:
         parts.append(Text(f"✓ {done[change.action]} {change.distribution or 'the plugin'}.", style="green"))
@@ -120,7 +120,11 @@ def _brings(change: PluginChange) -> list[str]:
     info = next((i for i in change.plugins if i.distribution == change.distribution), None)
     if info is None:
         return []
-    lines = [f"Adds the theme {theme}: hz system theme use {theme}" for theme in info.themes]
+    lines = [
+        f"Adds the theme {theme}: after the restart, choose it in Settings > Appearance "
+        f"(or `hz system theme use {theme}`)"
+        for theme in info.themes
+    ]
     if "capability" in info.kinds:
         lines.append(f"Adds commands: hz {info.name} --help")
     lines.extend(f"Adds the integration {capability}." for capability in info.capabilities)

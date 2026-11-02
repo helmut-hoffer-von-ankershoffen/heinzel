@@ -32,7 +32,7 @@ module.service(DaemonService, DaemonService.for_user)
 
 def _attestation(service: DaemonService) -> DaemonAttestation:
     """Expose only read-only daemon status through the existing permission boundary."""
-    return DaemonAttestation(status=service.status)
+    return DaemonAttestation(status=service.status, job_running=service.job_running)
 
 
 def _installation_lifecycle(service: DaemonService) -> DaemonInstallationLifecycle:

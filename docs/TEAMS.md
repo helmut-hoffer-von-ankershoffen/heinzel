@@ -20,8 +20,8 @@ To create a team, see [Bootstrap your team](guides/manager.md); to join one, [Jo
 ## The roster
 
 Each entry holds a handle, a GitHub login, an optional e-mail, roles and `since`/`until` dates. It never holds names,
-titles or managers. The roles are `engineer`, `principal`, `engineering-manager`, `engineering-leadership`,
-`product-manager`, `product-leadership` and `program-manager`. Leaving sets `until`; handles are never reused.
+titles or managers. The roles are `engineer` (IC), `engineering-manager` (EM), `product-manager` (PM) and
+`program-manager` (TPM). Leaving sets `until`; handles are never reused.
 
 - `hz team add theo --login theo-example --role engineer` adds someone, as a pull request or, without a remote, a
   commit.

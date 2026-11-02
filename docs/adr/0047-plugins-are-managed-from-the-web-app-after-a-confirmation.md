@@ -2,6 +2,7 @@
 status: proposed
 amended-by: 0078, 0083, 0091
 date: 2026-10-24
+implementation: built
 decision-makers: maintainer
 amends: 0006, 0039
 amends-0006: add shows first and installs on --confirm, from PyPI or https git only

@@ -278,11 +278,54 @@ def _constraint_policy(data: dict[str, Any]) -> ToolConstraintPolicy:
     )
 
 
-def _remove_transient_constraint(raw: bytes, original: ToolConstraintPolicy, added: str) -> bytes:
-    """Remove exactly the last, temporary exact-version constraint from a matching policy.
+def _transient_entry(added: str) -> str:
+    """The receipt entry one exact-version guard becomes.
 
     Raises:
-        HeinzelError: If the policy or added constraint does not match exactly.
+        HeinzelError: If `added` is anything but one plain exact-version requirement.
+    """
+    requirement = Requirement(added)
+    specifiers = list(requirement.specifier)
+    if requirement.url or requirement.marker or requirement.extras or len(specifiers) != 1:
+        raise HeinzelError(_CONSTRAINT_ERROR)
+    specifier = specifiers[0]
+    if specifier.operator != "==" or "*" in specifier.version:
+        raise HeinzelError(_CONSTRAINT_ERROR)
+    Version(specifier.version)
+    entry = {"name": canonicalize_name(requirement.name, validate=True), "specifier": str(specifier)}
+    return json.dumps(entry, sort_keys=True, separators=(",", ":"))
+
+
+def _without_added_options(raw: bytes, options: Mapping[str, object]) -> bytes:
+    """The receipt without the `[tool.options]` a mutation added: they must be exactly `options`, nothing more.
+
+    The receipt policy allows no options of its own (`_validate_receipt_policy`), so the table goes as a whole.
+
+    Raises:
+        HeinzelError: If the options differ from `options` in any way.
+    """
+    try:
+        data = tomllib.loads(raw.decode("utf-8"))
+        if data["tool"].get("options") != dict(options):
+            raise HeinzelError(_CONSTRAINT_ERROR)
+        document = tomlkit.parse(raw.decode("utf-8"))
+        del cast("Any", document)["tool"]["options"]
+        del data["tool"]["options"]
+        # uv separates the table with a blank line; without it the receipt ends as uv writes one with no options.
+        replacement = (tomlkit.dumps(document).rstrip("\n") + "\n").encode("utf-8")
+        if tomllib.loads(replacement.decode("utf-8")) != data:
+            raise HeinzelError(_CONSTRAINT_ERROR)
+    except (KeyError, TypeError, ValueError, UnicodeError) as exc:
+        raise HeinzelError(_CONSTRAINT_ERROR) from exc
+    else:
+        return replacement
+
+
+def _remove_transient_constraint(raw: bytes, original: ToolConstraintPolicy, added: tuple[str, ...]) -> bytes:
+    """Remove exactly the last, temporary exact-version constraints from a matching receipt.
+
+    Raises:
+        HeinzelError: If the policy or added constraints do not match exactly.
     """
     try:
         snapshot = cast("object", original)
@@ -292,37 +335,92 @@ def _remove_transient_constraint(raw: bytes, original: ToolConstraintPolicy, add
             or not isinstance(cast("object", snapshot.entries), tuple)
             or any(not isinstance(entry, str) for entry in cast("tuple[object, ...]", snapshot.entries))
             or (not snapshot.present and snapshot.entries)
+            or not added
         ):
             raise HeinzelError(_CONSTRAINT_ERROR)
-        requirement = Requirement(added)
-        specifiers = list(requirement.specifier)
-        if requirement.url or requirement.marker or requirement.extras or len(specifiers) != 1:
-            raise HeinzelError(_CONSTRAINT_ERROR)
-        specifier = specifiers[0]
-        if specifier.operator != "==" or "*" in specifier.version:
-            raise HeinzelError(_CONSTRAINT_ERROR)
-        Version(specifier.version)
-        added_entry = {"name": canonicalize_name(requirement.name, validate=True), "specifier": str(specifier)}
+        expected = tuple(_transient_entry(item) for item in added)
         data = tomllib.loads(raw.decode("utf-8"))
         actual = _constraint_policy(data)
-        expected = json.dumps(added_entry, sort_keys=True, separators=(",", ":"))
-        if not actual.present or actual.entries != (*original.entries, expected):
+        if not actual.present or actual.entries != (*original.entries, *expected):
             raise HeinzelError(_CONSTRAINT_ERROR)
         document = tomlkit.parse(raw.decode("utf-8"))
         table = cast("MutableMapping[str, Any]", document["tool"])
-        if original.present:
-            table["constraints"].pop()
-        else:
-            del table["constraints"]
+        for current in (table, data["tool"]):
+            if original.present:
+                for _ in expected:
+                    current["constraints"].pop()
+            else:
+                del current["constraints"]
         replacement = tomlkit.dumps(document).encode("utf-8")
-        if original.present:
-            data["tool"]["constraints"].pop()
-        else:
-            del data["tool"]["constraints"]
         if tomllib.loads(replacement.decode("utf-8")) != data:
             raise HeinzelError(_CONSTRAINT_ERROR)
     except (KeyError, TypeError, ValueError, UnicodeError, InvalidRequirement, InvalidVersion) as exc:
         raise HeinzelError(_CONSTRAINT_ERROR) from exc
+    else:
+        return replacement
+
+
+_RECEIPT_ERROR = "The uv receipt's requirements couldn't be put back as they were; inspect the receipt."
+_RETAG_ERROR = "The installed core isn't the commit the release tag named; inspect the uv receipt."
+
+
+def _requirements_from(raw: bytes, original: bytes, names: Sequence[str]) -> bytes:
+    """The receipt `raw` with the requirement entries for `names` exactly as in `original`, nothing else changed.
+
+    Raises:
+        HeinzelError: If an entry is missing, or anything else would change.
+    """
+    wanted = {canonicalize_name(name) for name in names}
+    try:
+        data = tomllib.loads(raw.decode("utf-8"))
+        previous = cast("Any", tomlkit.parse(original.decode("utf-8")))["tool"]["requirements"]
+        before = {canonicalize_name(str(entry["name"])): entry for entry in previous}
+        plain = {
+            canonicalize_name(str(e["name"])): e
+            for e in tomllib.loads(original.decode("utf-8"))["tool"]["requirements"]
+        }
+        document = tomlkit.parse(raw.decode("utf-8"))
+        entries = cast("Any", document)["tool"]["requirements"]
+        for index, entry in enumerate(list(entries)):
+            name = canonicalize_name(str(entry["name"]))
+            if name in wanted:
+                entries[index] = before[name]
+        for index, entry in enumerate(data["tool"]["requirements"]):
+            name = canonicalize_name(str(entry["name"]))
+            if name in wanted:
+                data["tool"]["requirements"][index] = plain[name]
+        replacement = tomlkit.dumps(document).encode("utf-8")
+        if tomllib.loads(replacement.decode("utf-8")) != data:
+            raise HeinzelError(_RECEIPT_ERROR)
+    except (KeyError, IndexError, TypeError, ValueError, UnicodeError) as exc:
+        raise HeinzelError(_RECEIPT_ERROR) from exc
+    else:
+        return replacement
+
+
+def _core_by_tag(raw: bytes, commit: str, tag: str) -> bytes:
+    """The receipt with its core's git `rev` moved from `commit` to `tag`, and nothing else changed.
+
+    Raises:
+        HeinzelError: If the core isn't from git at exactly `commit`.
+    """
+    try:
+        data = tomllib.loads(raw.decode("utf-8"))
+        document = tomlkit.parse(raw.decode("utf-8"))
+        entries = (document["tool"]["requirements"], data["tool"]["requirements"])
+        parts = urlsplit(str(entries[1][0]["git"]))
+        query = parse_qs(parts.query)
+        if query.get("rev") != [commit] or set(query) - {"rev", "subdirectory"}:
+            raise HeinzelError(_RETAG_ERROR)
+        query["rev"] = [tag]
+        url = urlunsplit(parts._replace(query="&".join(f"{k}={v[0]}" for k, v in sorted(query.items()))))
+        for current in entries:
+            current[0]["git"] = url
+        replacement = tomlkit.dumps(document).encode("utf-8")
+        if tomllib.loads(replacement.decode("utf-8")) != data:
+            raise HeinzelError(_RETAG_ERROR)
+    except (KeyError, IndexError, TypeError, ValueError, UnicodeError) as exc:
+        raise HeinzelError(_RETAG_ERROR) from exc
     else:
         return replacement
 
@@ -384,6 +482,9 @@ def _without_verified_overrides(raw: bytes, overrides: Mapping[str, Path]) -> by
     return replacement
 
 
+EDGE_WHEEL_PREFIX = "https://github.com/helmut-hoffer-von-ankershoffen/heinzel/releases/download/edge-v"
+"""Where edge wheels live; a pin elsewhere is someone's own choice and stays theirs."""
+
 type PinKind = Literal["release", "ref", "commit", "default", "local", "url", "index"]
 """What the core requirement installs from: a release tag `vX.Y.Z`, another git ref (a branch or a tag that is no
 release), a commit, a git repository's default branch, a local directory or file, a URL, or a package index."""
@@ -416,6 +517,11 @@ class CorePin:
     git: str | None = None
     """The git repository's URL without ref, query or fragment; None if it isn't installed from git."""
     subdirectory: str | None = None
+
+    @property
+    def is_edge(self) -> bool:
+        """Whether this is an edge release's wheel, the only pin the edge channel makes (ADR 0114)."""
+        return self.kind == "url" and (self.ref or "").startswith(EDGE_WHEEL_PREFIX)
 
     @property
     def version(self) -> str | None:
@@ -563,8 +669,69 @@ class Installation:
             raise HeinzelError(_CONSTRAINT_ERROR)
         return result
 
-    def remove_transient_tool_constraint(self, *, expected: str, original: ToolConstraintPolicy, added: str) -> str:
-        """Remove one exact-version guard only from the independently verified post-mutation generation.
+    def receipt(self) -> bytes:
+        """The uv receipt as it is now, read without following a symlink.
+
+        Raises:
+            HeinzelError: If it can't be read safely.
+        """
+        try:
+            return _read_tool_receipt_bytes(self.prefix)
+        except ValueError as exc:
+            raise HeinzelError(_RECEIPT_ERROR) from exc
+
+    def restore_receipt_requirements(self, *, expected: str, original: bytes, names: Sequence[str]) -> str:
+        """Put the receipt's requirements for `names` back as `original` had them, changing nothing else.
+
+        Automatic updates hold a plugin from git at its installed commit while they install (ADR 0116); the receipt
+        then follows the branch or tag it followed before.
+
+        Raises:
+            HeinzelError: If anything but those requirements would change.
+            OSError: If the private receipt replacement cannot be synchronized.
+        """
+
+        def transform() -> bytes:
+            try:
+                receipt = _read_tool_receipt_bytes(self.prefix)
+            except ValueError as exc:
+                raise HeinzelError(_RECEIPT_ERROR) from exc
+            return _requirements_from(receipt, original, names)
+
+        return _installation_continuity.replace_receipt(self.prefix, self._continuity_authority, expected, transform)
+
+    def name_core_by_tag(self, *, expected: str, commit: str, tag: str) -> str:
+        """Name the core in the receipt by its release `tag` again after it was installed from that tag's `commit`.
+
+        An automatic update installs the exact commit a tag named when it was announced (ADR 0116); the receipt goes
+        on following release tags, so the next update moves on from `tag`.
+
+        Raises:
+            HeinzelError: If the receipt's core isn't from git at `commit`, or anything else would change.
+            OSError: If the private receipt replacement cannot be synchronized.
+        """
+
+        def transform() -> bytes:
+            try:
+                receipt = _read_tool_receipt_bytes(self.prefix)
+            except ValueError as exc:
+                raise HeinzelError(_RETAG_ERROR) from exc
+            return _core_by_tag(receipt, commit, tag)
+
+        return _installation_continuity.replace_receipt(self.prefix, self._continuity_authority, expected, transform)
+
+    def remove_transient_tool_constraint(
+        self,
+        *,
+        expected: str,
+        original: ToolConstraintPolicy,
+        added: str | tuple[str, ...],
+        options: Mapping[str, object] | None = None,
+    ) -> str:
+        """Remove exact-version guards only from the independently verified post-mutation generation.
+
+        uv also records the resolver options a run was given (`[tool.options]`, such as `exclude-newer`); `options`
+        names exactly those this mutation added, and they go too. Anything else in the receipt stays as it is.
 
         Raises:
             HeinzelError: If the receipt, policy or installation generation cannot be verified.
@@ -576,9 +743,19 @@ class Installation:
                 receipt = _read_tool_receipt_bytes(self.prefix)
             except ValueError as exc:
                 raise HeinzelError(_CONSTRAINT_ERROR) from exc
-            return _remove_transient_constraint(receipt, original, added)
+            if options:
+                receipt = _without_added_options(receipt, options)
+            return _remove_transient_constraint(receipt, original, (added,) if isinstance(added, str) else added)
 
         return _installation_continuity.replace_receipt(self.prefix, self._continuity_authority, expected, transform)
+
+    def installed_versions(self, names: Sequence[str]) -> dict[str, str]:
+        """The installed version of each named distribution, read without starting its interpreter.
+
+        Raises:
+            HeinzelError: If the metadata cannot be safely inspected.
+        """
+        return _installed_metadata.inspect_versions(self.prefix, names)
 
     def installed_core_version(self) -> str:
         """Inspect the currently installed core version without starting its interpreter.
@@ -707,11 +884,14 @@ class Installation:
         """
         return _core_requirement(source)
 
-    def tool_install_command(self, core: str, plugins: Sequence[str], *, refresh: bool = False) -> list[str]:
+    def tool_install_command(
+        self, core: str, plugins: Sequence[str], *, refresh: bool = False, reinstall: bool = True
+    ) -> list[str]:
         """Reinstall the tool environment from `core` with `plugins`, on the Python Heinzelmännchen runs on.
 
         With `refresh` uv asks the indexes and git remotes again instead of trusting its cache, so a branch is
-        resolved to its newest commit and an index to its newest release.
+        resolved to its newest commit and an index to its newest release. Without `reinstall`, what is installed and
+        still satisfies the requirements stays as it is (automatic updates, ADR 0116).
         """
         requirement = _core_requirement(core)
         scope = self._tool_scope.get()
@@ -720,7 +900,7 @@ class Installation:
             self.uv,
             "tool",
             "install",
-            "--reinstall",
+            *(["--reinstall"] if reinstall else []),
             *(["--refresh"] if refresh else []),
             "--python",
             python,

@@ -1,6 +1,7 @@
 ---
 status: proposed
 date: 2026-10-23
+implementation: partial
 related: 0004, 0017, 0025
 ---
 

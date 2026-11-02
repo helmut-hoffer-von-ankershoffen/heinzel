@@ -8,11 +8,13 @@ import { join } from "node:path";
 import { chromium, webkit } from "playwright-core";
 import ts from "typescript";
 import { contributePanel } from "./contributed-panel.mjs";
+import { fetchOnce, ONE_CONNECTION } from "./fetch-once.mjs";
 import { reportMediaFailure, watchMedia } from "./media-diagnostics.mjs";
 
 // Fixed, credential-free checkpoints for timeout diagnosis; do not interpolate page or URL data.
 function stage(name) {
   console.error(`MOBILE_STAGE:${name}`);
+  console.error(`MOBILE_ELAPSED:${Math.round(performance.now() / 1000)}`);
 }
 stage("launch");
 const [url, shots] = process.argv.slice(2);
@@ -228,7 +230,13 @@ async function showPage(page) {
   await tab.tap();
 }
 
-async function footerPane(page, id, label) {
+async function footerPane(page, id, label, ready) {
+  if (ready) {
+    await ready;
+    await page.waitForFunction(
+      () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve(true)))),
+    );
+  }
   const trigger = page.locator(`[data-footer-content="${id}"] button`).first();
   if (!(await trigger.isVisible())) {
     await page.locator('[data-footer-content="@more"] button').click();
@@ -255,7 +263,7 @@ try {
     await contributePanel(page);
     // Platform-specific CLI paths and provider names must wrap rather than widen their settings pane.
     await page.route("**/api/ai/access/list", async (route) => {
-      const response = await route.fetch();
+      const response = await fetchOnce(route);
       const listing = await response.json();
       listing.options.push({
         name: "mobile-overflow-probe",
@@ -276,12 +284,12 @@ try {
     });
     // Include advanced controls using the real isolated-profile operation.
     const expertResponse = await context.request.post(new URL("/api/system/expert/on", url).href, {
-      headers: { Authorization: `Bearer ${new URL(url).hash.slice("#token=".length)}` },
+      headers: { ...ONE_CONNECTION, Authorization: `Bearer ${new URL(url).hash.slice("#token=".length)}` },
     });
     assert.ok(expertResponse.ok(), "Advanced settings must be enabled in the isolated fixture");
     // Enum display labels come from providers and can exceed a native select's intrinsic phone width.
     await page.route("**/api/system/config/show", async (route) => {
-      const response = await route.fetch();
+      const response = await fetchOnce(route);
       const report = await response.json();
       const backend = report.settings.find(
         (setting) => setting.section === "system.credential" && setting.key === "backend",
@@ -350,7 +358,7 @@ try {
       `${spec.name}: footer moved while scrolling`,
     );
     assert.ok(afterScroll.top.y >= 0 && afterScroll.bottom.y + afterScroll.bottom.height <= spec.height + 1);
-    await page.getByRole("button", { name: "Home", exact: true }).click();
+    await page.getByRole("button", { name: "Today", exact: true }).click();
     assert.ok(await page.getByRole("menu").isVisible(), `${spec.name}: header menu is unreachable`);
     await page.keyboard.press("Escape");
     await page.screenshot({ path: join(shots, `mobile-${spec.name}-sticky-scroll.png`) });
@@ -482,10 +490,12 @@ try {
     await page.screenshot({ path: join(shots, `mobile-${spec.name}-updates.png`) });
     await dismissFooterPane(page);
     updateAvailable = true;
+    // The footer's label and its fit depend on this answer, so tap only once the footer shows it.
+    const updateAnswered = page.waitForResponse("**/api/update-status");
     await page.goto(url);
     await page.getByRole("heading", { name: "Today" }).waitFor();
     await page.locator("#splash").waitFor({ state: "hidden", timeout: 15_000 });
-    const availablePane = await footerPane(page, "@updates", "Update available");
+    const availablePane = await footerPane(page, "@updates", "Update available", updateAnswered);
     await assertContained(page, availablePane, `${spec.name}: available update pane`);
     await availablePane.getByText(/^Last installed:/).waitFor();
     await assertTouchTarget(
@@ -520,7 +530,7 @@ try {
       `${spec.name}: expanded left navigation`,
     );
     await page.getByRole("button", { name: "Collapse navigation" }).click();
-    await page.getByRole("button", { name: "Home", exact: true }).click();
+    await page.getByRole("button", { name: "Today", exact: true }).click();
     await assertContained(page, page.getByRole("menu"), `${spec.name}: screen menu`);
     await page.keyboard.press("Escape");
     const initialChatTab = page.getByRole("tab", { name: "Chat", exact: true });
@@ -535,7 +545,7 @@ try {
     await page.getByRole("textbox", { name: "Your message" }).fill("A draft to keep.");
     await assertContained(
       page,
-      page.getByRole("button", { name: "Create Heinzel and take this message" }),
+      page.getByRole("button", { name: "Create a helper and take this message" }),
       `${spec.name}: workshop agent handoff`,
     );
     await page.screenshot({ path: join(shots, `mobile-${spec.name}-agent-handoff.png`) });
@@ -756,7 +766,7 @@ try {
       });
     });
     await page.getByRole("textbox", { name: "Your message" }).fill("Keep my notes current.");
-    await page.getByRole("button", { name: "Create Heinzel and take this message" }).click();
+    await page.getByRole("button", { name: "Create a helper and take this message" }).click();
     await page.getByLabel("Message your Heinzel").waitFor();
     await page.getByText(/Customize.*suggested look/).click();
     const useSuggestion = page.getByRole("button", { name: "Use suggested identity" });
@@ -1035,6 +1045,10 @@ try {
     await soundPage.getByRole("button", { name: "Choose a soundscape", exact: true }).click();
     const soundDialog = soundPage.getByRole("dialog", { name: "Sound" });
     await soundDialog.getByText("Use your iPhone or iPad volume buttons to adjust YouTube audio.").waitFor();
+    // Safari's toolbars and keyboard resize the window at the same width: the navigation and this dialog stay open.
+    await soundPage.evaluate(() => window.dispatchEvent(new Event("resize")));
+    await soundPage.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve))));
+    assert.equal(await soundDialog.count(), 1, "a same-width resize keeps the sound dialog open");
     assert.equal(await soundDialog.getByRole("slider", { name: "Volume" }).count(), 0);
     assert.equal(await soundDialog.getByRole("switch", { name: "Softer while I type" }).count(), 0);
     await assertContained(soundPage, soundDialog, "iPhone sound controls");
@@ -1079,6 +1093,8 @@ try {
     await soundPage.screenshot({ path: join(shots, "mobile-compact-sound.png") });
     await soundPage.getByRole("button", { name: "Expand navigation" }).click();
     await player.waitFor();
+    // The player moves with the navigation's width transition: a tap during it can land beside the button.
+    await soundPage.waitForFunction(() => !document.getAnimations().some((run) => run instanceof CSSTransition));
     await popOut.tap();
     await soundPage.waitForFunction(() => document.querySelector('[data-dock="floating"]'));
     await soundPage.setViewportSize({ width: 360, height: 400 });

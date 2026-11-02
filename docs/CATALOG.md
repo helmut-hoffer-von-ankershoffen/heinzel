@@ -1,6 +1,6 @@
 ---
 title: Plugins & themes
-description: Discover capabilities and themes for Heinzel, with immutable source links and compatibility metadata.
+description: Discover capabilities and themes for Heinzelmännchen, with immutable source links and compatibility metadata.
 hide:
   - navigation
   - toc
@@ -8,9 +8,9 @@ hide:
 
 <p class="hz-eyebrow">A small core. A growing world.</p>
 
-# Make Heinzel yours.
+# Make Heinzelmännchen yours.
 
-<p class="hz-lead">Clocks, connections, context and character. Explore independently owned plugins, then build the one your team needs.</p>
+<p class="hz-lead">Clocks, connections, themes. Plugins have their own owners and releases. Build the one you need.</p>
 
 [Install the standard app](guides/install.md) · [Create a plugin](PLUGIN_AUTHORING.md) · [How discovery works](guides/catalog.md)
 
@@ -30,13 +30,13 @@ hide:
 
 ## A different atmosphere.
 
-Themes can own light and dark palettes, artwork and soundscapes. These illustrations use palettes read from the owning source; they are previews, not screenshots of a running plugin.
+Themes bring light and dark colors, art and sound. These are previews drawn from each theme's palette, not screenshots.
 
 <!-- hz:themes -->
 
 ## From your repository to this catalog.
 
-Put your plugin in its own public repository, add the `heinzel-plugin` GitHub topic, and declare its `heinzel.modules` entry point. No core registration is needed. Private plugins use authenticated CLI discovery and never appear on this public site.
+Put your plugin in a public repository, add the `heinzel-plugin` GitHub topic, and declare a `heinzel.modules` entry point. No core registration. Private plugins never appear here.
 
 [Publish your first plugin →](PLUGIN_AUTHORING.md) · [Add showcase metadata →](guides/catalog.md)
 

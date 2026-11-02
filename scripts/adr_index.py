@@ -4,7 +4,8 @@
 # ///
 """The ADR relations of the documentation site and of docs/adr/README.md (ADR 0001, ADR 0082).
 
-Every record's front matter carries what links it to the rest: `implemented-by` (pull request numbers),
+Every record's front matter carries `implementation` (built, partial or planned: how much of the decision the code does
+today) and what links it to the rest: `implemented-by` (pull request numbers),
 `amends` / `amended-by` / `supersedes` / `superseded-by` and, for each amended or superseded ADR, `amends-NNNN: what
 it changes`. This module renders them as the index table (scripts/generate_docs.py writes it between the markers
 below, a test pins it) and, as an MkDocs hook listed in mkdocs.yml, as a short block under the title of each ADR page.
@@ -86,7 +87,7 @@ def _link(records: dict[str, dict[str, str]], other: str, reason: str) -> str:
 
 
 def adr_index_table(records: dict[str, dict[str, str]], repo_url: str) -> str:
-    """The index table: title and number, status over date, the pull requests and the amendments, one row per ADR."""
+    """The index table: title and number, status and date over implementation, the pull requests and the amendments."""
     rows = [
         "| ADR | Status | Pull requests | Amendments |",
         "| --- | --- | --- | --- |",
@@ -100,7 +101,7 @@ def adr_index_table(records: dict[str, dict[str, str]], repo_url: str) -> str:
         ]
         cells = [
             f"[{number}]({meta['file']}) {meta['title']}",
-            f"{meta['status']} · {_short_date(meta['date'])}",
+            f"{meta['status']} · {_short_date(meta['date'])}<br>{meta['implementation']}",
             ", ".join(pull_links(meta, repo_url)),
             "<br>".join(amendments),
         ]
@@ -116,7 +117,7 @@ def adr_index_block(directory: Path, repo_url: str) -> str:
 
 def adr_page_block(records: dict[str, dict[str, str]], number: str, repo_url: str) -> str:
     """What an ADR page shows under its title: the pull requests and each relation with the reason it gives."""
-    lines = []
+    lines = [f"- **Implementation** {records[number]['implementation']}"]
     links = pull_links(records[number], repo_url)
     if links:
         lines.append(f"- **Implemented by** {', '.join(links)}")
@@ -124,7 +125,7 @@ def adr_page_block(records: dict[str, dict[str, str]], number: str, repo_url: st
         if pairs:
             items = ", ".join(_link(records, n, "") + (f" ({reason})" if reason else "") for n, reason in pairs)
             lines.append(f"- **{LABELS[kind].capitalize()}** {items}")
-    return '<div class="adr-relations" markdown="1">\n\n' + "\n".join(lines) + "\n\n</div>\n\n" if lines else ""
+    return '<div class="adr-relations" markdown="1">\n\n' + "\n".join(lines) + "\n\n</div>\n\n"
 
 
 def on_page_markdown(markdown: str, *, page: Any, config: Any, **_: Any) -> str:  # noqa: ANN401 - mkdocs' own objects
@@ -135,4 +136,4 @@ def on_page_markdown(markdown: str, *, page: Any, config: Any, **_: Any) -> str:
     if not repo or not match or source.parent.name != "adr" or match.group(1) == "0000":
         return markdown
     block = adr_page_block(adr_records(source.parent), match.group(1), repo).rstrip("\n")
-    return ADR_TITLE.sub(lambda m: f"{m.group(0)}\n\n{block}", markdown, count=1) if block else markdown
+    return ADR_TITLE.sub(lambda m: f"{m.group(0)}\n\n{block}", markdown, count=1)

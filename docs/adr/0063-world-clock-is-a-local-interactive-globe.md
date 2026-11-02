@@ -2,6 +2,7 @@
 amended-by: 0094
 status: proposed
 date: 2026-10-25
+implementation: built
 decision-makers: maintainer
 related: 0039, 0056
 implemented-by: 162

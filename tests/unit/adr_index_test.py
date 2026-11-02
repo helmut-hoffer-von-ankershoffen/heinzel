@@ -19,7 +19,8 @@ spec.loader.exec_module(hooks)
 def _adr(directory, number, name, **front):
     meta = "".join(f"{key}: {value}\n" for key, value in front.items())
     (directory / f"{number}-{name}.md").write_text(
-        f"---\nstatus: proposed\ndate: 2026-10-24\n{meta}---\n\n# {number}: Title {name}\n", encoding="utf-8"
+        f"---\nstatus: proposed\ndate: 2026-10-24\nimplementation: built\n{meta}---\n\n# {number}: Title {name}\n",
+        encoding="utf-8",
     )
 
 
@@ -29,13 +30,15 @@ def test_adr_relations_are_rendered_on_both_sides_with_the_amending_reason(tmp_p
     records = hooks.adr_records(tmp_path)
     table = hooks.adr_index_table(records, "https://example.test/r")
     assert (
-        '| [0001](0001-old.md) Title old | proposed · 24 Oct |  | amended by [0002](0002-new.md "what it changes") |'
-        in table
+        "| [0001](0001-old.md) Title old | proposed · 24 Oct<br>built |  | "
+        'amended by [0002](0002-new.md "what it changes") |' in table
     )
     assert "[#7](https://example.test/r/pull/7), [#9](https://example.test/r/pull/9)" in table
     assert "- **Amended by** [0002](0002-new.md) (what it changes)" in hooks.adr_page_block(records, "0001", "u")
     assert "- **Implemented by** [#7](u/pull/7), [#9](u/pull/9)" in hooks.adr_page_block(records, "0002", "u")
-    assert hooks.adr_page_block({"0003": {"file": "x.md"}}, "0003", "u") == ""
+    alone = hooks.adr_page_block({"0003": {"file": "x.md", "implementation": "planned"}}, "0003", "u")
+    assert "- **Implementation** planned" in alone
+    assert "Implemented by" not in alone
 
 
 def test_the_hook_adds_the_block_under_the_title_of_an_adr_page_only(tmp_path):

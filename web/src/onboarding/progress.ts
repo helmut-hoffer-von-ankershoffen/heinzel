@@ -34,15 +34,12 @@ export function saveProgress(progress: Progress): void {
 export const setupIncomplete = (profile: SchemaProfile | undefined) =>
   profile !== undefined && (!profile.role || !profile.timezone);
 
-/** The roles `org.role` accepts, with the short names people use. */
+/** The roles `org.role` accepts, in this order, with the labels people choose by (the same the server gives Settings). */
 export const ROLES = [
-  ["engineering-manager", "EM"],
-  ["engineer", "IC"],
-  ["principal", "Principal"],
-  ["product-manager", "PM"],
-  ["program-manager", "TPM"],
-  ["engineering-leadership", "Eng Lead"],
-  ["product-leadership", "Product Lead"],
+  ["engineer", "IC - Engineer"],
+  ["engineering-manager", "EM - Engineering Manager"],
+  ["product-manager", "PM - Product Manager"],
+  ["program-manager", "TPM - Program Manager"],
 ] as const;
 
 /** "Send the weekly status to my team" → `send-the-weekly-status`: a contract name `hz heinzel new` takes. */

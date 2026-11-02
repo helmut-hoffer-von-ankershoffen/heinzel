@@ -1,6 +1,7 @@
 ---
 status: proposed
 date: 2026-10-30
+implementation: built
 decision-makers: maintainer
 related: 0094, 0106
 implemented-by: 300
@@ -70,6 +71,11 @@ respect the person's current installation without inventing publisher trust or e
   explicit source; changing it intentionally needs an explicit uv command. For every automatic source, host
   metadata must show a result at least as new as the observed version before any changed interpreter starts; if
   uv has already changed the tool to an older result, the pending token remains for explicit recovery.
+- Within one process, a plain fingerprint may be reused for up to a minute while the same walk, with the same
+  refusals, finds every file's size, timestamps and inode unchanged and none newer than two seconds when it was read.
+  A package mutation asks for dozens of fingerprints and the bytes took most of its time. Strict and projected-receipt
+  fingerprints always read content. A write through an existing memory mapping that leaves the timestamps alone is
+  only seen after the reuse expires.
 - This is local continuity evidence. It is not publisher attestation, a Python sandbox, a human approval, or a
   provider/model/schedule grant. An actor controlling the same user's files can replace both state and evidence.
 - Initial verified composition installation can seed the record. Legacy exact composition inspection may remain

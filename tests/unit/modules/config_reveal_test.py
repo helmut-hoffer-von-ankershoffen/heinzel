@@ -39,6 +39,7 @@ def config_file(tmp_path) -> Path:
     return path
 
 
+@pytest.mark.macos_specific
 def test_macos_selects_an_existing_file_in_finder(config_file):
     opener = FakeOpener()
     done = revealer("darwin", opener=opener).reveal(config_file)
@@ -46,6 +47,7 @@ def test_macos_selects_an_existing_file_in_finder(config_file):
     assert (done.supported, done.opened, done.message) == (True, True, f"Showed {config_file} in Finder.")
 
 
+@pytest.mark.macos_specific
 def test_macos_opens_the_nearest_existing_folder_of_a_missing_file_and_creates_nothing(tmp_path):
     missing = tmp_path / "not" / "yet" / "config.toml"
     opener = FakeOpener()
@@ -169,6 +171,7 @@ def test_a_folder_opens_itself_not_its_parent(tmp_path, platform, program, name)
     assert (done.opened, done.message) == (True, f"Opened {tmp_path} in {name}.")
 
 
+@pytest.mark.macos_specific
 def test_on_macos_a_folder_with_a_suffix_is_selected_never_opened_as_it_may_be_an_app(tmp_path):
     app = tmp_path / "Tool.app"
     app.mkdir()

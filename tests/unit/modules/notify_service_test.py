@@ -327,6 +327,7 @@ def heinzel_service(  # noqa: PLR0913 - a test double with switches
     return NotifyService(settings, NotifySettings(), ORG, clock=clock, notifier=notifier)
 
 
+@pytest.mark.macos_specific
 def test_doctor_checks_heinzel_notifier_without_installing_it(settings, clock, tmp_path):
     service = heinzel_service(settings, clock, tmp_path, "not-determined")
     checks = {check.name: check for check in service.health()}
@@ -342,6 +343,7 @@ def test_doctor_checks_heinzel_notifier_without_installing_it(settings, clock, t
     assert "hz system notify install" in checks["native notifications"].detail
 
 
+@pytest.mark.macos_specific
 def test_once_allowed_the_daemon_pops_up_through_heinzel_notifier(settings, clock, tmp_path):
     service = heinzel_service(settings, clock, tmp_path, "authorized")
     draft(service)
@@ -359,6 +361,7 @@ def test_doctor_names_a_denial_and_a_quarantine(settings, clock, tmp_path):
     assert checks["heinzel notifier quarantine"].fix.startswith("xattr -d com.apple.quarantine")
 
 
+@pytest.mark.macos_specific
 def test_install_puts_heinzel_notifier_in_place_and_pops_up_a_test(settings, clock, tmp_path):
     service = heinzel_service(settings, clock, tmp_path, "authorized")
     installed = service.install()
@@ -372,6 +375,7 @@ def shown(service: NotifyService) -> list[str]:
     return [line.plain for line in render_installed(service.install()).renderables]
 
 
+@pytest.mark.macos_specific
 def test_install_replaces_an_outdated_notifier_and_says_so(settings, clock, tmp_path):
     service = heinzel_service(settings, clock, tmp_path, "authorized", stale=True)
     assert shown(service) == [
@@ -382,6 +386,7 @@ def test_install_replaces_an_outdated_notifier_and_says_so(settings, clock, tmp_
     assert service.notifier.app.inspect().state == "current"
 
 
+@pytest.mark.macos_specific
 def test_install_says_so_when_a_wheel_ships_no_notifier(settings, clock, tmp_path):
     service = heinzel_service(settings, clock, tmp_path, "authorized", stale=True, wheel=True)
     lines = shown(service)
@@ -396,6 +401,7 @@ def test_install_does_not_claim_an_update_when_the_rebuild_fails(settings, clock
     assert lines[0].startswith("Couldn't update Heinzel Notifier: building it failed (swiftc not found)")
 
 
+@pytest.mark.macos_specific
 def test_install_reads_the_notifiers_success_output_as_success(settings, clock, tmp_path):
     service = heinzel_service(settings, clock, tmp_path, "authorized", posted="posted error=nil")
     installed = service.install()
@@ -417,6 +423,7 @@ def test_install_golden_output_when_up_to_date_and_when_refused(settings, clock,
     ]
 
 
+@pytest.mark.macos_specific
 def test_install_without_a_notifier_says_why(make, settings, clock):
     service = NotifyService(settings, NotifySettings(), ORG, clock=clock, notifier=Native(None, detail="headless"))
     installed = service.install()
@@ -599,3 +606,77 @@ def test_unknown_acknowledgement_after_atomic_commit_replays_without_duplicate(m
     assert len(service.recent()) == 1
     assert make(repeat_hours=0).emit_once(*args, **kwargs)
     assert len(service.recent()) == 1
+
+
+def leftover_service(settings, clock, tmp_path, ended: list[int]) -> NotifyService:
+    bundle = tmp_path / "HeinzelNotifier.app"
+    (bundle / "Contents" / "MacOS").mkdir(parents=True)
+    (bundle / "Contents" / "MacOS" / "notifier").write_bytes(b"app")
+    table = (
+        "PID\tStatus\tLabel\n"
+        "7001\t0\tapplication.dev.heinzel.notifier.1.2.AAAA\n"
+        "7002\t0\tapplication.dev.heinzel.notifier.1.3.BBBB\n"
+        "7003\t0\tcom.example.stranger\n"
+    )
+
+    def run(command, timeout=None):
+        if command[0].endswith("launchctl"):
+            return subprocess.CompletedProcess(command, 0, table, "")
+        if command[0].endswith("/ps"):
+            return subprocess.CompletedProcess(command, 0, {"7001": "2-00:00:00", "7002": "00:04"}[command[-1]], "")
+        if "--stdout" in command:
+            Path(command[command.index("--stdout") + 1]).write_text("authorized", encoding="utf-8")
+        return subprocess.CompletedProcess(command, 0 if command[0] != "/usr/bin/xattr" else 1, "", "")
+
+    app = NotifierApp(tmp_path / "home", bundled=bundle, runner=run, kill=lambda pid, sig: ended.append(pid))
+    return NotifyService(
+        settings, NotifySettings(), ORG, clock=clock, notifier=Native(HEINZEL, str(app.path), clicks=True, app=app)
+    )
+
+
+@pytest.mark.macos_specific
+def test_doctor_counts_leftover_notifier_processes_and_names_the_fix(settings, clock, tmp_path):
+    ended: list[int] = []
+    service = leftover_service(settings, clock, tmp_path, ended)
+    assert service.notifier.app is not None
+    service.notifier.app.ensure()
+    checks = {check.name: check for check in service.health()}
+    check = checks["heinzel notifier processes"]
+    assert check.status is Status.DEGRADED
+    assert check.detail.startswith("1 Heinzel Notifier process(es) have run for over 5 minutes")
+    assert check.fix == "hz system notify clean"
+    assert ended == []  # doctor reads, it never kills
+
+
+def test_every_daemon_tick_ends_the_leftovers_and_leaves_a_notification_being_posted(settings, clock, tmp_path):
+    ended: list[int] = []
+    service = leftover_service(settings, clock, tmp_path, ended)
+    assert service.post_native() == 0
+    assert ended == [7001]  # 7002 is four seconds old, 7003 is a stranger
+    assert service.clean().ended == 1
+    assert ended == [7001, 7001]
+
+
+@pytest.mark.macos_specific
+def test_the_tick_makes_macos_forget_stray_copies_once_a_day(settings, clock, tmp_path):
+    forgotten: list[str] = []
+    ended: list[int] = []
+    service = leftover_service(settings, clock, tmp_path, ended)
+    assert service.notifier.app is not None
+    app = service.notifier.app
+    app.unregister_strays = lambda: forgotten.append("x") or 3  # type: ignore[method-assign]
+    service.post_native()
+    service.post_native()
+    assert forgotten == ["x"]  # the second tick, a minute later, doesn't ask macOS again
+    clock.now += timedelta(days=1, minutes=1)
+    service.post_native()
+    assert forgotten == ["x", "x"]
+
+
+@pytest.mark.macos_specific
+def test_the_tick_installs_a_missing_notifier_without_any_command(settings, clock, tmp_path):
+    service = leftover_service(settings, clock, tmp_path, [])
+    assert service.notifier.app is not None
+    assert not service.notifier.app.path.exists()
+    service.post_native()
+    assert service.notifier.app.path.is_dir()  # an update, or a daemon installed first, heals on its next tick

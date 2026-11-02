@@ -8,10 +8,19 @@ import os
 
 import pytest
 from hypothesis import settings
+from hypothesis import strategies as st
 
 settings.register_profile("dev", max_examples=40, deadline=None, database=None)
 settings.register_profile("ci", settings.get_profile("dev"), derandomize=True, print_blob=True)
 settings.load_profile(os.environ.get("HYPOTHESIS_PROFILE") or ("ci" if os.environ.get("CI") else "dev"))
+
+
+def pytest_collection_finish() -> None:
+    """Build Hypothesis's Unicode tables before any test's clock starts.
+
+    A worker builds them on its first text strategy; on a fresh runner that took all 5 s of the test that came first.
+    """
+    st.text().validate()
 
 
 @pytest.fixture(autouse=True)

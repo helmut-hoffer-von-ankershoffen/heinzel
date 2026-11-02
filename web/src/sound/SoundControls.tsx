@@ -1,5 +1,5 @@
 // The sound's controls (ADR 0058): one visible speaker beside the light/dark toggle opens the soundscape picker; the
-// picker also has Play/Pause, and Settings → General exposes the same choices.
+// picker also has Play/Pause and stays open while a soundscape is picked (it plays at once), and Settings → General exposes the same choices.
 import { Check, Pause, Play, Volume, Volume2, VolumeX } from "lucide-react";
 import { type ReactNode, type RefObject, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -12,8 +12,8 @@ import { isIOS } from "@/lib/browser";
 import { placePopover, popoverHeight } from "@/lib/placement";
 import { cn } from "@/lib/utils";
 import { viewportBounds, watchViewport } from "@/lib/viewport";
-import { effective, useSetSound, useSoundSetting, useSoundscapes } from "./queries";
-import { toggle, useSound } from "./store";
+import { effective, pendingResume, useSetSound, useSoundSetting, useSoundscapes } from "./queries";
+import { play, toggle, useSound } from "./store";
 
 const LONG_PRESS_MS = 500;
 const VOLUME_DEBOUNCE_MS = 400;
@@ -32,9 +32,13 @@ function detail(soundscape: SchemaSoundscapeView): string | null {
   return credits.length ? t("sound.credits", { credits: credits.join(", ") }) : null;
 }
 
-/** Claude FM and the plugins' soundscapes, the configured one checked, as a group of radios. */
-export function SoundChoices({ list, onPicked }: { list: SchemaSoundList; onPicked?: () => void }) {
+/**
+ * Claude FM and the plugins' soundscapes, the configured one checked, as a group of radios. Picking one plays it at
+ * once (switching from what plays) and leaves the picker where it is.
+ */
+export function SoundChoices({ list }: Readonly<{ list: SchemaSoundList }>) {
   const choose = useSetSound();
+  const sound = useSound();
   const themes = useThemes().data?.themes ?? [];
   return (
     <div role="radiogroup" aria-label={t("sound.title")} className="flex flex-col gap-0.5">
@@ -68,12 +72,14 @@ export function SoundChoices({ list, onPicked }: { list: SchemaSoundList; onPick
               type="button"
               role="radio"
               aria-checked={checked}
-              disabled={choose.isPending}
+              aria-busy={choose.isPending || undefined}
               onClick={() => {
-                if (!checked || list.follow_theme) choose.mutate(soundscape.name);
-                onPicked?.();
+                // Not disabled while saving: a disabled button would take the keyboard focus out of the picker.
+                if (choose.isPending) return;
+                if (!checked || list.follow_theme) choose.pick(soundscape.name);
+                else if (!sound.playing) play(soundscape.name);
               }}
-              className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-ui hover:bg-accent disabled:opacity-50"
+              className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-ui hover:bg-accent aria-busy:opacity-50"
             >
               <span className="min-w-0 flex-1">
                 <span className="block truncate">{soundscape.title}</span>
@@ -192,7 +198,8 @@ function Popover({
 export function SoundButton({ compact = false }: { compact?: boolean }) {
   const list = useSoundscapes();
   const sound = useSound();
-  const [open, setOpen] = useState(false);
+  // After a pick that reloaded the page the picker is open again, with the pick playing.
+  const [open, setOpen] = useState(() => pendingResume() !== null);
   const ref = useRef<HTMLDivElement>(null);
   const dialog = useRef<HTMLDivElement>(null);
   const opener = useRef<HTMLButtonElement>(null);
@@ -229,7 +236,7 @@ export function SoundButton({ compact = false }: { compact?: boolean }) {
               type="button"
               disabled={!current}
               onClick={() => {
-                toggle();
+                toggle(current?.name);
               }}
               aria-label={
                 current
@@ -246,7 +253,7 @@ export function SoundButton({ compact = false }: { compact?: boolean }) {
                 : t("sound.play", { title: current?.title ?? "" })}
             </button>
           </div>
-          <SoundChoices list={list.data} onPicked={() => setOpen(false)} />
+          <SoundChoices list={list.data} />
           <Notes list={list.data} />
           <hr className="mx-2 my-1 border-border" />
           <VolumeSlider list={list.data} />
@@ -263,7 +270,7 @@ export function SoundButton({ compact = false }: { compact?: boolean }) {
       {compact && current && (
         <button
           type="button"
-          onClick={() => toggle()}
+          onClick={() => toggle(current.name)}
           aria-label={
             sound.playing ? t("sound.pause", { title: current.title }) : t("sound.play", { title: current.title })
           }
