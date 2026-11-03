@@ -35,6 +35,9 @@ WORKFLOWS = sorted((REPO / ".github" / "workflows").glob("*.yml"))
 NOT_MAKE = {  # workflow: {start of the step's command: why}
     "*": {"uv sync": "installs what the job needs"},
     "ci.yml": {
+        "python3 scripts/main_batch.py": "read-only bounded admission of an explicit main batch",
+        "echo 'The validated aggregate base": "records that the final run consumed the aggregate base",
+        'echo "Full CI is recorded': "links the intermediate admission to its exact final run",
         "uv run --no-project --frozen --no-build --python 3.14 python scripts/check_confidentiality.py --require": (
             "the secret must be configured in this repo"
         ),
@@ -213,9 +216,11 @@ def test_managed_backend_verification_gates_ci_without_leaking_into_plugin_templ
         assert "managed-backend" not in (REPO / "template" / name).read_text()
 
 
-@pytest.mark.parametrize("event", ["pull_request", "push"])
+@pytest.mark.parametrize(("event", "batch_base"), [("pull_request", False), ("push", False), ("push", True)])
 @pytest.mark.parametrize("path", ["plugins/heinzel-unforeseen/src/plugin.py", "src/heinzel/kernel/public.py"])
-def test_plugin_only_changes_skip_core_work_and_keep_required_plugin_checks(tmp_path, monkeypatch, event, path):
+def test_plugin_only_changes_skip_core_work_and_keep_required_plugin_checks(
+    tmp_path, monkeypatch, event, path, batch_base
+):
     workflow = yaml.safe_load((REPO / ".github/workflows/ci.yml").read_text())
     jobs = workflow["jobs"]
     foreign_index = tmp_path / "foreign-index"
@@ -241,16 +246,25 @@ def test_plugin_only_changes_skip_core_work_and_keep_required_plugin_checks(tmp_
     output = tmp_path / "outputs"
     script = jobs["changes"]["steps"][-1]["run"]
     subprocess.run(
-        ["bash", "-euo", "pipefail", "-c", script], cwd=tmp_path,
-        env={**environment, "BASE": base, "EVENT": event, "GITHUB_OUTPUT": str(output)}, check=True, timeout=30,
-    )  # fmt: skip
+        ["bash", "-euo", "pipefail", "-c", script],
+        cwd=tmp_path,
+        env={
+            **environment,
+            "BASE": base,
+            "BATCH_BASE": base if batch_base else "",
+            "EVENT": event,
+            "GITHUB_OUTPUT": str(output),
+        },
+        check=True,
+        timeout=30,
+    )
     values = dict(line.split("=", 1) for line in output.read_text().splitlines())
     assert not foreign_index.exists()
     plugin_only = path.startswith("plugins/")
-    assert values["core"] == str(not plugin_only).lower()
+    assert values["core"] == str(batch_base or not plugin_only).lower()
     assert values["plugins"] == str(plugin_only).lower()
-    assert values["contracts"] == str(not plugin_only).lower()
-    if plugin_only:
+    assert values["contracts"] == str(batch_base or not plugin_only).lower()
+    if plugin_only and not batch_base:
         assert values["notifier"] == values["electron"] == "false"
     for name in ("lint", "setup", "audit", "test", "coverage", "perf", "e2e", "build", "core-wheel"):
         assert "needs.changes.outputs.core == 'true'" in jobs[name]["if"]

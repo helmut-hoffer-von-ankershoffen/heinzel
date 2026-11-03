@@ -149,6 +149,15 @@ def makefile() -> str:
 def ci_workflow() -> str:
     """The CI workflow without the template job; the build check looks for the plugin package."""
     text = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    # Batch admission is core queue coordination; plugins retain their complete workflow.
+    text = re.sub(r"\n  admission:\n.*?(?=\n  changes:)", "", text, flags=re.DOTALL)
+    text = re.sub(r"(?m)^run-name:.*\n", "", text)
+    text = text.replace("    needs: admission\n", "")
+    text = text.replace("    if: github.event_name != 'push' || needs.admission.outputs.full != 'false'\n", "")
+    text = text.replace(
+        "always() && (github.event_name != 'push' || needs.admission.outputs.full != 'false')", "always()"
+    )
+    text = text.replace("needs: [admission, ", "needs: [")
     # Plugins have no changed-path job; preserve their existing macOS matrix.
     text = text.replace(" && needs.changes.outputs.macos_full != 'true'", "")
     text = text.replace(
@@ -217,6 +226,7 @@ def ci_workflow() -> str:
     text = text.replace(", consumer-plan, consumer-check]", "]")
     # Removed jobs must also disappear from the stable required aggregate, irrespective of list order.
     removed = {
+        "batch-full",
         "changes",
         "site-tests",
         "template",

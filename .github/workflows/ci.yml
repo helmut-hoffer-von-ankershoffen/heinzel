@@ -1,4 +1,5 @@
 name: CI
+run-name: "${{ github.event_name == 'push' && 'CI batch admission ' || 'CI ' }}${{ github.sha }}"
 
 on:
   push:
@@ -8,8 +9,7 @@ on:
   schedule:
     - cron: "23 5 * * *" # daily: new advisories and upstream changes break unchanged code too
 
-permissions:
-  contents: read
+permissions: {}
 
 # Every commit on main gets its own group, so a later push never replaces a queued run or cancels a running one and
 # each main commit ends with a CI result. Pull requests share one group per ref and cancel superseded runs.
@@ -29,11 +29,64 @@ env:
 # Cheap checks cancel a failing same-repository pull request's run early; fork PRs finish with read-only tokens.
 # Provider-specific integration checks live with their owning plugins.
 jobs:
+  admission:
+    name: Main batch admission
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    permissions:
+      contents: read
+      actions: read
+      statuses: read
+      pull-requests: read
+    outputs:
+      full: ${{ steps.batch.outputs.full }}
+      base: ${{ steps.batch.outputs.base }}
+      run: ${{ steps.batch.outputs.run }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: batch
+        name: Admit the full run unless explicit batch proof covers this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/main_batch.py
+
+  batch-full:
+    permissions:
+      contents: read
+    name: Main batch full suite (${{ needs.admission.outputs.base }})
+    needs: admission
+    if: needs.admission.outputs.full == 'true' && needs.admission.outputs.base != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 1
+    steps:
+      - run: echo 'The validated aggregate base selects the full batch suite.'
+
+  batch-delegated:
+    permissions:
+      contents: read
+    name: Main batch delegated to ${{ needs.admission.outputs.run }}
+    needs: admission
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.admission.outputs.full == 'false'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 1
+    steps:
+      - name: Record delegation without claiming CI OK for this intermediate commit
+        env:
+          FINAL_RUN: ${{ needs.admission.outputs.run }}
+        run: echo "Full CI is recorded by final main run $FINAL_RUN" >> "$GITHUB_STEP_SUMMARY"
+
   changes:
+    permissions:
+      contents: read
+    needs: admission
+    if: github.event_name != 'push' || needs.admission.outputs.full != 'false'
     name: Changed paths
     runs-on: ubuntu-24.04
     timeout-minutes: 3
     outputs:
+      batch_base: ${{ needs.admission.outputs.base }}
       notifier: ${{ steps.paths.outputs.notifier }}
       contracts: ${{ steps.paths.outputs.contracts }}
       electron: ${{ steps.paths.outputs.electron }}
@@ -50,7 +103,8 @@ jobs:
         name: Heinzel Notifier is built always, except on a pull request that leaves its sources alone
         env:
           EVENT: ${{ github.event_name }}
-          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          BASE: ${{ needs.admission.outputs.base || github.event.pull_request.base.sha || github.event.before }}
+          BATCH_BASE: ${{ needs.admission.outputs.base }}
         run: |
           changed="$(git diff --name-only "$BASE...HEAD")" || changed=""
           # A push to main of prose alone: the pull request already ran everything on the same content. docs/ also
@@ -77,10 +131,13 @@ jobs:
             macos_full=false
           fi
           echo "macos_full=$macos_full" >> "$GITHUB_OUTPUT"
+          if [ -n "${BATCH_BASE:-}" ]; then
+            prose_push=false
+          fi
           if [ "$prose_push" = true ]; then
             echo "core=false" >> "$GITHUB_OUTPUT"
             core_work=false
-          elif [ "$EVENT" = schedule ] || [ "$EVENT" = workflow_dispatch ] \
+          elif [ -n "${BATCH_BASE:-}" ] || [ "$EVENT" = schedule ] || [ "$EVENT" = workflow_dispatch ] \
             || [ -z "$changed" ] || grep -qvE '^plugins/' <<< "$changed"; then
             echo "core=true" >> "$GITHUB_OUTPUT"
             core_work=true
@@ -116,6 +173,8 @@ jobs:
           fi
 
   dependency-review:
+    permissions:
+      contents: read
     name: Dependency review
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-24.04
@@ -129,6 +188,8 @@ jobs:
           fail-on-severity: moderate
 
   commits:
+    permissions:
+      contents: read
     name: Conventional commits
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-24.04
@@ -148,6 +209,8 @@ jobs:
         run: make commits
 
   lint:
+    permissions:
+      contents: read
     name: Lint, contracts and types
     needs: changes
     if: needs.changes.outputs.core == 'true'
@@ -176,6 +239,10 @@ jobs:
       - run: make test-web # the web app's component tests (Vitest with axe); core only
 
   secrets:
+    permissions:
+      contents: read
+    needs: admission
+    if: github.event_name != 'push' || needs.admission.outputs.full != 'false'
     name: Secret scan
     runs-on: ubuntu-24.04
     timeout-minutes: 3
@@ -189,6 +256,8 @@ jobs:
         run: make secrets
 
   setup:
+    permissions:
+      contents: read
     name: make setup (${{ matrix.os }})
     needs: changes
     if: needs.changes.outputs.core == 'true'
@@ -216,6 +285,8 @@ jobs:
         run: make tools-verify
 
   audit:
+    permissions:
+      contents: read
     needs: changes
     if: needs.changes.outputs.core == 'true'
     name: Dependency audit
@@ -233,6 +304,8 @@ jobs:
       - run: make audit
 
   test:
+    permissions:
+      contents: read
     needs: changes
     if: needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true'
     name: Test (${{ matrix.os }}, Python ${{ matrix.python }}${{ matrix.levels && format(', {0}', matrix.levels) || '' }})
@@ -320,6 +393,8 @@ jobs:
           MINIMUM_ORANGE: 80
 
   perf:
+    permissions:
+      contents: read
     needs: changes
     if: needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true'
     name: Performance tests
@@ -343,6 +418,8 @@ jobs:
       - run: make test-perf
 
   site-tests:
+    permissions:
+      contents: read
     needs: changes
     if: needs.changes.outputs.site_only == 'true'
     name: Site tests
@@ -403,6 +480,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   template:
+    permissions:
+      contents: read
     name: Plugin template
     needs: lint # the slowest offline check runs only once the cheap ones pass
     runs-on: ubuntu-24.04
@@ -420,6 +499,8 @@ jobs:
       - run: make template-test AUDIT=1
 
   notifier:
+    permissions:
+      contents: read
     name: Heinzel Notifier (macOS app)
     needs: changes
     if: github.event_name != 'pull_request' && needs.changes.outputs.notifier == 'true' # pull requests: macos-smoke
@@ -441,6 +522,8 @@ jobs:
           path: notifier.tar.gz
 
   macos-specific:
+    permissions:
+      contents: read
     name: macOS-specific tests
     needs: changes
     if: github.event_name != 'pull_request' && needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true'
@@ -466,6 +549,8 @@ jobs:
         run: make test-macos-specific
 
   macos-smoke:
+    permissions:
+      contents: read
     name: macOS smoke
     # Every app PR checks the CLI and macOS-only tests; full-macOS PRs also run the other platform jobs.
     # Build the notifier so the real-launch tests cannot silently skip.
@@ -499,6 +584,8 @@ jobs:
           path: notifier.tar.gz
 
   electron:
+    permissions:
+      contents: read
     name: Electron (${{ matrix.os }})
     needs: changes
     if: needs.changes.outputs.electron == 'true'
@@ -538,6 +625,8 @@ jobs:
         run: make desktop-electron-native
 
   build:
+    permissions:
+      contents: read
     name: Build
     needs: [changes, notifier, macos-smoke]
     if: ${{ !cancelled() && needs.changes.outputs.core == 'true' && needs.notifier.result != 'failure' && needs.macos-smoke.result != 'failure' }}
@@ -571,6 +660,8 @@ jobs:
           path: dist/
 
   core-wheel:
+    permissions:
+      contents: read
     name: Plugin SDK candidate
     needs: changes
     if: needs.changes.outputs.core == 'true'
@@ -589,6 +680,8 @@ jobs:
           path: dist/heinzel-*.whl
 
   local-plugin-plan:
+    permissions:
+      contents: read
     name: Optional source plugins
     needs: changes
     if: needs.changes.outputs.plugins == 'true' || needs.changes.outputs.contracts == 'true'
@@ -611,7 +704,7 @@ jobs:
       - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
       - id: plan
         env:
-          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          BASE: ${{ needs.changes.outputs.batch_base || github.event.pull_request.base.sha || github.event.before }}
           CONTRACT: ${{ needs.changes.outputs.contracts == 'true' && 'core:plugin-api@1' || '' }}
           PLUGIN_SOURCE_ROOT: ${{ github.workspace }}
         run: |
@@ -676,6 +769,8 @@ jobs:
           fi
 
   consumer-plan:
+    permissions:
+      contents: read
     name: Public contract consumers
     needs: [changes, core-wheel]
     if: needs.changes.outputs.contracts == 'true'
@@ -704,6 +799,8 @@ jobs:
           cat plan.json >> "$GITHUB_STEP_SUMMARY"
 
   consumer-check:
+    permissions:
+      contents: read
     name: Consumer (${{ matrix.name }})
     needs: consumer-plan
     if: needs.consumer-plan.outputs.selected == 'True'
@@ -831,9 +928,11 @@ jobs:
         run: gh run cancel "$RUN_ID" --repo "$REPOSITORY"
 
   ci-ok:
+    permissions:
+      contents: read
     name: CI OK
-    if: always()
-    needs: [dependency-review, commits, changes, lint, secrets, setup, audit, test, coverage, perf, site-tests, e2e, template, notifier, macos-specific, macos-smoke, electron, build, core-wheel, local-plugin-plan, local-plugin-check, consumer-plan, consumer-check]
+    if: always() && (github.event_name != 'push' || needs.admission.outputs.full != 'false')
+    needs: [admission, batch-full, dependency-review, commits, changes, lint, secrets, setup, audit, test, coverage, perf, site-tests, e2e, template, notifier, macos-specific, macos-smoke, electron, build, core-wheel, local-plugin-plan, local-plugin-check, consumer-plan, consumer-check]
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     steps:
