@@ -16,6 +16,8 @@ Constraints per workflow:
   main, daily and dispatch, with the existing temporary macOS matrix exception. A failing cheap check cancels the rest of
   a same-repository pull request's run as soon as it completes; fork PRs finish normally with read-only tokens. Every main
   commit keeps its own CI run; batches cannot rely on a single tip run yet.
+- `update-prs.yml`: core keeps tested PR heads for the merge queue; plugin repositories update behind branches and
+  approve the resulting CI runs. Closed code-scanning threads are resolved in both.
 - `acceptance.yml`: `contents: read`, no secrets, publishes nothing; uploads `result.json`, which promotion reads. A
   candidate run (release wheel URL + sha256 + profile URL) is labelled `CANDIDATE_*`, never a public-path pass.
 - `prepare-release.yml` (`make release`): opens the release PR `chore(release): vX.Y.Z` and dispatches CI on it (token-made

@@ -6,6 +6,7 @@ import io
 import json
 import os
 import re
+import runpy
 import stat
 import subprocess
 import sys
@@ -860,6 +861,52 @@ def test_claude_review_skips_events_sent_by_bots():
         assert clause in condition
 
 
+def test_core_keeps_tested_pull_request_heads_while_plugins_keep_branch_updates():
+    workflow = yaml.safe_load((REPO / ".github/workflows/update-prs.yml").read_text(encoding="utf-8"))
+    steps = workflow["jobs"]["update"]["steps"]
+    branch_updates = [step for step in steps if "gh pr update-branch" in step.get("run", "")]
+
+    assert len(branch_updates) == 1
+    assert branch_updates[0].get("if") == "github.repository != 'helmut-hoffer-von-ankershoffen/heinzel'"
+    assert "select(.autoMergeRequest != null and (.isCrossRepository | not))" in branch_updates[0]["run"]
+    assert "actions/runs/$run/approve" in branch_updates[0]["run"]
+
+
+def test_closed_code_scanning_threads_are_still_resolved_in_core():
+    workflow = yaml.safe_load((REPO / ".github/workflows/update-prs.yml").read_text(encoding="utf-8"))
+    steps = workflow["jobs"]["update"]["steps"]
+    cleanup = [step for step in steps if "resolveReviewThread" in step.get("run", "")]
+
+    assert len(cleanup) == 1
+    assert "if" not in cleanup[0]
+    assert '[ "$state" != open ] || continue' in cleanup[0]["run"]
+
+
+def test_template_installed_cli_uses_its_own_daemon_unit_directory(tmp_path, tmp_path_factory, monkeypatch):
+    source = REPO / "template/tests/e2e/install_test.py.jinja"
+    namespace = runpy.run_path(str(source))
+    inherited_units = tmp_path / "user-units"
+    monkeypatch.setenv("HZ_SYSTEM_DAEMON__UNIT_DIR", str(inherited_units))
+    monkeypatch.setenv("PLUGIN_TEST_WHEEL", str(tmp_path / "plugin.whl"))
+    monkeypatch.setattr("shutil.which", lambda _name: "/isolated/uv")
+    calls = []
+
+    def run(command, **kwargs):
+        calls.append((command, kwargs["env"]))
+        return subprocess.CompletedProcess(command, 0, stdout="{}", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", run)
+    cli = namespace["hz"].__wrapped__(tmp_path_factory)
+    cli("system", "plugin", "remove", "example", "--json")
+
+    assert len(calls) == 3
+    root = Path(calls[0][1]["UV_TOOL_DIR"]).parent
+    for _command, env in calls:
+        units = env.get("HZ_SYSTEM_DAEMON__UNIT_DIR")
+        assert units == str(root / "units")
+        assert units != str(inherited_units)
+
+
 def test_claude_review_prefers_the_api_key():
     """Each review step authenticates with ANTHROPIC_API_KEY and uses the subscription token only without one."""
     spec = yaml.safe_load((REPO / ".github" / "workflows" / "claude-review.yml").read_text(encoding="utf-8"))
@@ -1372,3 +1419,23 @@ def test_a_failed_cheap_check_cancels_the_rest_of_a_pull_request_run():
         assert any(step.get("run") == 'gh run cancel "$RUN_ID" --repo "$REPOSITORY"' for step in stop["steps"])
     for expensive in ("test", "e2e", "coverage", "electron", "macos-smoke"):
         assert "lint" not in str(jobs[expensive].get("needs", "")), expensive  # they start in parallel, not after
+
+
+def test_release_acceptance_can_pin_public_artifacts_and_correlate_its_run():
+    """A coordinator can keep public-path evidence tied to one release after main moves."""
+    workflow = yaml.safe_load((REPO / ".github/workflows/acceptance.yml").read_text())
+    events = workflow.get("on", workflow.get(True))
+    for trigger in ("workflow_dispatch", "workflow_call"):
+        for name in ("expected_wheel_sha256", "expected_profile_sha256", "release_attempt"):
+            assert events[trigger]["inputs"][name]["default"] == ""
+    job = workflow["jobs"]["acceptance"]
+    command = next(step["run"] for step in job["steps"] if step.get("name") == "Run the acceptance harness")
+    for flag, variable in (
+        ("--accept-wheel-sha256", "EXPECTED_WHEEL_SHA256"),
+        ("--accept-profile-sha256", "EXPECTED_PROFILE_SHA256"),
+    ):
+        assert f'{flag} "${variable}"' in command
+        assert variable in job["env"]
+    assert "inputs.release_attempt" in workflow["run-name"]
+    assert workflow["permissions"] == {}
+    assert job["permissions"] == {"contents": "read"}

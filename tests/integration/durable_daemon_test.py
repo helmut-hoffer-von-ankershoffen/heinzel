@@ -28,6 +28,41 @@ def no_live_notifications(monkeypatch):
     monkeypatch.setattr(NotifyService, "post_native", lambda _self: 0)
 
 
+@pytest.fixture
+def unrelated_host_daemon(make_kernel, settings, monkeypatch, tmp_path):
+    """A daemon outside the test's configured unit directory must never cause a service-manager probe."""
+    monkeypatch.setenv("HOME", str(tmp_path / "host-home"))
+    host_daemon = DaemonService(make_kernel(builtins=True), settings, DaemonSettings())
+    for path in host_daemon._unit_paths():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("unrelated host unit", encoding="utf-8")
+
+    def reject_host_probe(_self):
+        pytest.fail("the replay test must not probe the host service manager")
+
+    monkeypatch.setattr(DaemonService, "_loaded", reject_host_probe)
+
+
+def bind_check_in_clock(kernel, settings, daemon_clock, review_clock):
+    """Keep schedule reviews and daemon ticks deterministic with the kernel's isolated unit settings."""
+    crud = kernel.resolve(SessionCrud)
+    crud.clock = review_clock
+    crud.repository.clock = review_clock
+    daemon = DaemonService(kernel, settings, kernel.resolve(DaemonSettings), clock=daemon_clock, zone=UTC)
+    kernel.bind(DaemonService, daemon)
+
+
+def json_commands(runner, kernel):
+    """Invoke a fixed test kernel through the CLI and require its successful JSON response."""
+
+    def call(*args):
+        result = runner.invoke(build(kernel), [*args, "--json"])
+        assert result.exit_code == 0, result.output
+        return json.loads(result.output)
+
+    return call
+
+
 def approve_schedule(call, session, schedule, request_id, action="activate"):
     """Stage and explicitly confirm an exact schedule preview through chat's human boundary."""
     staged = call(
@@ -102,19 +137,19 @@ def kill_after_legacy_receipt_compaction(state_dir, session_id, contract_version
 
 
 @pytest.mark.parametrize("evicted", [False, True])
-def test_check_in_dispatch_replays_intended_slot_after_interrupted_receipt(make_kernel, settings, monkeypatch, evicted):
+def test_check_in_dispatch_replays_intended_slot_after_interrupted_receipt(
+    make_kernel, settings, monkeypatch, unrelated_host_daemon, evicted
+):
     runner = CliRunner()
     now = datetime(2026, 10, 25, 12, 6, tzinfo=UTC)
 
     def make():
         kernel = make_kernel(builtins=True)
-        session_crud = kernel.resolve(SessionCrud)
-        session_crud.clock = lambda: now.replace(minute=4)
-        session_crud.repository.clock = lambda: now.replace(minute=4)
-        kernel.bind(DaemonService, DaemonService(kernel, settings, DaemonSettings(), clock=lambda: now, zone=UTC))
+        bind_check_in_clock(kernel, settings, lambda: now, lambda: now.replace(minute=4))
         return kernel
 
     kernel = make()
+    assert kernel.resolve(DaemonService).unit_dir == Path(os.environ["HZ_SYSTEM_DAEMON__UNIT_DIR"])
     notifications = kernel.resolve(Notifications)
     notifications.settings = notifications.settings.model_copy(update={"repeat_hours": 0})
 
@@ -169,10 +204,7 @@ def test_check_in_payload_survives_rename_during_replay_and_next_slot_uses_new_n
 
     def make():
         kernel = make_kernel(builtins=True)
-        crud = kernel.resolve(SessionCrud)
-        crud.clock = lambda: time[0].replace(minute=4)
-        crud.repository.clock = lambda: time[0].replace(minute=4)
-        kernel.bind(DaemonService, DaemonService(kernel, settings, DaemonSettings(), clock=lambda: time[0], zone=UTC))
+        bind_check_in_clock(kernel, settings, lambda: time[0], lambda: time[0].replace(minute=4))
         return kernel
 
     kernel = make()
@@ -236,15 +268,9 @@ def test_foreground_daemon_compiles_owned_check_in_and_reports_failed_notice(mak
     runner = CliRunner()
     kernel = make_kernel(builtins=True)
     now = datetime(2026, 10, 25, 12, 6, tzinfo=UTC)
-    session_crud = kernel.resolve(SessionCrud)
-    session_crud.clock = lambda: now.replace(minute=4)
-    session_crud.repository.clock = lambda: now.replace(minute=4)
-    kernel.bind(DaemonService, DaemonService(kernel, settings, DaemonSettings(), clock=lambda: now, zone=UTC))
+    bind_check_in_clock(kernel, settings, lambda: now, lambda: now.replace(minute=4))
 
-    def call(*args):
-        result = runner.invoke(build(kernel), [*args, "--json"])
-        assert result.exit_code == 0, result.output
-        return json.loads(result.output)
+    call = json_commands(runner, kernel)
 
     session = call("heinzel", "new-chat", "create")["session_id"]
     proposed = call("heinzel", "propose-check-in", session, "proposal")
@@ -276,16 +302,9 @@ def test_tick_never_dispatches_a_slot_from_before_activation_or_resume(make_kern
     runner = CliRunner()
     kernel = make_kernel(builtins=True)
     time = [datetime(2026, 10, 25, 12, 4 if resume else 6, tzinfo=UTC)]
-    session_crud = kernel.resolve(SessionCrud)
-    session_crud.clock = lambda: time[0]
-    session_crud.repository.clock = lambda: time[0]
-    daemon = DaemonService(kernel, settings, DaemonSettings(), clock=lambda: time[0], zone=UTC)
-    kernel.bind(DaemonService, daemon)
+    bind_check_in_clock(kernel, settings, lambda: time[0], lambda: time[0])
 
-    def call(*args):
-        result = runner.invoke(build(kernel), [*args, "--json"])
-        assert result.exit_code == 0, result.output
-        return json.loads(result.output)
+    call = json_commands(runner, kernel)
 
     session = call("heinzel", "new-chat", "create")["session_id"]
     proposed = call("heinzel", "propose-check-in", session, "proposal")
@@ -314,15 +333,9 @@ def test_manual_wake_cannot_dispatch_a_scheduled_check_in(make_kernel, settings,
     runner = CliRunner()
     now = datetime(2026, 10, 25, 12, minute, tzinfo=UTC)
     kernel = make_kernel(builtins=True)
-    session_crud = kernel.resolve(SessionCrud)
-    session_crud.clock = lambda: now.replace(minute=4)
-    session_crud.repository.clock = lambda: now.replace(minute=4)
-    kernel.bind(DaemonService, DaemonService(kernel, settings, DaemonSettings(), clock=lambda: now, zone=UTC))
+    bind_check_in_clock(kernel, settings, lambda: now, lambda: now.replace(minute=4))
 
-    def call(*args):
-        result = runner.invoke(build(kernel), [*args, "--json"])
-        assert result.exit_code == 0, result.output
-        return json.loads(result.output)
+    call = json_commands(runner, kernel)
 
     session = call("heinzel", "new-chat", "create")["session_id"]
     proposed = call("heinzel", "propose-check-in", session, "proposal")
@@ -342,10 +355,7 @@ def test_outbox_recovers_or_fails_closed_after_notice_before_outbox_ack(make_ker
 
     def make():
         kernel = make_kernel(builtins=True)
-        crud = kernel.resolve(SessionCrud)
-        crud.clock = lambda: now.replace(minute=4)
-        crud.repository.clock = lambda: now.replace(minute=4)
-        kernel.bind(DaemonService, DaemonService(kernel, settings, DaemonSettings(), clock=lambda: now, zone=UTC))
+        bind_check_in_clock(kernel, settings, lambda: now, lambda: now.replace(minute=4))
         notices = kernel.resolve(Notifications)
         notices.settings = notices.settings.model_copy(update={"repeat_hours": 0})
         return kernel
@@ -414,10 +424,7 @@ def test_check_in_delivery_state_is_constant_size_over_many_slots(make_kernel, s
     crud.repository.clock = lambda: now
     runner = CliRunner()
 
-    def call(*args):
-        result = runner.invoke(build(kernel), [*args, "--json"])
-        assert result.exit_code == 0, result.output
-        return json.loads(result.output)
+    call = json_commands(runner, kernel)
 
     session = call("heinzel", "new-chat", "create")["session_id"]
     proposed = call("heinzel", "propose-check-in", session, "bounded-proposal")
@@ -445,10 +452,7 @@ def test_check_in_watermark_never_regresses_for_out_of_order_slots(make_kernel):
     crud.clock = lambda: now
     crud.repository.clock = lambda: now
 
-    def call(*args):
-        result = runner.invoke(build(kernel), [*args, "--json"])
-        assert result.exit_code == 0, result.output
-        return json.loads(result.output)
+    call = json_commands(runner, kernel)
 
     session = call("heinzel", "new-chat", "create")["session_id"]
     proposed = call("heinzel", "propose-check-in", session, "order-proposal")
@@ -471,10 +475,7 @@ def test_concurrent_check_in_callers_share_one_durable_slot(make_kernel):
     crud.clock = lambda: now
     crud.repository.clock = lambda: now
 
-    def call(*args):
-        result = runner.invoke(build(kernel), [*args, "--json"])
-        assert result.exit_code == 0, result.output
-        return json.loads(result.output)
+    call = json_commands(runner, kernel)
 
     session = call("heinzel", "new-chat", "create")["session_id"]
     proposed = call("heinzel", "propose-check-in", session, "concurrent-proposal")
@@ -502,10 +503,7 @@ def test_legacy_completed_receipts_are_compacted_as_a_batch_before_checkpoint(ma
     crud.clock = lambda: now.replace(minute=4)
     crud.repository.clock = lambda: now.replace(minute=4)
 
-    def call(*args):
-        result = runner.invoke(build(kernel), [*args, "--json"])
-        assert result.exit_code == 0, result.output
-        return json.loads(result.output)
+    call = json_commands(runner, kernel)
 
     session = call("heinzel", "new-chat", "create")["session_id"]
     proposed = call("heinzel", "propose-check-in", session, "legacy-batch-proposal")
@@ -564,10 +562,7 @@ def test_process_death_after_legacy_compaction_recovers_completed_and_unresolved
     crud.repository.clock = lambda: now.replace(minute=4)
     runner = CliRunner()
 
-    def call(*args):
-        result = runner.invoke(build(kernel), [*args, "--json"])
-        assert result.exit_code == 0, result.output
-        return json.loads(result.output)
+    call = json_commands(runner, kernel)
 
     session = call("heinzel", "new-chat", "create")["session_id"]
     proposed = call("heinzel", "propose-check-in", session, "process-legacy-proposal")
@@ -637,10 +632,7 @@ def test_bounded_outbox_reconciles_prior_writer_intent_before_emitting(make_kern
     crud.clock = lambda: now
     crud.repository.clock = lambda: now
 
-    def call(*args):
-        result = runner.invoke(build(kernel), [*args, "--json"])
-        assert result.exit_code == 0, result.output
-        return json.loads(result.output)
+    call = json_commands(runner, kernel)
 
     session = call("heinzel", "new-chat", "create")["session_id"]
     proposed = call("heinzel", "propose-check-in", session, "legacy-proposal")
@@ -662,10 +654,7 @@ def test_bounded_outbox_reconciles_legacy_writer_after_checkpoint_creation(make_
     crud.clock = lambda: now
     crud.repository.clock = lambda: now
 
-    def call(*args):
-        result = runner.invoke(build(kernel), [*args, "--json"])
-        assert result.exit_code == 0, result.output
-        return json.loads(result.output)
+    call = json_commands(runner, kernel)
 
     session = call("heinzel", "new-chat", "create")["session_id"]
     proposed = call("heinzel", "propose-check-in", session, "legacy-overlap-proposal")
@@ -693,10 +682,7 @@ def test_pause_resume_never_replays_a_stale_pending_check_in(make_kernel, monkey
     notices = kernel.resolve(Notifications)
     runner = CliRunner()
 
-    def call(*args):
-        result = runner.invoke(build(kernel), [*args, "--json"])
-        assert result.exit_code == 0, result.output
-        return json.loads(result.output)
+    call = json_commands(runner, kernel)
 
     session = call("heinzel", "new-chat", "create")["session_id"]
     proposed = call("heinzel", "propose-check-in", session, "pause-replay-proposal")
@@ -756,10 +742,7 @@ def test_legacy_pending_slot_keeps_its_revision_across_clock_rollback_and_resume
     crud.repository.clock = lambda: now[0]
     runner = CliRunner()
 
-    def call(*args):
-        result = runner.invoke(build(kernel), [*args, "--json"])
-        assert result.exit_code == 0, result.output
-        return json.loads(result.output)
+    call = json_commands(runner, kernel)
 
     session = call("heinzel", "new-chat", "create")["session_id"]
     proposed = call("heinzel", "propose-check-in", session, "legacy-clock-proposal")
@@ -804,15 +787,9 @@ def test_slow_daemon_cadence_fails_check_in_instead_of_dropping_slots(make_kerne
     runner = CliRunner()
     now = datetime(2026, 10, 25, 12, 6, tzinfo=UTC)
     kernel = make_kernel(builtins=True)
-    crud = kernel.resolve(SessionCrud)
-    crud.clock = lambda: now.replace(minute=4)
-    crud.repository.clock = lambda: now.replace(minute=4)
-    kernel.bind(DaemonService, DaemonService(kernel, settings, DaemonSettings(), clock=lambda: now, zone=UTC))
+    bind_check_in_clock(kernel, settings, lambda: now, lambda: now.replace(minute=4))
 
-    def call(*args):
-        result = runner.invoke(build(kernel), [*args, "--json"])
-        assert result.exit_code == 0, result.output
-        return json.loads(result.output)
+    call = json_commands(runner, kernel)
 
     session = call("heinzel", "new-chat", "create")["session_id"]
     proposed = call("heinzel", "propose-check-in", session, "proposal")
