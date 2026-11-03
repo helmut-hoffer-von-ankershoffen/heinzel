@@ -128,6 +128,7 @@ from heinzel.kernel._installation import (
     ToolConstraintPolicy,
     requirement_from_receipt,
 )
+from heinzel.kernel._installation_mutations import installation_mutation_paths, installation_mutation_pending
 from heinzel.kernel._jobs import CompiledJobs, JobInactive, tick_interval, using_tick_interval
 from heinzel.kernel._json import jsonable
 from heinzel.kernel._kernel import Kernel, ModuleRecord, Origin
@@ -163,7 +164,7 @@ from heinzel.kernel._lets import (
     schedule_problem,
 )
 from heinzel.kernel._local_overview import CachedOverviewLet, DaemonOverview, LocalObservation, WebOverview
-from heinzel.kernel._local_web import LocalWebRuntime
+from heinzel.kernel._local_web import LocalWebRuntime, PersistentWeb
 from heinzel.kernel._metadata_verifier import CoreMetadataVerifier
 from heinzel.kernel._module import Module
 from heinzel.kernel._notifications import Delivery, Notice, NoticeKind, Notifications
@@ -178,6 +179,14 @@ from heinzel.kernel._playbooks import (
     PlaybookSetup,
 )
 from heinzel.kernel._presence import Presence
+from heinzel.kernel._private_control import (
+    PrivateControl,
+    private_directory,
+    private_lock,
+    private_read,
+    private_socket_directory,
+    private_write,
+)
 from heinzel.kernel._progress import Emit, Progress
 from heinzel.kernel._prompter import INTERRUPT, Prompter, ScriptedPrompter, ScriptExhausted
 from heinzel.kernel._protocols import (
@@ -481,6 +490,7 @@ __all__ = [
     "OrgContext",
     "Origin",
     "Participant",
+    "PersistentWeb",
     "Person",
     "PlaybookLet",
     "PlaybookSetup",
@@ -489,6 +499,7 @@ __all__ = [
     "PostedMessage",
     "Presence",
     "Principal",
+    "PrivateControl",
     "ProcessExecute",
     "ProcessOutcome",
     "Progress",
@@ -610,6 +621,8 @@ __all__ = [
     "free_busy_people",
     "git_command",
     "input_schema",
+    "installation_mutation_paths",
+    "installation_mutation_pending",
     "jsonable",
     "link_problem",
     "operation_path",
@@ -617,6 +630,11 @@ __all__ = [
     "parse_duration",
     "parse_window",
     "plain_addresses",
+    "private_directory",
+    "private_lock",
+    "private_read",
+    "private_socket_directory",
+    "private_write",
     "public_parameters",
     "read_skill",
     "read_skill_file",

@@ -149,7 +149,7 @@ def build(kernel: Kernel, *, plain: bool = False) -> typer.Typer:
     app.command(name="join", help=JOIN_HELP, epilog=footer, rich_help_panel=CORE_PANEL)(join)
     # Top level too, by the maintainer's decision: the web head is how people who don't live in a terminal start
     # (ADR 0039, "a web head: a React app served by the API head").
-    app.command(name="ui", help=UI_HELP, epilog=footer, rich_help_panel=CORE_PANEL)(ui_command(kernel, err_console))
+    _mount_ui(app, mount.groups, kernel, err_console)
     # `hz chat` at the top level as well, by the maintainer's decision: the chat is what a person talks to, and
     # without a subcommand it is the interactive chat (ADR 0045).
     if chat := mount.groups.get(CHAT):
@@ -175,6 +175,13 @@ def build(kernel: Kernel, *, plain: bool = False) -> typer.Typer:
         hidden = 0 if mount.expert else count.expert
         app.info.epilog = start_screen_footer(kernel, hidden)
     return app
+
+
+def _mount_ui(app: typer.Typer, groups: dict[str, typer.Typer], kernel: Kernel, error: Console) -> None:
+    ui = groups.get("ui") or typer.Typer()
+    ui.callback(invoke_without_command=True, no_args_is_help=False, help=UI_HELP)(ui_command(kernel, error))
+    if "ui" not in groups:
+        app.add_typer(ui, name="ui", cls=SortedGroup, rich_help_panel=CORE_PANEL)
 
 
 def main() -> None:
