@@ -3,6 +3,8 @@
 import argparse
 import importlib.util
 import json
+import shutil
+import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -244,3 +246,102 @@ def test_a_public_preflight_never_accepts_an_edge_version(tmp_path, monkeypatch)
     with pytest.raises(harness.StepFailed, match="must be final"):
         harness.preflight(args, tmp_path)
     assert harness.EDGE_CANDIDATE is None
+
+
+FAKE_LIST = """
+function el(tag, text, children = [], label = null) {
+  const node = { tagName: tag, innerText: text, textContent: text, children, parentElement: null, label };
+  node.firstElementChild = children[0] ?? null;
+  for (const child of children) child.parentElement = node;
+  node.closest = (tag) => node.tagName === tag.toUpperCase() ? node : node.parentElement?.closest(tag);
+  node.querySelectorAll = (selector) => {
+    const found = [];
+    const walk = (n) => {
+      for (const child of n.children) {
+        if (selector === "span" ? child.tagName === "SPAN" : child.label?.startsWith("Remove ")) found.push(child);
+        walk(child);
+      }
+    };
+    walk(node);
+    return found;
+  };
+  return node;
+}
+const row = (name, version, pending = "") =>
+  el("LI", `${name} v${version} ${pending}`, [
+    el("DIV", `${name} v${version}`, [el("SPAN", `v${version}`), el("BUTTON", "", [], `Remove ${name}`)]),
+    el("DIV", pending, [el("SPAN", pending)])
+  ]);
+const clock = row("heinzel-clock", CLOCK_VERSION, PENDING_VERSION);
+const tailscale = row("heinzel-tailscale", "0.9.2");
+const rows = SINGLE_PLUGIN ? [clock] : [clock, tailscale];
+const list = el("UL", rows.map(r => r.innerText).join(" "), rows);
+el("DIV", list.innerText, [list]);
+globalThis.document = {
+  querySelector: (selector) => {
+    const name = selector.match(/Remove ([^']+)'/)[1];
+    return rows.find(r => r.children[0].children[1].label === `Remove ${name}`)?.children[0].children[1] ?? null;
+  },
+};
+"""
+
+
+@pytest.mark.parametrize(
+    ("installed", "pending", "single", "lookup", "shown"),
+    [
+        ("0.9.3", "", False, ("heinzel-clock", "0.9.3"), True),
+        ("0.9.3", "", False, ("heinzel-clock", "0.9.2"), False),
+        ("0.9.20", "", False, ("heinzel-clock", "0.9.2"), False),
+        ("0.9.3", "v0.9.2", True, ("heinzel-clock", "0.9.2"), False),
+        ("0.9.3", "v0.9.2", True, ("heinzel-clock", "0.9.3"), True),
+        ("0.9.3", "", False, ("heinzel-missing", "0.9.2"), False),
+    ],
+)
+def test_a_row_check_reads_only_the_installed_version_in_its_own_header(installed, pending, single, lookup, shown):
+    """Other plugins, pending changes and version prefixes cannot make an installed row look changed."""
+    node = shutil.which("node")
+    assert node, "node runs the page expression; the CI runner images have it"
+    setup = (
+        f"const CLOCK_VERSION={json.dumps(installed)}, PENDING_VERSION={json.dumps(pending)}, "
+        f"SINGLE_PLUGIN={json.dumps(single)};"
+    )
+    script = setup + FAKE_LIST + f"console.log(JSON.stringify({harness.row_has(*lookup)}));"
+    out = subprocess.run([node, "-e", script], capture_output=True, text=True, check=True, timeout=5)
+    assert json.loads(out.stdout) is shown
+
+
+def test_plugin_navigation_cannot_restart_an_expired_change_budget(monkeypatch):
+    monkeypatch.setattr(harness.time, "monotonic", lambda: 100)
+    assert harness.ui_remaining(105, 60) == 5
+    assert harness.ui_remaining(200, 30) == 30
+    with pytest.raises(harness.StepFailed, match="deadline passed"):
+        harness.ui_remaining(100, 60)
+
+
+@pytest.mark.parametrize("field", ["accept_wheel_sha256", "accept_profile_sha256"])
+def test_a_public_release_snapshot_rejects_replaced_bytes(field, tmp_path, monkeypatch):
+    """A later release must not satisfy acceptance of the coordinator's pinned bytes."""
+    version = "1.2.3"
+    wheel = b"published wheel"
+    wheel_hash = harness.sha256(wheel)
+    profile = {"format": 2, "core_version": version, "artifacts": [{"name": "heinzel", "sha256": wheel_hash}]}
+    profile_bytes = json.dumps(profile).encode()
+    metadata = {
+        "info": {"version": version},
+        "urls": [{"packagetype": "bdist_wheel", "digests": {"sha256": wheel_hash}}],
+    }
+    monkeypatch.setattr(harness, "latest_app_version", lambda: version)
+    responses = {
+        "https://pypi.org/pypi/heinzel/json": json.dumps(metadata).encode(),
+        f"{harness.COLLECTION}/releases/download/app-v{version}/standard.json": profile_bytes,
+    }
+    monkeypatch.setattr(harness, "fetch", lambda url, *a: responses[url])
+    args = argparse.Namespace(
+        expect_version=version,
+        expect_app_version=version,
+        accept_wheel_sha256=wheel_hash,
+        accept_profile_sha256=harness.sha256(profile_bytes),
+    )
+    setattr(args, field, "0" * 64)
+    with pytest.raises(harness.StepFailed, match="differs from the accepted hash"):
+        harness.preflight(args, tmp_path)

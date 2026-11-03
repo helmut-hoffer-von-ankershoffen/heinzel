@@ -7,7 +7,7 @@ import sys
 import unicodedata
 import urllib.error
 from collections import defaultdict
-from datetime import date
+from datetime import date, datetime
 from typing import Any, cast, override
 from urllib.parse import urlsplit
 
@@ -15,7 +15,7 @@ from packaging.version import InvalidVersion, Version
 from pydantic import BaseModel, SecretStr
 
 from heinzel import InfoLet, Kernel, __version__
-from heinzel.kernel import EDGE_WHEEL_PREFIX, EdgeRelease, Installation, ReleaseCache, ReleaseSource
+from heinzel.kernel import EDGE_WHEEL_PREFIX, EdgeRelease, Installation, ReleaseCache, ReleaseFacts, ReleaseSource
 from heinzel.modules.system import _github
 from heinzel.modules.system._models import ModuleInfo, ReleaseCheck, ReleaseNotes, SystemInfo
 
@@ -115,6 +115,30 @@ class GitHubReleases(ReleaseSource):
     def latest_version(self, timeout: float) -> str:
         """The version of the latest release, for the release cache."""
         return self.latest(timeout)[0]
+
+    @override
+    def release_facts(self, version: str, timeout: float) -> ReleaseFacts:
+        """When release `version` was published and the commit its tag names: three unauthenticated GETs at most.
+
+        Raises:
+            OSError: If GitHub can't be reached or answers with an error, e.g. when rate-limited.
+            ValueError: If an answer is too large or not JSON.
+            KeyError: If an answer lacks a field.
+            TypeError: If an answer is no JSON object.
+        """
+        base = f"{_github.GITHUB_API}/repos/{self.repository}"
+        tag = f"v{version}"
+        release = _github.get_json(f"{base}/releases/tags/{tag}", None, timeout)
+        published = release.get("published_at")
+        ref = _github.get_json(f"{base}/git/ref/tags/{tag}", None, timeout)["object"]
+        if ref["type"] == "tag":  # an annotated tag: the commit is behind the tag object
+            ref = _github.get_json(f"{base}/git/tags/{ref['sha']}", None, timeout)["object"]
+        return ReleaseFacts(
+            version=version,
+            published_at=datetime.fromisoformat(published) if isinstance(published, str) else None,
+            commit=str(ref["sha"]) if ref.get("type") == "commit" else None,
+            prerelease=bool(release.get("prerelease")) or bool(release.get("draft")),
+        )
 
     @override
     def highest_version(self, timeout: float, *, prereleases: bool = False) -> str:

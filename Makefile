@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help install setup release-local doctor tools-verify check check-fast linux-user-manager-proof preflight fix lint format typecheck test test-parallel commits test-all-pythons test-unit test-integration test-perf test-macos-specific test-notifier test-e2e e2e-prepare test-browser-deps audit licenses secrets template-test template-sync docs attributions fuzz demo terminal-art notifier icons web-build web-dev test-web test-site managed-backend-setup managed-backend-check desktop-electron-test desktop-electron-sandbox desktop-electron-native desktop-electron-package build pypi-clean-build-marker changelog ci-logs pr review sync docs-plugins docs-record docs-site docs-catalog docs-site-check docs-publish-check design-check release clean
+.PHONY: help install setup release-local doctor tools-verify check check-fast linux-user-manager-proof preflight fix lint format typecheck test test-parallel commits test-all-pythons test-unit test-integration test-perf test-macos-specific test-macos-smoke test-notifier test-e2e e2e-prepare test-browser-deps audit licenses secrets template-test template-sync docs attributions fuzz demo terminal-art notifier icons web-build web-dev test-web test-site managed-backend-setup managed-backend-check desktop-electron-test desktop-electron-sandbox desktop-electron-native desktop-electron-package build pypi-clean-build-marker changelog ci-logs pr review sync docs-plugins docs-record docs-site docs-catalog docs-site-check docs-publish-check design-check release clean
 
 # Quiet by default: one line per passing step, the tail of a failing one. VERBOSE=1 streams everything.
 # A step starting with & runs concurrently with the one before it; the first failure cancels the rest.
@@ -61,6 +61,7 @@ install: ## Install what the build needs: Python with every dependency group (.v
 
 setup: install ## Install what the build needs, and the git hooks (prek: lint on commit, conventional commits)
 	@uv run --quiet prek install --hook-type pre-commit --hook-type commit-msg --hook-type pre-push >/dev/null
+	@uv run --quiet --script scripts/install_push_hook.py
 	@echo "✓ git hooks: pre-commit, commit-msg, pre-push"
 
 doctor: ## What the build needs, what is missing, and the command that fixes it
@@ -217,6 +218,9 @@ test-perf: ## Run the performance tests (timing assertions such as linear time);
 
 test-macos-specific: ## Tests that exercise only macOS behaviour, serially (CI's required macOS job; build the notifier first: make notifier)
 	$(STEPS) "macos=uv run pytest -m macos_specific -q -p no:cacheprovider --durations=10 --session-timeout=420"
+
+test-macos-smoke: ## A pull request's macOS check: the CLI starts and the macOS-only tests pass, serially (make notifier first for its launches)
+	$(STEPS) "cli=uv run hz --version && uv run hz --help >/dev/null" "macos=uv run pytest -m macos_specific -q -p no:cacheprovider --durations=10 --session-timeout=420"
 
 test-notifier: ## Real Heinzel Notifier launches leave no process behind (macOS; build it first: make notifier)
 	$(STEPS) "notifier=uv run pytest tests/e2e/notifier_instances_test.py -q -p no:cacheprovider -o timeout=120"

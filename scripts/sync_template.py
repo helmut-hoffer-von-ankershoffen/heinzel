@@ -114,6 +114,7 @@ def makefile() -> str:
         "desktop-electron-native",
         "desktop-electron-package",
         "test-macos-specific",  # the core's notifier, launchd and Finder tests
+        "test-macos-smoke",  # the same tests, as a pull request's macOS check
     }
     text = re.sub(
         r"(?m)^\.PHONY:.*$",
@@ -124,7 +125,7 @@ def makefile() -> str:
     # Heinzel Notifier, the core's macOS notifier app (ADR 0043): plugins have none.
     # Likewise the macOS-specific tests: the notifier, launchd service and Finder code are the core's.
     text = re.sub(r"(?m)^(\.PHONY:.*?) notifier\b", r"\1", text)
-    text = re.sub(r"\n(?:notifier|test-macos-specific):.*?\n(?:\t.*\n)+", "\n", text)
+    text = re.sub(r"\n(?:notifier|test-macos-specific|test-macos-smoke):.*?\n(?:\t.*\n)+", "\n", text)
     # The terminal art is drawn from the web app's drawing: plugins have none.
     text = re.sub(r"(?m)^(\.PHONY:.*?) terminal-art\b", r"\1", text)
     text = re.sub(r"\nterminal-art:.*?\n(?:\t.*\n)+", "\n", text)
@@ -148,6 +149,12 @@ def makefile() -> str:
 def ci_workflow() -> str:
     """The CI workflow without the template job; the build check looks for the plugin package."""
     text = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    # Plugins have no changed-path job; preserve their existing macOS matrix.
+    text = text.replace(" && needs.changes.outputs.macos_full != 'true'", "")
+    text = text.replace(
+        "Smoke-lane PRs omit these; full-macOS PRs and non-PR runs cover all versions.",
+        "PRs run the newest version; non-PR runs cover all versions.",
+    )
     text = re.sub(r"\n  template:\n.*?(?=\n  build:)", "\n", text, flags=re.DOTALL)
     text = re.sub(
         r"\n      - name: Require the confidential terms\n.*?(?=\n      - run: make lint)", "", text, flags=re.DOTALL
@@ -180,6 +187,8 @@ def ci_workflow() -> str:
     text = re.sub(r"\n  notifier:\n.*?(?=\n  build:)", "\n", text, flags=re.DOTALL)
     # The Electron window and its native runtime are core-only; plugins carry no desktop app.
     text = re.sub(r"\n  electron:\n.*?(?=\n  build:)", "\n", text, flags=re.DOTALL)
+    # The pull request's macOS smoke job runs the core's macOS-only tests: plugins have none.
+    text = re.sub(r"\n  macos-smoke:\n.*?(?=\n  [a-z-]+:)", "\n", text, flags=re.DOTALL)
     text = text[: text.index("  site-tests:\n")] + text[text.index("  e2e:\n") :]
     text = re.sub(r"\n  changes:\n.*?(?=\n  dependency-review:)", "", text, flags=re.DOTALL)
     # The template has no changed-path job; keep the E2E matrix as is, without core-only gating.
@@ -200,7 +209,7 @@ def ci_workflow() -> str:
     )
     text = re.sub(r"\n      - name: Unpack Heinzel Notifier into the package\n[^\n]*\n[^\n]*", "", text)
     text = re.sub(r"\n      - name: Check the wheel ships Heinzel Notifier\n[^\n]*\n[^\n]*", "", text)
-    text = text.replace(", notifier, macos-specific, electron, build]", ", build]")
+    text = text.replace(", notifier, macos-specific, macos-smoke, electron, build]", ", build]")
     # Consumer compatibility belongs to core's public-contract release, never a plugin's own edit loop.
     text = re.sub(r"\n  consumer-(?:plan|check):\n.*?(?=\n  [a-z-]+:)", "\n", text, flags=re.DOTALL)
     text = re.sub(r"\n  local-plugin-(?:plan|check):\n.*?(?=\n  [a-z-]+:)", "\n", text, flags=re.DOTALL)
@@ -213,6 +222,7 @@ def ci_workflow() -> str:
         "template",
         "notifier",
         "macos-specific",
+        "macos-smoke",
         "electron",
         "consumer-plan",
         "consumer-check",
@@ -238,6 +248,17 @@ def ci_workflow() -> str:
         text,
         count=1,
         flags=re.DOTALL,
+    )
+    # Plugins do not have the core smoke job: retain their existing macOS PR tests and E2E coverage.
+    text = text.replace(
+        "github.event_name == 'pull_request' && '[]' || github.event_name == 'schedule'",
+        'github.event_name == \'pull_request\' && \'[{"os":"macos-latest","python":"3.15","levels":"unit"},'
+        '{"os":"macos-latest","python":"3.15","levels":"integration"}]\' || github.event_name == \'schedule\'',
+    )
+    text = text.replace(
+        "os: ${{ fromJSON(github.event_name == 'pull_request' && '[\"ubuntu-24.04\"]' || "
+        '\'["ubuntu-24.04","macos-latest"]\') }}',
+        "os: [ubuntu-24.04, macos-latest]",
     )
     text = re.sub(r"\n# GitHub-hosted macOS runners.*?\n(?=jobs:)", "\n", text, flags=re.DOTALL)
     return text.replace(", template, build]", ", build]").replace(", changes,", ",")
