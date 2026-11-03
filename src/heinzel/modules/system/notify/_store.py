@@ -81,6 +81,18 @@ class Store:
             logger.warning("%s cannot be read (%s); showing no notices", self.path, exc)
         return _State()
 
+    def integrity_problem(self) -> str | None:
+        """Report unavailable durable replay evidence without writing, locking or exposing notice contents."""
+        try:
+            try:
+                self._durable.stat()
+            except FileNotFoundError:
+                return None
+            self._read_state(strict=True)
+        except (OSError, RecursionError):
+            return "Notification history is unavailable or its replay keys were lost; notification writes are blocked."
+        return None
+
     def read(self) -> list[Notice]:
         """Every notice kept, oldest first; a missing or damaged file is no notices (and is logged)."""
         return self._read_state().notices

@@ -708,3 +708,97 @@ def test_the_tick_installs_a_missing_notifier_without_any_command(settings, cloc
     assert not service.notifier.app.path.exists()
     service.post_native()
     assert service.notifier.app.path.is_dir()  # an update, or a daemon installed first, heals on its next tick
+
+
+def _store_files(directory):
+    if not directory.exists():
+        return None
+    return {
+        path.name: (path.read_bytes(), stat.S_IMODE(path.stat().st_mode))
+        for path in directory.iterdir()
+        if path.is_file()
+    }
+
+
+@pytest.mark.parametrize("damage", ["legacy", "missing", "malformed", "invalid-keys"])
+def test_health_reports_durable_store_damage_without_writes_or_disclosure(make, monkeypatch, caplog, damage):
+    import json
+
+    from heinzel.modules.system.notify import _store
+
+    service = make(native=False)
+    private_content = "fixture-private-notice-content"
+    assert service.emit_once(
+        NoticeKind.HEINZEL, private_content, private_content, route="/heinzel", command="hz", key="private-slot"
+    )
+    path = service.store.path
+    notices = [notice.model_dump(mode="json") for notice in service.recent()]
+    if damage == "legacy":
+        path.write_text(json.dumps(notices), encoding="utf-8")
+    elif damage == "missing":
+        path.unlink()
+    elif damage == "malformed":
+        path.write_text('{"notices": "' + private_content, encoding="utf-8")
+    else:
+        path.write_text(json.dumps({"notices": notices, "durable_keys": 42}), encoding="utf-8")
+    before = _store_files(service.store.directory)
+
+    def no_write(*args, **kwargs):
+        pytest.fail("doctor must not write or acquire the notification writer lock")
+
+    monkeypatch.setattr(_store, "_write_private", no_write)
+    monkeypatch.setattr(service.store, "_locked", no_write)
+    caplog.clear()
+    checks = service.health()
+    assert len(checks) == 1
+    assert checks[0].name == "notification store"
+    assert checks[0].status is Status.DOWN
+    assert "notification writes are blocked" in checks[0].detail
+    assert "coherent trusted backup" in checks[0].fix
+    assert "do not delete" in checks[0].fix
+    assert private_content not in repr(checks)
+    assert private_content not in caplog.text
+    assert caplog.text == ""
+    assert _store_files(service.store.directory) == before
+
+
+def test_health_does_not_hide_durable_integrity_failure_when_notifications_are_off(make):
+    service = make()
+    assert service.emit_once(NoticeKind.HEINZEL, "Check-in", "Due", route="/heinzel", command="hz", key="slot")
+    service.store.path.write_text("[]", encoding="utf-8")
+    disabled = make(enabled=False)
+    assert disabled.health()[0].status is Status.DOWN
+
+
+def test_health_accepts_valid_durable_store_without_changes(make):
+    service = make(native=False)
+    assert service.emit_once(NoticeKind.HEINZEL, "Check-in", "Due", route="/heinzel", command="hz", key="slot")
+    before = _store_files(service.store.directory)
+    assert all(check.status is not Status.DOWN for check in service.health())
+    assert _store_files(service.store.directory) == before
+
+
+def test_health_leaves_uninitialized_and_valid_legacy_stores_unchanged(make):
+    service = make(native=False)
+    assert _store_files(service.store.directory) is None
+    assert all(check.status is not Status.DOWN for check in service.health())
+    assert _store_files(service.store.directory) is None
+    assert draft(service) is not None
+    assert not service.store._durable.exists()
+    before = _store_files(service.store.directory)
+    assert all(check.status is not Status.DOWN for check in service.health())
+    assert _store_files(service.store.directory) == before
+
+
+def test_health_reports_unreadable_durable_marker_without_disclosing_error(make, monkeypatch):
+    from unittest.mock import Mock
+
+    service = make(native=False)
+    private_content = "fixture-private-path"
+    marker = Mock()
+    marker.stat.side_effect = PermissionError(private_content)
+    monkeypatch.setattr(service.store, "_durable", marker)
+    checks = service.health()
+    assert checks[0].status is Status.DOWN
+    assert private_content not in repr(checks)
+    assert _store_files(service.store.directory) is None
