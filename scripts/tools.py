@@ -33,7 +33,9 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import time
 import tomllib
+import urllib.error
 import urllib.request
 import zipfile
 from collections.abc import Callable, Iterable
@@ -51,6 +53,7 @@ REQUIRED = frozenset({"build", "web"})
 """Groups whose missing tools fail `make doctor`; `web` only where there is a web/ app (not in plugins)."""
 WEB_APP = ROOT / "web" / "package.json"
 TIMEOUT = 120
+DOWNLOAD_ATTEMPTS = 3
 SHA256 = re.compile(r"[0-9a-f]{64}")
 # CA bundles of common Linux distributions, for Pythons whose OpenSSL looks elsewhere.
 CA_BUNDLES = ("/etc/ssl/cert.pem", "/etc/ssl/certs/ca-certificates.crt", "/etc/pki/tls/certs/ca-bundle.crt")
@@ -190,11 +193,45 @@ def ssl_context() -> ssl.SSLContext:
     return context
 
 
+def _interrupted_transport(error: OSError | http.client.HTTPException) -> bool:
+    reason = error.reason if isinstance(error, urllib.error.URLError) else error
+    return isinstance(reason, (ssl.SSLEOFError, ConnectionResetError, http.client.IncompleteRead))
+
+
 def http_get(url: str) -> bytes:
-    """The body at a URL, following redirects; proxies come from the usual environment variables."""
-    request = urllib.request.Request(url, headers={"User-Agent": "heinzel-dev-tools"})  # noqa: S310 - https only (load)
-    with urllib.request.urlopen(request, timeout=TIMEOUT, context=ssl_context()) as response:  # noqa: S310
-        return bytes(response.read())
+    """The URL's body, with at most three attempts for interrupted transfers.
+
+    Retry socket timeouts use the original budget's remaining time. Redirects and proxies use urllib's defaults.
+    Certificate and HTTP errors fail immediately.
+
+    Raises:
+        OSError: the connection or TLS verification failed.
+        http.client.HTTPException: the response was interrupted or invalid.
+    """
+    deadline = time.monotonic() + TIMEOUT
+    timeout = TIMEOUT
+    attempt = 0
+    while True:
+        request = urllib.request.Request(url, headers={"User-Agent": "heinzel-dev-tools"})  # noqa: S310 - https only (load)
+        try:
+            with urllib.request.urlopen(  # noqa: S310 - https only (load)
+                request, timeout=timeout, context=ssl_context()
+            ) as response:
+                return bytes(response.read())
+        except (OSError, http.client.HTTPException) as error:
+            attempt += 1
+            delay = 0.5 * attempt
+            if (
+                not _interrupted_transport(error)
+                or attempt == DOWNLOAD_ATTEMPTS
+                or deadline - time.monotonic() <= delay
+            ):
+                raise
+            # Restart from byte zero; fetch still checks the entire body before caching or installing it.
+            time.sleep(delay)
+            timeout = deadline - time.monotonic()
+            if timeout <= 0:
+                raise
 
 
 def download_bytes(url: str, get: Callable[[str], bytes] = http_get) -> bytes:
