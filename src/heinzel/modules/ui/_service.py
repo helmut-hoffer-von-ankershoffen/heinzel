@@ -11,6 +11,7 @@ import socket
 import stat
 import subprocess
 import sys
+import time
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
@@ -41,6 +42,8 @@ from heinzel.modules.ui._profile import (
 LABEL = "io.github.helmut-hoffer-von-ankershoffen.heinzel.web"
 UNIT = "hz-web.service"
 MAX_PORT = 65535
+STOP_SECONDS = 5.0
+STOP_POLL_SECONDS = 0.05
 Runner = Callable[[Sequence[str]], subprocess.CompletedProcess[str]]
 
 
@@ -100,6 +103,8 @@ class WebService:
         profile: dict[str, str] | None = None,
         unsupported: tuple[str, ...] = (),
         selected_preview: bool = True,
+        clock: Callable[[], float] = time.monotonic,
+        sleep: Callable[[float], None] = time.sleep,
     ) -> None:
         """Keep the stable shim path unresolved, because uv replaces its destination during updates."""
         self.directory = state / "ui"
@@ -110,6 +115,7 @@ class WebService:
         self.profile = profile if profile is not None else default_profile(home, state, self.prefix, executable)
         self.unsupported = unsupported
         self.selected_preview = selected_preview
+        self._clock, self._sleep = clock, sleep
         self.platform = platform
         self.runner = runner
         self.which = which
@@ -581,23 +587,56 @@ class WebService:
             return False
         return True
 
-    def _verify_stopped(self, record: dict[str, JsonValue]) -> None:
-        """Prove the owned manager stopped before removing any integration file.
+    def _stop_complete(self, record: dict[str, JsonValue]) -> bool:
+        """Observe exact owned identity on every stop sample; foreign or unknown evidence fails immediately.
 
         Raises:
-            HeinzelError: If the owned job remains loaded or its stop cannot be verified.
+            HeinzelError: If the manager identity or stop state cannot be verified.
         """
-        if self.platform == "darwin" and self._manager(record)[0]:
-            msg = "The web job remains loaded; its files were retained."
+        loaded, _ = self._manager(record)
+        if self.platform == "darwin":
+            return not loaded
+        stopped = self.runner(self._command("show", UNIT, "--property=ActiveState,MainPID"))
+        properties = {
+            key: value for line in stopped.stdout.splitlines() if "=" in line for key, value in [line.split("=", 1)]
+        }
+        if not stopped.returncode and properties == {"ActiveState": "inactive", "MainPID": "0"}:
+            return True
+        pid = properties.get("MainPID", "")
+        if (
+            stopped.returncode
+            or not loaded
+            or set(properties) != {"ActiveState", "MainPID"}
+            or properties["ActiveState"] not in {"active", "activating", "deactivating", "reloading"}
+            or not pid.isascii()
+            or not pid.isdecimal()
+        ):
+            msg = "The web service stop could not be verified; its files were retained."
             raise HeinzelError(msg)
-        if self.platform == "linux":
-            stopped = self.runner(self._command("show", UNIT, "--property=ActiveState,MainPID"))
-            properties = {
-                key: value for line in stopped.stdout.splitlines() if "=" in line for key, value in [line.split("=", 1)]
-            }
-            if stopped.returncode or properties != {"ActiveState": "inactive", "MainPID": "0"}:
-                msg = "The web service stop could not be verified; its files were retained."
+        return False
+
+    def _verify_stopped(self, record: dict[str, JsonValue]) -> None:
+        """Wait boundedly for an already authorized stop, preserving every ownership check and integration file.
+
+        Raises:
+            HeinzelError: If ownership changes, evidence is unknown, or the exact owned job does not settle.
+        """
+        deadline = self._clock() + STOP_SECONDS
+        while True:
+            if self._record() != record:
+                msg = "Web integration changed during removal; its files were retained."
                 raise HeinzelError(msg)
+            if self._stop_complete(record):
+                return
+            remaining = deadline - self._clock()
+            if remaining <= 0:
+                msg = (
+                    "The web job remains loaded; its files were retained."
+                    if self.platform == "darwin"
+                    else "The web service stop could not be verified; its files were retained."
+                )
+                raise HeinzelError(msg)
+            self._sleep(min(STOP_POLL_SECONDS, remaining))
 
     def _uninstall(self) -> WebChange:
         """Unload only the exact owned OS service before removing its definition, preserving user data.

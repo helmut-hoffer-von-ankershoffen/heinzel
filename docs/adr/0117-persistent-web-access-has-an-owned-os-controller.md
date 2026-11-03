@@ -48,7 +48,11 @@ installation, paired devices and update handoff while making process availabilit
    edited or foreign integration, unsafe filesystem paths and unsupported user sessions. Mutations hold one private
    lifecycle lock. Before restart or removal, launchd's loaded program, arguments and definition path, or systemd's
    loaded executable, arguments, fragment and absence of drop-ins, must match the recorded installation. A PID or
-   matching file on disk alone cannot authorize stopping a process.
+   matching file on disk alone cannot authorize stopping a process. After an authorized stop request, a five-second polling
+   budget permits known owned transitions to settle; the existing bounded manager-command timeouts still apply.
+   Every observation rechecks the exact loaded
+   identity and unchanged record; unknown or foreign evidence aborts immediately, and timeout retains all files.
+   Waiting never issues another stop request.
 3. **One OS process owner.** macOS uses a LaunchAgent in the user's GUI domain with RunAtLoad and throttled KeepAlive;
    Linux uses a systemd user service with a fixed restart delay. Both promise availability after that user logs in,
    not before login or after logout. Neither installs a root daemon nor enables Linux linger. The job runs a

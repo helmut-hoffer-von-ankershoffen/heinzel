@@ -840,3 +840,123 @@ def test_real_user_factory_binds_profile_and_refuses_process_behavior_before_man
     assert manager.calls == []
     assert disabled.status().installed is False
     assert disabled.uninstall().changed is False
+
+
+class StopClock:
+    """Advance stop observation without real sleeping or manipulating OS processes."""
+
+    def __init__(self):
+        self.now = 0.0
+
+    def clock(self):
+        return self.now
+
+    def sleep(self, seconds):
+        self.now += seconds
+
+
+def asynchronous_stop(service, manager, clock, *, outcome):
+    """A successful stop request precedes the manager's observed terminal state."""
+    stopping = False
+
+    def runner(command):
+        nonlocal stopping
+        args = command[1:]
+        args = args[1:] if args[:1] == ["--user"] else args
+        operation = args[0]
+        if stopping and clock.now >= 0.05:
+            if outcome == "settled":
+                manager.active = False
+                if service.platform == "darwin":
+                    manager.loaded = False
+            elif outcome == "foreign":
+                manager.foreign = True
+            elif outcome == "unknown" and operation in {"print", "list", "show"}:
+                manager.calls.append(list(command))
+                return subprocess.CompletedProcess(command, 1, "", "")
+            elif outcome == "changed":
+                service.launcher.write_text("changed fixture launcher")
+        result = manager(command)
+        if operation in {"bootout", "disable"} and result.returncode == 0:
+            stopping = True
+            manager.active = manager.loaded = True
+        return result
+
+    service.runner = runner
+    service._clock = clock.clock
+    service._sleep = clock.sleep
+
+
+def test_successful_stop_waits_for_owned_manager_transition_before_removing_files(service):
+    selected, manager, port = service
+    selected.install(port)
+    clock = StopClock()
+    asynchronous_stop(selected, manager, clock, outcome="settled")
+    assert selected.uninstall().changed
+    assert clock.now > 0
+    assert not selected.unit.exists()
+    assert not selected.marker.exists()
+    assert not selected.launcher.exists()
+    assert not manager.loaded
+    stops = [command for command in manager.calls if "bootout" in command or "disable" in command]
+    assert len(stops) == 1
+
+
+@pytest.mark.parametrize("outcome", ["persistent", "foreign", "unknown", "changed"])
+def test_stop_wait_retains_integration_on_timeout_or_lost_ownership(service, outcome):
+    selected, manager, port = service
+    selected.install(port)
+    clock = StopClock()
+    asynchronous_stop(selected, manager, clock, outcome=outcome)
+    with pytest.raises(HeinzelError):
+        selected.uninstall()
+    assert selected.unit.exists()
+    assert selected.marker.exists()
+    assert selected.launcher.exists()
+    stops = [command for command in manager.calls if "bootout" in command or "disable" in command]
+    assert len(stops) == 1
+    if outcome == "persistent":
+        assert clock.now == 5.0
+    elif outcome == "changed":
+        assert clock.now < 5.0
+    else:
+        assert clock.now == 0.05
+
+
+@pytest.mark.parametrize(
+    ("returncode", "output"),
+    [
+        (1, "ActiveState=active\nMainPID=7\n"),
+        (0, "ActiveState=deactivating\n"),
+        (0, "ActiveState=active\nMainPID:7\n"),
+        (0, "ActiveState=active\nWrongPID=7\n"),
+        (0, "ActiveState=active\nMainPID=7\nUnexpected=extra\n"),
+        (0, "ActiveState=active\nMainPID=not-a-pid\n"),
+        (0, "ActiveState=active\nMainPID=\u0661\n"),
+        (0, "ActiveState=inactive\nMainPID=7\n"),
+        (0, "ActiveState=failed\nMainPID=0\n"),
+    ],
+)
+def test_linux_unknown_stop_state_fails_immediately_and_retains_all_integration(service_factory, returncode, output):
+    selected, manager, port = service_factory("linux")
+    selected.install(port)
+    before = {path: path.read_bytes() for path in (selected.marker, selected.unit, selected.launcher)}
+    clock = StopClock()
+    selected._clock, selected._sleep = clock.clock, clock.sleep
+
+    def runner(command):
+        if command[-1] == "--property=ActiveState,MainPID":
+            manager.calls.append(list(command))
+            return subprocess.CompletedProcess(command, returncode, output, "")
+        result = manager(command)
+        if "disable" in command:
+            manager.active = True
+        return result
+
+    selected.runner = runner
+    with pytest.raises(HeinzelError, match="stop could not be verified"):
+        selected.uninstall()
+    assert {path: path.read_bytes() for path in before} == before
+    assert clock.now == 0.0
+    stops = [command for command in manager.calls if "disable" in command]
+    assert len(stops) == 1
