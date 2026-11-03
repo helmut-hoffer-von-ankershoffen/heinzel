@@ -5,7 +5,7 @@ from urllib.parse import urlsplit
 import httpx
 import pytest
 
-from tests.e2e._ui_service import RunningService
+from tests.e2e._ui_service import RunningService, startup_diagnostics
 from tests.e2e.tool_install_test import sandbox, seed_uv_cache, wheel
 from tests.integration.ui_service_test import service, service_factory
 
@@ -21,6 +21,7 @@ def supervised(service, tmp_path, sandbox, wheel):
     service.executable = sandbox.hz_bin
     service.prefix = sandbox.root / "tools/heinzel"
     service.install(port)
+    startup_diagnostics(service.prefix, service.directory)
     directories = {
         "HZ_STATE_DIR": str(service.directory.parent),
         "HZ_DATA_DIR": str(tmp_path / "data"),

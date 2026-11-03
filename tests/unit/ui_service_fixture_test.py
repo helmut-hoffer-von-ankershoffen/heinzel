@@ -81,3 +81,16 @@ def test_native_sample_exposes_only_bounded_static_thread_and_symbol_labels():
     assert RunningService.sample_metadata(report) == [{"role": "publication", "symbols": ["fsync"]}]
     many_threads = "\n".join(f" 46 Thread_{number}: private-thread-name" for number in range(32))
     assert len(RunningService.sample_metadata(many_threads)) == 16
+
+
+def test_python_startup_snapshots_expose_only_bounded_fixed_source_labels():
+    snapshot = (
+        "Timeout (0:00:02)!\nThread 0x1234:\n"
+        '  File "/private/example/heinzel/heads/cli/__init__.py", line 42 in private_function_name\n'
+        '  File "/private/example/private-file.py", line 7 in private_function_name\n'
+        "private-error-body-must-not-be-logged\n"
+    )
+    frames = RunningService.startup_frames(snapshot * 5)
+    assert frames == [[("heinzel/heads/cli/__init__.py", 42), ("other", 7)]] * 3
+    many_frames = "Timeout (0:00:02)!\n" + (snapshot.splitlines()[2] + "\n") * 64
+    assert len(RunningService.startup_frames(many_frames)[0]) == 32

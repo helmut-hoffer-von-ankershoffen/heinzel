@@ -92,6 +92,52 @@ _NATIVE_SYMBOLS = {
     "write",
     "write_nocancel",
 }
+_STARTUP_MODULES = {
+    "_bootstrap",
+    "_bootstrap_external",
+    "site.py",
+    "sitecustomize.py",
+    "heinzel/__main__.py",
+    "heinzel/heads/cli/__init__.py",
+    "heinzel/heads/cli/_serve.py",
+    "heinzel/heads/web/__init__.py",
+    "heinzel/heads/web/_supervision.py",
+    "heinzel/kernel/_boot.py",
+    "heinzel/kernel/_discovery.py",
+    "heinzel/kernel/_kernel.py",
+    "heinzel/kernel/_private_control.py",
+    "typer/main.py",
+    "fastapi/routing.py",
+    "pydantic/_internal/_generate_schema.py",
+    "inspect.py",
+    "threading.py",
+    "uvicorn/server.py",
+    "asyncio/base_events.py",
+    "selectors.py",
+}
+
+
+def startup_diagnostics(prefix, directory):
+    """Capture one early stack only inside this fixture's isolated SDK, never the owner's install."""
+    packages = list((prefix / "lib").glob("python*/site-packages"))
+    assert len(packages) == 1
+    assert packages[0].resolve().is_relative_to(prefix.resolve()), "Startup diagnostics must stay in the fixture SDK."
+    target = packages[0] / "sitecustomize.py"
+    assert not target.exists(), "The fixture must not replace existing startup code."
+    assert not target.is_symlink(), "The fixture must not replace an existing startup link."
+    destination = directory / "startup-stacks.txt"
+    descriptor = destination.open("xb")
+    descriptor.close()
+    destination.chmod(0o600)
+    source = (
+        "import faulthandler, os, sys\n"
+        # The stable shim execs isolated Python before importing hz; observe that app, not its short-lived shim.
+        "if sys.flags.isolated:\n"
+        f"    _hz_stacks = os.open({str(destination)!r}, os.O_WRONLY | os.O_TRUNC | os.O_NOFOLLOW)\n"
+        "    faulthandler.dump_traceback_later(4, repeat=False, file=_hz_stacks)\n"
+    )
+    with target.open("x") as handle:
+        handle.write(source)
 
 
 def _sample_role(line):
@@ -161,16 +207,53 @@ class RunningService:
             f"last status={status.model_dump_json() if status is not None else 'not sampled'}, "
             f"owned process exit={self.processes[-1].poll()}, wait channel={self.wait_channel()}, "
             f"control failure={self.control_failure}, failed status calls={self.control_failure_count}, "
-            f"publication evidence={self.publication_evidence()}."
+            f"publication evidence={self.publication_evidence(initial=previous is None and len(self.processes) == 1)}."
         )
 
-    def publication_evidence(self):
+    def publication_evidence(self, *, initial):
         """Observe only after the unchanged readiness deadline has already failed."""
         pending = list(islice(self.service.directory.glob(".runtime.json.*"), 4))
         result = {"runtime_present": self.service.runtime.exists(), "pending_writes": len(pending)}
+        # A real tool replacement removes the fixture-only sitecustomize; never attribute its old stack to an exec.
+        result["startup"] = self.startup_metadata() if initial else "not-initial-startup"
         result["native"] = self.native_state()
         result["runtime_after_sample"] = self.service.runtime.exists()
         return result
+
+    def startup_metadata(self):
+        """Publish only fixed source labels and line numbers from bounded, fixture-private Python snapshots."""
+        try:
+            with (self.service.directory / "startup-stacks.txt").open("rb") as handle:
+                report = handle.read(64 * 1024).decode("utf-8", errors="replace")
+        except OSError:
+            return []
+        return self.startup_frames(report)
+
+    @staticmethod
+    def startup_frames(report):
+        """Discard thread identifiers, paths, source text and arbitrary names before formatting diagnostics."""
+        snapshots = []
+        frames = None
+        for line in report.splitlines():
+            if line.startswith("Timeout ("):
+                if len(snapshots) == 3:
+                    break
+                frames = []
+                snapshots.append(frames)
+            elif frames is not None and len(frames) < 32:
+                match = re.match(r'  File "([^"\n]{1,512})", line ([1-9]\d{0,6}) in ', line)
+                if match is None:
+                    continue
+                normalized = match[1].replace("\\", "/")
+                frozen = {
+                    "<frozen importlib._bootstrap>": "_bootstrap",
+                    "<frozen importlib._bootstrap_external>": "_bootstrap_external",
+                }
+                label = frozen.get(normalized) or next(
+                    (name for name in _STARTUP_MODULES if normalized.endswith("/" + name)), "other"
+                )
+                frames.append((label, int(match[2])))
+        return snapshots
 
     def native_state(self):
         """Sample only the fixture-created child and emit static role/symbol labels, never raw reports."""
