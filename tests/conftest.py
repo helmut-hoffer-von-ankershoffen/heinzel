@@ -1,9 +1,11 @@
 """Shared fixtures. The test-suite policy (one level per test, in order, with timeouts) and the isolation of every
 test from the developer's HZ_* variables, config and state (`hz_isolation`) are heinzel.testing's."""
 
+import math
 import os
 import re
 import sys
+import time
 from collections.abc import Callable
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
@@ -144,12 +146,72 @@ class _Diagnostics:
 
 def pytest_configure(config: pytest.Config) -> None:
     """Only the controller emits reports; workers forward their normal reports unchanged."""
+    if config.getoption("markexpr") == "(integration) and not perf":
+        config.pluginmanager.register(_SessionTiming(config), "heinzel-integration-session-timing")
     if (
         not os.environ.get("PYTEST_XDIST_WORKER")
         and not hasattr(config, "workerinput")
         and config.getoption("markexpr") == "e2e"
     ):
         config.pluginmanager.register(_Diagnostics(), "heinzel-e2e-immediate-diagnostics")
+
+
+class _SessionTiming:
+    """Separate collection, test phases and CPU use when the integration session exhausts its budget."""
+
+    def __init__(self, config: pytest.Config) -> None:
+        self._config = config
+        self._started = time.monotonic()
+        self._cpu = os.times()
+        self._phases = 0.0
+        self._completed = 0
+
+    @pytest.hookimpl(optionalhook=True)
+    def pytest_xdist_node_collection_finished(self, node: object, ids: list[str]) -> None:
+        worker = getattr(getattr(node, "gateway", None), "id", "")
+        if isinstance(worker, str) and re.fullmatch(r"gw[0-9]+", worker):
+            _emit(
+                f"INTEGRATION collected worker={worker} tests={len(ids)} "
+                f"controller_seconds={time.monotonic() - self._started:.3f}"
+            )
+
+    def pytest_runtest_logreport(self, report: pytest.TestReport) -> None:
+        self._phases += report.duration
+        self._completed += report.when == "teardown"
+
+    @pytest.hookimpl(tryfirst=True)
+    def pytest_sessionfinish(self, session: pytest.Session, exitstatus: int) -> None:
+        del session
+        cpu = os.times()
+        timing = {
+            "wall": time.monotonic() - self._started,
+            "cpu": cpu.user + cpu.system - self._cpu.user - self._cpu.system,
+            "child_cpu": cpu.children_user + cpu.children_system - self._cpu.children_user - self._cpu.children_system,
+            "phases": self._phases,
+            "completed": self._completed,
+        }
+        if hasattr(self._config, "workeroutput"):
+            self._config.workeroutput["heinzel_integration_timing"] = timing
+        else:
+            _emit(f"INTEGRATION session exit={int(exitstatus)} wall_seconds={timing['wall']:.3f}")
+
+    @pytest.hookimpl(optionalhook=True)
+    def pytest_testnodedown(self, node: object, error: object) -> None:
+        del error  # Exception text can contain private paths or values.
+        worker = getattr(getattr(node, "gateway", None), "id", "")
+        timing = getattr(node, "workeroutput", {}).get("heinzel_integration_timing")
+        if not isinstance(worker, str) or not re.fullmatch(r"gw[0-9]+", worker) or not isinstance(timing, dict):
+            return
+        if not all(
+            type(timing.get(key)) in {int, float} and math.isfinite(timing[key]) and timing[key] >= 0
+            for key in ("completed", "wall", "cpu", "child_cpu", "phases")
+        ):
+            return
+        _emit(
+            f"INTEGRATION worker={worker} completed={int(timing['completed'])} "
+            f"wall_seconds={timing['wall']:.3f} cpu_seconds={timing['cpu']:.3f} "
+            f"child_cpu_seconds={timing['child_cpu']:.3f} phase_seconds={timing['phases']:.3f}"
+        )
 
 
 def _spread_early_e2e(items: list[pytest.Item], workers: int) -> list[pytest.Item]:
