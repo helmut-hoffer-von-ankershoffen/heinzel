@@ -58,6 +58,16 @@ SHA256 = re.compile(r"[0-9a-f]{64}")
 # CA bundles of common Linux distributions, for Pythons whose OpenSSL looks elsewhere.
 CA_BUNDLES = ("/etc/ssl/cert.pem", "/etc/ssl/certs/ca-certificates.crt", "/etc/pki/tls/certs/ca-bundle.crt")
 
+# Split callable argument lists to avoid the shared template's variable delimiter.
+type FetchBytes[T] = Callable[
+    [T],
+    bytes,
+]
+type FindProgram = Callable[
+    [str],
+    str | None,
+]
+
 
 class ToolError(Exception):
     """A tool can't be installed; the message says why and what to do."""
@@ -234,7 +244,7 @@ def http_get(url: str) -> bytes:
                 raise
 
 
-def download_bytes(url: str, get: Callable[[str], bytes] = http_get) -> bytes:
+def download_bytes(url: str, get: FetchBytes[str] = http_get) -> bytes:
     """The bytes at a URL.
 
     Raises:
@@ -247,9 +257,7 @@ def download_bytes(url: str, get: Callable[[str], bytes] = http_get) -> bytes:
         raise ToolError(msg) from error
 
 
-def fetch(
-    download: Download, cache: Path = CACHE, get: Callable[[str], bytes] = http_get, *, cached_ok: bool = True
-) -> bytes:
+def fetch(download: Download, cache: Path = CACHE, get: FetchBytes[str] = http_get, *, cached_ok: bool = True) -> bytes:
     """A pinned file's bytes, from the cache or the network, refused unless they match the checksum.
 
     `cached_ok=False` always downloads (and refreshes the cache), to check the file is still published.
@@ -329,7 +337,7 @@ def install(
     tool: Tool,
     platform_: str,
     tools_dir: Path = TOOLS_DIR,
-    fetch_: Callable[[Download], bytes] = fetch,
+    fetch_: FetchBytes[Download] = fetch,
 ) -> Result:
     """Install the pinned binary for this platform unless it is already there; idempotent and safe to interrupt."""
     download = tool.files.get(platform_)
@@ -377,7 +385,7 @@ def run(
     platform_: str,
     arguments: list[str],
     tools_dir: Path = TOOLS_DIR,
-    fetch_: Callable[[Download], bytes] = fetch,
+    fetch_: FetchBytes[Download] = fetch,
 ) -> int:
     """Run a tool, installing it first if needed; only an installation or a failure prints anything (on stderr)."""
     result = install(tool, platform_, tools_dir, fetch_)
@@ -389,7 +397,7 @@ def run(
     return 1
 
 
-def pin(name: str, manifest: Path = MANIFEST, get: Callable[[str], bytes] = http_get) -> list[str]:
+def pin(name: str, manifest: Path = MANIFEST, get: FetchBytes[str] = http_get) -> list[str]:
     """Download a tool's files for the version in the manifest and write their checksums into it.
 
     Raises:
@@ -484,7 +492,7 @@ def checks(  # noqa: PLR0913 - what it looks at, injectable for tests
     platform_: str,
     tools: dict[str, Tool],
     tools_dir: Path = TOOLS_DIR,
-    which: Callable[[str], str | None] = shutil.which,
+    which: FindProgram = shutil.which,
     output: Callable[..., tuple[int, str]] = _output,
     *,
     web_app: Path = WEB_APP,

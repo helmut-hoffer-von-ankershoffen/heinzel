@@ -149,6 +149,8 @@ def test_fresh_governed_setup_creates_its_lock_before_frozen_install(tmp_path):
         quiet=True,
         vcs_ref="HEAD",
     )
+    assert (destination / "scripts" / "tools.py").read_bytes() == (repository / "scripts" / "tools.py").read_bytes()
+    assert not (destination / "scripts" / "tools.py.jinja").exists()
     assert not (destination / "uv.lock").exists()
     tools = tmp_path / "bin"
     tools.mkdir()
