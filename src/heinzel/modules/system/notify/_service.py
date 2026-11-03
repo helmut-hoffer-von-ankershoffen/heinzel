@@ -491,7 +491,20 @@ class NotifyService(Notifications):
         return Delivered(delivered=[notice.id for notice in self.deliver(ids, Delivery.WEB)])
 
     def health(self) -> list[Check]:
-        """How notices reach you, for `hz system doctor`; degraded only while the native notifier refuses pop-ups."""
+        """Report durable store integrity and how notices reach you, without changing notification state."""
+        if problem := self.store.integrity_problem():
+            return [
+                Check(
+                    name="notification store",
+                    status=Status.DOWN,
+                    detail=problem,
+                    fix=(
+                        "Preserve the store for recovery review; "
+                        "use a coherent trusted backup if replay evidence is damaged. "
+                        "Do not delete its marker or rebuild replay keys."
+                    ),
+                )
+            ]
         settings = self.settings
         if not settings.enabled:
             return [Check(name="notifications", status=Status.UP, detail="off ([system.notify] enabled = false)")]

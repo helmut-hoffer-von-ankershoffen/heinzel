@@ -90,3 +90,24 @@ The first `add` previews. Check the source and compatibility, then confirm. Some
 For updates, removal and platform details, see the tested instructions in the
 [repository README](../../README.md#install). The desktop lifecycle has
 [explicit production gates](../DESKTOP_PRODUCTION_GATES.md); the local web command above is the starting path.
+
+### Notification history needs recovery
+
+If `hz system doctor` reports **notification store: down**, hz cannot safely read the durable record of notices
+already queued. Some integrity failures block notification writes to avoid repeating a notice whose result is uncertain.
+Reinstalling the native notifier does not repair this history. Doctor leaves the existing state unchanged.
+
+For a read-only, bounded check, doctor verifies at most 4 MiB of notification state and rejects linked, nonregular,
+public or inaccessible store paths. Larger histories report verification unavailable; this does not prove corruption
+and does not impose a new limit on durable writes. Preserve the full history for review rather than trimming keys.
+
+Preserve the existing notification store and its `durable-notices` marker. Recovery requires a coherent, trusted
+backup of the same profile: the notification state must include both its notices and complete durable replay-key set,
+with the corresponding marker. A legacy list of notices alone is insufficient; display history is bounded and cannot
+reconstruct missing replay keys. Do not delete the marker, reset the store or convert a legacy list to an empty-key
+record to silence the warning.
+
+Before any restoration, stop writers using that profile through their supported controls and ensure they use the
+current hz version. Have the backup and restoration procedure reviewed before changing the preserved state, then run
+`hz system doctor` again before resuming notification delivery. If no coherent backup is available, keep the store
+unchanged and ask for recovery help.

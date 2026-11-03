@@ -708,3 +708,262 @@ def test_the_tick_installs_a_missing_notifier_without_any_command(settings, cloc
     assert not service.notifier.app.path.exists()
     service.post_native()
     assert service.notifier.app.path.is_dir()  # an update, or a daemon installed first, heals on its next tick
+
+
+def _store_files(directory):
+
+    try:
+        root = directory.lstat()
+    except FileNotFoundError:
+        return None
+    result = {".": stat.S_IMODE(root.st_mode)}
+    if stat.S_ISLNK(root.st_mode):
+        result["link"] = directory.readlink()
+        return result
+    for path in directory.iterdir():
+        info = path.lstat()
+        content = path.read_bytes() if stat.S_ISREG(info.st_mode) else None
+        target = path.readlink() if stat.S_ISLNK(info.st_mode) else None
+        result[path.name] = (content, stat.S_IMODE(info.st_mode), info.st_ino, target)
+    return result
+
+
+@pytest.mark.parametrize("damage", ["legacy", "missing", "malformed", "invalid-keys", "deep"])
+def test_health_reports_durable_store_damage_without_writes_or_disclosure(make, monkeypatch, caplog, damage):
+    import json
+
+    from heinzel.modules.system.notify import _store
+
+    service = make(native=False)
+    private_content = "fixture-private-notice-content"
+    assert service.emit_once(
+        NoticeKind.HEINZEL, private_content, private_content, route="/heinzel", command="hz", key="private-slot"
+    )
+    path = service.store.path
+    notices = [notice.model_dump(mode="json") for notice in service.recent()]
+    if damage == "legacy":
+        path.write_text(json.dumps(notices), encoding="utf-8")
+    elif damage == "missing":
+        path.unlink()
+    elif damage == "malformed":
+        path.write_text('{"notices": "' + private_content, encoding="utf-8")
+    elif damage == "deep":
+        path.write_text("[" * 1500 + "]" * 1500, encoding="utf-8")
+    else:
+        path.write_text(json.dumps({"notices": notices, "durable_keys": 42}), encoding="utf-8")
+    before = _store_files(service.store.directory)
+
+    def no_write(*args, **kwargs):
+        pytest.fail("doctor must not write or acquire the notification writer lock")
+
+    monkeypatch.setattr(_store, "_write_private", no_write)
+    monkeypatch.setattr(service.store, "_locked", no_write)
+    caplog.clear()
+    checks = service.health()
+    assert len(checks) == 1
+    assert checks[0].name == "notification store"
+    assert checks[0].status is Status.DOWN
+    assert "cannot be verified" in checks[0].detail
+    assert "coherent trusted backup" in checks[0].fix
+    assert "Do not delete" in checks[0].fix
+    assert private_content not in repr(checks)
+    assert private_content not in caplog.text
+    assert caplog.text == ""
+    assert _store_files(service.store.directory) == before
+
+
+def test_health_does_not_hide_durable_integrity_failure_when_notifications_are_off(make):
+    service = make()
+    assert service.emit_once(NoticeKind.HEINZEL, "Check-in", "Due", route="/heinzel", command="hz", key="slot")
+    service.store.path.write_text("[]", encoding="utf-8")
+    disabled = make(enabled=False)
+    assert disabled.health()[0].status is Status.DOWN
+
+
+def test_health_accepts_valid_durable_store_without_changes(make):
+    service = make(native=False)
+    assert service.emit_once(NoticeKind.HEINZEL, "Check-in", "Due", route="/heinzel", command="hz", key="slot")
+    before = _store_files(service.store.directory)
+    assert all(check.status is not Status.DOWN for check in service.health())
+    assert _store_files(service.store.directory) == before
+
+
+def test_health_leaves_uninitialized_and_valid_legacy_stores_unchanged(make):
+    service = make(native=False)
+    assert _store_files(service.store.directory) is None
+    assert all(check.status is not Status.DOWN for check in service.health())
+    assert _store_files(service.store.directory) is None
+    assert draft(service) is not None
+    assert not service.store._durable.exists()
+    before = _store_files(service.store.directory)
+    assert all(check.status is not Status.DOWN for check in service.health())
+    assert _store_files(service.store.directory) == before
+
+
+@pytest.mark.parametrize("unreadable", ["durable-notices", "notices.json"])
+def test_health_reports_unreadable_files_without_disclosing_error(make, monkeypatch, unreadable):
+    import os
+
+    from heinzel.modules.system.notify import _store
+
+    service = make(native=False)
+    assert service.emit_once(NoticeKind.HEINZEL, "Check-in", "Due", route="/heinzel", command="hz", key="slot")
+    private_content = "fixture-private-path"
+    before = _store_files(service.store.directory)
+    original = os.open
+
+    def denied(path, *args, **kwargs):
+        if path == unreadable:
+            raise PermissionError(private_content)
+        return original(path, *args, **kwargs)
+
+    monkeypatch.setattr(_store.os, "open", denied)
+    checks = service.health()
+    assert checks[0].status is Status.DOWN
+    assert private_content not in repr(checks)
+    assert _store_files(service.store.directory) == before
+
+
+@pytest.mark.parametrize(
+    "unsafe",
+    [
+        "dangling-marker",
+        "linked-marker",
+        "fifo-marker",
+        "linked-state",
+        "fifo-state",
+        "public-marker",
+        "public-state",
+        "hardlinked-marker",
+        "hardlinked-state",
+        "linked-directory",
+        "public-directory",
+        "unsafe-parent",
+    ],
+)
+def test_health_rejects_unsafe_paths_without_locking_or_changes(make, settings, monkeypatch, unsafe):
+    import os
+
+    from heinzel.modules.system.notify import _store
+
+    service = make(native=False)
+    assert service.emit_once(NoticeKind.HEINZEL, "Check-in", "Due", route="/heinzel", command="hz", key="slot")
+    directory = service.store.directory
+    marker = service.store._durable
+    state = service.store.path
+    if unsafe == "linked-directory":
+        physical = directory.with_name("physical-notify")
+        directory.rename(physical)
+        directory.symlink_to(physical, target_is_directory=True)
+    elif unsafe == "public-directory":
+        directory.chmod(0o755)
+    elif unsafe == "unsafe-parent":
+        settings.state_dir.chmod(0o777)
+    else:
+        target = marker if "marker" in unsafe else state
+        if unsafe.startswith("public"):
+            target.chmod(0o644)
+        elif unsafe.startswith("hardlinked"):
+            os.link(target, target.with_name(target.name + ".linked"))
+        elif unsafe.startswith("fifo"):
+            target.unlink()
+            os.mkfifo(target, 0o600)
+        else:
+            physical = target.with_name(target.name + ".physical")
+            target.rename(physical)
+            target.symlink_to(physical if unsafe != "dangling-marker" else directory / "missing")
+    before = _store_files(directory)
+    parent_mode = stat.S_IMODE(settings.state_dir.stat().st_mode)
+
+    def no_write(*args, **kwargs):
+        pytest.fail("doctor must never write or acquire the notification writer lock")
+
+    monkeypatch.setattr(service.store, "_locked", no_write)
+    monkeypatch.setattr(_store, "_write_private", no_write)
+    checks = service.health()
+    assert checks[0].status is Status.DOWN
+    assert _store_files(directory) == before
+    assert stat.S_IMODE(settings.state_dir.stat().st_mode) == parent_mode
+
+
+@pytest.mark.parametrize("fields", [{}, {"notices": []}, {"durable_keys": []}])
+def test_missing_durable_fields_fail_closed_for_health_and_writes(make, fields):
+    import json
+
+    service = make(native=False)
+    assert service.emit_once(NoticeKind.HEINZEL, "Check-in", "Due", route="/heinzel", command="hz", key="slot")
+    service.store.path.write_text(json.dumps(fields), encoding="utf-8")
+    before = service.store.path.read_bytes()
+    assert service.health()[0].status is Status.DOWN
+
+    def no_replay(notices):
+        pytest.fail("unproven replay evidence must not allow a notice mutation")
+
+    with pytest.raises(OSError, match="durable notification store"):
+        service.store.change_once(service._clock(), "new-slot", no_replay)
+    with pytest.raises(OSError, match="durable notification store"):
+        service.store.has_once("slot")
+    assert service.store.path.read_bytes() == before
+
+
+def test_oversized_health_verification_is_unavailable_without_a_new_write_limit(make, monkeypatch):
+    from heinzel.modules.system.notify import _store
+
+    service = make(native=False)
+    assert service.emit_once(NoticeKind.HEINZEL, "Check-in", "Due", route="/heinzel", command="hz", key="slot")
+    before = _store_files(service.store.directory)
+    monkeypatch.setattr(_store, "MAX_HEALTH_BYTES", 16)
+    finding = service.health()[0]
+    assert finding.status is Status.DOWN
+    assert "verification is unavailable" in finding.detail
+    assert "health-check read limit" in finding.detail
+    assert service.store._read_state(strict=True).durable_keys
+    assert _store_files(service.store.directory) == before
+
+
+def test_health_reads_the_verified_descriptor_when_its_path_is_replaced(make, monkeypatch):
+    import os
+
+    from heinzel.modules.system.notify import _store
+
+    service = make(native=False)
+    assert service.emit_once(NoticeKind.HEINZEL, "Check-in", "Due", route="/heinzel", command="hz", key="slot")
+    state = service.store.path
+    original_bytes = state.read_bytes()
+    original_inode = state.stat().st_ino
+    retained = state.with_name("retained-state")
+    actual_open, actual_fstat = os.open, os.fstat
+    opens = 0
+    replaced = False
+
+    def checked_open(path, flags, *args, **kwargs):
+        nonlocal opens
+        if path in {"durable-notices", "notices.json"}:
+            assert flags & os.O_NOFOLLOW
+            assert flags & os.O_NONBLOCK
+            assert isinstance(kwargs.get("dir_fd"), int)
+        if path == "notices.json":
+            opens += 1
+            assert opens == 1, "health must not reopen the pathname after verification"
+        return actual_open(path, flags, *args, **kwargs)
+
+    def replace_after_fstat(descriptor):
+        nonlocal replaced
+        info = actual_fstat(descriptor)
+        if info.st_ino == original_inode and not replaced:
+            state.rename(retained)
+            state.symlink_to(state.with_name("missing-state"))
+            replaced = True
+        return info
+
+    def no_path_read(*args, **kwargs):
+        pytest.fail("health must decode bytes from its verified descriptor, not read the pathname again")
+
+    monkeypatch.setattr(_store.os, "open", checked_open)
+    monkeypatch.setattr(_store.os, "fstat", replace_after_fstat)
+    monkeypatch.setattr(service.store, "_read_state", no_path_read)
+    assert all(check.status is not Status.DOWN for check in service.health())
+    assert replaced
+    assert opens == 1
+    assert retained.read_bytes() == original_bytes
+    assert stat.S_IMODE(retained.stat().st_mode) == 0o600
