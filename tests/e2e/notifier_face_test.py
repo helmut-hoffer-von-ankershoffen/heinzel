@@ -4,6 +4,7 @@ The required serial macOS jobs build the notifier first. A fresh Swift SDK modul
 harness's ten-second compiler budget, so this native compiler check belongs with those builds, not Python shards.
 """
 
+import platform
 import plistlib
 import shutil
 import subprocess
@@ -64,8 +65,14 @@ def test_bundled_face_renders_in_an_owned_private_directory_without_posting(tmp_
     shutil.copyfile(SOURCES / "heinzel.svg", resources / "face.svg")
     with (app / "Info.plist").open("wb") as handle:
         plistlib.dump({"CFBundleExecutable": "render", "CFBundlePackageType": "APPL"}, handle)
+    # Match the production slice's compiler settings so its SDK module cache can be reused.
+    target = f"{platform.machine()}-apple-macos13"
     subprocess.run(
-        [compiler, str(source), "-o", str(executable)], check=True, capture_output=True, text=True, timeout=10
+        [compiler, "-O", "-target", target, str(source), "-o", str(executable)],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=10,
     )
     rendered = subprocess.run(
         [str(executable), str(tmp_path / "blue-face.png")],
