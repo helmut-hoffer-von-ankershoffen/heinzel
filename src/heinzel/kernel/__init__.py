@@ -23,6 +23,25 @@ from heinzel.kernel._bounded_process import ProcessExecute, ProcessOutcome, run_
 from heinzel.kernel._capabilities import CAPABILITIES, MODES, NO_ADAPTER, Capability, Mode, Requirement
 from heinzel.kernel._capability_schema import capability_read_schema
 from heinzel.kernel._captured_source import captured_source_active
+from heinzel.kernel._captured_write import (
+    CapturedWriteAcknowledgement,
+    CapturedWriteDraft,
+    CapturedWriteLease,
+    CapturedWriteReview,
+    CapturedWriteService,
+    CapturedWriteTarget,
+)
+from heinzel.kernel._channels import (
+    ApprovalChannel,
+    ChannelApprovalReply,
+    ChannelApprovalRequest,
+    ChannelNotice,
+    ChannelReceipt,
+    ChannelReplyConsumer,
+    ChannelReplySource,
+    NotificationChannel,
+    VerifiedChannelReply,
+)
 from heinzel.kernel._chat import ActionGate, ProposedCall
 from heinzel.kernel._chat_services import (
     CheckInChatContext,
@@ -356,6 +375,7 @@ __all__ = [
     "AgentResult",
     "AgentRunner",
     "AiAccess",
+    "ApprovalChannel",
     "AssetType",
     "Authentication",
     "Avatar",
@@ -368,8 +388,20 @@ __all__ = [
     "Capability",
     "CapabilitySettings",
     "CapabilityView",
+    "CapturedWriteAcknowledgement",
+    "CapturedWriteDraft",
+    "CapturedWriteLease",
+    "CapturedWriteReview",
+    "CapturedWriteService",
+    "CapturedWriteTarget",
     "CardWidget",
     "CatchUp",
+    "ChannelApprovalReply",
+    "ChannelApprovalRequest",
+    "ChannelNotice",
+    "ChannelReceipt",
+    "ChannelReplyConsumer",
+    "ChannelReplySource",
     "Chat",
     "ChatDraftTemplate",
     "Check",
@@ -484,6 +516,7 @@ __all__ = [
     "Notice",
     "NoticeHelper",
     "NoticeKind",
+    "NotificationChannel",
     "Notifications",
     "OpenUrl",
     "OperationCall",
@@ -595,6 +628,7 @@ __all__ = [
     "UsageEntry",
     "UsageLog",
     "Verb",
+    "VerifiedChannelReply",
     "ViewLet",
     "ViewSlot",
     "Weather",

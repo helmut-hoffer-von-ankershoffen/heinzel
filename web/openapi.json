@@ -1674,6 +1674,173 @@
         "title": "CapabilityUse",
         "type": "object"
       },
+      "CapturedWriteProposal": {
+        "additionalProperties": false,
+        "description": "Untrusted inert target terms; owner and provider binding are selected by the host.",
+        "properties": {
+          "account": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Account",
+            "type": "string"
+          },
+          "base_revision": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Base Revision",
+            "type": "string"
+          },
+          "content": {
+            "format": "password",
+            "title": "Content",
+            "type": "string",
+            "writeOnly": true
+          },
+          "operation": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Operation",
+            "type": "string"
+          },
+          "reference": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Reference",
+            "type": "string"
+          },
+          "request_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "section": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Section",
+            "type": "string"
+          },
+          "session_id": {
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "source": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Source",
+            "type": "string"
+          },
+          "write_scope": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Write Scope",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "request_id",
+          "account",
+          "source",
+          "reference",
+          "operation",
+          "section",
+          "base_revision",
+          "write_scope",
+          "content"
+        ],
+        "title": "CapturedWriteProposal",
+        "type": "object"
+      },
+      "CapturedWriteReceipt": {
+        "description": "Host-recorded provider acknowledgement of one exact attempt; not a later read observation.",
+        "properties": {
+          "account": {
+            "description": "Account recorded in the reviewed draft.",
+            "title": "Account",
+            "type": "string"
+          },
+          "base_revision": {
+            "description": "Revision reviewed before the attempt.",
+            "title": "Base Revision",
+            "type": "string"
+          },
+          "provider": {
+            "description": "Host-selected provider recorded with the draft.",
+            "title": "Provider",
+            "type": "string"
+          },
+          "reference": {
+            "description": "Exact artifact reference recorded in the reviewed draft.",
+            "title": "Reference",
+            "type": "string"
+          },
+          "request_id": {
+            "description": "Owner-scoped identity of the confirmed write draft.",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "revision": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Revision returned by the provider acknowledgement, if any.",
+            "title": "Revision"
+          },
+          "source": {
+            "description": "Source identity recorded in the reviewed draft.",
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_id",
+          "provider",
+          "account",
+          "source",
+          "reference",
+          "base_revision"
+        ],
+        "title": "CapturedWriteReceipt",
+        "type": "object"
+      },
+      "CapturedWriteStatus": {
+        "description": "Owner-private state without draft content or an invented success.",
+        "properties": {
+          "receipt": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CapturedWriteReceipt"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Recorded provider acknowledgement, not a later artifact verification, if present."
+          },
+          "status": {
+            "description": "Local state; a draft does not grant a write.",
+            "enum": [
+              "draft",
+              "discarded",
+              "uncertain",
+              "acknowledged"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "CapturedWriteStatus",
+        "type": "object"
+      },
       "CardWidget": {
         "additionalProperties": false,
         "description": "A card: a title, a short body and up to three buttons.",
@@ -17448,6 +17615,62 @@
         "title": "heinzel_chat_Input",
         "type": "object"
       },
+      "heinzel_discard_captured_write_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "request_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "session_id": {
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "request_id"
+        ],
+        "title": "heinzel_discard_captured_write_Input",
+        "type": "object"
+      },
+      "heinzel_execute_captured_write_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "approval_proof": {
+            "minLength": 1,
+            "title": "Approval Proof",
+            "type": "string"
+          },
+          "request_id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "review": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "title": "Review",
+            "type": "object"
+          },
+          "session_id": {
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "request_id",
+          "review",
+          "approval_proof"
+        ],
+        "title": "heinzel_execute_captured_write_Input",
+        "type": "object"
+      },
       "heinzel_new_chat_Input": {
         "additionalProperties": false,
         "properties": {
@@ -17706,6 +17929,19 @@
           "timeout_seconds"
         ],
         "title": "heinzel_propose_agent_schedule_Input",
+        "type": "object"
+      },
+      "heinzel_propose_captured_write_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "proposal": {
+            "$ref": "#/components/schemas/CapturedWriteProposal"
+          }
+        },
+        "required": [
+          "proposal"
+        ],
+        "title": "heinzel_propose_captured_write_Input",
         "type": "object"
       },
       "heinzel_propose_check_in_Input": {
@@ -19126,6 +19362,58 @@
         ]
       }
     },
+    "/heinzel/captured-write-status": {
+      "get": {
+        "description": "Read the owner's recorded disposition without repeating a provider operation.",
+        "operationId": "heinzel_captured_write_status",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapturedWriteStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read the owner's recorded disposition without repeating a provider operation.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
     "/heinzel/chat": {
       "post": {
         "description": "Durably queue a message for this Heinzel; acceptance is distinct from a completed model answer.",
@@ -19626,6 +19914,49 @@
         ]
       }
     },
+    "/heinzel/discard-captured-write": {
+      "post": {
+        "description": "Set a draft aside without writing it.",
+        "operationId": "heinzel_discard_captured_write",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/heinzel_discard_captured_write_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Heinzel Discard Captured Write",
+                  "type": "boolean"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set a draft aside without writing it.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
     "/heinzel/discover": {
       "get": {
         "description": "Find candidates for each playbook's artifact types through your bound capabilities; reads only.",
@@ -19673,6 +20004,49 @@
           }
         },
         "summary": "Find candidates for each playbook's artifact types through your bound capabilities; reads only.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/execute-captured-write": {
+      "post": {
+        "description": "Execute one exact confirmed conditional write or leave its outcome uncertain.",
+        "operationId": "heinzel_execute_captured_write",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/heinzel_execute_captured_write_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Heinzel Execute Captured Write",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Execute one exact confirmed conditional write or leave its outcome uncertain.",
         "tags": [
           "heinzel"
         ]
@@ -20436,6 +20810,56 @@
         ]
       }
     },
+    "/heinzel/pending-captured-writes": {
+      "get": {
+        "description": "Drafts waiting for your decision, with their exact terms; reading them writes nothing.",
+        "operationId": "heinzel_pending_captured_writes",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": {
+                      "$ref": "#/components/schemas/JsonValue"
+                    },
+                    "type": "object"
+                  },
+                  "title": "Response Heinzel Pending Captured Writes",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Drafts waiting for your decision, with their exact terms; reading them writes nothing.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
     "/heinzel/personal-artifacts": {
       "get": {
         "description": "List local principal-submitted file associations without accessing the provider.",
@@ -20664,6 +21088,49 @@
           }
         },
         "summary": "Propose scheduled turns; separate human confirmation is required to approve them.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/propose-captured-write": {
+      "post": {
+        "description": "Persist a local draft without writing to a provider or granting authority.",
+        "operationId": "heinzel_propose_captured_write",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/heinzel_propose_captured_write_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Heinzel Propose Captured Write",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Persist a local draft without writing to a provider or granting authority.",
         "tags": [
           "heinzel"
         ]
@@ -24377,6 +24844,62 @@
           }
         },
         "summary": "Stage the exact current agent schedule for human review; no schedule is approved yet.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/runner/chat/propose-captured-write": {
+      "post": {
+        "description": "Stage exact owner-private captured write terms for separate human confirmation.",
+        "operationId": "system_runner_chat_propose_captured_write",
+        "parameters": [
+          {
+            "description": "Owner-scoped personal conversation.",
+            "in": "query",
+            "name": "durable_session",
+            "required": true,
+            "schema": {
+              "description": "Owner-scoped personal conversation.",
+              "title": "Durable Session",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Identity of the captured write draft.",
+            "in": "query",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "description": "Identity of the captured write draft.",
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatSession"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Stage exact owner-private captured write terms for separate human confirmation.",
         "tags": [
           "system"
         ]

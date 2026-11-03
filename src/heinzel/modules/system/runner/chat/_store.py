@@ -179,6 +179,7 @@ class ChatStore(McpChatSessions):
             if action.module == "heinzel" and action.operation in {
                 "approve-model-grant",
                 "accept-agent-contract",
+                "execute-captured-write",
                 "approve-connected-read",
                 "approve-connected-read-set",
                 "approve-agent-schedule",
@@ -192,6 +193,8 @@ class ChatStore(McpChatSessions):
                     if action.operation in {"approve-connected-read", "approve-connected-read-set"}
                     else "Review agent schedule"
                     if action.operation == "approve-agent-schedule"
+                    else "Current section text is not shown; review the full replacement and base revision."
+                    if action.operation == "execute-captured-write"
                     else "Review agent contract"
                     if action.operation == "accept-agent-contract"
                     else "Review model policy"
@@ -212,6 +215,7 @@ class ChatStore(McpChatSessions):
                 "propose-check-in",
                 "approve-model-grant",
                 "accept-agent-contract",
+                "execute-captured-write",
                 "approve-connected-read",
                 "approve-connected-read-set",
                 "approve-agent-schedule",
@@ -575,6 +579,7 @@ class StoreGate(ActionGate):
         if call.module == "heinzel" and call.operation in {
             "approve-model-grant",
             "accept-agent-contract",
+            "execute-captured-write",
             "approve-connected-read",
             "approve-connected-read-set",
             "approve-agent-schedule",

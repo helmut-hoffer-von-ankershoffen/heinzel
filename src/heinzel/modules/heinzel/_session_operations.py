@@ -12,6 +12,7 @@ from pydantic import Field, JsonValue
 
 from heinzel import Config, ConfiguredApiAccess, CurrentUser, HeinzelError, Module, Notifications
 from heinzel.kernel import (
+    CapturedWriteService,
     CheckInChatContext,
     CheckInChatContextSource,
     CheckInHistoryMessage,
@@ -27,6 +28,9 @@ from heinzel.modules.heinzel._autonomous_schedule import (
     ScheduleReviewPage,
     ScheduleReviewView,
 )
+from heinzel.modules.heinzel._captured_write_binding import SelectedWriteService
+from heinzel.modules.heinzel._captured_write_host import CapturedWriteHost, review_payload
+from heinzel.modules.heinzel._captured_write_operations import register_captured_write_operations
 from heinzel.modules.heinzel._connected_grants import (
     ConnectedGrant,
     ConnectedGrantProposal,
@@ -157,7 +161,21 @@ class _SessionApprovalIssuer(ApprovalIssuer):
         grants = ConnectedReadGrants(self.service, current, self.kernel)
         return ConnectedReadSetApprovals(ConnectedReadSetReviews(sets, grants))
 
+    def _write_host(self) -> CapturedWriteHost:
+        if self.kernel is None:
+            msg = "Captured write review is unavailable"
+            raise HeinzelError(msg)
+        return CapturedWriteHost(
+            self.service, self.kernel.resolve(CurrentUser), self.kernel.resolve(SelectedWriteService)
+        )
+
     def review(self, module: str, operation: str, arguments: dict[str, JsonValue]) -> dict[str, JsonValue]:
+        if module == "heinzel" and operation == "execute-captured-write":
+            session, request = self._model_args(arguments)
+            return self._write_host().review(session, request)
+        return self._review_existing(module, operation, arguments)
+
+    def _review_existing(self, module: str, operation: str, arguments: dict[str, JsonValue]) -> dict[str, JsonValue]:
         if module == "heinzel" and operation == "queue-agent-notification":
             if self.kernel is None:
                 msg = "Notification review is unavailable"
@@ -250,6 +268,15 @@ class _SessionApprovalIssuer(ApprovalIssuer):
         return self.kernel.resolve(NotificationDelivery).recover(session, request, write_receipt=False) == "recorded"
 
     def issue(self, module: str, operation: str, arguments: dict[str, JsonValue], provenance: str) -> str:
+        if module == "heinzel" and operation == "execute-captured-write":
+            if arguments.get("review") != self.review(module, operation, arguments):
+                msg = "The reviewed write draft is unavailable or changed"
+                raise HeinzelError(msg)
+            session, request = self._model_args(arguments)
+            return self._write_host().issue(session, request, provenance)
+        return self._issue_existing(module, operation, arguments, provenance)
+
+    def _issue_existing(self, module: str, operation: str, arguments: dict[str, JsonValue], provenance: str) -> str:
         if module == "heinzel" and operation == "queue-agent-notification":
             return self._issue_notification(arguments, provenance)
         if module == "heinzel" and operation in {"approve-connected-read", "approve-connected-read-set"}:
@@ -309,6 +336,18 @@ class _SessionApprovalIssuer(ApprovalIssuer):
         )
 
     def applied(self, module: str, operation: str, arguments: dict[str, JsonValue]) -> bool:
+        if module == "heinzel" and operation == "execute-captured-write":
+            if self.kernel is None:
+                return False
+            session, request = self._model_args(arguments)
+            host = CapturedWriteHost(self.service, self.kernel.resolve(CurrentUser), CapturedWriteService())
+            return (
+                arguments.get("review") == review_payload(host.current(session, request))
+                and host.status(session, request) == "acknowledged"
+            )
+        return self._applied_existing(module, operation, arguments)
+
+    def _applied_existing(self, module: str, operation: str, arguments: dict[str, JsonValue]) -> bool:
         if module == "heinzel" and operation == "queue-agent-notification":
             return self._applied_notification(arguments)
         if module == "heinzel" and operation in {"approve-connected-read", "approve-connected-read-set"}:
@@ -871,6 +910,7 @@ def _register_review_services(module: Module) -> None:
     _register_connected_read_operations(module)
     _register_connected_read_set_operations(module)
     _register_autonomous_schedule_operations(module)
+    register_captured_write_operations(module)
 
 
 def register_session_operations(module: Module) -> None:  # noqa: C901 - operation declarations define one shared head surface

@@ -374,6 +374,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/heinzel/captured-write-status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read the owner's recorded disposition without repeating a provider operation.
+         * @description Read the owner's recorded disposition without repeating a provider operation.
+         */
+        get: operations["heinzel_captured_write_status"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/heinzel/chat": {
         parameters: {
             query?: never;
@@ -574,6 +594,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/heinzel/discard-captured-write": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Set a draft aside without writing it.
+         * @description Set a draft aside without writing it.
+         */
+        post: operations["heinzel_discard_captured_write"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/heinzel/discover": {
         parameters: {
             query?: never;
@@ -588,6 +628,26 @@ export interface paths {
         get: operations["heinzel_discover"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/heinzel/execute-captured-write": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Execute one exact confirmed conditional write or leave its outcome uncertain.
+         * @description Execute one exact confirmed conditional write or leave its outcome uncertain.
+         */
+        post: operations["heinzel_execute_captured_write"];
         delete?: never;
         options?: never;
         head?: never;
@@ -874,6 +934,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/heinzel/pending-captured-writes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Drafts waiting for your decision, with their exact terms; reading them writes nothing.
+         * @description Drafts waiting for your decision, with their exact terms; reading them writes nothing.
+         */
+        get: operations["heinzel_pending_captured_writes"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/heinzel/personal-artifacts": {
         parameters: {
             query?: never;
@@ -988,6 +1068,26 @@ export interface paths {
          * @description Propose scheduled turns; separate human confirmation is required to approve them.
          */
         post: operations["heinzel_propose_agent_schedule"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/heinzel/propose-captured-write": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Persist a local draft without writing to a provider or granting authority.
+         * @description Persist a local draft without writing to a provider or granting authority.
+         */
+        post: operations["heinzel_propose_captured_write"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2808,6 +2908,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/system/runner/chat/propose-captured-write": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Stage exact owner-private captured write terms for separate human confirmation.
+         * @description Stage exact owner-private captured write terms for separate human confirmation.
+         */
+        post: operations["system_runner_chat_propose_captured_write"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/system/runner/chat/propose-connected-read-review": {
         parameters: {
             query?: never;
@@ -4365,6 +4485,90 @@ export interface components {
              * @description As declared, e.g. `documents:read` or `github:tracker:read`.
              */
             requirement: string;
+        };
+        /**
+         * CapturedWriteProposal
+         * @description Untrusted inert target terms; owner and provider binding are selected by the host.
+         */
+        CapturedWriteProposal: {
+            /** Account */
+            account: string;
+            /** Base Revision */
+            base_revision: string;
+            /**
+             * Content
+             * Format: password
+             */
+            content: string;
+            /** Operation */
+            operation: string;
+            /** Reference */
+            reference: string;
+            /** Request Id */
+            request_id: string;
+            /** Section */
+            section: string;
+            /** Session Id */
+            session_id: string;
+            /** Source */
+            source: string;
+            /** Write Scope */
+            write_scope: string;
+        };
+        /**
+         * CapturedWriteReceipt
+         * @description Host-recorded provider acknowledgement of one exact attempt; not a later read observation.
+         */
+        CapturedWriteReceipt: {
+            /**
+             * Account
+             * @description Account recorded in the reviewed draft.
+             */
+            account: string;
+            /**
+             * Base Revision
+             * @description Revision reviewed before the attempt.
+             */
+            base_revision: string;
+            /**
+             * Provider
+             * @description Host-selected provider recorded with the draft.
+             */
+            provider: string;
+            /**
+             * Reference
+             * @description Exact artifact reference recorded in the reviewed draft.
+             */
+            reference: string;
+            /**
+             * Request Id
+             * @description Owner-scoped identity of the confirmed write draft.
+             */
+            request_id: string;
+            /**
+             * Revision
+             * @description Revision returned by the provider acknowledgement, if any.
+             */
+            revision?: string | null;
+            /**
+             * Source
+             * @description Source identity recorded in the reviewed draft.
+             */
+            source: string;
+        };
+        /**
+         * CapturedWriteStatus
+         * @description Owner-private state without draft content or an invented success.
+         */
+        CapturedWriteStatus: {
+            /** @description Recorded provider acknowledgement, not a later artifact verification, if present. */
+            receipt?: components["schemas"]["CapturedWriteReceipt"] | null;
+            /**
+             * Status
+             * @description Local state; a draft does not grant a write.
+             * @enum {string}
+             */
+            status: "draft" | "discarded" | "uncertain" | "acknowledged";
         };
         /**
          * CardWidget
@@ -13487,6 +13691,26 @@ export interface components {
              */
             when_busy: "follow_up" | "steer";
         };
+        /** heinzel_discard_captured_write_Input */
+        heinzel_discard_captured_write_Input: {
+            /** Request Id */
+            request_id: string;
+            /** Session Id */
+            session_id: string;
+        };
+        /** heinzel_execute_captured_write_Input */
+        heinzel_execute_captured_write_Input: {
+            /** Approval Proof */
+            approval_proof: string;
+            /** Request Id */
+            request_id: string;
+            /** Review */
+            review: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            /** Session Id */
+            session_id: string;
+        };
         /** heinzel_new_chat_Input */
         heinzel_new_chat_Input: {
             /** @description The complete personal appearance overrides; null leaves the current look unchanged. */
@@ -13613,6 +13837,10 @@ export interface components {
             session_id: string;
             /** Timeout Seconds */
             timeout_seconds: number;
+        };
+        /** heinzel_propose_captured_write_Input */
+        heinzel_propose_captured_write_Input: {
+            proposal: components["schemas"]["CapturedWriteProposal"];
         };
         /** heinzel_propose_check_in_Input */
         heinzel_propose_check_in_Input: {
@@ -13954,6 +14182,9 @@ export type SchemaCapabilityChoice = components['schemas']['CapabilityChoice'];
 export type SchemaCapabilityInfo = components['schemas']['CapabilityInfo'];
 export type SchemaCapabilityReport = components['schemas']['CapabilityReport'];
 export type SchemaCapabilityUse = components['schemas']['CapabilityUse'];
+export type SchemaCapturedWriteProposal = components['schemas']['CapturedWriteProposal'];
+export type SchemaCapturedWriteReceipt = components['schemas']['CapturedWriteReceipt'];
+export type SchemaCapturedWriteStatus = components['schemas']['CapturedWriteStatus'];
 export type SchemaCardWidget = components['schemas']['CardWidget'];
 export type SchemaCatchUp = components['schemas']['CatchUp'];
 export type SchemaChannel = components['schemas']['Channel'];
@@ -14213,12 +14444,15 @@ export type SchemaHeinzelApproveConnectedReadSetInput = components['schemas']['h
 export type SchemaHeinzelApproveModelGrantInput = components['schemas']['heinzel_approve_model_grant_Input'];
 export type SchemaHeinzelAssociateArtifactInput = components['schemas']['heinzel_associate_artifact_Input'];
 export type SchemaHeinzelChatInput = components['schemas']['heinzel_chat_Input'];
+export type SchemaHeinzelDiscardCapturedWriteInput = components['schemas']['heinzel_discard_captured_write_Input'];
+export type SchemaHeinzelExecuteCapturedWriteInput = components['schemas']['heinzel_execute_captured_write_Input'];
 export type SchemaHeinzelNewChatInput = components['schemas']['heinzel_new_chat_Input'];
 export type SchemaHeinzelPauseAgentScheduleInput = components['schemas']['heinzel_pause_agent_schedule_Input'];
 export type SchemaHeinzelPrepareConnectedReadSetReviewInput = components['schemas']['heinzel_prepare_connected_read_set_review_Input'];
 export type SchemaHeinzelPrepareSuggestedSourceInput = components['schemas']['heinzel_prepare_suggested_source_Input'];
 export type SchemaHeinzelProfileInput = components['schemas']['heinzel_profile_Input'];
 export type SchemaHeinzelProposeAgentScheduleInput = components['schemas']['heinzel_propose_agent_schedule_Input'];
+export type SchemaHeinzelProposeCapturedWriteInput = components['schemas']['heinzel_propose_captured_write_Input'];
 export type SchemaHeinzelProposeCheckInInput = components['schemas']['heinzel_propose_check_in_Input'];
 export type SchemaHeinzelProposeConnectedReadInput = components['schemas']['heinzel_propose_connected_read_Input'];
 export type SchemaHeinzelProposeConnectedReadSetInput = components['schemas']['heinzel_propose_connected_read_set_Input'];
@@ -14806,6 +15040,38 @@ export interface operations {
             };
         };
     };
+    heinzel_captured_write_status: {
+        parameters: {
+            query: {
+                session_id: string;
+                request_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CapturedWriteStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     heinzel_chat: {
         parameters: {
             query?: never;
@@ -15133,6 +15399,39 @@ export interface operations {
             };
         };
     };
+    heinzel_discard_captured_write: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["heinzel_discard_captured_write_Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": boolean;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     heinzel_discover: {
         parameters: {
             query?: {
@@ -15152,6 +15451,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Discovery"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    heinzel_execute_captured_write: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["heinzel_execute_captured_write_Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": string;
                 };
             };
             /** @description Validation Error */
@@ -15618,6 +15950,39 @@ export interface operations {
             };
         };
     };
+    heinzel_pending_captured_writes: {
+        parameters: {
+            query: {
+                session_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: components["schemas"]["JsonValue"];
+                    }[];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     heinzel_personal_artifacts: {
         parameters: {
             query: {
@@ -15788,6 +16153,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ScheduleBinding"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    heinzel_propose_captured_write: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["heinzel_propose_captured_write_Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": string;
                 };
             };
             /** @description Validation Error */
@@ -18273,6 +18671,40 @@ export interface operations {
                 /** @description The personal agent session. */
                 durable_session: string;
                 /** @description The schedule proposal request id. */
+                request_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatSession"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_runner_chat_propose_captured_write: {
+        parameters: {
+            query: {
+                /** @description Owner-scoped personal conversation. */
+                durable_session: string;
+                /** @description Identity of the captured write draft. */
                 request_id: string;
             };
             header?: never;
