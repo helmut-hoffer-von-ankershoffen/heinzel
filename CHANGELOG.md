@@ -4,7 +4,7 @@ All notable changes to Heinzelmännchen, newest first. Versions follow [Semantic
 
 ## [0.9.15](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/releases/tag/v0.9.15) - 2026-11-03
 
-Share the app link through the native share sheet and open the first-session guide from Learn more. This release also improves update recovery and test reliability.
+Run the web app as a supervised background service, and use Ctrl+C, Ctrl+Z, Ctrl+D, Esc, Tab and arrow keys from the phone terminal. The footer can keep important plugin information visible, and opening hz in a terminal gives a quick local status overview. Share the app link through the native share sheet and open the first-session guide from Learn more.
 
 ### 🛡️ Security
 
@@ -13,6 +13,8 @@ Share the app link through the native share sheet and open the first-session gui
 ### ✨ Features
 
 - **web:** Share service URLs with native sheet ([#483](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/483)) ([b6bf603](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/b6bf6034bd9c7c43ecb11684ca36fc3324d64909))
+- **web:** Retain footer contributions by declared priority ([#488](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/488)) ([ea1a83d](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/ea1a83d77c04d4f52855e200a23e33460d6209c1))
+- **cli:** Show a read-only local start overview ([#492](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/492)) ([7b6bf5f](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/7b6bf5fad10daf4a01873adff4c18bd3bd8fe125))
 
 ### 🐛 Bug fixes
 
@@ -22,14 +24,19 @@ Share the app link through the native share sheet and open the first-session gui
 - **system:** Skip notifier maintenance when native delivery is off ([#484](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/484)) ([091491d](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/091491d9f76d354e20078796eea917f9dba94ac2))
 - **ci:** Preserve timing for unchanged CPU counters ([#487](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/487)) ([83acb35](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/83acb35598e5019fd1a20fe02b5f8bc974e4fae8))
 - **web:** Link Learn more to the first session guide ([#482](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/482)) ([7218ac4](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/7218ac4588c7b113ab8a429c985cf37acfe9796c))
+- **web:** Supervise the workspace after login ([#485](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/485)) ([0cb088a](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/0cb088a98b4f261fce6db1190ea44f2b44cb0093))
+- **web:** Make terminal keys available on phones ([#489](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/489)) ([6255180](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/6255180769755e7040a26d671a58cca9d1fa67a9))
 
 ### ⚡ Performance
 
 - **ci:** Reduce repeated test setup work ([#486](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/486)) ([bedcf7b](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/bedcf7b323987dc4f0bcf602c52911f4bbbc0f23))
+- **ci:** Test macOS PRs on endpoint Python versions ([#490](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/490)) ([42b39af](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/42b39af9d1ef146cec68c10e93eacf3ac34a13c2))
+- **ci:** Run full main tests once per proven batch ([#491](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/491)) ([f351420](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/f35142011090967088bb3499fbd276aa5dfba373))
 
 ### 📚 Documentation
 
 - **adr:** Simplify index and show implementing PRs ([#475](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/475)) ([eb8f9c5](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/eb8f9c5d1461c68567578b8f6bbfedf4f3a99361))
+- **release:** Refresh notes for v0.9.15 ([320143d](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/320143dc22c3c127f9f7ae0762f3084bb1a7bd0d))
 
 ### 🧪 Testing
 
