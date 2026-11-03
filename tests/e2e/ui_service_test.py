@@ -109,3 +109,19 @@ def test_installed_server_keeps_session_on_update_exec_and_pairing_after_cold_re
         revoked = client.delete(origin + "/api/_web/device", headers=device)
         assert revoked.status_code == 200
         assert client.get(origin + "/api/lifecycle", headers=device).status_code == 401
+
+
+@pytest.mark.parametrize("_cold_start", range(5))
+def test_fresh_installed_server_repeatedly_publishes_authenticated_control(supervised, _cold_start):
+    service, running = supervised
+    process = running.launch()
+    current = running.ready()
+    assert current.pid == process.pid
+    origin = f"http://127.0.0.1:{current.port}"
+    with httpx.Client(timeout=2) as client:
+        unauthenticated = client.get(origin + "/api/lifecycle")
+        assert unauthenticated.status_code == 401
+        headers = session_headers(service.open_local())
+        authenticated = client.get(origin + "/api/lifecycle", headers=headers)
+        assert authenticated.status_code == 200
+        assert authenticated.json()["instance"] == current.instance
