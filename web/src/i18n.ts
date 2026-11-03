@@ -130,6 +130,8 @@ const en = {
   "contrib.toggle.off": "Off",
   "contrib.toggle.working": "Applying…",
   "contrib.toggle.copyUrl": "Copy URL",
+  "contrib.toggle.shareUrl": "Share",
+  "contrib.toggle.shareFailed": "Could not share the link. You can copy it instead.",
   "contrib.toggle.copySignIn": "Copy sign-in link",
   "contrib.toggle.copyFailed": "Could not copy the link.",
   "contrib.toggle.failed": "The change could not be completed.",

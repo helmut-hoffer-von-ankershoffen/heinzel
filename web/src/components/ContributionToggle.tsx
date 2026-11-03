@@ -1,5 +1,5 @@
 // A deliberate toggle gesture authorizes one host-projected call; readiness remains a server fact.
-import { Check, Copy, ExternalLink } from "lucide-react";
+import { Check, Copy, ExternalLink, Share2 } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import { problem, type SchemaOperationCall } from "@/api/client";
 import { token } from "@/api/token";
@@ -105,6 +105,7 @@ export function ContributionToggle({ control, refresh, applySettings }: Props) {
   const mounted = useRef(true);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [shareFailed, setShareFailed] = useState(false);
   const [copiedUrl, setCopiedUrl] = useState<string | null>(null);
   useEffect(() => {
     mounted.current = true;
@@ -173,6 +174,24 @@ export function ContributionToggle({ control, refresh, applySettings }: Props) {
     }
   };
 
+  const share = async () => {
+    const value = authenticatedUrl(control) ?? publicUrl(control.url);
+    if (!control.checked || !value || !navigator.share) return;
+    setError(null);
+    try {
+      await navigator.share({ url: value });
+      if (mounted.current) {
+        setError(null);
+        setShareFailed(false);
+      }
+    } catch (cause) {
+      if (mounted.current) {
+        setShareFailed(true);
+        if (!(cause instanceof DOMException && cause.name === "AbortError")) setError(t("contrib.toggle.shareFailed"));
+      }
+    }
+  };
+
   const copy = async () => {
     const value = authenticatedUrl(control) ?? publicUrl(control.url);
     if (!control.checked || !value) return;
@@ -234,10 +253,18 @@ export function ContributionToggle({ control, refresh, applySettings }: Props) {
         <div className="space-y-2">
           <p className="break-all font-mono text-xs">{displayUrl}</p>
           <div className="flex flex-wrap gap-2">
-            <Button type="button" size="sm" variant="outline" onClick={() => void copy()}>
-              {copied ? <Check aria-hidden /> : <Copy aria-hidden />}
-              {t("contrib.toggle.copyUrl")}
-            </Button>
+            {typeof navigator.share === "function" && (
+              <Button type="button" size="sm" variant="outline" onClick={() => void share()}>
+                <Share2 aria-hidden />
+                {t("contrib.toggle.shareUrl")}
+              </Button>
+            )}
+            {(typeof navigator.share !== "function" || shareFailed) && (
+              <Button type="button" size="sm" variant="outline" onClick={() => void copy()}>
+                {copied ? <Check aria-hidden /> : <Copy aria-hidden />}
+                {t("contrib.toggle.copyUrl")}
+              </Button>
+            )}
             <Button size="sm" variant="outline" asChild>
               <a href={displayUrl ?? url} target="_blank" rel="noopener noreferrer">
                 <ExternalLink aria-hidden />
