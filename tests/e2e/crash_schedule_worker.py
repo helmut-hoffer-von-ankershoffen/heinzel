@@ -7,6 +7,7 @@ import sys
 import time
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import override
 
 import pytest
 
@@ -36,7 +37,8 @@ class Clock(datetime):
 
 
 class Notices(Notifications):
-    def emit_once(self, _kind, title, body, *, route, command, key):
+    @override
+    def emit_once(self, _kind, title, body, *, route, command, key, helper=None):
         if (root / "block-notice").exists():
             fake_effect = """import pathlib,sys,time
 p=pathlib.Path(sys.argv[1])

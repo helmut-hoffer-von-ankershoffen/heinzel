@@ -25,6 +25,8 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+from heinzel import clean_text
+
 logger = logging.getLogger(__name__)
 SOURCES = Path(__file__).parent / "macos"
 """The app's sources: main.swift, icon.swift, its artwork (heinzel*.svg) and the Info.plist template."""
@@ -128,6 +130,33 @@ def parse_etime(text: str) -> int | None:
         return None
     parts = {name: int(value or 0) for name, value in match.groupdict().items()}
     return ((parts["d"] * 24 + parts["h"]) * 60 + parts["m"]) * 60 + parts["s"]
+
+
+@dataclass(frozen=True, slots=True)
+class Look:
+    """Bounded native presentation from a helper's bundled face, text, sound and stable notice identity."""
+
+    subtitle: str | None = None
+    hat: str | None = None
+    sound: bool = False
+    ident: str | None = None
+    thread: str | None = None
+
+    def arguments(self) -> list[str]:
+        """Return only bounded plain-text arguments and a closed hat colour; never an image path or URL."""
+        arguments: list[str] = []
+        for flag, value, limit in (("--subtitle", self.subtitle, 80), ("--thread", self.thread, 200)):
+            if value:
+                text = " ".join(clean_text(value).split()).lstrip("-[\\ ")[:limit]
+                if text:
+                    arguments += [flag, text]
+        if self.hat in {"red", "rust", "ochre", "green", "teal", "blue", "purple", "slate"}:
+            arguments += ["--hat", self.hat]
+        if self.ident is not None and re.fullmatch(r"[A-Za-z0-9._:-]{1,120}", self.ident):
+            arguments += ["--id", self.ident]
+        if self.sound:
+            arguments.append("--sound")
+        return arguments
 
 
 @dataclass(frozen=True, slots=True)
@@ -325,7 +354,7 @@ class NotifierApp:
         """MacOS's answer for the app: `authorized`, `denied`, `not-determined`, `provisional`, or why unknown."""
         return self._launch(["--status"])
 
-    def post(self, title: str, message: str, url: str | None, *, asking: bool = False) -> str:
+    def post(self, title: str, message: str, url: str | None, *, asking: bool = False, look: Look | None = None) -> str:
         """Post one notification through LaunchServices; `posted`, `denied`, or what went wrong.
 
         With `asking`, a person is there to answer macOS's question, so it waits longer for the app.
@@ -333,6 +362,8 @@ class NotifierApp:
         arguments = ["--title", title, "--message", message]
         if url is not None:
             arguments += ["--open", url]
+        if look is not None:
+            arguments += look.arguments()
         return self._launch(arguments, ASKING_TIMEOUT if asking else TIMEOUT)
 
     def _launch(self, arguments: list[str], timeout: float = TIMEOUT) -> str:

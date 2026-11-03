@@ -7884,6 +7884,8 @@ export interface components {
              * @description Why it isn't shown as a desktop notification; none if it is.
              */
             held?: string | null;
+            /** @description The personal Heinzel behind this notice, if any. */
+            helper?: components["schemas"]["NoticeHelper"] | null;
             /**
              * Id
              * @description Identifier of the notice, unique on this machine; later notices sort after it.
@@ -7917,6 +7919,27 @@ export interface components {
              * @default false
              */
             urgent: boolean;
+        };
+        /**
+         * NoticeHelper
+         * @description The personal Heinzel behind a notice, using the bundled face and a closed hat palette.
+         */
+        NoticeHelper: {
+            /**
+             * Hat
+             * @description Hat colour for the bundled face; none uses red.
+             */
+            hat?: ("red" | "rust" | "ochre" | "green" | "teal" | "blue" | "purple" | "slate") | null;
+            /**
+             * Name
+             * @description The personal Heinzel's display name.
+             */
+            name: string;
+            /**
+             * Reason
+             * @description Why the Heinzel speaks now, such as scheduled check-in.
+             */
+            reason: string;
         };
         /**
          * NoticeKind
@@ -14034,6 +14057,7 @@ export type SchemaNavigate = components['schemas']['Navigate'];
 export type SchemaNode = components['schemas']['Node'];
 export type SchemaNodeMetadata = components['schemas']['NodeMetadata'];
 export type SchemaNotice = components['schemas']['Notice'];
+export type SchemaNoticeHelper = components['schemas']['NoticeHelper'];
 export type SchemaNoticeKind = components['schemas']['NoticeKind'];
 export type SchemaNoticeList = components['schemas']['NoticeList'];
 export type SchemaNotificationProposal = components['schemas']['NotificationProposal'];

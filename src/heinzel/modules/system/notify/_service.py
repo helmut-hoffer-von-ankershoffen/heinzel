@@ -19,7 +19,19 @@ from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from heinzel import Check, Config, Delivery, HeinzelError, Kernel, Notice, NoticeKind, Notifications, Settings, Status
+from heinzel import (
+    Check,
+    Config,
+    Delivery,
+    HeinzelError,
+    Kernel,
+    Notice,
+    NoticeHelper,
+    NoticeKind,
+    Notifications,
+    Settings,
+    Status,
+)
 from heinzel.kernel import KERNEL_SECTION
 from heinzel.modules.system.notify import _policy as policy
 from heinzel.modules.system.notify._channels import (
@@ -154,6 +166,7 @@ class NotifyService(Notifications):
         command: str,
         key: str,
         urgent: bool = False,
+        helper: NoticeHelper | None = None,
     ) -> Notice | None:
         """Record a notice under the policy; the earlier one when it repeats; None if its kind is off or it failed."""
         if not self.settings.wants(kind):
@@ -178,6 +191,7 @@ class NotifyService(Notifications):
                 due=decision.due,
                 popup=decision.popup,
                 held=decision.held,
+                helper=helper,
             )
             notices.append(notice)
             return notice
@@ -189,7 +203,15 @@ class NotifyService(Notifications):
             return None
 
     def emit_once(  # noqa: PLR0913 - the notice fields match emit
-        self, kind: NoticeKind, title: str, body: str, *, route: str, command: str, key: str
+        self,
+        kind: NoticeKind,
+        title: str,
+        body: str,
+        *,
+        route: str,
+        command: str,
+        key: str,
+        helper: NoticeHelper | None = None,
     ) -> bool:
         """Persist a notice and replay key together, independent of repeat policy and display retention."""
         if not self.settings.wants(kind):
@@ -211,6 +233,7 @@ class NotifyService(Notifications):
                     due=decision.due,
                     popup=decision.popup,
                     held=decision.held,
+                    helper=helper,
                 )
             )
 
@@ -300,7 +323,17 @@ class NotifyService(Notifications):
         for index, notice in enumerate(claimed):
             url = self._ui_url(event_route(notice)) if self.notifier.clicks else None
             body = notice.body if url is not None else _with_command(notice.body, notice.command)
-            if (problem := self.notifier.post(notice.title, body, url=url)) is not None:
+            if (
+                problem := self.notifier.post(
+                    notice.title,
+                    body,
+                    url=url,
+                    helper=notice.helper,
+                    sound=self.settings.sound,
+                    ident=notice.id,
+                    thread=notice.route,
+                )
+            ) is not None:
                 logger.warning("couldn't show notice %s: %s", notice.id, problem)
                 self._release(claimed[index:])  # the next would fail the same way; they wait for the next tick
                 break
@@ -491,7 +524,20 @@ class NotifyService(Notifications):
         return Delivered(delivered=[notice.id for notice in self.deliver(ids, Delivery.WEB)])
 
     def health(self) -> list[Check]:
-        """How notices reach you, for `hz system doctor`; degraded only while the native notifier refuses pop-ups."""
+        """Report durable store integrity and how notices reach you, without changing notification state."""
+        if problem := self.store.integrity_problem():
+            return [
+                Check(
+                    name="notification store",
+                    status=Status.DOWN,
+                    detail=problem,
+                    fix=(
+                        "Preserve the store for recovery review; "
+                        "use a coherent trusted backup if replay evidence is damaged. "
+                        "Do not delete its marker or rebuild replay keys."
+                    ),
+                )
+            ]
         settings = self.settings
         if not settings.enabled:
             return [Check(name="notifications", status=Status.UP, detail="off ([system.notify] enabled = false)")]

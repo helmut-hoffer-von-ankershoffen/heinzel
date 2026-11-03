@@ -200,7 +200,14 @@ class RunningService:
             status = self.service.status()
             if status.ready and status.instance != previous:
                 return status
-            assert self.processes[-1].poll() is None, self.processes[-1].communicate(timeout=1)
+            returncode = self.processes[-1].poll()
+            if returncode is not None:
+                output, errors = self.processes[-1].communicate(timeout=1)
+                pytest.fail(
+                    "The owned web server exited before readiness; "
+                    f"owned process exit={returncode}, signal={-returncode if returncode < 0 else None}, "
+                    f"publication failure={self.publication_failure(output + errors)}."
+                )
             changed.wait(0.02)
         pytest.fail(
             "The owned web server did not become ready with a new lifecycle instance; "
@@ -209,6 +216,23 @@ class RunningService:
             f"control failure={self.control_failure}, failed status calls={self.control_failure_count}, "
             f"publication evidence={self.publication_evidence(initial=previous is None and len(self.processes) == 1)}."
         )
+
+    @staticmethod
+    def publication_failure(output):
+        """Return only a fixed category and bounded errno from owned publication diagnostics."""
+        matches = re.findall(
+            rb"Owned web publication failed: category=(os|value|ownership) errno=(none|[0-9]{1,4})\r?$",
+            output[-16 * 1024 :],
+            re.MULTILINE,
+        )
+        if not matches:
+            return None
+        category, encoded = matches[-1]
+        number = int(encoded) if encoded != b"none" else None
+        return {
+            "category": category.decode("ascii"),
+            "errno": number if number is not None and 1 <= number <= 4095 else None,
+        }
 
     def publication_evidence(self, *, initial):
         """Observe only after the unchanged readiness deadline has already failed."""
