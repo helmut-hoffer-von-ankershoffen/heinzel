@@ -38,6 +38,21 @@ def test_worker_timing_measures_cpu_and_phases_from_session_start(monkeypatch, r
     }
 
 
+def test_unchanged_rounded_cpu_counters_still_emit_the_worker_report(monkeypatch, capsys, reporter):
+    cpu = SimpleNamespace(user=0.49, system=0.11, children_user=0.49, children_system=0.11)
+    monkeypatch.setattr(reporter, "os", SimpleNamespace(times=lambda: cpu))
+    config = SimpleNamespace(workeroutput={})
+    timing = reporter._SessionTiming(config)
+    timing.pytest_runtest_logreport(SimpleNamespace(when="teardown", duration=0.001))
+    timing.pytest_sessionfinish(None, 2)
+    timing.pytest_testnodedown(
+        SimpleNamespace(gateway=SimpleNamespace(id="gw0"), workeroutput=config.workeroutput), None
+    )
+    output = capsys.readouterr().out
+    assert "INTEGRATION worker=gw0 completed=1 wall_seconds=" in output
+    assert "cpu_seconds=0.000 child_cpu_seconds=0.000 phase_seconds=0.001" in output
+
+
 @pytest.fixture
 def valid_timing():
     return {"completed": 2, "wall": 5.0, "cpu": 1.0, "child_cpu": 0.5, "phases": 4.0}

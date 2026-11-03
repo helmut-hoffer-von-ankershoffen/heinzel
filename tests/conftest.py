@@ -252,10 +252,12 @@ class _SessionTiming:
     def pytest_sessionfinish(self, session: pytest.Session, exitstatus: int) -> None:
         del session
         cpu = os.times()
+        # Subtract each rounded counter first, so unchanged ticks cannot become a tiny negative total.
         timing = {
             "wall": time.monotonic() - self._started,
-            "cpu": cpu.user + cpu.system - self._cpu.user - self._cpu.system,
-            "child_cpu": cpu.children_user + cpu.children_system - self._cpu.children_user - self._cpu.children_system,
+            "cpu": (cpu.user - self._cpu.user) + (cpu.system - self._cpu.system),
+            "child_cpu": (cpu.children_user - self._cpu.children_user)
+            + (cpu.children_system - self._cpu.children_system),
             "phases": self._phases,
             "completed": self._completed,
         }
