@@ -12,6 +12,7 @@ import os
 import re
 import subprocess
 import time
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from urllib.parse import parse_qs, urlsplit
@@ -26,6 +27,8 @@ PREFIX = "CI batch admission "
 DELEGATED = "Main batch delegated to "
 SHA = re.compile(r"[0-9a-f]{40}")
 MIN_BATCH, MAX_BATCH, MEMBER_FIELDS, MAX_URL = 2, 5, 2, 1800
+INTENT_SECONDS = 180
+GRACE_SECONDS = 5
 
 
 def proof_url(base: str, prs: list[list[int | str]], run_id: int) -> str:
@@ -117,14 +120,39 @@ def valid_run(run: dict[str, Any], proof: dict[str, Any]) -> bool:
     )
 
 
-def _attested(status: dict[str, Any], url: str | None = None) -> bool:
+def _authored(status: dict[str, Any]) -> bool:
     return (
         status.get("context") == CONTEXT
-        and status.get("state") == "success"
         and type(status.get("creator", {}).get("id")) is int
         and status["creator"]["id"] == PUBLISHER_ID
-        and (url is None or status.get("target_url") == url)
     )
+
+
+def _attested(status: dict[str, Any], url: str | None = None) -> bool:
+    return _authored(status) and status.get("state") == "success" and (url is None or status.get("target_url") == url)
+
+
+def intent_url(base: str, sha: str) -> str:
+    """Bind assembly intent to public base and current squash commit identities."""
+    return f"https://github.com/{REPOSITORY}/compare/{base}...{sha}"
+
+
+def intent_remaining(sha: str, status: object, now: float) -> float:
+    """Return the bounded lifetime of trusted pending intent, never authority to skip tests."""
+    try:
+        if not isinstance(status, dict) or not _authored(status) or status.get("state") != "pending":
+            return 0
+        match = re.fullmatch(
+            rf"https://github\.com/{re.escape(REPOSITORY)}/compare/([0-9a-f]{{40}})\.\.\.{re.escape(sha)}",
+            status.get("target_url", ""),
+        )
+        created = status.get("created_at")
+        if not match or match[1] == sha or not isinstance(created, str) or not created.endswith("Z"):
+            return 0
+        age = now - datetime.fromisoformat(created).astimezone(UTC).timestamp()
+        return INTENT_SECONDS - age if 0 <= age < INTENT_SECONDS else 0
+    except (ValueError, TypeError, KeyError, AttributeError):
+        return 0
 
 
 def _valid_history(proof: dict[str, Any], get: Callable[[str], dict[str, Any]]) -> bool:
@@ -196,12 +224,22 @@ def _valid_job_page(payload: object) -> bool:
     )
 
 
-def proof_for(sha: str, get: Callable[[str], Any]) -> dict[str, Any] | None:
-    """Validate the publisher, contiguous squash history and exact final run.
+def _marker_state(proof: dict[str, Any], get: Callable[[str], Any]) -> str:
+    payload = get(f"actions/runs/{proof['run']}/attempts/1/jobs?per_page=100")
+    if not _valid_job_page(payload):
+        return "invalid"
+    matches = [row for row in payload["jobs"] if row["name"] == f"Main batch full suite ({proof['base']})"]
+    if not matches:
+        return "waiting"
+    if len(matches) != 1:
+        return "invalid"
+    marker = matches[0]
+    if marker["status"] != "completed":
+        return "waiting"
+    return "present" if marker["conclusion"] == "success" else "invalid"
 
-    The final run may accept its own proof before its marker exists. An intermediate
-    delegates only after that marker proves the aggregate base was consumed.
-    """
+
+def _identity_for(sha: str, get: Callable[[str], Any]) -> dict[str, Any] | None:
     status = _latest_status(sha, get)
     if not status or not _attested(status):
         return None
@@ -217,18 +255,45 @@ def proof_for(sha: str, get: Callable[[str], Any]) -> dict[str, Any] | None:
         or not _valid_history(proof, get)
     ):
         return None
-    if sha != final:
-        jobs = get(f"actions/runs/{proof['run']}/attempts/1/jobs?per_page=100")
-        if not _valid_job_page(jobs):
-            return None
-        if not any(
-            row["name"] == f"Main batch full suite ({proof['base']})"
-            and row["status"] == "completed"
-            and row["conclusion"] == "success"
-            for row in jobs["jobs"]
-        ):
-            return None
     return proof
+
+
+def proof_for(sha: str, get: Callable[[str], Any]) -> dict[str, Any] | None:
+    """Validate exact batch identity and require the aggregate marker before delegating.
+
+    The final run may accept its own proof before its marker exists. An intermediate
+    delegates only after that marker proves the aggregate base was consumed.
+    """
+    proof = _identity_for(sha, get)
+    if proof is None or (sha != proof["prs"][-1][1] and _marker_state(proof, get) != "present"):
+        return None
+    return proof
+
+
+def _full_run() -> dict[str, str | bool | int]:
+    return {"full": True, "base": "", "run": ""}
+
+
+def _inspect_admission(
+    sha: str,
+    get: Callable[[str], Any],
+    now: float,
+) -> tuple[dict[str, str | bool | int] | None, float | None]:
+    status = _latest_status(sha, get)
+    remaining = intent_remaining(sha, status, now)
+    if status is None or remaining > 0:
+        return None, remaining if status else None
+    if not _attested(status):
+        return _full_run(), 0
+    proof = _identity_for(sha, get)
+    if not proof:
+        return _full_run(), 0
+    if sha == proof["prs"][-1][1]:
+        return {"full": True, "base": proof["base"], "run": proof["run"]}, 0
+    marker = _marker_state(proof, get)
+    if marker == "present":
+        return {"full": False, "base": proof["base"], "run": proof["run"]}, 0
+    return (None, INTENT_SECONDS) if marker == "waiting" else (_full_run(), 0)
 
 
 def admit(
@@ -239,18 +304,25 @@ def admit(
     clock: Callable[[], float] = time.monotonic,
     sleep: Callable[[float], None] = time.sleep,
 ) -> dict[str, str | bool | int]:
-    """Poll boundedly; every error or missing proof preserves the normal full run."""
-    deadline = clock() + seconds
+    """Give ordinary pushes a short race grace; only explicit trusted intent may wait longer."""
+    started = clock()
+    deadline = started + min(seconds, GRACE_SECONDS)
+    authorized = False
     while True:
         try:
-            proof = proof_for(sha, get)
-            if proof:
-                return {"full": sha == proof["prs"][-1][1], "base": proof["base"], "run": proof["run"]}
+            result, authority = _inspect_admission(sha, get, time.time())
         except (ValueError, TypeError, KeyError, AttributeError, OSError, subprocess.SubprocessError):
-            pass
+            return _full_run()
+        if result is not None:
+            return result
+        if authority is not None:
+            authorized = True
+            deadline = min(started + seconds, clock() + authority)
+        elif authorized:
+            return _full_run()  # missing or revoked intent never inherits the longer wait
         remaining = deadline - clock()
         if remaining <= 0:
-            return {"full": True, "base": "", "run": ""}
+            return _full_run()
         sleep(min(5, remaining))
 
 
@@ -273,7 +345,7 @@ def main() -> None:
                 capture_output=True,
                 text=True,
                 check=True,
-                timeout=max(0.001, min(10, remaining)),
+                timeout=max(0.001, min(2, remaining)),
             )
             return json.loads(done.stdout)
 

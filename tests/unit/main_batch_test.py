@@ -110,7 +110,7 @@ def test_missing_proof_wait_is_bounded_without_real_sleep():
 
     result = batch.admit(FIRST, lambda _: {}, seconds=12, clock=lambda: ticks[0], sleep=sleep)
     assert result["full"] is True
-    assert waits == [5, 5, 2]
+    assert waits == [5]
 
 
 @pytest.mark.parametrize(
@@ -170,3 +170,95 @@ def test_legitimate_pending_job_before_valid_marker_still_delegates(evidence, st
     page["jobs"].insert(0, {"name": "Test (macos-latest)", "status": status, "conclusion": None})
     page["total_count"] += 1
     assert batch.admit(FIRST, evidence.__getitem__, seconds=0)["full"] is False
+
+
+@pytest.fixture
+def fake_clock(monkeypatch):
+    state = {"elapsed": 0, "waits": []}
+
+    def sleep(seconds):
+        state["waits"].append(seconds)
+        state["elapsed"] += seconds
+
+    monkeypatch.setattr(batch.time, "time", lambda: state["elapsed"])
+    return state, lambda: state["elapsed"], sleep
+
+
+def _pending_intent():
+    return {
+        "context": batch.CONTEXT,
+        "state": "pending",
+        "creator": {"id": batch.PUBLISHER_ID},
+        "target_url": batch.intent_url(BASE, FIRST),
+        "created_at": "1970-01-01T00:00:00Z",
+    }
+
+
+def test_ordinary_push_without_batch_intent_is_fast(fake_clock):
+    state, clock, sleep = fake_clock
+    result = batch.admit(FIRST, lambda _: [], clock=clock, sleep=sleep)
+    assert result == {"full": True, "base": "", "run": ""}
+    assert state["elapsed"] <= 5
+    assert state["waits"] == [5]
+
+
+def test_trusted_multi_pr_intent_can_wait_for_the_final_proof(evidence, fake_clock):
+    state, clock, sleep = fake_clock
+
+    def get(endpoint):
+        if state["elapsed"] < 12:
+            assert endpoint == f"commits/{FIRST}/statuses?per_page=100"
+            return [_pending_intent()]
+        return evidence[endpoint]
+
+    assert batch.admit(FIRST, get, clock=clock, sleep=sleep) == {"full": False, "base": BASE, "run": 99}
+    assert state["elapsed"] == 15
+
+
+@pytest.mark.parametrize(
+    ("key", "value"),
+    [
+        ("state", "success"),  # a closed compare URL is not a final proof
+        ("creator", {"id": 7}),
+        ("target_url", "https://example.invalid/intent"),
+        ("created_at", "not-a-date"),
+        ("created_at", "1969-12-31T23:56:59Z"),
+        ("created_at", "1970-01-01T00:00:01Z"),
+    ],
+)
+def test_closed_untrusted_malformed_or_expired_intent_does_not_wait(fake_clock, key, value):
+    state, clock, sleep = fake_clock
+    status = {**_pending_intent(), key: value}
+    result = batch.admit(FIRST, lambda _: [status], clock=clock, sleep=sleep)
+    assert result == {"full": True, "base": "", "run": ""}
+    assert state["elapsed"] == 0
+    assert state["waits"] == []
+
+
+def test_queue_crash_intent_expires_into_full_ci(fake_clock):
+    state, clock, sleep = fake_clock
+    result = batch.admit(FIRST, lambda _: [_pending_intent()], clock=clock, sleep=sleep)
+    assert result == {"full": True, "base": "", "run": ""}
+    assert state["elapsed"] == 180
+
+
+def test_closed_batch_stops_an_authorized_wait_immediately(fake_clock):
+    state, clock, sleep = fake_clock
+
+    def get(_):
+        status = _pending_intent()
+        if state["elapsed"] >= 10:
+            status["state"] = "success"
+        return [status]
+
+    assert batch.admit(FIRST, get, clock=clock, sleep=sleep)["full"] is True
+    assert state["elapsed"] == 10
+
+
+def test_malformed_final_job_page_does_not_inherit_the_long_wait(evidence, fake_clock):
+    state, clock, sleep = fake_clock
+    page = evidence["actions/runs/99/attempts/1/jobs?per_page=100"]
+    page["jobs"].insert(0, {})
+    page["total_count"] += 1
+    assert batch.admit(FIRST, evidence.__getitem__, clock=clock, sleep=sleep)["full"] is True
+    assert state["elapsed"] == 0
