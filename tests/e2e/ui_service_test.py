@@ -4,6 +4,7 @@ import contextlib
 import subprocess
 import threading
 import time
+from pathlib import Path
 from urllib.parse import urlsplit
 
 import httpx
@@ -44,8 +45,19 @@ class RunningService:
         pytest.fail(
             "The owned web server did not become ready with a new lifecycle instance; "
             f"last status={status.model_dump_json() if status is not None else 'not sampled'}, "
-            f"owned process exit={self.processes[-1].poll()}."
+            f"owned process exit={self.processes[-1].poll()}, wait channel={self.wait_channel()}."
         )
+
+    def wait_channel(self):
+        """Read only the owned child's bounded kernel wait symbol when Linux provides it."""
+        try:
+            with (Path("/proc") / str(self.processes[-1].pid) / "wchan").open(
+                encoding="ascii", errors="replace"
+            ) as handle:
+                value = handle.read(128).strip()
+        except OSError:
+            return "unavailable"
+        return value if value.isidentifier() or value == "0" else "unknown"
 
     def close(self):
         for process in self.processes:
