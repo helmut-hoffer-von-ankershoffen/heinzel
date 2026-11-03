@@ -141,17 +141,41 @@ function MeetingItem({ now, onOpen }: { now: Date; onOpen: () => void }) {
   return (
     <FooterItem
       label={label}
+      className="h-auto min-h-8"
       state={agenda.isError || agenda.data?.problem ? "bad" : "off"}
       content={
-        <span className="flex max-w-28 items-center gap-1 truncate sm:max-w-64">
+        <span className="flex max-w-44 items-center gap-1 sm:max-w-72">
           <Calendar aria-hidden className="size-4 shrink-0" />
-          <span className="min-w-0 leading-tight">
-            {label.split(" · ").map((line) => (
-              <span className="block truncate" key={line}>
-                {line}
-              </span>
-            ))}
-          </span>
+          {agenda.isPending || agenda.isError || agenda.data?.problem ? (
+            <span className="truncate">{label}</span>
+          ) : (
+            <span className="flex min-w-0 flex-col leading-tight">
+              {active ? (
+                <span className="flex min-w-0 gap-1">
+                  <span className="min-w-0 truncate">In {active.title}</span>
+                  <time className="shrink-0 whitespace-nowrap" dateTime={active.end}>
+                    until {time(new Date(active.end), agenda.data?.timezone)}
+                  </time>
+                </span>
+              ) : (
+                <span>Not in a meeting</span>
+              )}
+              {upcoming ? (
+                <span className="flex min-w-0 gap-1">
+                  <span className="min-w-0 truncate">Next: {upcoming.title}</span>
+                  <time className="shrink-0 whitespace-nowrap" dateTime={upcoming.start}>
+                    {new Intl.DateTimeFormat(undefined, {
+                      weekday: "short",
+                      timeZone: agenda.data?.timezone ?? undefined,
+                    }).format(new Date(upcoming.start))}{" "}
+                    {time(new Date(upcoming.start), agenda.data?.timezone)}
+                  </time>
+                </span>
+              ) : (
+                <span>None through tomorrow</span>
+              )}
+            </span>
+          )}
         </span>
       }
       onActivate={onOpen}
@@ -191,7 +215,7 @@ export function StatusBar({ onOpenCalendar = () => {} }: { onOpenCalendar?: () =
         <FooterPart id="@health" priority={90} label={t("health.title")}>
           <HealthStatus />
         </FooterPart>
-        <FooterPart id="@meeting" priority={85}>
+        <FooterPart id="@meeting" priority={925}>
           <MeetingItem now={now} onOpen={onOpenCalendar} />
         </FooterPart>
         <FooterMore />

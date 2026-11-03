@@ -26,14 +26,15 @@ for (const [name, engine] of [
       const now = Date.now();
       const current = {
         id: "a",
-        title: "Standup",
+        title: "Standup with an exceptionally long meeting title that must not hide the ending time",
         start: new Date(now - 60000).toISOString(),
         end: new Date(now + 600000).toISOString(),
         all_day: false,
+        conference_url: "https://meet.example/test",
       };
       const next = {
         id: "b",
-        title: "Review",
+        title: "Review with a very long title that must not hide the starting time",
         start: new Date(now + 1200000).toISOString(),
         end: new Date(now + 1800000).toISOString(),
         all_day: false,
@@ -60,7 +61,45 @@ for (const [name, engine] of [
       await page.goto(url);
       await page.locator("#splash").waitFor({ state: "hidden" });
       const footer = page.locator("footer");
-      const button = footer.getByRole("button", { name: /In Standup until .*Next: Review .* at/ });
+      const button = footer.getByRole("button", {
+        name: /In Standup with an exceptionally long meeting title .*Next: Review with a very long title/,
+      });
+      await button.waitFor({ state: "visible" });
+      await page.screenshot({ path: join(shots, `${name}-${size}-footer.png`) });
+      const times = button.locator("time");
+      assert.equal(await times.count(), 2);
+      const expected = [current.end, next.start].map((value) =>
+        new Intl.DateTimeFormat("en-GB", {
+          timeZone: "UTC",
+          hour: "2-digit",
+          minute: "2-digit",
+          hourCycle: "h23",
+        }).format(new Date(value)),
+      );
+      for (const [index, time] of (await times.all()).entries()) {
+        assert.ok((await time.textContent())?.includes(expected[index]), "wrong meeting time");
+      }
+      for (const time of await times.all()) {
+        assert.ok(
+          await time.evaluate((element) => {
+            const own = element.getBoundingClientRect();
+            let parent = element.parentElement;
+            while (parent && parent !== document.body) {
+              const box = parent.getBoundingClientRect();
+              if (
+                own.left < box.left - 0.5 ||
+                own.right > box.right + 0.5 ||
+                own.top < box.top - 0.5 ||
+                own.bottom > box.bottom + 0.5
+              )
+                return false;
+              parent = parent.parentElement;
+            }
+            return element.scrollWidth <= element.clientWidth && own.width > 0;
+          }),
+          "meeting time was clipped",
+        );
+      }
       try {
         await button.click({ timeout: 10000 });
       } catch (error) {
@@ -69,7 +108,9 @@ for (const [name, engine] of [
       }
       const panel = page.getByRole("region", { name: "Calendar", exact: true });
       try {
-        await panel.getByText("Review", { exact: true }).waitFor({ timeout: 10000 });
+        await panel
+          .getByText("Review with a very long title that must not hide the starting time", { exact: true })
+          .waitFor({ timeout: 10000 });
       } catch (error) {
         await page.screenshot({ path: join(shots, `${name}-${size}-panel-failed.png`) });
         throw new Error(

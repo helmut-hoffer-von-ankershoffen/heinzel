@@ -844,7 +844,14 @@ def test_calendar_panel_on_phone_and_desktop_in_both_browsers(environment, tmp_p
     try:
         url = capture.wait_url()
         result = subprocess.run(
-            [*run, "exec", "node", "e2e/calendar.mjs", url, str(tmp_path / "calendar")],
+            [
+                *run,
+                "exec",
+                "node",
+                "e2e/calendar.mjs",
+                url,
+                str(Path(os.environ.get("HZ_SCREENSHOTS", tmp_path)) / "calendar"),
+            ],
             cwd=REPO,
             capture_output=True,
             text=True,

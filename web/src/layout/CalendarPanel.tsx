@@ -4,7 +4,14 @@ import { Link } from "react-router";
 import { token } from "@/api/token";
 import { CONNECTORS } from "./settingsSections";
 
-type Event = { id: string; title: string; start: string; end: string; all_day: boolean };
+type Event = {
+  id: string;
+  title: string;
+  start: string;
+  end: string;
+  all_day: boolean;
+  conference_url?: string | null;
+};
 type Week = {
   timezone: string | null;
   since: string;
@@ -13,6 +20,33 @@ type Week = {
   problem: string | null;
   fix: string | null;
 };
+
+/** Reject relative, credential-bearing and non-web links from calendar data. */
+function conferenceLink(value: string | null | undefined): string | null {
+  if (
+    !value ||
+    value.length > 2048 ||
+    /[\s\\"'<>]/.test(value) ||
+    [...value].some((char) => {
+      const code = char.codePointAt(0) ?? 0;
+      return code < 32 || (code >= 127 && code <= 159);
+    }) ||
+    !/^https?:\/\//i.test(value)
+  )
+    return null;
+  try {
+    const url = new URL(value);
+    return (url.protocol === "http:" || url.protocol === "https:") &&
+      url.hostname &&
+      !url.username &&
+      !url.password &&
+      url.port !== "0"
+      ? url.href
+      : null;
+  } catch {
+    return null;
+  }
+}
 
 export function CalendarPanel({ onClose }: { onClose: () => void }) {
   const [offset, setOffset] = useState(0);
@@ -103,6 +137,16 @@ export function CalendarPanel({ onClose }: { onClose: () => void }) {
                       {!event.all_day &&
                         ` – ${new Date(event.end).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short", hourCycle: "h23", timeZone: week.data.timezone ?? undefined })}`}
                     </p>
+                    {conferenceLink(event.conference_url) && (
+                      <a
+                        href={conferenceLink(event.conference_url) ?? undefined}
+                        target="_blank"
+                        rel="noreferrer noopener"
+                        className="inline-flex min-h-10 items-center text-primary underline"
+                      >
+                        Join meeting
+                      </a>
+                    )}
                   </li>
                 ))}
               </ol>

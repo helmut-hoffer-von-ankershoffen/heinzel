@@ -293,6 +293,48 @@ describe("Footer items are icons with a state and a pane", () => {
     expect(await within(panel).findByText("Review")).toBeInTheDocument();
   });
 
+  it("only renders safe conference links in the calendar", async () => {
+    const now = Date.now();
+    const base = {
+      start: new Date(now - 60_000).toISOString(),
+      end: new Date(now + 300_000).toISOString(),
+      all_day: false,
+    };
+    mockApi({
+      ...states,
+      "/api/org/calendar": {
+        since: new Date(now).toISOString(),
+        until: new Date(now + 604800000).toISOString(),
+        problem: null,
+        fix: null,
+        events: [
+          { ...base, id: "1", title: "Safe", conference_url: "https://meet.example/test" },
+          { ...base, id: "2", title: "HTTP", conference_url: "http://meet.example/test" },
+          { ...base, id: "3", title: "Missing" },
+          { ...base, id: "4", title: "Script", conference_url: "javascript:alert(1)" },
+          { ...base, id: "5", title: "Credentials", conference_url: "https://user:pass@meet.example/test" },
+          { ...base, id: "6", title: "Backslash", conference_url: "https://meet.example\\evil.test" },
+        ],
+      },
+    });
+    const user = userEvent.setup();
+    renderAt("/doctor");
+    await user.click(
+      await within(await screen.findByRole("contentinfo")).findByRole("button", {
+        name: "Calendar unavailable, error",
+      }),
+    );
+    const panel = await screen.findByRole("region", { name: "Calendar" });
+    const links = await within(panel).findAllByRole("link", { name: "Join meeting" });
+    expect(links).toHaveLength(2);
+    expect(links[0]).toHaveAttribute("href", "https://meet.example/test");
+    expect(links[1]).toHaveAttribute("href", "http://meet.example/test");
+    for (const link of links) {
+      expect(link).toHaveAttribute("target", "_blank");
+      expect(link).toHaveAttribute("rel", "noreferrer noopener");
+    }
+  });
+
   it("shows the installed changelog and a compact GitHub release link", async () => {
     mockApi(states);
     window.innerWidth = 1280;
