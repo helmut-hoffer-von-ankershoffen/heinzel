@@ -17,8 +17,8 @@ import subprocess
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 
-from heinzel import clean_text
-from heinzel.modules.system.notify._macos import NotifierApp
+from heinzel import NoticeHelper, clean_text
+from heinzel.modules.system.notify._macos import Look, NotifierApp
 
 APP = "Heinzelmännchen"
 TITLE_LIMIT = 80
@@ -106,14 +106,36 @@ class Native:
         # notify-send: the body may be read as markup by the notification server, the summary isn't.
         return [self.executable, f"--app-name={APP}", "--", title, html.escape(body, quote=False)]
 
-    def post(self, title: str, body: str, *, url: str | None = None, asking: bool = False) -> str | None:
+    def post(  # noqa: PLR0913 - optional native presentation is passed only by keyword
+        self,
+        title: str,
+        body: str,
+        *,
+        url: str | None = None,
+        asking: bool = False,
+        helper: NoticeHelper | None = None,
+        sound: bool = False,
+        ident: str | None = None,
+        thread: str | None = None,
+    ) -> str | None:
         """Show one notification; None when it was shown, else why not.
 
         `asking` says a person is at the screen (`hz system notify install`): only then may Heinzel Notifier make
         macOS ask whether to allow it. The daemon doesn't, or an unanswered question would hold every tick.
         """
         if self.name == HEINZEL and self.app is not None:
-            return _through_app(self.app, title, body, url=url, asking=asking)
+            look = Look(
+                subtitle=sanitise(f"{helper.name} · {helper.reason}" if helper.reason else helper.name, TITLE_LIMIT)
+                if helper
+                else None,
+                hat=(helper.hat or "red") if helper else None,
+                sound=sound,
+                ident=ident,
+                thread=thread,
+            )
+            return _through_app(self.app, title, body, url=url, asking=asking, look=look)
+        if helper is not None:
+            title = f"{helper.name}: {title}"
         try:
             command = self.argv(title, body)
         except ValueError as exc:
@@ -124,7 +146,9 @@ class Native:
         return None
 
 
-def _through_app(app: NotifierApp, title: str, body: str, *, url: str | None, asking: bool) -> str | None:
+def _through_app(  # noqa: PLR0913 - native presentation stays separate from text and permission requests
+    app: NotifierApp, title: str, body: str, *, url: str | None, asking: bool, look: Look | None = None
+) -> str | None:
     """Show one notification through Heinzel Notifier, installing it first if needed; None when it was shown."""
     try:
         installed = app.ensure()
@@ -134,7 +158,7 @@ def _through_app(app: NotifierApp, title: str, body: str, *, url: str | None, as
         return f"Heinzel Notifier isn't installed: {installed.detail}"
     if not asking and app.status() == "not-determined":
         return NOT_ASKED
-    said = app.post(sanitise(title, TITLE_LIMIT), sanitise(body, BODY_LIMIT), url, asking=asking)
+    said = app.post(sanitise(title, TITLE_LIMIT), sanitise(body, BODY_LIMIT), url, asking=asking, look=look)
     word = said.split(maxsplit=1)[0] if said.split() else ""  # older builds print "posted error=nil"
     if word == "posted":
         return None

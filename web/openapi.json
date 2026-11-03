@@ -7902,6 +7902,17 @@
             "description": "Why it isn't shown as a desktop notification; none if it is.",
             "title": "Held"
           },
+          "helper": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NoticeHelper"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The personal Heinzel behind this notice, if any."
+          },
           "id": {
             "description": "Identifier of the notice, unique on this machine; later notices sort after it.",
             "title": "Id",
@@ -7951,6 +7962,52 @@
           "popup"
         ],
         "title": "Notice",
+        "type": "object"
+      },
+      "NoticeHelper": {
+        "additionalProperties": false,
+        "description": "The personal Heinzel behind a notice, using the bundled face and a closed hat palette.",
+        "properties": {
+          "hat": {
+            "anyOf": [
+              {
+                "enum": [
+                  "red",
+                  "rust",
+                  "ochre",
+                  "green",
+                  "teal",
+                  "blue",
+                  "purple",
+                  "slate"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Hat colour for the bundled face; none uses red.",
+            "title": "Hat"
+          },
+          "name": {
+            "description": "The personal Heinzel's display name.",
+            "maxLength": 100,
+            "title": "Name",
+            "type": "string"
+          },
+          "reason": {
+            "description": "Why the Heinzel speaks now, such as scheduled check-in.",
+            "maxLength": 120,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "reason"
+        ],
+        "title": "NoticeHelper",
         "type": "object"
       },
       "NoticeKind": {

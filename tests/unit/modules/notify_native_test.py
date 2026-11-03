@@ -5,7 +5,8 @@ import subprocess
 
 import pytest
 
-from heinzel.modules.system.notify._macos import NotifierApp
+from heinzel import NoticeHelper
+from heinzel.modules.system.notify._macos import Look, NotifierApp
 from heinzel.modules.system.notify._native import (
     APP,
     BODY_LIMIT,
@@ -70,19 +71,52 @@ def test_long_text_is_bounded():
     assert len(command[-1]) == BODY_LIMIT
 
 
-def app(tmp_path, *, bundled: bool, said: str = "posted") -> NotifierApp:
+def app(tmp_path, *, bundled: bool, said: str = "posted", commands=None) -> NotifierApp:
     bundle = tmp_path / "HeinzelNotifier.app"
     if bundled:
         (bundle / "Contents" / "MacOS").mkdir(parents=True)
         (bundle / "Contents" / "MacOS" / "notifier").write_bytes(b"app")
 
     def runner(command, timeout=None):
+        if commands is not None:
+            commands.append(list(command))
         if "--stdout" in command:
             with pathlib.Path(command[command.index("--stdout") + 1]).open("w", encoding="utf-8") as out:
                 out.write(said)
         return subprocess.CompletedProcess(command, 0, "", "")
 
     return NotifierApp(tmp_path / "home", bundled=bundle, runner=runner)
+
+
+@pytest.mark.parametrize("sound", [False, True])
+def test_native_helper_name_reason_face_sound_and_identity_are_safe_arguments(tmp_path, sound):
+    commands = []
+    application = app(tmp_path, bundled=True, commands=commands)
+    notifier = Native(HEINZEL, app=application)
+    helper = NoticeHelper(name="-Mira\nExample", hat="blue", reason="scheduled check-in")
+    route = "http://127.0.0.1:18737/heinzel?chat=example&event=notice-1"
+    assert (
+        notifier.post("Check in", "Ready", url=route, helper=helper, sound=sound, ident="notice-1", thread="example")
+        is None
+    )
+    command = commands[-1]
+    arguments = command[command.index("--args") + 1 :]
+    assert arguments[arguments.index("--subtitle") + 1] == "Mira Example · scheduled check-in"
+    assert arguments[arguments.index("--hat") + 1] == "blue"
+    assert arguments[arguments.index("--id") + 1] == "notice-1"
+    assert arguments[arguments.index("--thread") + 1] == "example"
+    assert arguments[arguments.index("--open") + 1] == route
+    assert ("--sound" in arguments) is sound
+
+
+def test_presentation_refuses_artwork_urls_and_invalid_ids_and_bounds_plain_text():
+    arguments = Look(
+        subtitle="--option\n" + "x" * 200,
+        hat="https://images.example.test/face.svg",
+        ident="--other\nargument",
+        thread="-" + "y" * 300,
+    ).arguments()
+    assert arguments == ["--subtitle", "option " + "x" * 73, "--thread", "y" * 200]
 
 
 @pytest.mark.macos_specific

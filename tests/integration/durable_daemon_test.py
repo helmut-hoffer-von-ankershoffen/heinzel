@@ -11,9 +11,10 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from heinzel import CurrentUser, HeinzelError, NoticeKind, Notifications
+from heinzel import CurrentUser, HeinzelError, NoticeHelper, NoticeKind, Notifications
 from heinzel.heads.cli import build
 from heinzel.modules.heinzel._session_crud import SessionCrud
+from heinzel.modules.heinzel._session_models import HeinzelAppearance
 from heinzel.modules.system.daemon import DaemonService, DaemonSettings
 from heinzel.modules.system.daemon._ledger import Ledger
 
@@ -245,13 +246,14 @@ def test_check_in_payload_survives_rename_during_replay_and_next_slot_uses_new_n
 
     crud = kernel.resolve(SessionCrud)
     with kernel.resolve(CurrentUser).local("cli"):
-        crud.profile(session, "rename-profile", 1, name="Renamed")
+        crud.profile(session, "rename-profile", 1, name="Renamed", appearance=HeinzelAppearance(hat="blue"))
     monkeypatch.setattr(notices, "emit_once", real_emit_once)
     replay = runner.invoke(build(make()), ["system", "daemon", "tick", "--json"])
     assert replay.exit_code == 0, replay.output
     replayed = kernel.resolve(Notifications).recent(200)
     assert len(replayed) == 1, replay.output
     assert replayed[0].title == "Original checked in"
+    assert replayed[0].helper == NoticeHelper(name="Original", hat=None, reason="scheduled check-in")
 
     time[0] = time[0].replace(minute=11)
     (settings.state_dir / "daemon" / "heartbeat.json").unlink()
@@ -260,6 +262,7 @@ def test_check_in_payload_survives_rename_during_replay_and_next_slot_uses_new_n
     latest = kernel.resolve(Notifications).recent(200)
     assert len(latest) == 2
     assert latest[0].title == "Renamed checked in"
+    assert latest[0].helper == NoticeHelper(name="Renamed", hat="blue", reason="scheduled check-in")
 
 
 def test_foreground_daemon_compiles_owned_check_in_and_reports_failed_notice(make_kernel, settings, monkeypatch):
