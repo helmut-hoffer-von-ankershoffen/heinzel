@@ -128,11 +128,12 @@ jobs:
           fi
           echo "site_only=$site_only" >> "$GITHUB_OUTPUT"
           # PR portable tests run on Linux plus real macOS smoke. Native/platform changes retain macOS E2E and Electron;
-          # a missing or unrecognised diff keeps those jobs too. Non-PR runs always retain the complete macOS matrix.
+          # only known portable UI, model and CI paths omit them; build/dependency inputs and unknown paths keep them.
+          # Non-PR runs always retain the complete macOS matrix.
           macos_full=true
           if [ "$EVENT" = pull_request ] && [ -n "$changed" ] \
-            && ! grep -qvE '^(src/heinzel/|web/|tests/|scripts/|docs/|\.github/|template/|[^/]*\.md$)' <<< "$changed" \
-            && ! grep -qE '^(desktop/|src/heinzel/(kernel/_(installation|local_web|private_control)|heads/cli/|heads/web/_(lifecycle|supervision)|modules/(ui/|system/(daemon|update|notify|runner)/))|scripts/(install|uninstall|notifier|tools|bootstrap)[^/]*|tests/(e2e/.*(install|daemon|update|ui_service)|.*(macos|notifier|supervision))|docs/.*\.sh$|agent-skills/|Makefile$|pyproject\.toml$|uv\.lock$)' <<< "$changed"; then
+            && ! grep -qvE '^(src/heinzel/(kernel/_(contributions|exposure)\.py$|modules/team/_(models|render)\.py$)|web/(src/|e2e/|openapi\.json$)|tests/(unit/|integration/|e2e/)|scripts/(main_batch|sync_template|ci_logs|scoped_checks|merge_gate|source_review|review_tier)\.py$|docs/|\.github/(workflows/ci\.yml$|[^/]*\.md$)|template/\.github/workflows/ci\.yml\.jinja$|[^/]*\.md$)' <<< "$changed" \
+            && ! grep -qE '^(tests/(e2e/.*(install|daemon|update|ui_service)|.*(macos|notifier|supervision|tool_install|session_io|reveal|acceptance))|web/e2e/.*(install|daemon|update|native|electron|desktop|macos|notifier)|docs/.*\.sh$)' <<< "$changed"; then
             macos_full=false
           fi
           echo "macos_full=$macos_full" >> "$GITHUB_OUTPUT"
