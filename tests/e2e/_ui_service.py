@@ -1,5 +1,6 @@
 """Owned child lifecycle diagnostics without installed-tool fixture imports."""
 
+import math
 import re
 import subprocess
 import sys
@@ -154,6 +155,7 @@ class RunningService:
         self.service, self.manager = service, manager
         self.command, self.environment = command, environment
         self.processes = []
+        self.last_launch = None
         self.original_control = service._control
         self.control_failure = None
         self.control_failure_count = 0
@@ -184,8 +186,10 @@ class RunningService:
             raise
 
     def launch(self):
+        started = time.monotonic()
         process = subprocess.Popen(self.command, env=self.environment, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         self.processes.append(process)
+        self.last_launch = process, started
         self.manager.pid = process.pid
         return process
 
@@ -236,12 +240,46 @@ class RunningService:
 
     def publication_evidence(self, *, initial):
         """Observe only after the unchanged readiness deadline has already failed."""
+        cpu = self.startup_cpu()
         pending = list(islice(self.service.directory.glob(".runtime.json.*"), 4))
-        result = {"runtime_present": self.service.runtime.exists(), "pending_writes": len(pending)}
+        result = {"cpu": cpu, "runtime_present": self.service.runtime.exists(), "pending_writes": len(pending)}
         # A real tool replacement removes the fixture-only sitecustomize; never attribute its old stack to an exec.
         result["startup"] = self.startup_metadata() if initial else "not-initial-startup"
         result["native"] = self.native_state()
         result["runtime_after_sample"] = self.service.runtime.exists()
+        return result
+
+    def startup_cpu(self):
+        """Read only lifetime CPU counters of this fixture's still-owned child, before native sampling."""
+        result = {"result": "unavailable"}
+        if not self.processes or self.last_launch is None or self.last_launch[0] is not self.processes[-1]:
+            return result
+        process, started = self.last_launch
+        pid = getattr(process, "pid", None)
+        now = time.monotonic()
+        wall, waiting = now - started, now - self.ready_started
+        if (
+            type(pid) is not int
+            or pid <= 0
+            or not all(0 <= value <= 600 and math.isfinite(value) for value in (wall, waiting))
+        ):
+            return result
+        result.update(process_wall_seconds=round(wall, 3), ready_wait_seconds=round(waiting, 3))
+        if process.poll() is not None:
+            return {**result, "result": "exited"}
+        import psutil
+
+        try:
+            counters = psutil.Process(pid).cpu_times()
+        except (OSError, psutil.Error):
+            return result
+        if process.poll() is not None:
+            return {**result, "result": "exited"}
+        user, system = getattr(counters, "user", None), getattr(counters, "system", None)
+        if all(type(value) in {int, float} and 0 <= value <= 600 and math.isfinite(value) for value in (user, system)):
+            result.update(
+                result="sampled", process_user_seconds=round(user, 3), process_system_seconds=round(system, 3)
+            )
         return result
 
     def startup_metadata(self):
