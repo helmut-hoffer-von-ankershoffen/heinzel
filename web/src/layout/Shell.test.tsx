@@ -151,5 +151,9 @@ describe("Shell", () => {
     account.focus();
     await user.keyboard("{Enter}");
     expect(screen.getByRole("menuitem", { name: "Profile" })).toBeVisible();
+    expect(screen.getByRole("menuitem", { name: "Learn more" })).toHaveAttribute(
+      "href",
+      "https://heinzel.team/guides/first-steps/",
+    );
   });
 });

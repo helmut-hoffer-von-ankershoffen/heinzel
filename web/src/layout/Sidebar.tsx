@@ -429,7 +429,7 @@ function Footer({ compact = false }: { compact?: boolean }) {
             <MenuLink to="?panel=changelog" icon={FileClock} onSelect={close}>
               {t("account.changelog")}
             </MenuLink>
-            <MenuLink href={`${REPO}#readme`} icon={Info} onSelect={close}>
+            <MenuLink href="https://heinzel.team/guides/first-steps/" icon={Info} onSelect={close}>
               {t("account.learn")}
             </MenuLink>
           </div>,
@@ -470,8 +470,6 @@ function Footer({ compact = false }: { compact?: boolean }) {
   );
 }
 
-const REPO = "https://github.com/helmut-hoffer-von-ankershoffen/heinzel";
-
 type MenuLinkProps = {
   icon: LucideIcon;
   onSelect: () => void;
@@ -479,7 +477,7 @@ type MenuLinkProps = {
   children: React.ReactNode;
 } & ({ to: string; href?: never } | { href: string; to?: never });
 
-/** One row of the account menu: a screen of the app, or a page on GitHub in a new tab. */
+/** One row of the account menu: a screen of the app, or an external page in a new tab. */
 function MenuLink({ icon: Icon, onSelect, shortcut, children, ...target }: MenuLinkProps) {
   const row =
     "flex w-full items-center gap-3 rounded-lg px-2.5 py-1.5 text-left text-ui text-foreground/90 transition-colors hover:bg-accent [&_svg]:size-(--icon) [&_svg]:shrink-0 [&_svg]:stroke-[1.75] [&_svg]:text-icon";
