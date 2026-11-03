@@ -1177,21 +1177,36 @@ def test_e2e_sequence_stops_after_readme_failure(tmp_path, first_fails):
     assert (result.returncode != 0) is first_fails
 
 
-def _changes_outputs(tmp_path, event: str, changed: str, git_exit: int = 0) -> set[str]:
+@pytest.fixture(scope="module")
+def ci_paths(tmp_path_factory):
+    """One immutable workflow/script fixture per worker; every case still executes it with distinct data."""
     jobs = yaml.safe_load((REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))["jobs"]
     script = next(step["run"] for step in jobs["changes"]["steps"] if step.get("id") == "paths")
-    stubs = tmp_path / "bin"
+    directory = tmp_path_factory.mktemp("ci-paths")
+    stubs = directory / "bin"
     stubs.mkdir()
     git = stubs / "git"
-    git.write_text(f"#!/bin/sh\nprintf '{changed}'\nexit {git_exit}\n")
+    git.write_text('#!/bin/sh\nprintf "%s" "$CHANGED_PATHS"\nexit "$DIFF_EXIT"\n')
     git.chmod(0o700)
-    (tmp_path / "desktop").mkdir()
-    (tmp_path / "desktop" / "package.json").write_text("{}")
+    (directory / "desktop").mkdir()
+    (directory / "desktop" / "package.json").write_text("{}")
+    return script, directory
+
+
+def _changes_outputs(tmp_path, ci_paths, event: str, changed: str, git_exit: int = 0) -> set[str]:
+    script, directory = ci_paths
     output = tmp_path / "output"
     subprocess.run(
         ["bash", "-c", script],
-        env={"PATH": f"{stubs}:/usr/bin:/bin", "EVENT": event, "BASE": "base", "GITHUB_OUTPUT": str(output)},
-        cwd=tmp_path,
+        env={
+            "PATH": f"{directory / 'bin'}:/usr/bin:/bin",
+            "EVENT": event,
+            "BASE": "base",
+            "GITHUB_OUTPUT": str(output),
+            "CHANGED_PATHS": changed,
+            "DIFF_EXIT": str(git_exit),
+        },
+        cwd=directory,
         check=True,
         timeout=4,
     )
@@ -1211,8 +1226,8 @@ def _changes_outputs(tmp_path, event: str, changed: str, git_exit: int = 0) -> s
         ("schedule", "docs/guides/install.md\n", "true"),
     ],
 )
-def test_only_a_prose_push_to_main_skips_the_core_jobs(tmp_path, event, changed, core):
-    assert f"core={core}" in _changes_outputs(tmp_path, event, changed)
+def test_only_a_prose_push_to_main_skips_the_core_jobs(tmp_path, ci_paths, event, changed, core):
+    assert f"core={core}" in _changes_outputs(tmp_path, ci_paths, event, changed)
 
 
 @pytest.mark.parametrize(
@@ -1262,8 +1277,8 @@ def test_only_a_prose_push_to_main_skips_the_core_jobs(tmp_path, event, changed,
         ("", "true"),
     ],
 )
-def test_macos_native_jobs_are_retained_for_platform_and_unknown_paths(tmp_path, path, full):
-    outputs = _changes_outputs(tmp_path, "pull_request", path)
+def test_macos_native_jobs_are_retained_for_platform_and_unknown_paths(tmp_path, ci_paths, path, full):
+    outputs = _changes_outputs(tmp_path, ci_paths, "pull_request", path)
     assert f"macos_full={full}" in outputs
     if full == "true":
         assert "electron=true" in outputs
@@ -1271,12 +1286,12 @@ def test_macos_native_jobs_are_retained_for_platform_and_unknown_paths(tmp_path,
 
 @pytest.mark.parametrize("event", ["push", "schedule", "workflow_dispatch"])
 @pytest.mark.parametrize("changed", [".github/workflows/ci.yml\n", "web/src/Footer.tsx\n", "", "new/path.py\n"])
-def test_non_pr_runs_retain_native_macos_jobs_for_every_scope(tmp_path, event, changed):
-    assert "macos_full=true" in _changes_outputs(tmp_path, event, changed)
+def test_non_pr_runs_retain_native_macos_jobs_for_every_scope(tmp_path, ci_paths, event, changed):
+    assert "macos_full=true" in _changes_outputs(tmp_path, ci_paths, event, changed)
 
 
-def test_failed_diff_with_partial_output_still_runs_full_macos(tmp_path):
-    outputs = _changes_outputs(tmp_path, "pull_request", "src/heinzel/modules/team/_render.py\n", git_exit=1)
+def test_failed_diff_with_partial_output_still_runs_full_macos(tmp_path, ci_paths):
+    outputs = _changes_outputs(tmp_path, ci_paths, "pull_request", "src/heinzel/modules/team/_render.py\n", git_exit=1)
     assert {"macos_full=true", "electron=true", "core=true"} <= outputs
 
 
@@ -1295,8 +1310,10 @@ def test_failed_diff_with_partial_output_still_runs_full_macos(tmp_path):
         ("workflow_dispatch", "src/heinzel/__init__.py\n", "true"),
     ],
 )
-def test_electron_runs_for_its_paths_on_a_push_and_always_on_schedule_and_dispatch(tmp_path, event, changed, electron):
-    assert f"electron={electron}" in _changes_outputs(tmp_path, event, changed)
+def test_electron_runs_for_its_paths_on_a_push_and_always_on_schedule_and_dispatch(
+    tmp_path, ci_paths, event, changed, electron
+):
+    assert f"electron={electron}" in _changes_outputs(tmp_path, ci_paths, event, changed)
 
 
 def test_the_test_matrix_keeps_the_whole_output_of_a_failure():
@@ -1320,8 +1337,8 @@ SITE_ONLY_PATHS = [
 
 
 @pytest.mark.parametrize("path", SITE_ONLY_PATHS)
-def test_a_site_pull_request_skips_the_app_jobs(tmp_path, path):
-    outputs = _changes_outputs(tmp_path, "pull_request", f"{path}\n")
+def test_a_site_pull_request_skips_the_app_jobs(tmp_path, ci_paths, path):
+    outputs = _changes_outputs(tmp_path, ci_paths, "pull_request", f"{path}\n")
     assert "site_only=true" in outputs
     assert "electron=false" in outputs
 
@@ -1341,8 +1358,8 @@ def test_a_site_pull_request_skips_the_app_jobs(tmp_path, path):
         ("workflow_dispatch", "docs/TEAMS.md\n"),
     ],
 )
-def test_everything_else_runs_the_app_jobs(tmp_path, event, changed):
-    assert "site_only=false" in _changes_outputs(tmp_path, event, changed)
+def test_everything_else_runs_the_app_jobs(tmp_path, ci_paths, event, changed):
+    assert "site_only=false" in _changes_outputs(tmp_path, ci_paths, event, changed)
 
 
 def test_site_only_skips_exactly_the_app_test_jobs_and_ci_ok_waits_for_site_tests():
