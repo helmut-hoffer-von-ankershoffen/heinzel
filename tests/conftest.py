@@ -6,7 +6,7 @@ import os
 import re
 import sys
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Protocol
@@ -17,6 +17,7 @@ from heinzel import Config, Kernel, Module, ModuleRecord, Settings
 from heinzel.kernel import Origin, discover
 from heinzel.modules.org import _discovery as discovery
 from heinzel.modules.system import _github
+from heinzel.testing import CATEGORIES
 
 TEST_ORIGIN = Origin(distribution="heinzel-test", version="9.9.9", builtin=False)
 
@@ -71,6 +72,74 @@ _DRIVER_TIMEOUT = re.compile(r"\b([a-z][A-Za-z]*\.[a-z][A-Za-z]*: Timeout [0-9]+
 _ALLOWED_TYPES = frozenset(
     {"AssertionError", "ValueError", "TypeError", "RuntimeError", "TimeoutError", "OSError", "Failed"}
 )
+_LEVELS = frozenset(CATEGORIES)
+_LEVEL_LAYOUT = all((_ROOT / "tests" / level).is_dir() for level in _LEVELS)
+# Keep these integration files' existing node IDs and unit-scoped fixtures until they can move together.
+_INTEGRATION_FILES = frozenset(
+    {
+        "unit/steps_signal_test.py",
+        "unit/modules/autonomous_schedule_test.py",
+        "unit/modules/user_chat_test.py",
+        "unit/modules/scheduled_notifications_test.py",
+    }
+)
+
+
+def pytest_addoption(parser: pytest.Parser) -> None:
+    """Retain full import-based collection as a comparison; lane validation remains required in both modes."""
+    parser.addoption(
+        "--full-level-collection",
+        action="store_true",
+        help="Import every test level before marker selection (diagnostic comparison).",
+    )
+
+
+def _level_layout(config: pytest.Config) -> bool:
+    return _LEVEL_LAYOUT and config.getini("testpaths") == ["tests"]
+
+
+def _path_level(path: Path) -> str | None:
+    try:
+        relative = path.relative_to(_ROOT / "tests")
+    except ValueError:
+        return None
+    if relative.as_posix() in _INTEGRATION_FILES:
+        return "integration"
+    return relative.parts[0] if relative.parts and relative.parts[0] in _LEVELS else None
+
+
+def pytest_ignore_collect(collection_path: Path, config: pytest.Config) -> bool | None:
+    """The integration shard imports its owned files; directories and their scoped fixtures are always collected."""
+    if (
+        config.getoption("markexpr") != "(integration) and not perf"
+        or config.getoption("full_level_collection")
+        or not _level_layout(config)
+        or not collection_path.is_file()
+        or not any(collection_path.match(pattern) for pattern in config.getini("python_files"))
+    ):
+        return None
+    level = _path_level(collection_path)
+    return True if level is not None and level != "integration" else None
+
+
+@pytest.hookimpl(specname="pytest_collection_modifyitems", hookwrapper=True, tryfirst=True)
+def pytest_collection_modifyitems_layout(config: pytest.Config, items: list[pytest.Item]) -> Iterator[None]:
+    """Validate each lane's actual markers, including cases another hook deselects or reclassifies."""
+    original = tuple(items) if _level_layout(config) else ()
+    yield
+    offenders: set[str] = set()
+    for item in original:
+        if not item.path.is_relative_to(_ROOT / "tests"):
+            continue
+        expected = _path_level(item.path)
+        actual = [level for level in _LEVELS if item.get_closest_marker(level) is not None]
+        if actual != [expected]:
+            relative = item.path.relative_to(_ROOT).as_posix()
+            safe = relative if re.fullmatch(r"[A-Za-z0-9_./-]+", relative) else "<unclassified-test>"
+            offenders.add(f"{safe}: expected {expected or 'a unit, integration or e2e directory'}")
+    if offenders:
+        message = "Tests must carry exactly one level matching their collection lane:\n  "
+        raise pytest.UsageError(message + "\n  ".join(sorted(offenders)))
 
 
 def _node(value: str) -> str:

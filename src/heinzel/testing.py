@@ -124,8 +124,12 @@ def hz_isolation(monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pytest.TempP
     """No test sees the developer's HZ_* variables, config or state, touches launchd or systemd or asks for updates."""
     for name in ISOLATED:
         monkeypatch.delenv(name, raising=False)
+    # Numbered allocation scans the growing base directory; private children avoid repeating it for each HZ directory.
+    directory = tmp_path_factory.mktemp("hz")
     for name in OWN_DIRECTORIES:
-        monkeypatch.setenv(name, str(tmp_path_factory.mktemp(name.lower())))
+        path = directory / name.lower()
+        path.mkdir(mode=0o700)
+        monkeypatch.setenv(name, str(path))
     isolate_credentials(monkeypatch)
     monkeypatch.setenv("HZ_UPDATE_CHECK", "false")  # no `hz` a test starts asks GitHub for the latest release
     monkeypatch.setenv("HZ_SYSTEM_NOTIFY__NATIVE", "false")  # no tick a test runs pops up a real notification

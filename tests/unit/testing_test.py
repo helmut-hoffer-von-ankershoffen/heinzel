@@ -2,13 +2,14 @@
 
 import os
 import re
+import stat
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
-from heinzel.testing import CATEGORIES, TIMEOUTS, pytest_collection_modifyitems
+from heinzel.testing import CATEGORIES, OWN_DIRECTORIES, TIMEOUTS, hz_isolation, pytest_collection_modifyitems
 
 pytestmark = pytest.mark.unit
 
@@ -187,3 +188,27 @@ def test_help_wraps_at_the_pinned_width(hz):
 def test_no_test_checks_for_updates():
     """Every `hz` a test starts, in-process or not, inherits this (ADR 0031): the suite never asks GitHub."""
     assert os.environ["HZ_UPDATE_CHECK"] == "false"
+
+
+def test_each_test_has_distinct_empty_private_directories():
+    directories = [Path(os.environ[name]) for name in OWN_DIRECTORIES]
+    assert len(set(directories)) == len(OWN_DIRECTORIES)
+    for directory in directories:
+        assert directory.is_dir()
+        assert list(directory.iterdir()) == []
+        if os.name == "posix":
+            assert stat.S_IMODE(directory.stat().st_mode) == 0o700
+
+
+def test_repeated_isolation_never_shares_directories_and_restores_the_previous_environment(tmp_path_factory):
+    before = {name: os.environ[name] for name in OWN_DIRECTORIES}
+    created = []
+    for _ in range(2):
+        with pytest.MonkeyPatch.context() as patch:
+            hz_isolation.__wrapped__(patch, tmp_path_factory)
+            current = {Path(os.environ[name]) for name in OWN_DIRECTORIES}
+            assert len(current) == len(OWN_DIRECTORIES)
+            assert all(path.is_dir() and not list(path.iterdir()) for path in current)
+            created.append(current)
+        assert {name: os.environ[name] for name in OWN_DIRECTORIES} == before
+    assert created[0].isdisjoint(created[1])
