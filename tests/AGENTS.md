@@ -2,6 +2,9 @@
 
 - Fast loop: `uv run pytest tests/unit -x -q` (`--lf` reruns failures).
 - Set exactly one level per file: `pytestmark = pytest.mark.unit` (or `integration`, `e2e`).
+- Put new files under their level's directory. `make test-parallel TEST_LEVELS=integration` imports only that lane;
+  runtime marker checks retain even deselected cases. Four legacy paths in `tests/conftest.py` keep their unit fixtures.
+  `--full-level-collection` disables pruning without changing explicit paths or the marker/path check.
 - `unit/` mirrors `src/heinzel/` (`unit/kernel/kernel_test.py` ↔ `src/heinzel/kernel/_kernel.py`). `integration/` goes
   through the CLI head (`CliRunner` or `python -m heinzel`). `e2e/` installs with `uv tool` and runs the README.
   `fixtures/heinzel-dummy` is a minimal plugin with a submodule for e2e lifecycle tests.

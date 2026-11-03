@@ -1,10 +1,12 @@
 """Shared fixtures. The test-suite policy (one level per test, in order, with timeouts) and the isolation of every
 test from the developer's HZ_* variables, config and state (`hz_isolation`) are heinzel.testing's."""
 
+import math
 import os
 import re
 import sys
-from collections.abc import Callable
+import time
+from collections.abc import Callable, Iterator
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Protocol
@@ -15,6 +17,7 @@ from heinzel import Config, Kernel, Module, ModuleRecord, Settings
 from heinzel.kernel import Origin, discover
 from heinzel.modules.org import _discovery as discovery
 from heinzel.modules.system import _github
+from heinzel.testing import CATEGORIES
 
 TEST_ORIGIN = Origin(distribution="heinzel-test", version="9.9.9", builtin=False)
 
@@ -69,6 +72,74 @@ _DRIVER_TIMEOUT = re.compile(r"\b([a-z][A-Za-z]*\.[a-z][A-Za-z]*: Timeout [0-9]+
 _ALLOWED_TYPES = frozenset(
     {"AssertionError", "ValueError", "TypeError", "RuntimeError", "TimeoutError", "OSError", "Failed"}
 )
+_LEVELS = frozenset(CATEGORIES)
+_LEVEL_LAYOUT = all((_ROOT / "tests" / level).is_dir() for level in _LEVELS)
+# Keep these integration files' existing node IDs and unit-scoped fixtures until they can move together.
+_INTEGRATION_FILES = frozenset(
+    {
+        "unit/steps_signal_test.py",
+        "unit/modules/autonomous_schedule_test.py",
+        "unit/modules/user_chat_test.py",
+        "unit/modules/scheduled_notifications_test.py",
+    }
+)
+
+
+def pytest_addoption(parser: pytest.Parser) -> None:
+    """Retain full import-based collection as a comparison; lane validation remains required in both modes."""
+    parser.addoption(
+        "--full-level-collection",
+        action="store_true",
+        help="Import every test level before marker selection (diagnostic comparison).",
+    )
+
+
+def _level_layout(config: pytest.Config) -> bool:
+    return _LEVEL_LAYOUT and config.getini("testpaths") == ["tests"]
+
+
+def _path_level(path: Path) -> str | None:
+    try:
+        relative = path.relative_to(_ROOT / "tests")
+    except ValueError:
+        return None
+    if relative.as_posix() in _INTEGRATION_FILES:
+        return "integration"
+    return relative.parts[0] if relative.parts and relative.parts[0] in _LEVELS else None
+
+
+def pytest_ignore_collect(collection_path: Path, config: pytest.Config) -> bool | None:
+    """The integration shard imports its owned files; directories and their scoped fixtures are always collected."""
+    if (
+        config.getoption("markexpr") != "(integration) and not perf"
+        or config.getoption("full_level_collection")
+        or not _level_layout(config)
+        or not collection_path.is_file()
+        or not any(collection_path.match(pattern) for pattern in config.getini("python_files"))
+    ):
+        return None
+    level = _path_level(collection_path)
+    return True if level is not None and level != "integration" else None
+
+
+@pytest.hookimpl(specname="pytest_collection_modifyitems", hookwrapper=True, tryfirst=True)
+def pytest_collection_modifyitems_layout(config: pytest.Config, items: list[pytest.Item]) -> Iterator[None]:
+    """Validate each lane's actual markers, including cases another hook deselects or reclassifies."""
+    original = tuple(items) if _level_layout(config) else ()
+    yield
+    offenders: set[str] = set()
+    for item in original:
+        if not item.path.is_relative_to(_ROOT / "tests"):
+            continue
+        expected = _path_level(item.path)
+        actual = [level for level in _LEVELS if item.get_closest_marker(level) is not None]
+        if actual != [expected]:
+            relative = item.path.relative_to(_ROOT).as_posix()
+            safe = relative if re.fullmatch(r"[A-Za-z0-9_./-]+", relative) else "<unclassified-test>"
+            offenders.add(f"{safe}: expected {expected or 'a unit, integration or e2e directory'}")
+    if offenders:
+        message = "Tests must carry exactly one level matching their collection lane:\n  "
+        raise pytest.UsageError(message + "\n  ".join(sorted(offenders)))
 
 
 def _node(value: str) -> str:
@@ -144,12 +215,74 @@ class _Diagnostics:
 
 def pytest_configure(config: pytest.Config) -> None:
     """Only the controller emits reports; workers forward their normal reports unchanged."""
+    if config.getoption("markexpr") == "(integration) and not perf":
+        config.pluginmanager.register(_SessionTiming(config), "heinzel-integration-session-timing")
     if (
         not os.environ.get("PYTEST_XDIST_WORKER")
         and not hasattr(config, "workerinput")
         and config.getoption("markexpr") == "e2e"
     ):
         config.pluginmanager.register(_Diagnostics(), "heinzel-e2e-immediate-diagnostics")
+
+
+class _SessionTiming:
+    """Separate collection, test phases and CPU use when the integration session exhausts its budget."""
+
+    def __init__(self, config: pytest.Config) -> None:
+        self._config = config
+        self._started = time.monotonic()
+        self._cpu = os.times()
+        self._phases = 0.0
+        self._completed = 0
+
+    @pytest.hookimpl(optionalhook=True)
+    def pytest_xdist_node_collection_finished(self, node: object, ids: list[str]) -> None:
+        worker = getattr(getattr(node, "gateway", None), "id", "")
+        if isinstance(worker, str) and re.fullmatch(r"gw[0-9]+", worker):
+            _emit(
+                f"INTEGRATION collected worker={worker} tests={len(ids)} "
+                f"controller_seconds={time.monotonic() - self._started:.3f}"
+            )
+
+    def pytest_runtest_logreport(self, report: pytest.TestReport) -> None:
+        self._phases += report.duration
+        self._completed += report.when == "teardown"
+
+    @pytest.hookimpl(tryfirst=True)
+    def pytest_sessionfinish(self, session: pytest.Session, exitstatus: int) -> None:
+        del session
+        cpu = os.times()
+        # Subtract each rounded counter first, so unchanged ticks cannot become a tiny negative total.
+        timing = {
+            "wall": time.monotonic() - self._started,
+            "cpu": (cpu.user - self._cpu.user) + (cpu.system - self._cpu.system),
+            "child_cpu": (cpu.children_user - self._cpu.children_user)
+            + (cpu.children_system - self._cpu.children_system),
+            "phases": self._phases,
+            "completed": self._completed,
+        }
+        if hasattr(self._config, "workeroutput"):
+            self._config.workeroutput["heinzel_integration_timing"] = timing
+        else:
+            _emit(f"INTEGRATION session exit={int(exitstatus)} wall_seconds={timing['wall']:.3f}")
+
+    @pytest.hookimpl(optionalhook=True)
+    def pytest_testnodedown(self, node: object, error: object) -> None:
+        del error  # Exception text can contain private paths or values.
+        worker = getattr(getattr(node, "gateway", None), "id", "")
+        timing = getattr(node, "workeroutput", {}).get("heinzel_integration_timing")
+        if not isinstance(worker, str) or not re.fullmatch(r"gw[0-9]+", worker) or not isinstance(timing, dict):
+            return
+        if not all(
+            type(timing.get(key)) in {int, float} and math.isfinite(timing[key]) and timing[key] >= 0
+            for key in ("completed", "wall", "cpu", "child_cpu", "phases")
+        ):
+            return
+        _emit(
+            f"INTEGRATION worker={worker} completed={int(timing['completed'])} "
+            f"wall_seconds={timing['wall']:.3f} cpu_seconds={timing['cpu']:.3f} "
+            f"child_cpu_seconds={timing['child_cpu']:.3f} phase_seconds={timing['phases']:.3f}"
+        )
 
 
 def _spread_early_e2e(items: list[pytest.Item], workers: int) -> list[pytest.Item]:
