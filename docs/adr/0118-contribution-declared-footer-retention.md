@@ -2,6 +2,7 @@
 status: proposed
 date: 2026-11-03
 implementation: built
+implemented-by: 488
 decision-makers: maintainer
 related: 0056, 0094
 ---
