@@ -3,6 +3,8 @@ export function anchorWorkspace(scroller: HTMLElement, page: HTMLElement, worksp
   let height = page.offsetHeight;
   let top = workspace.offsetTop;
   let scroll = scroller.scrollTop;
+  let viewportHeight = scroller.clientHeight;
+  let viewportWidth = scroller.clientWidth;
   let interacting = workspace.contains(document.activeElement);
   let active = true;
   const visible = () => top < scroll + scroller.clientHeight && top + workspace.offsetHeight > scroll;
@@ -10,6 +12,8 @@ export function anchorWorkspace(scroller: HTMLElement, page: HTMLElement, worksp
     height = page.offsetHeight;
     top = workspace.offsetTop;
     scroll = scroller.scrollTop;
+    viewportHeight = scroller.clientHeight;
+    viewportWidth = scroller.clientWidth;
   };
   const interaction = (event: Event) => {
     interacting = event.target instanceof Node && workspace.contains(event.target);
@@ -24,7 +28,9 @@ export function anchorWorkspace(scroller: HTMLElement, page: HTMLElement, worksp
   const observer = new ResizeObserver(() => {
     if (!active) return;
     const change = page.offsetHeight - height;
-    if (change && interacting && visible()) scroller.scrollTop = scroll + change;
+    // Viewport reflow belongs to the browser and focused-editor handler, not content anchoring.
+    const reflow = scroller.clientHeight !== viewportHeight || scroller.clientWidth !== viewportWidth;
+    if (change && !reflow && interacting && visible()) scroller.scrollTop = scroll + change;
     remember();
   });
   observer.observe(page);
