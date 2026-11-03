@@ -1344,6 +1344,7 @@ $ hz org [OPTIONS] COMMAND [ARGS]...
 **Commands**:
 
 * `agenda`: (expert) Show the meeting you are in now...
+* `calendar`: (expert) Show a week from your connected...
 * `show`: Show your profile: who you are, your role,...
 * `sync`: Show what your team recommends beside what...
 
@@ -1359,6 +1360,23 @@ $ hz org agenda [OPTIONS]
 
 **Options**:
 
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz org calendar`
+
+(expert) Show a week from your connected calendar.
+
+**Usage**:
+
+```console
+$ hz org calendar [OPTIONS]
+```
+
+**Options**:
+
+* `--offset <int>`: Weeks before or after this week.  [default: 0]
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
