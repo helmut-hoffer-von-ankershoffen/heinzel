@@ -27,11 +27,11 @@ from heinzel.kernel._approval import (
 )
 from heinzel.modules.heinzel._connected_grants import ConnectedGrant
 from heinzel.modules.heinzel._contract_review import ContractReview
-from heinzel.modules.heinzel._interactive_turn import interactive_turn_id
 from heinzel.modules.heinzel._scheduled_notifications import ScheduledNotificationInventory, ScheduledNotificationPolicy
 from heinzel.modules.heinzel._session_bodies import immutable_body
 from heinzel.modules.heinzel._session_crud import SessionCrud
 from heinzel.modules.heinzel._session_models import MessageRequest, RequestId, SessionId
+from heinzel.modules.heinzel._turn_activity import interactive_turn_id
 from heinzel.modules.heinzel._user_chat import MAX_TURN_SECONDS, UserChatService
 
 _MAX_PAGE = 100

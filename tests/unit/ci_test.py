@@ -978,28 +978,50 @@ def test_plugin_ci_has_no_core_only_jobs_and_every_need_exists():
     assert '"os":"macos-latest","python":"3.15"' in jobs["test"]["strategy"]["matrix"]["include"]
 
 
-def test_macos_cells_shard_by_level_and_ci_ok_waits_for_changes():
+def _macos_include(matrix: dict, event: str, full: bool) -> list[dict]:
+    expression = re.fullmatch(r"\$\{\{ fromJSON\((.*)\) \}\}", matrix["include"].strip())
+    assert expression
+    context = {"github.event_name": event, "needs.changes.outputs.macos_full": str(full).lower()}
+    for branch in expression[1].split(" || "):
+        value = None
+        for term in branch.split(" && "):
+            literal = re.fullmatch(r"'([^']*)'", term)
+            if literal:
+                value = literal[1]
+            else:
+                condition = re.fullmatch(r"([a-z_.]+) (==|!=) '([^']*)'", term)
+                assert condition, term
+                equal = context[condition[1]] == condition[3]
+                value = equal if condition[2] == "==" else not equal
+            if not value:
+                break
+        if value:
+            return json.loads(value)
+    message = "No matrix branch matched"
+    raise AssertionError(message)
+
+
+@pytest.mark.parametrize(
+    ("event", "full", "pythons"),
+    [
+        ("pull_request", False, []),
+        ("pull_request", True, []),
+        ("push", False, ["3.12", "3.13", "3.14", "3.15"]),
+        ("push", True, ["3.12", "3.13", "3.14", "3.15"]),
+        ("schedule", False, ["3.12", "3.13", "3.14", "3.15"]),
+        ("schedule", True, ["3.12", "3.13", "3.14", "3.15"]),
+        ("workflow_dispatch", False, ["3.12", "3.13", "3.14", "3.15"]),
+        ("workflow_dispatch", True, ["3.12", "3.13", "3.14", "3.15"]),
+    ],
+)
+def test_macos_cells_shard_by_level_and_ci_ok_waits_for_changes(event, full, pythons):
     jobs = yaml.safe_load((REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))["jobs"]
-    include = jobs["test"]["strategy"]["matrix"]["include"]
-    pull_request, schedule, otherwise = (
-        json.loads(cells)
-        for cells in re.fullmatch(
-            r"\$\{\{ fromJSON\(github\.event_name == 'pull_request' && "
-            r"'(.*)' "
-            r"\|\| github\.event_name == 'schedule' && '(.*)' \|\| '(.*)'\) \}\}",
-            include.strip(),
-        ).groups()
-    )
-    for cells, pythons in (
-        (pull_request, []),
-        (schedule, ["3.12", "3.13", "3.14", "3.15"]),
-        (otherwise, ["3.12", "3.13", "3.14", "3.15"]),
-    ):
-        assert cells == [
-            {"os": "macos-latest", "python": python, "levels": level}
-            for python in pythons
-            for level in ("unit", "integration")
-        ]
+    cells = _macos_include(jobs["test"]["strategy"]["matrix"], event, full)
+    assert cells == [
+        {"os": "macos-latest", "python": python, "levels": level}
+        for python in pythons
+        for level in ("unit", "integration")
+    ]
     recipe = (REPO / "Makefile").read_text(encoding="utf-8").split("\ntest-parallel:", 1)[1].split("\n\n", 1)[0]
     assert "-m '($(TEST_LEVELS)) and not perf'" in recipe
     assert "--session-timeout=420" in recipe  # each shard has the cap the whole suite had
@@ -1449,13 +1471,38 @@ def test_native_macos_matrices_follow_scope_only_on_pull_requests(event, macos_f
         )
 
 
-def test_a_pull_request_tests_python_oldest_and_newest_and_main_every_supported_python():
+@pytest.mark.parametrize(
+    ("event", "expected"),
+    [
+        ("pull_request", ["3.12", "3.15"]),
+        ("push", ["3.12", "3.13", "3.14", "3.15"]),
+        ("schedule", ["3.12", "3.13", "3.14", "3.15"]),
+        ("workflow_dispatch", ["3.12", "3.13", "3.14", "3.15"]),
+    ],
+)
+def test_a_pull_request_tests_python_oldest_and_newest_and_main_every_supported_python(event, expected):
     test = _ci_jobs()["test"]
-    pythons = test["strategy"]["matrix"]["python"]
-    assert _oses(pythons, "pull_request") == ["3.12", "3.15"]
-    assert _oses(pythons, "push") == ["3.12", "3.13", "3.14", "3.15"]
+    assert _oses(test["strategy"]["matrix"]["python"], event) == expected
     probe = next(step for step in test["steps"] if step.get("run") == "make linux-user-manager-proof")
     assert probe["if"] == "matrix.os == 'ubuntu-24.04' && matrix.python == '3.12'"  # a cell every pull request runs
+
+
+@pytest.mark.parametrize(
+    ("event", "expected"),
+    [
+        ("pull_request", ["3.15"]),
+        ("push", ["3.12", "3.13", "3.14", "3.15"]),
+        ("schedule", ["3.12", "3.13", "3.14", "3.15"]),
+        ("workflow_dispatch", ["3.12", "3.13", "3.14", "3.15"]),
+    ],
+)
+def test_plugin_macos_matrix_preserves_its_existing_python_coverage(event, expected):
+    cells = _macos_include(_generated_plugin_ci()["jobs"]["test"]["strategy"]["matrix"], event, full=False)
+    assert cells == [
+        {"os": "macos-latest", "python": version, "levels": level}
+        for version in expected
+        for level in ("unit", "integration")
+    ]
 
 
 def test_a_failed_cheap_check_cancels_the_rest_of_a_pull_request_run():

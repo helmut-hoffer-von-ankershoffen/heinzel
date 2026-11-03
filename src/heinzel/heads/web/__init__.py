@@ -39,7 +39,7 @@ import secrets
 import socket
 import sys
 import threading
-import webbrowser
+import webbrowser as webbrowser
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 
@@ -59,6 +59,7 @@ from heinzel.heads.web._ports import wait_for_port
 from heinzel.heads.web._shutdown import GRACE_SECONDS, KEEP_ALIVE_SECONDS, Stopping
 from heinzel.heads.web._shutdown import server as stopping_server
 from heinzel.heads.web._stream import add_stream
+from heinzel.heads.web._supervision import WebPublication, restart_when_settled
 from heinzel.heads.web._updates import add_updates
 from heinzel.kernel import (
     FONT_ROUTE,
@@ -243,6 +244,7 @@ def build(  # noqa: PLR0913 - all but the kernel by keyword
         restart=restart,
         accept=lambda presented: device.id if (device := paired.check(presented)) else None,
     )
+    app.state.lifecycle = endpoints.state.lifecycle
     add_pairing(endpoints, paired)
     add_updates(endpoints, kernel, static, restartable=restart is not None)
     app.state.auto_update = AutoUpdater(kernel, restart=restart, activity=activity)
@@ -489,6 +491,7 @@ def serve(  # noqa: PLR0913 - all but the kernel by keyword
     base: str | None = None,
     restartable: bool = True,
     execute: Execute = os.execve,
+    supervised: str | None = None,
     waiting: Callable[[str], None] = print,
 ) -> None:
     """Serve the web head on localhost until Ctrl-C stops it, with a new token, and open the browser at it.
@@ -508,6 +511,7 @@ def serve(  # noqa: PLR0913 - all but the kernel by keyword
         restartable: Whether `POST /api/restart` runs this process's command again; false where the command isn't
             `hz ui` (`make web-dev`).
         execute: Replaces the process on restart; a fake in tests.
+        supervised: Exact installed OS-service generation; publishes owner-only local control, never a URL to logs.
         waiting: Reports a bounded wait when a recently stopped UI still holds the requested port.
 
     Raises:
@@ -532,10 +536,21 @@ def serve(  # noqa: PLR0913 - all but the kernel by keyword
             handover.append(duplicate)
         server.should_exit = True
 
+    restart_server = restart_when_settled(
+        restart,
+        prefix=Path(sys.prefix),
+        state=kernel.settings.state_dir,
+        supervised=supervised is not None,
+    )
     stopping = Stopping()
     try:
         app = build(
-            kernel, port=bound, token=token, static=static, restart=restart if restartable else None, stopping=stopping
+            kernel,
+            port=bound,
+            token=token,
+            static=static,
+            restart=restart_server if restartable else None,
+            stopping=stopping,
         )
     except BaseException:
         sock.close()
@@ -549,14 +564,23 @@ def serve(  # noqa: PLR0913 - all but the kernel by keyword
     )
     server = stopping_server(config, stopping)
     url = session_url(bound, token, base)
+    lifecycle = app.state.lifecycle
+    publication = WebPublication(
+        Config.load(Path.home()).settings(Settings, KERNEL_SECTION).state_dir / "ui",
+        supervised,
+        bound,
+        lifecycle.instance,
+        lifecycle.version,
+        url,
+        restart_server,
+        lambda: setattr(server, "should_exit", True),
+    )
 
     def when_started() -> None:
         while not server.started and not server.should_exit:
             threading.Event().wait(0.05)
         if server.started:
-            announce(url)
-            if browser:
-                webbrowser.open(url)
+            publication.publish(announce, browser=browser)
 
     threading.Thread(target=when_started, daemon=True).start()
     updater: AutoUpdater = app.state.auto_update
@@ -565,6 +589,7 @@ def serve(  # noqa: PLR0913 - all but the kernel by keyword
         server.run(sockets=[sock])
     finally:
         updater.stop()
+        publication.close()
         sock.close()
     if handover and not stopping.interrupted:  # Ctrl-C while restarting stops it
         command = [sys.executable, "-m", "heinzel", *sys.argv[1:]]
