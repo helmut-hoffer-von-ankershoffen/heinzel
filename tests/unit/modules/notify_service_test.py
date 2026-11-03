@@ -657,6 +657,34 @@ def test_every_daemon_tick_ends_the_leftovers_and_leaves_a_notification_being_po
     assert ended == [7001, 7001]
 
 
+def test_disabled_native_notifications_never_maintain_the_desktop_app(settings, clock, tmp_path, monkeypatch):
+    service = leftover_service(settings, clock, tmp_path, [])
+    service.settings = NotifySettings(native=False)
+    app = service.notifier.app
+    assert app is not None
+
+    def reject_maintenance():
+        pytest.fail("disabled native notifications reached desktop maintenance")
+
+    for method in ("ensure", "clean", "unregister_strays"):
+        monkeypatch.setattr(app, method, reject_maintenance)
+    watched = []
+    service.watcher = lambda: watched.append(True) or 0
+    assert service.post_native() == 0
+    assert watched == [True]
+
+
+def test_disabled_native_notifications_never_discover_the_host_notifier(make, monkeypatch):
+    service = make(native=False)
+    service._notifier = None
+
+    def reject_discovery(_self):
+        pytest.fail("disabled native notifications discovered the desktop notifier")
+
+    monkeypatch.setattr(type(service), "notifier", property(reject_discovery))
+    assert service.post_native() == 0
+
+
 @pytest.mark.macos_specific
 def test_the_tick_makes_macos_forget_stray_copies_once_a_day(settings, clock, tmp_path):
     forgotten: list[str] = []
