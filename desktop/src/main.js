@@ -87,15 +87,17 @@ if (identityReady && instance.acquire(process.argv.slice(app.isPackaged ? 1 : 2)
     if (stopping) return;
     stopping = true;
     permissions?.revoke();
+    let unclean = false;
     void stopWithReport(ownedCli, () => {
-      if (unexpectedExitReported) return;
+      unclean = true;
+      if (signalQuit.received() || unexpectedExitReported) return;
       dialog.showErrorBox(
         "Heinzelmännchen stopped unexpectedly",
         "The local service did not shut down cleanly. Check any work that was in progress before continuing.",
       );
     }).then(() => {
       quitting = true;
-      app.quit();
+      if (!signalQuit.exitIfUnclean(unclean)) app.quit();
     }).catch(() => {
       stopping = false;
       if (signalQuit.received()) {

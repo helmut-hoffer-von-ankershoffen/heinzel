@@ -21,5 +21,13 @@ export function installSignalQuit({
     quit(signal);
   };
   for (const signal of signals) proc.on(signal, handler);
-  return Object.freeze({ received: () => received });
+  return Object.freeze({
+    received: () => received,
+    // An unclean owned-child result must not look like a successful signal shutdown.
+    exitIfUnclean: (unclean) => {
+      if (!received || !unclean) return false;
+      forceExit(1);
+      return true;
+    },
+  });
 }

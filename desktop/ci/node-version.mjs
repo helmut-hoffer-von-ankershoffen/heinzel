@@ -6,8 +6,8 @@ const MINIMUM_MAJOR = Number(PINNED_NODE.split(".")[0]);
  * Decide whether this Node.js may build the package.
  *
  * CI (or `HZ_DESKTOP_STRICT_NODE=1`) must run exactly the pinned version so release artifacts stay reproducible.
- * Local builds accept any newer Node.js at or above the pinned major and say so, since the packaged bytes come
- * from Electron and the locked dependencies, not from the Node.js that drives the packager.
+ * Local builds accept Node.js at or above the pinned major and report any difference. The packaging target
+ * still installs locked dependencies and verifies the closed runtime inventory.
  */
 export function checkNode(version = process.versions.node, env = process.env) {
   const strict = env.CI === "true" || env.CI === "1" || env.HZ_DESKTOP_STRICT_NODE === "1";

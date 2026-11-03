@@ -59,6 +59,8 @@ test("local builds accept newer Node.js with a notice and reject older majors", 
   assert.equal(newer.ok, true);
   assert.match(newer.warning, /26\.12\.1/);
   assert.equal(checkNode(PINNED_NODE, {}).warning, undefined);
+  assert.equal(checkNode("24.0.0", {}).ok, true);
+  assert.match(checkNode("24.0.0", {}).warning, /24\.0\.0/);
   assert.equal(checkNode("22.11.0", {}).ok, false);
   assert.equal(checkNode("garbage", {}).ok, false);
 });
@@ -67,4 +69,16 @@ test("the CI workflow pins the same Node.js as the packager", async () => {
   const workflow = await readFile(new URL("../../.github/workflows/ci.yml", import.meta.url), "utf8");
   const electron = workflow.slice(workflow.indexOf("\n  electron:"));
   assert.match(electron, new RegExp(`node-version: ${PINNED_NODE.replaceAll(".", "\\.")}`));
+});
+
+
+test("only an unclean signal shutdown forces a non-zero exit", () => {
+  const { proc, calls, installed } = harness();
+  assert.equal(installed.exitIfUnclean(true), false, "Manual quit retains its existing report/retry policy");
+  assert.deepEqual(calls.exit, []);
+  proc.emit("SIGTERM", "SIGTERM");
+  assert.equal(installed.exitIfUnclean(false), false, "A graceful owned-child exit stays successful");
+  assert.deepEqual(calls.exit, []);
+  assert.equal(installed.exitIfUnclean(true), true);
+  assert.deepEqual(calls.exit, [1]);
 });
