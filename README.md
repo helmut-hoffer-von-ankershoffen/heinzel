@@ -243,12 +243,13 @@ that says what it may cost before it runs. Modules can also advertise jobs that
 rights; `hz system daemon pause` and `uninstall` stop them (see [SECURITY.md](SECURITY.md)).
 
 `hz ui` normally stops when its terminal closes. Persistent availability is currently a preview, disabled until
-`persistent_web` is named in your user-level `hz.features` setting for lifecycle validation. With that flag enabled,
-explicitly run `hz ui install --port 8737`; `hz ui status` distinguishes a loaded service from a ready web server. Later `hz ui`
+`persistent_web` is named in your user-level `hz.features` configuration file for lifecycle validation. Then run `hz ui install --port 8737`; `hz ui status` distinguishes a loaded service from a ready web server. Later `hz ui`
 opens that owned service. `hz ui restart` keeps its session through a normal restart; `hz ui uninstall` removes
 only its web login service and keeps data and paired devices. This is separate from scheduled background work and
 Tailscale sharing. After an interrupted automatic update, startup can refuse until supported recovery repairs it;
 status does not call that ready. An existing foreground server must be stopped before installing on its port.
+The service keeps using the configuration files and storage roots selected at installation. Put behavior settings
+in those files; installation refuses process-only `HZ_*` overrides. Reinstall to select a different profile.
 
 Built in today:
 

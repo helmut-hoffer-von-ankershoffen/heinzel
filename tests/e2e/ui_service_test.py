@@ -5,6 +5,7 @@ from urllib.parse import urlsplit
 import httpx
 import pytest
 
+from heinzel.modules.ui._profile import default_profile
 from tests.e2e._ui_service import RunningService, startup_diagnostics
 from tests.e2e.tool_install_test import sandbox, seed_uv_cache, wheel
 from tests.integration.ui_service_test import service, service_factory
@@ -20,31 +21,38 @@ def supervised(service, tmp_path, sandbox, wheel):
     sandbox.run("uv", "tool", "install", "--offline", wheel)
     service.executable = sandbox.hz_bin
     service.prefix = sandbox.root / "tools/heinzel"
-    service.install(port)
-    startup_diagnostics(service.prefix, service.directory)
-    directories = {
-        "HZ_STATE_DIR": str(service.directory.parent),
-        "HZ_DATA_DIR": str(tmp_path / "data"),
-        "HZ_CACHE_DIR": str(tmp_path / "cache"),
-        "HZ_LOG_DIR": str(tmp_path / "logs"),
-        "HZ_CONFIG_HOME": str(tmp_path / "config"),
-    }
-    environment = {key: value for key, value in sandbox.env.items() if not key.startswith(("HZ_", "HEINZEL_"))}
-    config = tmp_path / "conflicting.toml"
-    config.write_text('[hz]\nstate_dir = "' + str(tmp_path / "foreign-config-state") + '"\n')
-    environment.update(
-        directories
-        | {
-            "HZ_STATE_DIR": str(tmp_path / "foreign-environment-state"),
+    config = tmp_path / "selected-config/config.toml"
+    config.parent.mkdir(mode=0o700)
+    config.write_text(
+        '[hz]\nfeatures = ["persistent_web"]\nupdate_check = false\nauto_update = false\nplugins_enabled = false\n'
+        "[system.notify]\nnative = false\n"
+    )
+    service.profile = default_profile(service.home, service.directory.parent, service.prefix, service.executable)
+    service.profile.update(
+        {
+            "HZ_CONFIG_HOME": str(config.parent),
             "HZ_CONFIG": str(config),
-            "HZ_UPDATE_CHECK": "false",
-            "HZ_PLUGINS_ENABLED": "false",
-            "HZ_SYSTEM_NOTIFY__NATIVE": "false",
-            "HZ_TEST": "1",
-            "HZ_FEATURES": "persistent_web",
-            "PATH": "/usr/bin:/bin",
+            "HZ_DATA_DIR": str(tmp_path / "data"),
+            "HZ_CACHE_DIR": str(tmp_path / "cache"),
+            "HZ_LOG_DIR": str(tmp_path / "logs"),
         }
     )
+    service.install(port)
+    startup_diagnostics(service.prefix, service.directory)
+    foreign = tmp_path / "foreign-config.toml"
+    foreign.write_text("[hz]\nfeatures = []\n")
+    environment = {
+        "HOME": str(tmp_path / "foreign-home"),
+        "HZ_STATE_DIR": str(tmp_path / "foreign-state"),
+        "HZ_DATA_DIR": str(tmp_path / "foreign-data"),
+        "HZ_CONFIG": str(foreign),
+        "HZ_CONFIG_HOME": str(tmp_path / "foreign-config"),
+        "HZ_FEATURES": "poison-manager-feature",
+        "HZ_SYSTEM_NOTIFY__NATIVE": "true",
+        "OPENAI_API_KEY": "fixture-process-secret-must-not-propagate",
+        "PYTHONPATH": str(tmp_path / "poison-python"),
+        "PATH": "/usr/bin:/bin",
+    }
     command = ["/bin/sh", str(service.launcher)]
     running = RunningService(service, manager, command, environment)
     try:

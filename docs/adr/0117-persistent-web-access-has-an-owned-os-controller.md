@@ -54,6 +54,11 @@ installation, paired devices and update handoff while making process availabilit
    not before login or after logout. Neither installs a root daemon nor enables Linux linger. The job runs a
    private exact launcher outside the mutable uv environment, then replaces itself with the stable uv bin shim.
    The shim is never resolved into a disposable uvx environment or pinned to a replaced tool interpreter.
+   The owned record binds HOME, user and explicit configuration selectors, all four storage roots and uv tool
+   destinations. The launcher clears inherited credentials and configuration, retaining only named OS-session
+   capabilities such as the user bus and display. Behavior stays in the selected configuration files: installation
+   refuses process-only HZ overrides, and later feature or automatic-update changes are reread without an installed
+   environment snapshot overriding them. Cleanup validates the recorded profile independently of caller overrides.
    The launcher pins the exact guarded state directory and a controlled PATH including the captured verified uv
    executable directory, so config/environment changes and a minimal user-manager PATH cannot bypass its journal
    or make uv disappear from the supported updater.

@@ -79,6 +79,9 @@ Only the latest release receives security fixes while the project is on 0.x; upd
   lifecycle acceptance is complete. Installation, attachment and service startup require it; inspection and owned
   removal remain available when it is off. `hz ui install` installs a separate per-user launchd or systemd job;
   its CLI-only `status`, `restart` and `uninstall` actions verify exact integration and loaded process ownership.
+  That record also binds configuration selectors and storage roots. The child receives those routes and a narrow
+  OS-session environment; terminal or manager credentials are not copied. Process-only behavior overrides must
+  be moved to the selected user configuration before installation.
   It listens only on loopback and keeps the existing web authentication and origin checks. Its session credential
   stays in memory; a bounded private local socket serves explicit local Open actions without writing a bearer to
   state or OS logs. Paired devices retain their existing expiry and revocation. An external launcher refuses cold

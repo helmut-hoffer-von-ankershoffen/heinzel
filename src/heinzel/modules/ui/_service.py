@@ -20,6 +20,7 @@ from heinzel import Config, HeinzelError, Kernel, Settings
 from heinzel.kernel import (
     Installation,
     PrivateControl,
+    feature_enabled,
     installation_mutation_paths,
     installation_mutation_pending,
     private_directory,
@@ -27,6 +28,14 @@ from heinzel.kernel import (
     private_read,
     private_socket_directory,
     private_write,
+)
+from heinzel.modules.ui._profile import (
+    default_profile,
+    environment_command,
+    installation_overrides,
+    require_installation_profile,
+    user_profile,
+    validated_profile,
 )
 
 LABEL = "io.github.helmut-hoffer-von-ankershoffen.heinzel.web"
@@ -88,6 +97,9 @@ class WebService:
         verify: Callable[[], bool] = lambda: False,
         prefix: Path | None = None,
         uv: Path | None = None,
+        profile: dict[str, str] | None = None,
+        unsupported: tuple[str, ...] = (),
+        selected_preview: bool = True,
     ) -> None:
         """Keep the stable shim path unresolved, because uv replaces its destination during updates."""
         self.directory = state / "ui"
@@ -95,6 +107,9 @@ class WebService:
         self.executable = executable
         self.prefix = prefix or home / "tool"
         self.uv = uv or Path(shutil.which("uv") or "/usr/bin/uv")
+        self.profile = profile if profile is not None else default_profile(home, state, self.prefix, executable)
+        self.unsupported = unsupported
+        self.selected_preview = selected_preview
         self.platform = platform
         self.runner = runner
         self.which = which
@@ -116,7 +131,8 @@ class WebService:
         Raises:
             HeinzelError: If uv is absent or its bin directory cannot be read.
         """
-        settings = Config.load(Path.home()).settings(Settings, "hz")
+        config = Config.load(Path.home())
+        settings = config.settings(Settings, "hz")
         if not settings.state_dir.is_absolute():
             msg = "Persistent web availability requires an absolute hz.state_dir in your user configuration."
             raise HeinzelError(msg)
@@ -136,6 +152,11 @@ class WebService:
             binary / "hz",
             prefix=installation.prefix.resolve(strict=True),
             uv=Path(uv).absolute(),
+            profile=user_profile(
+                config, settings, Path.home(), installation.prefix.resolve(strict=True), binary / "hz"
+            ),
+            unsupported=installation_overrides(config),
+            selected_preview=feature_enabled(settings, "persistent_web"),
             verify=lambda: (
                 installation.is_tool
                 and installation.startup_state_matches()
@@ -151,7 +172,7 @@ class WebService:
             raise HeinzelError(msg)
         return [executable, *arguments] if self.platform == "darwin" else [executable, "--user", *arguments]
 
-    def _launch_content(self, port: int, generation: str) -> str:
+    def _launch_content(self, port: int, generation: str, profile: dict[str, str] | None = None) -> str:
         guards = "".join(
             f"if [ -e {shlex.quote(str(path))} ] || [ -L {shlex.quote(str(path))} ]; then exit 75; fi\n"
             for path in installation_mutation_paths(self.prefix, self.directory.parent)
@@ -180,11 +201,10 @@ class WebService:
         )
         return (
             "#!/bin/sh\nset -eu\n"
-            f"export HZ_STATE_DIR={shlex.quote(str(self.directory.parent))}\n"
-            f"export PATH={path}\n"
             "# Recovery requires the existing update authority before any mutable tool code imports.\n"
             + guards
-            + f"unset PYTHONPATH PYTHONHOME\nexec {arguments}\n"
+            + environment_command(self.profile if profile is None else profile)
+            + f'exec "$@" PATH={path} {arguments}\n'
         )
 
     def _content(self) -> str:
@@ -221,11 +241,25 @@ class WebService:
     def _record(self) -> dict[str, JsonValue] | None:
         try:
             value = TypeAdapter(dict[str, JsonValue]).validate_json(private_read(self.marker))
-            if set(value) != {"port", "generation", "executable", "unit", "content", "launcher", "prefix", "uv"}:
+            if set(value) != {
+                "port",
+                "generation",
+                "executable",
+                "unit",
+                "content",
+                "launcher",
+                "prefix",
+                "uv",
+                "profile",
+            }:
                 return None
+            profile = validated_profile(
+                value.get("profile"), self.home, self.directory.parent, self.prefix, self.executable
+            )
             port, generation = value.get("port"), value.get("generation")
             if (
-                type(port) is not int
+                profile is None
+                or type(port) is not int
                 or not 1 <= port <= MAX_PORT
                 or not isinstance(generation, str)
                 or re.fullmatch(r"[0-9a-f]{32}", generation) is None
@@ -234,7 +268,7 @@ class WebService:
                 or value["uv"] != str(self.uv)
                 or value["unit"] != str(self.unit)
                 or value["content"] != self._content()
-                or value["launcher"] != self._launch_content(port, generation)
+                or value["launcher"] != self._launch_content(port, generation, profile)
                 or private_read(self.launcher) != value["launcher"]
             ):
                 return None
@@ -388,6 +422,11 @@ class WebService:
         if not 1 <= port <= MAX_PORT:
             msg = "Use a fixed web port between 1 and 65535."
             raise HeinzelError(msg)
+        profile = validated_profile(self.profile, self.home, self.directory.parent, self.prefix, self.executable)
+        require_installation_profile(profile, self.unsupported)
+        if not self.selected_preview:
+            msg = "Enable persistent_web in the selected user configuration before installing web availability."
+            raise HeinzelError(msg)
         existing = self._record()
         loaded, _ = self._manager(existing)
         if existing is not None:
@@ -423,6 +462,7 @@ class WebService:
                     "executable": str(self.executable),
                     "prefix": str(self.prefix),
                     "uv": str(self.uv),
+                    "profile": self.profile,
                     "unit": str(self.unit),
                     "content": content,
                     "launcher": self._launch_content(port, generation),

@@ -3,8 +3,10 @@
 import json
 import os
 import plistlib
+import shlex
 import socket
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 from types import SimpleNamespace
@@ -661,3 +663,180 @@ def test_each_loaded_identity_field_independently_blocks_mutation_with_a_live_co
 def test_linux_second_exec_vector_is_refused_even_when_first_vector_matches(service_factory):
     service, manager, port = service_factory("linux")
     assert_loaded_identity_refused(service, manager, port, "second-vector")
+
+
+def test_profile_binding_survives_minimal_and_conflicting_manager_environment(service, tmp_path):
+    from heinzel.modules.ui._profile import default_profile
+
+    selected, manager, port = service
+    config = tmp_path / "selected-config/config.toml"
+    config.parent.mkdir(mode=0o700)
+    config.write_text('[hz]\nfeatures = ["persistent_web"]\nauto_update = false\n[system.notify]\nnative = false\n')
+    selected.profile = default_profile(selected.home, selected.directory.parent, selected.prefix, selected.executable)
+    selected.profile.update({"HZ_CONFIG_HOME": str(config.parent), "HZ_CONFIG": str(config)})
+    output = tmp_path / "profile-observation.json"
+    script = (
+        "import json,os; from pathlib import Path; from heinzel import Config,Settings; "
+        "c=Config.load(Path.home()); s=c.settings(Settings,'hz'); "
+        "result={'home':str(Path.home()),'features':sorted(s.features),'auto_update':s.auto_update,"
+        "'roots':[str(s.state_dir),str(s.data_dir),str(s.cache_dir),str(s.log_dir)],"
+        "'secret_absent':'OPENAI_API_KEY' not in os.environ,"
+        "'python_absent':'PYTHONPATH' not in os.environ,"
+        "'session_retained':os.environ.get('DBUS_SESSION_BUS_ADDRESS')=='fixture-session'}; "
+        f"Path({str(output)!r}).write_text(json.dumps(result))"
+    )
+    selected.executable.write_text("#!/bin/sh\nexec " + shlex.join([sys.executable, "-I", "-c", script]) + "\n")
+    selected.executable.chmod(0o700)
+    selected.install(port)
+    environment = {
+        "PATH": "/usr/bin:/bin",
+        "HOME": str(tmp_path / "foreign-home"),
+        "HZ_FEATURES": "foreign",
+        "HZ_CONFIG": str(tmp_path / "foreign-config"),
+        "HZ_DATA_DIR": str(tmp_path / "foreign-data"),
+        "PYTHONPATH": "foreign-python",
+        "OPENAI_API_KEY": "fixture-secret-never-persist",
+        "DBUS_SESSION_BUS_ADDRESS": "fixture-session",
+    }
+    subprocess.run(["/bin/sh", str(selected.launcher)], env=environment, check=True, capture_output=True, timeout=5)
+    observed = json.loads(output.read_text())
+    assert observed["home"] == str(selected.home)
+    assert observed["features"] == ["persistent_web"]
+    assert observed["auto_update"] is False
+    assert observed["roots"] == [
+        selected.profile[name] for name in ("HZ_STATE_DIR", "HZ_DATA_DIR", "HZ_CACHE_DIR", "HZ_LOG_DIR")
+    ]
+    assert observed["secret_absent"] is True
+    assert observed["python_absent"] is True
+    assert observed["session_retained"] is True
+    assert not (tmp_path / "foreign-home").exists()
+    assert not (tmp_path / "foreign-data").exists()
+    for path in (selected.marker, selected.launcher, selected.unit):
+        assert "fixture-secret-never-persist" not in path.read_text()
+        assert "fixture-session" not in path.read_text()
+    config.write_text("[hz]\nfeatures = []\nauto_update = true\n")
+    subprocess.run(["/bin/sh", str(selected.launcher)], env=environment, check=True, capture_output=True, timeout=5)
+    changed = json.loads(output.read_text())
+    assert changed["features"] == []
+    assert changed["auto_update"] is True
+    selected.profile = {**selected.profile, "HZ_CONFIG_HOME": str(tmp_path / "other-caller")}
+    selected.unsupported = ("HZ_FEATURES",)
+    assert selected.status().installed
+    assert selected.uninstall().changed
+    assert not manager.loaded
+
+
+def test_process_only_behavior_is_refused_before_install_without_exposing_values(service, monkeypatch):
+    from heinzel import Config
+    from heinzel.modules.ui._profile import installation_overrides
+
+    selected, manager, port = service
+    monkeypatch.setenv("HZ_FEATURES", "fixture-secret-never-persist")
+    selected.unsupported = installation_overrides(Config.load(selected.home))
+    with pytest.raises(HeinzelError, match="selected user configuration") as error:
+        selected.install(port)
+    assert "HZ_FEATURES" in str(error.value)
+    assert "fixture-secret-never-persist" not in str(error.value)
+    assert manager.calls == []
+    assert not selected.unit.exists()
+
+
+@pytest.mark.parametrize("damage", ["missing", "unknown", "relative", "malformed"])
+def test_malformed_recorded_profile_cannot_authorize_uninstall(service, damage):
+    selected, manager, port = service
+    selected.install(port)
+    record = json.loads(private_read(selected.marker))
+    if damage == "missing":
+        del record["profile"]
+    elif damage == "unknown":
+        record["profile"]["OPENAI_API_KEY"] = "fixture-secret"
+    elif damage == "relative":
+        record["profile"]["HZ_DATA_DIR"] = "relative"
+    else:
+        record["profile"] = False
+    private_write(selected.marker, json.dumps(record))
+    manager.calls.clear()
+    with pytest.raises(HeinzelError):
+        selected.uninstall()
+    assert manager.loaded
+    assert not any("bootout" in call or "disable" in call for call in manager.calls)
+
+
+def test_real_user_factory_binds_profile_and_refuses_process_behavior_before_manager_calls(
+    service, make_kernel, monkeypatch, tmp_path
+):
+    from heinzel.kernel import Installation
+    from heinzel.modules.ui import _service
+
+    selected, manager, port = service
+    for name in list(os.environ):
+        if name.upper().startswith("HZ_"):
+            monkeypatch.delenv(name)
+    monkeypatch.setenv("HOME", str(selected.home))
+    config_dir = tmp_path / "real-user-config"
+    config_dir.mkdir()
+    explicit = tmp_path / "explicit-profile.toml"
+    explicit.write_text('[hz]\nfeatures = ["persistent_web"]\n')
+    environment = {
+        "HZ_CONFIG_HOME": str(config_dir),
+        "HZ_CONFIG": str(explicit),
+        "HZ_STATE_DIR": str(selected.directory.parent),
+        "HZ_DATA_DIR": str(tmp_path / "selected-data"),
+        "HZ_CACHE_DIR": str(tmp_path / "selected-cache"),
+        "HZ_LOG_DIR": str(tmp_path / "selected-log"),
+        "UV_CACHE_DIR": str(tmp_path / "selected-uv-cache"),
+        "UV_PYTHON_INSTALL_DIR": str(tmp_path / "selected-pythons"),
+    }
+    for name, value in environment.items():
+        monkeypatch.setenv(name, value)
+    expected = selected.prefix / "bin/hz"
+    expected.parent.mkdir(parents=True)
+    expected.write_text("verified fixture")
+    selected.executable.unlink()
+    selected.executable.symlink_to(expected)
+    custom_uv = selected.home / "uv/uv"
+    monkeypatch.setattr(_service.shutil, "which", lambda name: str(custom_uv) if name == "uv" else None)
+    monkeypatch.setattr(
+        _service, "_run", lambda args: subprocess.CompletedProcess(args, 0, str(selected.executable.parent), "")
+    )
+    kernel = make_kernel(builtins=True, settings_=Settings(features={"persistent_web"}))
+    kernel.bind(Installation, SimpleNamespace(prefix=selected.prefix, is_tool=True, startup_state_matches=lambda: True))
+    created = WebService.for_user(kernel)
+    assert created.profile == {
+        **environment,
+        "HOME": str(selected.home),
+        "UV_TOOL_DIR": str(selected.prefix.parent),
+        "UV_TOOL_BIN_DIR": str(selected.executable.parent),
+        "XDG_CONFIG_DIRS": os.environ.get("XDG_CONFIG_DIRS", "/etc/xdg"),
+    }
+    assert created.unsupported == ()
+    assert created.selected_preview is True
+    created.runner, created.which = manager, selected.which
+    manager.service = created
+    for name in ("hz_features", "Hz_Auto_Update", "HZ_LOG_LEVEL"):
+        monkeypatch.setenv(
+            name,
+            "false"
+            if name == "Hz_Auto_Update"
+            else "ERROR"
+            if name == "HZ_LOG_LEVEL"
+            else "fixture-value-never-expose",
+        )
+    rejected = WebService.for_user(kernel)
+    rejected.runner, rejected.which = manager, selected.which
+    assert set(rejected.unsupported) == {"hz_features", "Hz_Auto_Update", "HZ_LOG_LEVEL"}
+    with pytest.raises(HeinzelError, match="selected user configuration") as error:
+        rejected.install(port)
+    assert "fixture-value-never-expose" not in str(error.value)
+    assert manager.calls == []
+    for name in ("hz_features", "Hz_Auto_Update", "HZ_LOG_LEVEL"):
+        monkeypatch.delenv(name)
+    explicit.write_text("[hz]\nfeatures = []\n")
+    disabled = WebService.for_user(kernel)
+    disabled.runner, disabled.which = manager, selected.which
+    assert disabled.selected_preview is False
+    with pytest.raises(HeinzelError, match="Enable persistent_web in the selected user configuration"):
+        disabled.install(port)
+    assert manager.calls == []
+    assert disabled.status().installed is False
+    assert disabled.uninstall().changed is False
