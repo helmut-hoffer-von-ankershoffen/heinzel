@@ -19,8 +19,8 @@ independent request prove that the earlier browser request was accepted or answe
 `HZ_REOPEN_DIAGNOSTICS=1` opts this one fixture into synthetic-server receipts. They record only the progress of
 `GET /`: time, a Fetch Metadata navigation boolean, client port, response status and send completion. They exclude
 request bodies, header text, URL queries, fragments, arbitrary paths and credentials. Receipt output is limited to
-the failed driver invocation's last 30 events. A response send completion means the ASGI send returned; it does not
-prove the browser received or committed the document.
+at most 16 KiB and the failed driver invocation's last 30 complete events. A response send completion means the ASGI
+send returned; it does not prove the browser received or committed the document.
 
 The browser now reports navigation response headers separately from request completion and prints the pending
 navigation's Playwright timing fields on failure. The original persistent profile, allowed service workers, stale
@@ -65,5 +65,5 @@ request was never sent.
 Process observation was limited to descendants of this experiment's gate process. A one-second sample of its owned
 browser showed inspector/run-loop/display-link frames; it was a control observation of a deliberately unanswered
 request, not a sample of the CI failure. Auxiliary WebKit processes were not proven descendants and were not sampled.
-Five focused receipt tests pass, covering privacy, navigation/probe classification, streaming completion and
-unrelated-path/protocol pass-through.
+Eight focused receipt tests pass, covering privacy, navigation/probe classification, streaming completion,
+unrelated-path/protocol pass-through, fixed read bounds on an oversized file and incomplete-record handling.

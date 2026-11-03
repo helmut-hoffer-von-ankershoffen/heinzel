@@ -23,6 +23,7 @@ from urllib.request import Request, urlopen
 import pytest
 
 from tests.e2e._mobile_server_output import MobileServerOutput, check_driver, redact, sanitize_timeout
+from tests.e2e._reopen_server import receipt_tail
 
 pytestmark = pytest.mark.e2e
 
@@ -328,9 +329,7 @@ def test_a_paired_browser_reopens_signed_in_without_a_link_after_hz_ui_restarts(
         )
         progress = ""
         if driven.returncode and receipts.exists():
-            with receipts.open(encoding="utf-8") as stream:
-                stream.seek(receipt_offset)
-                progress = "\nServer GET / progress:\n" + "".join(stream.readlines()[-30:])
+            progress = "\nServer GET / progress:\n" + receipt_tail(receipts, receipt_offset)
         assert driven.returncode == 0, driven.stderr + driven.stdout + progress
         return json.loads(driven.stdout.strip().splitlines()[-1])
 

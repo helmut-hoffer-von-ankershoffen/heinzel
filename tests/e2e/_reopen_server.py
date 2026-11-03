@@ -9,6 +9,23 @@ from pathlib import Path
 import uvicorn
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
+RECEIPT_TAIL_BYTES = 16_384
+
+
+def receipt_tail(path: Path, offset: int) -> str:
+    """Read at most 16 KiB of this invocation's receipts and return its last 30 complete lines."""
+    with path.open("rb") as stream:
+        end = stream.seek(0, os.SEEK_END)
+        start = max(offset, end - RECEIPT_TAIL_BYTES)
+        stream.seek(start)
+        tail = stream.read(min(RECEIPT_TAIL_BYTES, max(0, end - start)))
+    if start > offset:
+        # A byte boundary can split a record; never emit its partial projection.
+        tail = tail.partition(b"\n")[2]
+    if not tail.endswith(b"\n"):
+        tail = tail.rpartition(b"\n")[0]
+    return b"\n".join(tail.splitlines()[-30:]).decode("utf-8", errors="replace")
+
 
 class NavigationReceipts:
     """Distinguish a browser navigation reaching the server from the driver's independent health probe."""
