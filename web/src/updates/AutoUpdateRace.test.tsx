@@ -6,6 +6,7 @@ import { keys } from "@/api/queries";
 import { mockApi } from "@/test/render";
 import { AutoUpdate, type AutoUpdateStatus } from "./AutoUpdate";
 import { KEY } from "./autoUpdateApi";
+import { updateTransport } from "./controller";
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -70,3 +71,79 @@ it("shows a countdown enabled in another window while this window still has the 
   expect(await screen.findByRole("alertdialog", {}, { timeout: 5000 })).toHaveTextContent("hz updates itself in");
   expect(client.getQueryData(keys.config)).toEqual(config);
 }, 10000);
+
+it("recovers from a status request stalled across restart and reloads the updated server", async () => {
+  vi.useFakeTimers();
+  const reload = vi.spyOn(updateTransport, "reload").mockImplementation(() => undefined);
+  vi.spyOn(updateTransport, "clean").mockResolvedValue(undefined);
+  const client = queryClient();
+  client.setQueryData(KEY, idle);
+  let calls = 0;
+  mockApi({
+    "/api/system/config/show": setting(true),
+    "/api/auto-update": (request: Request) => {
+      calls += 1;
+      if (calls === 1)
+        return new Promise((_resolve, reject) => {
+          request.signal.addEventListener("abort", () => reject(request.signal.reason), { once: true });
+        });
+      return { ...idle, version: "1.1.0", message: "hz is up to date: 1.1.0, updated automatically." };
+    },
+  });
+  try {
+    render(
+      <Providers client={client}>
+        <AutoUpdate />
+      </Providers>,
+    );
+    await act(() => vi.advanceTimersByTimeAsync(2_000));
+    expect(calls).toBe(1);
+    // The replacement is ready, but the retiring server's response never reaches this browser.
+    await act(() => vi.advanceTimersByTimeAsync(8_000));
+    expect(reload).toHaveBeenCalledOnce();
+  } finally {
+    client.clear();
+    vi.useRealTimers();
+  }
+});
+
+it("shows a slow valid countdown even when the additional status read fails", async () => {
+  vi.useFakeTimers();
+  const client = queryClient();
+  client.setQueryData(KEY, idle);
+  let calls = 0;
+  mockApi({
+    "/api/system/config/show": setting(true),
+    "/api/auto-update": (request: Request) => {
+      calls += 1;
+      if (calls === 2) return { status: 503, body: { error: "Restarting." } };
+      return new Promise((resolve, reject) => {
+        const timer = setTimeout(
+          () => resolve({ ...idle, phase: "countdown", core: "9.9.9", seconds_left: 30 }),
+          5_000,
+        );
+        request.signal.addEventListener(
+          "abort",
+          () => {
+            clearTimeout(timer);
+            reject(request.signal.reason);
+          },
+          { once: true },
+        );
+      });
+    },
+  });
+  try {
+    render(
+      <Providers client={client}>
+        <AutoUpdate />
+      </Providers>,
+    );
+    await act(() => vi.advanceTimersByTimeAsync(7_500));
+    expect(screen.getByRole("alertdialog")).toHaveTextContent("Installing: hz 9.9.9.");
+    expect(screen.getByRole("button", { name: "Postpone 1 hour" })).toBeEnabled();
+  } finally {
+    client.clear();
+    vi.useRealTimers();
+  }
+});
