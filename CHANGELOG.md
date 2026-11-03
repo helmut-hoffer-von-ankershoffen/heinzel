@@ -4,25 +4,46 @@ All notable changes to Heinzelmännchen, newest first. Versions follow [Semantic
 
 ## [0.9.15](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/releases/tag/v0.9.15) - 2026-11-03
 
-Improves recovery when an update status request stalls.
+Share the app link through the native share sheet and open the first-session guide from Learn more. This release also improves update recovery and test reliability.
 
 ### 🛡️ Security
 
 - **security:** Scan the exact refs sent to the push destination ([#471](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/471)) ([e9becac](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/e9becacf72994b11ca86fa4531fb0cbc1a652c2b))
 
+### ✨ Features
+
+- **web:** Share service URLs with native sheet ([#483](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/483)) ([b6bf603](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/b6bf6034bd9c7c43ecb11684ca36fc3324d64909))
+
 ### 🐛 Bug fixes
 
 - **ci:** Keep tested core pull request heads ([#467](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/467)) ([cd8e5a4](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/cd8e5a4595d5240f3e3f7f72b239cd60ccee918f))
 - **web:** Recover a stalled automatic-update status read ([#474](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/474)) ([28a9e92](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/28a9e928ad80701a357c24fef9fa317fdb7894e2))
+- **ci:** Retry interrupted pinned tool downloads ([#479](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/479)) ([556a357](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/556a357dfc8672ad0bb2282ae3acc12606d63768))
+- **system:** Skip notifier maintenance when native delivery is off ([#484](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/484)) ([091491d](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/091491d9f76d354e20078796eea917f9dba94ac2))
+- **ci:** Preserve timing for unchanged CPU counters ([#487](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/487)) ([83acb35](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/83acb35598e5019fd1a20fe02b5f8bc974e4fae8))
+- **web:** Link Learn more to the first session guide ([#482](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/482)) ([7218ac4](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/7218ac4588c7b113ab8a429c985cf37acfe9796c))
+
+### ⚡ Performance
+
+- **ci:** Reduce repeated test setup work ([#486](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/486)) ([bedcf7b](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/bedcf7b323987dc4f0bcf602c52911f4bbbc0f23))
+
+### 📚 Documentation
+
+- **adr:** Simplify index and show implementing PRs ([#475](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/475)) ([eb8f9c5](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/eb8f9c5d1461c68567578b8f6bbfedf4f3a99361))
 
 ### 🧪 Testing
 
 - **system:** Isolate replay fixtures from the host service ([#468](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/468)) ([19c0363](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/19c0363c54c43d2deac95125082e6a15745dd6b5))
+- Isolate stop hook gate dispatch ([#476](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/476)) ([32a3373](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/32a33736713285763db65c39978b1254ac65f7ba))
+- **ci:** Reduce source review fixture overhead ([#478](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/478)) ([d7476c8](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/d7476c836c4fd728733ad8c404bca8534fe997da))
+- **web:** Diagnose disclosure pointer failures ([#480](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/480)) ([a7a7ba7](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/a7a7ba710708f8052a0063b17b108c49b60e6cba))
+- **ci:** Record integration session CPU timing ([#481](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/481)) ([67bb047](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/67bb047958cb2c8f2dbd39ee611748ba9225c1c6))
 
 ### 🏗️ Build and CI
 
 - **release:** Pin public acceptance artifact identities ([#470](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/470)) ([fe0ab7f](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/fe0ab7f7cb0b76421e1a879e3bb6fbd13301af32))
 - Shorten the pull request feedback path ([#469](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/469)) ([b26843f](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/b26843f75791833b7e922d2d38ee62cab7845c12))
+- **github:** MacOS blocks merges again ([#455](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/455)) ([1b13e03](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/1b13e0308f22afd5985a9eabd089b6591257b18b))
 
 ## [0.9.14](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/releases/tag/v0.9.14) - 2026-11-02
 
