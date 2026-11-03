@@ -48,6 +48,7 @@ print("rendered bundled blue face; private directory removed; no notification po
 
 @pytest.mark.macos_specific
 @pytest.mark.skipif(sys.platform != "darwin", reason="AppKit rendering is macOS-only")
+@pytest.mark.timeout(15)
 def test_bundled_face_renders_in_an_owned_private_directory_without_posting(tmp_path):
     compiler = shutil.which("swiftc")
     assert compiler is not None
