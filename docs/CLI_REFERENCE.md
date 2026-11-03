@@ -28,7 +28,7 @@ $ hz [OPTIONS] COMMAND [ARGS]...
 * `setup`: Set up what is still missing, wizard...
 * `system`: Inspect, configure, diagnose and update...
 * `team`: Your team&#x27;s repository: create one (`hz...
-* `ui`: Open the web app in your browser, served...
+* `ui`: Open the web workspace or manage its...
 
 ## `hz ai`
 
@@ -3653,12 +3653,12 @@ $ hz team show [OPTIONS]
 
 ## `hz ui`
 
-Open the web app in your browser, served on localhost; Ctrl-C stops it.
+Open the web workspace or manage its optional persistent service.
 
 **Usage**:
 
 ```console
-$ hz ui [OPTIONS]
+$ hz ui [OPTIONS] COMMAND [ARGS]...
 ```
 
 **Options**:
@@ -3667,4 +3667,77 @@ $ hz ui [OPTIONS]
 * `--browser / --no-browser`: Open the default browser at the app; --no-browser prints only its URL.  [default: browser]
 * `--devices`: List the browsers and installed apps paired with hz, then stop.
 * `--revoke <str>`: Unpair a device by its id from --devices, or `all`, then stop.
+* `--help`: Show this message and exit.
+
+**Commands**:
+
+* `install`: Install preview web availability after...
+* `restart`: Restart the preview web service with its...
+* `status`: Show exact OS ownership and the live web...
+* `uninstall`: Remove only the owned web login service,...
+
+### `hz ui install`
+
+Install preview web availability after login, separately from scheduled background work.
+
+**Usage**:
+
+```console
+$ hz ui install [OPTIONS]
+```
+
+**Options**:
+
+* `--port <int>`: Fixed loopback port for the web workspace.  [default: 8737]
+* `--dry-run / --no-dry-run`: Show the exact service definition without changing anything.  [default: no-dry-run]
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz ui restart`
+
+Restart the preview web service with its existing port and authenticated session.
+
+**Usage**:
+
+```console
+$ hz ui restart [OPTIONS]
+```
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz ui status`
+
+Show exact OS ownership and the live web server&#x27;s readiness and version.
+
+**Usage**:
+
+```console
+$ hz ui status [OPTIONS]
+```
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz ui uninstall`
+
+Remove only the owned web login service, preserving your data and paired devices.
+
+**Usage**:
+
+```console
+$ hz ui uninstall [OPTIONS]
+```
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.

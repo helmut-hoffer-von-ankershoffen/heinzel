@@ -39,3 +39,14 @@ class LocalWebRuntime:
                 return False
             register()
             return True
+
+
+@dataclass(frozen=True, slots=True)
+class PersistentWeb:
+    """Open an explicitly installed owned web server from the person's local CLI.
+
+    The result is a session URL and must never appear in status, logs or remote heads. None means no owned
+    persistent integration exists, so the CLI may keep its existing foreground behavior.
+    """
+
+    open_local: Callable[[], str | None]
