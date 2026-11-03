@@ -294,9 +294,11 @@ function FooterStatus({
   return (
     <FooterItem
       label={accessible}
-      // The trigger shows the live value and the pane's name is the zone, so the pane needs no time heading.
+      // Meter labels already summarize detail bullets; keep the pane heading when there are no bullets.
       paneName={item.text || undefined}
-      hideHeading={Boolean(item.meters?.length) || (item.presentation === "value" && Boolean(item.live))}
+      hideHeading={
+        Boolean(item.meters?.length && item.detail?.length) || (item.presentation === "value" && Boolean(item.live))
+      }
       state={stateOf(item.tone)}
       icon={
         (!item.presentation || item.presentation === "icon") && !item.meters?.length
