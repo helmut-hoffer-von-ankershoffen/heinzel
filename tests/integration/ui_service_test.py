@@ -193,8 +193,9 @@ def test_foreign_listener_is_preserved_without_installing_integration(service):
     with socket.socket() as foreign:
         foreign.bind(("127.0.0.1", 0))
         foreign.listen()
+        port = foreign.getsockname()[1]
         with pytest.raises(OSError, match="Address already in use"):
-            service.install(foreign.getsockname()[1])
+            service.install(port)
         assert not service.unit.exists()
         assert not manager.loaded
         assert foreign.fileno() >= 0

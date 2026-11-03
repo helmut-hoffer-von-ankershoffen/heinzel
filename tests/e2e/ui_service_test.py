@@ -9,7 +9,11 @@ from urllib.parse import urlsplit
 import httpx
 import pytest
 
-pytest_plugins = ("tests.e2e.tool_install_test", "tests.integration.ui_service_test")
+from tests.e2e.tool_install_test import sandbox, seed_uv_cache, wheel
+from tests.integration.ui_service_test import service, service_factory
+
+__all__ = ["sandbox", "seed_uv_cache", "service", "service_factory", "wheel"]
+
 pytestmark = pytest.mark.e2e
 
 

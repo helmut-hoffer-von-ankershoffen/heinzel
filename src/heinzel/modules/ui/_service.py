@@ -36,7 +36,8 @@ Runner = Callable[[Sequence[str]], subprocess.CompletedProcess[str]]
 
 
 def _run(command: Sequence[str]) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(command, capture_output=True, text=True, check=False, timeout=10)  # noqa: S603 - resolved manager, fixed arguments
+    # The manager executable is resolved and its argument vector is fixed by the operation.
+    return subprocess.run(command, capture_output=True, text=True, check=False, timeout=10)  # noqa: S603
 
 
 class WebStatus(BaseModel):
@@ -275,7 +276,7 @@ class WebService:
         if paths != [str(self.unit)] or programs != ["/bin/sh"] or arguments != expected:
             msg = "The loaded web job differs from its owned integration; it was left unchanged."
             raise HeinzelError(msg)
-        pids = re.findall(r"(?m)^\s*pid = ([1-9][0-9]*)$", result.stdout)
+        pids = re.findall(r"(?m)^\s*pid = ([1-9]\d*)$", result.stdout, flags=re.ASCII)
         return True, int(pids[0]) if len(pids) == 1 else None
 
     def _manager_linux(self, record: dict[str, JsonValue] | None) -> tuple[bool, int | None]:
@@ -285,7 +286,9 @@ class WebService:
         if result.returncode != 0:
             msg = "The web service manager could not be inspected."
             raise HeinzelError(msg)
-        values = dict(line.split("=", 1) for line in result.stdout.splitlines() if "=" in line)
+        values = {
+            key: value for line in result.stdout.splitlines() if "=" in line for key, value in [line.split("=", 1)]
+        }
         if values.get("LoadState") == "not-found":
             return False, None
         if (
@@ -538,6 +541,24 @@ class WebService:
             return False
         return True
 
+    def _verify_stopped(self, record: dict[str, JsonValue]) -> None:
+        """Prove the owned manager stopped before removing any integration file.
+
+        Raises:
+            HeinzelError: If the owned job remains loaded or its stop cannot be verified.
+        """
+        if self.platform == "darwin" and self._manager(record)[0]:
+            msg = "The web job remains loaded; its files were retained."
+            raise HeinzelError(msg)
+        if self.platform == "linux":
+            stopped = self.runner(self._command("show", UNIT, "--property=ActiveState,MainPID"))
+            properties = {
+                key: value for line in stopped.stdout.splitlines() if "=" in line for key, value in [line.split("=", 1)]
+            }
+            if stopped.returncode or properties != {"ActiveState": "inactive", "MainPID": "0"}:
+                msg = "The web service stop could not be verified; its files were retained."
+                raise HeinzelError(msg)
+
     def _uninstall(self) -> WebChange:
         """Unload only the exact owned OS service before removing its definition, preserving user data.
 
@@ -560,15 +581,7 @@ class WebService:
             if self.runner(command).returncode:
                 msg = "The owned web service could not be unloaded; its files were retained."
                 raise HeinzelError(msg)
-        if self.platform == "darwin" and self._manager(record)[0]:
-            msg = "The web job remains loaded; its files were retained."
-            raise HeinzelError(msg)
-        if self.platform == "linux":
-            stopped = self.runner(self._command("show", UNIT, "--property=ActiveState,MainPID"))
-            properties = dict(line.split("=", 1) for line in stopped.stdout.splitlines() if "=" in line)
-            if stopped.returncode or properties != {"ActiveState": "inactive", "MainPID": "0"}:
-                msg = "The web service stop could not be verified; its files were retained."
-                raise HeinzelError(msg)
+        self._verify_stopped(record)
         if self._record() != record:
             msg = "Web integration changed during removal; its files were retained."
             raise HeinzelError(msg)
