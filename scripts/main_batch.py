@@ -1,3 +1,7 @@
+# /// script
+# requires-python = ">=3.12"
+# dependencies = []
+# ///
 """Validate a public main batch before delegating an intermediate CI run.
 
 Only the queue publisher can attest a batch. Unknown evidence runs full CI.
