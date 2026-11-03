@@ -64,7 +64,7 @@ def acme() -> Module:  # noqa: C901 - one test module with every kind of source 
 
     @module.status(source="report", order=10)
     def reviews(result: dict[str, int]) -> StatusItem:
-        return StatusItem(text=f"{result['open']} reviews", effect=RunOperation(operation="sync"))
+        return StatusItem(text=f"{result['open']} reviews", effect=RunOperation(operation="sync"), footer_priority=777)
 
     @module.status(source="secret")
     def leaky(result: str) -> StatusItem:
@@ -114,6 +114,7 @@ def test_items_are_sorted_by_order_and_each_failure_stays_its_own(service):
     reviews, leaky, down = entries
     assert reviews.item is not None
     assert reviews.item.text == "3 reviews"
+    assert reviews.model_dump()["item"]["footer_priority"] == 777
     assert reviews.problem is None
     assert (leaky.item, leaky.problem) == (None, "acme:leaky failed: RuntimeError")  # never the exception's text
     assert down.problem == "acme:down: Acme is down"  # a HeinzelError's message, cleaned

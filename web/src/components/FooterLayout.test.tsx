@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { type ReactNode, useEffect, useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { FooterItem } from "./FooterItem";
@@ -146,6 +147,25 @@ describe("measured footer controls", () => {
 });
 
 describe("single-instance overflow", () => {
+  it("focuses the More list without opening a detail over its other controls", async () => {
+    const user = userEvent.setup();
+    measuredFooter(
+      220,
+      <FooterItem label="Daemon" state="ok" text="Daemon">
+        <button type="button">Inspect jobs</button>
+      </FooterItem>,
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "More status items" }));
+    const popup = await screen.findByRole("region", { name: "More status items" });
+    await waitFor(() => expect(popup).toHaveFocus());
+    const trigger = within(popup).getByRole("button", { name: "Daemon" });
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("region", { name: "Daemon" })).not.toBeInTheDocument();
+    await user.tab();
+    expect(trigger).toHaveFocus();
+    expect(await screen.findByRole("region", { name: "Daemon" })).toBeInTheDocument();
+  });
+
   it("parks unresolved parts without phantom gaps or a spurious More row", async () => {
     const { container } = measuredFooter(220, <Empty />);
     await waitFor(() =>

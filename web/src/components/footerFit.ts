@@ -1,4 +1,5 @@
 // Layout only: measured content widths decide which footer controls fit. A viewport breakpoint cannot know that.
+import { compareCodeUnits } from "@/lib/sort";
 export type FooterMeasure = { id: string; width: number; priority: number; pinned?: boolean };
 
 const present = (items: readonly FooterMeasure[]) =>
@@ -19,10 +20,9 @@ export function fitFooter(
   const visible = items.filter((item) => item.pinned);
   const more = { id: "@more", width: moreWidth, priority: 0 };
   const byPriority = items
-    .map((item, order) => ({ item, order }))
-    .filter(({ item }) => !item.pinned)
-    .sort((left, right) => right.item.priority - left.item.priority || left.order - right.order);
-  for (const { item } of byPriority) {
+    .filter((item) => !item.pinned)
+    .sort((left, right) => right.priority - left.priority || compareCodeUnits(left.id, right.id));
+  for (const item of byPriority) {
     if (size([...visible, item, more], gap) <= available) visible.push(item);
   }
   const selected = new Set(visible.map((item) => item.id));

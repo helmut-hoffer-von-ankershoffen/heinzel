@@ -140,6 +140,15 @@ def test_unknown_keys_icons_and_tones_are_refused():
         StatusItem.model_validate({"text": "x", "tone": "red"})
 
 
+def test_footer_priority_defaults_and_is_a_bounded_integer():
+    assert StatusItem(text="x").footer_priority == 40
+    assert StatusItem(text="x", footer_priority=0).footer_priority == 0
+    assert StatusItem(text="x", footer_priority=1000).footer_priority == 1000
+    for value in (-1, 1001, True, 1.5):
+        with pytest.raises(ValidationError):
+            StatusItem.model_validate({"text": "x", "footer_priority": value})
+
+
 def test_a_model_built_without_checks_is_checked_again_inside_another():
     sneaky = OpenUrl.model_construct(kind="open", url="javascript:alert(1)")
     with pytest.raises(ValidationError, match="https"):

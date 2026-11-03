@@ -353,7 +353,8 @@ export function FooterMore() {
     const unwatchViewport = watchViewport(position);
     window.addEventListener(FOOTER_RELOCATED, position);
     window.addEventListener("scroll", position, true);
-    const frame = requestAnimationFrame(() => panel.querySelector<HTMLElement>("button,a,input")?.focus());
+    // Focusing a status trigger previews its detail, which can cover the other rows in a narrow More list.
+    const frame = requestAnimationFrame(() => panel.focus({ preventScroll: true }));
     const outside = (event: MouseEvent) => {
       if (!trigger.current?.contains(event.target as Node) && !containsControlled(panel, event.target))
         setOverflowOpen(false);
@@ -401,6 +402,7 @@ export function FooterMore() {
             id={id}
             ref={panelRef}
             aria-label={t("status.more")}
+            tabIndex={-1}
             className="viewport-popover fixed z-(--layer-popover) flex w-72 max-w-[calc(var(--hz-viewport-width,100vw)-2rem)] flex-col overflow-y-auto rounded-xl border border-border bg-popover p-2 text-sm text-foreground shadow-xl"
             style={at}
           />,
