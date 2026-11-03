@@ -2698,3 +2698,42 @@ def test_impossible_marker_interval_denies_instead_of_crashing(retained):
     )
     with pytest.raises(HeinzelError, match="not proven quiescent"), service.quiescence_guard(binary):
         pytest.fail("an impossible interval must deny")
+
+
+def test_heartbeat_distinguishes_manager_scheduled_from_manual_tick(make, monkeypatch):
+    service = make()
+    service.install(timedelta(minutes=5))
+    monkeypatch.setattr(service, "_service_manager_pid", os.getpid)
+    service.tick()
+    heartbeat = json.loads((service.state_dir / "heartbeat.json").read_text())
+    assert heartbeat["source"] == "scheduled"
+    assert heartbeat["interval_minutes"] == 5
+    assert heartbeat["outcome"] == "completed"
+    assert heartbeat["completed_at"] == heartbeat["last_tick"]
+
+    monkeypatch.setattr(service, "_service_manager_pid", lambda: os.getpid() + 1)
+    service.tick()
+    heartbeat = json.loads((service.state_dir / "heartbeat.json").read_text())
+    assert heartbeat["source"] == "manual"
+    assert "interval_minutes" not in heartbeat
+    assert "version" not in heartbeat
+    monkeypatch.setattr(service, "_service_manager_pid", lambda: None)
+    service.tick()
+    assert json.loads((service.state_dir / "heartbeat.json").read_text())["source"] == "unknown"
+
+
+def test_failed_scheduled_tick_records_failure(make, monkeypatch):
+    from heinzel.modules.system.daemon._models import JobRun
+
+    service = make()
+    service.install(timedelta(minutes=5))
+    monkeypatch.setattr(service, "_service_manager_pid", os.getpid)
+    monkeypatch.setattr(
+        service,
+        "_run",
+        lambda *args: [JobRun(job="example:job", as_of=T0, wake=Wake.SCHEDULE, disposition=Disposition.FAILED)],
+    )
+    service.tick()
+    heartbeat = json.loads((service.state_dir / "heartbeat.json").read_text())
+    assert heartbeat["source"] == "scheduled"
+    assert heartbeat["outcome"] == "failed"

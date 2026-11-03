@@ -39,6 +39,7 @@ from heinzel.heads.cli._command import command
 from heinzel.heads.cli._discovery import command_tree
 from heinzel.heads.cli._join import HELP as JOIN_HELP
 from heinzel.heads.cli._join import JoinCommand
+from heinzel.heads.cli._overview import show
 from heinzel.heads.cli._progress import ConsoleProgress
 from heinzel.heads.cli._render import TerminalSafe, message, terminal_safe
 from heinzel.heads.cli._serve import UI_HELP, serve_group, ui_command
@@ -184,6 +185,9 @@ def main() -> None:
         err_console.print(message("Configuration error:", str(exc)))
         err_console.print("Check the files `hz system config show` lists and your HZ_* environment variables.")
         sys.exit(EX_CONFIG)
+    if not sys.argv[1:] and sys.stdout.isatty() and sys.stdin.isatty():
+        show(kernel, console)
+        return
     # Discovery stays offline; ordinary invocations check in the background at most once an hour (ADR 0031).
     check = None if "--command-tree" in sys.argv[1:] else start_check(kernel)
     if not sys.argv[1:]:
