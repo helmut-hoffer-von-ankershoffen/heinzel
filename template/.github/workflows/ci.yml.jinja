@@ -8,8 +8,7 @@ on:
   schedule:
     - cron: "23 5 * * *" # daily: new advisories and upstream changes break unchanged code too
 
-permissions:
-  contents: read
+permissions: {}
 
 # Every commit on main gets its own group, so a later push never replaces a queued run or cancels a running one and
 # each main commit ends with a CI result. Pull requests share one group per ref and cancel superseded runs.
@@ -23,6 +22,8 @@ env:
 
 jobs:
   dependency-review:
+    permissions:
+      contents: read
     name: Dependency review
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-24.04
@@ -36,6 +37,8 @@ jobs:
           fail-on-severity: moderate
 
   commits:
+    permissions:
+      contents: read
     name: Conventional commits
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-24.04
@@ -55,6 +58,8 @@ jobs:
         run: make commits
 
   lint:
+    permissions:
+      contents: read
     name: Lint, contracts and types
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -73,6 +78,8 @@ jobs:
       - run: make typecheck
 
   secrets:
+    permissions:
+      contents: read
     name: Secret scan
     runs-on: ubuntu-24.04
     timeout-minutes: 3
@@ -86,6 +93,8 @@ jobs:
         run: make secrets
 
   setup:
+    permissions:
+      contents: read
     name: make setup (${{ matrix.os }})
     # What a contributor runs on a fresh machine, on each platform scripts/tools.toml pins: `make setup` installs
     # everything the build needs, relying only on git, make and uv, and `make doctor` confirms it.
@@ -111,6 +120,8 @@ jobs:
         run: make tools-verify
 
   audit:
+    permissions:
+      contents: read
     name: Dependency audit
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -126,6 +137,8 @@ jobs:
       - run: make audit
 
   test:
+    permissions:
+      contents: read
     name: Test (${{ matrix.os }}, Python ${{ matrix.python }}${{ matrix.levels && format(', {0}', matrix.levels) || '' }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10
@@ -203,6 +216,8 @@ jobs:
           MINIMUM_ORANGE: 80
 
   perf:
+    permissions:
+      contents: read
     name: Performance tests
     # Timing assertions (linear time) run here only: on a loaded developer machine they flake, so neither the
     # pre-push hook nor the test matrix runs them.
@@ -259,6 +274,8 @@ jobs:
 
 
   build:
+    permissions:
+      contents: read
     name: Build
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -379,6 +396,8 @@ jobs:
         run: gh run cancel "$RUN_ID" --repo "$REPOSITORY"
 
   ci-ok:
+    permissions:
+      contents: read
     name: CI OK
     if: always()
     needs: [dependency-review, commits, lint, secrets, setup, audit, test, coverage, perf, e2e, build]

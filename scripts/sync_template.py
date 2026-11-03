@@ -146,13 +146,29 @@ def makefile() -> str:
     )
 
 
+def _without_batch_admission(text: str) -> str:
+    """Keep the core queue jobs out of the plugin workflow."""
+    start = text.find("\n  admission:\n")
+    end = text.find("\n  changes:\n", start)
+    return text[:start] + text[end:] if 0 <= start < end else text
+
+
 def ci_workflow() -> str:
     """The CI workflow without the template job; the build check looks for the plugin package."""
     text = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    # Batch admission is core queue coordination; plugins retain their complete workflow.
+    text = _without_batch_admission(text)
+    text = re.sub(r"(?m)^run-name:.*\n", "", text)
+    text = text.replace("    needs: admission\n", "")
+    text = text.replace("    if: github.event_name != 'push' || needs.admission.outputs.full != 'false'\n", "")
+    text = text.replace(
+        "always() && (github.event_name != 'push' || needs.admission.outputs.full != 'false')", "always()"
+    )
+    text = text.replace("needs: [admission, ", "needs: [")
     # Plugins have no changed-path job; preserve their existing macOS matrix.
     text = text.replace(" && needs.changes.outputs.macos_full != 'true'", "")
     text = text.replace(
-        "Smoke-lane PRs omit these; full-macOS PRs use oldest/newest Python, non-PR runs all versions.",
+        "PRs use Linux plus macOS smoke; non-PR runs retain every macOS Python/level cell.",
         "PRs run the newest version; non-PR runs cover all versions.",
     )
     text = re.sub(r"\n  template:\n.*?(?=\n  build:)", "\n", text, flags=re.DOTALL)
@@ -217,6 +233,7 @@ def ci_workflow() -> str:
     text = text.replace(", consumer-plan, consumer-check]", "]")
     # Removed jobs must also disappear from the stable required aggregate, irrespective of list order.
     removed = {
+        "batch-full",
         "changes",
         "site-tests",
         "template",
