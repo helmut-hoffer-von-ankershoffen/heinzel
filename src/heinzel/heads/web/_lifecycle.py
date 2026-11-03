@@ -154,6 +154,7 @@ async def _expectation(request: Request) -> ExpectedLifecycle:
 def add_lifecycle(app: FastAPI, kernel: Kernel, restart: Callable[[], None] | None) -> None:
     """Add transport lifecycle routes to an API whose shared middleware already enforces authentication."""
     lifecycle = Lifecycle(instance=secrets.token_hex(16), version=__version__, restartable=restart is not None)
+    app.state.lifecycle = lifecycle
     # ConfigService.report rereads files; only this startup snapshot proves what the new process actually loaded.
     loaded = _loaded_settings(kernel)
     startup = kernel.settings
