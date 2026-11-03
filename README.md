@@ -236,11 +236,21 @@ alongside its CPU, memory and load readings.
 
 Every module is a set of operations, and every operation is a `hz` command, an MCP tool (`hz system serve mcp`)
 and a REST endpoint (`hz system serve api`) at once. Coding agents use whichever suits them: the CLI with `--json`,
-or the MCP tools. People who'd rather click run `hz ui`: a web app on localhost, for this session only, with a
+or the MCP tools. People who'd rather click run `hz ui`: a web app on localhost with a
 navigation tree of settings, contracts, your team, inventory and the doctor's fixes, and a chat with your agent runner
 that says what it may cost before it runs. Modules can also advertise jobs that
 `hz system daemon install` runs in the background on a schedule, under launchd or systemd, with your
-rights; `hz system daemon pause` and `uninstall` stop them (see [SECURITY.md](SECURITY.md)). Built in today:
+rights; `hz system daemon pause` and `uninstall` stop them (see [SECURITY.md](SECURITY.md)).
+
+`hz ui` normally stops when its terminal closes. Persistent availability is currently a preview, disabled until
+`persistent_web` is named in your user-level `hz.features` setting for lifecycle validation. With that flag enabled,
+explicitly run `hz ui install --port 8737`; `hz ui status` distinguishes a loaded service from a ready web server. Later `hz ui`
+opens that owned service. `hz ui restart` keeps its session through a normal restart; `hz ui uninstall` removes
+only its web login service and keeps data and paired devices. This is separate from scheduled background work and
+Tailscale sharing. After an interrupted automatic update, startup can refuse until supported recovery repairs it;
+status does not call that ready. An existing foreground server must be stopped before installing on its port.
+
+Built in today:
 
 <!-- modules:start -->
 - [`ai`](docs/MODULES.md#ai) — How hz reaches AI, and what it spends: tokens and cost per run.
@@ -273,6 +283,7 @@ rights; `hz system daemon pause` and `uninstall` stop them (see [SECURITY.md](SE
 - [`system.theme`](docs/MODULES.md#systemtheme) — Pick how the web app looks: the built-in theme or one a plugin offers.
 - [`system.ui`](docs/MODULES.md#systemui) — List what modules add to the web app: status items, header actions and Today widgets.
 - [`team`](docs/MODULES.md#team) — Your team's repository: create one (`hz team new`), join one by its URL (`hz team join`), add people to it.
+- [`ui`](docs/MODULES.md#ui) — Open the web workspace or manage its optional persistent service.
 <!-- modules:end -->
 
 Details for each, in every head: [docs/MODULES.md](docs/MODULES.md). Plugins add their own modules.

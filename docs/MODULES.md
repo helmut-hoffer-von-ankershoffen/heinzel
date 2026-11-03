@@ -38,6 +38,7 @@ mode (`hz system expert on`); every one runs either way, and MCP and REST list t
 | [`system.theme`](#systemtheme) | Pick how the web app looks: the built-in theme or one a plugin offers. |
 | [`system.ui`](#systemui) | List what modules add to the web app: status items, header actions and Today widgets. |
 | [`team`](#team) | Your team's repository: create one (`hz team new`), join one by its URL (`hz team join`), add people to it. |
+| [`ui`](#ui) | Open the web workspace or manage its optional persistent service. |
 
 ## `ai`
 
@@ -470,3 +471,14 @@ Your team's repository: create one (`hz team new`), join one by its URL (`hz tea
 Settings: [`[team]`](CONFIGURATION.md#team).
 
 Health checks: reported by `hz system doctor`.
+
+## `ui`
+
+Open the web workspace or manage its optional persistent service.
+
+| Operation | CLI | MCP tool | REST | Web | Changes state | Expert |
+| --- | --- | --- | --- | --- | --- | --- |
+| Install preview web availability after login, separately from scheduled background work. | `hz ui install` | — | — | — | yes |  |
+| Show exact OS ownership and the live web server's readiness and version. | `hz ui status` | — | — | — |  |  |
+| Restart the preview web service with its existing port and authenticated session. | `hz ui restart` | — | — | — | yes |  |
+| Remove only the owned web login service, preserving your data and paired devices. | `hz ui uninstall` | — | — | — | yes |  |
