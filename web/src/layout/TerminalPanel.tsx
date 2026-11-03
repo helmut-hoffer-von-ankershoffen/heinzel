@@ -467,7 +467,7 @@ function TerminalView({
         aria-label="Terminal keys"
         className="m-0 flex min-w-0 shrink-0 gap-1 overflow-x-auto border-0 px-3 py-1 md:[@media(pointer:fine)]:hidden"
       >
-        {[
+        {([
           ["Esc", "\x1b", "Escape"],
           ["Tab", "\t", "Tab"],
           ["Ctrl+C", "\x03", "Control+C"],
@@ -477,7 +477,7 @@ function TerminalView({
           ["↓", "B", "Arrow down"],
           ["↑", "A", "Arrow up"],
           ["→", "C", "Arrow right"],
-        ].map(([label, key, accessibleName]) => (
+        ] as const).map(([label, key, accessibleName]) => (
           <Button
             key={label}
             variant="outline"

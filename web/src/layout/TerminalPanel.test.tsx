@@ -60,6 +60,7 @@ class Socket {
   send = vi.fn();
   close() {}
   onopen: (() => void) | null = null;
+  onclose: ((event: CloseEvent) => void) | null = null;
   onmessage: ((event: { data: unknown }) => void) | null = null;
   constructor() {
     Socket.instances.push(this);
