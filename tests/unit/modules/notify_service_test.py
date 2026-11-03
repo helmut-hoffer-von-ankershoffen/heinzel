@@ -4,11 +4,12 @@ import stat
 import subprocess
 from datetime import datetime, timedelta
 from pathlib import Path
+from unittest.mock import Mock
 from zoneinfo import ZoneInfo
 
 import pytest
 
-from heinzel import Check, Delivery, Module, NoticeKind, Notifications, Status
+from heinzel import Check, Delivery, Module, Notice, NoticeHelper, NoticeKind, Notifications, Status
 from heinzel.modules.system.notify import NotifyService, NotifySettings
 from heinzel.modules.system.notify._macos import NotifierApp
 from heinzel.modules.system.notify._native import ALLOW, DENIED, HEINZEL, Native
@@ -95,6 +96,55 @@ def test_a_repeat_returns_the_earlier_notice_and_records_nothing(make, clock):
     assert len(service.recent()) == 1
     clock.now += timedelta(hours=24)
     assert draft(service) != first
+
+
+def test_helper_metadata_survives_reload_and_durable_deduplication_without_changing_delivery_policy(make, runner):
+    helper = NoticeHelper(name="Mira", hat="blue", reason="scheduled check-in")
+    service = make(working_hours=False)
+    arguments = {"route": "/heinzel?chat=example", "command": "hz heinzel sessions", "key": "helper-notice"}
+    assert service.emit_once(NoticeKind.HEINZEL, "Check in", "Ready", helper=helper, **arguments)
+    replacement = helper.model_copy(update={"name": "Renamed", "hat": "green"})
+    assert service.emit_once(NoticeKind.HEINZEL, "Changed", "Changed", helper=replacement, **arguments)
+    restarted = make(working_hours=False)
+    notice = restarted.recent()[0]
+    assert notice.helper == helper
+    assert notice.title == "Check in"
+    assert restarted.has_once("helper-notice") is True
+    assert restarted.post_native() == 1
+    assert runner.commands[-1][-2] == "Mira: Check in"
+    assert restarted.post_native() == 0
+    legacy = notice.model_dump()
+    legacy.pop("helper")
+    assert Notice.model_validate(legacy).helper is None
+
+
+@pytest.mark.parametrize("sound", [False, True])
+def test_native_delivery_forwards_the_recorded_identity_and_selected_sound_setting(make, monkeypatch, sound):
+    service = make(working_hours=False, sound=sound)
+    notifier = Mock(spec=Native)
+    notifier.name = "fixture"
+    notifier.clicks = True
+    notifier.post.return_value = None
+    monkeypatch.setattr(service, "_notifier", notifier)
+    helper = NoticeHelper(name="Mira", hat="blue", reason="scheduled check-in")
+    notice = service.emit(
+        NoticeKind.HEINZEL,
+        "Check in",
+        "Ready",
+        route="/heinzel?chat=example",
+        command="hz heinzel sessions",
+        key="native-helper",
+        helper=helper,
+    )
+    assert notice is not None
+    assert service.post_native() == 1
+    assert notifier.post.call_args.kwargs == {
+        "url": f"http://127.0.0.1:8737/heinzel?chat=example&event={notice.id}",
+        "helper": helper,
+        "sound": sound,
+        "ident": notice.id,
+        "thread": notice.route,
+    }
 
 
 def test_a_kind_that_is_off_records_nothing(make):

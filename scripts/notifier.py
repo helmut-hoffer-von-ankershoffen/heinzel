@@ -262,6 +262,7 @@ def build() -> None:
             for name, pixels in ((f"icon_{size}x{size}.png", size), (f"icon_{size}x{size}@2x.png", size * 2)):
                 _run(str(icon), str(artwork_for(pixels)), str(iconset / name), str(pixels), "tile")
         _run("iconutil", "-c", "icns", "-o", str(app / "Contents" / "Resources" / "heinzel.icns"), str(iconset))
+        shutil.copyfile(SOURCES / "heinzel.svg", app / "Contents" / "Resources" / "face.svg")
         plist = (SOURCES / "Info.plist").read_text(encoding="utf-8").replace("@VERSION@", version)
         (app / "Contents" / "Info.plist").write_text(plist, encoding="utf-8")
         _run("codesign", "--force", "--sign", "-", "--identifier", "dev.heinzel.notifier", str(app))

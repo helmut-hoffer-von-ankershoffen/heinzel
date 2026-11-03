@@ -15,6 +15,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import override
 
 import anyio
 import pytest
@@ -1985,7 +1986,8 @@ def test_owner_confirms_exact_notification_once_and_mcp_cannot_self_authorize(ke
             self.calls = []
             self.keys = set()
 
-        def emit_once(self, _kind, title, body, *, route, command, key):
+        @override
+        def emit_once(self, _kind, title, body, *, route, command, key, helper=None):
             self.calls.append((title, body, key))
             self.keys.add(key)
             return acknowledged
