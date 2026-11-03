@@ -45,12 +45,12 @@ let confirmedStreamDelay = 0;
 
 describe("plugin source labels", () => {
   it.each([
-    ["https://github.com/helmut-hoffer-von-ankershoffen/heinzel/tree/main/plugins/heinzel-clock", null, "First-Party"],
-    ["https://github.com/HELMUT-HOFFER-VON-ANKERSHOFFEN/HEINZEL.git", null, "First-Party"],
+    ["https://github.com/helmut-hoffer-von-ankershoffen/heinzel/tree/main/plugins/heinzel-clock", null, "First-party"],
+    ["https://github.com/HELMUT-HOFFER-VON-ANKERSHOFFEN/HEINZEL.git", null, "First-party"],
     [
       "https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/tree/main/plugins/heinzel-clock",
       null,
-      "First-Party",
+      "First-party",
     ],
     ["https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins-fork", true, "Private"],
     ["https://github.com/helmut-hoffer-von-ankershoffen/heinzel-contrib", null, "Community"],
@@ -99,7 +99,7 @@ describe("plugin source labels", () => {
       />,
     );
     expect(screen.getByRole("button", { name: "Community" })).toBeInTheDocument();
-    expect(screen.queryByText("First-Party")).not.toBeInTheDocument();
+    expect(screen.queryByText("First-party")).not.toBeInTheDocument();
   });
 });
 
@@ -521,6 +521,36 @@ describe("PluginsSection", () => {
     },
   );
 
+  it("still restarts when the removed plugin's row has already left the refreshed list", async () => {
+    let removed = false;
+    const calls = serve((url) => {
+      if (url.pathname === "/api/stream/system/plugin/remove") {
+        removed = true;
+        return { body: change("remove", true, { distribution: "heinzel-clock", plugins: [] }) };
+      }
+      if (url.pathname === "/api/system/plugin/list" && removed) return { body: [] };
+      return base(url);
+    });
+    // The list answers first and the lifecycle read that precedes the restart later, as on a real server.
+    const answer = vi.mocked(fetch).getMockImplementation();
+    if (!answer) throw new Error("missing fetch fixture");
+    vi.mocked(fetch).mockImplementation(async (request) => {
+      if (removed && new URL((request as Request).url).pathname.startsWith("/api/lifecycle")) {
+        await new Promise((resolve) => setTimeout(resolve, 200));
+      }
+      return answer(request);
+    });
+    const user = userEvent.setup();
+    const reload = vi.fn();
+    show({ reload, restartInterval: 1 });
+    await user.click(await screen.findByRole("button", { name: "Remove heinzel-clock" }));
+    const card = await screen.findByRole("group", { name: /Remove heinzel-clock/ });
+    await user.click(within(card).getByRole("button", { name: "Restart and apply" }));
+    await user.click(await screen.findByRole("button", { name: "Restart and apply Plugins" }));
+    await waitFor(() => expect(reload).toHaveBeenCalledOnce(), { timeout: 10_000 });
+    expect(calls.filter((call) => new URL(call.url).pathname === "/api/restart")).toHaveLength(1);
+  });
+
   it("does not repeat an uncertain removal in the same confirmation", async () => {
     const calls = serve((url) => {
       if (url.pathname === "/api/stream/system/plugin/remove") {
@@ -620,7 +650,7 @@ describe("PluginsSection", () => {
     const labels = (await screen.findAllByRole("listitem")).map((row) => row.textContent);
     expect(labels.some((text) => text?.includes("Community"))).toBe(true);
     expect(labels.some((text) => text?.includes("Custom"))).toBe(true);
-    expect(labels.some((text) => text?.includes("First-Party"))).toBe(true);
+    expect(labels.some((text) => text?.includes("First-party"))).toBe(true);
     const row = (name: string) => screen.getByText(name, { exact: true }).closest("li") as HTMLElement;
     expect(within(row("Reference")).getByText("Custom")).toBeInTheDocument();
     expect(within(row("Private tools")).getByText("Private")).toBeInTheDocument();

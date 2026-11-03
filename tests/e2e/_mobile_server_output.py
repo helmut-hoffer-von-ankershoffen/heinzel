@@ -62,10 +62,20 @@ def timeout_stage(stderr):
     return found
 
 
+def checkpoint_seconds(stderr):
+    """Only the digits of the driver's elapsed time at each checkpoint, so a timeout shows where the time went."""
+    if isinstance(stderr, bytes):
+        stderr = stderr.decode("utf-8", "replace")
+    if not isinstance(stderr, str):
+        return "unavailable"
+    return " ".join(line[15:] for line in stderr.splitlines() if re.fullmatch(r"MOBILE_ELAPSED:\d+", line))
+
+
 def sanitize_timeout(error):
     """Keep timeout type and deadline while withholding the command and captured output."""
     stage = timeout_stage(error.stderr)
     error.add_note(f"Mobile driver last checkpoint: {stage}")
+    error.add_note(f"Mobile driver seconds per checkpoint: {checkpoint_seconds(error.stderr)}")
     error.cmd = ["<mobile-browser-command>"]
     error.args = (error.cmd, error.timeout)
     error.output = None

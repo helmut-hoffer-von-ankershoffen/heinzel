@@ -1,6 +1,12 @@
 """A successful response from the retiring UI process cannot acknowledge a completed restart."""
 
+import http.client
+import threading
+import time
+from urllib.parse import urlsplit
+
 import pytest
+import uvicorn
 from fastapi.testclient import TestClient
 from pydantic import BaseModel, Field, SecretStr
 
@@ -155,3 +161,43 @@ def test_restart_refusal_never_schedules_a_restart(make_kernel):
     result = client.post("/api/restart", headers=AUTH)
     assert result.status_code == 400
     assert "can't restart" in result.json()["error"]
+
+
+def test_an_idle_connection_outlives_the_old_five_second_close(make_kernel, monkeypatch):
+    """WebKit fails a POST caught by the server's close of an idle connection, so the server must not close first."""
+    servers: list[uvicorn.Server] = []
+    urls: list[str] = []
+    started = threading.Event()
+
+    class Recorded(uvicorn.Server):
+        def __init__(self, config: uvicorn.Config) -> None:
+            super().__init__(config)
+            servers.append(self)
+
+    def announce(url: str) -> None:
+        urls.append(url)
+        started.set()
+
+    monkeypatch.setattr(uvicorn, "Server", Recorded)
+    kernel = make_kernel(builtins=True)
+    thread = threading.Thread(
+        target=web.serve, args=(kernel,), kwargs={"port": 0, "announce": announce, "static": None, "browser": False}
+    )
+    thread.start()
+    try:
+        assert started.wait(10)
+        address = urlsplit(urls[0])
+        headers = {"Authorization": f"Bearer {address.fragment.removeprefix('token=')}"}
+        connection = http.client.HTTPConnection(address.hostname, address.port, timeout=5)
+        connection.request("GET", "/api/lifecycle", headers=headers)
+        assert connection.getresponse().read()
+        socket = connection.sock
+        time.sleep(6)
+        connection.request("GET", "/api/lifecycle", headers=headers)
+        assert connection.getresponse().status == 200
+        assert connection.sock is socket
+        connection.close()
+    finally:
+        servers[0].should_exit = True
+        thread.join(10)
+    assert not thread.is_alive()

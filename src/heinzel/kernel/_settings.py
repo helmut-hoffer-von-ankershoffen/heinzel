@@ -99,7 +99,32 @@ class Settings(ModuleSettings):
         default=True,
         title="Check for updates",
         description="Look for a newer release at most once an hour and mention it after a command's output. The "
-        "check sends nothing about you, and never runs in CI or in JSON, MCP or REST output.",
+        "check uses no personal data, and never runs in CI or in JSON, MCP or REST output.",
+    )
+    auto_update: bool = Field(
+        default=True,
+        title="Automatic updates",
+        description="Installs new versions of hz and its plugins by itself, after a 30-second warning you can "
+        "postpone; never during a chat answer or a running job.",
+        json_schema_extra={"x-live": True},  # the web app's server reads it again by itself: no restart
+    )
+    auto_update_min_age_hours: int = Field(
+        default=6,
+        ge=0,
+        le=24 * 30,
+        title="Wait before installing a new hz",
+        description="How old a release of hz must be before automatic updates install it, so a broken release can "
+        "be withdrawn first.",
+        json_schema_extra={"x-unit": "hours", "x-expert": True, "x-live": True},
+    )
+    auto_update_plugin_min_age_hours: int = Field(
+        default=24,
+        ge=0,
+        le=24 * 30,
+        title="Wait before installing a new plugin",
+        description="How old a plugin's release must be before automatic updates install it, so a broken or "
+        "hijacked release can be withdrawn first.",
+        json_schema_extra={"x-unit": "hours", "x-expert": True, "x-live": True},
     )
     update_channel: Annotated[Literal["stable", "edge", "main"], BeforeValidator(_update_channel)] = Field(
         default="stable",
@@ -114,6 +139,13 @@ class Settings(ModuleSettings):
                 "main": "The main branch (newest commit)",
             },
         },
+    )
+    features: Annotated[frozenset[str], NoDecode] = Field(
+        default=frozenset(),
+        title="Preview features",
+        description="Unfinished work to switch on by name; it may change or break. In the environment, separate them "
+        "with commas.",
+        json_schema_extra={"x-expert": True},
     )
     disabled_modules: Annotated[frozenset[str], NoDecode] = Field(
         default=frozenset(),
@@ -136,9 +168,10 @@ class Settings(ModuleSettings):
         default=frozenset(),
         max_length=16,
         title="Shared web app origins",
-        description="Exact HTTPS origins allowed by the authenticated web app behind a private reverse proxy, "
-        "such as https://workstation.example.ts.net. The listener stays on this computer. Restart and apply "
-        "after changing this user-only setting. In the environment, separate origins with commas.",
+        description="Exact HTTPS origins allowed by the authenticated web app behind a private reverse proxy. The "
+        "listener stays on this computer. Restart and apply after changing this user-only setting. In the "
+        "environment, separate origins with commas.",
+        examples=["https://workstation.example.ts.net"],
         json_schema_extra={"x-expert": True, "x-private": True},
     )
     api_allowed_hosts: Annotated[frozenset[str], NoDecode] = Field(
@@ -151,10 +184,19 @@ class Settings(ModuleSettings):
     )
 
     ignored_in_project: ClassVar[frozenset[str]] = frozenset(
-        {"api_allowed_hosts", "expert", "ui_allowed_origins", "ui_port", "update_check"}
+        {
+            "api_allowed_hosts",
+            "auto_update",
+            "auto_update_min_age_hours",
+            "auto_update_plugin_min_age_hours",
+            "expert",
+            "ui_allowed_origins",
+            "ui_port",
+            "update_check",
+        }
     )
 
-    @field_validator("disabled_modules", "api_allowed_hosts", mode="before")
+    @field_validator("features", "disabled_modules", "api_allowed_hosts", mode="before")
     @classmethod
     def _split_names(cls, value: object) -> object:
         if isinstance(value, str):

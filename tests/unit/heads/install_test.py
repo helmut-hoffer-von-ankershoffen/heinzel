@@ -256,7 +256,7 @@ def test_verified_profile_uses_one_command_for_the_chosen_environment(tmp_path, 
     )
     assert install.main(["--profile", str(file), "--python", "/isolated/bin/python"]) == 0
     [command] = calls
-    assert command[:5] == ["/trusted/bin/uv", "pip", "install", "--python", "/isolated/bin/python"]
+    assert command[:5] == ["/trusted/bin/uv", "pip", "install", "--python=/isolated/bin/python", "--"]
     assert len(command[5:]) == 2
     assert all(Path(path).is_file() for path in command[5:])
 

@@ -55,7 +55,7 @@ describe("ChatPanel", () => {
     const user = userEvent.setup();
     renderAt("/doctor");
     await user.type(screen.getByLabelText("Your message"), "Keep my notes current");
-    await user.click(screen.getByRole("button", { name: "Create Heinzel and take this message" }));
+    await user.click(screen.getByRole("button", { name: "Create a helper and take this message" }));
     const panel = within(await screen.findByRole("complementary", { name: "Chat" }));
     expect(await panel.findByLabelText("Message your Heinzel")).toHaveValue("Keep my notes current");
     expect(panel.getByRole("button", { name: "Queue message" })).toBeEnabled();
@@ -108,7 +108,7 @@ describe("ChatPanel", () => {
     const user = userEvent.setup();
     renderAt("/doctor");
     await user.type(screen.getByLabelText("Your message"), "Keep the chosen artifact current");
-    await user.click(screen.getByRole("button", { name: "Create Heinzel and take this message" }));
+    await user.click(screen.getByRole("button", { name: "Create a helper and take this message" }));
     const panel = within(await screen.findByRole("complementary", { name: "Chat" }));
     expect(await panel.findByLabelText("Message your Heinzel")).toHaveValue("Keep the chosen artifact current");
     await user.click(panel.getByRole("button", { name: "Queue message" }));
@@ -135,8 +135,8 @@ describe("ChatPanel", () => {
     renderAt("/doctor");
     const box = screen.getByLabelText("Your message");
     await user.type(box, "First request");
-    await user.click(screen.getByRole("button", { name: "Create Heinzel and take this message" }));
-    expect(await screen.findByText("Creating your Heinzel…")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Create a helper and take this message" }));
+    expect(await screen.findByText("Creating your helper…")).toBeInTheDocument();
     expect(box).toBeDisabled();
     await user.type(box, " later edit");
     expect(box).toHaveValue("First request");
@@ -157,7 +157,7 @@ describe("ChatPanel", () => {
     const user = userEvent.setup();
     const first = renderAt("/doctor");
     await user.type(screen.getByLabelText("Your message"), "Preserve across reload");
-    await user.click(screen.getByRole("button", { name: "Create Heinzel and take this message" }));
+    await user.click(screen.getByRole("button", { name: "Create a helper and take this message" }));
     await waitFor(() => expect(requests).toHaveLength(1));
     first.unmount();
     mockApi({
@@ -174,7 +174,7 @@ describe("ChatPanel", () => {
     expect(screen.getByLabelText("Your message")).toHaveAttribute("readonly");
     expect(screen.getByText(/earlier creation is unresolved/)).toBeInTheDocument();
     expect(requests).toHaveLength(1);
-    await user.click(screen.getByRole("button", { name: "Create Heinzel and take this message" }));
+    await user.click(screen.getByRole("button", { name: "Create a helper and take this message" }));
     expect(await screen.findByLabelText("Message your Heinzel")).toHaveValue("Preserve across reload");
     expect(requests).toEqual([requests[0], requests[0]]);
     expect(sessionStorage.getItem("hz.personal-heinzel.handoff")).toBeNull();
@@ -202,11 +202,11 @@ describe("ChatPanel", () => {
     renderAt("/doctor");
     const box = screen.getByLabelText("Your message");
     await user.type(box, "Preserve this request");
-    await user.click(screen.getByRole("button", { name: "Create Heinzel and take this message" }));
+    await user.click(screen.getByRole("button", { name: "Create a helper and take this message" }));
     expect(await screen.findByRole("alert")).toBeInTheDocument();
     expect(box).toHaveValue("Preserve this request");
     fail = false;
-    await user.click(screen.getByRole("button", { name: "Create Heinzel and take this message" }));
+    await user.click(screen.getByRole("button", { name: "Create a helper and take this message" }));
     expect(await screen.findByLabelText("Message your Heinzel")).toHaveValue("Preserve this request");
     expect(requests).toHaveLength(2);
     expect(requests[1]).toBe(requests[0]);
@@ -233,7 +233,7 @@ describe("ChatPanel", () => {
     renderAt("/doctor");
     const box = screen.getByLabelText("Your message");
     await user.type(box, "A different request");
-    await user.click(screen.getByRole("button", { name: "Create Heinzel and take this message" }));
+    await user.click(screen.getByRole("button", { name: "Create a helper and take this message" }));
     expect(await screen.findByRole("alert")).toBeInTheDocument();
     expect(box).toHaveValue("A different request");
     expect(sessionStorage.getItem(key)).toBe(saved);
@@ -463,5 +463,5 @@ it("keeps a meeting-reminder request in workshop chat without silently creating 
       (request) => request.url.includes("/heinzel/new-chat") || request.url.includes("/heinzel/propose-check-in"),
     ),
   ).toBe(false);
-  expect(screen.getByRole("button", { name: "Create Heinzel and take this message" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Create a helper and take this message" })).toBeInTheDocument();
 });

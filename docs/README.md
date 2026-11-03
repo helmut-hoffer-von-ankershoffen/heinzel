@@ -1,6 +1,6 @@
 ---
 title: Heinzelmännchen — helpers for good work
-description: Heinzelmännchen, or Heinzel for short, is an open-source crew of AI helpers that draft your busywork. You approve; it runs on your machine.
+description: Heinzelmännchen is an open-source crew of AI helpers that drafts your team's busywork and asks before anything leaves your machine.
 template: home.html
 hide:
   - navigation
@@ -13,10 +13,10 @@ hide:
 
 # Less busywork.<br>More good work.
 
-<p class="hz-lead">Heinzelmännchen are small AI helpers that draft the busywork nobody chose. They work with your own accounts. You approve everything.</p>
+<p class="hz-lead">Heinzelmännchen, or heinzels for short, are small AI helpers that draft the busywork nobody chose. They work with your own accounts. You approve everything.</p>
 
 <div class="hz-actions" markdown>
-[Install Heinzel ↗](guides/install.md){ .hz-button }
+[Install Heinzelmännchen ↗](guides/install.md){ .hz-button }
 [Explore plugins](CATALOG.md){ .hz-button .hz-button-quiet }
 </div>
 <p class="hz-caption">MIT licensed · macOS and Linux · CLI, MCP, REST and a web workspace</p>
@@ -32,7 +32,7 @@ hide:
 <h2 id="hz-trust-title">Open code. Visible checks.</h2>
 <p>Check the license, practices and analysis before you install.</p>
 <div class="hz-trust-links">
-<a href="https://github.com/helmut-hoffer-von-ankershoffen/heinzel/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-brightgreen" alt="MIT license" height="20" loading="lazy"></a>
+<a href="https://github.com/helmut-hoffer-von-ankershoffen/heinzel/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-44bb00" alt="MIT license" height="20" loading="lazy"></a>
 <a href="https://www.bestpractices.dev/en/projects/15863"><img src="https://img.shields.io/cii/level/15863?label=OpenSSF%20Best%20Practices" alt="OpenSSF Best Practices: view the project's criteria" height="20" loading="lazy"></a>
 <a href="https://github.com/helmut-hoffer-von-ankershoffen/heinzel/actions/workflows/codeql.yml?query=branch%3Amain"><img src="https://img.shields.io/github/actions/workflow/status/helmut-hoffer-von-ankershoffen/heinzel/codeql.yml?branch=main&amp;label=CodeQL" alt="CodeQL analysis on main: view the workflow runs" height="20" loading="lazy"></a>
 <a href="https://sonarcloud.io/summary/new_code?id=helmut-hoffer-von-ankershoffen_heinzel"><img src="https://img.shields.io/sonar/quality_gate/helmut-hoffer-von-ankershoffen_heinzel?server=https://sonarcloud.io&amp;label=Quality%20Gate%20Status" alt="Quality gate: new core code" height="20" loading="lazy"></a>
@@ -88,7 +88,7 @@ Imagined helpers. Real screens, made-up data. Select an image to zoom.
 
 <!-- hz:home-gallery -->
 
-[Try Heinzel →](guides/install.md){ .hz-button }
+[Try Heinzelmännchen →](guides/install.md){ .hz-button }
 [Take the product tour](guides/tour.md){ .hz-button .hz-button-quiet }
 </section>
 
@@ -153,13 +153,14 @@ they are out of date, so they can't drift.
 | **Build durable turns**: typed outcomes, checkpoints and offline engine tests | [DURABLE_TURNS](DURABLE_TURNS.md) |
 | **Build the desktop lifecycle foundation** | [Shared runtime authority](DESKTOP_RUNTIME_AUTHORITY.md) · [Production gates still open](DESKTOP_PRODUCTION_GATES.md) |
 | **Understand** why it exists and how it is built | [INTENT](../INTENT.md) · [ARCHITECTURE](ARCHITECTURE.md) · [decisions (ADRs)](adr/README.md) · research: [daemon head](research/daemon-head.md) · [workflow contracts](research/workflow-contracts.md) · [embedded workflows](research/embedded-workflows.md) · [inventory](research/inventory.md) · [people and org](research/people-and-org.md) · [onboarding](research/onboarding.md) · [plugin extraction opportunities](research/plugin-extraction-opportunities.md) |
-| **Pick a plugin**: the gallery, one page per plugin with what it brings in every head, its settings, themes and recordings | [Public plugin catalog](CATALOG.md), with immutable source revisions and theme previews · `hz system plugin search` discovers available plugins automatically |
+| **Pick a plugin**: the gallery, one page per plugin with what it brings in every head, its settings, themes and recordings | [Public plugin catalog](CATALOG.md), with immutable source revisions and theme previews · `hz system plugin search` discovers available plugins |
 | **Extend** it with modules and plugins | [Plugin extension guide](PLUGINS.md) · [README: Extend](../README.md#extend) · [ARCHITECTURE: Plugins](ARCHITECTURE.md#plugins) · [writing a playbook](PLAYBOOKS.md#writing-a-playbook) · [themes, and how to make a weather theme](THEMES.md) · [settings that need no explaining](SETTINGS_UX.md) · [screenshot playbook](SCREENSHOT_PLAYBOOK.md) · the template's AGENTS.md (`hz system plugin new`) |
 | **Publish and verify a release** | [Publishing acceptance](PUBLISHING.md) |
 | **Contribute** to the core | [CONTRIBUTING](../CONTRIBUTING.md) · [CODING_STANDARDS](CODING_STANDARDS.md) · [Sonar security lessons](SONAR_SECURITY.md) · [docs style check](dev/DOCS_CHECK.md) · [durable session storage](SESSIONS.md) · [shipping small changes with a small model](SHIP_SMALL.md) · [CHANGELOG](../CHANGELOG.md) *(generated at release)* |
+| Check the **names, taglines and claims** | [BRANDING](BRANDING.md) |
 | Work on it **as a coding agent** | [AGENTS](../AGENTS.md) and the scoped AGENTS.md files it lists |
 | Report a **vulnerability** | [SECURITY](../SECURITY.md) |
-| Read the **legal notices** of the website (German texts prevail) | [Impressum](impressum.md) · [Imprint](imprint.md) · [Datenschutzerklärung](datenschutz.md) · [Privacy notice](privacy.md) |
+| Read the **legal notices** of the website | [Imprint](imprint.md) · [Privacy notice](privacy.md) |
 
 How drift is prevented:
 

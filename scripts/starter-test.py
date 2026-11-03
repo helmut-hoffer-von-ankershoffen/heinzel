@@ -8,6 +8,7 @@ import argparse
 import json
 import os
 import subprocess
+import sys
 import tempfile
 import time
 import tomllib
@@ -142,7 +143,13 @@ def journey(core: str, toolkit: str | None, template: Path, destination: Path) -
     collection.mkdir()
     marker = collection / "README.md"
     marker.write_text("Existing collection; no registration edits.\n")
-    cli = ["uv", "run", "--no-project", "--with", toolkit or TOOLKIT, "hz-plugin"]
+    cli = [
+        sys.executable,
+        str(Path(__file__).with_name("plugin_tooling.py")),
+        "--toolkit",
+        toolkit or TOOLKIT,
+        "hz-plugin",
+    ]
     for preset in ("minimal", "contributions"):
         name = f"collection-{preset}"
         run(

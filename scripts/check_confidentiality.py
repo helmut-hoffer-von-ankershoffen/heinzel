@@ -7,6 +7,8 @@
 The terms never live in the repository: a list in a public repository, even hashed, gives them away. They come from
 `$CONFIDENTIAL_TERMS` (newline-separated; CI sets it from the repository secret of the same name) or from the file
 `$CONFIDENTIAL_TERMS_FILE`, default `~/.config/heinzel-dev/confidential-terms`. One term per line, `#` comments.
+`--push` scans what a push sends (the pre-push hook): the messages, author lines, paths and added lines of every
+commit in the range, old ones included.
 Findings name the location and the term's number, never the term, because CI logs of a public repository are public.
 
 Matching is case-insensitive after Unicode normalization (NFKC, invisible characters removed). Words of six letters or
@@ -32,6 +34,7 @@ import argparse
 import contextlib
 import os
 import re
+import shutil
 import subprocess
 import sys
 import unicodedata
@@ -108,7 +111,217 @@ def scan(where: str, text: str, compiled: list[re.Pattern[str]]) -> Iterator[Fin
 
 
 def _git(*args: str) -> str:
-    return subprocess.run(["git", *args], check=True, capture_output=True, text=True, timeout=60).stdout  # noqa: S603, S607
+    executable = shutil.which("git")
+    if executable is None:
+        msg = "Git is required to inspect repository content"
+        raise RuntimeError(msg)
+    # Fixed Git operations with operand boundaries
+    return subprocess.run(  # noqa: S603
+        [executable, *args], check=True, capture_output=True, text=True, errors="replace", timeout=60
+    ).stdout
+
+
+def _revision(name: str) -> str:
+    """Rebuild a revision from parts that cannot carry an option: Git's own ref names, hex digits or `HEAD` offsets.
+
+    Raises:
+        ValueError: If the input is none of these.
+    """
+    if offset := re.fullmatch(r"HEAD(?:([~^])([0-9]{1,4}))?", name):
+        return f"HEAD{offset[1]}{int(offset[2])}" if offset[1] else "HEAD"
+    if re.fullmatch(r"[0-9a-f]{7,64}", name):
+        return f"{int(name, 16):0{len(name)}x}"
+    for known in _git(
+        "for-each-ref", "--format=%(refname:short)", "refs/heads", "refs/remotes", "refs/tags"
+    ).splitlines():
+        if known == name:
+            return known
+    msg = f"Not a branch, tag, commit or HEAD offset: {name!r}"
+    raise ValueError(msg)
+
+
+def _range(text: str) -> list[str]:
+    """A revision or a `from..to` / `from...to` range, each end rebuilt by `_revision`."""
+    for separator in ("...", ".."):
+        if separator in text:
+            start, _, end = text.partition(separator)
+            return [f"{_revision(start)}{separator}{_revision(end)}"]
+    return [_revision(text)]
+
+
+def _known(sha: str) -> bool:
+    try:
+        _git("cat-file", "-e", f"{_revision(sha)}^{{commit}}")
+    except (ValueError, subprocess.CalledProcessError):
+        return False
+    return True
+
+
+def _push_input() -> str | None:
+    """Prefer real Git input; accept preserved bytes only inside the hook runner.
+
+    Raises:
+        ValueError: If a preserved-input marker is inherited outside the pre-push runner.
+    """
+    direct = sys.stdin.read() if sys.stdin is not None and not sys.stdin.isatty() else ""
+    if direct:
+        return direct
+    if saved := os.environ.get("HZ_DEV_PUSH_REFS_FILE"):
+        if os.environ.get("PRE_COMMIT") != "1" or os.environ.get("PREK_HOOK_STAGE") != "pre-push":
+            msg = "Preserved push input is valid only inside the pre-push runner"
+            raise ValueError(msg)
+        return Path(saved).read_text(encoding="utf-8", errors="surrogateescape")
+    return None
+
+
+def _pushed_refs(raw: str) -> list[tuple[str, str]]:
+    """The `(local sha, remote sha)` of each ref Git is about to push.
+
+    Raises:
+        ValueError: If the supplied ref list contains a malformed record.
+    """
+    sha = r"[0-9a-f]{40}|[0-9a-f]{64}"
+    refs = []
+    for line in raw.splitlines():
+        if not line.strip():
+            continue
+        parts = line.split()
+        if len(parts) == 4 and re.fullmatch(sha, parts[1]) and re.fullmatch(sha, parts[3]):  # noqa: PLR2004
+            refs.append((parts[1], parts[3]))
+        else:
+            msg = "The pushed-ref list is invalid"
+            raise ValueError(msg)
+    return refs
+
+
+def _destination_commits() -> list[str]:
+    """Exclude only commits currently advertised by the actual push destination.
+
+    Raises:
+        ValueError: If the push destination cannot be inspected or returns malformed refs.
+    """
+    destination = os.environ.get("PRE_COMMIT_REMOTE_URL")
+    if not destination:
+        return []
+    try:
+        advertised = _git("ls-remote", "--refs", "--", destination)
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+        msg = "The push destination could not be inspected"
+        raise ValueError(msg) from None
+    commits = []
+    for line in advertised.splitlines():
+        parts = line.split()
+        if len(parts) != 2 or not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", parts[0]):  # noqa: PLR2004
+            msg = "The push destination returned invalid refs"
+            raise ValueError(msg)
+        if _known(parts[0]):
+            commits.append(parts[0])
+    return commits
+
+
+def _push_range(raw: str | None = None) -> list[str]:
+    """What a push sends: the commits reachable from what is pushed that the remote has not got.
+
+    The ref and sha come from Git's input preserved by the hook shim (or direct standard input), so
+    `git push origin other:name` scans `other`, not HEAD. Without that input, the runner's first range plus all local
+    branches remain the conservative fallback. A new ref counts every commit the push destination has not got.
+    Nothing is exempt: old commits in the range are scanned like new ones.
+    """
+    if raw is None:
+        raw = _push_input()
+    tips, bases = [], []
+    for local, remote in _pushed_refs(raw or ""):
+        if set(local) != {"0"}:  # a deletion sends no commits
+            tips.append(_revision(local))
+        if set(remote) != {"0"} and _known(remote):
+            bases.append(_revision(remote))
+    if not tips:
+        if raw is not None:
+            # Git supplied no new commit tips (an empty push or deletions only).
+            return ["--all", "--not", "--all"]
+        start, end = os.environ.get("PRE_COMMIT_FROM_REF", ""), os.environ.get("PRE_COMMIT_TO_REF") or "HEAD"
+        # Under prek the variables name the first pushed ref only and standard input is empty, so every local branch
+        # no remote has yet is scanned too: a second ref of `git push origin a b` or `--all` cannot slip through.
+        tips = [_revision(end), "--branches"]
+        if start and set(start) != {"0"} and _known(start):
+            bases = [_revision(start)]
+    return [*tips, "--not", *bases, *_destination_commits()]
+
+
+def _hunk(header: re.Match[str]) -> tuple[int, int, int]:
+    """Old line count, first new line and new line count of a hunk header (a missing count is 1)."""
+    old, first, new = header.groups(default="1")
+    return int(old), int(first), int(new)
+
+
+def _body_line(line: str) -> tuple[bool, int, int]:
+    """Whether a hunk body line is an added one, and how many old and new lines it uses."""
+    if line.startswith("+"):
+        return True, 0, 1
+    if line.startswith("-"):
+        return False, 1, 0
+    return (False, 0, 0) if line.startswith("\\") else (False, 1, 1)
+
+
+def added_lines(diff: str) -> Iterator[tuple[str, list[tuple[int, str]]]]:
+    """The added lines of a zero-context diff, per file, with their line numbers in the new file.
+
+    Hunks are read by their line counts, so an added line that looks like a header (`++ text`) stays content.
+
+    Yields:
+        `(path, [(line number, text)])` for each file with added lines.
+    """
+    path, found, number, old_left, new_left = "", [], 0, 0, 0
+    for line in diff.split("\n"):
+        if old_left > 0 or new_left > 0:
+            added, old_used, new_used = _body_line(line)
+            if added:
+                found.append((number, line[1:]))
+            old_left, new_left, number = old_left - old_used, new_left - new_used, number + new_used
+        elif line.startswith("diff --git "):
+            if found:
+                yield path, found
+            path, found = "", []
+        elif line.startswith("+++ "):
+            path = line[4:].removeprefix("b/")
+        elif hunk := re.match(r"@@ -\d+(?:,(\d+))? \+(\d+)(?:,(\d+))? @@", line):
+            old_left, number, new_left = _hunk(hunk)
+    if found:
+        yield path, found
+
+
+def _push_sources() -> Iterator[tuple[str, str]]:
+    """The messages, author lines, paths and added content of the commits being pushed.
+
+    Merges are diffed against each parent and binary files as text, so nothing added escapes.
+
+    Yields:
+        `(where, text)` pairs to scan.
+    """
+    raw = _push_input()
+    if raw is not None:
+        _pushed_refs(raw)  # Validate every record before looking at its names.
+        for line in raw.splitlines():
+            parts = line.split()
+            if parts and set(parts[1]) != {"0"}:
+                yield "push ref", f"{parts[0]}\n{parts[2]}"
+    for sha in _git("rev-list", *_push_range(raw), "--").split():
+        yield f"commit {sha[:12]}", _git("log", "-1", "--format=%an <%ae>%n%cn <%ce>%n%B", sha)
+        names = _git("diff-tree", "--no-commit-id", "--name-only", "-r", "-m", "-z", "--root", sha)
+        for path in dict.fromkeys(names.split("\0")):
+            if path:
+                yield f"commit {sha[:12]} (path)", path
+        diff = _git(
+            "-c", "core.quotepath=false", "diff-tree", "-p", "-m", "--text", "-U0", "--no-color", "--no-renames",
+            "--no-commit-id", "--root", sha,
+        )  # fmt: skip
+        for index, (_, lines) in enumerate(added_lines(diff), start=1):
+            # Each added line sits on its real line number, so a finding names the right line; lines between are a
+            # filler no phrase can span. The file is named by its number in the commit, never by text read from it.
+            rows = ["0"] * lines[-1][0]
+            for number, text in lines:
+                rows[number - 1] = text
+            yield f"commit {sha[:12]} changed file {index}", "\n".join(rows)
 
 
 def _read(path: Path) -> str | None:
@@ -152,6 +365,12 @@ def identity_problems() -> list[str]:
     return problems
 
 
+def _identities() -> Iterator[tuple[str, str]]:
+    for role in ("author", "committer"):
+        with contextlib.suppress(subprocess.CalledProcessError):  # no identity: git refuses to commit anyway
+            yield role, _git("var", f"GIT_{role.upper()}_IDENT")
+
+
 def sources(args: argparse.Namespace) -> Iterator[tuple[str, str]]:
     """Collect what the command line selects.
 
@@ -161,14 +380,14 @@ def sources(args: argparse.Namespace) -> Iterator[tuple[str, str]]:
     if args.commit_msg:
         yield "commit message", Path(args.commit_msg).read_text(encoding="utf-8")
     elif args.messages:
-        for sha in _git("rev-list", args.messages).split():
+        for sha in _git("rev-list", "--end-of-options", *_range(args.messages), "--").split():
             yield f"commit {sha[:12]}", _git("log", "-1", "--format=%an <%ae>%n%cn <%ce>%n%B", sha)
+    elif args.push:
+        yield from _push_sources()
     elif args.branch:
         yield "branch", _git("rev-parse", "--abbrev-ref", "HEAD")
     elif args.identity:
-        for role in ("author", "committer"):
-            with contextlib.suppress(subprocess.CalledProcessError):  # no identity: git refuses to commit anyway
-                yield role, _git("var", f"GIT_{role.upper()}_IDENT")
+        yield from _identities()
     elif args.text is not None:
         yield "text", args.text
     else:
@@ -188,8 +407,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--text")
     parser.add_argument("--identity", action="store_true")
     parser.add_argument("--branch", action="store_true")
+    parser.add_argument("--push", action="store_true", help="the commits being pushed: messages, paths, added content")
     parser.add_argument("--require", action="store_true")
     args = parser.parse_args(argv)
+    if args.messages:
+        try:
+            _range(args.messages)
+        except (ValueError, subprocess.CalledProcessError):
+            parser.error("--messages must be a branch, tag, commit or HEAD offset, or a range of two")
 
     # Independent of the term list, which plugin developers usually don't have.
     problems = identity_problems() if args.identity else []

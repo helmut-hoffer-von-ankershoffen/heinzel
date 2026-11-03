@@ -52,3 +52,15 @@ def test_browser_failure_console_does_not_render_token(tmp_path, scenario):
     assert sentinel not in result.stdout + result.stderr
     expected = "Authorization: Bearer <redacted-session>" if scenario == "failure" else "The browser fixture timed out."
     assert re.search(rf"(?m)^E\s+AssertionError: {re.escape(expected)}$", result.stdout)
+
+
+def test_no_browser_driver_waits_on_an_async_predicate():
+    """page.waitForFunction stops after one call of an async predicate, so that wait waits for nothing: use until()."""
+    root = Path(__file__).resolve().parents[2]
+    found = [
+        path.name
+        for folder in ("web/e2e", "desktop/e2e")
+        for path in (root / folder).glob("*.mjs")
+        if re.search(r"waitForFunction\(\s*async\b", path.read_text(encoding="utf-8"))
+    ]
+    assert found == []

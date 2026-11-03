@@ -7,7 +7,7 @@ description: Join your team's Heinzelmännchen setup: run the line your manager 
 For the engineer or product manager whose manager posted a line in chat. Run the line, answer what it asks, see your
 team's first draft. Nothing is published, sent or scheduled unless you say so.
 
-Examples use a made-up company, Acme, and its Checkout team.
+Examples use a made-up company, ACME, and its Checkout team.
 
 ## The one line from your manager
 

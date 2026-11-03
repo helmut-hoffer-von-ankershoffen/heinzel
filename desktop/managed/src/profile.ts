@@ -14,6 +14,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join, resolve } from "node:path";
+import { sortedKeys } from "./order.js";
 
 export type Channel = "stable" | "preview" | "development";
 export interface ProfileChoice {
@@ -76,7 +77,7 @@ function identity(value: unknown, expected: ProfileChoice, owner: number): Ident
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new ProfileError();
   const data = value as Record<string, unknown>;
   if (
-    Object.keys(data).sort().join(",") !== KEYS.join(",") ||
+    sortedKeys(data).join(",") !== KEYS.join(",") ||
     data.version !== 1 ||
     typeof data.id !== "string" ||
     !UUID.test(data.id) ||

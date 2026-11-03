@@ -46,7 +46,7 @@ A failed stage prints what went wrong and the literal next step. A stop for "not
 as not small, writes `stopped` into the worktree's git directory: every later stage refuses with exit 3 and prints a
 report (directory, branch, PR, failures) for the orchestrator. `SHIP_ORCHESTRATOR=1 ... reset` clears it. Pending calls name the `hz-gate` holder they queue behind: on a busy host the push, not the model, is the slow part.
 
-The pre-push hook is scoped too (`scripts/scoped_checks.py push`): Markdown and site templates alone run the documentation checks and the tests that read documents (seconds), `web/` alone the web checks, everything else `make check-fast`; CI always runs the full gate.
+The pre-push hook is scoped too (`scripts/scoped_checks.py push`): Markdown and site templates alone run the documentation checks and the tests that read documents (seconds), `web/` alone the web checks, Python changes the lint and type checks plus only the unit tests related to the change (config changes run them all); `make check-fast` by hand is the full run; CI always runs the full gate.
 
 ## Relation to the rest of the pipeline
 

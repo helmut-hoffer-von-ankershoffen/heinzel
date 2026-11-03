@@ -40,7 +40,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" > release.json
-          uv run --script scripts/pypi_release.py source "$TAG" release.json
+          uv run --no-project --frozen --no-build --python 3.14 python scripts/pypi_release.py source "$TAG" release.json
           rm release.json
       - run: make notifier
       - name: Pack the notifier with its executable bits and signature
@@ -55,7 +55,7 @@ jobs:
     if: github.repository == 'helmut-hoffer-von-ankershoffen/heinzel' && startsWith(github.ref, 'refs/tags/v')
     name: Build and verify only the core distributions
     needs: notifier
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
       contents: read
@@ -81,12 +81,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" > release.json
-          uv run --script scripts/pypi_release.py source "$TAG" release.json >> "$GITHUB_OUTPUT"
+          uv run --no-project --frozen --no-build --python 3.14 python scripts/pypi_release.py source "$TAG" release.json >> "$GITHUB_OUTPUT"
           rm release.json
       - name: Check the release for confidential terms
         env:
           CONFIDENTIAL_TERMS: ${{ secrets.CONFIDENTIAL_TERMS }}
-        run: uv run --script scripts/check_confidentiality.py --require
+        run: uv run --no-project --frozen --no-build --python 3.14 python scripts/check_confidentiality.py --require
       - name: Check runtime license compatibility
         run: make licenses
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
@@ -101,7 +101,7 @@ jobs:
       - name: Verify artifact identity, payloads and digests
         env:
           SOURCE_COMMIT: ${{ steps.source.outputs.commit }}
-        run: uv run --script scripts/pypi_release.py artifacts "$TAG" "$SOURCE_COMMIT" dist artifact-manifest.json
+        run: uv run --no-project --frozen --no-build --python 3.14 python scripts/pypi_release.py artifacts "$TAG" "$SOURCE_COMMIT" dist artifact-manifest.json
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: core-pypi-distributions
@@ -114,7 +114,7 @@ jobs:
     if: github.repository == 'helmut-hoffer-von-ankershoffen/heinzel' && startsWith(github.ref, 'refs/tags/v')
     name: Upload verified core artifacts using PyPI trusted publishing
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     environment:
       name: pypi

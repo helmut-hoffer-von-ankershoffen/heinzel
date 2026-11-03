@@ -21,6 +21,8 @@ class DaemonAttestation:
     """Read-only daemon status accessor shared across module boundaries."""
 
     status: Callable[[], DaemonStatusAttestation]
+    job_running: Callable[[], bool] = lambda: False
+    """Whether a daemon tick is running jobs right now; automatic updates wait for it (ADR 0116)."""
 
 
 @dataclass(frozen=True, slots=True)

@@ -111,20 +111,18 @@ Status says whether we agreed. The second line of the Status column says whether
 | [0110](0110-one-versionless-launcher-installs-and-opens-the-standard-app.md) One versionless launcher installs and opens the standard app | proposed · 30 Oct<br>built | [#304](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/304), [#310](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/310) |
 | [0111](0111-plugins-recommend-the-default-theme-with-a-core-recovery-fallback.md) Plugins recommend the default theme with a Core recovery fallback | proposed · 30 Oct<br>built | [#304](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/304) |
 | [0114](0114-green-main-releases-to-edge-and-acceptance-promotes-to-stable.md) Green main releases to edge, and acceptance promotes to stable | proposed · 31 Oct<br>partial |  |
+| [0115](0115-merge-unfinished-work-dark-behind-named-feature-flags.md) Merge unfinished work dark behind named feature flags | accepted · 1 Nov<br>built | [#354](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/354) |
+| [0116](0116-automatic-updates-are-scheduled-by-the-running-app-server.md) Automatic updates are scheduled by the running app server | proposed · 2 Nov<br>built | [#452](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/452) |
 
 </div>
 <!-- adr-index:end -->
 
 The pull requests are the ones that built the record, empty where none is known (the founding records came with the
-first commit). Hover a number in the last column, or open the record, for what the amendment changes.
+first commit).
 
 ADRs 0021–0024 are
 proposed together and disagree on a few points (data file format, the shared `inventory` module, canonicalization,
 selector grammar); each lists them under More Information.
-
-Supersessions: [0035](0035-integrations-go-through-vendor-clis-as-an-ordinary-employee.md) supersedes
-[0033](0033-github-rest-api-over-urllib.md) and [0034](0034-atlassian-cloud-rest-apis-over-urllib.md) (vendor CLIs
-instead of REST over urllib with tokens).
 
 ## Rules
 
@@ -133,7 +131,6 @@ instead of REST over urllib with tokens).
   changed decision is a new ADR that supersedes or amends the old one, with the links set on both.
 - **Numbers** are sequential and never reused; files are `NNNN-title-in-kebab-case.md`.
 - **This index** is generated from the records' front matter by `make docs` (`scripts/generate_docs.py`): title, status,
-  date, `implemented-by` (the pull requests that built it, by number, never the one that only wrote the record) and the
-  amendments (`amends`, `amended-by`, `supersedes`, `superseded-by`, each `amends-NNNN: what it changes`).
+  date and `implemented-by` (the pull requests that built it, by number, never the one that only wrote the record).
   `tests/unit/documentation_test.py` checks the template, this table and the links between records.
 - New ADR: copy [0000-template.md](0000-template.md) or use the `write-adr` skill.

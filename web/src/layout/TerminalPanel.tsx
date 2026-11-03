@@ -11,19 +11,9 @@ import { token } from "@/api/token";
 import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
 import { connectTerminal, followSize } from "@/lib/terminal";
+import { followTerminalTheme, terminalTheme } from "@/lib/terminalTheme";
 import { cn } from "@/lib/utils";
 import { desktopState } from "@/notifications/desktop";
-
-/** The palette of the dark theme, so the terminal reads as part of the app. */
-const theme = {
-  background: "#181818",
-  foreground: "#ececec",
-  cursor: "#d97757",
-  cursorAccent: "#181818",
-  selectionBackground: "#d9775755",
-  black: "#272727",
-  brightBlack: "#6b6b6b",
-};
 
 type CursorStyle = "block" | "bar" | "underline";
 type Options = { cursorStyle: CursorStyle; cursorBlink: boolean; copyOnSelect: boolean; scrollback: number };
@@ -245,7 +235,7 @@ function TerminalView({
     void generation;
     const { copyOnSelect: _copy, ...settings } = initial.current;
     const terminal = new Terminal({
-      theme,
+      theme: terminalTheme(),
       fontFamily: 'ui-monospace, "SF Mono", Menlo, Monaco, monospace',
       fontSize: 13,
       lineHeight: 1.2,
@@ -428,6 +418,14 @@ function TerminalView({
     terminal.options.cursorBlink = options.cursorBlink;
     terminal.options.scrollback = options.scrollback;
   }, [options]);
+  // The terminal wears the active theme and follows a switch of theme or mode while it runs.
+  useEffect(
+    () =>
+      followTerminalTheme((theme) => {
+        if (terminalRef.current) terminalRef.current.options.theme = theme;
+      }),
+    [],
+  );
   // Full screen changes the container's size: measure again.
   useEffect(() => {
     void full;

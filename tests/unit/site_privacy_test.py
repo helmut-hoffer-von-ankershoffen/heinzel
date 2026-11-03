@@ -62,7 +62,7 @@ def test_own_origin_relative_urls_and_followed_links_pass(check, tmp_path):
     check.static_privacy(build(tmp_path, html, "a{background:url(img/x.svg)}"), OWN)
 
 
-def test_a_listed_host_passes_and_must_be_named_in_both_privacy_pages(check, tmp_path, monkeypatch):
+def test_a_listed_host_passes_and_must_be_named_in_the_privacy_page(check, tmp_path, monkeypatch):
     monkeypatch.setitem(check.THIRD_PARTY_HOSTS, "badges.example.org", "status badge")
     check.static_privacy(build(tmp_path, '<img src="https://badges.example.org/x.svg">'), OWN)
     for name in check.LEGAL_PAGES:
@@ -70,12 +70,13 @@ def test_a_listed_host_passes_and_must_be_named_in_both_privacy_pages(check, tmp
         (tmp_path / name / "index.html").write_text("no host here")
     with pytest.raises(check.PrivacyError, match=r"badges\.example\.org is listed but not named"):
         check.legal_pages_name_hosts(tmp_path)
-    for name in ("privacy", "datenschutz"):
-        (tmp_path / name / "index.html").write_text("badges.example.org")
+    (tmp_path / "privacy" / "index.html").write_text("badges.example.org")
     check.legal_pages_name_hosts(tmp_path)
 
 
 def test_the_legal_pages_are_in_the_footer_of_every_page():
     footer = (ROOT / "docs/overrides/partials/footer.html").read_text()
-    for page in ("impressum/", "imprint/", "datenschutz/", "privacy/"):
+    for page in ("imprint/", "privacy/"):
         assert f"'{page}' | url" in footer
+    assert "impressum" not in footer
+    assert "datenschutz" not in footer

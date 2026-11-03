@@ -28,4 +28,4 @@ web/test-results/
 site/
 
 # The privacy plugin's download cache for external images (mkdocs.yml).
-.cache/
+/.cache/

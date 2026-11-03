@@ -281,10 +281,7 @@ def preflight(args, accepted_dir):
     """Bind every published input to its release identity. Executes nothing it downloads."""
     version, app = args.expect_version, args.expect_app_version
     report = {"expect_version": version, "expect_app_version": app}
-    check(version == app and CANDIDATE_VERSION.fullmatch(version), "A candidate names one final or edge version")
-    if not is_final_version(version):
-        global EDGE_CANDIDATE  # noqa: PLW0603 - set once, before any case runs, for this explicit run only
-        EDGE_CANDIDATE = version
+    check(is_final_version(version) and is_final_version(app), "The expected versions must be final X.Y.Z versions")
     pypi = json.loads(fetch("https://pypi.org/pypi/heinzel/json", 8 * 1024 * 1024))
     report["pypi_latest"] = pypi["info"]["version"]
     check(pypi["info"]["version"] == version, f"PyPI latest is {pypi['info']['version']}, not expected {version}")
@@ -1649,26 +1646,52 @@ UI_NAV = (
 )
 
 
-def ui_open_plugins(browser, case):
-    """Profile menu -> Settings -> Plugins, with clicks only, after dismissing a first-run setup if it appears."""
-    time.sleep(3)  # a first-run setup dialog may open late; it is what a user dismisses first
+def ui_remaining(deadline, limit):
+    """Keep navigation, restart and the row check inside the same change deadline."""
+    if deadline is None:
+        return limit
+    left = deadline - time.monotonic()
+    check(left > 0, "The plugin change deadline passed")
+    return min(left, limit)
+
+
+def ui_open_plugins(browser, case, *, deadline=None):
+    """Navigate Profile menu -> Settings -> Plugins, dismissing a first-run setup if it appears."""
+    time.sleep(ui_remaining(deadline, 3))  # a first-run setup dialog may open late; a user dismisses it first
     if browser.present("button", "Close setup"):
-        browser.click("button", "Close setup")
-        browser.wait("!document.querySelector('[role=dialog]')", "the setup dialog to close", 30)
-    browser.click("button", "Profile", "suffix")
-    browser.click("[role=menuitem]", "Settings", False)
-    browser.click("button", "Plugins")
-    browser.wait("document.body.innerText.includes('Installed on this machine')", "the installed plugin list", 60)
+        browser.click("button", "Close setup", timeout=ui_remaining(deadline, 60))
+        browser.wait("!document.querySelector('[role=dialog]')", "the setup dialog to close", ui_remaining(deadline, 30))
+    profile = browser.locate("button", "Profile", "suffix")
+    browser.wait(
+        f"(()=>{{const e={profile};if(!e)return false;e.focus();return document.activeElement===e}})()",
+        "the Profile button to receive keyboard focus",
+        ui_remaining(deadline, 60),
+    )
+    browser.press("Enter", "Enter", 13)
+    browser.click("[role=menuitem]", "Settings", False, timeout=ui_remaining(deadline, 60))
+    browser.click("button", "Plugins", timeout=ui_remaining(deadline, 60))
+    browser.wait(
+        "document.body.innerText.includes('Installed on this machine')",
+        "the installed plugin list",
+        ui_remaining(deadline, 60),
+    )
 
 
-def ui_apply(browser, what):
-    """The two-step confirmation the page asks for: Restart and apply, then Restart and apply Plugins.
-
-    The caller waits for the end state it expects; the server restarts itself and the page reloads.
-    """
+def ui_apply(browser, what, expected):
+    """Confirm the change, then verify its row in the restarted page within the original 360-second budget."""
     browser.click("button", "Restart and apply")
     browser.wait(browser.exists("button", "Restart and apply Plugins"), f"the restart confirmation of {what}", 30)
-    browser.click("button", "Restart and apply Plugins")
+    deadline = time.monotonic() + 360
+    # The old document can briefly show the installed version before reload closes Settings.
+    browser.evaluate("window.__hzAcceptancePluginRestart = true")
+    browser.click("button", "Restart and apply Plugins", timeout=ui_remaining(deadline, 60))
+    browser.wait(
+        "window.__hzAcceptancePluginRestart === undefined&&" + browser.exists("button", "Profile", "suffix"),
+        f"the new document after {what}",
+        ui_remaining(deadline, 360),
+    )
+    ui_open_plugins(browser, None, deadline=deadline)
+    browser.wait(expected, f"the row after {what}", ui_remaining(deadline, 360))
 
 
 def ui_settle(browser, case):
@@ -1714,13 +1737,17 @@ def ui_add(browser, case, spec, shot, expect_detail):
 
 
 def row_has(name, version):
-    """A page expression: the plugin's row (the Remove button's nearest ancestor with text) shows `v<version>`."""
+    """A page expression: the plugin's own list-row header shows exactly `v<version>`.
+
+    The list and a pending confirmation can contain other versions. Only the header of the Remove button's own
+    list item describes the installed plugin; matching whole ancestors made case 8 pass before a change happened.
+    """
     return (
-        "(()=>{let e=document.querySelector(" + json.dumps(f"button[aria-label='Remove {name}']") + ");"
-        "for(let i=0;i<6&&e;i++,e=e.parentElement){if(e.innerText&&e.innerText.includes('v"
-        + version
-        + "'))return true}"
-        "return false})()"
+        "(()=>{const button=document.querySelector(" + json.dumps(f"button[aria-label='Remove {name}']") + ");"
+        "const header=button?.closest('li')?.firstElementChild;"
+        "return !!header&&[...header.querySelectorAll('span')].some(e=>e.textContent.trim()==="
+        + json.dumps("v" + version)
+        + ")})()"
     )
 
 
@@ -1766,8 +1793,7 @@ def case_plugin_ui(case):
     def install():
         browser = holder["browser"]
         text = ui_add(browser, case, "heinzel-example", "02-install-preview", ["heinzel-example", "0.4.0"])
-        ui_apply(browser, "the install")
-        browser.wait(row_has("heinzel-example", "0.4.0"), "the new plugin's row at v0.4.0", 360)
+        ui_apply(browser, "the install", row_has("heinzel-example", "0.4.0"))
         expect_plugins(case, heinzel_example={"enabled": True, "version": "0.4.0"})
         cli = plugin_map(case, "plugins-after-ui-install")
         check(cli["heinzel-example"]["version"] == "0.4.0", "The CLI does not see the UI-installed plugin")
@@ -1783,8 +1809,7 @@ def case_plugin_ui(case):
         for spec, expected, shot in (("heinzel-clock==0.9.2", "0.9.2", "04"), ("heinzel-clock", "0.9.3", "05")):
             text = ui_add(browser, case, spec, f"{shot}-preview", ["heinzel-clock", expected])
             check("Replaces" in text, f"The preview of {spec} does not say it replaces a version")
-            ui_apply(browser, f"the {spec} change")
-            browser.wait(row_has("heinzel-clock", expected), f"Clock at v{expected}", 360)
+            ui_apply(browser, f"the {spec} change", row_has("heinzel-clock", expected))
             expect_plugins(case, heinzel_clock={"enabled": True, "version": expected})
             check(plugin_map(case, f"clock-{expected}")["heinzel-clock"]["version"] == expected, "CLI disagrees")
             results[spec] = {"screenshot": browser.shot(f"{shot}-done")}
@@ -1796,8 +1821,7 @@ def case_plugin_ui(case):
         browser.click("button", "Remove heinzel-example")
         browser.wait("document.body.innerText.includes('Remove heinzel-example?')", "the removal question", 30)
         browser.shot("06-remove-ask")
-        ui_apply(browser, "the removal")
-        browser.wait("!document.querySelector(\"button[aria-label='Remove heinzel-example']\")", "the row to go", 360)
+        ui_apply(browser, "the removal", "!document.querySelector(\"button[aria-label='Remove heinzel-example']\")")
         expect_plugins(case, heinzel_example=None)
         check("heinzel-example" not in plugin_map(case, "plugins-after-ui-remove"), "The CLI still has the plugin")
         return {"screenshot": browser.shot("07-removed"), "isolated_server": server_state("after-remove")}
@@ -1995,7 +2019,10 @@ def assert_final_install(case, where):
         f"{where}: receipt Core {receipt.get('core_version')} is not final",
     )
     for name, version in versions.items():
-        check(is_final_version(version), f"{where}: {name} {version} is not a final version")
+        check(
+            is_accepted_core(version) if name == "heinzel" else is_final_version(version),
+            f"{where}: {name} {version} is not a final version",
+        )
     info = case.json_command("system", "info", label="hz-system-info-final")
     check(is_accepted_core(info["version"]), f"{where}: the installed Core {info['version']} is not a final version")
     check(info["version"] == receipt["core_version"], f"{where}: the receipt and the installed Core differ")
@@ -2236,6 +2263,9 @@ def bind_release_candidate(args, parent):
     """
     version, app = args.expect_version, args.expect_app_version
     check(version == app and CANDIDATE_VERSION.fullmatch(version), "A candidate names one final or edge version")
+    if not is_final_version(version):
+        global EDGE_CANDIDATE  # noqa: PLW0603 - set once, before any case runs, for this explicit run only
+        EDGE_CANDIDATE = version
     wheel_url, profile_url = args.candidate_wheel_url, args.candidate_profile_url
     wheel_match = RELEASE_WHEEL_URL.fullmatch(wheel_url or "")
     check(wheel_match, "--candidate-wheel-url must be this project's final release wheel")

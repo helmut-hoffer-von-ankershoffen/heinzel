@@ -29,6 +29,9 @@ if TYPE_CHECKING:
 
 GRACE_SECONDS = 3
 """How long open responses get to end before uvicorn cancels them; ours end within a fraction of it."""
+KEEP_ALIVE_SECONDS = 75
+"""Outlast the browser's idle connections (WebKit drops them at about 30 s): a server closing first races the next
+request, and WebKit fails a POST caught by that close with "Load failed" instead of retrying it."""
 SETTLE_SECONDS = 0.1
 """How long the app gets to close its terminals itself before uvicorn closes what is left with its own code."""
 UVICORN_LOGGER = "uvicorn.error"

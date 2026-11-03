@@ -27,6 +27,8 @@ export type JsonSchema = {
   "x-unit"?: string;
   "x-options"?: { source: string; capability?: string; none?: string };
   "x-hidden"?: boolean;
+  /** The running server reads it again by itself: a change is saved at once, with no restart. */
+  "x-live"?: boolean;
   "x-expert"?: boolean;
 };
 

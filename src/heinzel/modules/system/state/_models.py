@@ -33,8 +33,8 @@ class StateSettings(ModuleSettings):
         title="Personal state repository",
         json_schema_extra={"x-private": True},
         description="Your own private state repository, which hz pushes this machine's presence and adoption to, "
-        "on the branch hz/<your handle>/<machine>; e.g. https://github.com/mira-example/heinzel-state-mira. "
-        "Unset, nothing leaves this machine.",
+        "on the branch hz/<your handle>/<machine>. Unset, nothing leaves this machine.",
+        examples=["https://github.com/mira-example/heinzel-state-mira"],
     )
 
     ignored_in_project: ClassVar[frozenset[str]] = frozenset({"personal"})

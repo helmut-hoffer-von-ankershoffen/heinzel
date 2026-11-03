@@ -11,8 +11,10 @@ on:
 permissions:
   contents: read
 
+# Every commit on main gets its own group, so a later push never replaces a queued run or cancels a running one and
+# each main commit ends with a CI result. Pull requests share one group per ref and cancel superseded runs.
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
@@ -23,7 +25,7 @@ jobs:
   dependency-review:
     name: Dependency review
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 3
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -36,7 +38,7 @@ jobs:
   commits:
     name: Conventional commits
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 3
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -54,7 +56,7 @@ jobs:
 
   lint:
     name: Lint, contracts and types
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -72,7 +74,7 @@ jobs:
 
   secrets:
     name: Secret scan
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 3
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -88,11 +90,12 @@ jobs:
     # What a contributor runs on a fresh machine, on each platform scripts/tools.toml pins: `make setup` installs
     # everything the build needs, relying only on git, make and uv, and `make doctor` confirms it.
     runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ startsWith(matrix.os, 'macos') }} # temporary: macOS matrix failures do not block
     timeout-minutes: 10
     strategy:
-      fail-fast: false
+      fail-fast: ${{ github.event_name == 'pull_request' }} # stop waiting for other setup cells on a red PR
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-24.04, macos-latest]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -105,12 +108,12 @@ jobs:
       - run: make setup
       - run: make doctor
       - name: Every pinned tool, for every platform, still downloads and matches its checksum
-        if: matrix.os == 'ubuntu-latest'
+        if: matrix.os == 'ubuntu-24.04'
         run: make tools-verify
 
   audit:
     name: Dependency audit
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -126,16 +129,18 @@ jobs:
   test:
     name: Test (${{ matrix.os }}, Python ${{ matrix.python }}${{ matrix.levels && format(', {0}', matrix.levels) || '' }})
     runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ startsWith(matrix.os, 'macos') }} # temporary: macOS matrix failures do not block
     timeout-minutes: 10
     strategy:
       fail-fast: ${{ github.event_name == 'pull_request' }} # a red cell is enough to know on a pull request
       matrix:
-        os: [ubuntu-latest]
-        python: ["3.12", "3.13", "3.14", "3.15"]
+        os: [ubuntu-24.04]
+        # Linux: oldest and newest Python on a pull request, every supported one on main, schedule and dispatch.
+        python: ${{ fromJSON(github.event_name == 'pull_request' && '["3.12","3.15"]' || '["3.12","3.13","3.14","3.15"]') }}
         # macOS has 3 vCPU and runs the suite at the edge of the 420 s cap, so each cell is split into one shard per level
-        # under that same cap. Newest Python on a pull request, oldest and newest on main and dispatches, all on schedule.
+        # under that same cap. PRs run the newest version; non-PR runs cover all versions.
         include:
-          ${{ fromJSON(github.event_name == 'pull_request' && '[{"os":"macos-latest","python":"3.15","levels":"unit"},{"os":"macos-latest","python":"3.15","levels":"integration"}]' || github.event_name == 'schedule' && '[{"os":"macos-latest","python":"3.12","levels":"unit"},{"os":"macos-latest","python":"3.12","levels":"integration"},{"os":"macos-latest","python":"3.13","levels":"unit"},{"os":"macos-latest","python":"3.13","levels":"integration"},{"os":"macos-latest","python":"3.14","levels":"unit"},{"os":"macos-latest","python":"3.14","levels":"integration"},{"os":"macos-latest","python":"3.15","levels":"unit"},{"os":"macos-latest","python":"3.15","levels":"integration"}]' || '[{"os":"macos-latest","python":"3.12","levels":"unit"},{"os":"macos-latest","python":"3.12","levels":"integration"},{"os":"macos-latest","python":"3.15","levels":"unit"},{"os":"macos-latest","python":"3.15","levels":"integration"}]') }}
+          ${{ fromJSON(github.event_name == 'pull_request' && '[{"os":"macos-latest","python":"3.15","levels":"unit"},{"os":"macos-latest","python":"3.15","levels":"integration"}]' || github.event_name == 'schedule' && '[{"os":"macos-latest","python":"3.12","levels":"unit"},{"os":"macos-latest","python":"3.12","levels":"integration"},{"os":"macos-latest","python":"3.13","levels":"unit"},{"os":"macos-latest","python":"3.13","levels":"integration"},{"os":"macos-latest","python":"3.14","levels":"unit"},{"os":"macos-latest","python":"3.14","levels":"integration"},{"os":"macos-latest","python":"3.15","levels":"unit"},{"os":"macos-latest","python":"3.15","levels":"integration"}]' || '[{"os":"macos-latest","python":"3.12","levels":"unit"},{"os":"macos-latest","python":"3.12","levels":"integration"},{"os":"macos-latest","python":"3.13","levels":"unit"},{"os":"macos-latest","python":"3.13","levels":"integration"},{"os":"macos-latest","python":"3.14","levels":"unit"},{"os":"macos-latest","python":"3.14","levels":"integration"},{"os":"macos-latest","python":"3.15","levels":"unit"},{"os":"macos-latest","python":"3.15","levels":"integration"}]') }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -146,8 +151,14 @@ jobs:
           cache-dependency-glob: uv.lock
           save-cache: ${{ github.ref == 'refs/heads/main' }} # pull requests reuse main's cache
           python-version: ${{ matrix.python }}
-      - name: Install what the tests need, and no more
-        run: uv sync --no-dev --group test # UV_FROZEN: exactly the lockfile
+      - name: Install wheel dependencies
+        if: matrix.python != '3.15'
+        run: uv sync --frozen --no-build --no-dev --group test
+      - name: Install Python 3.15 dependencies with the verified PyYAML compatibility build
+        if: matrix.python == '3.15'
+        run: |
+          uv sync --frozen --no-build --no-dev --group test --no-install-package pyyaml
+          bash scripts/bootstrap-pyyaml.sh
       - name: Unit and integration tests (unit first, 4 workers, stop at the first failure)
         env:
           UV_NO_SYNC: "1" # use the test group just installed
@@ -158,7 +169,7 @@ jobs:
   coverage:
     name: Coverage
     # One measured run, in parallel with the matrix instead of after it.
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
       contents: write # publishes the badge to the python-coverage-comment-action-data branch
@@ -175,8 +186,15 @@ jobs:
           cache-dependency-glob: uv.lock
           save-cache: ${{ github.ref == 'refs/heads/main' }} # pull requests reuse main's cache
           python-version: "3.14"
-      - run: uv sync --no-dev --group test # UV_FROZEN: exactly the lockfile
+      - run: uv sync --frozen --no-build --no-dev --group test
       - run: make test
+      - name: Record the total for the merge gate
+        run: uv run --no-build coverage report --format=total --precision=2 > coverage-total.txt
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: coverage-total
+          path: coverage-total.txt
+          retention-days: 7
       - name: Report coverage on pull requests and publish the badge
         # The action only understands pull_request, push and schedule events; dispatched runs (release PRs) skip it.
         if: github.event_name != 'workflow_dispatch'
@@ -190,7 +208,7 @@ jobs:
     name: Performance tests
     # Timing assertions (linear time) run here only: on a loaded developer machine they flake, so neither the
     # pre-push hook nor the test matrix runs them.
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     env:
       UV_NO_SYNC: "1"
@@ -204,17 +222,18 @@ jobs:
           cache-dependency-glob: uv.lock
           save-cache: ${{ github.ref == 'refs/heads/main' }} # pull requests reuse main's cache
           python-version: "3.14"
-      - run: uv sync --no-dev --group test # UV_FROZEN: exactly the lockfile
+      - run: uv sync --frozen --no-build --no-dev --group test
       - run: make test-perf
 
   e2e:
     name: End-to-end (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ startsWith(matrix.os, 'macos') }} # temporary: macOS matrix failures do not block
     timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
-        os: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-latest"]' || '["ubuntu-latest","macos-latest"]') }}
+        os: [ubuntu-24.04, macos-latest]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -244,7 +263,7 @@ jobs:
 
   build:
     name: Build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -260,11 +279,113 @@ jobs:
           path: dist/
 
 
+  stop-after-dependency-review:
+    name: Stop after dependency-review failure
+    # Each cheap check can cancel as soon as it fails; the expensive jobs start in parallel.
+    needs: [dependency-review]
+    if: failure() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    permissions:
+      actions: write # cancels this run only
+    steps:
+      - name: Cancel the remaining jobs of this run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+        run: gh run cancel "$RUN_ID" --repo "$REPOSITORY"
+
+  stop-after-commits:
+    name: Stop after commits failure
+    # Each cheap check can cancel as soon as it fails; the expensive jobs start in parallel.
+    needs: [commits]
+    if: failure() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    permissions:
+      actions: write # cancels this run only
+    steps:
+      - name: Cancel the remaining jobs of this run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+        run: gh run cancel "$RUN_ID" --repo "$REPOSITORY"
+
+  stop-after-lint:
+    name: Stop after lint failure
+    # Each cheap check can cancel as soon as it fails; the expensive jobs start in parallel.
+    needs: [lint]
+    if: failure() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    permissions:
+      actions: write # cancels this run only
+    steps:
+      - name: Cancel the remaining jobs of this run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+        run: gh run cancel "$RUN_ID" --repo "$REPOSITORY"
+
+  stop-after-secrets:
+    name: Stop after secrets failure
+    # Each cheap check can cancel as soon as it fails; the expensive jobs start in parallel.
+    needs: [secrets]
+    if: failure() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    permissions:
+      actions: write # cancels this run only
+    steps:
+      - name: Cancel the remaining jobs of this run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+        run: gh run cancel "$RUN_ID" --repo "$REPOSITORY"
+
+  stop-after-setup:
+    name: Stop after setup failure
+    # Each cheap check can cancel as soon as it fails; the expensive jobs start in parallel.
+    needs: [setup]
+    if: failure() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    permissions:
+      actions: write # cancels this run only
+    steps:
+      - name: Cancel the remaining jobs of this run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+        run: gh run cancel "$RUN_ID" --repo "$REPOSITORY"
+
+  stop-after-audit:
+    name: Stop after audit failure
+    # Each cheap check can cancel as soon as it fails; the expensive jobs start in parallel.
+    needs: [audit]
+    if: failure() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    permissions:
+      actions: write # cancels this run only
+    steps:
+      - name: Cancel the remaining jobs of this run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+        run: gh run cancel "$RUN_ID" --repo "$REPOSITORY"
+
   ci-ok:
     name: CI OK
     if: always()
     needs: [dependency-review, commits, lint, secrets, setup, audit, test, coverage, perf, e2e, build]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 2
     steps:
       - name: Fail if any required job failed

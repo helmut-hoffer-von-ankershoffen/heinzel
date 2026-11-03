@@ -45,7 +45,9 @@ def test_any_text_gets_diagnostics_from_the_parser_never_from_an_exception(text)
 @QUICK
 @given(FRONTMATTER)
 def test_a_contract_reads_the_same_every_time(text):
-    assert read_contract(PATH, "me", text) == read_contract(PATH, "me", text)
+    first = read_contract(PATH, "me", text)
+    second = read_contract(PATH, "me", text)
+    assert second == first
 
 
 @QUICK

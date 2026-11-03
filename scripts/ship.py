@@ -50,6 +50,7 @@ NOT_SMALL = "Not a small change: "
 MAX_FILES, MAX_LINES = 8, 80
 MAX_FAILURES = 2
 BUDGET = 100  # seconds one call may take: a model's shell tool gives up at 120
+GATE_CHECKS = ("merge-gate", "coverage-floor")  # .github/workflows/merge-gate.yml
 FLAKY = ("End-to-end (macos)",)  # failed jobs worth one `gh run rerun --failed`, without investigation
 MODEL = os.environ.get("SHIP_MODEL", "Claude Haiku 4.5")
 ORCHESTRATOR = os.environ.get("SHIP_ORCHESTRATOR") == "1"
@@ -872,7 +873,7 @@ def stage_wait(args: argparse.Namespace) -> None:
         code, out = gh("pr", "view", str(number), "-R", repo, "--json", fields)
         if code != 0:
             fail("wait", "gh could not read the pull request.", f"{RUN} wait", out.splitlines()[-3:])
-        data = json.loads(out)
+        data = without_advisory_gates(json.loads(out), repo)
         if data["state"] != "OPEN" or data["mergeable"] == "CONFLICTING":
             if data["state"] == "MERGED":
                 ok("wait", "Merged.", f"{RUN} verify", pr=number)
@@ -1040,7 +1041,35 @@ def read_pull(repo: str, number: int) -> dict[str, Any]:
     """The pull request's state, labels, head and checks as GitHub reports them now."""
     fields = "labels,state,isDraft,headRefOid,mergeStateStatus,mergeable,statusCheckRollup"
     code, out = gh("pr", "view", str(number), "-R", repo, "--json", fields)
-    return json.loads(out) if code == 0 else {}
+    return without_advisory_gates(json.loads(out), repo) if code == 0 else {}
+
+
+def without_advisory_gates(data: dict[str, Any], repo: str) -> dict[str, Any]:
+    """Drop the merge gate's checks while main doesn't require them: they report, GitHub would let the merge through.
+
+    Once a check is required it counts here too. When the rules can't be read every check counts: never a looser gate.
+    """
+    code, out = gh("api", f"repos/{repo}/rules/branches/main")
+    try:
+        rules = json.loads(out) if code == 0 else None
+    except ValueError:
+        rules = None
+    if not isinstance(rules, list):
+        return data
+    required = {
+        check["context"]
+        for rule in rules
+        if rule.get("type") == "required_status_checks"
+        for check in rule["parameters"]["required_status_checks"]
+    }
+    advisory = set(GATE_CHECKS) - required
+    rollup = data.get("statusCheckRollup") or []
+    kept = [item for item in rollup if (item.get("name") or item.get("context")) not in advisory]
+    if len(kept) == len(rollup):
+        return data
+    # GitHub says UNSTABLE for a failing or pending check it doesn't require; every other check is still judged.
+    status = "CLEAN" if data.get("mergeStateStatus") == "UNSTABLE" else data.get("mergeStateStatus")
+    return {**data, "statusCheckRollup": kept, "mergeStateStatus": status}
 
 
 def merge_blocker(data: dict[str, Any]) -> str:

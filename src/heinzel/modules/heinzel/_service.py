@@ -59,6 +59,7 @@ from heinzel.kernel import (
     Requirement,
     ToolProfile,
     UsageEntry,
+    jsonable,
     record_usage,
     toml_value,
 )
@@ -466,7 +467,8 @@ class HeinzelService:
                 command=f"hz heinzel show {qualified}", why="what it requires, what is bound, and whether it is ready"
             ),
             Step(
-                command=f"hz heinzel wake {qualified} --dry-run", why="the packet the agent would get; nothing is spent"
+                command=f"hz heinzel wake {qualified} --dry-run",
+                why="the packet the helper would get; nothing is spent",
             ),
             Step(
                 command=f"hz heinzel wake {qualified}",
@@ -1478,7 +1480,7 @@ class HeinzelService:
                     why = clean_text(f"{type(exc).__name__}: {exc}")
                     msg = f"{contract.qualified}: input {name!r} ({spec.read}) failed: {why}"
                     raise HeinzelError(msg) from exc
-            data = cast("JsonValue", _minimised(to_jsonable_python(_without_emails(result))))
+            data = cast("JsonValue", _minimised(jsonable(_without_emails(result))))
             size = len(json.dumps(data, ensure_ascii=False).encode())
             if size > MAX_INPUT_BYTES:
                 msg = (

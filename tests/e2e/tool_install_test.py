@@ -241,33 +241,60 @@ def test_direct_lifecycle(sandbox, wheel):
     assert not sandbox.hz_bin.exists()
 
 
-def test_skill_lifecycle(tmp_path, wheel, fixture_managed_python, seed_uv_cache):
-    """What `/hz-init` and `/hz-uninstall --purge` do, through the scripts that ship with the skills."""
-    sandbox = seeded(Sandbox(tmp_path, *fixture_managed_python, own_home=True), seed_uv_cache)
+INIT = SKILLS / "hz-init" / "scripts" / "install.sh"
+UNINSTALL = SKILLS / "hz-uninstall" / "scripts" / "uninstall.sh"
+
+
+def hz_init(root: Path, python, cache: Path, wheel: Path) -> tuple[Sandbox, str]:
+    """What `/hz-init --plugin <dummy>` does in a fresh sandbox with its own $HOME, via the script the skill ships."""
+    sandbox = seeded(Sandbox(root, *python, own_home=True), cache)
     sandbox.home.mkdir()
-    output = sandbox.run(
-        "bash", SKILLS / "hz-init" / "scripts" / "install.sh", "--plugin", DUMMY_PLUGIN, HZ_SOURCE=str(wheel)
-    )
+    return sandbox, sandbox.run("bash", INIT, "--plugin", DUMMY_PLUGIN, HZ_SOURCE=str(wheel))
+
+
+@pytest.fixture(scope="module")
+def hz_inited(tmp_path_factory, wheel, fixture_managed_python, seed_uv_cache) -> tuple[Sandbox, str]:
+    """One `/hz-init` for the tests that leave the installation in place, so the install is not repeated for each.
+
+    The installs are most of a lifecycle's time and the whole lifecycle in one test outgrew its 120 s on macOS.
+    Tests that use this must leave the installation usable; the one that removes it makes its own.
+    """
+    return hz_init(tmp_path_factory.mktemp("hz-init"), fixture_managed_python, seed_uv_cache, wheel)
+
+
+def test_hz_init_installs_core_plugin_configuration_and_skills(hz_inited):
+    sandbox, output = hz_inited
     assert "==> Done" in output
     assert sandbox.hz("dummy", "hello").strip() == "hello from dummy"
     assert [p.name for p in sandbox.home.rglob("config.toml")] == ["config.toml"]
     assert {p.name for p in sandbox.skills.iterdir()} == {"hz", "hz-init", "hz-uninstall"}
 
-    # Running hz-init again updates in place and keeps plugins and configuration.
-    sandbox.run("bash", SKILLS / "hz-init" / "scripts" / "install.sh", HZ_SOURCE=str(wheel))
+
+def test_hz_init_again_updates_in_place_and_keeps_plugins_and_configuration(hz_inited, wheel):
+    sandbox, _ = hz_inited
+    sandbox.run("bash", INIT, HZ_SOURCE=str(wheel))
     assert sandbox.hz("dummy", "hello").strip() == "hello from dummy"
     data_dir = Path(json.loads(sandbox.hz("system", "config", "get", "hz.data_dir", "--json"))["value"])
-    data_dir.mkdir(parents=True, exist_ok=True)
     assert data_dir.is_relative_to(sandbox.home)
 
-    sandbox.run("bash", SKILLS / "hz-uninstall" / "scripts" / "uninstall.sh", "--purge")
+
+def test_hz_uninstall_purge_removes_everything_and_twice_is_harmless(
+    tmp_path, wheel, fixture_managed_python, seed_uv_cache
+):
+    sandbox, output = hz_init(tmp_path, fixture_managed_python, seed_uv_cache, wheel)
+    assert "==> Done" in output
+    data_dir = Path(json.loads(sandbox.hz("system", "config", "get", "hz.data_dir", "--json"))["value"])
+    assert data_dir.is_relative_to(sandbox.home)
+    data_dir.mkdir(parents=True, exist_ok=True)
+
+    sandbox.run("bash", UNINSTALL, "--purge")
     assert not sandbox.hz_bin.exists()
     assert not sandbox.skills.exists() or not any(sandbox.skills.iterdir())
     assert not list(sandbox.home.rglob("config.toml"))
     assert not data_dir.exists()
 
     # Uninstalling twice is harmless.
-    assert "not installed" in sandbox.run("bash", SKILLS / "hz-uninstall" / "scripts" / "uninstall.sh")
+    assert "not installed" in sandbox.run("bash", UNINSTALL)
 
 
 def test_install_from_git_like_users_do(sandbox):
