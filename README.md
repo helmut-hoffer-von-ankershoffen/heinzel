@@ -149,7 +149,7 @@
 | src/heinzel/modules/system/notify/\_native.py                    |      101 |        7 |       26 |        1 |     94% |72-75, 131-132, 134 |
 | src/heinzel/modules/system/notify/\_policy.py                    |       83 |        5 |       26 |        2 |     94% |57-\>59, 62-64, 90-91 |
 | src/heinzel/modules/system/notify/\_render.py                    |       57 |       11 |       32 |        8 |     74% |14-18, 25, 31, 52, 54, 64-\>67, 81, 85 |
-| src/heinzel/modules/system/notify/\_service.py                   |      325 |       25 |       92 |       10 |     91% |196, 231-233, 323, 325-327, 348-350, 359, 371-\>370, 397-398, 411, 446-\>459, 451-453, 466, 503-\>506, 534, 596-600 |
+| src/heinzel/modules/system/notify/\_service.py                   |      326 |       25 |       94 |       10 |     91% |196, 231-233, 325, 327-329, 350-352, 361, 373-\>372, 399-400, 413, 448-\>461, 453-455, 468, 505-\>508, 536, 598-602 |
 | src/heinzel/modules/system/notify/\_store.py                     |      165 |       14 |       20 |        2 |     91% |67-68, 71-72, 138, 143, 163-164, 173-174, 188-189, 203-204 |
 | src/heinzel/modules/system/notify/\_watch.py                     |       34 |        7 |       10 |        4 |     75% |21-29, 40, 43-44, 59, 68 |
 | src/heinzel/modules/system/plugin/\_\_init\_\_.py                |       67 |        5 |        6 |        0 |     93% |122, 139, 157, 192, 203 |
@@ -188,7 +188,7 @@
 | src/heinzel/modules/telemetry/\_render.py                        |       15 |       10 |        2 |        0 |     29% |11-17, 22-27 |
 | src/heinzel/modules/telemetry/\_service.py                       |      236 |        8 |       70 |        3 |     96% |146-\>152, 154-\>152, 162, 219-220, 289-291, 344-345 |
 | src/heinzel/testing.py                                           |      124 |        4 |       32 |        0 |     97% |   240-244 |
-| **TOTAL**                                                        | **39421** | **2503** | **10132** | **1017** | **92%** |           |
+| **TOTAL**                                                        | **39422** | **2503** | **10134** | **1017** | **92%** |           |
 
 128 files skipped due to complete coverage.
 
