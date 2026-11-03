@@ -13,7 +13,7 @@ Constraints per workflow:
 
 - `ci.yml`: `CI OK` gates merging. A pull request runs Linux with Python oldest and newest plus `macOS smoke`; unknown,
   platform and shared changes also run the full applicable macOS suite, with failures blocking. The full matrix runs on
-  main, daily and dispatch, with the existing temporary macOS matrix exception. A failing cheap check cancels the rest of
+  main, daily and dispatch; every scheduled macOS job blocks `CI OK`. A failing cheap check cancels the rest of
   a same-repository pull request's run as soon as it completes; fork PRs finish normally with read-only tokens. Every main
   commit keeps its own CI run; batches cannot rely on a single tip run yet.
 - `update-prs.yml`: core keeps tested PR heads for the merge queue; plugin repositories update behind branches and

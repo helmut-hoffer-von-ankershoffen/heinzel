@@ -1338,15 +1338,13 @@ def _runs_on_pull_request(job: dict) -> bool:
     return "github.event_name != 'pull_request'" not in str(job.get("if", ""))
 
 
-def test_macos_smoke_blocks_while_existing_matrix_exception_remains():
+def test_every_scheduled_macos_job_blocks_ci_ok():
     jobs = _ci_jobs()
-    for name in ("setup", "test", "e2e", "electron"):
-        assert jobs[name]["continue-on-error"] == (
-            "${{ startsWith(matrix.os, 'macos') && !(github.event_name == 'pull_request' "
-            "&& needs.changes.outputs.macos_full == 'true') }}"
-        )
-    for name in ("notifier", "macos-specific", "macos-smoke"):
-        assert "continue-on-error" not in jobs[name]
+    for workflow_jobs in (jobs, _generated_plugin_ci()["jobs"]):
+        for name, job in workflow_jobs.items():
+            assert job.get("continue-on-error", False) is False, name
+            for step in job.get("steps", []):
+                assert step.get("continue-on-error", False) is False, name
     for name in ("setup", "test", "e2e", "notifier", "macos-specific", "macos-smoke", "electron"):
         assert name in jobs["ci-ok"]["needs"], name
     script = next(step["run"] for step in jobs["ci-ok"]["steps"] if "RESULTS" in step.get("env", {}))

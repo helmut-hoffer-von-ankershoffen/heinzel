@@ -149,13 +149,8 @@ def makefile() -> str:
 def ci_workflow() -> str:
     """The CI workflow without the template job; the build check looks for the plugin package."""
     text = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
-    # Plugins have no changed-path job; preserve their existing macOS matrix and exception.
+    # Plugins have no changed-path job; preserve their existing macOS matrix.
     text = text.replace(" && needs.changes.outputs.macos_full != 'true'", "")
-    text = text.replace(" && !(github.event_name == 'pull_request' && needs.changes.outputs.macos_full == 'true')", "")
-    text = text.replace(
-        "# full macOS PR checks block; main's temporary exception remains",
-        "# temporary: macOS matrix failures do not block",
-    )
     text = text.replace(
         "Smoke-lane PRs omit these; full-macOS PRs and non-PR runs cover all versions.",
         "PRs run the newest version; non-PR runs cover all versions.",
