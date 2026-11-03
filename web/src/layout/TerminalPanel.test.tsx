@@ -7,6 +7,7 @@ import { READY_FALLBACK_MS, READY_QUIET_MS, TerminalPanel } from "./TerminalPane
 const { terminals } = vi.hoisted(() => ({
   terminals: [] as Array<{
     options: { theme?: { background?: string } };
+    modes: { applicationCursorKeysMode: boolean };
     title: (value: string) => void;
     osc: Map<number, (value: string) => boolean>;
   }>,
@@ -18,9 +19,11 @@ vi.mock("@xterm/xterm", () => ({
     options: { theme?: { background?: string } } = {};
     record = {
       options: this.options,
+      modes: { applicationCursorKeysMode: false },
       title: (_value: string) => {},
       osc: new Map<number, (value: string) => boolean>(),
     };
+    modes = this.record.modes;
     parser = {
       registerOscHandler: (id: number, callback: (value: string) => boolean) => {
         this.record.osc.set(id, callback);
@@ -57,6 +60,7 @@ class Socket {
   send = vi.fn();
   close() {}
   onopen: (() => void) | null = null;
+  onclose: ((event: CloseEvent) => void) | null = null;
   onmessage: ((event: { data: unknown }) => void) | null = null;
   constructor() {
     Socket.instances.push(this);
@@ -103,6 +107,55 @@ describe("typing a command for the person", () => {
 });
 
 describe("terminal tabs", () => {
+  it("sends mobile keys only to the active open terminal", async () => {
+    vi.stubGlobal("WebSocket", Socket);
+    const user = userEvent.setup();
+    render(<TerminalPanel onClose={vi.fn()} full={false} onToggleFull={vi.fn()} />);
+    const escapeKey = screen.getByRole("button", { name: "Escape" });
+    expect(escapeKey).toBeDisabled();
+    act(() => Socket.instances[0]?.onopen?.());
+    expect(escapeKey).toBeEnabled();
+    await user.click(screen.getByRole("button", { name: "New terminal tab" }));
+    expect(screen.getByRole("button", { name: "Escape" })).toBeDisabled();
+    act(() => Socket.instances[1]?.onopen?.());
+    const first = Socket.instances[0];
+    const second = Socket.instances[1];
+    first?.send.mockClear();
+    second?.send.mockClear();
+    for (const label of [
+      "Escape",
+      "Tab",
+      "Control+C",
+      "Control+Z",
+      "Control+D",
+      "Arrow left",
+      "Arrow down",
+      "Arrow up",
+      "Arrow right",
+    ]) {
+      await user.click(screen.getByRole("button", { name: label }));
+    }
+    expect(first?.send).not.toHaveBeenCalled();
+    expect(second?.send.mock.calls.map(([data]) => new TextDecoder().decode(data))).toEqual([
+      "\x1b",
+      "\t",
+      "\x03",
+      "\x1a",
+      "\x04",
+      "\x1b[D",
+      "\x1b[B",
+      "\x1b[A",
+      "\x1b[C",
+    ]);
+    const left = screen.getByRole("button", { name: "Arrow left" });
+    act(() => {
+      if (terminals[1]) terminals[1].modes.applicationCursorKeysMode = true;
+    });
+    await user.click(left);
+    expect(new TextDecoder().decode(second?.send.mock.calls.at(-1)?.[0])).toBe("\x1bOD");
+    act(() => second?.onclose?.({ reason: "ended" } as CloseEvent));
+    expect(left).toBeDisabled();
+  });
   it("shows each terminal's title and notification on its own tab", async () => {
     vi.stubGlobal("WebSocket", Socket);
     const user = userEvent.setup();

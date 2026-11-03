@@ -87,6 +87,7 @@ def repository_files() -> list[str]:
 
 SHARED = [".claude", ".github/workflows", "scripts"]
 CORE_ONLY = {  # path: why plugins don't get it
+    "scripts/main_batch.py": "validates only the core repository merge queue; plugin CI has no batch admissions",
     "scripts/merge_gate.py": "judges a public repo's SonarCloud project; a new plugin has none until it is set up",
     "scripts/merge_gate.py.lock": "the lock of scripts/merge_gate.py, which plugins don't get by default",
     ".github/workflows/merge-gate.yml": "runs scripts/merge_gate.py, which plugins don't get by default",

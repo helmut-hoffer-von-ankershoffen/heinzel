@@ -5,7 +5,7 @@ from typing import Annotated
 from pydantic import Field
 
 from heinzel import Check, Module
-from heinzel.kernel import DaemonAttestation, DaemonInstallationLifecycle, parse_duration
+from heinzel.kernel import DaemonAttestation, DaemonInstallationLifecycle, DaemonOverview, parse_duration
 from heinzel.modules.system.daemon._models import (
     DaemonSettings,
     DaemonStatus,
@@ -19,6 +19,7 @@ from heinzel.modules.system.daemon._models import (
     Toggled,
     Uninstalled,
 )
+from heinzel.modules.system.daemon._overview import DaemonOverviewService
 from heinzel.modules.system.daemon._render import render_installed, render_jobs, render_logs, render_tick
 from heinzel.modules.system.daemon._service import DaemonService
 from heinzel.modules.system.daemon._status_item import status_item
@@ -49,6 +50,7 @@ def _installation_lifecycle(service: DaemonService) -> DaemonInstallationLifecyc
     )
 
 
+module.service(DaemonOverview, DaemonOverviewService)
 module.service(DaemonAttestation, _attestation)
 module.service(DaemonInstallationLifecycle, _installation_lifecycle)
 

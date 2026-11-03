@@ -35,6 +35,9 @@ WORKFLOWS = sorted((REPO / ".github" / "workflows").glob("*.yml"))
 NOT_MAKE = {  # workflow: {start of the step's command: why}
     "*": {"uv sync": "installs what the job needs"},
     "ci.yml": {
+        "uv run --no-build --script scripts/main_batch.py": "read-only bounded admission of an explicit main batch",
+        "echo 'The validated aggregate base": "records that the final run consumed the aggregate base",
+        'echo "Full CI is recorded': "links the intermediate admission to its exact final run",
         "uv run --no-project --frozen --no-build --python 3.14 python scripts/check_confidentiality.py --require": (
             "the secret must be configured in this repo"
         ),
@@ -213,9 +216,11 @@ def test_managed_backend_verification_gates_ci_without_leaking_into_plugin_templ
         assert "managed-backend" not in (REPO / "template" / name).read_text()
 
 
-@pytest.mark.parametrize("event", ["pull_request", "push"])
+@pytest.mark.parametrize(("event", "batch_base"), [("pull_request", False), ("push", False), ("push", True)])
 @pytest.mark.parametrize("path", ["plugins/heinzel-unforeseen/src/plugin.py", "src/heinzel/kernel/public.py"])
-def test_plugin_only_changes_skip_core_work_and_keep_required_plugin_checks(tmp_path, monkeypatch, event, path):
+def test_plugin_only_changes_skip_core_work_and_keep_required_plugin_checks(
+    tmp_path, monkeypatch, event, path, batch_base
+):
     workflow = yaml.safe_load((REPO / ".github/workflows/ci.yml").read_text())
     jobs = workflow["jobs"]
     foreign_index = tmp_path / "foreign-index"
@@ -241,16 +246,25 @@ def test_plugin_only_changes_skip_core_work_and_keep_required_plugin_checks(tmp_
     output = tmp_path / "outputs"
     script = jobs["changes"]["steps"][-1]["run"]
     subprocess.run(
-        ["bash", "-euo", "pipefail", "-c", script], cwd=tmp_path,
-        env={**environment, "BASE": base, "EVENT": event, "GITHUB_OUTPUT": str(output)}, check=True, timeout=30,
-    )  # fmt: skip
+        ["bash", "-euo", "pipefail", "-c", script],
+        cwd=tmp_path,
+        env={
+            **environment,
+            "BASE": base,
+            "BATCH_BASE": base if batch_base else "",
+            "EVENT": event,
+            "GITHUB_OUTPUT": str(output),
+        },
+        check=True,
+        timeout=30,
+    )
     values = dict(line.split("=", 1) for line in output.read_text().splitlines())
     assert not foreign_index.exists()
     plugin_only = path.startswith("plugins/")
-    assert values["core"] == str(not plugin_only).lower()
+    assert values["core"] == str(batch_base or not plugin_only).lower()
     assert values["plugins"] == str(plugin_only).lower()
-    assert values["contracts"] == str(not plugin_only).lower()
-    if plugin_only:
+    assert values["contracts"] == str(batch_base or not plugin_only).lower()
+    if plugin_only and not batch_base:
         assert values["notifier"] == values["electron"] == "false"
     for name in ("lint", "setup", "audit", "test", "coverage", "perf", "e2e", "build", "core-wheel"):
         assert "needs.changes.outputs.core == 'true'" in jobs[name]["if"]
@@ -978,28 +992,50 @@ def test_plugin_ci_has_no_core_only_jobs_and_every_need_exists():
     assert '"os":"macos-latest","python":"3.15"' in jobs["test"]["strategy"]["matrix"]["include"]
 
 
-def test_macos_cells_shard_by_level_and_ci_ok_waits_for_changes():
+def _macos_include(matrix: dict, event: str, full: bool) -> list[dict]:
+    expression = re.fullmatch(r"\$\{\{ fromJSON\((.*)\) \}\}", matrix["include"].strip())
+    assert expression
+    context = {"github.event_name": event, "needs.changes.outputs.macos_full": str(full).lower()}
+    for branch in expression[1].split(" || "):
+        value = None
+        for term in branch.split(" && "):
+            literal = re.fullmatch(r"'([^']*)'", term)
+            if literal:
+                value = literal[1]
+            else:
+                condition = re.fullmatch(r"([a-z_.]+) (==|!=) '([^']*)'", term)
+                assert condition, term
+                equal = context[condition[1]] == condition[3]
+                value = equal if condition[2] == "==" else not equal
+            if not value:
+                break
+        if value:
+            return json.loads(value)
+    message = "No matrix branch matched"
+    raise AssertionError(message)
+
+
+@pytest.mark.parametrize(
+    ("event", "full", "pythons"),
+    [
+        ("pull_request", False, []),
+        ("pull_request", True, []),
+        ("push", False, ["3.12", "3.13", "3.14", "3.15"]),
+        ("push", True, ["3.12", "3.13", "3.14", "3.15"]),
+        ("schedule", False, ["3.12", "3.13", "3.14", "3.15"]),
+        ("schedule", True, ["3.12", "3.13", "3.14", "3.15"]),
+        ("workflow_dispatch", False, ["3.12", "3.13", "3.14", "3.15"]),
+        ("workflow_dispatch", True, ["3.12", "3.13", "3.14", "3.15"]),
+    ],
+)
+def test_macos_cells_shard_by_level_and_ci_ok_waits_for_changes(event, full, pythons):
     jobs = yaml.safe_load((REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))["jobs"]
-    include = jobs["test"]["strategy"]["matrix"]["include"]
-    pull_request, schedule, otherwise = (
-        json.loads(cells)
-        for cells in re.fullmatch(
-            r"\$\{\{ fromJSON\(github\.event_name == 'pull_request' && "
-            r"needs\.changes\.outputs\.macos_full != 'true' && '(.*)' "
-            r"\|\| github\.event_name == 'schedule' && '(.*)' \|\| '(.*)'\) \}\}",
-            include.strip(),
-        ).groups()
-    )
-    for cells, pythons in (
-        (pull_request, []),
-        (schedule, ["3.12", "3.13", "3.14", "3.15"]),
-        (otherwise, ["3.12", "3.13", "3.14", "3.15"]),
-    ):
-        assert cells == [
-            {"os": "macos-latest", "python": python, "levels": level}
-            for python in pythons
-            for level in ("unit", "integration")
-        ]
+    cells = _macos_include(jobs["test"]["strategy"]["matrix"], event, full)
+    assert cells == [
+        {"os": "macos-latest", "python": python, "levels": level}
+        for python in pythons
+        for level in ("unit", "integration")
+    ]
     recipe = (REPO / "Makefile").read_text(encoding="utf-8").split("\ntest-parallel:", 1)[1].split("\n\n", 1)[0]
     assert "-m '($(TEST_LEVELS)) and not perf'" in recipe
     assert "--session-timeout=420" in recipe  # each shard has the cap the whole suite had
@@ -1183,24 +1219,60 @@ def test_only_a_prose_push_to_main_skips_the_core_jobs(tmp_path, event, changed,
     ("path", "full"),
     [
         ("src/heinzel/modules/team/_render.py\n", "false"),
+        ("web/src/components/Footer.tsx\n", "false"),
+        ("scripts/main_batch.py\nscripts/sync_template.py\ntests/unit/main_batch_test.py\n", "false"),
+        ("src/heinzel/kernel/_exposure.py\n", "false"),
+        ("src/heinzel/kernel/_contributions.py\n", "false"),
+        ("src/heinzel/heads/_tool_install.py\n", "true"),
+        ("src/heinzel/heads/web/__init__.py\n", "true"),
+        ("src/heinzel/kernel/_session_io.py\n", "true"),
+        ("src/heinzel/kernel/_new_platform_boundary.py\n", "true"),
+        ("src/heinzel/modules/system/config/_reveal.py\n", "true"),
+        ("src/heinzel/modules/system/state/_service.py\n", "true"),
+        ("scripts/acceptance/run_acceptance.py\n", "true"),
+        ("scripts/web_build.py\n", "true"),
+        ("scripts/new_tool.py\n", "true"),
+        ("template/Makefile\n", "true"),
+        ("template/pyproject.toml.jinja\n", "true"),
+        ("web/pnpm-lock.yaml\n", "true"),
+        ("web/e2e/daemon-install.mjs\n", "true"),
+        ("web/package.json\n", "true"),
+        ("web/tsconfig.json\n", "true"),
+        ("web/src/components/Footer.tsx\nweb/pnpm-lock.yaml\n", "true"),
+        (".github/workflows/ci.yml\nweb/package.json\n", "true"),
+        ("src/heinzel/heads/web/_supervision.py\n", "true"),
+        ("src/heinzel/kernel/_installation_mutations.py\n", "true"),
+        ("src/heinzel/modules/ui/_service.py\n", "true"),
+        ("scripts/notifier.py\n", "true"),
+        ("scripts/tools.toml\n", "true"),
+        ("pyproject.toml\n", "true"),
+        ("uv.lock\n", "true"),
+        ("web/src/components/Footer.tsx\nuv.lock\n", "true"),
         ("src/heinzel/modules/system/daemon/_service.py\n", "true"),
+        ("src/heinzel/modules/system/runner/chat/_policy.py\n", "true"),
         ("src/heinzel/modules/system/notify/macos/app.swift\n", "true"),
         ("desktop/src/main.js\n", "true"),
         ("scripts/install.sh\n", "true"),
         ("src/heinzel/modules/system/update/_update.py\n", "true"),
         ("tests/e2e/uninstall_test.py\n", "true"),
-        (".github/workflows/ci.yml\n", "true"),
+        (".github/workflows/ci.yml\n", "false"),
         ("Makefile\n", "true"),
         ("new/unclassified/path.py\n", "true"),
         ("src/heinzel/modules/team/_render.py\ndesktop/src/main.js\n", "true"),
         ("", "true"),
     ],
 )
-def test_macos_full_is_fail_closed_on_platform_shared_and_unknown_paths(tmp_path, path, full):
+def test_macos_native_jobs_are_retained_for_platform_and_unknown_paths(tmp_path, path, full):
     outputs = _changes_outputs(tmp_path, "pull_request", path)
     assert f"macos_full={full}" in outputs
     if full == "true":
         assert "electron=true" in outputs
+
+
+@pytest.mark.parametrize("event", ["push", "schedule", "workflow_dispatch"])
+@pytest.mark.parametrize("changed", [".github/workflows/ci.yml\n", "web/src/Footer.tsx\n", "", "new/path.py\n"])
+def test_non_pr_runs_retain_native_macos_jobs_for_every_scope(tmp_path, event, changed):
+    assert "macos_full=true" in _changes_outputs(tmp_path, event, changed)
 
 
 def test_failed_diff_with_partial_output_still_runs_full_macos(tmp_path):
@@ -1321,17 +1393,19 @@ def _ci_jobs() -> dict:
     return yaml.safe_load((REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))["jobs"]
 
 
-def _oses(value: str | list[str], event: str) -> list[str]:
+def _oses(value: str | list[str], event: str, *, macos_full: bool = False) -> list[str]:
     """The matrix values for an event, from a plain list or a pull-request conditional."""
     if isinstance(value, list):
         return value
     match = re.fullmatch(
         r"\$\{\{ fromJSON\(github\.event_name == 'pull_request' && "
-        r"(?:needs\.changes\.outputs\.macos_full != 'true' && )?'(.*)' \|\| '(.*)'\) \}\}",
+        r"(?P<native>needs\.changes\.outputs\.macos_full != 'true' && )?'(?P<pr>.*)' "
+        r"\|\| '(?P<full>.*)'\) \}\}",
         value,
     )
     assert match, value
-    return json.loads(match[1] if event == "pull_request" else match[2])
+    pr_lane = event == "pull_request" and (not match["native"] or not macos_full)
+    return json.loads(match["pr"] if pr_lane else match["full"])
 
 
 def _runs_on_pull_request(job: dict) -> bool:
@@ -1352,7 +1426,7 @@ def test_every_scheduled_macos_job_blocks_ci_ok():
     assert "continue-on-error" not in jobs["ci-ok"]
     for name in ("setup", "e2e", "electron"):
         assert "needs.changes.outputs.macos_full != 'true'" in jobs[name]["strategy"]["matrix"]["os"]
-    assert "needs.changes.outputs.macos_full != 'true'" in jobs["test"]["strategy"]["matrix"]["include"]
+    assert "needs.changes.outputs.macos_full" not in jobs["test"]["strategy"]["matrix"]["include"]
 
 
 def test_a_pull_request_runs_one_small_macos_job_and_main_runs_the_full_macos_suite():
@@ -1370,7 +1444,7 @@ def test_a_pull_request_runs_one_small_macos_job_and_main_runs_the_full_macos_su
             if "macos" in runs_on or (oses is not None and any("macos" in os for os in _oses(oses, event))):
                 found.add(name)
     include = jobs["test"]["strategy"]["matrix"]["include"]
-    assert "needs.changes.outputs.macos_full != 'true' && '[]'" in include
+    assert "github.event_name == 'pull_request' && '[]'" in include
     assert on_pull_request == {"macos-smoke"}
     assert on_main == {"setup", "e2e", "notifier", "macos-specific", "electron"}  # and the test matrix's macOS shards
     assert _oses(jobs["setup"]["strategy"]["matrix"]["os"], "push") == [
@@ -1395,13 +1469,54 @@ def test_a_pull_request_runs_one_small_macos_job_and_main_runs_the_full_macos_su
     assert " -n " not in recipe
 
 
-def test_a_pull_request_tests_python_oldest_and_newest_and_main_every_supported_python():
+@pytest.mark.parametrize("event", ["pull_request", "push", "schedule", "workflow_dispatch"])
+@pytest.mark.parametrize("macos_full", [False, True])
+def test_native_macos_matrices_follow_scope_only_on_pull_requests(event, macos_full):
+    jobs = _ci_jobs()
+    native = event != "pull_request" or macos_full
+    assert _oses(jobs["setup"]["strategy"]["matrix"]["os"], event, macos_full=macos_full) == (
+        ["ubuntu-24.04", "ubuntu-24.04-arm", "macos-latest", "macos-15-intel"]
+        if native
+        else ["ubuntu-24.04", "ubuntu-24.04-arm"]
+    )
+    for name in ("e2e", "electron"):
+        assert _oses(jobs[name]["strategy"]["matrix"]["os"], event, macos_full=macos_full) == (
+            ["ubuntu-24.04", "macos-latest"] if native else ["ubuntu-24.04"]
+        )
+
+
+@pytest.mark.parametrize(
+    ("event", "expected"),
+    [
+        ("pull_request", ["3.12", "3.15"]),
+        ("push", ["3.12", "3.13", "3.14", "3.15"]),
+        ("schedule", ["3.12", "3.13", "3.14", "3.15"]),
+        ("workflow_dispatch", ["3.12", "3.13", "3.14", "3.15"]),
+    ],
+)
+def test_a_pull_request_tests_python_oldest_and_newest_and_main_every_supported_python(event, expected):
     test = _ci_jobs()["test"]
-    pythons = test["strategy"]["matrix"]["python"]
-    assert _oses(pythons, "pull_request") == ["3.12", "3.15"]
-    assert _oses(pythons, "push") == ["3.12", "3.13", "3.14", "3.15"]
+    assert _oses(test["strategy"]["matrix"]["python"], event) == expected
     probe = next(step for step in test["steps"] if step.get("run") == "make linux-user-manager-proof")
     assert probe["if"] == "matrix.os == 'ubuntu-24.04' && matrix.python == '3.12'"  # a cell every pull request runs
+
+
+@pytest.mark.parametrize(
+    ("event", "expected"),
+    [
+        ("pull_request", ["3.15"]),
+        ("push", ["3.12", "3.13", "3.14", "3.15"]),
+        ("schedule", ["3.12", "3.13", "3.14", "3.15"]),
+        ("workflow_dispatch", ["3.12", "3.13", "3.14", "3.15"]),
+    ],
+)
+def test_plugin_macos_matrix_preserves_its_existing_python_coverage(event, expected):
+    cells = _macos_include(_generated_plugin_ci()["jobs"]["test"]["strategy"]["matrix"], event, full=False)
+    assert cells == [
+        {"os": "macos-latest", "python": version, "levels": level}
+        for version in expected
+        for level in ("unit", "integration")
+    ]
 
 
 def test_a_failed_cheap_check_cancels_the_rest_of_a_pull_request_run():

@@ -344,16 +344,18 @@ def _manager_environment(command: list[str]) -> dict[str, str]:
     }
 
 
-def _quiescence_command(command: list[str]) -> ProcessOutcome:
+def bounded_manager_command(
+    command: list[str], *, deadline: float | None = None, env: dict[str, str] | None = None
+) -> ProcessOutcome:
     """Bound a read-only manager child; never signal a reaped or unknown process."""
     process = subprocess.Popen(  # noqa: S603 - fixed absolute launchctl and fixed subcommands
         command,
         stdin=subprocess.DEVNULL,
         stdout=subprocess.PIPE,
         stderr=subprocess.DEVNULL,
-        env=_manager_environment(command),
+        env=env if env is not None else _manager_environment(command),
     )
-    deadline = time.monotonic() + 5
+    deadline = deadline if deadline is not None else time.monotonic() + 5
     captured = bytearray()
     truncated = False
     try:
@@ -387,6 +389,10 @@ def _quiescence_command(command: list[str]) -> ProcessOutcome:
                 process.wait(timeout=1)
         if process.stdout is not None:
             process.stdout.close()
+
+
+# Retain the internal lifecycle probe name used by the Linux session acceptance harness.
+_quiescence_command = bounded_manager_command
 
 
 def _linux_user_manager_identity(run_root: Path = Path("/run")) -> tuple[int, ...] | None:
@@ -1770,8 +1776,23 @@ class DaemonService:
                 log = TickLog(self.log_path, f"{now:%Y%m%dT%H%M%S}", self._clock)
                 try:
                     runs = self._run(jobs, job, now, log)
-                    heartbeat: dict[str, str | int] = {"last_tick": now.isoformat()}
-                    if self._service_manager_pid() == os.getpid():
+                    manager_pid = self._service_manager_pid()
+                    manager_bound = manager_pid == os.getpid()
+                    heartbeat: dict[str, str | int] = {
+                        "last_tick": now.isoformat(),
+                        "completed_at": self._clock().isoformat(),
+                        "source": (
+                            "scheduled" if manager_bound and job is None else "manual" if manager_pid else "unknown"
+                        ),
+                        "outcome": (
+                            "failed" if any(run.disposition is Disposition.FAILED for run in runs) else "completed"
+                        ),
+                    }
+                    recorded = self._read_state("install.json")
+                    interval = recorded.get("interval_minutes")
+                    if manager_bound and isinstance(interval, int) and not isinstance(interval, bool) and interval > 0:
+                        heartbeat["interval_minutes"] = interval
+                    if manager_bound:
                         heartbeat["version"] = __version__
                         self._finish_handover_locked(handover, now)
                     self._write_state("heartbeat.json", heartbeat)

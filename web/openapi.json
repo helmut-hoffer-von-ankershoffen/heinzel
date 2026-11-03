@@ -13657,6 +13657,14 @@
             "description": "What a click does.",
             "title": "Effect"
           },
+          "footer_priority": {
+            "default": 40,
+            "description": "Retention priority in a crowded footer, from 0 to 1000; higher values move to overflow later.",
+            "maximum": 1000.0,
+            "minimum": 0.0,
+            "title": "Footer Priority",
+            "type": "integer"
+          },
           "icon": {
             "anyOf": [
               {
