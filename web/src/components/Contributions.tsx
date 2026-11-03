@@ -296,7 +296,7 @@ function FooterStatus({
       label={accessible}
       // The trigger shows the live value and the pane's name is the zone, so the pane needs no time heading.
       paneName={item.text || undefined}
-      hideHeading={item.presentation === "value" && Boolean(item.live)}
+      hideHeading={Boolean(item.meters?.length) || (item.presentation === "value" && Boolean(item.live))}
       state={stateOf(item.tone)}
       icon={
         (!item.presentation || item.presentation === "icon") && !item.meters?.length
