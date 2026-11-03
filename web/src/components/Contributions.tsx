@@ -588,6 +588,24 @@ export function useShown(id: string, slot: Slot, fallback = true): boolean {
   return entry ? Boolean(entry.slots[slot]) : fallback;
 }
 
+/** Measure each contribution using its declared footer retention priority. */
+function MeasuredStatus({
+  entry,
+  updatedAt,
+  run,
+}: {
+  entry: SchemaStatusEntry;
+  updatedAt: number;
+  run: (effect: Effect) => void;
+}) {
+  const current = useEntry("status", entry, updatedAt);
+  return (
+    <FooterPart id={entry.id} label={current.item?.text} priority={current.item?.footer_priority ?? 40}>
+      <FooterStatus entry={entry} updatedAt={updatedAt} run={run} />
+    </FooterPart>
+  );
+}
+
 /** The status items of a slot: in a row for the footer, stacked for the sidebar. */
 export function StatusItems({
   slot,
@@ -621,9 +639,7 @@ export function StatusItems({
         compact ? (
           <SidebarStatusItem key={entry.id} entry={entry} updatedAt={updatedAt} run={run} compact />
         ) : measured ? (
-          <FooterPart key={entry.id} id={entry.id} label={entry.item?.text} priority={40}>
-            <FooterStatus entry={entry} updatedAt={updatedAt} run={run} />
-          </FooterPart>
+          <MeasuredStatus key={entry.id} entry={entry} updatedAt={updatedAt} run={run} />
         ) : (
           <FooterStatus key={entry.id} entry={entry} updatedAt={updatedAt} run={run} />
         ),
