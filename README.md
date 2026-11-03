@@ -89,6 +89,10 @@ them all off, and they stay away from JSON, pipes, CI and `NO_COLOR` anyway.
 You talk to them with **`hz`**, a small modulith: the kernel discovers *modules* and the *lets* they advertise — typed
 declarations of operations, services, settings and health checks — and *heads* expose them.
 
+Running `hz` without arguments in an interactive terminal shows a local, read-only overview of scheduled work,
+the web server and sharing observations. `hz --help` still lists commands; redirected use keeps the existing help
+output. Missing evidence is unknown, and sharing observations are historical rather than proof of reachability.
+
 ## Get started
 
 Two task-first guides take you top to bottom: [Bootstrap your team](docs/guides/manager.md) for the manager who

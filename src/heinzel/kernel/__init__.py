@@ -163,6 +163,7 @@ from heinzel.kernel._lets import (
     Status,
     schedule_problem,
 )
+from heinzel.kernel._local_overview import CachedOverviewLet, DaemonOverview, LocalObservation, WebOverview
 from heinzel.kernel._local_web import LocalWebRuntime, PersistentWeb
 from heinzel.kernel._metadata_verifier import CoreMetadataVerifier
 from heinzel.kernel._module import Module
@@ -361,6 +362,7 @@ __all__ = [
     "Badge",
     "Billing",
     "Budget",
+    "CachedOverviewLet",
     "Calendar",
     "CallIdentity",
     "Capability",
@@ -405,6 +407,7 @@ __all__ = [
     "DaemonHandoverRequest",
     "DaemonInstallationLifecycle",
     "DaemonMutationScope",
+    "DaemonOverview",
     "DaemonStatusAttestation",
     "Daypart",
     "DeclaredCredential",
@@ -455,6 +458,7 @@ __all__ = [
     "LiveTime",
     "LiveUntil",
     "LoadedSkill",
+    "LocalObservation",
     "LocalWebRuntime",
     "Login",
     "Mail",
@@ -593,6 +597,7 @@ __all__ = [
     "ViewLet",
     "ViewSlot",
     "Weather",
+    "WebOverview",
     "Widget",
     "WidgetAction",
     "WidgetLet",
