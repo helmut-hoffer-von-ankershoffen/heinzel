@@ -152,7 +152,7 @@ def ci_workflow() -> str:
     # Plugins have no changed-path job; preserve their existing macOS matrix.
     text = text.replace(" && needs.changes.outputs.macos_full != 'true'", "")
     text = text.replace(
-        "Smoke-lane PRs omit these; full-macOS PRs and non-PR runs cover all versions.",
+        "Smoke-lane PRs omit these; full-macOS PRs use oldest/newest Python, non-PR runs all versions.",
         "PRs run the newest version; non-PR runs cover all versions.",
     )
     text = re.sub(r"\n  template:\n.*?(?=\n  build:)", "\n", text, flags=re.DOTALL)
@@ -248,6 +248,12 @@ def ci_workflow() -> str:
         text,
         count=1,
         flags=re.DOTALL,
+    )
+    # The extra endpoint branch is core-only; the plugin's existing PR branch below stays on newest Python.
+    text = re.sub(
+        r" \|\| github\.event_name == 'pull_request' && '\[[^']+\]'(?= \|\| github\.event_name == 'schedule')",
+        "",
+        text,
     )
     # Plugins do not have the core smoke job: retain their existing macOS PR tests and E2E coverage.
     text = text.replace(
