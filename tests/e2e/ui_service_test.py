@@ -32,6 +32,7 @@ class RunningService:
         return process
 
     def ready(self, previous=None):
+        status = None
         deadline = time.monotonic() + 6
         changed = threading.Event()
         while time.monotonic() < deadline:
@@ -40,7 +41,11 @@ class RunningService:
                 return status
             assert self.processes[-1].poll() is None, self.processes[-1].communicate(timeout=1)
             changed.wait(0.02)
-        pytest.fail("The owned web server did not become ready with a new lifecycle instance.")
+        pytest.fail(
+            "The owned web server did not become ready with a new lifecycle instance; "
+            f"last status={status.model_dump_json() if status is not None else 'not sampled'}, "
+            f"owned process exit={self.processes[-1].poll()}."
+        )
 
     def close(self):
         for process in self.processes:
