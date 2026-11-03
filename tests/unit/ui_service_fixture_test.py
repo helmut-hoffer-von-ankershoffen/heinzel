@@ -68,3 +68,16 @@ def test_forced_kill_reports_only_safe_traceback_metadata():
     assert "private-error-body-must-not-be-logged" not in message
     assert "/private/example" not in message
     assert child.killed
+
+
+def test_native_sample_exposes_only_bounded_static_thread_and_symbol_labels():
+    report = (
+        "Path: /private/private-error-body-must-not-be-logged\n"
+        " 46 Thread_123: Thread-1 (when_started)\n"
+        " + 46 fsync (in libsystem_kernel.dylib)\n"
+        " + 46 private_error_body_must_not_be_logged (in private-library)\n"
+        "Binary Images:\n /private/private-error-body-must-not-be-logged\n"
+    )
+    assert RunningService.sample_metadata(report) == [{"role": "publication", "symbols": ["fsync"]}]
+    many_threads = "\n".join(f" 46 Thread_{number}: private-thread-name" for number in range(32))
+    assert len(RunningService.sample_metadata(many_threads)) == 16

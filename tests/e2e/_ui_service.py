@@ -2,9 +2,12 @@
 
 import re
 import subprocess
+import sys
+import tempfile
 import threading
 import time
 from collections import deque
+from itertools import islice
 from pathlib import Path
 
 import pytest
@@ -63,6 +66,39 @@ _TRACEBACK_ERRORS = {
     "ValidationError",
     "ValueError",
 }
+_NATIVE_SYMBOLS = {
+    "__accept",
+    "__psynch_cvwait",
+    "__select",
+    "_pthread_cond_wait",
+    "_PyEval_Vector",
+    "_TAIL_CALL_CALL",
+    "PyImport_ImportModuleLevelObject",
+    "_PyImport_ImportModuleLevelObject",
+    "accept",
+    "dlopen",
+    "fdatasync",
+    "fsync",
+    "kevent",
+    "kevent_qos",
+    "lstat",
+    "open",
+    "poll",
+    "pthread_join",
+    "read",
+    "select",
+    "stat",
+    "time_sleep",
+    "write",
+    "write_nocancel",
+}
+
+
+def _sample_role(line):
+    """Map native thread labels to fixed roles without returning their text."""
+    if "com.apple.main-thread" in line:
+        return "main"
+    return "publication" if "(when_started)" in line else "other"
 
 
 class RunningService:
@@ -124,8 +160,60 @@ class RunningService:
             "The owned web server did not become ready with a new lifecycle instance; "
             f"last status={status.model_dump_json() if status is not None else 'not sampled'}, "
             f"owned process exit={self.processes[-1].poll()}, wait channel={self.wait_channel()}, "
-            f"control failure={self.control_failure}, failed status calls={self.control_failure_count}."
+            f"control failure={self.control_failure}, failed status calls={self.control_failure_count}, "
+            f"publication evidence={self.publication_evidence()}."
         )
+
+    def publication_evidence(self):
+        """Observe only after the unchanged readiness deadline has already failed."""
+        pending = list(islice(self.service.directory.glob(".runtime.json.*"), 4))
+        result = {"runtime_present": self.service.runtime.exists(), "pending_writes": len(pending)}
+        result["native"] = self.native_state()
+        result["runtime_after_sample"] = self.service.runtime.exists()
+        return result
+
+    def native_state(self):
+        """Sample only the fixture-created child and emit static role/symbol labels, never raw reports."""
+        process = self.processes[-1]
+        pid = getattr(process, "pid", None)
+        if sys.platform != "darwin" or type(pid) is not int or pid <= 0 or process.poll() is not None:
+            return {"result": "unavailable"}
+        try:
+            with tempfile.TemporaryDirectory(prefix="hz-owned-sample-") as directory:
+                path = Path(directory) / "sample.txt"
+                sample = subprocess.run(
+                    ["/usr/bin/sample", str(pid), "1", "20", "-file", str(path)],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    timeout=4,
+                    check=False,
+                )
+                if sample.returncode:
+                    return {"result": "unavailable"}
+                with path.open("rb") as report:
+                    threads = self.sample_metadata(report.read(64 * 1024).decode("utf-8", errors="replace"))
+        except (OSError, subprocess.TimeoutExpired):
+            return {"result": "unavailable"}
+        return {"result": "sampled", "threads": threads}
+
+    @staticmethod
+    def sample_metadata(report):
+        """Drop report headers, paths, addresses and arbitrary symbols from a bounded native sample."""
+        threads = []
+        current = None
+        for line in report.splitlines():
+            if line.startswith(("Total number", "Binary Images:")):
+                break
+            if re.match(r"^\s*\d+\s+Thread_\d+", line):
+                if len(threads) == 16:
+                    break
+                current = {"role": _sample_role(line), "symbols": set()}
+                threads.append(current)
+            elif current is not None:
+                symbol = re.match(r"^[\s+!:|]*\d+\s+([A-Za-z_]\w*)", line)
+                if symbol is not None and symbol[1] in _NATIVE_SYMBOLS:
+                    current["symbols"].add(symbol[1])
+        return [{"role": thread["role"], "symbols": sorted(thread["symbols"])} for thread in threads]
 
     def wait_channel(self):
         """Read only the owned child's bounded kernel wait symbol when Linux provides it."""
