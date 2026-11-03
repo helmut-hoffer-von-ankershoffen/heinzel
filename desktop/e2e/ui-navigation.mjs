@@ -113,6 +113,9 @@ async function run(redirectOnStart) {
       await withTimeout(exited, 15_000, "Electron did not exit after closing its window.");
       stopped = true;
     }
+    const ownedPid = Number(await readFile(join(root, "owned-pid"), "utf8"));
+    assert.equal(processExists(ownedPid), false, "Electron left its owned service running.");
+    assert.deepEqual(JSON.parse(await readFile(join(root, "owned-exit"), "utf8")), { code: 0, signal: null });
     const paths = JSON.parse(await readFile(join(root, "electron-paths"), "utf8"));
     assert.deepEqual(paths, {
       userData: join(root, "electron-profile"),
@@ -120,6 +123,7 @@ async function run(redirectOnStart) {
     });
   } catch (error) {
     primary = error;
+    console.error(`Electron navigation requests: ${JSON.stringify({ initialRedirectHits, subsequentRedirectHits, lifecycleHits, targetRequests })}`);
     console.error(`Electron phases:\n${await readFile(join(root, "phases"), "utf8").catch(() => "none")}`);
     throw error;
   } finally {
