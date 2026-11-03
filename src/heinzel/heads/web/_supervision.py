@@ -1,6 +1,7 @@
 """Publish a live web instance over local owner-only control without writing its bearer to disk or logs."""
 
 import json
+import logging
 import os
 import re
 import secrets
@@ -19,6 +20,9 @@ from heinzel.kernel import (
     private_socket_directory,
     private_write,
 )
+
+logger = logging.getLogger(__name__)
+_MAX_ERRNO = 4095
 
 
 class SupervisedWeb:
@@ -125,7 +129,12 @@ class WebPublication:
                 url=self.url,
                 restart=self.restart,
             )
-        except (OSError, ValueError, HeinzelError):
+        except (OSError, ValueError, HeinzelError) as exc:
+            # Publication can contain a session bearer: log fixed categories, never exception text or paths.
+            category = "os" if isinstance(exc, OSError) else "value" if isinstance(exc, ValueError) else "ownership"
+            number = exc.errno if isinstance(exc, OSError) else None
+            errno = str(number) if type(number) is int and 1 <= number <= _MAX_ERRNO else "none"
+            logger.warning("Owned web publication failed: category=%s errno=%s", category, errno)
             self.failed()
 
     def close(self) -> None:
