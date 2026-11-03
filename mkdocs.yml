@@ -88,7 +88,7 @@ extra_javascript:
 hooks:
   - scripts/site_pages.py
   - scripts/mkdocs_hooks.py # links to files outside docs/ become GitHub links
-  - scripts/adr_index.py # pull requests and amendments under each ADR title (core only)
+  - scripts/adr_index.py # implementation status and pull requests under each ADR title (core only)
 
 nav:
   - Home: README.md
