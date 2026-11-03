@@ -2,6 +2,7 @@
 status: proposed
 date: 2026-11-03
 implementation: partial
+implemented-by: 485
 decision-makers: maintainer and independent security reviewer
 amends: 0046, 0078, 0116
 amends-0046: offer explicit OS supervised web availability after login

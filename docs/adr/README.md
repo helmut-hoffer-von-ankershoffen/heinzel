@@ -113,7 +113,7 @@ Status says whether we agreed. The second line of the Status column says whether
 | [0114](0114-green-main-releases-to-edge-and-acceptance-promotes-to-stable.md) Green main releases to edge, and acceptance promotes to stable | proposed · 31 Oct<br>partial |  |
 | [0115](0115-merge-unfinished-work-dark-behind-named-feature-flags.md) Merge unfinished work dark behind named feature flags | accepted · 1 Nov<br>built | [#354](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/354) |
 | [0116](0116-automatic-updates-are-scheduled-by-the-running-app-server.md) Automatic updates are scheduled by the running app server | proposed · 2 Nov<br>built | [#452](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/452) |
-| [0117](0117-persistent-web-access-has-an-owned-os-controller.md) Persistent web access has an owned OS controller | proposed · 3 Nov<br>partial |  |
+| [0117](0117-persistent-web-access-has-an-owned-os-controller.md) Persistent web access has an owned OS controller | proposed · 3 Nov<br>partial | [#485](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/485) |
 
 </div>
 <!-- adr-index:end -->
