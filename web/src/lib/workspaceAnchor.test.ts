@@ -24,16 +24,29 @@ function layout() {
   const workspace = document.createElement("aside");
   const button = document.createElement("button");
   let height = 800;
+  let viewportHeight = 600;
+  let viewportWidth = 360;
   Object.defineProperty(page, "offsetHeight", { get: () => height });
   Object.defineProperty(workspace, "offsetTop", { get: () => height });
   Object.defineProperty(workspace, "offsetHeight", { value: 400 });
-  Object.defineProperty(scroller, "clientHeight", { value: 600 });
+  Object.defineProperty(scroller, "clientHeight", { get: () => viewportHeight });
+  Object.defineProperty(scroller, "clientWidth", { get: () => viewportWidth });
   workspace.append(button);
   scroller.append(page, workspace);
   document.body.append(scroller);
   scroller.scrollTop = 400;
   const dispose = anchorWorkspace(scroller, page, workspace);
-  return { scroller, page, button, dispose, grow: (change: number) => (height += change) };
+  return {
+    scroller,
+    page,
+    button,
+    dispose,
+    grow: (change: number) => (height += change),
+    resize: (width: number, height: number) => {
+      viewportWidth = width;
+      viewportHeight = height;
+    },
+  };
 }
 
 it("keeps a pressed workspace control at the same visible position while the page grows", () => {
@@ -56,6 +69,26 @@ it("does not compensate twice when the browser already anchored the scroll", () 
   view.scroller.dispatchEvent(new Event("scroll"));
   resized();
   expect(view.scroller.scrollTop).toBe(1600);
+  view.dispose();
+});
+
+it.each([
+  [360, 420],
+  [320, 600],
+])("preserves editor visibility scrolling when the viewport becomes %i by %i", (width, height) => {
+  const view = layout();
+  view.button.focus();
+  view.resize(width, height);
+  view.grow(-180);
+  // The browser and keyboard handler already revealed the focused editor in the new geometry.
+  view.scroller.scrollTop = 388;
+  view.scroller.dispatchEvent(new Event("scroll"));
+  resized();
+  expect(view.scroller.scrollTop).toBe(388);
+  // Subsequent content loading still anchors within the new viewport.
+  view.grow(100);
+  resized();
+  expect(view.scroller.scrollTop).toBe(488);
   view.dispose();
 });
 
