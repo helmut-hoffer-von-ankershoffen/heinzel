@@ -13,10 +13,24 @@ pytestmark = pytest.mark.integration
 
 
 @pytest.mark.parametrize("session_timeout", [False, True])
-def test_xdist_timing_is_emitted_for_a_failed_session_without_replacing_its_result(tmp_path, session_timeout):
+@pytest.mark.parametrize("unchanged_cpu", [False, True])
+def test_xdist_timing_is_emitted_for_a_failed_session_without_replacing_its_result(
+    tmp_path, session_timeout, unchanged_cpu
+):
     tests = tmp_path / "tests"
     tests.mkdir()
     shutil.copyfile(Path(__file__).resolve().parents[1] / "conftest.py", tests / "conftest.py")
+    if unchanged_cpu:
+        # A short test can finish within one OS accounting tick; keep the actual session clock and timeout.
+        with (tests / "conftest.py").open("a") as plugin:
+            plugin.write(
+                "\nfrom types import SimpleNamespace\n"
+                "def pytest_sessionstart(session):\n"
+                "    global os\n"
+                "    cpu = SimpleNamespace(user=0.49, system=0.11, children_user=0.49, children_system=0.11)\n"
+                "    os = SimpleNamespace(environ=os.environ, times=lambda: cpu)\n"
+                "    session.config.pluginmanager.get_plugin('heinzel-integration-session-timing')._cpu = cpu\n"
+            )
     (tmp_path / "pytest.ini").write_text("[pytest]\nmarkers =\n    integration: integration\n")
     (tests / "test_probe.py").write_text(
         "import pytest\npytestmark = pytest.mark.integration\n"
