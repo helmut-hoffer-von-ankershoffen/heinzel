@@ -6,7 +6,8 @@ app.commandLine.appendSwitch('use-fake-device-for-media-stream');
 app.setPath('userData', process.env.HZ_TEST_PROFILE);
 app.setPath('sessionData', process.env.HZ_TEST_PROFILE);
 app.whenReady().then(async () => {
-const window = new BrowserWindow({ show: false, webPreferences: { contextIsolation: true, sandbox: true } });
+// Shown, as the app's own window is: a hidden one may paint no frames, and then input and page polling never complete.
+const window = new BrowserWindow({ show: true, webPreferences: { contextIsolation: true, sandbox: true } });
 const windows = new WeakSet([window]);
 const connection = { origin: process.env.HZ_TEST_ORIGIN, token: 'synthetic_permission_fixture_token' };
 globalThis.permissionEvents = [];

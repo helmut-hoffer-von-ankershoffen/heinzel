@@ -17,7 +17,7 @@ from rich.text import Text
 from heinzel import HeinzelError, Module, ModuleSettings, __version__
 from heinzel.kernel import Installation
 from heinzel.modules.system._models import ReleaseNotes
-from heinzel.modules.system._service import RELEASE_TIMEOUT, clean, github_releases
+from heinzel.modules.system._service import RELEASE_TIMEOUT, clean, installed_releases
 
 FILENAME = "CHANGELOG.md"
 
@@ -37,7 +37,7 @@ class ChangelogSettings(ModuleSettings):
         validation_alias=AliasChoices("HZ_SYSTEM_CHANGELOG__GITHUB_TOKEN", "GH_TOKEN", "GITHUB_TOKEN"),
         title="GitHub token",
         description="A GitHub token for reading what newer releases bring, which works without "
-        "one at a lower rate limit. Also read from GH_TOKEN or GITHUB_TOKEN, sent to "
+        "one at a lower rate limit. Also read from GH_TOKEN or GITHUB_TOKEN, used with "
         "GitHub only, and never by the hourly update check.",
         json_schema_extra={"x-expert": True},
     )
@@ -96,7 +96,7 @@ def changelog(
     """Show the installed version's changelog as Markdown, or with `--newer` what newer releases bring.
 
     Only `--newer` uses the network: GETs to the GitHub releases API of the repository in the uv tool receipt (or the
-    default repository) with a `heinzel/<version>` User-Agent (ADR 0031), a few pages at most, and the GitHub token
+    default repository) with a `heinzel/<version>` User-Agent, a few pages at most, and the GitHub token
     of the settings (GH_TOKEN, GITHUB_TOKEN) if one is set; unauthenticated otherwise.
 
     Raises:
@@ -121,7 +121,7 @@ def _newer(installation: Installation, token: SecretStr | None) -> list[ReleaseN
     except InvalidVersion as exc:
         msg = f"hz {__version__} is no release version, so no release is newer or older than it."
         raise HeinzelError(msg) from exc
-    releases = github_releases(installation)
+    releases = installed_releases(installation)
     try:
         return releases.newer_than(__version__, RELEASE_TIMEOUT, token)
     # Offline, rate-limited or an odd answer: one clear error, never a traceback.

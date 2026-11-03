@@ -311,3 +311,9 @@ def test_the_template_brings_no_web_app():
         assert "scripts/web.py" not in text
         assert "heads/web/static" not in text
     assert not (template / "web").exists()
+
+
+@pytest.mark.parametrize("ignore", [".gitignore", "template/.gitignore"])
+def test_no_ignore_pattern_matches_the_uv_cache_a_wheel_is_built_in(ignore):
+    """uv unpacks the sdist under ~/.cache; a bare `.cache/` made hatchling add the bundled app to the wheel twice."""
+    assert ".cache/" not in (REPO / ignore).read_text(encoding="utf-8").splitlines()

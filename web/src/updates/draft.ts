@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { ModelChoice } from "@/api/chat";
-import { registerUpdatePreparation } from "./work";
+import { registerReloadHold, registerUpdatePreparation } from "./work";
 
 const KEY = "hz.update.composer";
 type Draft = { context: string; session: string | null; message: string; picked: ModelChoice | null };
@@ -53,5 +53,7 @@ export function useUpdateDraft(context: string, session: string | null, busy = f
       }),
     [context, session, message, picked, busy],
   );
+  // Unsent text or a running turn holds off the reload an automatic update needs.
+  useEffect(() => registerReloadHold(() => busy || message.trim() !== ""), [busy, message]);
   return { message, setMessage, picked, setPicked };
 }

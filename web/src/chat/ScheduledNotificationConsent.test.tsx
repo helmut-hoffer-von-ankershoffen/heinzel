@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
 import { expect, it } from "vitest";
@@ -208,6 +208,10 @@ it("requires acknowledgment for an unresolved attempt and never resends", async 
   show(<ScheduledNotificationAttempts sessionId={session} />);
   const panel = await screen.findByRole("region", { name: "Scheduled notification activity" });
   const resolve = await within(panel).findByRole("button", { name: "Inspect or set aside outcome" });
+  expect(within(panel).getByText(/Future scheduled turns are blocked/)).toHaveTextContent(
+    "The notice may already have been queued and may still be delivered.",
+  );
+  expect(within(panel).getByText(/Abandoning a chat turn does not resolve/)).toBeInTheDocument();
   expect(resolve).toBeDisabled();
   await user.click(
     within(panel).getByRole("checkbox", { name: /I understand this notice may already have been queued/ }),
@@ -257,4 +261,60 @@ it("recovers a lost acknowledgment by reading history without repeating the deci
   show(<ScheduledNotificationAttempts sessionId={session} />);
   expect(await screen.findByText(/Topic: example · queued; not confirmed shown/)).toBeInTheDocument();
   expect(calls.filter((call) => new URL(call.url).pathname.endsWith("resolve-scheduled-notification"))).toHaveLength(1);
+});
+
+it("sends at most one acknowledgment for simultaneous clicks", async () => {
+  let finish: (() => void) | undefined;
+  const waiting = new Promise<void>((resolve) => {
+    finish = resolve;
+  });
+  const { calls } = mockApi({
+    "/api/heinzel/scheduled-notification-attempts": () => ({
+      session_id: session,
+      items: [{ proposal: draft, seq: 1, status: "unresolved" }],
+      next_cursor: null,
+    }),
+    "/api/heinzel/resolve-scheduled-notification": async () => {
+      await waiting;
+      return { proposal: draft, seq: 1, status: "abandoned" };
+    },
+  });
+  const user = userEvent.setup();
+  show(<ScheduledNotificationAttempts sessionId={session} />);
+  const panel = await screen.findByRole("region", { name: "Scheduled notification activity" });
+  await user.click(await within(panel).findByRole("checkbox", { name: /I understand this notice/ }));
+  const confirm = within(panel).getByRole("button", { name: "Inspect or set aside outcome" });
+  act(() => {
+    fireEvent.click(confirm);
+    fireEvent.click(confirm);
+  });
+  await waitFor(() =>
+    expect(
+      calls.filter((call) => new URL(call.url).pathname.endsWith("resolve-scheduled-notification")).length,
+    ).toBeGreaterThan(0),
+  );
+  expect(calls.filter((call) => new URL(call.url).pathname.endsWith("resolve-scheduled-notification"))).toHaveLength(1);
+  await act(async () => {
+    finish?.();
+    await waiting;
+  });
+});
+
+it("names the cause of a stalled agent when the unresolved attempt is on a later page", async () => {
+  mockApi({
+    "/api/heinzel/scheduled-notification-attempts": (request: Request) => {
+      const cursor = new URL(request.url).searchParams.get("cursor");
+      return cursor === "0"
+        ? { session_id: session, items: [{ proposal: draft, seq: 1, status: "recorded" }], next_cursor: 1 }
+        : {
+            session_id: session,
+            items: [{ proposal: { ...draft, request_id: "notice-2" }, seq: 2, status: "unresolved" }],
+            next_cursor: null,
+          };
+    },
+  });
+  show(<ScheduledNotificationAttempts sessionId={session} />);
+  const panel = await screen.findByRole("region", { name: "Scheduled notification activity" });
+  expect(await within(panel).findByRole("alert")).toHaveTextContent("scheduled turns are blocked");
+  expect(within(panel).getByRole("button", { name: "Inspect or set aside outcome" })).toBeDisabled();
 });

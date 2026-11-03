@@ -1,6 +1,6 @@
 ---
 title: Find your contribution path
-description: Build a plugin, design a theme, improve the docs, or contribute to Heinzel core.
+description: Build a plugin, design a theme, improve the docs, or contribute to the Heinzelmännchen core.
 ---
 
 # Build something useful.
@@ -49,3 +49,5 @@ make docs-site-check
 The ordinary build uses the checked-in public catalog without a network. `make docs-catalog` explicitly refreshes
 metadata when GitHub CLI is available. Publishing refreshes it automatically. See
 [catalog metadata and automation](catalog.md) for the boundary and test contract.
+
+Fixing a typo or an unclear sentence in these docs is a good first contribution. Small changes like that have a quick path of their own: ask your coding agent to use the ship small skill.

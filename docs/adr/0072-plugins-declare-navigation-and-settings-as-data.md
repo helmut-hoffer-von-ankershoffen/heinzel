@@ -2,9 +2,11 @@
 amended-by: 0094
 status: proposed
 date: 2026-10-25
+implementation: built
 decision-makers: maintainer, architect and security reviewer
 amends: 0056
 related: 0026, 0039, 0065, 0068
+implemented-by: 173
 ---
 
 # 0072: Plugins declare navigation and Settings metadata as checked data

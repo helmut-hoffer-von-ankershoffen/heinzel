@@ -77,7 +77,7 @@
             "type": "string"
           },
           "hosts": {
-            "description": "Hosts it sends prompts to, when known.",
+            "description": "Hosts it passes prompts to, when known.",
             "items": {
               "type": "string"
             },
@@ -1179,7 +1179,7 @@
             "type": "boolean"
           },
           "name": {
-            "description": "Distribution name, `heinzel-<name>` by convention (ADR 0025).",
+            "description": "Distribution name, `heinzel-<name>` by convention.",
             "title": "Name",
             "type": "string"
           },
@@ -1887,6 +1887,33 @@
         "title": "Channel",
         "type": "object"
       },
+      "ChannelReport": {
+        "description": "The update channel, and what a switch changes.",
+        "properties": {
+          "changed": {
+            "description": "Whether this call switched the channel.",
+            "title": "Changed",
+            "type": "boolean"
+          },
+          "channel": {
+            "description": "The channel followed now: stable, edge or main.",
+            "title": "Channel",
+            "type": "string"
+          },
+          "statement": {
+            "description": "What the switch changes; said before anything happens.",
+            "title": "Statement",
+            "type": "string"
+          }
+        },
+        "required": [
+          "channel",
+          "changed",
+          "statement"
+        ],
+        "title": "ChannelReport",
+        "type": "object"
+      },
       "ChatAction": {
         "description": "An operation the agent proposed; it runs only when the person confirms it, with exactly these arguments.",
         "properties": {
@@ -1986,7 +2013,7 @@
         "properties": {
           "detail": {
             "default": "",
-            "description": "What the opener knows about it, in words (a notification's title and body); email addresses are never sent to the agent.",
+            "description": "What the opener knows about it, in words (a notification's title and body); email addresses are never shared with the helper.",
             "maxLength": 4000,
             "title": "Detail",
             "type": "string"
@@ -4045,6 +4072,19 @@
             "description": "Whether the unit files exist.",
             "title": "Installed",
             "type": "boolean"
+          },
+          "installed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When `install` last loaded the unit, from its marker; tells a daemon still waiting for its first tick from one that stopped ticking.",
+            "title": "Installed At"
           },
           "installed_version": {
             "anyOf": [
@@ -9068,7 +9108,7 @@
           },
           "first_party": {
             "default": false,
-            "description": "Whether its recorded origin is an official maintainer repository (ADR 0094).",
+            "description": "Whether its recorded origin is an official maintainer repository.",
             "title": "First Party",
             "type": "boolean"
           },
@@ -9085,7 +9125,7 @@
             "title": "Homepage"
           },
           "kinds": {
-            "description": "What the plugin is, any of four, always in this order: `connector` when it brings adapters (`capabilities` isn't empty); `theme` when it offers themes; `capability` when it has an operation of its own besides the `info` every plugin from the template gets (e.g. `hz clock`); `playbook` when it ships one. In the web app `Capability` means such a feature of its own, while `capabilities` above, like ADR 0028, names the integration interfaces (tracker, calendar, ...) a connector implements.",
+            "description": "What the plugin is, any of four, always in this order: `connector` when it brings adapters (`capabilities` isn't empty); `theme` when it offers themes; `capability` when it has an operation of its own besides the `info` every plugin from the template gets (e.g. `hz clock`); `playbook` when it ships one. In the web app `Capability` means such a feature of its own, while `capabilities` above names the integration interfaces (tracker, calendar, ...) a connector implements.",
             "items": {
               "enum": [
                 "connector",
@@ -9099,7 +9139,7 @@
             "type": "array"
           },
           "layers": {
-            "description": "Layers its modules declare (ADR 0040).",
+            "description": "Layers its modules declare.",
             "items": {
               "$ref": "#/components/schemas/PluginLayer"
             },
@@ -9120,7 +9160,7 @@
             "type": "string"
           },
           "playbooks": {
-            "description": "Modules that bring a playbook (ADR 0037); empty while it is disabled.",
+            "description": "Modules that bring a playbook; empty while it is disabled.",
             "items": {
               "type": "string"
             },
@@ -9187,7 +9227,7 @@
             "type": "string"
           },
           "themes": {
-            "description": "Names of the themes its modules offer for the web app (`module.theme`, ADR 0044), sorted; `hz system theme use <name>` picks one.",
+            "description": "Names of the themes its modules offer for the web app (`module.theme`), sorted; `hz system theme use <name>` picks one.",
             "items": {
               "type": "string"
             },
@@ -9210,7 +9250,7 @@
         "type": "object"
       },
       "PluginLayer": {
-        "description": "A layer a plugin's module declares (ADR 0040).",
+        "description": "A layer a plugin's module declares.",
         "properties": {
           "module": {
             "description": "The layer's module name, e.g. `acme-payments`.",
@@ -9473,6 +9513,78 @@
         "title": "PluginPage",
         "type": "object"
       },
+      "PluginPending": {
+        "description": "What changed in the installed plugins since this server started, however it changed.",
+        "properties": {
+          "changes": {
+            "description": "Plugins installed, removed, updated, enabled or disabled since this server started.",
+            "items": {
+              "$ref": "#/components/schemas/PluginPendingChange"
+            },
+            "title": "Changes",
+            "type": "array"
+          },
+          "restart_required": {
+            "description": "Whether this server must restart to load them.",
+            "title": "Restart Required",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "changes",
+          "restart_required"
+        ],
+        "title": "PluginPending",
+        "type": "object"
+      },
+      "PluginPendingChange": {
+        "description": "One plugin whose installed state differs from what the running server loaded.",
+        "properties": {
+          "change": {
+            "description": "How the installed environment differs from what this server loaded.",
+            "enum": [
+              "installed",
+              "removed",
+              "updated",
+              "enabled",
+              "disabled"
+            ],
+            "title": "Change",
+            "type": "string"
+          },
+          "distribution": {
+            "description": "The plugin's distribution name.",
+            "title": "Distribution",
+            "type": "string"
+          },
+          "themes": {
+            "description": "Themes it brings, to choose in Settings > Appearance after a restart.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Themes",
+            "type": "array"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The installed version, when it is still installed.",
+            "title": "Version"
+          }
+        },
+        "required": [
+          "distribution",
+          "change"
+        ],
+        "title": "PluginPendingChange",
+        "type": "object"
+      },
       "PluginSearch": {
         "description": "Plugins one can install, and what kept the search from being complete.",
         "properties": {
@@ -9664,6 +9776,18 @@
             "description": "Your name; on this machine only.",
             "title": "Name"
           },
+          "retired_role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A role you chose once that is no longer offered; choose a new one. None otherwise.",
+            "title": "Retired Role"
+          },
           "role": {
             "anyOf": [
               {
@@ -9702,6 +9826,7 @@
         "required": [
           "handle",
           "role",
+          "retired_role",
           "timezone",
           "working_hours",
           "working_hours_set",
@@ -13531,6 +13656,14 @@
             ],
             "description": "What a click does.",
             "title": "Effect"
+          },
+          "footer_priority": {
+            "default": 40,
+            "description": "Retention priority in a crowded footer, from 0 to 1000; higher values move to overflow later.",
+            "maximum": 1000.0,
+            "minimum": 0.0,
+            "title": "Footer Priority",
+            "type": "integer"
           },
           "icon": {
             "anyOf": [
@@ -18271,7 +18404,7 @@
     },
     "/graph": {
       "get": {
-        "description": "Show your team's promises: who keeps which artifact, how each promise stands, where the flow waits.",
+        "description": "Show your team's contracts: who keeps which artifact, how each stands, where the flow waits.",
         "operationId": "graph",
         "parameters": [
           {
@@ -18377,7 +18510,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Show your team's promises: who keeps which artifact, how each promise stands, where the flow waits.",
+        "summary": "Show your team's contracts: who keeps which artifact, how each stands, where the flow waits.",
         "tags": [
           "graph"
         ]
@@ -18720,7 +18853,7 @@
     },
     "/heinzel/approve-agent-schedule": {
       "post": {
-        "description": "Record exact human-confirmed autonomous schedule authority.",
+        "description": "Record the exact human-confirmed schedule approval.",
         "operationId": "heinzel_approve_agent_schedule",
         "requestBody": {
           "content": {
@@ -18754,7 +18887,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Record exact human-confirmed autonomous schedule authority.",
+        "summary": "Record the exact human-confirmed schedule approval.",
         "tags": [
           "heinzel"
         ]
@@ -19438,7 +19571,7 @@
     },
     "/heinzel/discover": {
       "get": {
-        "description": "Find candidates for each playbook's asset types through the capabilities you have bound; reads only.",
+        "description": "Find candidates for each playbook's artifact types through your bound capabilities; reads only.",
         "operationId": "heinzel_discover",
         "parameters": [
           {
@@ -19482,7 +19615,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Find candidates for each playbook's asset types through the capabilities you have bound; reads only.",
+        "summary": "Find candidates for each playbook's artifact types through your bound capabilities; reads only.",
         "tags": [
           "heinzel"
         ]
@@ -20291,7 +20424,7 @@
     },
     "/heinzel/playbooks": {
       "get": {
-        "description": "List the playbooks plugins contribute: asset types, template contracts and recommended settings.",
+        "description": "List the playbooks plugins contribute: artifact types, template contracts and recommended settings.",
         "operationId": "heinzel_playbooks",
         "responses": {
           "200": {
@@ -20305,7 +20438,7 @@
             "description": "Successful Response"
           }
         },
-        "summary": "List the playbooks plugins contribute: asset types, template contracts and recommended settings.",
+        "summary": "List the playbooks plugins contribute: artifact types, template contracts and recommended settings.",
         "tags": [
           "heinzel"
         ]
@@ -20439,7 +20572,7 @@
     },
     "/heinzel/propose-agent-schedule": {
       "post": {
-        "description": "Propose autonomous turns; separate human confirmation is required to authorize them.",
+        "description": "Propose scheduled turns; separate human confirmation is required to approve them.",
         "operationId": "heinzel_propose_agent_schedule",
         "requestBody": {
           "content": {
@@ -20473,7 +20606,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Propose autonomous turns; separate human confirmation is required to authorize them.",
+        "summary": "Propose scheduled turns; separate human confirmation is required to approve them.",
         "tags": [
           "heinzel"
         ]
@@ -21854,7 +21987,7 @@
     },
     "/system/changelog": {
       "get": {
-        "description": "Show the installed version's changelog as Markdown, or with `--newer` what newer releases bring.\n\nOnly `--newer` uses the network: GETs to the GitHub releases API of the repository in the uv tool receipt (or the\ndefault repository) with a `heinzel/<version>` User-Agent (ADR 0031), a few pages at most, and the GitHub token\nof the settings (GH_TOKEN, GITHUB_TOKEN) if one is set; unauthenticated otherwise.\n\nRaises:\n    HeinzelError: If the changelog is not part of this installation, or, with `--newer`, GitHub can't be asked.",
+        "description": "Show the installed version's changelog as Markdown, or with `--newer` what newer releases bring.\n\nOnly `--newer` uses the network: GETs to the GitHub releases API of the repository in the uv tool receipt (or the\ndefault repository) with a `heinzel/<version>` User-Agent, a few pages at most, and the GitHub token\nof the settings (GH_TOKEN, GITHUB_TOKEN) if one is set; unauthenticated otherwise.\n\nRaises:\n    HeinzelError: If the changelog is not part of this installation, or, with `--newer`, GitHub can't be asked.",
         "operationId": "system_changelog",
         "parameters": [
           {
@@ -21904,6 +22037,75 @@
           }
         },
         "summary": "Show the installed version's changelog as Markdown, or with `--newer` what newer releases bring.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/channel": {
+      "post": {
+        "description": "Show the update channel, or say what switching changes and, with `--yes`, switch.\n\nDefault is stable. Switching installs nothing until `hz system update`, and survives updates. Going from edge to\nstable never downgrades: edge stays until stable is as new.",
+        "operationId": "system_channel",
+        "parameters": [
+          {
+            "description": "The channel to move to; without it, shows the current one.",
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "stable",
+                    "edge",
+                    "main"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The channel to move to; without it, shows the current one.",
+              "title": "To"
+            }
+          },
+          {
+            "description": "Make the change that was described; without it, nothing changes.",
+            "in": "query",
+            "name": "yes",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Make the change that was described; without it, nothing changes.",
+              "title": "Yes",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChannelReport"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Show the update channel, or say what switching changes and, with `--yes`, switch.",
         "tags": [
           "system"
         ]
@@ -23426,6 +23628,28 @@
         ]
       }
     },
+    "/system/plugin/pending": {
+      "get": {
+        "description": "List plugins changed on this machine since this server started: what a restart would load.\n\nRaises:\n    HeinzelError: If the installed environment cannot be read.",
+        "operationId": "system_plugin_pending",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginPending"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List plugins changed on this machine since this server started: what a restart would load.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
     "/system/plugin/remove": {
       "post": {
         "description": "Remove a plugin.",
@@ -23519,7 +23743,7 @@
     },
     "/system/release": {
       "get": {
-        "description": "Ask where Heinzelmännchen was installed from for its latest release, and whether to update.\n\nOne unauthenticated GET to the GitHub releases API of the repository in the uv tool receipt (or the default\nrepository) with only a `heinzel/<version>` User-Agent (ADR 0031); offline or rate-limited, the result carries a\nwarning. Always asks, even when the hourly check (setting `update_check`) asked a minute ago; the answer is\ncached for the update notice.",
+        "description": "Ask where Heinzelmännchen was installed from for its latest release, and whether to update.\n\nOne unauthenticated GET to the GitHub releases API of the repository in the uv tool receipt (or the default\nrepository) with only a `heinzel/<version>` User-Agent; offline or rate-limited, the result carries a\nwarning. Always asks, even when the hourly check (setting `update_check`) asked a minute ago; the answer is\ncached for the update notice.",
         "operationId": "system_release",
         "responses": {
           "200": {
@@ -24924,7 +25148,7 @@
     },
     "/system/theme/signals": {
       "get": {
-        "description": "Show the signals themes follow now: the time of day, and the weather when a plugin publishes it.",
+        "description": "Show the signals themes follow now: the time of day, and the weather when a plugin provides it.",
         "operationId": "system_theme_signals",
         "responses": {
           "200": {
@@ -24938,7 +25162,7 @@
             "description": "Successful Response"
           }
         },
-        "summary": "Show the signals themes follow now: the time of day, and the weather when a plugin publishes it.",
+        "summary": "Show the signals themes follow now: the time of day, and the weather when a plugin provides it.",
         "tags": [
           "system"
         ]
@@ -25393,7 +25617,7 @@
             }
           },
           {
-            "description": "Follow `release` (the default, setting `update_channel`): the newest release, also from `main` once a release is as new as it; or `main`: its newest commit.",
+            "description": "Follow `stable` (the default, setting `update_channel`; `release` is its earlier name): the newest accepted release, also from `main` or edge once it is as new; `edge`: the newest edge release; or `main`: its newest commit.",
             "in": "query",
             "name": "channel",
             "required": false,
@@ -25401,8 +25625,10 @@
               "anyOf": [
                 {
                   "enum": [
-                    "release",
-                    "main"
+                    "stable",
+                    "edge",
+                    "main",
+                    "release"
                   ],
                   "type": "string"
                 },
@@ -25410,7 +25636,7 @@
                   "type": "null"
                 }
               ],
-              "description": "Follow `release` (the default, setting `update_channel`): the newest release, also from `main` once a release is as new as it; or `main`: its newest commit.",
+              "description": "Follow `stable` (the default, setting `update_channel`; `release` is its earlier name): the newest accepted release, also from `main` or edge once it is as new; `edge`: the newest edge release; or `main`: its newest commit.",
               "title": "Channel"
             }
           }

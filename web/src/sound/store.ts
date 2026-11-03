@@ -9,13 +9,22 @@ export type SoundState = {
   playing: boolean;
   /** Ever pressed Play in this tab for the soundscape in effect: a stream's player exists only from then on. */
   started: boolean;
+  /** The soundscape Play was pressed for; null when it was pressed for "whatever is in effect". */
+  soundscape: string | null;
   typing: boolean;
   voice: boolean;
   /** Why the sound can't play, in words; null when it can. */
   problem: string | null;
 };
 
-const initial: SoundState = { playing: false, started: false, typing: false, voice: false, problem: null };
+const initial: SoundState = {
+  playing: false,
+  started: false,
+  soundscape: null,
+  typing: false,
+  voice: false,
+  problem: null,
+};
 let state = initial;
 const listeners = new Set<() => void>();
 
@@ -43,11 +52,23 @@ function gesture(): boolean {
   return activation ? activation.isActive : true;
 }
 
-/** Play, from a click or a key press only; refused (false) otherwise, so nothing starts on its own. */
-export function play(): boolean {
+/**
+ * Play, from a click or a key press only; refused (false) otherwise, so nothing starts on its own. Given the
+ * soundscape it is for, a later change of the soundscape in effect to that one doesn't stop it: that is a pick that
+ * plays (the engine stops what plays only when another soundscape than the one pressed for comes into effect).
+ */
+export function play(soundscape?: string): boolean {
   if (!gesture()) return false;
-  set({ playing: true, started: true, problem: null });
+  set({ playing: true, started: true, soundscape: soundscape ?? null, problem: null });
   return true;
+}
+
+/**
+ * Play again after the page reloaded for a pick (the frame origin of a stream changed): the gesture was the click
+ * before the reload, which `takeResume` vouches for. The browser's own autoplay rules still apply to what plays.
+ */
+export function resume(soundscape: string): void {
+  set({ playing: true, started: true, soundscape, problem: null });
 }
 
 export function pause(): void {
@@ -57,21 +78,21 @@ export function pause(): void {
 /** Stop and forget the player: a stream's frame is removed, layered audio released. */
 export function stop(): void {
   ducker.stop();
-  set({ playing: false, started: false });
+  set({ playing: false, started: false, soundscape: null });
 }
 
-export function toggle(): boolean {
+export function toggle(soundscape?: string): boolean {
   if (state.playing) {
     pause();
     return true;
   }
-  return play();
+  return play(soundscape);
 }
 
 /** Stop with a reason; the next Play starts afresh. */
 export function fail(problem: string): void {
   ducker.stop();
-  set({ playing: false, started: false, problem });
+  set({ playing: false, started: false, soundscape: null, problem });
 }
 
 const ducker = new Ducker((typing) => set({ typing }));

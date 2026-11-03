@@ -200,6 +200,18 @@ def test_owner_explicitly_sets_aside_uncertain_turn_and_can_continue(make_kernel
     assert "heinzel_abandon_chat_turn" not in {item.name for item in exposed(kernel, "mcp-stdio")}
 
 
+def _fix_occurrence_time(monkeypatch, now):
+    """A tick across the cadence boundary would otherwise expire its own occurrence and render nothing."""
+    import heinzel.modules.heinzel._autonomous_schedule as schedule_module
+
+    class FixedClock(type(now)):
+        @classmethod
+        def now(cls, tz=None):
+            return now
+
+    monkeypatch.setattr(schedule_module, "datetime", FixedClock)
+
+
 def test_schedule_card_and_daemon_registry_run_one_owner_bound_fake_turn(make_kernel, tmp_path, settings, monkeypatch):  # noqa: PLR0915 - complete reviewed lifecycle
     from datetime import UTC, datetime
 
@@ -283,6 +295,7 @@ def test_schedule_card_and_daemon_registry_run_one_owner_bound_fake_turn(make_ke
         assert job.scheduled_only
         assert job.retries == 0
         now = datetime.now(UTC)
+        _fix_occurrence_time(monkeypatch, now)
         daemon = DaemonService(kernel, settings, DaemonSettings(), clock=lambda: now, zone=UTC)
         registered = [item for item in daemon._jobs() if item.id == "heinzel:" + job.name]
         assert len(registered) == 1

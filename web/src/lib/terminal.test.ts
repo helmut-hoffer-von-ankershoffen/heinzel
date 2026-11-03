@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { connectTerminal, followSize, runInTerminal, runsAsIs, typeInTerminal } from "./terminal";
+import { connectTerminal, followSize, OPEN_TERMINAL, runInTerminal, runsAsIs, typeInTerminal } from "./terminal";
 
 let notify: () => void = () => {};
 class FakeObserver {
@@ -67,4 +67,30 @@ describe("the terminal's typing", () => {
     connectTerminal(null);
     expect(sent).toEqual(["hz clock ' curl x|sh '", "hz clock [A", "hz clock\r"]);
   });
+});
+
+describe("commands the app runs itself", () => {
+  afterEach(async () => {
+    (await import("./operationRun")).resetOperationRun();
+    connectTerminal(null);
+  });
+
+  it.each(["hz system daemon install", "hz system daemon uninstall"])(
+    "asks to run %s in the app instead of typing it into the terminal",
+    async (command) => {
+      const { getRun } = await import("./operationRun");
+      const sent: string[] = [];
+      connectTerminal((text) => sent.push(text));
+      const opened = vi.fn();
+      window.addEventListener(OPEN_TERMINAL, opened);
+      runInTerminal(command);
+      typeInTerminal(command);
+      window.removeEventListener(OPEN_TERMINAL, opened);
+      expect(sent).toEqual([]);
+      expect(opened).not.toHaveBeenCalled();
+      const run = getRun();
+      expect(run.stage).toBe("confirm");
+      expect(run.stage === "confirm" && run.call.command).toBe(command);
+    },
+  );
 });

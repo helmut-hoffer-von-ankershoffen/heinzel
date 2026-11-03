@@ -20,7 +20,7 @@ in project metadata instead.
    (`make release-local INTRO="What changed for users."` is the local path). Every release requires an
    introduction: a few sentences on what changed for users, as the **intro** input or `INTRO="..."`.
 4. Review the pull request `chore(release): vX.Y.Z` (version bumps, CHANGELOG.md, the introduction under the new
-   heading; introductions of earlier releases are kept); CI runs on it and it auto-merges when green.
+   heading; introductions of earlier releases are kept); CI runs on it; a maintainer reviews it and its current-head checks before merging.
 5. **Release tag** tags the merge commit and **Publish** builds, attests and creates the GitHub release:
    `gh run watch`.
 6. Verify: `uv tool install --force git+https://github.com/helmut-hoffer-von-ankershoffen/heinzel@vX.Y.Z`, then

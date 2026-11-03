@@ -1,43 +1,37 @@
 ---
 title: Your first session
-description: Find your way around Heinzel, inspect its operations, and choose your next useful step.
+description: Find your way around Heinzelmännchen and choose your next useful step.
 ---
 
 # A useful first session.
 
-[Install the standard app](install.md), then run `hz ui` and open the local address it prints. Keep the terminal
-open while you explore. There is no team repository or cloud service required just to inspect the workspace.
+Already have the app open? Start here. If not, follow the [installation guide](install.md) first.
 
-## Orient yourself
+## Find your way around
 
-Start with **Today** and inspect the current state. Open settings to choose the theme and configure the modules
-you want. The standard profile includes a world clock and system resource views. Available widgets and menu
-entries follow enabled contributions; plugins own those features.
+**Today** is your starting point. Use the navigation to move between screens, and open the chat to ask a question
+about your work. The account menu at the bottom of the navigation brings together **Settings**, **Profile**,
+**Set up hz**, **Check this machine** and **Get help**.
 
-Heinzelmännchen communicate states such as working, waiting for you and blocked. Treat the accompanying words
-as the explanation. Motion and playful decoration can be disabled in settings.
+## Make it yours
 
-## Learn one capability from every angle
+1. Open the account menu and choose **Set up hz**. Add your name, role and time zone; you can leave the team
+   repository empty to start alone.
+2. Pick a theme. You can change it later in **Settings**.
+3. If you want to use a heinzel to draft work, choose AI access in **Settings → General**. Connectors have their
+   own setup and may need you to sign in.
+4. Choose how you want to receive notifications, and use the test buttons in setup to check them.
 
-```sh
-hz --help
-hz system doctor
-hz system plugin search --text clock --json
-```
-
-Operations have typed inputs and output. The same operation can be accessible from CLI, MCP and REST, subject to its privacy and head restrictions,
-so learning it in the terminal also teaches you what an agent or application can call. Explore the
-[generated CLI reference](../CLI_REFERENCE.md) and [module reference](../MODULES.md).
+You can return to setup from the account menu. You can also use **Check this machine** and **Get help** if you get
+stuck.
 
 ## Choose your next step
 
 | Your goal | Start here |
 | --- | --- |
+| Explore the screens | [Product tour](tour.md). |
 | Connect a tool | [Plugin catalog](../CATALOG.md): inspect the owning source and setup requirements. |
 | Coordinate a team | [Manager guide](manager.md) or [joining guide](joining.md). |
 | Model repeatable work | [Your Heinzelmännchen](../HEINZELMAENNCHEN.md) and [playbooks](../PLAYBOOKS.md). |
 | Build your own capability | [Create a plugin](../PLUGIN_AUTHORING.md): start with one operation and one test. |
-| Understand the design | [Architecture tour](architecture.md) and [vision](../VISION.md). |
-
-This release establishes the extensible foundation. Richer end-to-end team workflows remain work in progress;
-use the owning module's documentation and health checks to assess each integration you enable.
+| Use the command line | [CLI reference](../CLI_REFERENCE.md) and [modules](../MODULES.md). |

@@ -130,7 +130,7 @@ def release_check(settings: Settings) -> Check:
     """Whether a newer release is known, from the release cache (ADR 0031); informational, so always up."""
     cache = ReleaseCache(settings.cache_dir)
     failed = f"; the last check failed: {cache.error}" if cache.error else ""
-    if latest := cache.newer_than(__version__):
+    if latest := cache.newer_than(__version__, settings.update_channel):
         return Check(
             name="release",
             status=Status.UP,

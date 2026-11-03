@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-pytestmark = pytest.mark.unit
+pytestmark = pytest.mark.integration
 
 _RUNNER = Path(__file__).resolve().parents[2] / "scripts" / "steps.py"
 

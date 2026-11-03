@@ -1,16 +1,16 @@
 # Security policy
 
 <!-- badges:start -->
-[![CI](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/actions/workflows/ci.yml/badge.svg)](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/actions/workflows/ci.yml)
-[![Coverage](https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel/python-coverage-comment-action-data/badge.svg)](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/tree/python-coverage-comment-action-data)
-[![CodeQL](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/actions/workflows/codeql.yml/badge.svg)](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/actions/workflows/codeql.yml)
-[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/helmut-hoffer-von-ankershoffen/heinzel/badge)](https://scorecard.dev/viewer/?uri=github.com/helmut-hoffer-von-ankershoffen/heinzel)
-[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/15863/badge)](https://www.bestpractices.dev/en/projects/15863/passing)
+[![CI](https://img.shields.io/github/actions/workflow/status/helmut-hoffer-von-ankershoffen/heinzel/ci.yml?branch=main&label=CI)](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/actions/workflows/ci.yml)
+[![Coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel/python-coverage-comment-action-data/endpoint.json)](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/tree/python-coverage-comment-action-data)
+[![CodeQL](https://img.shields.io/github/actions/workflow/status/helmut-hoffer-von-ankershoffen/heinzel/codeql.yml?branch=main&label=CodeQL)](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/actions/workflows/codeql.yml)
+[![OpenSSF Scorecard](https://img.shields.io/ossf-scorecard/github.com/helmut-hoffer-von-ankershoffen/heinzel?label=OpenSSF%20Scorecard)](https://scorecard.dev/viewer/?uri=github.com/helmut-hoffer-von-ankershoffen/heinzel)
+[![OpenSSF Best Practices](https://img.shields.io/cii/level/15863?label=OpenSSF%20Best%20Practices)](https://www.bestpractices.dev/en/projects/15863/passing)
 [![PyPI](https://img.shields.io/pypi/v/heinzel)](https://pypi.org/project/heinzel/)
 [![Python](https://img.shields.io/badge/python-3.12%20%7C%203.13%20%7C%203.14%20%7C%203.15-blue)](pyproject.toml)
-[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=helmut-hoffer-von-ankershoffen_heinzel&metric=alert_status)](https://sonarcloud.io/summary/overall?id=helmut-hoffer-von-ankershoffen_heinzel)
+[![Quality Gate Status](https://img.shields.io/sonar/quality_gate/helmut-hoffer-von-ankershoffen_heinzel?server=https://sonarcloud.io&label=Quality%20Gate%20Status)](https://sonarcloud.io/summary/overall?id=helmut-hoffer-von-ankershoffen_heinzel)
 [![Security Rating](https://sonarcloud.io/api/project_badges/measure?project=helmut-hoffer-von-ankershoffen_heinzel&metric=security_rating)](https://sonarcloud.io/summary/overall?id=helmut-hoffer-von-ankershoffen_heinzel)
-[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/license-MIT-44bb00)](LICENSE)
 <!-- badges:end -->
 
 ## Reporting a vulnerability
@@ -78,6 +78,20 @@ Only the latest release receives security fixes while the project is on 0.x; upd
 - External commands (uv, git, copier, and vendor CLIs such as `gh` that adapters call) run without a shell, from
   argument lists, with timeouts. An adapter that calls a vendor CLI acts with that CLI's login, which may allow
   more than the adapter needs; the GitHub plugin only sends GET requests.
+- **Persistent web availability is an opt-in preview.** The `persistent_web` feature flag defaults off until OS
+  lifecycle acceptance is complete. Installation, attachment and service startup require it; inspection and owned
+  removal remain available when it is off. `hz ui install` installs a separate per-user launchd or systemd job;
+  its CLI-only `status`, `restart` and `uninstall` actions verify exact integration and loaded process ownership.
+  That record also binds configuration selectors and storage roots. The child receives those routes and a narrow
+  OS-session environment; terminal or manager credentials are not copied. Process-only behavior overrides must
+  be moved to the selected user configuration before installation.
+  It listens only on loopback and keeps the existing web authentication and origin checks. Its session credential
+  stays in memory; a bounded private local socket serves explicit local Open actions without writing a bearer to
+  state or OS logs. Paired devices retain their existing expiry and revocation. An external launcher refuses cold
+  startup while a durable installation mutation awaits completion or recovery, before importing the mutable tool
+  environment. These sampled checks also protect explicit supervised restarts; they are not an atomic writer fence.
+  This does not establish automatic repair or availability before login. Uninstall this service before removing
+  the uv tool; the uninstall skill propagates web-service removal failures instead of leaving it respawning.
 - **The daemon runs jobs unattended.** Once you run `hz system daemon install`, launchd or systemd start
   `hz system daemon tick` every few minutes, at login too, and it runs the jobs your modules and plugins declare,
   with your rights, without asking. Nothing is installed unless you run that command on the command line (it is
@@ -122,7 +136,7 @@ Only the latest release receives security fixes while the project is on 0.x; upd
 Verify a release artifact:
 
 ```bash
-gh attestation verify heinzel-0.1.0-py3-none-any.whl --repo helmut-hoffer-von-ankershoffen/heinzel
+gh attestation verify heinzel-<version>-py3-none-any.whl --repo helmut-hoffer-von-ankershoffen/heinzel
 ```
 
 Plugins created from the template inherit the same hooks, checks and release workflow.

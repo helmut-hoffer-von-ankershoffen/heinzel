@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 from pydantic_ai import Agent
-from pydantic_ai.messages import ModelRequest, TextPart, ToolCallPart, ToolReturnPart, UserPromptPart
+from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, ToolCallPart, ToolReturnPart, UserPromptPart
 from pydantic_ai.models import ModelRequestParameters
 from pydantic_ai.tools import ToolDefinition
 
@@ -179,6 +179,60 @@ def test_closed_result_rejects_unknown_tool_or_extra_fields(tmp_path):
         model = fixture_model(executable, policy, FixtureVerifier(), lambda: policy, execute=fake)
         with pytest.raises(HeinzelError, match="safely admitted"):
             asyncio.run(model.request([ModelRequest(parts=[UserPromptPart(content="private")])], None, parameters()))
+
+
+def _answering(wire, sent=None):
+    def fake(command, *, input=None, **_kwargs):  # noqa: A002 - the runner's keyword
+        from heinzel.modules.system.runner._process import Outcome
+
+        if command[-1] == "--version":
+            return Outcome(0, "2.1.312 (Claude Code)\n", "")
+        if sent is not None:
+            sent.append(json.loads(input))
+        return Outcome(
+            0, json.dumps({"type": "result", "subtype": "success", "is_error": False, "structured_output": wire}), ""
+        )
+
+    return fake
+
+
+def test_an_omitted_name_only_ever_means_the_single_output_tool(tmp_path):
+    policy = admission()
+    executable = fake_cli(tmp_path)
+    wire = {"kind": "tool", "name": None, "arguments": {"report": "Done"}, "text": None}
+    prompt = [ModelRequest(parts=[UserPromptPart(content="private")])]
+    host = ToolDefinition(name="use_tool")
+    output = ToolDefinition(name="final_result", kind="output")
+    both = ModelRequestParameters(function_tools=[host], output_tools=[output], allow_text_output=False)
+    model = fixture_model(executable, policy, FixtureVerifier(), lambda: policy, execute=_answering(wire))
+    response = asyncio.run(model.request(prompt, None, both))
+    assert [(part.tool_name, part.args) for part in response.parts] == [("final_result", {"report": "Done"})]
+    for unnamed in (
+        parameters(),
+        ModelRequestParameters(
+            function_tools=[host], output_tools=[output, ToolDefinition(name="other", kind="output")]
+        ),
+    ):
+        refused = fixture_model(executable, policy, FixtureVerifier(), lambda: policy, execute=_answering(wire))
+        request = refused.request(prompt, None, unnamed)
+        with pytest.raises(HeinzelError, match="safely admitted"):
+            asyncio.run(request)
+
+
+def test_history_does_not_repeat_the_instructions_of_every_request(tmp_path):
+    policy = admission()
+    sent = []
+    wire = {"kind": "text", "name": None, "arguments": None, "text": "ok"}
+    model = fixture_model(fake_cli(tmp_path), policy, FixtureVerifier(), lambda: policy, execute=_answering(wire, sent))
+    history = [
+        ModelRequest(parts=[UserPromptPart(content="first")], instructions="Long instructions"),
+        ModelResponse(parts=[TextPart(content="reply")]),
+        ModelRequest(parts=[UserPromptPart(content="second")], instructions="Long instructions"),
+    ]
+    asyncio.run(model.request(history, None, parameters()))
+    assert sent[0]["instructions"] == "Long instructions"
+    assert all("instructions" not in message for message in sent[0]["messages"])
+    assert len(sent[0]["messages"]) == len(history)
 
 
 def test_permission_denial_cannot_be_reported_as_success(tmp_path):

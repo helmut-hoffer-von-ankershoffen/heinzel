@@ -6,7 +6,7 @@ network, and no `gh` is needed to push.
 
 import json
 import subprocess
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 
 import pytest
@@ -228,10 +228,16 @@ def test_remote_trees_are_refused_without_copying_any_foreign_file(remote, tmp_p
     assert not (clone / "unexpected").exists()
 
 
+def _another_day_this_month() -> date:
+    """A presence line the first push has not written: that push already noted today, and one per day is kept."""
+    today = datetime.now().astimezone().date()
+    return today.replace(day=2 if today.day == 1 else 1)
+
+
 def test_a_failed_network_push_keeps_lines_pending_and_success_resets_backoff(remote):
     first = hz("system", "state", "push")[1]
     state = _service.StateService.for_user()
-    state.streams.note_presence(datetime.now().astimezone().date().replace(day=1), "0.4.0")
+    state.streams.note_presence(_another_day_this_month(), "0.4.0")
     hook = remote / "hooks" / "pre-receive"
     hook.write_text("#!/bin/sh\nexit 1\n")
     hook.chmod(0o700)
@@ -293,7 +299,7 @@ def test_an_unconfigured_daemon_job_does_not_accumulate_receipts():
 def test_remote_rewrites_and_deletion_are_refused(remote, tmp_path, mutation):
     state = _service.StateService.for_user()
     first = hz("system", "state", "push")[1]
-    state.streams.note_presence(datetime.now().astimezone().date().replace(day=1), "0.4.0")
+    state.streams.note_presence(_another_day_this_month(), "0.4.0")
     second = hz("system", "state", "push")[1]
     assert first["commit"] != second["commit"]
     branch = first["branch"]

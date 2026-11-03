@@ -2,7 +2,7 @@ import { act, renderHook } from "@testing-library/react";
 import { StrictMode } from "react";
 import { afterEach, expect, it, vi } from "vitest";
 import { useUpdateDraft } from "./draft";
-import { preserveUpdateWork } from "./work";
+import { preserveUpdateWork, reloadHeld } from "./work";
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -44,4 +44,18 @@ it("refuses an update before a busy turn, a modal editor or unavailable storage 
     throw new Error("quota");
   });
   expect(preserveUpdateWork).toThrow("quota");
+});
+
+it("holds the reload after an automatic update while there is unsent text or a turn runs", () => {
+  const hook = renderHook(({ busy }) => useUpdateDraft("route:/", null, busy), { initialProps: { busy: false } });
+  expect(reloadHeld()).toBe(false);
+  act(() => hook.result.current.setMessage("Half a thought"));
+  expect(reloadHeld()).toBe(true);
+  act(() => hook.result.current.setMessage("  "));
+  expect(reloadHeld()).toBe(false); // an empty composer releases it
+  hook.rerender({ busy: true });
+  expect(reloadHeld()).toBe(true); // a running turn holds it
+  hook.rerender({ busy: false });
+  expect(reloadHeld()).toBe(false);
+  hook.unmount();
 });

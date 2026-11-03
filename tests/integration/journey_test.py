@@ -240,14 +240,14 @@ def test_join_proposes_you_when_the_roster_lacks_you(settings, found, place, mon
     terminal(monkeypatch)
     calls: list[dict] = []
     kernel = kernel_of(settings, team=team({}, calls))
-    prompter = scripted(kernel, ["principal", "", "2", "y"])  # role, hours, none of these, ask the owners
+    prompter = scripted(kernel, ["product-manager", "", "2", "y"])  # role, hours, none of these, ask the owners
     result = runner.invoke(build(kernel), ["join", URL])
     assert result.exit_code == 0, result.output
     assert calls[-1] == {
         "url": URL,
         "propose": True,
         "handle": "mira-example",
-        "role": "principal",
+        "role": "product-manager",
         "login": "Mira-Example",
         "yes": True,
     }
@@ -355,8 +355,8 @@ def test_join_flags_change_a_profile_that_is_set_up_already(settings, found, pla
     assert user_config()["org"]["role"] == "engineer"
     # Changing a complete profile asks everything but the role the flag gives: handle, time zone, hours, GitHub
     # login, coding agent; then the roster entry and whether to ask the owners.
-    result, _, _ = join_with(settings, {}, ["", "", "", "", "", "", "n"], "--role", "principal")
-    assert user_config()["org"]["role"] == "principal", result.output
+    result, _, _ = join_with(settings, {}, ["", "", "", "", "", "", "n"], "--role", "product-manager")
+    assert user_config()["org"]["role"] == "product-manager", result.output
 
 
 def test_join_picks_the_roster_entry_that_is_you(settings, found, place, monkeypatch):
@@ -406,7 +406,7 @@ def test_an_answers_file_asks_before_it_changes_what_a_person_set_up(settings, f
     scripted(kernel, ["engineer", ""])
     assert runner.invoke(build(kernel), ["setup"]).exit_code == 0
     answers = tmp_path / "answers.toml"
-    answers.write_text('[org]\nrole = "principal"\n', "utf-8")
+    answers.write_text('[org]\nrole = "product-manager"\n', "utf-8")
     kernel = kernel_of(settings)
     prompter = scripted(kernel, [""])  # keep it
     assert runner.invoke(build(kernel), ["setup", "org", "--answers", str(answers)]).exit_code == 0

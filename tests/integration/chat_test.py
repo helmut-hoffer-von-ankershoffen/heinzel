@@ -964,6 +964,7 @@ def test_stdio_mcp_can_require_direct_human_terminal_approval_without_a_bearer( 
         real_open = os.open
         terminal_prompt: list[str] = []
         terminal_errors: list[str] = []
+        connected_event = threading.Event()
 
         def open_terminal(path: str, flags: int, *args, **kwargs):
             return os.dup(slave) if path == "/dev/tty" else real_open(path, flags, *args, **kwargs)
@@ -973,6 +974,8 @@ def test_stdio_mcp_can_require_direct_human_terminal_approval_without_a_bearer( 
 
             def answer_on_tty() -> None:
                 prompt = bytearray()
+                # The three second clock starts once the client is connected, not while the server is still being built.
+                connected_event.wait()
                 deadline = time.monotonic() + 3
                 while b"> " not in prompt:
                     remaining = deadline - time.monotonic()
@@ -996,9 +999,13 @@ def test_stdio_mcp_can_require_direct_human_terminal_approval_without_a_bearer( 
 
             async def call_tool():
                 async with Client(mcp.build(kernel)) as connected:
+                    connected_event.set()
                     return await connected.call_tool("heinzel_schedule_control", call_arguments)
 
-            response = anyio.run(call_tool)
+            try:
+                response = anyio.run(call_tool)
+            finally:
+                connected_event.set()  # never leave the reader waiting if the connection itself failed
             reader.join(timeout=3)
             os.close(master)
             os.close(slave)
@@ -1700,8 +1707,11 @@ def configured_policy_binding(kernel, monkeypatch):
     from heinzel import ConfiguredApiAccess
     from heinzel.modules.ai.access._models import AccessSettings
     from heinzel.modules.ai.access._pydantic import PydanticAiAccess
-    from heinzel.modules.heinzel._priced_model import MODEL
+    from heinzel.modules.heinzel import _model_policy_operations
+    from heinzel.modules.heinzel._priced_model import CHECKED, MODEL
 
+    # A fixed clock inside the pricing snapshot window keeps these tests independent of the real date.
+    monkeypatch.setattr(_model_policy_operations, "_utc_now", lambda: CHECKED)
     monkeypatch.setenv("OPENAI_API_KEY", "test-policy-key")
     access = kernel.resolve_builtin_service(PydanticAiAccess, "ai.access")
     settings = AccessSettings(model=MODEL)

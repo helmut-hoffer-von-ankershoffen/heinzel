@@ -64,7 +64,7 @@ def found(monkeypatch):
 
 def test_when_everything_is_found_only_role_and_working_hours_are_asked(found):
     found(EVERYTHING)
-    prompter = ScriptedPrompter(["3", ""])
+    prompter = ScriptedPrompter(["2", ""])
     editor = RecordingEditor()
     assert ask_profile(OrgSettings(), prompter, editor) == CONFIG
     assert editor.written == {
@@ -113,7 +113,7 @@ def test_without_any_login_the_handle_and_more_are_asked():
     assert "No gh or gws login found; a few questions instead." in transcript
     assert "Please answer; there is no default." in transcript
     assert "'Mira' is not a handle" in transcript
-    assert "  engineering-manager: leads a team of engineers" in transcript
+    assert "  EM - Engineering Manager (engineering-manager): leads a team of engineers" in transcript
     assert not any(line.startswith("GitHub login") for line in prompter.transcript)  # only once you join a team
     assert "  working_hours 09-18" in transcript  # everything kept is shown before it is written
 
@@ -211,8 +211,8 @@ def answers(presets: dict[str, object]) -> Prompter:
 def test_an_answers_file_sets_up_the_profile_without_a_person(found):
     found(EVERYTHING)
     editor = RecordingEditor()
-    ask_profile(OrgSettings(), answers({"org.role": "principal", "org.working_hours": "10-18"}), editor)
-    assert editor.written["org.role"] == "principal"
+    ask_profile(OrgSettings(), answers({"org.role": "product-manager", "org.working_hours": "10-18"}), editor)
+    assert editor.written["org.role"] == "product-manager"
     assert editor.written["org.working_hours"] == [10, 18]
     assert editor.written["org.handle"] == "mira-example"  # found, so nothing needed answering
 
@@ -232,3 +232,14 @@ def test_without_an_answer_for_the_role_the_key_is_named():
         ask_profile(OrgSettings(), answers({}), RecordingEditor())
     with pytest.raises(HeinzelError, match=r"No answer for org.role"):
         ask_profile(OrgSettings(), answers({"org.handle": "mira"}), RecordingEditor())
+
+
+def test_a_saved_removed_role_loads_from_the_configuration_and_setup_asks_for_a_new_one(found):
+    found(EVERYTHING)
+    settings = configured(role="principal", handle="mira-example", timezone="Europe/Berlin")
+    assert (settings.role, settings.retired_role) == (None, "principal")
+    prompter = ScriptedPrompter(["2", ""])
+    editor = RecordingEditor()
+    ask_profile(settings, prompter, editor)
+    assert editor.written["org.role"] == "engineering-manager"
+    assert "Your saved role 'principal' is no longer offered; choose a new one." in "\n".join(prompter.transcript)

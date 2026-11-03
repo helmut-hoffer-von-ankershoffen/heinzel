@@ -5,6 +5,10 @@ name: Claude review
 # falls back to the secret CLAUDE_CODE_OAUTH_TOKEN (from `claude setup-token`), which runs on a Claude subscription.
 # Pull requests from forks get no secrets, so they are skipped, and so are events sent by bots (the action refuses
 # them): the update-prs merge of main into a branch, a release pull request opened by the bot.
+# The attempt job runs the review and judges it from the action's execution file (scripts/review_outcome.py). The
+# review job is the check: it passes only when Claude reviewed, fails with the error text when the review failed, and
+# is skipped when the account could not serve the review (credit balance, usage, spending or rate limit, overload);
+# then a neutral check "Claude review" says "skipped: <reason>". A review that did not run never passes.
 
 on:
   pull_request:
@@ -17,14 +21,18 @@ concurrency: # a new push supersedes the review of the previous one
   cancel-in-progress: true
 
 jobs:
-  review:
+  attempt:
     if: vars.CLAUDE_REVIEW == 'true' && github.event.sender.type != 'Bot' && !github.event.pull_request.draft && github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
       contents: read
       pull-requests: write
       id-token: write # the action authenticates to GitHub with OIDC unless given a token
+      checks: write # the neutral "Claude review" check of a skipped review
+    outputs:
+      verdict: ${{ steps.verdict.outputs.verdict }}
+      reason: ${{ steps.verdict.outputs.reason }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -46,8 +54,10 @@ jobs:
           else tier=full; fi
           echo "tier=$tier" >> "$GITHUB_OUTPUT"
           echo "Review tier: $tier"
-      - if: steps.tier.outputs.tier == 'light'
-        uses: anthropics/claude-code-action@ae68417a745a5df4b2124873632bd73a2255e6f6 # v1.0.259
+      - id: light
+        if: steps.tier.outputs.tier == 'light'
+        continue-on-error: true # judged by the verdict step
+        uses: anthropics/claude-code-action@925afb53776cf1a2b738c6bdbed37b4d4000ef13 # v1.0.262
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           claude_code_oauth_token: ${{ secrets.ANTHROPIC_API_KEY == '' && secrets.CLAUDE_CODE_OAUTH_TOKEN || '' }}
@@ -57,8 +67,10 @@ jobs:
             This pull request only changes documentation. Run the docs-reviewer agent on it (compare against
             origin/${{ github.base_ref }}) and post its findings and verdict as one pull request comment.
             The comment is public: never quote a confidential term, refer to it by file and line.
-      - if: steps.tier.outputs.tier == 'full'
-        uses: anthropics/claude-code-action@ae68417a745a5df4b2124873632bd73a2255e6f6 # v1.0.259
+      - id: full
+        if: steps.tier.outputs.tier == 'full'
+        continue-on-error: true # judged by the verdict step
+        uses: anthropics/claude-code-action@925afb53776cf1a2b738c6bdbed37b4d4000ef13 # v1.0.262
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           claude_code_oauth_token: ${{ secrets.ANTHROPIC_API_KEY == '' && secrets.CLAUDE_CODE_OAUTH_TOKEN || '' }}
@@ -68,3 +80,38 @@ jobs:
             Use the review skill on this pull request (compare against origin/${{ github.base_ref }}).
             Post the merged findings and the GO / NO-GO verdict as one pull request comment.
             The comment is public: never quote a confidential term, refer to it by file and line.
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          enable-cache: false
+      - name: Judge the review
+        id: verdict
+        env:
+          OUTCOME: ${{ steps.full.outcome != 'skipped' && steps.full.outcome || steps.light.outcome }}
+        run: uv run --no-project --frozen --no-build --python 3.14 python scripts/review_outcome.py "$OUTCOME"
+      - name: Report a review that could not run as a neutral check
+        if: steps.verdict.outputs.verdict == 'skipped'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REASON: ${{ steps.verdict.outputs.reason }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          gh api "repos/${GITHUB_REPOSITORY}/check-runs" -f name="Claude review" -f head_sha="$SHA" -f status=completed \
+            -f conclusion=neutral -f "output[title]=skipped: ${REASON:0:200}" \
+            -f "output[summary]=Nothing was reviewed: ${REASON}"
+  review:
+    needs: attempt
+    if: ${{ !cancelled() && needs.attempt.result != 'skipped' && needs.attempt.outputs.verdict != 'skipped' && needs.attempt.outputs.verdict != 'none' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Pass only when Claude reviewed
+        env:
+          VERDICT: ${{ needs.attempt.outputs.verdict }}
+          REASON: ${{ needs.attempt.outputs.reason }}
+          ATTEMPT: ${{ needs.attempt.result }}
+        run: |
+          if [[ "$VERDICT" == reviewed ]]; then echo "$REASON"; exit 0; fi
+          if [[ "$VERDICT" == failed ]]; then echo "::error::Claude review failed, nothing was reviewed: $REASON"; exit 1; fi
+          echo "::error::The review attempt ended without a verdict (job $ATTEMPT); nothing was reviewed"
+          exit 1

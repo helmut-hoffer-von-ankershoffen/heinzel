@@ -15,6 +15,7 @@ from heinzel.modules.system.plugin._models import (
     PluginInfo,
     PluginLayer,
     PluginOperation,
+    PluginPending,
     PluginSearch,
     PluginSettings,
 )
@@ -109,6 +110,16 @@ def add(
     if prompter.confirm(f"Install {name} now?", default=False):
         return service.add(spec, confirm=True, operation_id=change.operation_id)
     return change.model_copy(update={"previewed": True})
+
+
+@module.operation(heads=CHANGES)
+def pending(service: PluginService) -> PluginPending:
+    """List plugins changed on this machine since this server started: what a restart would load.
+
+    Raises:
+        HeinzelError: If the installed environment cannot be read.
+    """
+    return service.pending()
 
 
 @module.operation(heads=CHANGES)

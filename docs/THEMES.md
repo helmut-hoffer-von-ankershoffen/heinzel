@@ -21,9 +21,16 @@ The sound options include volume, softer sound while typing and muting during me
 starts in the sidebar; pop it out, drag it near the sidebar to dock it again, or move the floating player with its
 arrow-key button. Docking, undocking and collapsing the sidebar keep the stream playing.
 
-Choosing a soundscape manually turns off **Follow my theme**, so your choice takes effect. Press **Play** to start it.
+Choosing a soundscape manually turns off **Follow my theme**, so your choice takes effect, and plays it at once. The
+sound picker stays open while you try soundscapes, switching over from the one that plays; **Pause** and **Play** at its
+top control the current one, and Escape or a click outside closes it.
 Turn **Follow my theme** on again to let your theme choose. Sound choices identify their supplying theme,
 plugin or built-in origin alongside playback and attribution details.
+
+The built-in default theme and the GitHub Pages site share one set of design tokens. `design/tokens.json` is the
+single source for the colours, corners, type scale and widths: `scripts/design_tokens.py` generates the site's
+`docs/assets/website/tokens.css` from it and `--check` (part of `make lint` and the unit tests) fails when the web app's
+CSS, `DEFAULT_THEME`, the avatar palette or the site's stylesheets drift from it.
 
 ## Themes that follow the time of day and the weather
 

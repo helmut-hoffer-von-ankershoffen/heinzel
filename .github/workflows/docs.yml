@@ -10,6 +10,7 @@ on:
       - docs/**
       - scripts/site_*.py
       - scripts/mkdocs_hooks.*
+      - scripts/adr_index.*
       - mkdocs.yml
       - .github/workflows/docs.yml
   pull_request:
@@ -17,6 +18,7 @@ on:
       - docs/**
       - scripts/site_*.py
       - scripts/mkdocs_hooks.*
+      - scripts/adr_index.*
       - mkdocs.yml
       - .github/workflows/docs.yml
   schedule:
@@ -52,7 +54,7 @@ jobs:
     name: Record the scenes
     # Reusable workflows inherit the caller's event: a release push is explicitly site-only.
     if: inputs.site_only != true && inputs.record == true && github.event_name != 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     permissions:
       contents: write # push the docs/recordings branch
@@ -68,7 +70,7 @@ jobs:
       - name: Fonts for the terminal recordings
         run: sudo apt-get update -qq && sudo apt-get install -y -qq fonts-jetbrains-mono fonts-noto-color-emoji
       - name: Chromium's system libraries, for Playwright
-        run: uv run --quiet --group docs playwright install-deps chromium
+        run: uv run --quiet --frozen --no-build --group docs playwright install-deps chromium
       - name: Record every scene
         env:
           CONFIDENTIAL_TERMS: ${{ secrets.CONFIDENTIAL_TERMS }}
@@ -89,7 +91,7 @@ jobs:
 
   site:
     name: Build the site
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
       contents: read
@@ -116,7 +118,7 @@ jobs:
           if-no-files-found: ignore
           retention-days: 1
       - if: github.event_name != 'pull_request'
-        uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4.0.0
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: site
 
@@ -125,7 +127,7 @@ jobs:
     needs: site
     # Public repositories publish; a private one only when its owner says so, so no page of a company's plugin leaks.
     if: github.event_name != 'pull_request' && (github.event.repository.visibility == 'public' || vars.DOCS_PAGES == 'true')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
       pages: write
@@ -134,8 +136,8 @@ jobs:
       name: github-pages
       url: ${{ steps.deploy.outputs.page_url }}
     steps:
-      - uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5.0.0
+      - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
         with:
           enablement: true # turns Pages on for the repository the first time, from the Actions source
       - id: deploy
-        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4.0.5
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

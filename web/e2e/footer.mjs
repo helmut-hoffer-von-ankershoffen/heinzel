@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { chromium } from "playwright-core";
+import { fetchOnce } from "./fetch-once.mjs";
 import { verifyLayers } from "./layers.mjs";
 
 export function navigationFolded() {
@@ -22,7 +23,67 @@ export async function waitForNavigationFold(page) {
   await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
 }
 
-export async function verifyFooter(page, shots) {
+export async function addFooterProofItems(page) {
+  const entries = Array.from({ length: 6 }, (_, index) => ({
+    id: `probe:status-${index}`,
+    module: "probe",
+    plugin: null,
+    order: index,
+    refresh: 60,
+    problem: null,
+    slots: { footer: true },
+    item: {
+      text: `Probe ${index}`,
+      tone: "ok",
+      icon: "link",
+      ...(index === 0 ? { footer_priority: 900 } : {}),
+      detail: [{ text: "A real mounted provider row." }],
+    },
+  }));
+  entries.push({
+    id: "probe:local-time",
+    module: "probe",
+    plugin: null,
+    order: 900,
+    refresh: 60,
+    problem: null,
+    slots: { footer: true },
+    item: {
+      text: "Berlin",
+      icon: "globe",
+      presentation: "value",
+      footer_priority: 1000,
+      live: { kind: "clock", zone: "Europe/Berlin" },
+      detail: [],
+    },
+  });
+  await page.route("**/api/system/ui/status*", async (route) => {
+    const selected = new URL(route.request().url()).searchParams.get("item");
+    const injected = entries.filter((entry) => !selected || entry.id === selected);
+    if (selected && injected.length) return route.fulfill({ json: injected });
+    const response = await fetchOnce(route);
+    const body = await response.json();
+    await route.fulfill({
+      response,
+      json: [...body.filter((entry) => !entries.some((item) => item.id === entry.id)), ...injected],
+    });
+  });
+  await page.route("**/api/system/plugin/pending", (route) =>
+    route.fulfill({
+      json: {
+        restart_required: true,
+        changes: [{ distribution: "heinzel-probe", change: "installed", version: "1.0.0", themes: [] }],
+      },
+    }),
+  );
+  await page.route("**/api/update-status", (route) =>
+    route.fulfill({
+      json: { current: "0.1.0", latest: "0.2.0", installed_at: null, available: true, supported: true, reason: null },
+    }),
+  );
+}
+
+export async function verifyFooter(page, shots, proofItems = false) {
   await page.locator("#splash").waitFor({ state: "hidden" });
   await page.waitForFunction(() => !document.querySelector("#root")?.hasAttribute("inert"));
   const footer = page.getByRole("contentinfo");
@@ -42,12 +103,15 @@ export async function verifyFooter(page, shots) {
     );
   });
   const samples = [];
-  for (const width of [1440, 900, 640, 360, 240]) {
-    await page.setViewportSize({ width, height: 900 });
+  // 240px is this footer's minimum verified viewport; smaller widths cannot guarantee room for the pinned controls.
+  for (const width of [1440, 900, 640, 390, 360, 240]) {
+    const height = width === 390 ? 844 : 900;
+    await page.setViewportSize({ width, height });
     if (width < 1024) {
       await waitForNavigationFold(page);
       const pageTab = page.getByRole("tab", { name: "Page", exact: true });
-      if (await pageTab.isVisible()) await pageTab.click();
+      if ((await pageTab.isVisible()) && (await pageTab.getAttribute("aria-selected")) !== "true")
+        await pageTab.click();
     }
     await page.waitForFunction(() => {
       const bar = document.querySelector("footer");
@@ -109,8 +173,20 @@ export async function verifyFooter(page, shots) {
     const shown = geometry.parts.filter((part) => !part.hidden);
     for (let index = 1; index < shown.length; index++)
       assert.ok(shown[index - 1].right <= shown[index].left + 1, `Footer controls overlap at ${width}px`);
-    assert.equal(shown[0]?.id, "@version");
+    if (width > 240) assert.equal(shown[0]?.id, "@version");
     const hidden = geometry.parts.filter((part) => part.overflow);
+    if (proofItems) {
+      assert.ok(
+        shown.some((part) => part.id === "probe:local-time"),
+        `Clock must stay visible at ${width}px: ${JSON.stringify(geometry)}`,
+      );
+      if (width === 390)
+        assert.ok(
+          shown.some((part) => part.id === "probe:status-0"),
+          "Declared priority also retains a non-clock item",
+        );
+      if (width <= 360) assert.ok(hidden.length > 0, `Another control must overflow at ${width}px`);
+    }
     const more = footer.getByRole("button", { name: "More status items" });
     const inspectOverflow = async () => {
       try {
@@ -256,9 +332,22 @@ export async function verifyFooter(page, shots) {
         ),
       }));
       assert.deepEqual(placement.actual, placement.expected);
+      if (proofItems && width === 240) {
+        for (const [id, label, action] of [
+          ["@plugins-pending", "Plugins changed, warning", "Restart and apply"],
+          ["@updates", "Update available, warning", "Update hz and plugins"],
+        ]) {
+          assert.ok(placement.actual.includes(id), `${id} must move into More at ${width}px`);
+          const trigger = popup.getByRole("button", { name: label, exact: true });
+          await trigger.click();
+          await page.getByRole("button", { name: action, exact: true }).waitFor({ state: "visible" });
+          await trigger.focus();
+          await page.keyboard.press("Escape");
+        }
+      }
       const box = await popup.boundingBox();
       assert.ok(
-        box && box.x >= 0 && box.x + box.width <= width + 1 && box.y >= 0 && box.y + box.height <= 901,
+        box && box.x >= 0 && box.x + box.width <= width + 1 && box.y >= 0 && box.y + box.height <= height + 1,
         JSON.stringify({ width, popup: box }),
       );
       for (const part of hidden) assert.equal(await page.locator(`[data-footer-host="${part.id}"]`).count(), 1);
@@ -266,6 +355,7 @@ export async function verifyFooter(page, shots) {
       // The first Escape belongs to a focused nested detail pane; the second closes its containing More list.
       if (await popup.isVisible()) await page.keyboard.press("Escape");
       await popup.waitFor({ state: "hidden" });
+      await page.mouse.move(0, 0);
       await more.focus();
     };
     if (hidden.length) await inspectOverflow();
@@ -301,32 +391,11 @@ if (process.argv[1]?.endsWith("/footer.mjs")) {
   }
   try {
     const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
-    const entries = Array.from({ length: 6 }, (_, index) => ({
-      id: `probe:status-${index}`,
-      module: "probe",
-      plugin: null,
-      order: index,
-      refresh: 60,
-      problem: null,
-      slots: { footer: true },
-      item: { text: `Probe ${index}`, tone: "ok", icon: "link", detail: [{ text: "A real mounted provider row." }] },
-    }));
-    await page.route("**/api/system/ui/status*", async (route) => {
-      const selected = new URL(route.request().url()).searchParams.get("item");
-      if (selected?.startsWith("probe:")) {
-        await route.fulfill({ json: entries.filter((entry) => entry.id === selected) });
-        return;
-      }
-      const response = await route.fetch();
-      const body = await response.json();
-      await route.fulfill({
-        response,
-        json: [...body, ...entries.filter((entry) => !selected || entry.id === selected)],
-      });
-    });
+    await addFooterProofItems(page);
     await page.goto(url);
     await page.locator('[data-footer-part="probe:status-0"]').waitFor();
-    const native = await verifyFooter(page, shots);
+    await page.locator('[data-footer-content="probe:local-time"] button').waitFor();
+    const native = await verifyFooter(page, shots, true);
     await page.setViewportSize({ width: 1440, height: 900 });
     // Narrow-layout proof folds navigation by design; the existing layer probe starts with a docked player.
     await page.evaluate(() => localStorage.setItem("hz.nav.open", "true"));

@@ -4,8 +4,8 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="color-scheme" content="light dark" />
-    <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
-    <meta name="theme-color" content="#181818" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#faf8f3" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#18231e" media="(prefers-color-scheme: dark)" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=bbe58f3f9911" />
     <link rel="icon" href="/favicon.ico?v=bbe58f3f9911" sizes="32x32" />
     <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png?v=bbe58f3f9911" />
@@ -15,17 +15,17 @@
          the last theme's, so the first paint already looks like the app. -->
     <style>
       :root {
-        --splash-background: #ffffff;
-        --splash-foreground: #1a1a1a;
-        --splash-muted-foreground: #6b6b6b;
-        --splash-primary: #b4532f;
+        --splash-background: #faf8f3;
+        --splash-foreground: #263b32;
+        --splash-muted-foreground: #56675e;
+        --splash-primary: #a64028;
         --splash-font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
       }
       :root.dark {
-        --splash-background: #181818;
-        --splash-foreground: #ececec;
-        --splash-muted-foreground: #9b9b9b;
-        --splash-primary: #d97757;
+        --splash-background: #18231e;
+        --splash-foreground: #e9ede5;
+        --splash-muted-foreground: #b4c3b5;
+        --splash-primary: #ffb398;
       }
       html {
         background: var(--splash-background);
@@ -160,7 +160,7 @@
         } catch {
           saved = null;
         }
-        let background = dark ? "#181818" : "#ffffff";
+        let background = dark ? "#18231e" : "#faf8f3";
         if (saved && typeof saved === "object") {
           const colours = saved[dark ? "dark" : "light"] ?? {};
           for (const key of ["background", "foreground", "muted_foreground", "primary"]) {

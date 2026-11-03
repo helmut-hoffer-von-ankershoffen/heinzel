@@ -10,8 +10,8 @@ mode (`hz system expert on`); every one runs either way, and MCP and REST list t
 | --- | --- |
 | [`ai`](#ai) | How hz reaches AI, and what it spends: tokens and cost per run. |
 | [`ai.access`](#aiaccess) | Pick how hz reaches AI: Claude Code, your company's gateway, or an option a plugin adds. |
-| [`graph`](#graph) | Are your team's promises kept? Artifacts and Heinzelmännchen, and where the flow waits. |
-| [`heinzel`](#heinzel) | Your Heinzelmännchen: durable agents that keep your team's documents true. |
+| [`graph`](#graph) | Are your team's contracts kept? Artifacts and Heinzelmännchen, and where the flow waits. |
+| [`heinzel`](#heinzel) | Your Heinzelmännchen: durable helpers that draft your team's recurring work for your approval. |
 | [`org`](#org) | Your profile, and the team, org and company you work with. |
 | [`report`](#report) | Telemetry: log what a Heinzelmännchen did, for your team's graph (`hz report published <id> <url>`). |
 | [`system`](#system) | Inspect, configure, diagnose and update Heinzelmännchen itself. |
@@ -38,6 +38,7 @@ mode (`hz system expert on`); every one runs either way, and MCP and REST list t
 | [`system.theme`](#systemtheme) | Pick how the web app looks: the built-in theme or one a plugin offers. |
 | [`system.ui`](#systemui) | List what modules add to the web app: status items, header actions and Today widgets. |
 | [`team`](#team) | Your team's repository: create one (`hz team new`), join one by its URL (`hz team join`), add people to it. |
+| [`ui`](#ui) | Open the web workspace or manage its optional persistent service. |
 
 ## `ai`
 
@@ -67,17 +68,17 @@ Health checks: reported by `hz system doctor`.
 
 ## `graph`
 
-Are your team's promises kept? Artifacts and Heinzelmännchen, and where the flow waits.
+Are your team's contracts kept? Artifacts and Heinzelmännchen, and where the flow waits.
 
 | Operation | CLI | MCP tool | REST | Web | Changes state | Expert |
 | --- | --- | --- | --- | --- | --- | --- |
-| Show your team's promises: who keeps which artifact, how each promise stands, where the flow waits. | `hz graph` | `graph` | — | `GET /api/graph` |  |  |
+| Show your team's contracts: who keeps which artifact, how each stands, where the flow waits. | `hz graph` | `graph` | — | `GET /api/graph` |  |  |
 
 Settings: [`[graph]`](CONFIGURATION.md#graph).
 
 ## `heinzel`
 
-Your Heinzelmännchen: durable agents that keep your team's documents true.
+Your Heinzelmännchen: durable helpers that draft your team's recurring work for your approval.
 
 | Operation | CLI | MCP tool | REST | Web | Changes state | Expert |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -103,9 +104,9 @@ Your Heinzelmännchen: durable agents that keep your team's documents true.
 | Pause a schedule; activation and resume require an exact-intent approval from a trusted issuer. | `hz heinzel schedule-control` | `heinzel_schedule_control` | — | `POST /api/heinzel/schedule-control` | yes |  |
 | Durably queue a message for this Heinzel; acceptance is distinct from a completed model answer. | `hz heinzel chat` | `heinzel_chat` | — | `POST /api/heinzel/chat` | yes |  |
 | List your Heinzelmännchen, one per contract: owner, schedule, state, last and next run. | `hz heinzel list` | `heinzel_list` | — | `GET /api/heinzel/list` |  |  |
-| Write a starter contract, or a playbook's template (--template), into your workflows directory. | `hz heinzel new` | `heinzel_new` | — | — | yes |  |
-| List the playbooks plugins contribute: asset types, template contracts and recommended settings. | `hz heinzel playbooks` | `heinzel_playbooks` | — | `GET /api/heinzel/playbooks` |  | expert |
-| Find candidates for each playbook's asset types through the capabilities you have bound; reads only. | `hz heinzel discover` | `heinzel_discover` | — | `GET /api/heinzel/discover` |  | expert |
+| Write a starter contract, or a playbook's template (--template), into your contracts folder. | `hz heinzel new` | `heinzel_new` | — | — | yes |  |
+| List the playbooks plugins contribute: artifact types, template contracts and recommended settings. | `hz heinzel playbooks` | `heinzel_playbooks` | — | `GET /api/heinzel/playbooks` |  | expert |
+| Find candidates for each playbook's artifact types through your bound capabilities; reads only. | `hz heinzel discover` | `heinzel_discover` | — | `GET /api/heinzel/discover` |  | expert |
 | Show a contract as the daemon runs it: schedule, requirements, adapters, readiness, next steps. | `hz heinzel show` | `heinzel_show` | — | `GET /api/heinzel/show` |  |  |
 | List the drafts runs saved locally, newest first, with their paths and records, or show the newest. | `hz heinzel drafts` | `heinzel_drafts` | — | — |  |  |
 | Record how much of a draft you changed before sending it; `hz heinzel show` reports it. | `hz heinzel sent` | `heinzel_sent` | — | — | yes | expert |
@@ -160,6 +161,7 @@ Inspect, configure, diagnose and update Heinzelmännchen itself.
 | List every module and the lets it advertises. | `hz system modules` | `system_modules` | `GET /system/modules` | `GET /api/system/modules` |  | expert |
 | Ask where Heinzelmännchen was installed from for its latest release, and whether to update. | `hz system release` | `system_release` | `GET /system/release` | `GET /api/system/release` |  | expert |
 | Update Heinzelmännchen and its plugins; see what it brings with `hz system changelog --newer`. | `hz system update` | `system_update` | `POST /system/update` | `POST /api/system/update` | yes |  |
+| Show the update channel, or say what switching changes and, with `--yes`, switch. | `hz system channel` | `system_channel` | `POST /system/channel` | `POST /api/system/channel` | yes |  |
 
 ## `system.agent`
 
@@ -308,6 +310,7 @@ Pop up what deserves your attention: in the web app while it is open, else nativ
 | Mark notices as shown, so the daemon doesn't pop them up again. | `hz system notify ack` | `system_notify_ack` | — | `POST /api/system/notify/ack` | yes | expert |
 | Record a test notice, report each way it can reach you, and exit 1 if nothing pops it up. | `hz system notify test` | — | — | `POST /api/system/notify/test` | yes | expert |
 | Install the native notifier (Heinzel Notifier on macOS) and pop up a test notification now. | `hz system notify install` | — | — | — | yes | expert |
+| End leftover Heinzel Notifier processes and make macOS forget its stray copies. | `hz system notify clean` | — | — | — | yes | expert |
 | Open the system's notification settings to allow hz's pop-ups (macOS: System Settings). | `hz system notify settings` | — | — | `POST /api/system/notify/settings` | yes | expert |
 
 Settings: [`[system.notify]`](CONFIGURATION.md#systemnotify).
@@ -322,6 +325,7 @@ Find, add, remove, enable, disable, list and scaffold plugins.
 | --- | --- | --- | --- | --- | --- | --- |
 | List installed plugins, enabled or not, with their source and the modules and adapters they bring. | `hz system plugin list` | `system_plugin_list` | `GET /system/plugin/list` | `GET /api/system/plugin/list` |  | expert |
 | Show what a plugin would install, then add it with `--confirm`; adding it again replaces it. | `hz system plugin add` | `system_plugin_add` | — | `POST /api/system/plugin/add` | yes | expert |
+| List plugins changed on this machine since this server started: what a restart would load. | `hz system plugin pending` | `system_plugin_pending` | — | `GET /api/system/plugin/pending` |  | expert |
 | Read the status and result of a plugin add without repeating it. | `hz system plugin operation` | `system_plugin_operation` | — | `GET /api/system/plugin/operation` |  | expert |
 | Add the plugin in a directory on this machine, to try a plugin you are writing. | `hz system plugin develop` | — | — | — | yes | expert |
 | Remove a plugin. | `hz system plugin remove` | `system_plugin_remove` | — | `POST /api/system/plugin/remove` | yes | expert |
@@ -428,7 +432,7 @@ Pick how the web app looks: the built-in theme or one a plugin offers.
 | Operation | CLI | MCP tool | REST | Web | Changes state | Expert |
 | --- | --- | --- | --- | --- | --- | --- |
 | List the themes of the web app, with every colour, font and size, and which one is in effect. | `hz system theme list` | `system_theme_list` | `GET /system/theme/list` | `GET /api/system/theme/list` |  | expert |
-| Show the signals themes follow now: the time of day, and the weather when a plugin publishes it. | `hz system theme signals` | `system_theme_signals` | `GET /system/theme/signals` | `GET /api/system/theme/signals` |  | expert |
+| Show the signals themes follow now: the time of day, and the weather when a plugin provides it. | `hz system theme signals` | `system_theme_signals` | `GET /system/theme/signals` | `GET /api/system/theme/signals` |  | expert |
 | Use a theme in the web app: writes `[system.theme] name` to your configuration file. | `hz system theme use` | `system_theme_use` | `POST /system/theme/use` | `POST /api/system/theme/use` | yes | expert |
 
 Settings: [`[system.theme]`](CONFIGURATION.md#systemtheme).
@@ -467,3 +471,14 @@ Your team's repository: create one (`hz team new`), join one by its URL (`hz tea
 Settings: [`[team]`](CONFIGURATION.md#team).
 
 Health checks: reported by `hz system doctor`.
+
+## `ui`
+
+Open the web workspace or manage its optional persistent service.
+
+| Operation | CLI | MCP tool | REST | Web | Changes state | Expert |
+| --- | --- | --- | --- | --- | --- | --- |
+| Install preview web availability after login, separately from scheduled background work. | `hz ui install` | — | — | — | yes |  |
+| Show exact OS ownership and the live web server's readiness and version. | `hz ui status` | — | — | — |  |  |
+| Restart the preview web service with its existing port and authenticated session. | `hz ui restart` | — | — | — | yes |  |
+| Remove only the owned web login service, preserving your data and paired devices. | `hz ui uninstall` | — | — | — | yes |  |

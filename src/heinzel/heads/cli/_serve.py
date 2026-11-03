@@ -1,6 +1,7 @@
 """`hz system serve`: start the other heads from the CLI."""
 
 import os
+import webbrowser
 from collections.abc import Callable
 from enum import StrEnum
 from pathlib import Path
@@ -12,7 +13,7 @@ from rich.console import Console
 from typer.core import TyperGroup
 
 from heinzel.heads.cli._render import message
-from heinzel.kernel import CurrentUser, HeinzelError, Kernel, parse_duration
+from heinzel.kernel import CurrentUser, HeinzelError, Kernel, PersistentWeb, Settings, feature_enabled, parse_duration
 
 if TYPE_CHECKING:
     from heinzel.heads.web._devices import Devices
@@ -123,7 +124,7 @@ def serve_group(
     return serve
 
 
-UI_HELP = "Open the web app in your browser, served on localhost; Ctrl-C stops it."
+UI_HELP = "Open the web workspace, or manage its optional service after login."
 UI_STOPPED = "Heinzelmännchen stopped. Run `hz ui` to start it again."
 """What `hz ui` says when Ctrl-C stops it: its normal end, so it exits 0, unlike an interrupted `hz setup` (130)."""
 
@@ -131,7 +132,8 @@ UI_STOPPED = "Heinzelmännchen stopped. Run `hz ui` to start it again."
 def ui_command(kernel: Kernel, err_console: Console) -> Callable[..., None]:
     """`hz ui`: the web head on its fixed localhost port, with a token for this session and paired devices."""
 
-    def ui(
+    def ui(  # noqa: PLR0913, PLR0917 - one CLI option per supported foreground and service control
+        ctx: typer.Context,
         port: Annotated[
             int | None, typer.Option(help="Port on 127.0.0.1; [hz] ui_port by default, 0 picks a free one.")
         ] = None,
@@ -141,6 +143,9 @@ def ui_command(kernel: Kernel, err_console: Console) -> Callable[..., None]:
                 "--browser/--no-browser", help="Open the default browser at the app; --no-browser prints only its URL."
             ),
         ] = True,
+        supervised: Annotated[
+            str | None, typer.Option(hidden=True, help="Owned service generation; never a credential.")
+        ] = None,
         devices: Annotated[
             bool, typer.Option("--devices", help="List the browsers and installed apps paired with hz, then stop.")
         ] = False,
@@ -160,24 +165,30 @@ def ui_command(kernel: Kernel, err_console: Console) -> Callable[..., None]:
         """
         from heinzel.heads import web  # noqa: PLC0415 - heavy import, only when serving
 
+        if ctx.invoked_subcommand is not None:
+            return
+
         if devices or revoke is not None:
             _devices(web.devices_for_user(), revoke, err_console)
             return
 
-        def announce(url: str) -> None:
-            # The URL carries the session's token: it is this terminal's to share, like the session itself.
-            if not browser:
-                typer.echo(url)
-                return
-            err_console.print(f"Heinzelmännchen runs at {url}", soft_wrap=True, highlight=False, markup=False)
-            err_console.print("Press Ctrl-C to stop it.", highlight=False, markup=False)
+        announce = _ui_announcement(err_console, browser=browser)
 
         try:
+            _supervised_preview(kernel.settings, supervised)
+            if (
+                supervised is None
+                and port is None
+                and web.RESUME not in os.environ
+                and _open_persistent(kernel, browser=browser)
+            ):
+                return
             web.serve(
                 kernel,
                 port=kernel.settings.ui_port if port is None else port,
                 browser=browser,
                 announce=announce,
+                supervised=supervised,
                 waiting=lambda text: err_console.print(text, highlight=False, markup=False),
             )
         except KeyboardInterrupt:  # Ctrl-C before the server took it over: stopped all the same
@@ -195,6 +206,37 @@ def ui_command(kernel: Kernel, err_console: Console) -> Callable[..., None]:
         err_console.print(UI_STOPPED, highlight=False, markup=False)
 
     return ui
+
+
+def _supervised_preview(settings: Settings, generation: str | None) -> None:
+    if generation is not None and not feature_enabled(settings, "persistent_web"):
+        msg = "Persistent web preview is disabled; enable persistent_web in hz.features before starting this service."
+        raise HeinzelError(msg)
+
+
+def _ui_announcement(err_console: Console, *, browser: bool) -> Callable[[str], None]:
+    def announce(url: str) -> None:
+        # The URL belongs only to this explicit terminal request, never to service-manager logs.
+        if not browser:
+            typer.echo(url)
+            return
+        err_console.print(f"Heinzelmännchen runs at {url}", soft_wrap=True, highlight=False, markup=False)
+        err_console.print("Press Ctrl-C to stop it.", highlight=False, markup=False)
+
+    return announce
+
+
+def _open_persistent(kernel: Kernel, *, browser: bool) -> bool:
+    if not kernel.provides(PersistentWeb):
+        return False
+    url = kernel.resolve(PersistentWeb).open_local()
+    if url is None:
+        return False
+    if browser:
+        webbrowser.open(url)
+    else:
+        typer.echo(url)
+    return True
 
 
 def _devices(paired: "Devices", revoke: str | None, err_console: Console) -> None:

@@ -22,7 +22,9 @@ class NotifySettings(ModuleSettings):
         default=True, title="Drafts to approve", description="Notify when a draft is ready to read and approve."
     )
     heinzel: bool = Field(
-        default=True, title="Scheduled Heinzel check-ins", description="Notify when a personal Heinzel checks in."
+        default=True,
+        title="Scheduled Heinzelmännchen check-ins",
+        description="Notify when a personal helper checks in.",
     )
     failed: bool = Field(
         default=True, title="Failed runs", description="Notify when a contract run on your daemon failed."
@@ -147,6 +149,16 @@ class Tested(BaseModel):
         default=True,
         description="Whether anything pops the test up: it was shown, a web app is open, or the daemon hands it to a "
         "native notifier that may show it. False means nothing will: see the channels' fixes.",
+    )
+
+
+class Cleaned(BaseModel):
+    """What `clean` did to leftover Heinzel Notifier processes."""
+
+    ended: int = Field(description="How many leftover Heinzel Notifier processes were ended.")
+    running: int = Field(description="How many are still running; a notification being posted is seconds old.")
+    unregistered: int = Field(
+        description="How many other copies of the app macOS no longer lists in System Settings > Notifications."
     )
 
 

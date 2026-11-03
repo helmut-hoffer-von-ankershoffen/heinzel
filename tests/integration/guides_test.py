@@ -133,6 +133,7 @@ def test_the_guides_exist_and_cite_commands():
         "install.md",
         "joining.md",
         "manager.md",
+        "tour.md",
     ]
     assert len({c for _, c, mention in CASES if not mention}) >= 30
 

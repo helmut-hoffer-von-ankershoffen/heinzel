@@ -16,7 +16,7 @@ from heinzel.modules.heinzel._user_chat import UserChatService
 from heinzel.modules.system.runner._models import RunnerSettings
 from heinzel.modules.system.runner._snapshot import RunnerSnapshotService
 
-pytestmark = pytest.mark.unit
+pytestmark = pytest.mark.integration
 
 
 def fake_claude(

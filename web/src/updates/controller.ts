@@ -1,5 +1,6 @@
 import { api, type SchemaUpdateResult, unwrap } from "@/api/client";
 import { token } from "@/api/token";
+import { compareCodeUnits } from "@/lib/sort";
 import {
   clearOwnedShellCaches,
   type Lifecycle,
@@ -73,18 +74,18 @@ export function loadedEntrypoints(document_: Document = document): string[] {
         new URL(element.getAttribute(element.tagName === "SCRIPT" ? "src" : "href") ?? "", window.location.origin),
     )
     .map((url) => (url.origin === window.location.origin ? url.pathname : ""))
-    .sort();
+    .sort(compareCodeUnits);
 }
 
 async function verifyAssets(build: Frontend, signal: AbortSignal, loaded: boolean): Promise<void> {
   validFrontend(build);
-  if (loaded && JSON.stringify(loadedEntrypoints()) !== JSON.stringify([...build.entrypoints].sort()))
+  if (loaded && JSON.stringify(loadedEntrypoints()) !== JSON.stringify([...build.entrypoints].sort(compareCodeUnits)))
     throw new Error("The page still has different frontend assets. Reload again to finish updating.");
   const html = await fetch(new Request(new URL("/", window.location.origin), { signal, cache: "no-store" }));
   if (
     !html.ok ||
     JSON.stringify(loadedEntrypoints(new DOMParser().parseFromString(await html.text(), "text/html"))) !==
-      JSON.stringify([...build.entrypoints].sort())
+      JSON.stringify([...build.entrypoints].sort(compareCodeUnits))
   )
     throw new Error("The current HTML does not match the verified frontend build.");
   for (const [path, expected] of Object.entries(build.files)) {

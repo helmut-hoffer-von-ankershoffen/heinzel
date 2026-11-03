@@ -1,12 +1,8 @@
 import assert from "node:assert/strict";
-import { chromium, webkit } from "playwright-core";
+import { openChatJourney, revealChat } from "./chat-ready.mjs";
+import { disclosureDiagnostics, watchDisclosure } from "./disclosure-diagnostics.mjs";
 
-const url = new URL(process.argv[2]);
-const token = url.hash.match(/(?:^#|&)token=([^&]+)/)?.[1] ?? "";
-url.pathname = "/doctor";
-const browser = await (process.argv[3] === "webkit" ? webkit : chromium).launch({ headless: true });
-const context = await browser.newContext({ serviceWorkers: "block", viewport: { width: 390, height: 844 } });
-const page = await context.newPage();
+const { browser, context, page, token, url } = await openChatJourney();
 const trace = [];
 const watched = new Set([
   "/api/heinzel/chat",
@@ -34,13 +30,14 @@ try {
     await page.getByRole("tab", { name: "Chat", exact: true }).click();
   const text = "Prepare a private draft and suggest an identity.";
   await page.getByLabel("Your message").fill(text);
-  await page.getByRole("button", { name: "Create Heinzel and take this message" }).click();
+  await page.getByRole("button", { name: "Create a helper and take this message" }).click();
   const message = page.getByLabel("Message your Heinzel");
   await message.waitFor();
   assert.equal(await message.inputValue(), text);
   await page.getByRole("button", { name: "Queue message" }).click();
   await page.getByText("I prepared proposals for your review.").waitFor({ timeout: 30000 });
   const replyActivity = page.getByText("Tool activity for this reply · 4 events");
+  await watchDisclosure(replyActivity, "reply-activity");
   await replyActivity.click();
   const replyEvents = replyActivity.locator("..");
   await replyEvents.getByText("agent:propose · requested").waitFor();
@@ -50,12 +47,14 @@ try {
   const overflow = await replyEvents.evaluate((node) => node.scrollWidth > node.clientWidth);
   assert.equal(overflow, false, "recorded activity must fit the phone viewport");
   const terms = page.getByRole("region", { name: "Proposed agent terms" });
+  await watchDisclosure(terms.getByText("Review proposed terms"), "proposed-terms");
   await terms.getByText("Review proposed terms").click();
   await terms.getByText("Prepare a private draft from my context.").waitFor();
   await terms.getByRole("button", { name: "Review these terms" }).click();
   await terms.getByRole("button", { name: "Confirm" }).click();
   await terms.getByText("These exact terms were accepted.").waitFor();
   const schedules = page.locator("details").filter({ has: page.getByText("Recurring agent turns", { exact: true }) });
+  await watchDisclosure(schedules.locator("summary").first(), "recurring-turns");
   await schedules.locator("summary").first().click();
   await schedules.getByRole("button", { name: "Propose recurring turns" }).click();
   await schedules.getByRole("button", { name: "Review this schedule" }).click();
@@ -63,6 +62,7 @@ try {
   await schedules.getByText(/Approved; the daemon must be running/).waitFor();
   await schedules.getByRole("button", { name: "Pause future turns" }).click();
   await schedules.getByText(/Every 5 minutes · paused/).waitFor();
+  await watchDisclosure(page.getByText(/suggested look/), "suggested-look");
   await page.getByText(/suggested look/).click();
   await page.getByRole("button", { name: "Use suggested identity" }).click();
   await page.getByRole("button", { name: "Save name and look" }).click();
@@ -96,13 +96,13 @@ try {
   await page.getByText(/reported its subscription usage limit/).waitFor();
   assert.equal(await page.getByRole("button", { name: "Retry the same message" }).isDisabled(), true);
   await page.reload();
-  await page.getByRole("tab", { name: "Chat", exact: true }).click();
+  await revealChat(page);
   await page.getByText(/may still be running/).waitFor();
   await page.getByRole("checkbox", { name: /will not retry it or undo/ }).check();
   await page.getByRole("button", { name: "Set aside this turn" }).click();
   await page.getByText(/This turn was set aside/).waitFor();
   await page.reload();
-  await page.getByRole("tab", { name: "Chat", exact: true }).click();
+  await revealChat(page);
   await page.getByText(/This turn was set aside/).waitFor();
   await page.getByRole("button", { name: "Continue conversation" }).click();
   const composer = page.getByLabel("Message your Heinzel");
@@ -129,12 +129,9 @@ try {
     .locator("body")
     .innerText()
     .catch(() => "");
-  process.stderr.write(
-    `${message}\n${visible}\nHTTP trace: ${trace.join(" | ")}`.replaceAll(
-      decodeURIComponent(token),
-      "<redacted-session>",
-    ) + "\n",
-  );
+  const disclosures = await disclosureDiagnostics(page);
+  const diagnostic = `${message}\n${visible}\nHTTP trace: ${trace.join(" | ")}\nDisclosure trace: ${JSON.stringify(disclosures)}`;
+  process.stderr.write(`${diagnostic.replaceAll(decodeURIComponent(token), "<redacted-session>")}\n`);
   process.exitCode = 1;
 } finally {
   await context.close();

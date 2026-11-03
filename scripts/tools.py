@@ -33,7 +33,9 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import time
 import tomllib
+import urllib.error
 import urllib.request
 import zipfile
 from collections.abc import Callable, Iterable
@@ -51,9 +53,20 @@ REQUIRED = frozenset({"build", "web"})
 """Groups whose missing tools fail `make doctor`; `web` only where there is a web/ app (not in plugins)."""
 WEB_APP = ROOT / "web" / "package.json"
 TIMEOUT = 120
+DOWNLOAD_ATTEMPTS = 3
 SHA256 = re.compile(r"[0-9a-f]{64}")
 # CA bundles of common Linux distributions, for Pythons whose OpenSSL looks elsewhere.
 CA_BUNDLES = ("/etc/ssl/cert.pem", "/etc/ssl/certs/ca-certificates.crt", "/etc/pki/tls/certs/ca-bundle.crt")
+
+# Split callable argument lists to avoid the shared template's variable delimiter.
+type FetchBytes[T] = Callable[
+    [T],
+    bytes,
+]
+type FindProgram = Callable[
+    [str],
+    str | None,
+]
 
 
 class ToolError(Exception):
@@ -190,14 +203,48 @@ def ssl_context() -> ssl.SSLContext:
     return context
 
 
+def _interrupted_transport(error: OSError | http.client.HTTPException) -> bool:
+    reason = error.reason if isinstance(error, urllib.error.URLError) else error
+    return isinstance(reason, (ssl.SSLEOFError, ConnectionResetError, http.client.IncompleteRead))
+
+
 def http_get(url: str) -> bytes:
-    """The body at a URL, following redirects; proxies come from the usual environment variables."""
-    request = urllib.request.Request(url, headers={"User-Agent": "heinzel-dev-tools"})  # noqa: S310 - https only (load)
-    with urllib.request.urlopen(request, timeout=TIMEOUT, context=ssl_context()) as response:  # noqa: S310
-        return bytes(response.read())
+    """The URL's body, with at most three attempts for interrupted transfers.
+
+    Retry socket timeouts use the original budget's remaining time. Redirects and proxies use urllib's defaults.
+    Certificate and HTTP errors fail immediately.
+
+    Raises:
+        OSError: the connection or TLS verification failed.
+        http.client.HTTPException: the response was interrupted or invalid.
+    """
+    deadline = time.monotonic() + TIMEOUT
+    timeout = TIMEOUT
+    attempt = 0
+    while True:
+        request = urllib.request.Request(url, headers={"User-Agent": "heinzel-dev-tools"})  # noqa: S310 - https only (load)
+        try:
+            with urllib.request.urlopen(  # noqa: S310 - https only (load)
+                request, timeout=timeout, context=ssl_context()
+            ) as response:
+                return bytes(response.read())
+        except (OSError, http.client.HTTPException) as error:
+            attempt += 1
+            delay = 0.5 * attempt
+            if (
+                not _interrupted_transport(error)
+                or attempt == DOWNLOAD_ATTEMPTS
+                or deadline - time.monotonic() <= delay
+            ):
+                raise
+            # Restart from byte zero; fetch still checks the entire body before caching or installing it.
+            time.sleep(delay)
+            timeout = deadline - time.monotonic()
+            if timeout <= 0:
+                raise
 
 
-def download_bytes(url: str, get: Callable[[str], bytes] = http_get) -> bytes:
+def download_bytes(url: str, get: FetchBytes[str] = http_get) -> bytes:
     """The bytes at a URL.
 
     Raises:
@@ -210,9 +257,7 @@ def download_bytes(url: str, get: Callable[[str], bytes] = http_get) -> bytes:
         raise ToolError(msg) from error
 
 
-def fetch(
-    download: Download, cache: Path = CACHE, get: Callable[[str], bytes] = http_get, *, cached_ok: bool = True
-) -> bytes:
+def fetch(download: Download, cache: Path = CACHE, get: FetchBytes[str] = http_get, *, cached_ok: bool = True) -> bytes:
     """A pinned file's bytes, from the cache or the network, refused unless they match the checksum.
 
     `cached_ok=False` always downloads (and refreshes the cache), to check the file is still published.
@@ -292,7 +337,7 @@ def install(
     tool: Tool,
     platform_: str,
     tools_dir: Path = TOOLS_DIR,
-    fetch_: Callable[[Download], bytes] = fetch,
+    fetch_: FetchBytes[Download] = fetch,
 ) -> Result:
     """Install the pinned binary for this platform unless it is already there; idempotent and safe to interrupt."""
     download = tool.files.get(platform_)
@@ -340,7 +385,7 @@ def run(
     platform_: str,
     arguments: list[str],
     tools_dir: Path = TOOLS_DIR,
-    fetch_: Callable[[Download], bytes] = fetch,
+    fetch_: FetchBytes[Download] = fetch,
 ) -> int:
     """Run a tool, installing it first if needed; only an installation or a failure prints anything (on stderr)."""
     result = install(tool, platform_, tools_dir, fetch_)
@@ -352,7 +397,7 @@ def run(
     return 1
 
 
-def pin(name: str, manifest: Path = MANIFEST, get: Callable[[str], bytes] = http_get) -> list[str]:
+def pin(name: str, manifest: Path = MANIFEST, get: FetchBytes[str] = http_get) -> list[str]:
     """Download a tool's files for the version in the manifest and write their checksums into it.
 
     Raises:
@@ -447,7 +492,7 @@ def checks(  # noqa: PLR0913 - what it looks at, injectable for tests
     platform_: str,
     tools: dict[str, Tool],
     tools_dir: Path = TOOLS_DIR,
-    which: Callable[[str], str | None] = shutil.which,
+    which: FindProgram = shutil.which,
     output: Callable[..., tuple[int, str]] = _output,
     *,
     web_app: Path = WEB_APP,

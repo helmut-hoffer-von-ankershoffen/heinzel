@@ -1,9 +1,12 @@
 ---
 status: accepted
 date: 2026-10-24
+implementation: built
 decision-makers: maintainer
 amends: 0028
+amends-0028: a sole installed adapter serves its capability automatically
 related: 0015, 0030, 0032, 0035, 0039, 0048
+implemented-by: 84, 91
 ---
 
 # 0055: Connectors show their sign-in, test live on demand, and bind themselves when they are alone
@@ -55,7 +58,7 @@ one option is not a choice.
   it in and bind it; plus, per capability, the adapters that could serve it. `hz system connector test <name>` runs
   the live providers and reports their checks and latency. Both are on the CLI, MCP and web heads, not the REST head,
   which has no authentication ([ADR 0047](0047-plugins-are-managed-from-the-web-app-after-a-confirmation.md)).
-- **Automatic binding** (amends ADR 0028; maintainer's decision, 2026-10-24): while `[capabilities]` doesn't set a
+- **Automatic binding** (amends ADR 0028): while `[capabilities]` doesn't set a
   capability, the only installed adapter that provides it serves it, shown as automatic. Several installed: the core's
   default serves if the capability has one, else nothing until the person picks. `mail` is never automatic
   (`Capability.automatic`): reading a mailbox stays the person's explicit choice. `none` is a binding that serves
@@ -88,5 +91,5 @@ app: its cards and pickers, and a test that a setting with known values never re
 
 ## More Information
 
-- The maintainer's requests of 2026-10-24 quoted above. Automatic binding reverses ADR 0028's "a sole installed
+- Automatic binding reverses ADR 0028's "a sole installed
   adapter is not bound automatically"; the rest of ADR 0028 stands.

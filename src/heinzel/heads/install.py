@@ -506,8 +506,8 @@ def main(argv: list[str] | None = None) -> int:
                 uv_executable(),
                 "pip",
                 "install",
-                "--python",
-                args.python,
+                f"--python={args.python}",  # a single token: the value can't become an option of its own
+                "--",
                 str(core),
                 *(str(path) for path in plugins),
             ]

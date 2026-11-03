@@ -1,7 +1,9 @@
 """The confidentiality check, with made-up terms: the real ones never enter the repository, not even in tests."""
 
 import importlib.util
+import io
 import re
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -33,18 +35,35 @@ def findings(terms, text):
     return sorted((f.line, f.term) for f in confidentiality.scan("f", text, confidentiality.patterns(terms)))
 
 
-def test_short_terms_match_where_no_letter_touches_them():
-    text = "ACME Corp\nacmeish and subacme\nacme_cli\nacme2\nacme's"
-    assert findings(["acme"], text) == [(1, 1), (3, 1), (4, 1), (5, 1)]
+def test_a_short_term_inside_a_longer_word_does_not_match():
+    text = "acmeish and subacme\nminimal\nAcmeCorp"
+    assert findings(["acme"], text) == []
+    assert findings(["mini"], "minimal\nminimum") == []
 
 
-def test_long_terms_match_anywhere_also_inside_identifiers():
-    assert findings(["globex"], "globexdb\nmy_globex_cli\nGLOBEX") == [(1, 1), (2, 1), (3, 1)]
+def test_the_term_alone_or_next_to_punctuation_digits_and_markdown_matches():
+    text = "ACME\nwe, acme.\n**acme**\n`acme`\n[acme](x)\n(acme)\nacme's\nacme_cli\nmy-acme-cli\n# acme\n"
+    text += "> acme: yes\nacme2\n2acme"
+    assert findings(["acme"], text) == [(n, 1) for n in range(1, 14)]
+
+
+def test_long_terms_match_anywhere_also_inside_identifiers_and_next_to_digits():
+    text = "globexdb\nmy_globex_cli\nGLOBEX\nunglobex\n[globex]\nGlobexCorp\nglobex2024\n2globex\nmyGlobexDb"
+    assert findings(["globex"], text) == [(n, 1) for n in range(1, 10)]
+
+
+def test_a_finding_per_term_and_line_with_the_right_number():
+    assert findings(["acme", "globex"], "acme and globex\nGlobex\nnothing") == [(1, 1), (1, 2), (2, 2)]
 
 
 def test_phrases_match_across_separators_and_line_breaks_or_glued():
     text = "the Project\n  Zebra\nproject-zebra\nprojectzebra\nproject_zebra\nprojects zebra"
     assert findings(["project zebra"], text) == [(1, 1), (3, 1), (4, 1), (5, 1)]
+
+
+def test_a_phrase_does_not_match_inside_longer_words_or_with_a_word_missing():
+    text = "reproject zebras\nproject zebras\nproject\nx\nzebra\nthe *project zebra*, yes"
+    assert findings(["project zebra"], text) == [(6, 1)]
 
 
 def test_invisible_and_compatibility_characters_do_not_hide_a_term():
@@ -90,6 +109,79 @@ def test_git_identities_and_branches_are_checked(monkeypatch):
     monkeypatch.setenv("GIT_COMMITTER_EMAIL", "dev@example.com")
     assert confidentiality.main(["--identity"]) == 0
     assert confidentiality.main(["--branch"]) == 0
+
+
+def test_preserved_push_refs_are_exact_and_malformed_input_fails_closed():
+    local, remote = "1" * 40, "0" * 40
+    assert confidentiality._pushed_refs(f"refs/heads/one {local} refs/heads/one {remote}\n") == [(local, remote)]
+    with pytest.raises(ValueError, match="pushed-ref list is invalid"):
+        confidentiality._pushed_refs("not a complete ref record")
+
+
+def test_preserved_deletions_and_empty_pushes_have_no_commit_tips(monkeypatch, tmp_path):
+    saved = tmp_path / "push-refs"
+    monkeypatch.setenv("HZ_DEV_PUSH_REFS_FILE", str(saved))
+    monkeypatch.setenv("PRE_COMMIT", "1")
+    monkeypatch.setenv("PREK_HOOK_STAGE", "pre-push")
+    monkeypatch.setattr(confidentiality.sys, "stdin", io.StringIO(""))
+    for refs in ("", f"(delete) {'0' * 40} refs/heads/one {'0' * 40}\n"):
+        saved.write_text(refs)
+        assert confidentiality._push_range() == ["--all", "--not", "--all"]
+
+
+def test_inherited_empty_marker_cannot_hide_real_stdin(monkeypatch, tmp_path):
+    saved = tmp_path / "empty"
+    saved.write_bytes(b"")
+    monkeypatch.setenv("HZ_DEV_PUSH_REFS_FILE", str(saved))
+    refs = f"refs/heads/one {'1' * 40} refs/heads/one {'0' * 40}\n"
+    monkeypatch.setattr(confidentiality.sys, "stdin", io.StringIO(refs))
+    assert confidentiality._push_input() == refs
+
+
+def test_preserved_input_outside_hook_runner_fails_closed(monkeypatch, tmp_path):
+    saved = tmp_path / "empty"
+    saved.write_bytes(b"")
+    monkeypatch.setenv("HZ_DEV_PUSH_REFS_FILE", str(saved))
+    monkeypatch.delenv("PRE_COMMIT", raising=False)
+    monkeypatch.setattr(confidentiality.sys, "stdin", io.StringIO(""))
+    with pytest.raises(ValueError, match="only inside the pre-push runner"):
+        confidentiality._push_input()
+
+
+def test_only_fresh_destination_commits_are_excluded(monkeypatch):
+    local, remote, other = "1" * 40, "2" * 40, "3" * 40
+    monkeypatch.setenv("PRE_COMMIT_REMOTE_URL", "destination")
+    calls = []
+
+    def git(*args):
+        calls.append(args)
+        return f"{remote}\trefs/heads/main\n{other}\trefs/heads/unknown\n"
+
+    monkeypatch.setattr(confidentiality, "_git", git)
+    monkeypatch.setattr(confidentiality, "_known", lambda sha: sha == remote)
+    monkeypatch.setattr(confidentiality, "_push_input", lambda: f"refs/heads/new {local} refs/heads/new {'0' * 40}\n")
+    assert confidentiality._push_range() == [local, "--not", remote]
+    assert calls == [("ls-remote", "--refs", "--", "destination")]
+
+
+def test_missing_destination_proof_does_not_exclude_any_remote(monkeypatch):
+    local = "1" * 40
+    monkeypatch.delenv("PRE_COMMIT_REMOTE_URL", raising=False)
+    monkeypatch.setattr(confidentiality, "_push_input", lambda: f"refs/heads/new {local} refs/heads/new {'0' * 40}\n")
+    assert confidentiality._push_range() == [local, "--not"]
+
+
+def test_failed_destination_lookup_stops_without_printing_its_url(monkeypatch):
+    destination = "private-destination"
+    monkeypatch.setenv("PRE_COMMIT_REMOTE_URL", destination)
+
+    def failed(*args):
+        raise subprocess.CalledProcessError(1, args, stderr="private diagnostic")
+
+    monkeypatch.setattr(confidentiality, "_git", failed)
+    with pytest.raises(ValueError, match="destination could not be inspected") as error:
+        confidentiality._destination_commits()
+    assert destination not in str(error.value)
 
 
 @pytest.mark.parametrize(

@@ -1,0 +1,68 @@
+{
+  "format": 1,
+  "captured": "2026-10-31",
+  "product": {
+    "heinzel": "0.9.8",
+    "plugins": {
+      "heinzel-acme": "0.1.2",
+      "heinzel-acme-payments-checkout": "0.1.2"
+    }
+  },
+  "profile": "A disposable HOME, an environment credential backend, fictional identity (Mira Example) and a closed fictional ACME world; no network access beyond the isolated app's own origin.",
+  "fixture": {
+    "sha256": "76eee58da56521241b8c11e12d783d04a5b65f3831bdcb8210d6c170753806a7",
+    "summary": "The public ACME documentation fixture plus a deterministic agent runner. A chat turn calls the unmodified stdio MCP server's heinzel_wake tool, which only proposes the action; no model is called and usage is zero."
+  },
+  "stories": {
+    "graph": "/contracts: Discover, Fit View, select the contract node, zoom with the graph's own wheel zoom.",
+    "terminal": "/contracts/weekly-report: Open a terminal, run hz heinzel graph, New terminal tab, run hz heinzel drafts --name weekly-report --latest, Full screen, Leave full screen.",
+    "chat": "/contracts/weekly-report?chat-context=contract:weekly-report: send a message in the real composer; the real proposal card appears."
+  },
+  "acceptance": {
+    "chat": "Browser journey observed: one pending action; the saved-run count unchanged while pending; plus one run after Confirm; no run after Decline."
+  },
+  "privacy": {
+    "redaction": "Authentication presentation and the disposable profile path are replaced in the page before every save (the path becomes /demo-profile); page text is scanned for credentials, paths, hosts and non-example email addresses.",
+    "review": "Two independent agent reviews of the exact bytes; the second found no privacy issue in any of the nine images.",
+    "bundle_sha256": "5693cf4f9ac942b7fd854a6d7779cc267eb30c45a9be9c9a7d8d116f3654b3e5",
+    "bundle_sha256_of": "the private review manifest listing every image and its page-text transcript"
+  },
+  "images": {
+    "chat-proposal-detail-dark.png": {
+      "sha256": "b5f239b089ade7341fdb2a34d36376588d82df1ac12cf8e273fc8227598d3bdf",
+      "capture": "1440x900 @2x, clipped to the proposal"
+    },
+    "chat-proposal-detail.png": {
+      "sha256": "1a1944e025316224e42cd40e808f15a5153ff41dc6760adf632b4a5a16dee152",
+      "capture": "1440x900 @2x, clipped to the proposal"
+    },
+    "chat-proposal.png": {
+      "sha256": "fdb59f43cb8661df8c5fd954c074ea5e6e292ea4312be39f2129f2d5238ea92d",
+      "capture": "1440x900 @1.5x"
+    },
+    "graph-contract-detail-dark.png": {
+      "sha256": "720da23e4d057aaeed83188387affe5b70427cfa31c17cc3c5a3dd930e891a0a",
+      "capture": "1440x900 @2x, clipped to the graph and its details"
+    },
+    "graph-contract-detail.png": {
+      "sha256": "eb40de9c0ea08406833521ec111923f1495a5c315073a80400fc79888d455d4b",
+      "capture": "1440x900 @2x, clipped to the graph and its details"
+    },
+    "graph-overview.png": {
+      "sha256": "9a2b01c5c7d488384077f3dafbc769c4b94fa4cab42aed0afb75b7e4b66b3814",
+      "capture": "1440x900 @1.5x"
+    },
+    "terminal-draft-full.png": {
+      "sha256": "d1ae45312516fecf2f46f9dfdcb0bed967409474b6f240eea3ec10ac4480cbfc",
+      "capture": "1680x1000 @1.5x, full screen"
+    },
+    "terminal-tabs-dark.png": {
+      "sha256": "4d9cd7eb6c5f686be4da728ce4db8442f1da1603dd03dcd50baaa0d86452dea9",
+      "capture": "1680x1000 @1.5x"
+    },
+    "terminal-tabs.png": {
+      "sha256": "fe17ab39fdd746372f5a41faadf145d627e55653cfa1dcbc5af1e4e3654188eb",
+      "capture": "1680x1000 @1.5x"
+    }
+  }
+}

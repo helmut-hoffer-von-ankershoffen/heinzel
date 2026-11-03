@@ -39,6 +39,7 @@ from heinzel.heads.cli._command import command
 from heinzel.heads.cli._discovery import command_tree
 from heinzel.heads.cli._join import HELP as JOIN_HELP
 from heinzel.heads.cli._join import JoinCommand
+from heinzel.heads.cli._overview import show
 from heinzel.heads.cli._progress import ConsoleProgress
 from heinzel.heads.cli._render import TerminalSafe, message, terminal_safe
 from heinzel.heads.cli._serve import UI_HELP, serve_group, ui_command
@@ -148,7 +149,7 @@ def build(kernel: Kernel, *, plain: bool = False) -> typer.Typer:
     app.command(name="join", help=JOIN_HELP, epilog=footer, rich_help_panel=CORE_PANEL)(join)
     # Top level too, by the maintainer's decision: the web head is how people who don't live in a terminal start
     # (ADR 0039, "a web head: a React app served by the API head").
-    app.command(name="ui", help=UI_HELP, epilog=footer, rich_help_panel=CORE_PANEL)(ui_command(kernel, err_console))
+    _mount_ui(app, mount.groups, kernel, err_console)
     # `hz chat` at the top level as well, by the maintainer's decision: the chat is what a person talks to, and
     # without a subcommand it is the interactive chat (ADR 0045).
     if chat := mount.groups.get(CHAT):
@@ -176,6 +177,13 @@ def build(kernel: Kernel, *, plain: bool = False) -> typer.Typer:
     return app
 
 
+def _mount_ui(app: typer.Typer, groups: dict[str, typer.Typer], kernel: Kernel, error: Console) -> None:
+    ui = groups.get("ui") or typer.Typer()
+    ui.callback(invoke_without_command=True, no_args_is_help=False, help=UI_HELP)(ui_command(kernel, error))
+    if "ui" not in groups:
+        app.add_typer(ui, name="ui", cls=SortedGroup, rich_help_panel=CORE_PANEL)
+
+
 def main() -> None:
     """Entry point of the `hz` executable."""
     try:
@@ -184,6 +192,9 @@ def main() -> None:
         err_console.print(message("Configuration error:", str(exc)))
         err_console.print("Check the files `hz system config show` lists and your HZ_* environment variables.")
         sys.exit(EX_CONFIG)
+    if not sys.argv[1:] and sys.stdout.isatty() and sys.stdin.isatty():
+        show(kernel, console)
+        return
     # Discovery stays offline; ordinary invocations check in the background at most once an hour (ADR 0031).
     check = None if "--command-tree" in sys.argv[1:] else start_check(kernel)
     if not sys.argv[1:]:

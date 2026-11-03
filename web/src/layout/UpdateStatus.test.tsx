@@ -150,3 +150,82 @@ it("opens details before updating with a fine pointer too", async () => {
   expect(startUpdate).toHaveBeenCalledTimes(1);
   match.mockRestore();
 });
+
+const autoUpdate = {
+  section: "hz",
+  key: "auto_update",
+  value: true,
+  default: true,
+  source: "default",
+  env: "HZ_AUTO_UPDATE",
+  description: "Installs new versions of hz and its plugins by itself.",
+  json_schema: { type: "boolean", title: "Automatic updates", default: true, "x-live": true },
+};
+const config = { files: [], settings: [autoUpdate], plugins: [] };
+
+it("has the Automatic updates switch, on by default, which saves the same setting as Settings", async () => {
+  const { calls } = mockApi({
+    ...shell,
+    "/api/update-status": status,
+    "/api/system/config/show": config,
+    "/api/system/config/set": "/home/mira/.config/hz/hz.toml",
+    "/api/auto-update": { phase: "idle", development: null },
+  });
+  const user = userEvent.setup();
+  renderAt("/");
+  await user.click(await screen.findByRole("button", { name: "Update available, warning" }));
+  const toggle = await screen.findByRole("switch", { name: "Automatic updates" });
+  await waitFor(() => expect(toggle).toBeEnabled());
+  expect(toggle).toHaveAttribute("aria-checked", "true");
+  expect(screen.getByText(/after a 30-second warning you can postpone/)).toBeInTheDocument();
+  await user.click(toggle);
+  await waitFor(() =>
+    expect(calls.find((call) => call.url.includes("/system/config/set"))?.url).toContain("key=hz.auto_update"),
+  );
+});
+
+it("disables the footer switch and says why while hz runs from a source checkout", async () => {
+  mockApi({
+    ...shell,
+    "/api/update-status": status,
+    "/api/system/config/show": config,
+    "/api/auto-update": { phase: "off", development: "Updates are managed by your source checkout." },
+  });
+  const user = userEvent.setup();
+  renderAt("/");
+  await user.click(await screen.findByRole("button", { name: "Update available, warning" }));
+  const toggle = await screen.findByRole("switch", { name: "Automatic updates" });
+  await waitFor(() => expect(toggle).toBeDisabled());
+  expect(toggle).toHaveAttribute("aria-checked", "false");
+  expect(screen.getByText("Updates are managed by your source checkout.")).toBeInTheDocument();
+});
+
+it("disables the footer switch and says so while update checks are off", async () => {
+  const line = "Update checks are off, so hz neither looks for updates nor installs them by itself.";
+  mockApi({
+    ...shell,
+    "/api/update-status": status,
+    "/api/system/config/show": config,
+    "/api/auto-update": { phase: "off", development: null, held: line },
+  });
+  const user = userEvent.setup();
+  renderAt("/");
+  await user.click(await screen.findByRole("button", { name: "Update available, warning" }));
+  const toggle = await screen.findByRole("switch", { name: "Automatic updates" });
+  await waitFor(() => expect(toggle).toBeDisabled());
+  expect(toggle).toHaveAttribute("aria-checked", "false");
+  expect(screen.getByText(line)).toBeInTheDocument();
+});
+
+it("names the plugins from git or a folder that are updated by hand", async () => {
+  mockApi({
+    ...shell,
+    "/api/update-status": status,
+    "/api/system/config/show": config,
+    "/api/auto-update": { phase: "off", development: null, held: null, by_hand: ["heinzel-crm"] },
+  });
+  const user = userEvent.setup();
+  renderAt("/");
+  await user.click(await screen.findByRole("button", { name: "Update available, warning" }));
+  expect(await screen.findByText(/^Update by hand: heinzel-crm\./)).toBeInTheDocument();
+});

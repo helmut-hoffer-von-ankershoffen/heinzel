@@ -1,7 +1,9 @@
 ---
 status: proposed
 date: 2026-10-28
+implementation: built
 amends: 0058
+implemented-by: 250
 ---
 
 # 0092: YouTube sign-in is an explicit player choice

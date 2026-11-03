@@ -116,8 +116,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Show your team's promises: who keeps which artifact, how each promise stands, where the flow waits.
-         * @description Show your team's promises: who keeps which artifact, how each promise stands, where the flow waits.
+         * Show your team's contracts: who keeps which artifact, how each stands, where the flow waits.
+         * @description Show your team's contracts: who keeps which artifact, how each stands, where the flow waits.
          */
         get: operations["graph"];
         put?: never;
@@ -284,8 +284,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Record exact human-confirmed autonomous schedule authority.
-         * @description Record exact human-confirmed autonomous schedule authority.
+         * Record the exact human-confirmed schedule approval.
+         * @description Record the exact human-confirmed schedule approval.
          */
         post: operations["heinzel_approve_agent_schedule"];
         delete?: never;
@@ -582,8 +582,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Find candidates for each playbook's asset types through the capabilities you have bound; reads only.
-         * @description Find candidates for each playbook's asset types through the capabilities you have bound; reads only.
+         * Find candidates for each playbook's artifact types through your bound capabilities; reads only.
+         * @description Find candidates for each playbook's artifact types through your bound capabilities; reads only.
          */
         get: operations["heinzel_discover"];
         put?: never;
@@ -902,8 +902,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * List the playbooks plugins contribute: asset types, template contracts and recommended settings.
-         * @description List the playbooks plugins contribute: asset types, template contracts and recommended settings.
+         * List the playbooks plugins contribute: artifact types, template contracts and recommended settings.
+         * @description List the playbooks plugins contribute: artifact types, template contracts and recommended settings.
          */
         get: operations["heinzel_playbooks"];
         put?: never;
@@ -984,8 +984,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Propose autonomous turns; separate human confirmation is required to authorize them.
-         * @description Propose autonomous turns; separate human confirmation is required to authorize them.
+         * Propose scheduled turns; separate human confirmation is required to approve them.
+         * @description Propose scheduled turns; separate human confirmation is required to approve them.
          */
         post: operations["heinzel_propose_agent_schedule"];
         delete?: never;
@@ -1643,7 +1643,7 @@ export interface paths {
          * @description Show the installed version's changelog as Markdown, or with `--newer` what newer releases bring.
          *
          *     Only `--newer` uses the network: GETs to the GitHub releases API of the repository in the uv tool receipt (or the
-         *     default repository) with a `heinzel/<version>` User-Agent (ADR 0031), a few pages at most, and the GitHub token
+         *     default repository) with a `heinzel/<version>` User-Agent, a few pages at most, and the GitHub token
          *     of the settings (GH_TOKEN, GITHUB_TOKEN) if one is set; unauthenticated otherwise.
          *
          *     Raises:
@@ -1652,6 +1652,29 @@ export interface paths {
         get: operations["system_changelog"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/channel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Show the update channel, or say what switching changes and, with `--yes`, switch.
+         * @description Show the update channel, or say what switching changes and, with `--yes`, switch.
+         *
+         *     Default is stable. Switching installs nothing until `hz system update`, and survives updates. Going from edge to
+         *     stable never downgrades: edge stays until stable is as new.
+         */
+        post: operations["system_channel"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2473,6 +2496,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/system/plugin/pending": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List plugins changed on this machine since this server started: what a restart would load.
+         * @description List plugins changed on this machine since this server started: what a restart would load.
+         *
+         *     Raises:
+         *         HeinzelError: If the installed environment cannot be read.
+         */
+        get: operations["system_plugin_pending"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/system/plugin/remove": {
         parameters: {
             query?: never;
@@ -2531,7 +2577,7 @@ export interface paths {
          * @description Ask where Heinzelmännchen was installed from for its latest release, and whether to update.
          *
          *     One unauthenticated GET to the GitHub releases API of the repository in the uv tool receipt (or the default
-         *     repository) with only a `heinzel/<version>` User-Agent (ADR 0031); offline or rate-limited, the result carries a
+         *     repository) with only a `heinzel/<version>` User-Agent; offline or rate-limited, the result carries a
          *     warning. Always asks, even when the hourly check (setting `update_check`) asked a minute ago; the answer is
          *     cached for the update notice.
          */
@@ -3102,8 +3148,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Show the signals themes follow now: the time of day, and the weather when a plugin publishes it.
-         * @description Show the signals themes follow now: the time of day, and the weather when a plugin publishes it.
+         * Show the signals themes follow now: the time of day, and the weather when a plugin provides it.
+         * @description Show the signals themes follow now: the time of day, and the weather when a plugin provides it.
          */
         get: operations["system_theme_signals"];
         put?: never;
@@ -3419,7 +3465,7 @@ export interface components {
             fix: string;
             /**
              * Hosts
-             * @description Hosts it sends prompts to, when known.
+             * @description Hosts it passes prompts to, when known.
              */
             hosts?: string[];
             /**
@@ -4046,7 +4092,7 @@ export interface components {
             installed: boolean;
             /**
              * Name
-             * @description Distribution name, `heinzel-<name>` by convention (ADR 0025).
+             * @description Distribution name, `heinzel-<name>` by convention.
              */
             name: string;
             /**
@@ -4403,6 +4449,27 @@ export interface components {
             state: "shown" | "ready" | "closed" | "blocked" | "missing" | "off" | "unknown";
         };
         /**
+         * ChannelReport
+         * @description The update channel, and what a switch changes.
+         */
+        ChannelReport: {
+            /**
+             * Changed
+             * @description Whether this call switched the channel.
+             */
+            changed: boolean;
+            /**
+             * Channel
+             * @description The channel followed now: stable, edge or main.
+             */
+            channel: string;
+            /**
+             * Statement
+             * @description What the switch changes; said before anything happens.
+             */
+            statement: string;
+        };
+        /**
          * ChatAction
          * @description An operation the agent proposed; it runs only when the person confirms it, with exactly these arguments.
          */
@@ -4477,7 +4544,7 @@ export interface components {
         ChatContext: {
             /**
              * Detail
-             * @description What the opener knows about it, in words (a notification's title and body); email addresses are never sent to the agent.
+             * @description What the opener knows about it, in words (a notification's title and body); email addresses are never shared with the helper.
              * @default
              */
             detail: string;
@@ -5691,6 +5758,11 @@ export interface components {
              * @description Whether the unit files exist.
              */
             installed: boolean;
+            /**
+             * Installed At
+             * @description When `install` last loaded the unit, from its marker; tells a daemon still waiting for its first tick from one that stopped ticking.
+             */
+            installed_at?: string | null;
             /**
              * Installed Version
              * @description The hz version in the last install marker; a successful service-manager command is not proof that this code ran.
@@ -8549,7 +8621,7 @@ export interface components {
             error?: string | null;
             /**
              * First Party
-             * @description Whether its recorded origin is an official maintainer repository (ADR 0094).
+             * @description Whether its recorded origin is an official maintainer repository.
              * @default false
              */
             first_party: boolean;
@@ -8560,12 +8632,12 @@ export interface components {
             homepage?: string | null;
             /**
              * Kinds
-             * @description What the plugin is, any of four, always in this order: `connector` when it brings adapters (`capabilities` isn't empty); `theme` when it offers themes; `capability` when it has an operation of its own besides the `info` every plugin from the template gets (e.g. `hz clock`); `playbook` when it ships one. In the web app `Capability` means such a feature of its own, while `capabilities` above, like ADR 0028, names the integration interfaces (tracker, calendar, ...) a connector implements.
+             * @description What the plugin is, any of four, always in this order: `connector` when it brings adapters (`capabilities` isn't empty); `theme` when it offers themes; `capability` when it has an operation of its own besides the `info` every plugin from the template gets (e.g. `hz clock`); `playbook` when it ships one. In the web app `Capability` means such a feature of its own, while `capabilities` above names the integration interfaces (tracker, calendar, ...) a connector implements.
              */
             kinds?: ("connector" | "theme" | "capability" | "playbook")[];
             /**
              * Layers
-             * @description Layers its modules declare (ADR 0040).
+             * @description Layers its modules declare.
              */
             layers?: components["schemas"]["PluginLayer"][];
             /**
@@ -8580,7 +8652,7 @@ export interface components {
             name: string;
             /**
              * Playbooks
-             * @description Modules that bring a playbook (ADR 0037); empty while it is disabled.
+             * @description Modules that bring a playbook; empty while it is disabled.
              */
             playbooks?: string[];
             /**
@@ -8611,7 +8683,7 @@ export interface components {
             summary: string;
             /**
              * Themes
-             * @description Names of the themes its modules offer for the web app (`module.theme`, ADR 0044), sorted; `hz system theme use <name>` picks one.
+             * @description Names of the themes its modules offer for the web app (`module.theme`), sorted; `hz system theme use <name>` picks one.
              */
             themes?: string[];
             /**
@@ -8622,7 +8694,7 @@ export interface components {
         };
         /**
          * PluginLayer
-         * @description A layer a plugin's module declares (ADR 0040).
+         * @description A layer a plugin's module declares.
          */
         PluginLayer: {
             /**
@@ -8769,6 +8841,49 @@ export interface components {
             version: string;
         };
         /**
+         * PluginPending
+         * @description What changed in the installed plugins since this server started, however it changed.
+         */
+        PluginPending: {
+            /**
+             * Changes
+             * @description Plugins installed, removed, updated, enabled or disabled since this server started.
+             */
+            changes: components["schemas"]["PluginPendingChange"][];
+            /**
+             * Restart Required
+             * @description Whether this server must restart to load them.
+             */
+            restart_required: boolean;
+        };
+        /**
+         * PluginPendingChange
+         * @description One plugin whose installed state differs from what the running server loaded.
+         */
+        PluginPendingChange: {
+            /**
+             * Change
+             * @description How the installed environment differs from what this server loaded.
+             * @enum {string}
+             */
+            change: "installed" | "removed" | "updated" | "enabled" | "disabled";
+            /**
+             * Distribution
+             * @description The plugin's distribution name.
+             */
+            distribution: string;
+            /**
+             * Themes
+             * @description Themes it brings, to choose in Settings > Appearance after a restart.
+             */
+            themes?: string[];
+            /**
+             * Version
+             * @description The installed version, when it is still installed.
+             */
+            version?: string | null;
+        };
+        /**
          * PluginSearch
          * @description Plugins one can install, and what kept the search from being complete.
          */
@@ -8872,6 +8987,11 @@ export interface components {
              * @description Your name; on this machine only.
              */
             name: string | null;
+            /**
+             * Retired Role
+             * @description A role you chose once that is no longer offered; choose a new one. None otherwise.
+             */
+            retired_role: string | null;
             /**
              * Role
              * @description Your role, e.g. engineering-manager.
@@ -11282,6 +11402,12 @@ export interface components {
              * @description What a click does.
              */
             effect?: (components["schemas"]["Navigate"] | components["schemas"]["OpenUrl"] | components["schemas"]["RunOperation"] | components["schemas"]["RunCommand"]) | null;
+            /**
+             * Footer Priority
+             * @description Retention priority in a crowded footer, from 0 to 1000; higher values move to overflow later.
+             * @default 40
+             */
+            footer_priority: number;
             /**
              * Icon
              * @description An icon before the text.
@@ -13808,6 +13934,7 @@ export type SchemaCapabilityUse = components['schemas']['CapabilityUse'];
 export type SchemaCardWidget = components['schemas']['CardWidget'];
 export type SchemaCatchUp = components['schemas']['CatchUp'];
 export type SchemaChannel = components['schemas']['Channel'];
+export type SchemaChannelReport = components['schemas']['ChannelReport'];
 export type SchemaChatAction = components['schemas']['ChatAction'];
 export type SchemaChatContext = components['schemas']['ChatContext'];
 export type SchemaChatCosts = components['schemas']['ChatCosts'];
@@ -13931,6 +14058,8 @@ export type SchemaPluginInfo = components['schemas']['PluginInfo'];
 export type SchemaPluginLayer = components['schemas']['PluginLayer'];
 export type SchemaPluginOperation = components['schemas']['PluginOperation'];
 export type SchemaPluginPage = components['schemas']['PluginPage'];
+export type SchemaPluginPending = components['schemas']['PluginPending'];
+export type SchemaPluginPendingChange = components['schemas']['PluginPendingChange'];
 export type SchemaPluginSearch = components['schemas']['PluginSearch'];
 export type SchemaPluginUpdate = components['schemas']['PluginUpdate'];
 export type SchemaProfile = components['schemas']['Profile'];
@@ -16636,6 +16765,40 @@ export interface operations {
             };
         };
     };
+    system_channel: {
+        parameters: {
+            query?: {
+                /** @description The channel to move to; without it, shows the current one. */
+                to?: ("stable" | "edge" | "main") | null;
+                /** @description Make the change that was described; without it, nothing changes. */
+                yes?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChannelReport"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     system_claude_list: {
         parameters: {
             query?: never;
@@ -17678,6 +17841,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_plugin_pending: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PluginPending"];
                 };
             };
         };
@@ -18869,8 +19052,8 @@ export interface operations {
             query?: {
                 /** @description Install from here instead, e.g. git+https://github.com/org/heinzel@v1.2.0 or a wheel. */
                 source?: string | null;
-                /** @description Follow `release` (the default, setting `update_channel`): the newest release, also from `main` once a release is as new as it; or `main`: its newest commit. */
-                channel?: ("release" | "main") | null;
+                /** @description Follow `stable` (the default, setting `update_channel`; `release` is its earlier name): the newest accepted release, also from `main` or edge once it is as new; `edge`: the newest edge release; or `main`: its newest commit. */
+                channel?: ("stable" | "edge" | "main" | "release") | null;
             };
             header?: never;
             path?: never;

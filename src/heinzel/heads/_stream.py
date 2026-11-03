@@ -13,7 +13,7 @@ import contextlib
 import contextvars
 import json
 import logging
-from collections.abc import AsyncGenerator, Generator, Mapping
+from collections.abc import AsyncGenerator, Callable, Generator, Mapping
 from contextlib import contextmanager
 from typing import Any
 
@@ -26,6 +26,11 @@ from heinzel.kernel._progress import Advance
 
 log = logging.getLogger(__name__)
 _SINK: contextvars.ContextVar[Emit | None] = contextvars.ContextVar("hz_stream_sink", default=None)
+WORK: contextvars.ContextVar[tuple[Callable[[], None], Callable[[], None]] | None] = contextvars.ContextVar(
+    "hz_stream_work", default=None
+)
+"""Set by a head that must know while work runs (the web head's automatic updates, ADR 0116): called with the
+operation's start and end in its worker thread, which can outlive the stream when the browser leaves."""
 END = "end"
 HEADERS = {"Cache-Control": "no-store", "X-Accel-Buffering": "no"}
 HEARTBEAT_SECONDS = 15
@@ -63,6 +68,15 @@ def frame(kind: str, data: object) -> str:
     return f"event: {kind}\ndata: {json.dumps(data, ensure_ascii=False, default=str)}\n\n"
 
 
+def _hold() -> Callable[[], None]:
+    """Tell the head that work starts (`WORK`); the function that says it ended."""
+    hold = WORK.get()
+    if hold is None:
+        return lambda: None
+    hold[0]()
+    return hold[1]
+
+
 def streamed(
     kernel: Kernel, operation: OperationLet, arguments: dict[str, Any], *, module: str = ""
 ) -> StreamingResponse:
@@ -73,6 +87,8 @@ def streamed(
     def emit(kind: str, data: Mapping[str, object]) -> None:
         with contextlib.suppress(RuntimeError):  # the loop closed: the browser left, nobody reads any more
             loop.call_soon_threadsafe(queue.put_nowait, (kind, dict(data)))
+
+    release = _hold()
 
     def work() -> None:
         _SINK.set(emit)
@@ -87,6 +103,7 @@ def streamed(
             emit("error", {"error": f"{operation.name} failed with a bug; the log of `hz ui` says why."})
         finally:
             emit(END, {})
+            release()
 
     loop.run_in_executor(None, contextvars.copy_context().run, work)
 

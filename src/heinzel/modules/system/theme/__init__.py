@@ -80,7 +80,7 @@ def render_signals(result: ThemeSignalsView) -> RenderableType:
 
 @module.operation(render=render_signals)
 def signals(service: ThemeService) -> ThemeSignalsView:
-    """Show the signals themes follow now: the time of day, and the weather when a plugin publishes it."""
+    """Show the signals themes follow now: the time of day, and the weather when a plugin provides it."""
     return service.signals()
 
 

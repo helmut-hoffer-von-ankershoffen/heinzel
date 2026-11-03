@@ -17,8 +17,8 @@ hz system plugin search --text playbook     # find one; `hz system plugin add <n
 hz heinzel playbooks                       # its asset types, templates and recommended settings
 ```
 
-The core brings one, the graph keeper (`graph:team-graph-keeper`, [Teams](TEAMS.md#is-the-work-flowing)); no
-first-party plugin brings a playbook yet. For your own kind of work, [write one](#writing-a-playbook) in your own
+The core brings one, the graph keeper (`graph:team-graph-keeper`, [Teams](TEAMS.md#is-the-work-flowing)); the reference company
+[heinzel-acme](https://github.com/helmut-hoffer-von-ankershoffen/heinzel-acme) ships a weekly-report playbook. For your own kind of work, [write one](#writing-a-playbook) in your own
 plugin (`hz system plugin new`). Commands below name a playbook's templates as `<module>:<template>`, where `<module>` is
 the module `hz heinzel playbooks` shows.
 
@@ -126,10 +126,10 @@ module.playbook(
 ## Layers: company, org, site, team
 
 A company's playbooks come in layers ([ADR 0040](adr/0040-layers-and-playbooks-are-plugins.md)): one plugin per
-company, org, site and team, each declaring where it sits. The made-up Acme:
+company, org, site and team, each declaring where it sits. The made-up company ACME:
 
 ```python
-module = Module("acme-payments-checkout", "The Checkout team of Acme Payments.")
+module = Module("acme-payments-checkout", "The Checkout team of ACME Payments.")
 module.layer(parent="acme-payments", site="acme-lisbon", roles=["checkout-captain"])
 module.playbook("How Checkout tracks its work.", defaults={"capabilities.tracker": "acme-payments-checkout"})
 ```

@@ -102,6 +102,11 @@ test the refusal paths as well as the successful call. Never put a private opera
 | Chat slash commands and mentions | Proposed | Data declarations name an operation or skill; no command string evaluated as code |
 | Interactive chat results | Proposed | Tool result selects a registered view with validated data and a plain-text fallback |
 
+For a crowded footer, `StatusItem(footer_priority=...)` sets retention priority from 0 to 1000; the default is 40.
+Higher values stay visible before lower values when space allows. Warning and error states receive a host-owned boost;
+equal effective priorities are resolved by contribution ID in locale-independent order. Overflow remains accessible
+through More. This is a priority, not a guarantee that an item fits on every screen.
+
 Existing UI contribution models, limits and exposure rules are specified in
 [ADR 0056](adr/0056-modules-contribute-status-items-actions-and-widgets-as-data.md). A richer view must not silently
 replace the generic footer, hide a confirmation or make a read operation write. Registered bundles load through

@@ -6,7 +6,7 @@ import { mkdirSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join } from "node:path";
 import { chromium } from "playwright-core";
-import { verifyFooter } from "./footer.mjs";
+import { addFooterProofItems, verifyFooter } from "./footer.mjs";
 import { verifyLayers } from "./layers.mjs";
 import { verifyNavigation } from "./navigation.mjs";
 
@@ -200,7 +200,7 @@ try {
     ["home", "/", "Today"],
     ["settings", "/settings", "Settings"],
     ["heinzel", "/heinzel", "Heinzelmännchen"],
-    ["contracts", "/contracts", "Workflow"],
+    ["contracts", "/contracts", "Contracts"],
     ["team-graph", "/graph", "Team graph"],
     ["team", "/team", "Team roster"],
     ["artifact-types", "/inventory/types", "Types"],
@@ -267,7 +267,11 @@ try {
   await audit("doctor-dark");
   result.layers = await verifyLayers(page, shots, true);
   result.navigation = await verifyNavigation(page, url, shots);
-  result.footer = await verifyFooter(page, shots);
+  await addFooterProofItems(page);
+  await page.reload();
+  await page.locator('[data-footer-part="probe:status-0"]').waitFor();
+  await page.locator('[data-footer-content="probe:local-time"] button').waitFor();
+  result.footer = await verifyFooter(page, shots, true);
   await splash();
 } finally {
   await browser.close();

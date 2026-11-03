@@ -435,6 +435,10 @@ class StatusItem(_Data):
     presentation: Literal["icon", "text", "value", "ticker"] = Field(
         default="icon", description="Generic rendering style."
     )
+    footer_priority: Annotated[StrictInt, Field(ge=0, le=1000)] = Field(
+        default=40,
+        description="Retention priority in a crowded footer, from 0 to 1000; higher values move to overflow later.",
+    )
     segments: list[DetailLine] = Field(
         default_factory=list[DetailLine], max_length=64, description="Ordered live ticker segments."
     )

@@ -54,15 +54,18 @@ def start_daemon_probe(kernel, directory, *, cadence_seconds=420):
                 daemon._jobs = lambda: registered
                 daemon._post_notices = lambda _log: None
                 report = daemon.tick()
-                assert any(
+                rendered = any(
                     item.job == "heinzel:" + job.name and item.disposition == "rendered" for item in report.runs
-                ), str(report)
-                calls = (directory / "calls").read_text()
-                restarted = DaemonService(kernel, kernel.settings, DaemonSettings(), clock=lambda: now, zone=UTC)
-                restarted._jobs = lambda: registered
-                restarted._post_notices = lambda _log: None
-                restarted.tick()
-                result["deduplicated"] = (directory / "calls").read_text() == calls
+                )
+                if rendered:
+                    calls = (directory / "calls").read_text()
+                    restarted = DaemonService(kernel, kernel.settings, DaemonSettings(), clock=lambda: now, zone=UTC)
+                    restarted._jobs = lambda: registered
+                    restarted._post_notices = lambda _log: None
+                    restarted.tick()
+                    result["deduplicated"] = (directory / "calls").read_text() == calls
+                else:
+                    result["failure"] = str(report)
         except Exception as error:  # noqa: BLE001 - test-only output contains no account secrets
             result["failure"] = str(error)
         finally:

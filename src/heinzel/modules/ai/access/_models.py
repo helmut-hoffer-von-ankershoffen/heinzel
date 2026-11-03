@@ -78,7 +78,7 @@ class AccessSettings(ModuleSettings):
     gateway_hosts: list[str] = Field(
         default_factory=list[str],
         title="Gateway hosts",
-        description="The hosts the gateway sends prompts to, as host names or addresses; shown "
+        description="The hosts the gateway passes prompts to, as host names or addresses; shown "
         "wherever AI access is listed.",
         examples=["ai.example.com"],
         json_schema_extra={"x-expert": True},
@@ -182,7 +182,7 @@ class AccessOption(BaseModel):
     fix: str = Field(default="", description="A command that makes it usable; often empty.")
     models: list[str] = Field(default_factory=list[str], description="Models it offers or is configured with.")
     runner: str | None = Field(default=None, description="The agent runner that serves its chat and coding uses.")
-    hosts: list[str] = Field(default_factory=list[str], description="Hosts it sends prompts to, when known.")
+    hosts: list[str] = Field(default_factory=list[str], description="Hosts it passes prompts to, when known.")
     last_test: LastTest | None = Field(default=None, description="The last `hz ai access test` of it, if any.")
 
 

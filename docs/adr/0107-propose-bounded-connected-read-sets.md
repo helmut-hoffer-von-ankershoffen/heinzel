@@ -1,7 +1,9 @@
 ---
 status: proposed
 date: 2026-10-30
+implementation: built
 related: 0049, 0099, 0104
+implemented-by: 299
 ---
 
 # 0107: Propose bounded connected read sets separately

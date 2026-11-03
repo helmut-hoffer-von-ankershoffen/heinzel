@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { t } from "@/i18n";
 import { type CapturedAudio, captureAudio } from "./capture";
 
 export function spectrumGeometry(width: number, height: number) {
@@ -153,8 +154,7 @@ export function AudioVisualizer({ enabled = true }: { enabled?: boolean }) {
     >
       <canvas ref={canvas} aria-hidden className="h-full w-full" />
       <span id="audio-visualizer-help" className="sr-only">
-        You choose the browser source. Audio stays in this tab and is not recorded or uploaded. Browser or operating
-        system audio sharing may be unavailable.
+        {t("audio.visualizerHelp")}
       </span>
       {!session && <span aria-hidden className="absolute inset-x-1 top-1/2 h-0.5 bg-current opacity-40" />}
       <span role="status" className="sr-only">

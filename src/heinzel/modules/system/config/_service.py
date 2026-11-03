@@ -20,7 +20,7 @@ from pydantic_core import to_jsonable_python
 from tomlkit.exceptions import ParseError
 
 from heinzel import Config, ConfigEditor, ConfigListChange, CurrentUser, HeinzelError, Kernel, ModuleSettings
-from heinzel.kernel import FILENAME, PROJECT_FILENAME, ConfigFile, env_prefix, toml_value, user_config_dir
+from heinzel.kernel import FILENAME, PROJECT_FILENAME, ConfigFile, env_prefix, jsonable, toml_value, user_config_dir
 from heinzel.modules.system.config._models import (
     ConfigFileInfo,
     ConfigReport,
@@ -253,10 +253,18 @@ class ConfigService(ConfigEditor):
         """
         section, name, model = self._locate(key)
         self._require(model.model_fields[name], write=True)
-        parsed = _without_none(to_jsonable_python(value))
+        parsed = _without_none(jsonable(value))
         if parsed is None:
             msg = f"TOML has no null; to let {key} take its default, run `hz system config unset {key}`."
             raise HeinzelError(msg)
+        if isinstance(parsed, str) and parsed in model.refused_on_write.get(name, frozenset()):
+            schema: dict[str, Any] = model.model_json_schema()["properties"].get(name, {})
+            options = cast("list[dict[str, Any]]", schema.get("anyOf", []))
+            nested = next((cast("list[str]", o["enum"]) for o in options if "enum" in o), None)
+            choices = cast("list[str]", schema.get("enum")) or nested or []
+            offered = f"; one of: {', '.join(choices)}" if choices else ""
+            msg = f"Invalid value for {key}: {parsed!r} is no longer offered{offered}.\n"
+            raise HeinzelError(msg + self._example(key, section, name, model))
         table = {**self._kernel.config.reread().section(section), name: parsed}
         try:
             Config(files=(), data=_nest(section, table)).settings(model, section)

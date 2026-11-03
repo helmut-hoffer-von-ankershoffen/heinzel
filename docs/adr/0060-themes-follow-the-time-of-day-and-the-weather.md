@@ -1,9 +1,12 @@
 ---
 status: proposed
 date: 2026-10-24
+implementation: built
 decision-makers: maintainer
 amends: 0044
+amends-0044: variants that follow signals; a base theme is checked for contrast too
 related: 0003, 0027, 0039, 0043
+implemented-by: 120
 ---
 
 # 0060: Themes follow the time of day and the weather: variants on a closed vocabulary of signals

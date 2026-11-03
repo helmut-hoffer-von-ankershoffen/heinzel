@@ -11,19 +11,9 @@ import { token } from "@/api/token";
 import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
 import { connectTerminal, followSize } from "@/lib/terminal";
+import { followTerminalTheme, terminalTheme } from "@/lib/terminalTheme";
 import { cn } from "@/lib/utils";
 import { desktopState } from "@/notifications/desktop";
-
-/** The palette of the dark theme, so the terminal reads as part of the app. */
-const theme = {
-  background: "#181818",
-  foreground: "#ececec",
-  cursor: "#d97757",
-  cursorAccent: "#181818",
-  selectionBackground: "#d9775755",
-  black: "#272727",
-  brightBlack: "#6b6b6b",
-};
 
 type CursorStyle = "block" | "bar" | "underline";
 type Options = { cursorStyle: CursorStyle; cursorBlink: boolean; copyOnSelect: boolean; scrollback: number };
@@ -201,6 +191,10 @@ export function TerminalPanel({ onClose, full, onToggleFull, onActivate }: Props
 }
 
 type State = "connecting" | "open" | "closed";
+/** How long the shell is silent after its last output before it counts as waiting at the prompt. */
+export const READY_QUIET_MS = 250;
+/** A shell that says nothing at all is taken as ready after this long. */
+export const READY_FALLBACK_MS = 3000;
 
 /** One shell in one tab; it keeps running while another tab is shown. */
 function TerminalView({
@@ -229,6 +223,9 @@ function TerminalView({
   const copyOnSelect = useRef(options.copyOnSelect);
   const initial = useRef(options);
   const [state, setState] = useState<State>("connecting");
+  // The shell has drawn its prompt: commands typed for the person wait until then, or the line is echoed twice and
+  // the shell prints a stray `%` for output that had no newline.
+  const [ready, setReady] = useState(false);
   const [reason, setReason] = useState("");
   const [generation, setGeneration] = useState(0);
   useEffect(() => {
@@ -238,7 +235,7 @@ function TerminalView({
     void generation;
     const { copyOnSelect: _copy, ...settings } = initial.current;
     const terminal = new Terminal({
-      theme,
+      theme: terminalTheme(),
       fontFamily: 'ui-monospace, "SF Mono", Menlo, Monaco, monospace',
       fontSize: 13,
       lineHeight: 1.2,
@@ -257,15 +254,28 @@ function TerminalView({
       if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ resize: [cols, rows] }));
     });
     refitRef.current = follower.refit;
+    let quiet: ReturnType<typeof setTimeout> | undefined;
+    // Ready when the shell has said something and then been quiet for a moment (its prompt); a shell that never
+    // speaks is ready after a while, so a command is never held back for good.
+    const settle = (after: number) => {
+      clearTimeout(quiet);
+      quiet = setTimeout(() => setReady(true), after);
+    };
     socket.onopen = () => {
+      setReady(false);
+      settle(READY_FALLBACK_MS);
       socket.send(JSON.stringify({ token: token() ?? "" }));
-      senderRef.current = (text) => socket.send(encoder.encode(text));
+      senderRef.current = (text) => {
+        if (socket.readyState === WebSocket.OPEN) socket.send(encoder.encode(text));
+      };
       setState("open");
       follower.refit();
     };
     socket.onmessage = (event) => {
-      if (event.data instanceof ArrayBuffer) terminal.write(new Uint8Array(event.data));
-      else if (typeof event.data === "string") {
+      if (event.data instanceof ArrayBuffer) {
+        terminal.write(new Uint8Array(event.data));
+        settle(READY_QUIET_MS);
+      } else if (typeof event.data === "string") {
         try {
           const message: unknown = JSON.parse(event.data);
           if (typeof message === "object" && message !== null && "agent_title" in message) {
@@ -278,6 +288,8 @@ function TerminalView({
       }
     };
     socket.onclose = (event) => {
+      clearTimeout(quiet);
+      setReady(false);
       senderRef.current = null;
       callbacks.current.onStatus("");
       callbacks.current.onTitle("");
@@ -382,6 +394,7 @@ function TerminalView({
       if (copyOnSelect.current && terminal.hasSelection()) void navigator.clipboard?.writeText(terminal.getSelection());
     });
     return () => {
+      clearTimeout(quiet);
       follower.dispose();
       refitRef.current = null;
       typed.dispose();
@@ -407,6 +420,14 @@ function TerminalView({
     terminal.options.cursorBlink = options.cursorBlink;
     terminal.options.scrollback = options.scrollback;
   }, [options]);
+  // The terminal wears the active theme and follows a switch of theme or mode while it runs.
+  useEffect(
+    () =>
+      followTerminalTheme((theme) => {
+        if (terminalRef.current) terminalRef.current.options.theme = theme;
+      }),
+    [],
+  );
   // Full screen changes the container's size: measure again.
   useEffect(() => {
     void full;
@@ -417,11 +438,12 @@ function TerminalView({
     if (!active || state !== "open") return;
     refitRef.current?.();
     terminalRef.current?.focus();
+    if (!ready) return;
     connectTerminal((text) => senderRef.current?.(text));
     return () => connectTerminal(null);
-  }, [active, state]);
+  }, [active, state, ready]);
   return (
-    <div className={cn("absolute inset-0 flex flex-col", !active && "hidden")}>
+    <div aria-hidden={!active || undefined} className={cn("absolute inset-0 flex flex-col", !active && "hidden")}>
       {state === "closed" && (
         <div className="flex shrink-0 items-center gap-2 px-4 py-1 text-xs text-muted-foreground">
           <span className="truncate">{reason || t("terminal.ended")}</span>
@@ -441,6 +463,44 @@ function TerminalView({
         </div>
       )}
       <div ref={host} className="min-h-0 flex-1 px-3 pb-1" />
+      <fieldset
+        aria-label="Terminal keys"
+        className="m-0 flex min-w-0 shrink-0 gap-1 overflow-x-auto border-0 px-3 py-1 md:[@media(pointer:fine)]:hidden"
+      >
+        {(
+          [
+            ["Esc", "\x1b", "Escape"],
+            ["Tab", "\t", "Tab"],
+            ["Ctrl+C", "\x03", "Control+C"],
+            ["Ctrl+Z", "\x1a", "Control+Z"],
+            ["Ctrl+D", "\x04", "Control+D"],
+            ["←", "D", "Arrow left"],
+            ["↓", "B", "Arrow down"],
+            ["↑", "A", "Arrow up"],
+            ["→", "C", "Arrow right"],
+          ] as const
+        ).map(([label, key, accessibleName]) => (
+          <Button
+            key={label}
+            variant="outline"
+            size="sm"
+            className="min-h-11 min-w-11 shrink-0"
+            disabled={state !== "open"}
+            aria-label={accessibleName}
+            onClick={() => {
+              if (!active) return;
+              const arrows = ["←", "↓", "↑", "→"];
+              const sequence = arrows.includes(label)
+                ? `\x1b${terminalRef.current?.modes?.applicationCursorKeysMode ? "O" : "["}${key}`
+                : key;
+              senderRef.current?.(sequence);
+              terminalRef.current?.focus();
+            }}
+          >
+            {label}
+          </Button>
+        ))}
+      </fieldset>
     </div>
   );
 }

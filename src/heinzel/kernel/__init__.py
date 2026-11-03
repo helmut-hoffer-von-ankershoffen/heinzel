@@ -110,6 +110,7 @@ from heinzel.kernel._discovery import BUILTIN_PACKAGE, ENTRY_POINT_GROUP, discov
 from heinzel.kernel._duration import MAX_WINDOW, WINDOW_PATTERN, Span, format_duration, parse_duration, parse_window
 from heinzel.kernel._errors import HeinzelError, SubscriptionUsageLimitError
 from heinzel.kernel._exposure import MCP_HTTP, MCP_STDIO, Exposed, exposed, input_schema, restricts
+from heinzel.kernel._features import feature_enabled
 from heinzel.kernel._git import (
     GIT_HARDENING,
     CommandFailed,
@@ -121,12 +122,15 @@ from heinzel.kernel._git import (
 from heinzel.kernel._identity import PRIVATE_WRITE, Authentication, CallIdentity, CurrentUser, Principal
 from heinzel.kernel._installation import (
     CORE_DISTRIBUTION,
+    EDGE_WHEEL_PREFIX,
     CorePin,
     Installation,
     ToolConstraintPolicy,
     requirement_from_receipt,
 )
+from heinzel.kernel._installation_mutations import installation_mutation_paths, installation_mutation_pending
 from heinzel.kernel._jobs import CompiledJobs, JobInactive, tick_interval, using_tick_interval
+from heinzel.kernel._json import jsonable
 from heinzel.kernel._kernel import Kernel, ModuleRecord, Origin
 from heinzel.kernel._layers import (
     Label,
@@ -159,7 +163,8 @@ from heinzel.kernel._lets import (
     Status,
     schedule_problem,
 )
-from heinzel.kernel._local_web import LocalWebRuntime
+from heinzel.kernel._local_overview import CachedOverviewLet, DaemonOverview, LocalObservation, WebOverview
+from heinzel.kernel._local_web import LocalWebRuntime, PersistentWeb
 from heinzel.kernel._metadata_verifier import CoreMetadataVerifier
 from heinzel.kernel._module import Module
 from heinzel.kernel._notifications import Delivery, Notice, NoticeKind, Notifications
@@ -174,6 +179,14 @@ from heinzel.kernel._playbooks import (
     PlaybookSetup,
 )
 from heinzel.kernel._presence import Presence
+from heinzel.kernel._private_control import (
+    PrivateControl,
+    private_directory,
+    private_lock,
+    private_read,
+    private_socket_directory,
+    private_write,
+)
 from heinzel.kernel._progress import Emit, Progress
 from heinzel.kernel._prompter import INTERRUPT, Prompter, ScriptedPrompter, ScriptExhausted
 from heinzel.kernel._protocols import (
@@ -217,7 +230,14 @@ from heinzel.kernel._protocols import (
     free_busy_people,
     plain_addresses,
 )
-from heinzel.kernel._release import ReleaseCache, ReleaseSource
+from heinzel.kernel._release import (
+    EdgeRelease,
+    PluginRelease,
+    PluginReleases,
+    ReleaseCache,
+    ReleaseFacts,
+    ReleaseSource,
+)
 from heinzel.kernel._runner_snapshot import RunnerSnapshot, RunnerSnapshotProvider
 from heinzel.kernel._services import ServiceContract
 from heinzel.kernel._session import SessionEvent, SessionHead, SessionProjector, SessionRead
@@ -298,6 +318,7 @@ __all__ = [
     "DAYPARTS",
     "DEFAULT_LOGO",
     "DEFAULT_THEME",
+    "EDGE_WHEEL_PREFIX",
     "ENTRY_POINT_GROUP",
     "FILENAME",
     "FONT_ROUTE",
@@ -341,6 +362,7 @@ __all__ = [
     "Badge",
     "Billing",
     "Budget",
+    "CachedOverviewLet",
     "Calendar",
     "CallIdentity",
     "Capability",
@@ -385,6 +407,7 @@ __all__ = [
     "DaemonHandoverRequest",
     "DaemonInstallationLifecycle",
     "DaemonMutationScope",
+    "DaemonOverview",
     "DaemonStatusAttestation",
     "Daypart",
     "DeclaredCredential",
@@ -395,6 +418,7 @@ __all__ = [
     "Document",
     "Documents",
     "DraftedMail",
+    "EdgeRelease",
     "Effect",
     "Effort",
     "Emit",
@@ -434,6 +458,7 @@ __all__ = [
     "LiveTime",
     "LiveUntil",
     "LoadedSkill",
+    "LocalObservation",
     "LocalWebRuntime",
     "Login",
     "Mail",
@@ -465,12 +490,16 @@ __all__ = [
     "OrgContext",
     "Origin",
     "Participant",
+    "PersistentWeb",
     "Person",
     "PlaybookLet",
     "PlaybookSetup",
+    "PluginRelease",
+    "PluginReleases",
     "PostedMessage",
     "Presence",
     "Principal",
+    "PrivateControl",
     "ProcessExecute",
     "ProcessOutcome",
     "Progress",
@@ -483,6 +512,7 @@ __all__ = [
     "RecommendationKind",
     "Relation",
     "ReleaseCache",
+    "ReleaseFacts",
     "ReleaseSource",
     "ReportingDraft",
     "Requester",
@@ -567,6 +597,7 @@ __all__ = [
     "ViewLet",
     "ViewSlot",
     "Weather",
+    "WebOverview",
     "Widget",
     "WidgetAction",
     "WidgetLet",
@@ -584,17 +615,26 @@ __all__ = [
     "env_prefix",
     "environment_variable",
     "exposed",
+    "feature_enabled",
     "font_stack_problem",
     "format_duration",
     "free_busy_people",
     "git_command",
     "input_schema",
+    "installation_mutation_paths",
+    "installation_mutation_pending",
+    "jsonable",
     "link_problem",
     "operation_path",
     "owns_path",
     "parse_duration",
     "parse_window",
     "plain_addresses",
+    "private_directory",
+    "private_lock",
+    "private_read",
+    "private_socket_directory",
+    "private_write",
     "public_parameters",
     "read_skill",
     "read_skill_file",

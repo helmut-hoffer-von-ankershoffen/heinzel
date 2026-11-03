@@ -36,6 +36,7 @@ def test_show_reports_the_configured_profile(hz, monkeypatch):
     assert hz("org", "show").json == {
         "handle": "mira",
         "role": "product-manager",
+        "retired_role": None,
         "timezone": "Europe/Lisbon",
         "working_hours": "08-16",
         "working_hours_set": True,

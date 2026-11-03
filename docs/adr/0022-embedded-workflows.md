@@ -1,10 +1,13 @@
 ---
 status: proposed
 date: 2026-10-23
+implementation: planned
 related: 0020, 0021
 ---
 
 # 0022: Workflows embedded in documents are discovered by connectors and run only once registered
+
+*Not implemented at 0.9.9; embedded workflows are not built.*
 
 ## Context and Problem Statement
 

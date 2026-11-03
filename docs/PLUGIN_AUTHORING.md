@@ -1,6 +1,6 @@
 # Create and ship a custom plugin
 
-A plugin can live in its own public or private repository. It needs no change in Heinzel core or
+A plugin can live in its own public or private repository. It needs no change in the Heinzelmännchen core or
 `heinzel-plugins`. Start with one operation and one test; add settings, services and views when the feature needs
 them. The same operation supplies CLI, MCP and REST access.
 
@@ -66,6 +66,11 @@ make acceptance   # install the wheel outside the source tree and test it
 No unrelated plugin or core tests run. Write a test for the new behavior and mark every pytest file with one
 level: `unit`, `integration` or `e2e`. Installed acceptance belongs in `tests/acceptance/`. A richer frontend declares
 its own build and tests; a small static view needs no JavaScript build system.
+
+## Show the useful feature
+
+Use the [screenshot playbook](SCREENSHOT_PLAYBOOK.md) to plan real UI and CLI scenes with fictional data, review
+privacy and legibility, and verify the rendered gallery before publication.
 
 ## Add dependencies
 
@@ -218,3 +223,18 @@ Shared commit and credential policies still apply; a mixed core/plugin change re
 Core's optional-plugin workflow uses the main-restricted `plugin-pypi` environment for public PyPI grants;
 standalone repositories, contrib and the official collection use `pypi`. Register the owning distribution with
 its host's `release.yml` and that environment. Core's separate tagged-core publisher remains in `pypi`.
+
+## Local sharing observations
+
+A plugin can declare historical sharing evidence for the interactive bare `hz` overview with
+`module.add(CachedOverviewLet(name="sharing"))` (`from heinzel import CachedOverviewLet`). This is inert metadata: the
+overview never resolves a plugin service or invokes its operations. The owning plugin may atomically publish a
+private `state_dir/overview/<qualified-module>.sharing.json` record during an explicit mutation or existing scheduled
+work. A read-only status operation must remain read-only.
+
+The JSON object contains exactly `state` and `observed_at`. State is one of `not installed`, `stopped`, `running`,
+`unhealthy` or `unknown`; the timestamp is an aware ISO timestamp. Use mode 0700 for the overview and state folders,
+mode 0600 for records, and an atomic replacement of a freshly written regular file. Publish no URL, token, host,
+identity, error message or other arbitrary detail. Core ignores unsafe, oversized, malformed, future or expired
+records; even fresh evidence is labeled **last observed**, never current reachability. See
+[ADR 0119](adr/0119-interactive-cli-reads-local-overview-records.md).

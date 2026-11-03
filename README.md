@@ -1,19 +1,19 @@
 # Heinzelmännchen
 
 <!-- badges:start -->
-[![CI](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/actions/workflows/ci.yml/badge.svg)](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/actions/workflows/ci.yml)
-[![Coverage](https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel/python-coverage-comment-action-data/badge.svg)](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/tree/python-coverage-comment-action-data)
-[![CodeQL](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/actions/workflows/codeql.yml/badge.svg)](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/actions/workflows/codeql.yml)
-[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/helmut-hoffer-von-ankershoffen/heinzel/badge)](https://scorecard.dev/viewer/?uri=github.com/helmut-hoffer-von-ankershoffen/heinzel)
-[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/15863/badge)](https://www.bestpractices.dev/en/projects/15863/passing)
+[![CI](https://img.shields.io/github/actions/workflow/status/helmut-hoffer-von-ankershoffen/heinzel/ci.yml?branch=main&label=CI)](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/actions/workflows/ci.yml)
+[![Coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel/python-coverage-comment-action-data/endpoint.json)](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/tree/python-coverage-comment-action-data)
+[![CodeQL](https://img.shields.io/github/actions/workflow/status/helmut-hoffer-von-ankershoffen/heinzel/codeql.yml?branch=main&label=CodeQL)](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/actions/workflows/codeql.yml)
+[![OpenSSF Scorecard](https://img.shields.io/ossf-scorecard/github.com/helmut-hoffer-von-ankershoffen/heinzel?label=OpenSSF%20Scorecard)](https://scorecard.dev/viewer/?uri=github.com/helmut-hoffer-von-ankershoffen/heinzel)
+[![OpenSSF Best Practices](https://img.shields.io/cii/level/15863?label=OpenSSF%20Best%20Practices)](https://www.bestpractices.dev/en/projects/15863/passing)
 [![PyPI](https://img.shields.io/pypi/v/heinzel)](https://pypi.org/project/heinzel/)
 [![Python](https://img.shields.io/badge/python-3.12%20%7C%203.13%20%7C%203.14%20%7C%203.15-blue)](pyproject.toml)
-[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=helmut-hoffer-von-ankershoffen_heinzel&metric=alert_status)](https://sonarcloud.io/summary/overall?id=helmut-hoffer-von-ankershoffen_heinzel)
+[![Quality Gate Status](https://img.shields.io/sonar/quality_gate/helmut-hoffer-von-ankershoffen_heinzel?server=https://sonarcloud.io&label=Quality%20Gate%20Status)](https://sonarcloud.io/summary/overall?id=helmut-hoffer-von-ankershoffen_heinzel)
 [![Security Rating](https://sonarcloud.io/api/project_badges/measure?project=helmut-hoffer-von-ankershoffen_heinzel&metric=security_rating)](https://sonarcloud.io/summary/overall?id=helmut-hoffer-von-ankershoffen_heinzel)
-[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/license-MIT-44bb00)](LICENSE)
 <!-- badges:end -->
 
-[**Install & explore →**](https://helmut.hoffer-von-ankershoffen.me/heinzel/) · [Plugin catalog](https://helmut.hoffer-von-ankershoffen.me/heinzel/CATALOG/) · [Build a plugin](docs/PLUGIN_AUTHORING.md)
+[**Install & explore →**](https://heinzel.team/) · [Plugin catalog](https://heinzel.team/CATALOG/) · [Build a plugin](docs/PLUGIN_AUTHORING.md)
 
 <p align="center">
   <picture>
@@ -22,11 +22,50 @@
   </picture>
 </p>
 
-**Heinzelmännchen are helpers accelerating product teams.** They draft the busywork of
-running a team — status, tracker updates, agendas, reports — in the background, and people approve it. Like the
+**Heinzelmännchen is an open-source crew of AI helpers that drafts your team's busywork and asks before anything leaves your machine.**
+Each Heinzelmännchen keeps one promise: the Friday report, the tracker update, the meeting brief. It reads your tools
+with *your* logins, drafts the work, and waits for your yes. Nothing is published, sent or spent without it. Like the
 [Heinzelmännchen of Cologne](https://en.wikipedia.org/wiki/Heinzelm%C3%A4nnchen), who finished the town's work at
-night. Why it exists and where it is going: [INTENT.md](INTENT.md). It is built on open source, and we are
-grateful: [thank you](#standing-on-the-shoulders-of-giants) to everyone in [ATTRIBUTIONS.md](ATTRIBUTIONS.md).
+night, they work in the background; unlike them, they ask first. Why it exists and where it is going: [INTENT.md](INTENT.md). It stands on open
+source, and we are grateful: [thank you](#standing-on-the-shoulders-of-giants) to everyone in
+[ATTRIBUTIONS.md](ATTRIBUTIONS.md).
+
+**Try it:** run `uvx heinzel@latest` on macOS or Linux; [other ways to install](#install).
+
+**Where it stands, honestly.** The foundation is released: the kernel, five heads (CLI, web app, MCP, REST and a
+background daemon), contracts that draft locally on request or on a schedule, a team repository, a graph of who keeps
+which promise, and plugins. A helper does not yet write into a shared document, no run has been proven unattended with a
+live provider, and helpers do not yet work with each other. Drafts are saved on your machine for you to edit
+([roadmap](INTENT.md#where-we-are)).
+
+<picture>
+  <source srcset="docs/assets/demo.png" media="(prefers-reduced-motion: reduce)" />
+  <img src="docs/assets/demo.gif" alt="hz in the terminal and web app: first commands, Today, a contract and the team graph in light and dark mode" width="100%" />
+</picture>
+
+[Video](docs/assets/demo.mp4) · [Still](docs/assets/demo.png)
+
+## See it working
+
+Real screens of the web app, captured from the installed plugins with a fictional team and demonstration data.
+Every image was inspected for private data before it was published.
+
+<a href="https://heinzel.team/catalog/heinzel-acme-aa9ce1cf07/">
+  <img src="https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-acme/7b8c4c1d114d37342d1229ba97aa972ec08de8c3/docs/assets/screenshots/company-workflow.png" alt="The workflow view of the web app: connected systems, the assets a playbook keeps, and the weekly-report contract they feed, drawn as a graph" width="100%">
+</a>
+
+**The team's real process, drawn from what is connected.** Systems, assets and contracts appear as a graph, so you
+can see what feeds the Friday report. [Explore the ACME team stack →](https://heinzel.team/catalog/heinzel-acme-aa9ce1cf07/)
+
+<a href="https://heinzel.team/catalog/heinzel-acme-payments-checkout-8a7d294621/"><img src="https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-acme/7b8c4c1d114d37342d1229ba97aa972ec08de8c3/plugins/heinzel-acme-payments-checkout/docs/assets/screenshots/draft-in-terminal.png" alt="A locally saved weekly-report draft, listed with hz heinzel drafts in the web app's terminal, ending: fictional local demonstration, review before sharing" width="100%"></a>
+
+**A first draft you can edit.** Saved locally by a deterministic demo runner, ready to review.
+
+<a href="https://heinzel.team/catalog/heinzel-clock-a8638667a9/"><img src="https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel-plugins/57a26d579b1989febfc9b642d3e6f23097baa8fb/plugins/heinzel-clock/docs/assets/screenshots/world-clock.png" alt="Today and the World Clock: a globe with Berlin, New York and Los Angeles, and who is at work now" width="100%"></a>
+
+**A time that works for everyone.** The Clock plugin shows who is at work, in demonstration time.
+
+[See every screen in the plugin catalog →](https://heinzel.team/CATALOG/) · [Install it yourself](#install)
 
 <img src="docs/assets/meet.svg" alt="Seven Heinzelmännchen, each showing a state: at rest, working, thinking, waiting for you, asleep, blocked and done" width="100%">
 
@@ -35,16 +74,6 @@ over, **waiting for you** to approve, **asleep** when there is nothing to do, **
 **done** with a happy smile. In `hz` a small one greets you, walks along during long work and marks a finished line.
 They are garnish, never a replacement for words: `hz system config set hz.playful false` (or Settings → General) turns
 them all off, and they stay away from JSON, pipes, CI and `NO_COLOR` anyway.
-
-This release is the foundation — kernel, heads, plugins and release automation; the first team workflows arrive in
-0.x ([roadmap](INTENT.md#where-we-are)).
-
-<picture>
-  <source srcset="docs/assets/demo.png" media="(prefers-reduced-motion: reduce)" />
-  <img src="docs/assets/demo.gif" alt="hz in the terminal and web app: first commands, Today, a contract and the team graph in light and dark mode" width="100%" />
-</picture>
-
-[Video](docs/assets/demo.mp4) · [Still](docs/assets/demo.png)
 
 **What you can do today:**
 
@@ -59,6 +88,10 @@ This release is the foundation — kernel, heads, plugins and release automation
 
 You talk to them with **`hz`**, a small modulith: the kernel discovers *modules* and the *lets* they advertise — typed
 declarations of operations, services, settings and health checks — and *heads* expose them.
+
+Running `hz` without arguments in an interactive terminal shows a local, read-only overview of scheduled work,
+the web server and sharing observations. `hz --help` still lists commands; redirected use keeps the existing help
+output. Missing evidence is unknown, and sharing observations are historical rather than proof of reachability.
 
 ## Get started
 
@@ -82,7 +115,7 @@ uvx heinzel@latest
 
 <!-- install-script:start -->
 ```sh
-curl -LsSf https://helmut.hoffer-von-ankershoffen.me/heinzel/install.sh | sh
+curl -LsSf https://heinzel.team/install.sh | sh
 ```
 <!-- install-script:end -->
 
@@ -90,8 +123,12 @@ It reuses uv when available, otherwise runs [Astral's official installer](https:
 It then runs the same app launcher. No administrator access or separate Python installation is needed.
 You can [inspect the script](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/blob/main/docs/install.sh) first.
 
-The first run installs the verified standard app with all default plugins and opens the workspace.
-Later runs open the installed app. Ctrl-C stops the foreground session; background operation stays optional.
+The first run installs the verified standard app with its default plugins and opens the workspace. Later runs open
+the installed app. Ctrl-C stops the foreground session; background operation stays optional.
+
+<details>
+<summary>Install details, updates and recovery</summary>
+
 The fresh standard-app installation requires a uv-managed Python: it overrides uv's configured Python preference
 and ignores `UV_PYTHON` for that installation step. Remove system-only `UV_NO_MANAGED_PYTHON` or
 `UV_PYTHON_PREFERENCE` environment settings before installing. If Python downloads are disabled, first install a
@@ -106,7 +143,10 @@ it says which `--source` moves it. Updates and plugin changes verify the current
 before selecting the tool and executable directories. If entrypoints are copied, missing or cannot be verified, use
 uv directly with the intended tool and executable directories explicitly selected. An unresolved symlink in the
 executable directory stops these changes until it is repaired; recovery may reuse an unchanged link verified for the
-original tool. This preflight cannot prevent another process from changing the directory between the check and uv's write. Shell completion: `hz --install-completion`.
+original tool. This preflight cannot prevent another process from changing the directory between the check and uv's write.
+Shell completion: `hz --install-completion`.
+
+</details>
 
 **From Claude Code**, add the plugin and let `/hz-init` do everything — install, plugins, configuration, agent
 skills:
@@ -154,6 +194,7 @@ hz system config show          # configuration files, settings in effect, their 
 hz system config set hz.log_level INFO
 hz system release              # is there a newer release? (asks GitHub now; hz checks hourly on its own)
 hz system update               # update, keeping plugins
+hz system config set hz.auto_update false  # stop the running web app updating hz and plugins by itself
 hz system agent install               # install the skills for coding agents
 ```
 
@@ -199,17 +240,28 @@ alongside its CPU, memory and load readings.
 
 Every module is a set of operations, and every operation is a `hz` command, an MCP tool (`hz system serve mcp`)
 and a REST endpoint (`hz system serve api`) at once. Coding agents use whichever suits them: the CLI with `--json`,
-or the MCP tools. People who'd rather click run `hz ui`: a web app on localhost, for this session only, with a
+or the MCP tools. People who'd rather click run `hz ui`: a web app on localhost with a
 navigation tree of settings, contracts, your team, inventory and the doctor's fixes, and a chat with your agent runner
 that says what it may cost before it runs. Modules can also advertise jobs that
-`hz system daemon install` runs in the background on a schedule, under launchd or systemd, unattended and with your
-rights; `hz system daemon pause` and `uninstall` stop them (see [SECURITY.md](SECURITY.md)). Built in today:
+`hz system daemon install` runs in the background on a schedule, under launchd or systemd, with your
+rights; `hz system daemon pause` and `uninstall` stop them (see [SECURITY.md](SECURITY.md)).
+
+`hz ui` normally stops when its terminal closes. Persistent availability is currently a preview, disabled until
+`persistent_web` is named in your user-level `hz.features` configuration file for lifecycle validation. Then run `hz ui install --port 8737`; `hz ui status` distinguishes a loaded service from a ready web server. Later `hz ui`
+opens that owned service. `hz ui restart` keeps its session through a normal restart; `hz ui uninstall` removes
+only its web login service and keeps data and paired devices. This is separate from scheduled background work and
+Tailscale sharing. After an interrupted automatic update, startup can refuse until supported recovery repairs it;
+status does not call that ready. An existing foreground server must be stopped before installing on its port.
+The service keeps using the configuration files and storage roots selected at installation. Put behavior settings
+in those files; installation refuses process-only `HZ_*` overrides. Reinstall to select a different profile.
+
+Built in today:
 
 <!-- modules:start -->
 - [`ai`](docs/MODULES.md#ai) — How hz reaches AI, and what it spends: tokens and cost per run.
 - [`ai.access`](docs/MODULES.md#aiaccess) — Pick how hz reaches AI: Claude Code, your company's gateway, or an option a plugin adds.
-- [`graph`](docs/MODULES.md#graph) — Are your team's promises kept? Artifacts and Heinzelmännchen, and where the flow waits.
-- [`heinzel`](docs/MODULES.md#heinzel) — Your Heinzelmännchen: durable agents that keep your team's documents true.
+- [`graph`](docs/MODULES.md#graph) — Are your team's contracts kept? Artifacts and Heinzelmännchen, and where the flow waits.
+- [`heinzel`](docs/MODULES.md#heinzel) — Your Heinzelmännchen: durable helpers that draft your team's recurring work for your approval.
 - [`org`](docs/MODULES.md#org) — Your profile, and the team, org and company you work with.
 - [`report`](docs/MODULES.md#report) — Telemetry: log what a Heinzelmännchen did, for your team's graph (`hz report published <id> <url>`).
 - [`system`](docs/MODULES.md#system) — Inspect, configure, diagnose and update Heinzelmännchen itself.
@@ -236,6 +288,7 @@ rights; `hz system daemon pause` and `uninstall` stop them (see [SECURITY.md](SE
 - [`system.theme`](docs/MODULES.md#systemtheme) — Pick how the web app looks: the built-in theme or one a plugin offers.
 - [`system.ui`](docs/MODULES.md#systemui) — List what modules add to the web app: status items, header actions and Today widgets.
 - [`team`](docs/MODULES.md#team) — Your team's repository: create one (`hz team new`), join one by its URL (`hz team join`), add people to it.
+- [`ui`](docs/MODULES.md#ui) — Open the web workspace or manage its optional persistent service.
 <!-- modules:end -->
 
 Details for each, in every head: [docs/MODULES.md](docs/MODULES.md). Plugins add their own modules.
@@ -264,8 +317,8 @@ Slack adapters are planned as first-party plugins too.
 
 ### Community plugins
 
-Weather and the Example reference plugin have moved from heinzel-contrib to heinzel-plugins. Each is independently
-tested against a built core artifact:
+Weather and the Example reference plugin live in heinzel-plugins too. Each is independently tested against a built
+core artifact:
 
 | Plugin | What it does | Install |
 | --- | --- | --- |
@@ -275,14 +328,14 @@ tested against a built core artifact:
 Company plugins live in their own `heinzel-*` repositories, scaffolded with `hz system plugin new`.
 
 Workflows are Markdown files, not code: a `<name>.prose.md` contract in your workflows directory (or your team's
-state repository) names the capabilities it reads, the inputs to fetch and the agent's limits, and its body says what
+state repository) names the capabilities it reads, the inputs to fetch and the helper's limits, and its body says what
 the draft must achieve. Drafts are saved locally; nothing is published by itself.
 
 ```bash
 hz heinzel new weekly-digest             # a starter contract, valid as written, with comments; creates the directory
 hz heinzel check                         # every problem by file and line
 hz heinzel show weekly-digest            # what it requires, what is bound, whether it is ready, what to run next
-hz heinzel wake weekly-digest --dry-run   # the packet the agent would get; nothing is spent
+hz heinzel wake weekly-digest --dry-run   # the packet the helper would get; nothing is spent
 hz heinzel wake weekly-digest             # draft it now; then `hz heinzel drafts`
 ```
 
@@ -390,5 +443,9 @@ security issues privately, as [SECURITY.md](SECURITY.md) describes.
 
 Heinzelmännchen is free and open-source software under the [MIT license](LICENSE). The packages it ships keep their
 own licenses, listed in [ATTRIBUTIONS.md](ATTRIBUTIONS.md).
+
+The website [heinzel.team](https://heinzel.team/) carries an [imprint](https://heinzel.team/imprint/) and a
+[privacy notice](https://heinzel.team/privacy/). The website sets no cookies and
+loads nothing from third parties, and the app sends no telemetry.
 
 Presence and adoption stay local by default. Opt in to a personal state repository with `hz system config set system.state.personal <repository>`, then inspect `hz system state status` ([state repository design](docs/adr/0081-state-repositories-one-writer-per-branch-the-daemon-pushes.md)).

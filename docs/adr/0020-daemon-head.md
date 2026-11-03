@@ -1,8 +1,10 @@
 ---
 status: proposed
 date: 2026-10-23
+implementation: partial
 amends: 0010
 amended-by: 0038, 0043, 0049, 0078, 0081
+implemented-by: 7
 ---
 
 # 0020: Add a daemon head for background and reactive operation
@@ -65,7 +67,7 @@ receipts and named a daemon head.
 
 Chosen option (proposed): **the OS supervises, the daemon ticks; GitHub holds shared state, leases and approvals**,
 because one short-lived `tick()` survives updates, crashes and sleep, and many daemons cooperate without a server of
-our own. Points are marked where 0.2 builds part of them and the rest comes later.
+our own. Points are marked where the first release builds part of them and the rest comes later.
 
 1. **Process model: the OS supervises, the daemon ticks.**
    - `hz system daemon install` writes a launchd LaunchAgent (`~/Library/LaunchAgents`, `StartCalendarInterval`,
@@ -79,13 +81,13 @@ our own. Points are marked where 0.2 builds part of them and the rest comes late
    - Commands live under `hz system daemon` (ADR 0018) as ordinary operations: `install`, `uninstall`, `status`,
      `logs`, `tick`, `pause`, `resume`, `jobs`. `status` is also a `HealthLet`. `install` and `uninstall` are
      CLI-only: installing something that runs at every login is a deliberate human act, not an MCP or REST call.
-     `tick` is CLI and MCP only (2026-10-24): it runs jobs that may spend money, and a web page can reach a local REST
+     `tick` is CLI and MCP only: it runs jobs that may spend money, and a web page can reach a local REST
      server ([ADR 0019](0019-mcp-and-rest-heads.md)); launchd and systemd run the CLI.
    - Jobs run unattended with the user's rights. `pause`, `uninstall` and `disabled_modules` stop them.
    - `hz system update` takes the local tick lock and restarts resident mode (later).
 2. **Two new let kinds, and jobs compiled from data.**
    - `JobLet`: name, func (injected like an operation, never prints), summary, `schedule` (cron), `scope`, `timeout`,
-     `retries`, `catch_up` (`latest` | `all` | `skip`), `idempotency`, `requires`. 0.2: `scope="personal"` only and
+     `retries`, `catch_up` (`latest` | `all` | `skip`), `idempotency`, `requires`. First release: `scope="personal"` only and
      `idempotency` defaulting to `<job>@<slot>`. Later: `on` (watch facets), `scope="team"`, `publishes`,
      `concurrency`, owner, and the memo key as the default idempotency.
    - `WatchLet` (later): name, provider (injected), period, scope, source id, canonicalizer. It returns facets that
@@ -103,7 +105,7 @@ our own. Points are marked where 0.2 builds part of them and the rest comes late
    will define `Ledger`, `Leases` and `Inbox` protocols and a `state` module provide them; until then, and whenever
    `state` is disabled, a local ledger under platformdirs applies.
 4. **Reconciliation follows Reactor.**
-   - Clocks only wake jobs (later; 0.2 runs a job once per due slot, keyed by its idempotency key). A job runs when its memo key `(contract fingerprint, input facet fingerprints[, freshness
+   - Clocks only wake jobs (later; the first release runs a job once per due slot, keyed by its idempotency key). A job runs when its memo key `(contract fingerprint, input facet fingerprints[, freshness
      epoch])` differs from the last rendered receipt; otherwise the disposition is `skipped`.
    - Missed schedule slots are computed from the ledger (the local one now, the **shared** one with `state`), not
      process memory. A job without a scheduled receipt starts at the later of the previous tick and one interval ago,
@@ -120,7 +122,7 @@ our own. Points are marked where 0.2 builds part of them and the rest comes late
      that job only; the other jobs run.
    - Only the leaseholder of a source polls it, with conditional requests, `retry-after` and exponential backoff
      (later).
-5. **Team state lives in a GitHub state repository** (later; 0.2 keeps a local ledger).
+5. **Team state lives in a GitHub state repository** (later; the first release keeps a local ledger).
    - Receipts are append-only, one file per receipt, never edited; one commit per tick, rebased and retried on
      rejection.
    - Leases are refs `refs/heads/hz/lease/<job-or-source>` whose acquire, renew and release commits form a
@@ -128,18 +130,18 @@ our own. Points are marked where 0.2 builds part of them and the rest comes late
      receipts record.
    - The repository also holds `control.toml` (kill switch, disabled jobs, cost ceilings),
      `policies/auto-approve.toml` (owned) and `workflows/registry.toml`.
-6. **Two runners, one ledger** (later; 0.2 runs personal jobs on your daemon). `scope=personal` jobs run only on their owner's daemon. `scope=team` jobs run in a
+6. **Two runners, one ledger** (later; the first release runs personal jobs on your daemon). `scope=personal` jobs run only on their owner's daemon. `scope=team` jobs run in a
    scheduled GitHub Actions workflow (`hz system daemon tick --scope team`, one `concurrency` group) when the team
    configures one; otherwise they are leased among daemons.
-7. **Approvals live in GitHub** (later; 0.2 publishes nothing unattended).
+7. **Approvals live in GitHub** (later; the first release publishes nothing unattended).
    - Every proposal becomes an issue in the state repository, or a pull request for file-like drafts.
-   - `hz inbox list|show|approve|reject` are operations, so CLI, MCP and REST share one inbox.
+   - `hz inbox list|show|approve|reject` (not built) are operations, so CLI, MCP and REST share one inbox.
    - Auto-approval is a policy entry with an owner, an action type, a scope and an expiry, changed by pull request;
      receipts name it.
 8. **Receipts** are JSON, content-addressed and hash-chained per job. The id is the SHA-256 of the stored JSON
    without the id, so fields added later don't invalidate older receipts. The hash is unkeyed: it detects accidents
    (truncation, hand edits, lost files), not tampering by the user's own processes; signed receipts come later.
-   Receipts, state and logs are private (directories 0700, files 0600) and written atomically with fsync. 0.2 writes
+   Receipts, state and logs are private (directories 0700, files 0600) and written atomically with fsync. the first release writes
    `job`, `wake`, `disposition` (`rendered|skipped|failed`), `as_of`, `idempotency_key`, `error` and `result`; the
    other fields come with what produces them. Fields:
    - job, contract and input fingerprints, memo key;
@@ -151,15 +153,15 @@ our own. Points are marked where 0.2 builds part of them and the rest comes late
 9. **Untrusted input is data until registered.** Workflows found in artefacts (a "🧝 Heinzel" tab) only produce a
    registration proposal (later). They run once registered with an owner and a pinned fingerprint, and pause for approval
    when the text changes. Renders get read-only tools; writes happen only through approved publish operations.
-   Unattended runs are limited to an allowlist of modules (later). 0.2: compiled contracts render with read-only
+   Unattended runs are limited to an allowlist of modules (later). First release: compiled contracts render with read-only
    tools and publish nothing; a project's `hz.toml` can't configure what the daemon runs.
 10. **Operations hygiene.**
     - Logs are rotated JSON lines in `platformdirs.user_log_dir`.
     - Secrets come from the OS keychain through `keyring`, never from unit files.
     - Kill switches (local flag, team `control.toml`, per job) are checked before every tick and every publish
-      (0.2: the local pause flag).
+      (first release: the local pause flag).
     - `--dry-run` on `install` and `tick`.
-    - Housekeeping (2026-10-24) is ordinary jobs, not a separate duty of the tick: a module whose data expires declares
+    - Housekeeping is ordinary jobs, not a separate duty of the tick: a module whose data expires declares
       a `JobLet` that deletes it, so ticks run it with a receipt, `hz system daemon jobs` lists it and `pause` stops it.
       The same deletion is an operation a person runs, and never a side effect of a read. The first is `workflow:prune`
       (daily, [ADR 0021](0021-workflow-contracts.md) decision 13). Receipts themselves don't expire.
@@ -181,7 +183,7 @@ our own. Points are marked where 0.2 builds part of them and the rest comes late
 
 ### Confirmation
 
-Partly, for the local part built in 0.2 (see the implementation status under More Information): golden-file tests for the plist and units
+Partly, for the local part built in the first release (see the implementation status under More Information): golden-file tests for the plist and units
 (`tests/unit/modules/daemon_units_test.py`), `tick()` driven by a fake clock
 (`tests/unit/modules/daemon_service_test.py`) and the CLI and foreground loop (`tests/integration/daemon_test.py`).
 Still planned: `doctor` checks for the state repository, tokens, the launchd Login Items state and a stale shim path,
@@ -191,12 +193,12 @@ and tests of two daemons plus Actions against one state repository.
 
 - Amends the "always-on runner" row of [ADR 0010](0010-towards-a-reactive-workflow-engine.md); see Consequences.
 - Research, sources and the phased plan: [docs/research/daemon-head.md](../research/daemon-head.md).
-- Implementation started in 0.2 with the local, personal part.
+- Implementation started in the first release with the local, personal part.
 
-**Implementation status.** The status stays **proposed** until the whole decision is built; 0.2 builds its local,
+**Implementation status.** The status stays **proposed** until the whole decision is built; the first release builds its local,
 personal part.
 
-**Built in 0.2 (the daemon runs locally):**
+**Built in the first release (the daemon runs locally):**
 
 - `JobLet` and `@module.job(schedule=..., timeout=..., retries=..., catch_up=..., idempotency=...)` in the public
   API, with `scope="personal"` only. The let checks its name, the shape of the cron expression, the timeout and the

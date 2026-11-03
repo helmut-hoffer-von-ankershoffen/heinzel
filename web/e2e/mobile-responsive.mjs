@@ -1,23 +1,27 @@
 // Focused mobile/touch viewport proof for the app served by `hz ui` (tests/e2e/web_ui_test.py).
-// This is Chromium emulation, not physical iPhone Safari.
+// These are Chromium/WebKit emulations, not physical iPhone Safari.
 // Usage: node e2e/mobile-responsive.mjs URL SCREENSHOT_DIR [SECTION]. SECTION is one viewport name or "phone" (the
-// scroll, sound and notification flows); without it every section runs in one browser.
+// scroll, sound and notification flows), or "share-chromium" / "share-webkit"; without it every viewport and phone flow runs.
 import assert from "node:assert/strict";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { chromium, webkit } from "playwright-core";
 import ts from "typescript";
 import { contributePanel } from "./contributed-panel.mjs";
+import { fetchOnce, ONE_CONNECTION } from "./fetch-once.mjs";
 import { reportMediaFailure, watchMedia } from "./media-diagnostics.mjs";
 
 // Fixed, credential-free checkpoints for timeout diagnosis; do not interpolate page or URL data.
 function stage(name) {
   console.error(`MOBILE_STAGE:${name}`);
+  console.error(`MOBILE_ELAPSED:${Math.round(performance.now() / 1000)}`);
 }
 stage("launch");
 const [url, shots] = process.argv.slice(2);
 mkdirSync(shots, { recursive: true });
-const useWebKit = process.env.PLAYWRIGHT_BROWSER === "webkit";
+const section = process.argv[4] ?? "all";
+const useWebKit =
+  section === "share-webkit" || (section !== "share-chromium" && process.env.PLAYWRIGHT_BROWSER === "webkit");
 const browser = useWebKit
   ? await webkit.launch()
   : await chromium.launch().catch(() => chromium.launch({ channel: "chrome" }));
@@ -30,9 +34,11 @@ const cases = [
   { name: "wide-landscape", width: 932, height: 430 },
   { name: "short-landscape", width: 844, height: 320 },
 ];
-const section = process.argv[4] ?? "all";
 assert.ok(
-  section === "all" || section === "phone" || cases.some((spec) => spec.name === section),
+  section === "all" ||
+    section === "phone" ||
+    ["share-chromium", "share-webkit"].includes(section) ||
+    cases.some((spec) => spec.name === section),
   `Unknown mobile section "${section}"`,
 );
 // A viewport section keeps just its own case; "phone" keeps none, and runs the phone flows instead.
@@ -228,7 +234,13 @@ async function showPage(page) {
   await tab.tap();
 }
 
-async function footerPane(page, id, label) {
+async function footerPane(page, id, label, ready) {
+  if (ready) {
+    await ready;
+    await page.waitForFunction(
+      () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve(true)))),
+    );
+  }
   const trigger = page.locator(`[data-footer-content="${id}"] button`).first();
   if (!(await trigger.isVisible())) {
     await page.locator('[data-footer-content="@more"] button').click();
@@ -238,6 +250,105 @@ async function footerPane(page, id, label) {
 }
 
 try {
+  if (section === "share-chromium" || section === "share-webkit") {
+    stage("phone-share");
+    // A synthetic status exercises the real footer component without a plugin or a private URL.
+    for (const supported of [true, false]) {
+      const page = await browser.newPage({
+        viewport: { width: 360, height: 780 },
+        isMobile: true,
+        hasTouch: true,
+        serviceWorkers: "block",
+      });
+      await page.addInitScript((supported) => {
+        localStorage.setItem("hz.onboarding", JSON.stringify({ step: "you", visited: [], closed: true }));
+        window.shareProbe = { calls: 0, copied: null };
+        Object.defineProperty(navigator, "share", {
+          configurable: true,
+          value: supported
+            ? async (data) => {
+                window.shareProbe.calls++;
+                window.shareProbe.url = data.url;
+                if (window.shareProbe.calls === 1) throw new DOMException("Cancelled", "AbortError");
+                throw new Error("private detail");
+              }
+            : undefined,
+        });
+        Object.defineProperty(navigator, "clipboard", {
+          configurable: true,
+          value: {
+            writeText: async (text) => {
+              window.shareProbe.copied = text;
+            },
+          },
+        });
+      }, supported);
+      const fixtureUrl = "https://workstation.tail-example.ts.net";
+      const entry = {
+        id: "probe:share",
+        module: "probe",
+        plugin: null,
+        order: 1,
+        refresh: 60,
+        slots: { footer: true },
+        problem: null,
+        item: {
+          text: "Share probe",
+          tone: "ok",
+          icon: "link",
+          detail: [],
+          toggle: {
+            label: "Share this service",
+            checked: true,
+            url: fixtureUrl,
+            sign_in_url: null,
+            enable: { call: { method: "POST", path: "/probe/enable", read_only: false, query: {}, body: {} } },
+            disable: { call: { method: "POST", path: "/probe/disable", read_only: false, query: {}, body: {} } },
+          },
+        },
+      };
+      await page.route("**/api/system/ui/status**", async (route) => {
+        const selected = new URL(route.request().url()).searchParams.get("item");
+        if (selected === entry.id) return route.fulfill({ json: [entry] });
+        const response = await fetchOnce(route);
+        const entries = await response.json();
+        return route.fulfill({ response, json: [...entries, ...(!selected ? [entry] : [])] });
+      });
+      await page.goto(url);
+      await page.locator("#splash").waitFor({ state: "hidden", timeout: 15_000 });
+      const pane = await footerPane(page, entry.id, "Share probe");
+      const copy = pane.getByRole("button", { name: "Copy URL", exact: true });
+      await assertContained(page, pane, "phone: share pane");
+      await page.screenshot({ path: join(shots, `mobile-${section}-${supported ? "supported" : "unsupported"}.png`) });
+      if (supported) {
+        const share = pane.getByRole("button", { name: "Share", exact: true });
+        await assertContained(page, share, "phone: Share");
+        await assertTouchTarget(share, "Share", "phone");
+        assert.equal(await copy.count(), 0, "Native sharing replaces the separate Copy button");
+        await share.tap();
+        assert.equal(await page.evaluate(() => window.shareProbe.calls), 1);
+        assert.equal(await pane.getByRole("alert").count(), 0, "Cancellation is silent");
+        await copy.waitFor(); // AbortError can also mean that no share targets were available.
+        await share.tap();
+        await pane.getByRole("alert").getByText("Could not share the link. You can copy it instead.").waitFor();
+        assert.equal(await page.evaluate(() => window.shareProbe.url), `${fixtureUrl}/`);
+      } else {
+        assert.equal(await pane.getByRole("button", { name: "Share", exact: true }).count(), 0);
+      }
+      await assertContained(page, copy, "phone: Copy URL");
+      await assertTouchTarget(copy, "Copy URL", "phone");
+      if (supported) await page.screenshot({ path: join(shots, `mobile-${section}-failed.png`) });
+      await copy.tap();
+      await page.waitForFunction((expected) => window.shareProbe.copied === expected, `${fixtureUrl}/`);
+      assert.equal(
+        await pane.evaluate((element) => element.scrollWidth <= element.clientWidth + 1),
+        true,
+        "Share controls and URL must wrap within the pane",
+      );
+      await page.close();
+    }
+    result.share = { cancellation: true, failure: true, copy: true, unsupported: true, wraps: true };
+  }
   for (const spec of cases) {
     stage(`viewport-${spec.name}-start`);
     const context = await browser.newContext({
@@ -255,7 +366,7 @@ try {
     await contributePanel(page);
     // Platform-specific CLI paths and provider names must wrap rather than widen their settings pane.
     await page.route("**/api/ai/access/list", async (route) => {
-      const response = await route.fetch();
+      const response = await fetchOnce(route);
       const listing = await response.json();
       listing.options.push({
         name: "mobile-overflow-probe",
@@ -276,12 +387,12 @@ try {
     });
     // Include advanced controls using the real isolated-profile operation.
     const expertResponse = await context.request.post(new URL("/api/system/expert/on", url).href, {
-      headers: { Authorization: `Bearer ${new URL(url).hash.slice("#token=".length)}` },
+      headers: { ...ONE_CONNECTION, Authorization: `Bearer ${new URL(url).hash.slice("#token=".length)}` },
     });
     assert.ok(expertResponse.ok(), "Advanced settings must be enabled in the isolated fixture");
     // Enum display labels come from providers and can exceed a native select's intrinsic phone width.
     await page.route("**/api/system/config/show", async (route) => {
-      const response = await route.fetch();
+      const response = await fetchOnce(route);
       const report = await response.json();
       const backend = report.settings.find(
         (setting) => setting.section === "system.credential" && setting.key === "backend",
@@ -350,7 +461,7 @@ try {
       `${spec.name}: footer moved while scrolling`,
     );
     assert.ok(afterScroll.top.y >= 0 && afterScroll.bottom.y + afterScroll.bottom.height <= spec.height + 1);
-    await page.getByRole("button", { name: "Home", exact: true }).click();
+    await page.getByRole("button", { name: "Today", exact: true }).click();
     assert.ok(await page.getByRole("menu").isVisible(), `${spec.name}: header menu is unreachable`);
     await page.keyboard.press("Escape");
     await page.screenshot({ path: join(shots, `mobile-${spec.name}-sticky-scroll.png`) });
@@ -482,10 +593,12 @@ try {
     await page.screenshot({ path: join(shots, `mobile-${spec.name}-updates.png`) });
     await dismissFooterPane(page);
     updateAvailable = true;
+    // The footer's label and its fit depend on this answer, so tap only once the footer shows it.
+    const updateAnswered = page.waitForResponse("**/api/update-status");
     await page.goto(url);
     await page.getByRole("heading", { name: "Today" }).waitFor();
     await page.locator("#splash").waitFor({ state: "hidden", timeout: 15_000 });
-    const availablePane = await footerPane(page, "@updates", "Update available");
+    const availablePane = await footerPane(page, "@updates", "Update available", updateAnswered);
     await assertContained(page, availablePane, `${spec.name}: available update pane`);
     await availablePane.getByText(/^Last installed:/).waitFor();
     await assertTouchTarget(
@@ -520,7 +633,7 @@ try {
       `${spec.name}: expanded left navigation`,
     );
     await page.getByRole("button", { name: "Collapse navigation" }).click();
-    await page.getByRole("button", { name: "Home", exact: true }).click();
+    await page.getByRole("button", { name: "Today", exact: true }).click();
     await assertContained(page, page.getByRole("menu"), `${spec.name}: screen menu`);
     await page.keyboard.press("Escape");
     const initialChatTab = page.getByRole("tab", { name: "Chat", exact: true });
@@ -535,7 +648,7 @@ try {
     await page.getByRole("textbox", { name: "Your message" }).fill("A draft to keep.");
     await assertContained(
       page,
-      page.getByRole("button", { name: "Create Heinzel and take this message" }),
+      page.getByRole("button", { name: "Create a helper and take this message" }),
       `${spec.name}: workshop agent handoff`,
     );
     await page.screenshot({ path: join(shots, `mobile-${spec.name}-agent-handoff.png`) });
@@ -756,7 +869,7 @@ try {
       });
     });
     await page.getByRole("textbox", { name: "Your message" }).fill("Keep my notes current.");
-    await page.getByRole("button", { name: "Create Heinzel and take this message" }).click();
+    await page.getByRole("button", { name: "Create a helper and take this message" }).click();
     await page.getByLabel("Message your Heinzel").waitFor();
     await page.getByText(/Customize.*suggested look/).click();
     const useSuggestion = page.getByRole("button", { name: "Use suggested identity" });
@@ -944,9 +1057,61 @@ try {
     await scrollPage.locator("#splash").waitFor({ state: "hidden", timeout: 15_000 });
     await scrollPage.getByRole("button", { name: "Open a terminal" }).tap();
     await atPanel("terminal");
+    const terminal = scrollPage.getByRole("region", { name: "Terminal", exact: true });
+    const terminalKeys = terminal.getByRole("group", { name: "Terminal keys", exact: true });
+    await assertContained(scrollPage, terminalKeys, "phone: terminal key row");
+    for (const name of [
+      "Escape",
+      "Tab",
+      "Control+C",
+      "Control+Z",
+      "Control+D",
+      "Arrow left",
+      "Arrow down",
+      "Arrow up",
+      "Arrow right",
+    ]) {
+      const key = terminalKeys.getByRole("button", { name, exact: true });
+      await assertTouchTarget(key, `terminal ${name} key`, "phone");
+    }
+    const rightArrow = terminalKeys.getByRole("button", { name: "Arrow right", exact: true });
+    await rightArrow.scrollIntoViewIfNeeded();
+    await assertContained(scrollPage, rightArrow, "phone: horizontally scrolled terminal key");
+    await scrollPage.screenshot({ path: join(shots, "mobile-terminal-keys.png") });
+    const shellInput = terminal.locator(".xterm-helper-textarea");
+    await scrollPage.waitForFunction(() => document.querySelector(".xterm-rows")?.textContent?.trim(), null, {
+      timeout: 10_000,
+    });
+    await shellInput.pressSequentially("printf 'READY_%s\\n' ok; sleep 30");
+    await shellInput.press("Enter");
+    await scrollPage.waitForFunction(
+      () => document.querySelector(".xterm-rows")?.textContent?.includes("READY_ok"),
+      null,
+      {
+        timeout: 10_000,
+      },
+    );
+    await terminalKeys.getByRole("button", { name: "Control+C", exact: true }).tap();
+    await scrollPage.waitForFunction(() => document.querySelector(".xterm-rows")?.textContent?.includes("^C"), null, {
+      timeout: 10_000,
+    });
+    await shellInput.pressSequentially("printf 'KEYS_TEST_%s\\n' ok");
+    await shellInput.press("Enter");
+    await scrollPage.waitForFunction(
+      () => document.querySelector(".xterm-rows")?.textContent?.includes("KEYS_TEST_ok"),
+      null,
+      {
+        timeout: 10_000,
+      },
+    );
     await scrollPage.setViewportSize({ width: 844, height: 320 });
     await scrollPage.getByRole("button", { name: "Show terminal" }).tap();
     await atPanel("terminal");
+    await terminalKeys.waitFor({ state: "visible" });
+    const landscapeEscape = terminalKeys.getByRole("button", { name: "Escape", exact: true });
+    await landscapeEscape.scrollIntoViewIfNeeded();
+    await assertTouchTarget(landscapeEscape, "landscape Escape key", "phone");
+    await scrollPage.screenshot({ path: join(shots, "mobile-terminal-keys-landscape.png") });
     await scrollPage.getByRole("tab", { name: "Page", exact: true }).tap();
     await atPage();
     assert.equal((await lastScroll()).behavior, "smooth", "short landscape Page scrolls smoothly");
@@ -1035,6 +1200,10 @@ try {
     await soundPage.getByRole("button", { name: "Choose a soundscape", exact: true }).click();
     const soundDialog = soundPage.getByRole("dialog", { name: "Sound" });
     await soundDialog.getByText("Use your iPhone or iPad volume buttons to adjust YouTube audio.").waitFor();
+    // Safari's toolbars and keyboard resize the window at the same width: the navigation and this dialog stay open.
+    await soundPage.evaluate(() => window.dispatchEvent(new Event("resize")));
+    await soundPage.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve))));
+    assert.equal(await soundDialog.count(), 1, "a same-width resize keeps the sound dialog open");
     assert.equal(await soundDialog.getByRole("slider", { name: "Volume" }).count(), 0);
     assert.equal(await soundDialog.getByRole("switch", { name: "Softer while I type" }).count(), 0);
     await assertContained(soundPage, soundDialog, "iPhone sound controls");
@@ -1079,6 +1248,8 @@ try {
     await soundPage.screenshot({ path: join(shots, "mobile-compact-sound.png") });
     await soundPage.getByRole("button", { name: "Expand navigation" }).click();
     await player.waitFor();
+    // The player moves with the navigation's width transition: a tap during it can land beside the button.
+    await soundPage.waitForFunction(() => !document.getAnimations().some((run) => run instanceof CSSTransition));
     await popOut.tap();
     await soundPage.waitForFunction(() => document.querySelector('[data-dock="floating"]'));
     await soundPage.setViewportSize({ width: 360, height: 400 });

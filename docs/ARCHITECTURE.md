@@ -152,17 +152,17 @@ hz --version
 hz join URL                                join a team: who you are, the team, what is still missing (CLI only)
 hz setup [MODULE]                          every module's setup step, or one module's, wizard style (CLI only)
 hz ui                                      the web app on localhost, opened in your browser
-hz system info | modules | doctor | changelog | release | update
-hz system expert [on | off]                every command in help, or just the everyday ones (ADR 0041)
-hz system config  show | get | set | unset | init
-hz system plugin  list | add | remove | new | docs show | docs build
-hz system layer   list | show
-hz system agent   skills | install | uninstall
-hz system skill   list | show | export | unexport   skills for AI; export hands chosen ones to Claude Code (ADR 0061)
-hz system daemon  install | uninstall | status | logs | tick | pause | resume | jobs
-hz system notify  list | ack | test | install
-hz system serve   mcp | api | daemon
-hz system state   status | push | reset     your machine's presence and versions, to your own repository
+hz system info                             also: modules, doctor, changelog, release, update
+hz system expert on                        every command in help; `off` shows just the everyday ones (ADR 0041)
+hz system config  show, get, set, unset or init
+hz system plugin  list, add, remove, new, docs show or docs build
+hz system layer  list or show
+hz system agent  skills, install or uninstall
+hz system skill  list, show, export or unexport   skills for AI; export hands chosen ones to Claude Code (ADR 0061)
+hz system daemon  install, uninstall, status, logs, tick, pause, resume or jobs
+hz system notify  list, ack, test or install
+hz system serve  mcp, api or daemon
+hz system state  status, push or reset     your machine's presence and versions, to your own repository
 hz report <verb> | sync                    what a Heinzelmännchen did, for the team graph (ADR 0054)
 hz graph                                  are the team's promises kept, and where the flow waits
 hz <module> …     work: plugin modules and built-in workflow modules
@@ -203,8 +203,8 @@ root package `heinzel_<name>`, entry point `<name>` in the `heinzel.modules` gro
 resolves a catalog name from project metadata. Public implementations live in
 [heinzel-plugins](https://github.com/helmut-hoffer-von-ankershoffen/heinzel-plugins), with independent locks, environments,
 versions and releases. External/private repositories use the same SDK and discovery rules. The standard app profile
-includes Clock, Resource, Tailscale and the Heinzelmännchen theme; minimal core has no plugin dependencies. Resource
-is the only built-in module extracted in 0.9; the theme plugin also owns the former bundled soundscape content.
+includes Clock, Resource, Tailscale and the Heinzelmännchen theme; minimal core has no plugin dependencies. The theme
+plugin also owns the bundled soundscape content.
 See [ADR 0094](adr/0094-plugins-own-features-and-independent-delivery.md) and
 [ADR 0095](adr/0095-standard-heinzel-theme-owns-bundled-soundscapes.md).
 
@@ -232,7 +232,7 @@ without exposing the interface as a user input or making unrelated heads unusabl
 The web head sizes dialogs and positions footer popovers against the visual viewport, including keyboard and zoom
 changes. Floating controls respect device safe areas; touch form fields use at least 16px text to avoid focus zoom.
 `web/e2e/mobile-responsive.mjs` checks phone portrait/landscape layouts, dialog and footer bounds, navigation,
-keyboard-sized heights and zoom. The collapsed sidebar keeps direct play/pause; see [ADR 0088](adr/0088-collapsed-sidebar-keeps-sound-controls.md).
+keyboard-sized heights and zoom. The collapsed sidebar keeps direct play/pause, and the sound picker stays open while a soundscape is picked, which plays at once (ADR 0058); see [ADR 0088](adr/0088-collapsed-sidebar-keeps-sound-controls.md).
 
 The workspace uses descriptor-driven tabs for Chat, Terminal and World Clock on desktop and phone. Hidden contents
 stay mounted. On phones, the World Clock, Chat and Terminal header actions scroll to their panels, and Page scrolls

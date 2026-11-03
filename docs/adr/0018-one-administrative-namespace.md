@@ -1,6 +1,7 @@
 ---
 status: accepted
 date: 2026-10-23
+implementation: built
 amended-by: 0032, 0039, 0041, 0045, 0080
 ---
 

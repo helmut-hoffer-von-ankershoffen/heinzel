@@ -2,8 +2,10 @@
 amended-by: 0094
 status: proposed
 date: 2026-10-25
+implementation: built
 decision-makers: maintainer
 related: 0039, 0056
+implemented-by: 162
 ---
 
 # 0063: World Clock is a local interactive globe in the right panel
@@ -44,6 +46,6 @@ Chosen option: **COBE, with a text list and static map**, because the globe can 
 
 ### Confirmation
 
-`web/src/layout/WorldClock.test.tsx` checks primary ordering, unknown-zone fallback, 24-hour times, panel opening and
-closing, reduced-motion fallback and graphics cleanup. `web/src/lib/worldClock.test.ts` checks solar and coordinate
+In heinzel-plugins, `plugins/heinzel-clock/web/src/ClockPanel.test.tsx` checks primary ordering, unknown-zone fallback, 24-hour times, panel opening and
+closing, reduced-motion fallback and graphics cleanup. `plugins/heinzel-clock/web/src/globe.test.ts` checks solar and coordinate
 calculations with fixed dates. The web licence check validates the bundled dependency.
