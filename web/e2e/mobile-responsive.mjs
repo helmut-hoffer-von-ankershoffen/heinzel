@@ -1,7 +1,7 @@
 // Focused mobile/touch viewport proof for the app served by `hz ui` (tests/e2e/web_ui_test.py).
-// This is Chromium emulation, not physical iPhone Safari.
+// These are Chromium/WebKit emulations, not physical iPhone Safari.
 // Usage: node e2e/mobile-responsive.mjs URL SCREENSHOT_DIR [SECTION]. SECTION is one viewport name or "phone" (the
-// scroll, sound and notification flows); without it every section runs in one browser.
+// scroll, sound and notification flows), or "share-chromium" / "share-webkit"; without it every viewport and phone flow runs.
 import assert from "node:assert/strict";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -19,7 +19,9 @@ function stage(name) {
 stage("launch");
 const [url, shots] = process.argv.slice(2);
 mkdirSync(shots, { recursive: true });
-const useWebKit = process.env.PLAYWRIGHT_BROWSER === "webkit";
+const section = process.argv[4] ?? "all";
+const useWebKit =
+  section === "share-webkit" || (section !== "share-chromium" && process.env.PLAYWRIGHT_BROWSER === "webkit");
 const browser = useWebKit
   ? await webkit.launch()
   : await chromium.launch().catch(() => chromium.launch({ channel: "chrome" }));
@@ -32,9 +34,11 @@ const cases = [
   { name: "wide-landscape", width: 932, height: 430 },
   { name: "short-landscape", width: 844, height: 320 },
 ];
-const section = process.argv[4] ?? "all";
 assert.ok(
-  section === "all" || section === "phone" || cases.some((spec) => spec.name === section),
+  section === "all" ||
+    section === "phone" ||
+    ["share-chromium", "share-webkit"].includes(section) ||
+    cases.some((spec) => spec.name === section),
   `Unknown mobile section "${section}"`,
 );
 // A viewport section keeps just its own case; "phone" keeps none, and runs the phone flows instead.
@@ -246,6 +250,102 @@ async function footerPane(page, id, label, ready) {
 }
 
 try {
+  if (section === "share-chromium" || section === "share-webkit") {
+    stage("phone-share");
+    // A synthetic status exercises the real footer component without a plugin or a private URL.
+    for (const supported of [true, false]) {
+      const page = await browser.newPage({
+        viewport: { width: 360, height: 780 },
+        isMobile: true,
+        hasTouch: true,
+        serviceWorkers: "block",
+      });
+      await page.addInitScript((supported) => {
+        localStorage.setItem("hz.onboarding", JSON.stringify({ step: "you", visited: [], closed: true }));
+        window.shareProbe = { calls: 0, copied: null };
+        Object.defineProperty(navigator, "share", {
+          configurable: true,
+          value: supported
+            ? async (data) => {
+                window.shareProbe.calls++;
+                window.shareProbe.url = data.url;
+                if (window.shareProbe.calls === 1) throw new DOMException("Cancelled", "AbortError");
+                throw new Error("private detail");
+              }
+            : undefined,
+        });
+        Object.defineProperty(navigator, "clipboard", {
+          configurable: true,
+          value: {
+            writeText: async (text) => {
+              window.shareProbe.copied = text;
+            },
+          },
+        });
+      }, supported);
+      const fixtureUrl = "https://workstation.tail-example.ts.net";
+      const entry = {
+        id: "probe:share",
+        module: "probe",
+        plugin: null,
+        order: 1,
+        refresh: 60,
+        slots: { footer: true },
+        problem: null,
+        item: {
+          text: "Share probe",
+          tone: "ok",
+          icon: "link",
+          detail: [],
+          toggle: {
+            label: "Share this service",
+            checked: true,
+            url: fixtureUrl,
+            sign_in_url: null,
+            enable: { call: { method: "POST", path: "/probe/enable", read_only: false, query: {}, body: {} } },
+            disable: { call: { method: "POST", path: "/probe/disable", read_only: false, query: {}, body: {} } },
+          },
+        },
+      };
+      await page.route("**/api/system/ui/status**", async (route) => {
+        const selected = new URL(route.request().url()).searchParams.get("item");
+        if (selected === entry.id) return route.fulfill({ json: [entry] });
+        const response = await fetchOnce(route);
+        const entries = await response.json();
+        return route.fulfill({ response, json: [...entries, ...(!selected ? [entry] : [])] });
+      });
+      await page.goto(url);
+      await page.locator("#splash").waitFor({ state: "hidden", timeout: 15_000 });
+      const pane = await footerPane(page, entry.id, "Share probe");
+      const copy = pane.getByRole("button", { name: "Copy URL", exact: true });
+      await assertContained(page, pane, "phone: share pane");
+      await assertContained(page, copy, "phone: Copy URL");
+      await assertTouchTarget(copy, "Copy URL", "phone");
+      await page.screenshot({ path: join(shots, `mobile-${section}-${supported ? "supported" : "unsupported"}.png`) });
+      if (supported) {
+        const share = pane.getByRole("button", { name: "Share", exact: true });
+        await assertContained(page, share, "phone: Share");
+        await assertTouchTarget(share, "Share", "phone");
+        await share.tap();
+        assert.equal(await page.evaluate(() => window.shareProbe.calls), 1);
+        assert.equal(await pane.getByRole("alert").count(), 0, "Cancellation is silent");
+        await share.tap();
+        await pane.getByRole("alert").getByText("Could not share the link. You can copy it instead.").waitFor();
+        assert.equal(await page.evaluate(() => window.shareProbe.url), `${fixtureUrl}/`);
+      } else {
+        assert.equal(await pane.getByRole("button", { name: "Share", exact: true }).count(), 0);
+      }
+      await copy.tap();
+      await page.waitForFunction((expected) => window.shareProbe.copied === expected, `${fixtureUrl}/`);
+      assert.equal(
+        await pane.evaluate((element) => element.scrollWidth <= element.clientWidth + 1),
+        true,
+        "Share controls and URL must wrap within the pane",
+      );
+      await page.close();
+    }
+    result.share = { cancellation: true, failure: true, copy: true, unsupported: true, wraps: true };
+  }
   for (const spec of cases) {
     stage(`viewport-${spec.name}-start`);
     const context = await browser.newContext({

@@ -230,6 +230,16 @@ describe("generic provider toggle", () => {
 });
 
 describe("authenticated URL copy", () => {
+  it("offers Copy without Share when native sharing is unavailable", async () => {
+    vi.stubGlobal("navigator", Object.assign(Object.create(navigator), { share: undefined }));
+    const user = userEvent.setup();
+    const clipboard = vi.spyOn(navigator.clipboard, "writeText");
+    show(control({ checked: true, url: ORIGIN, sign_in_url: ORIGIN }));
+    expect(screen.queryByRole("button", { name: "Share" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Copy URL" }));
+    expect(clipboard).toHaveBeenCalledWith(`${ORIGIN}/#token=session-for-tests`);
+  });
+
   it("shares the approved session URL directly from the click", async () => {
     const share = vi.fn(async () => {});
     vi.stubGlobal("navigator", Object.assign(Object.create(navigator), { share }));

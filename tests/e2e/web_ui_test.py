@@ -633,7 +633,7 @@ def test_theme_image_viewports_preserve_the_cap_hinge_in_actual_chromium(tmp_pat
     assert result == {"comparisons": 27, "reduced": True, "errors": []}
 
 
-# The sections of web/e2e/mobile-responsive.mjs: each viewport sweep, and the phone flows (scroll, sound, notification).
+# The sections of web/e2e/mobile-responsive.mjs: viewports, phone flows, and share on both browser engines.
 # Each runs in its own driver child against its own `hz ui` and isolated directories, so the cases are independent.
 MOBILE_VIEWPORTS = (
     "narrow-portrait",
@@ -643,7 +643,7 @@ MOBILE_VIEWPORTS = (
     "wide-landscape",
     "short-landscape",
 )
-MOBILE_SECTIONS = (*MOBILE_VIEWPORTS, "phone")
+MOBILE_SECTIONS = (*MOBILE_VIEWPORTS, "phone", "share-chromium", "share-webkit")
 # The driver child's deadline per section. One section is a seventh or less of what the single 300 s child covered
 # (all of it took 205 s on Ubuntu and 294 s on macOS; a section ran in 15-45 s locally), so this leaves a section 2.5x
 # its expected time, and a hung one fails in two minutes instead of five.
@@ -658,9 +658,19 @@ def test_mobile_sections_cover_every_viewport_of_the_driver():
 
 
 def check_mobile_result(section, result):
-    """A viewport section proves exactly its own case; the phone section, the docked player and iPhone controls."""
+    """Each section reports its own viewport or phone-flow evidence."""
     assert result["evidence"] == "mobile/touch emulation; not physical iPhone Safari"
-    if section == "phone":
+    if section in ("share-chromium", "share-webkit"):
+        assert result["engine"].startswith("Chromium " if section == "share-chromium" else "WebKit ")
+        assert result["cases"] == []
+        assert result["share"] == {
+            "cancellation": True,
+            "failure": True,
+            "copy": True,
+            "unsupported": True,
+            "wraps": True,
+        }
+    elif section == "phone":
         assert result["cases"] == []
         assert result["dockedPlayer"]["popOutUsable"] is True
         assert result["iphoneControls"] == {"deviceVolume": True, "notificationTest": True, "serverActionsHidden": True}
@@ -679,12 +689,12 @@ def report_mobile_time(capfd, section, begun):
 @pytest.mark.e2e_early
 @pytest.mark.parametrize("section", MOBILE_SECTIONS)
 def test_mobile_touch_viewports_keep_navigation_settings_and_chat_reachable(environment, tmp_path, capfd, section):
-    """Chromium mobile emulation checks responsive reachability; it is not a physical iPhone Safari test."""
+    """Mobile emulation checks responsive reachability; it is not a physical iPhone Safari test."""
     env, _recorded = environment
     web_build.ensure_built()
     run = [sys.executable, str(REPO / "scripts" / "web_build.py")]
     subprocess.run(
-        [*run, "exec", "playwright-core", "install", "chromium"],
+        [*run, "exec", "playwright-core", "install", "webkit" if section == "share-webkit" else "chromium"],
         cwd=REPO,
         check=True,
         timeout=600,
