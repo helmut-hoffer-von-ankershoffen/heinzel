@@ -1079,8 +1079,18 @@ try {
     await assertContained(scrollPage, rightArrow, "phone: horizontally scrolled terminal key");
     await scrollPage.screenshot({ path: join(shots, "mobile-terminal-keys.png") });
     const shellInput = terminal.locator(".xterm-helper-textarea");
-    await shellInput.pressSequentially("sleep 30");
+    await scrollPage.waitForFunction(() => document.querySelector(".xterm-rows")?.textContent?.trim(), null, {
+      timeout: 10_000,
+    });
+    await shellInput.pressSequentially("printf 'READY_%s\\n' ok; sleep 30");
     await shellInput.press("Enter");
+    await scrollPage.waitForFunction(
+      () => document.querySelector(".xterm-rows")?.textContent?.includes("READY_ok"),
+      null,
+      {
+        timeout: 10_000,
+      },
+    );
     await terminalKeys.getByRole("button", { name: "Control+C", exact: true }).tap();
     await scrollPage.waitForFunction(() => document.querySelector(".xterm-rows")?.textContent?.includes("^C"), null, {
       timeout: 10_000,
