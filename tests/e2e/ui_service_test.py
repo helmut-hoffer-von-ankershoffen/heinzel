@@ -4,12 +4,14 @@ import contextlib
 import subprocess
 import threading
 import time
+from collections import deque
 from pathlib import Path
 from urllib.parse import urlsplit
 
 import httpx
 import pytest
 
+from heinzel.kernel import HeinzelError
 from tests.e2e.tool_install_test import sandbox, seed_uv_cache, wheel
 from tests.integration.ui_service_test import service, service_factory
 
@@ -25,6 +27,34 @@ class RunningService:
         self.service, self.manager = service, manager
         self.command, self.environment = command, environment
         self.processes = []
+        self.original_control = service._control
+        self.control_failure = None
+        self.control_failure_count = 0
+        self.ready_started = 0.0
+        service._control = self.observe_control
+
+    def observe_control(self, record, pid, command):
+        """Record only safe metadata from an existing failed status call, then re-raise unchanged."""
+        try:
+            return self.original_control(record, pid, command)
+        except (OSError, ValueError, HeinzelError) as exc:
+            if command == "status":
+                frames = deque(maxlen=4)
+                trace = exc.__traceback__
+                while trace is not None:
+                    name = trace.tb_frame.f_code.co_name
+                    frames.append((name if name.isascii() and name.isidentifier() else "unknown", trace.tb_lineno))
+                    trace = trace.tb_next
+                self.control_failure_count += 1
+                name = type(exc).__name__
+                number = exc.errno if isinstance(exc, OSError) else None
+                self.control_failure = {
+                    "exception": name if name.isascii() and name.isidentifier() else "unknown",
+                    "errno": number if type(number) is int else None,
+                    "frames": list(frames),
+                    "elapsed": round(time.monotonic() - self.ready_started, 3),
+                }
+            raise
 
     def launch(self):
         process = subprocess.Popen(self.command, env=self.environment, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -35,6 +65,9 @@ class RunningService:
     def ready(self, previous=None):
         status = None
         deadline = time.monotonic() + 6
+        self.ready_started = deadline - 6
+        self.control_failure = None
+        self.control_failure_count = 0
         changed = threading.Event()
         while time.monotonic() < deadline:
             status = self.service.status()
@@ -45,7 +78,8 @@ class RunningService:
         pytest.fail(
             "The owned web server did not become ready with a new lifecycle instance; "
             f"last status={status.model_dump_json() if status is not None else 'not sampled'}, "
-            f"owned process exit={self.processes[-1].poll()}, wait channel={self.wait_channel()}."
+            f"owned process exit={self.processes[-1].poll()}, wait channel={self.wait_channel()}, "
+            f"control failure={self.control_failure}, failed status calls={self.control_failure_count}."
         )
 
     def wait_channel(self):
@@ -60,6 +94,7 @@ class RunningService:
         return value if value.isidentifier() or value == "0" else "unknown"
 
     def close(self):
+        self.service._control = self.original_control
         for process in self.processes:
             if process.poll() is None:
                 process.terminate()
