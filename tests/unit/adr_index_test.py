@@ -24,6 +24,14 @@ def _adr(directory, number, name, **front):
     )
 
 
+@pytest.mark.parametrize("relation", ["amends", "amended-by", "supersedes", "superseded-by"])
+def test_missing_relation_targets_are_rejected(tmp_path, relation):
+    _adr(tmp_path, "0001", "old", **{relation: "0002, 9999"})
+    _adr(tmp_path, "0002", "new")
+    with pytest.raises(ValueError, match=rf"0001.*{relation}.*9999"):
+        hooks.adr_records(tmp_path)
+
+
 def test_the_index_has_a_row_per_adr_with_its_pull_requests_and_no_amendment_text(tmp_path):
     _adr(tmp_path, "0001", "old", **{"amended-by": "0002"})
     _adr(tmp_path, "0002", "new", **{"amends": "0001", "amends-0001": "what it changes", "implemented-by": "7, 9"})

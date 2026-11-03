@@ -20,6 +20,15 @@ from typing import Any
 ADR_FILE = re.compile(r"^(\d{4})-.+\.md$")
 ADR_TITLE = re.compile(r"^# \d{4}: (.+)$", re.MULTILINE)
 INDEX_START, INDEX_END = "<!-- adr-index:start -->", "<!-- adr-index:end -->"
+RELATIONS = ("amends", "amended-by", "supersedes", "superseded-by")
+
+
+class MissingAdrTargetError(ValueError):
+    """An ADR relation points to a record that does not exist."""
+
+    def __init__(self, number: str, relation: str, target: str) -> None:
+        """Identify the source, relation and missing target."""
+        super().__init__(f"ADR {number} {relation} references missing ADR {target}")
 
 
 def numbers(value: str) -> list[str]:
@@ -43,7 +52,11 @@ def adr_frontmatter(text: str) -> dict[str, str]:
 
 
 def adr_records(directory: Path) -> dict[str, dict[str, str]]:
-    """Every record of an ADR directory by number: its front matter plus `file` and `title`."""
+    """Every record by number, including its `file` and `title`.
+
+    Raises:
+        MissingAdrTargetError: A relation references a missing record.
+    """
     records: dict[str, dict[str, str]] = {}
     for path in sorted(directory.iterdir()):
         match = ADR_FILE.match(path.name)
@@ -52,6 +65,11 @@ def adr_records(directory: Path) -> dict[str, dict[str, str]]:
         text = path.read_text(encoding="utf-8")
         title = ADR_TITLE.search(text)
         records[match.group(1)] = {**adr_frontmatter(text), "file": path.name, "title": title.group(1) if title else ""}
+    for number, meta in records.items():
+        for relation in RELATIONS:
+            for target in numbers(meta.get(relation, "")):
+                if target not in records:
+                    raise MissingAdrTargetError(number, relation, target)
     return records
 
 
