@@ -2,6 +2,7 @@
 status: proposed
 date: 2026-11-03
 implementation: partial
+implemented-by: 492
 related: 0020, 0031, 0056
 ---
 
