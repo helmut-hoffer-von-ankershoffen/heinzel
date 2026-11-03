@@ -1406,6 +1406,24 @@ def test_macos_specific_tests_are_a_required_serial_job_on_macos():
     assert any(step.get("run") == "make test-macos-specific" for step in job["steps"])
 
 
+@pytest.mark.parametrize(
+    ("name", "target"), [("macos-specific", "test-macos-specific"), ("macos-smoke", "test-macos-smoke")]
+)
+def test_native_face_compile_has_a_required_serial_job_with_a_real_notifier_build(name, target):
+    jobs = yaml.safe_load((REPO / ".github/workflows/ci.yml").read_text(encoding="utf-8"))["jobs"]
+    job = jobs[name]
+    assert job["runs-on"] == "macos-latest"
+    assert name in jobs["ci-ok"]["needs"]
+    assert not job.get("continue-on-error", False)
+    commands = [step["run"] for step in job["steps"] if "run" in step]
+    assert commands.index("make notifier") < commands.index(f"make {target}")
+    makefile = (REPO / "Makefile").read_text(encoding="utf-8")
+    recipe = makefile.split(f"\n{target}:", 1)[1].split("\n\n", 1)[0]
+    assert "-m macos_specific" in recipe
+    assert " -n " not in recipe
+    assert "test-e2e: e2e-prepare" in makefile
+
+
 def _ci_jobs() -> dict:
     return yaml.safe_load((REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))["jobs"]
 

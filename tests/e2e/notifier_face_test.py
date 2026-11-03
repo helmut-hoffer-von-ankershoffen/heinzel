@@ -1,4 +1,8 @@
-"""Render the production native face without posting, requesting permission or starting a service."""
+"""Render the production native face without posting, requesting permission or starting a service.
+
+The required serial macOS jobs build the notifier first. A fresh Swift SDK module cache can itself exceed this
+harness's ten-second compiler budget, so this native compiler check belongs with those builds, not Python shards.
+"""
 
 import plistlib
 import shutil
@@ -9,7 +13,7 @@ import pytest
 
 from heinzel.modules.system.notify._macos import SOURCES
 
-pytestmark = pytest.mark.integration
+pytestmark = pytest.mark.e2e
 
 HARNESS = r"""
 precondition(identifier("notice-1") == "notice-1")
