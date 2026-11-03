@@ -344,8 +344,9 @@ def main() -> None:
         def get(endpoint: str) -> dict[str, Any] | list[dict[str, Any]]:
             remaining = deadline - time.monotonic()
             # A subprocess timeout bounds even a hung remote request by the remaining admission budget.
-            done = subprocess.run(  # noqa: S603 - fixed gh API invocation, no shell or arbitrary host
-                ["gh", "api", f"repos/{REPOSITORY}/{endpoint}"],  # noqa: S607 - hosted runner supplies gh
+            # The fixed gh API invocation has no shell or arbitrary host; the hosted runner supplies gh.
+            done = subprocess.run(  # noqa: S603
+                ["gh", "api", f"repos/{REPOSITORY}/{endpoint}"],  # noqa: S607
                 capture_output=True,
                 text=True,
                 check=True,

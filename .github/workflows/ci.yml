@@ -53,7 +53,7 @@ jobs:
         name: Admit the full run unless explicit batch proof covers this commit
         env:
           GH_TOKEN: ${{ github.token }}
-        run: uv run --script scripts/main_batch.py
+        run: uv run --no-build --script scripts/main_batch.py
 
   batch-full:
     permissions:

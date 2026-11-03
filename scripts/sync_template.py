@@ -146,11 +146,18 @@ def makefile() -> str:
     )
 
 
+def _without_batch_admission(text: str) -> str:
+    """Keep the core queue jobs out of the plugin workflow."""
+    start = text.find("\n  admission:\n")
+    end = text.find("\n  changes:\n", start)
+    return text[:start] + text[end:] if 0 <= start < end else text
+
+
 def ci_workflow() -> str:
     """The CI workflow without the template job; the build check looks for the plugin package."""
     text = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
     # Batch admission is core queue coordination; plugins retain their complete workflow.
-    text = re.sub(r"\n  admission:\n.*?(?=\n  changes:)", "", text, flags=re.DOTALL)
+    text = _without_batch_admission(text)
     text = re.sub(r"(?m)^run-name:.*\n", "", text)
     text = text.replace("    needs: admission\n", "")
     text = text.replace("    if: github.event_name != 'push' || needs.admission.outputs.full != 'false'\n", "")
