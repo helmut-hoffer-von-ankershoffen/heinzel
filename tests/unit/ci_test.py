@@ -1292,3 +1292,23 @@ def test_macos_cells_are_temporarily_non_blocking_and_linux_cells_still_block():
     script = next(step["run"] for step in steps if "RESULTS" in step.get("env", {}))
     assert "success | skipped) ;;" in script  # a masked macOS failure reports success; anything else still fails
     assert "continue-on-error" not in jobs["ci-ok"]
+
+
+def test_release_acceptance_can_pin_public_artifacts_and_correlate_its_run():
+    """A coordinator can keep public-path evidence tied to one release after main moves."""
+    workflow = yaml.safe_load((REPO / ".github/workflows/acceptance.yml").read_text())
+    events = workflow.get("on", workflow.get(True))
+    for trigger in ("workflow_dispatch", "workflow_call"):
+        for name in ("expected_wheel_sha256", "expected_profile_sha256", "release_attempt"):
+            assert events[trigger]["inputs"][name]["default"] == ""
+    job = workflow["jobs"]["acceptance"]
+    command = next(step["run"] for step in job["steps"] if step.get("name") == "Run the acceptance harness")
+    for flag, variable in (
+        ("--accept-wheel-sha256", "EXPECTED_WHEEL_SHA256"),
+        ("--accept-profile-sha256", "EXPECTED_PROFILE_SHA256"),
+    ):
+        assert f'{flag} "${variable}"' in command
+        assert variable in job["env"]
+    assert "inputs.release_attempt" in workflow["run-name"]
+    assert workflow["permissions"] == {}
+    assert job["permissions"] == {"contents": "read"}
