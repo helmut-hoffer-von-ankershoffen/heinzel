@@ -266,6 +266,12 @@ def ci_workflow() -> str:
         count=1,
         flags=re.DOTALL,
     )
+    # The extra endpoint branch is core-only; the plugin's existing PR branch below stays on newest Python.
+    text = re.sub(
+        r" \|\| github\.event_name == 'pull_request' && '\[[^']+\]'(?= \|\| github\.event_name == 'schedule')",
+        "",
+        text,
+    )
     # Plugins do not have the core smoke job: retain their existing macOS PR tests and E2E coverage.
     text = text.replace(
         "github.event_name == 'pull_request' && '[]' || github.event_name == 'schedule'",
