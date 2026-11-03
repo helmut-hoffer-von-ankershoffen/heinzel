@@ -168,7 +168,7 @@ def ci_workflow() -> str:
     # Plugins have no changed-path job; preserve their existing macOS matrix.
     text = text.replace(" && needs.changes.outputs.macos_full != 'true'", "")
     text = text.replace(
-        "Smoke-lane PRs omit these; full-macOS PRs and non-PR runs cover all versions.",
+        "PRs use Linux plus macOS smoke; non-PR runs retain every macOS Python/level cell.",
         "PRs run the newest version; non-PR runs cover all versions.",
     )
     text = re.sub(r"\n  template:\n.*?(?=\n  build:)", "\n", text, flags=re.DOTALL)

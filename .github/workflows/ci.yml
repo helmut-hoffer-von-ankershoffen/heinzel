@@ -22,9 +22,9 @@ env:
   FORCE_COLOR: "1"
 
 # GitHub-hosted macOS runners are the scarce resource: a pull request waited longer for them than for anything else. So a
-# pull request runs Linux, Python oldest and newest, plus a macOS smoke job. Platform, shared and unknown changes also
-# run the full applicable macOS suite (setup, unit and integration shards, end-to-end,
-# notifier, macOS-only tests, Electron) and the full Python matrix run on every push to main, daily and on dispatch, and
+# pull request runs portable tests on Linux, Python oldest and newest, plus a real macOS smoke job. Native/platform
+# and unknown changes also retain macOS setup, end-to-end and Electron checks. Every push to main, daily
+# run and dispatch keeps the full setup, Python/shard, end-to-end, notifier, macOS-only and Electron matrix, and
 # `CI OK` includes every scheduled job; macOS failures block after three clean full-suite main runs.
 # Cheap checks cancel a failing same-repository pull request's run early; fork PRs finish with read-only tokens.
 # Provider-specific integration checks live with their owning plugins.
@@ -127,10 +127,12 @@ jobs:
             site_only=true
           fi
           echo "site_only=$site_only" >> "$GITHUB_OUTPUT"
-          # A narrow allowlist is safe for the smoke lane; missing, unrecognised, platform or shared paths run full macOS.
+          # PR portable tests run on Linux plus real macOS smoke. Native/platform changes retain macOS E2E and Electron;
+          # a missing or unrecognised diff keeps those jobs too. Non-PR runs always retain the complete macOS matrix.
           macos_full=true
           if [ "$EVENT" = pull_request ] && [ -n "$changed" ] \
-            && ! grep -qvE '^(src/heinzel/modules/team/(_models|_render)\.py$|docs/[^[:space:]]*\.md$)' <<< "$changed"; then
+            && ! grep -qvE '^(src/heinzel/|web/|tests/|scripts/|docs/|\.github/|template/|[^/]*\.md$)' <<< "$changed" \
+            && ! grep -qE '^(desktop/|src/heinzel/(kernel/_(installation|local_web|private_control)|heads/cli/|heads/web/_(lifecycle|supervision)|modules/(ui/|system/(daemon|update|notify|runner)/))|scripts/(install|uninstall|notifier|tools|bootstrap)[^/]*|tests/(e2e/.*(install|daemon|update|ui_service)|.*(macos|notifier|supervision))|docs/.*\.sh$|agent-skills/|Makefile$|pyproject\.toml$|uv\.lock$)' <<< "$changed"; then
             macos_full=false
           fi
           echo "macos_full=$macos_full" >> "$GITHUB_OUTPUT"
@@ -321,9 +323,9 @@ jobs:
         # Linux: oldest and newest Python on a pull request, every supported one on main, schedule and dispatch.
         python: ${{ fromJSON(github.event_name == 'pull_request' && '["3.12","3.15"]' || '["3.12","3.13","3.14","3.15"]') }}
         # macOS has 3 vCPU and runs the suite at the edge of the 420 s cap, so each cell is split into one shard per level
-        # under that same cap. Smoke-lane PRs omit these; full-macOS PRs and non-PR runs cover all versions.
+        # under that same cap. PRs use Linux plus macOS smoke; non-PR runs retain every macOS Python/level cell.
         include:
-          ${{ fromJSON(github.event_name == 'pull_request' && needs.changes.outputs.macos_full != 'true' && '[]' || github.event_name == 'schedule' && '[{"os":"macos-latest","python":"3.12","levels":"unit"},{"os":"macos-latest","python":"3.12","levels":"integration"},{"os":"macos-latest","python":"3.13","levels":"unit"},{"os":"macos-latest","python":"3.13","levels":"integration"},{"os":"macos-latest","python":"3.14","levels":"unit"},{"os":"macos-latest","python":"3.14","levels":"integration"},{"os":"macos-latest","python":"3.15","levels":"unit"},{"os":"macos-latest","python":"3.15","levels":"integration"}]' || '[{"os":"macos-latest","python":"3.12","levels":"unit"},{"os":"macos-latest","python":"3.12","levels":"integration"},{"os":"macos-latest","python":"3.13","levels":"unit"},{"os":"macos-latest","python":"3.13","levels":"integration"},{"os":"macos-latest","python":"3.14","levels":"unit"},{"os":"macos-latest","python":"3.14","levels":"integration"},{"os":"macos-latest","python":"3.15","levels":"unit"},{"os":"macos-latest","python":"3.15","levels":"integration"}]') }}
+          ${{ fromJSON(github.event_name == 'pull_request' && '[]' || github.event_name == 'schedule' && '[{"os":"macos-latest","python":"3.12","levels":"unit"},{"os":"macos-latest","python":"3.12","levels":"integration"},{"os":"macos-latest","python":"3.13","levels":"unit"},{"os":"macos-latest","python":"3.13","levels":"integration"},{"os":"macos-latest","python":"3.14","levels":"unit"},{"os":"macos-latest","python":"3.14","levels":"integration"},{"os":"macos-latest","python":"3.15","levels":"unit"},{"os":"macos-latest","python":"3.15","levels":"integration"}]' || '[{"os":"macos-latest","python":"3.12","levels":"unit"},{"os":"macos-latest","python":"3.12","levels":"integration"},{"os":"macos-latest","python":"3.13","levels":"unit"},{"os":"macos-latest","python":"3.13","levels":"integration"},{"os":"macos-latest","python":"3.14","levels":"unit"},{"os":"macos-latest","python":"3.14","levels":"integration"},{"os":"macos-latest","python":"3.15","levels":"unit"},{"os":"macos-latest","python":"3.15","levels":"integration"}]') }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
