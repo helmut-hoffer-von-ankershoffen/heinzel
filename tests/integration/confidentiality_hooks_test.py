@@ -80,6 +80,13 @@ def _create(tmp_path: Path) -> tuple[Path, dict[str, str]]:
     git(work, "init", "-q", "-b", "main")
     git(work, "config", "user.name", "Red Team")
     subprocess.run([PREK, "install", "-q"], cwd=work, check=True, capture_output=True, timeout=60)
+    subprocess.run(
+        [sys.executable, REPO / "scripts" / "install_push_hook.py"],
+        cwd=work,
+        check=True,
+        capture_output=True,
+        timeout=60,
+    )
     git(work, "add", "-A")
     assert git(work, "commit", "-q", "-m", "chore: start").returncode == 0
     git(work, "tag", "initial")
@@ -232,7 +239,8 @@ def test_the_pushed_ref_is_scanned_not_the_checked_out_branch(repo):
     clean = _new_branch(repo, base="initial")
     blocked = _pushes(repo, f"{leaky}:refs/heads/feat/other-{uuid.uuid4().hex[:6]}")
     assert blocked.returncode != 0
-    assert _pushes(repo, clean).returncode == 0
+    clean_push = _pushes(repo, clean)
+    assert clean_push.returncode == 0, clean_push.stderr + clean_push.stdout
 
 
 def test_every_ref_of_a_push_is_scanned_not_only_the_first(repo):
@@ -243,4 +251,38 @@ def test_every_ref_of_a_push_is_scanned_not_only_the_first(repo):
     result = _pushes(repo, clean, leaky)
     assert result.returncode != 0
     assert "confidential term #" in result.stderr + result.stdout
+    assert _no_term_printed(result)
+
+
+def test_a_commit_known_only_to_another_remote_is_still_scanned(repo, tmp_path):
+    leaky = _new_branch(repo)
+    _unchecked_commit(repo, {"a.md": b"ok\n"}, "docs: acme")
+    private = tmp_path / "other.git"
+    assert git(tmp_path, "init", "-q", "--bare", str(private)).returncode == 0
+    name = "other-" + uuid.uuid4().hex[:6]
+    assert git(repo, "remote", "add", name, str(private)).returncode == 0
+    assert git(repo, "-c", "core.hooksPath=/dev/null", "push", "-q", name, leaky).returncode == 0
+    assert git(repo, "fetch", "-q", name).returncode == 0
+    result = _pushes(repo, leaky)
+    assert result.returncode != 0
+    assert "confidential term #" in result.stdout + result.stderr
+    assert _no_term_printed(result)
+
+
+def test_a_stale_destination_tracking_ref_is_not_proof_the_remote_has_a_commit(repo):
+    leaky = _new_branch(repo)
+    _unchecked_commit(repo, {"a.md": b"ok\n"}, "docs: acme")
+    assert git(repo, "update-ref", "refs/remotes/origin/stale", "HEAD").returncode == 0
+    result = _pushes(repo, leaky)
+    assert result.returncode != 0
+    assert "confidential term #" in result.stdout + result.stderr
+    assert _no_term_printed(result)
+
+
+def test_pushed_ref_names_are_scanned_even_when_the_runner_sees_no_new_commits(repo):
+    clean = _new_branch(repo)
+    assert _pushes(repo, clean).returncode == 0
+    result = _pushes(repo, f"{clean}:refs/heads/acme-review")
+    assert result.returncode != 0
+    assert "confidential term #" in result.stdout + result.stderr
     assert _no_term_printed(result)
