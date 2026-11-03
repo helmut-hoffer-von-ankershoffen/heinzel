@@ -94,3 +94,30 @@ def test_python_startup_snapshots_expose_only_bounded_fixed_source_labels():
     assert frames == [[("heinzel/heads/cli/__init__.py", 42), ("other", 7)]] * 3
     many_frames = "Timeout (0:00:02)!\n" + (snapshot.splitlines()[2] + "\n") * 64
     assert len(RunningService.startup_frames(many_frames)[0]) == 32
+
+
+@pytest.mark.parametrize("returncode", [0, 75, -9])
+def test_early_exit_reports_returncode_and_signal_without_child_output(returncode):
+    secret = b"private-error-body-must-not-be-logged /private/example #token=secret"
+    child = SimpleNamespace(
+        poll=lambda: returncode,
+        communicate=lambda timeout: (secret, b"Owned web publication failed: category=os errno=13\n" + secret),
+    )
+    fixture = running(child)
+    fixture.service.status = lambda: SimpleNamespace(ready=False)
+    with pytest.raises(pytest.fail.Exception) as failure:
+        fixture.ready()
+    message = str(failure.value)
+    assert f"owned process exit={returncode}" in message
+    assert f"signal={-returncode if returncode < 0 else None}" in message
+    assert "{'category': 'os', 'errno': 13}" in message
+    assert "private-error-body" not in message
+    assert "/private/example" not in message
+    assert "#token=" not in message
+
+
+@pytest.mark.parametrize(
+    "encoded", [b"category=secret errno=13", b"category=os errno=13 /private/example", b"category=os errno=99999"]
+)
+def test_publication_diagnostics_refuse_unknown_or_unbounded_labels(encoded):
+    assert RunningService.publication_failure(b"Owned web publication failed: " + encoded) is None
