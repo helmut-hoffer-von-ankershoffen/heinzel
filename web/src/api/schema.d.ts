@@ -11403,6 +11403,12 @@ export interface components {
              */
             effect?: (components["schemas"]["Navigate"] | components["schemas"]["OpenUrl"] | components["schemas"]["RunOperation"] | components["schemas"]["RunCommand"]) | null;
             /**
+             * Footer Priority
+             * @description Retention priority in a crowded footer, from 0 to 1000; higher values move to overflow later.
+             * @default 40
+             */
+            footer_priority: number;
+            /**
              * Icon
              * @description An icon before the text.
              */

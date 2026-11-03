@@ -32,6 +32,18 @@ describe("footer fit from measured content", () => {
     expect(fitFooter(259, items, 8, 24).hidden.length).toBeGreaterThan(0);
     expect(fitFooter(300, [...items].reverse(), 8, 24).visible).toEqual([...items].reverse().map((item) => item.id));
   });
+  it("breaks equal-priority ties by canonical id regardless of registration order", () => {
+    const tied = [
+      { id: "zeta:status", width: 24, priority: 40 },
+      { id: "alpha:status", width: 24, priority: 40 },
+      { id: "omega:status", width: 24, priority: 40 },
+    ];
+    for (const order of [tied, [...tied].reverse()]) {
+      const result = fitFooter(56, order, 8, 24);
+      expect(result.visible).toEqual(["alpha:status"]);
+      expect(result.hidden.toSorted()).toEqual(["omega:status", "zeta:status"]);
+    }
+  });
   it("compacts the Berlin text before hiding a status control and expands it again when room returns", () => {
     const credit = { id: "credit", expanded: 180, compact: 20 };
     const narrow = footerWidths(375, items, 8, credit);

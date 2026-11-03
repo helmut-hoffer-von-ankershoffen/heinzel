@@ -169,7 +169,7 @@ export function StatusBar() {
     <>
       <AutoUpdate />
       <FooterLayout className="h-[60px] shrink-0 gap-2 overflow-visible border-t-[0.5px] border-foreground/20 px-4 text-ui text-muted-foreground">
-        <FooterPart id="@version" pinned className="mr-auto">
+        <FooterPart id="@version" priority={950} className="mr-auto">
           {info.data && (
             <FooterItem
               label={`v${info.data.version}`}
@@ -182,10 +182,10 @@ export function StatusBar() {
             </FooterItem>
           )}
         </FooterPart>
-        <FooterPart id="@plugins-pending" pinned priority={110} label={t("pluginsPending.title")}>
+        <FooterPart id="@plugins-pending" priority={110} label={t("pluginsPending.title")}>
           <PluginsPending />
         </FooterPart>
-        <FooterPart id="@updates" pinned priority={100} label={t("updates.title")}>
+        <FooterPart id="@updates" priority={100} label={t("updates.title")}>
           <UpdateStatus />
         </FooterPart>
         <FooterPart id="@heinzels" priority={70} label={t("nav.heinzelmaennchen")}>
