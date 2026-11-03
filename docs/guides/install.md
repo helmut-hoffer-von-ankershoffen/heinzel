@@ -94,8 +94,12 @@ For updates, removal and platform details, see the tested instructions in the
 ### Notification history needs recovery
 
 If `hz system doctor` reports **notification store: down**, hz cannot safely read the durable record of notices
-already queued. Notification writes stay blocked to avoid repeating a notice whose result is uncertain. Reinstalling
-the native notifier does not repair this history.
+already queued. Some integrity failures block notification writes to avoid repeating a notice whose result is uncertain.
+Reinstalling the native notifier does not repair this history. Doctor leaves the existing state unchanged.
+
+For a read-only, bounded check, doctor verifies at most 4 MiB of notification state and rejects linked, nonregular,
+public or inaccessible store paths. Larger histories report verification unavailable; this does not prove corruption
+and does not impose a new limit on durable writes. Preserve the full history for review rather than trimming keys.
 
 Preserve the existing notification store and its `durable-notices` marker. Recovery requires a coherent, trusted
 backup of the same profile: the notification state must include both its notices and complete durable replay-key set,

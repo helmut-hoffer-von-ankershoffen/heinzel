@@ -11,23 +11,27 @@ import json
 import logging
 import os
 import secrets
+import stat
 from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 
 from heinzel import Notice
 
 logger = logging.getLogger(__name__)
 MAX_NOTICES = 200
 """The most notices kept; the oldest go first."""
+MAX_HEALTH_BYTES = 4 * 1024 * 1024
+"""Health verification only; larger stores are unavailable to this check, not declared corrupt."""
 MAX_AGE = timedelta(days=30)
 """Notices older than this are pruned."""
 PRIVATE_DIR = 0o700
 PRIVATE_FILE = 0o600
 _NOTICES = TypeAdapter(list[Notice])
+INTEGRITY_UNAVAILABLE = "Durable notification history cannot be verified; preserve the store and its replay evidence."
 
 
 def _empty_notices() -> list[Notice]:
@@ -38,6 +42,90 @@ class _State(BaseModel):
     model_config = ConfigDict(extra="forbid")
     notices: list[Notice] = Field(default_factory=_empty_notices)
     durable_keys: set[str] = Field(default_factory=set)
+
+
+def _decode_state(text: str | bytes, *, strict: bool) -> _State:
+    """Validate serialized state; durable records must explicitly retain both fields.
+
+    Raises:
+        ValueError: If the state or durable evidence cannot be verified.
+    """
+    value = json.loads(text)
+    if isinstance(value, list):
+        if strict:
+            msg = "legacy notification list lost replay keys"
+            raise ValueError(msg)
+        return _State(notices=_NOTICES.validate_python(value))
+    state = _State.model_validate(value)
+    if strict and state.model_fields_set != {"notices", "durable_keys"}:
+        msg = "durable notification state lacks explicit notices or replay keys"
+        raise ValueError(msg)
+    return state
+
+
+def _safe_health_parent(info: os.stat_result) -> bool:
+    sticky_root = info.st_uid == 0 and bool(info.st_mode & stat.S_ISVTX)
+    return stat.S_ISDIR(info.st_mode) and info.st_uid in {0, os.getuid()} and (not info.st_mode & 0o022 or sticky_root)
+
+
+def _health_directory(path: Path) -> int | None:
+    """Open a physical private store through safe directory descriptors; never create it.
+
+    Raises:
+        OSError: If an existing path is linked, unsafe or inaccessible.
+    """
+    if not path.is_absolute() or ".." in path.parts:
+        raise OSError
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_NONBLOCK
+    directory = os.open(path.anchor, flags)
+    try:
+        for part in path.parts[1:]:
+            if not _safe_health_parent(os.fstat(directory)):
+                raise OSError
+            try:
+                child = os.open(part, flags, dir_fd=directory)
+            except FileNotFoundError:
+                return None
+            os.close(directory)
+            directory = child
+        info = os.fstat(directory)
+        if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o077:
+            raise OSError
+        return os.dup(directory)
+    finally:
+        os.close(directory)
+
+
+def _health_file(directory: int, name: str) -> int:
+    """Open and verify one private regular file without following links or blocking on special files.
+
+    Raises:
+        OSError: If the file is missing, linked, unsafe or inaccessible.
+    """
+    descriptor = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory)
+    try:
+        info = os.fstat(descriptor)
+    except BaseException:
+        os.close(descriptor)
+        raise
+    if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o077 or info.st_nlink != 1:
+        os.close(descriptor)
+        raise OSError
+    return descriptor
+
+
+def _health_contents(directory: int) -> bytes | None:
+    """Read only the already verified descriptor; an oversized store remains unverified.
+
+    Raises:
+        OSError: If the file is missing, linked, unsafe or inaccessible.
+    """
+    descriptor = _health_file(directory, "notices.json")
+    with os.fdopen(descriptor, "rb") as source:
+        if os.fstat(source.fileno()).st_size > MAX_HEALTH_BYTES:
+            return None
+        data = source.read(MAX_HEALTH_BYTES + 1)
+    return data if len(data) <= MAX_HEALTH_BYTES else None
 
 
 class Store:
@@ -55,20 +143,8 @@ class Store:
 
     def _read_state(self, *, strict: bool = False) -> _State:
         try:
-            text = self.path.read_text(encoding="utf-8")
-            value = json.loads(text)
-        except (OSError, ValueError, ValidationError) as exc:
-            return self._damaged_state(strict, exc)
-        if isinstance(value, list):
-            if strict:
-                return self._damaged_state(strict, ValueError("legacy notification list lost replay keys"))
-            try:
-                return _State(notices=_NOTICES.validate_python(value))
-            except ValidationError as exc:
-                return self._damaged_state(strict, exc)
-        try:
-            return _State.model_validate(value)
-        except ValidationError as exc:
+            return _decode_state(self.path.read_text(encoding="utf-8"), strict=strict)
+        except (OSError, ValueError) as exc:
             return self._damaged_state(strict, exc)
 
     def _damaged_state(self, strict: bool, exc: Exception) -> _State:
@@ -82,15 +158,34 @@ class Store:
         return _State()
 
     def integrity_problem(self) -> str | None:
-        """Report unavailable durable replay evidence without writing, locking or exposing notice contents."""
+        """Verify bounded durable evidence without writes, locks, linked paths or notice disclosure."""
         try:
-            try:
-                self._durable.stat()
-            except FileNotFoundError:
+            directory = _health_directory(self.directory)
+            if directory is None:
                 return None
-            self._read_state(strict=True)
-        except (OSError, RecursionError):
-            return "Notification history is unavailable or its replay keys were lost; notification writes are blocked."
+            try:
+                try:
+                    marker = _health_file(directory, "durable-notices")
+                except FileNotFoundError:
+                    durable = False
+                else:
+                    os.close(marker)
+                    durable = True
+                try:
+                    data = _health_contents(directory)
+                except FileNotFoundError:
+                    if durable:
+                        return INTEGRITY_UNAVAILABLE
+                    return None
+                if data is None:
+                    return (
+                        "Durable notification history exceeds the health-check read limit; verification is unavailable."
+                    )
+                _decode_state(data, strict=durable)
+            finally:
+                os.close(directory)
+        except (OSError, ValueError, RecursionError):
+            return INTEGRITY_UNAVAILABLE
         return None
 
     def read(self) -> list[Notice]:

@@ -499,8 +499,9 @@ class NotifyService(Notifications):
                     status=Status.DOWN,
                     detail=problem,
                     fix=(
-                        "Preserve the store and restore a coherent trusted backup; "
-                        "do not delete its marker or rebuild replay keys."
+                        "Preserve the store for recovery review; "
+                        "use a coherent trusted backup if replay evidence is damaged. "
+                        "Do not delete its marker or rebuild replay keys."
                     ),
                 )
             ]
