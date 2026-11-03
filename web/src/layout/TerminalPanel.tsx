@@ -265,7 +265,9 @@ function TerminalView({
       setReady(false);
       settle(READY_FALLBACK_MS);
       socket.send(JSON.stringify({ token: token() ?? "" }));
-      senderRef.current = (text) => socket.send(encoder.encode(text));
+      senderRef.current = (text) => {
+        if (socket.readyState === WebSocket.OPEN) socket.send(encoder.encode(text));
+      };
       setState("open");
       follower.refit();
     };
@@ -441,7 +443,7 @@ function TerminalView({
     return () => connectTerminal(null);
   }, [active, state, ready]);
   return (
-    <div className={cn("absolute inset-0 flex flex-col", !active && "hidden")}>
+    <div aria-hidden={!active || undefined} className={cn("absolute inset-0 flex flex-col", !active && "hidden")}>
       {state === "closed" && (
         <div className="flex shrink-0 items-center gap-2 px-4 py-1 text-xs text-muted-foreground">
           <span className="truncate">{reason || t("terminal.ended")}</span>
@@ -461,6 +463,42 @@ function TerminalView({
         </div>
       )}
       <div ref={host} className="min-h-0 flex-1 px-3 pb-1" />
+      <fieldset
+        aria-label="Terminal keys"
+        className="m-0 flex min-w-0 shrink-0 gap-1 overflow-x-auto border-0 px-3 py-1 md:[@media(pointer:fine)]:hidden"
+      >
+        {[
+          ["Esc", "\x1b", "Escape"],
+          ["Tab", "\t", "Tab"],
+          ["Ctrl+C", "\x03", "Control+C"],
+          ["Ctrl+Z", "\x1a", "Control+Z"],
+          ["Ctrl+D", "\x04", "Control+D"],
+          ["←", "D", "Arrow left"],
+          ["↓", "B", "Arrow down"],
+          ["↑", "A", "Arrow up"],
+          ["→", "C", "Arrow right"],
+        ].map(([label, key, accessibleName]) => (
+          <Button
+            key={label}
+            variant="outline"
+            size="sm"
+            className="min-h-11 min-w-11 shrink-0"
+            disabled={state !== "open"}
+            aria-label={accessibleName}
+            onClick={() => {
+              if (!active) return;
+              const arrows = ["←", "↓", "↑", "→"];
+              const sequence = arrows.includes(label)
+                ? `\x1b${terminalRef.current?.modes?.applicationCursorKeysMode ? "O" : "["}${key}`
+                : key;
+              senderRef.current?.(sequence);
+              terminalRef.current?.focus();
+            }}
+          >
+            {label}
+          </Button>
+        ))}
+      </fieldset>
     </div>
   );
 }

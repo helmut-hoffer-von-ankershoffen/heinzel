@@ -1057,9 +1057,51 @@ try {
     await scrollPage.locator("#splash").waitFor({ state: "hidden", timeout: 15_000 });
     await scrollPage.getByRole("button", { name: "Open a terminal" }).tap();
     await atPanel("terminal");
+    const terminal = scrollPage.getByRole("region", { name: "Terminal", exact: true });
+    const terminalKeys = terminal.getByRole("group", { name: "Terminal keys", exact: true });
+    await assertContained(scrollPage, terminalKeys, "phone: terminal key row");
+    for (const name of [
+      "Escape",
+      "Tab",
+      "Control+C",
+      "Control+Z",
+      "Control+D",
+      "Arrow left",
+      "Arrow down",
+      "Arrow up",
+      "Arrow right",
+    ]) {
+      const key = terminalKeys.getByRole("button", { name, exact: true });
+      await assertTouchTarget(key, `terminal ${name} key`, "phone");
+    }
+    const rightArrow = terminalKeys.getByRole("button", { name: "Arrow right", exact: true });
+    await rightArrow.scrollIntoViewIfNeeded();
+    await assertContained(scrollPage, rightArrow, "phone: horizontally scrolled terminal key");
+    await scrollPage.screenshot({ path: join(shots, "mobile-terminal-keys.png") });
+    const shellInput = terminal.locator(".xterm-helper-textarea");
+    await shellInput.pressSequentially("sleep 30");
+    await shellInput.press("Enter");
+    await terminalKeys.getByRole("button", { name: "Control+C", exact: true }).tap();
+    await scrollPage.waitForFunction(() => document.querySelector(".xterm-rows")?.textContent?.includes("^C"), null, {
+      timeout: 10_000,
+    });
+    await shellInput.pressSequentially("printf 'KEYS_TEST_%s\\n' ok");
+    await shellInput.press("Enter");
+    await scrollPage.waitForFunction(
+      () => document.querySelector(".xterm-rows")?.textContent?.includes("KEYS_TEST_ok"),
+      null,
+      {
+        timeout: 10_000,
+      },
+    );
     await scrollPage.setViewportSize({ width: 844, height: 320 });
     await scrollPage.getByRole("button", { name: "Show terminal" }).tap();
     await atPanel("terminal");
+    await terminalKeys.waitFor({ state: "visible" });
+    const landscapeEscape = terminalKeys.getByRole("button", { name: "Escape", exact: true });
+    await landscapeEscape.scrollIntoViewIfNeeded();
+    await assertTouchTarget(landscapeEscape, "landscape Escape key", "phone");
+    await scrollPage.screenshot({ path: join(shots, "mobile-terminal-keys-landscape.png") });
     await scrollPage.getByRole("tab", { name: "Page", exact: true }).tap();
     await atPage();
     assert.equal((await lastScroll()).behavior, "smooth", "short landscape Page scrolls smoothly");
