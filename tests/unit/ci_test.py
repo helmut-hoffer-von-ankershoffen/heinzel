@@ -45,6 +45,7 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
         "uv run --no-build coverage report --format=total": "hands the measured total to the merge gate",
         "tar -czf notifier.tar.gz": "packs the app the macOS job built, with its executable bit, for the build job",
         "tar -xzf notifier.tar.gz": "unpacks Heinzel Notifier into the package before the wheel is built",
+        'gh run cancel "$RUN_ID"': "a failed cheap check cancels the rest of its own pull request run",
     },
     "merge-gate.yml": {
         "uv run --no-build --frozen --script scripts/merge_gate.py": "judges by public APIs, from the base branch",
@@ -973,6 +974,8 @@ def test_plugin_ci_has_no_core_only_jobs_and_every_need_exists():
             assert need in jobs, f"{name} needs {need}"
     assert jobs["setup"]["strategy"]["matrix"]["os"] == ["ubuntu-24.04", "macos-latest"]
     assert "if" not in jobs["build"]
+    assert jobs["e2e"]["strategy"]["matrix"]["os"] == ["ubuntu-24.04", "macos-latest"]
+    assert '"os":"macos-latest","python":"3.15"' in jobs["test"]["strategy"]["matrix"]["include"]
 
 
 def test_macos_cells_shard_by_level_and_ci_ok_waits_for_changes():
@@ -981,15 +984,16 @@ def test_macos_cells_shard_by_level_and_ci_ok_waits_for_changes():
     pull_request, schedule, otherwise = (
         json.loads(cells)
         for cells in re.fullmatch(
-            r"\$\{\{ fromJSON\(github\.event_name == 'pull_request' && '(.*)' "
+            r"\$\{\{ fromJSON\(github\.event_name == 'pull_request' && "
+            r"needs\.changes\.outputs\.macos_full != 'true' && '(.*)' "
             r"\|\| github\.event_name == 'schedule' && '(.*)' \|\| '(.*)'\) \}\}",
             include.strip(),
         ).groups()
     )
     for cells, pythons in (
-        (pull_request, ["3.15"]),
+        (pull_request, []),
         (schedule, ["3.12", "3.13", "3.14", "3.15"]),
-        (otherwise, ["3.12", "3.15"]),
+        (otherwise, ["3.12", "3.13", "3.14", "3.15"]),
     ):
         assert cells == [
             {"os": "macos-latest", "python": python, "levels": level}
@@ -1137,13 +1141,13 @@ def test_e2e_sequence_stops_after_readme_failure(tmp_path, first_fails):
     assert (result.returncode != 0) is first_fails
 
 
-def _changes_outputs(tmp_path, event: str, changed: str) -> set[str]:
+def _changes_outputs(tmp_path, event: str, changed: str, git_exit: int = 0) -> set[str]:
     jobs = yaml.safe_load((REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))["jobs"]
     script = next(step["run"] for step in jobs["changes"]["steps"] if step.get("id") == "paths")
     stubs = tmp_path / "bin"
     stubs.mkdir()
     git = stubs / "git"
-    git.write_text(f"#!/bin/sh\nprintf '{changed}'\n")
+    git.write_text(f"#!/bin/sh\nprintf '{changed}'\nexit {git_exit}\n")
     git.chmod(0o700)
     (tmp_path / "desktop").mkdir()
     (tmp_path / "desktop" / "package.json").write_text("{}")
@@ -1176,6 +1180,35 @@ def test_only_a_prose_push_to_main_skips_the_core_jobs(tmp_path, event, changed,
 
 
 @pytest.mark.parametrize(
+    ("path", "full"),
+    [
+        ("src/heinzel/modules/team/_render.py\n", "false"),
+        ("src/heinzel/modules/system/daemon/_service.py\n", "true"),
+        ("src/heinzel/modules/system/notify/macos/app.swift\n", "true"),
+        ("desktop/src/main.js\n", "true"),
+        ("scripts/install.sh\n", "true"),
+        ("src/heinzel/modules/system/update/_update.py\n", "true"),
+        ("tests/e2e/uninstall_test.py\n", "true"),
+        (".github/workflows/ci.yml\n", "true"),
+        ("Makefile\n", "true"),
+        ("new/unclassified/path.py\n", "true"),
+        ("src/heinzel/modules/team/_render.py\ndesktop/src/main.js\n", "true"),
+        ("", "true"),
+    ],
+)
+def test_macos_full_is_fail_closed_on_platform_shared_and_unknown_paths(tmp_path, path, full):
+    outputs = _changes_outputs(tmp_path, "pull_request", path)
+    assert f"macos_full={full}" in outputs
+    if full == "true":
+        assert "electron=true" in outputs
+
+
+def test_failed_diff_with_partial_output_still_runs_full_macos(tmp_path):
+    outputs = _changes_outputs(tmp_path, "pull_request", "src/heinzel/modules/team/_render.py\n", git_exit=1)
+    assert {"macos_full=true", "electron=true", "core=true"} <= outputs
+
+
+@pytest.mark.parametrize(
     ("event", "changed", "electron"),
     [
         ("push", "src/heinzel/__init__.py\n", "false"),
@@ -1184,7 +1217,7 @@ def test_only_a_prose_push_to_main_skips_the_core_jobs(tmp_path, event, changed,
         ("push", "scripts/sync_template.py\n", "true"),
         ("push", ".github/workflows/ci.yml\n", "true"),
         ("push", "", "true"),  # a diff git could not compute
-        ("pull_request", "src/heinzel/__init__.py\n", "false"),
+        ("pull_request", "src/heinzel/__init__.py\n", "true"),
         ("pull_request", "desktop/src/main.js\n", "true"),
         ("schedule", "src/heinzel/__init__.py\n", "true"),
         ("workflow_dispatch", "src/heinzel/__init__.py\n", "true"),
@@ -1284,14 +1317,108 @@ def test_macos_specific_tests_are_a_required_serial_job_on_macos():
     assert any(step.get("run") == "make test-macos-specific" for step in job["steps"])
 
 
-def test_macos_cells_are_temporarily_non_blocking_and_linux_cells_still_block():
-    jobs = yaml.safe_load((REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))["jobs"]
+def _ci_jobs() -> dict:
+    return yaml.safe_load((REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))["jobs"]
+
+
+def _oses(value: str | list[str], event: str) -> list[str]:
+    """The matrix values for an event, from a plain list or a pull-request conditional."""
+    if isinstance(value, list):
+        return value
+    match = re.fullmatch(
+        r"\$\{\{ fromJSON\(github\.event_name == 'pull_request' && "
+        r"(?:needs\.changes\.outputs\.macos_full != 'true' && )?'(.*)' \|\| '(.*)'\) \}\}",
+        value,
+    )
+    assert match, value
+    return json.loads(match[1] if event == "pull_request" else match[2])
+
+
+def _runs_on_pull_request(job: dict) -> bool:
+    return "github.event_name != 'pull_request'" not in str(job.get("if", ""))
+
+
+def test_macos_smoke_blocks_while_existing_matrix_exception_remains():
+    jobs = _ci_jobs()
     for name in ("setup", "test", "e2e", "electron"):
-        assert jobs[name]["continue-on-error"] == "${{ startsWith(matrix.os, 'macos') }}", name
-    steps = jobs["ci-ok"]["steps"]
-    script = next(step["run"] for step in steps if "RESULTS" in step.get("env", {}))
-    assert "success | skipped) ;;" in script  # a masked macOS failure reports success; anything else still fails
+        assert jobs[name]["continue-on-error"] == (
+            "${{ startsWith(matrix.os, 'macos') && !(github.event_name == 'pull_request' "
+            "&& needs.changes.outputs.macos_full == 'true') }}"
+        )
+    for name in ("notifier", "macos-specific", "macos-smoke"):
+        assert "continue-on-error" not in jobs[name]
+    for name in ("setup", "test", "e2e", "notifier", "macos-specific", "macos-smoke", "electron"):
+        assert name in jobs["ci-ok"]["needs"], name
+    script = next(step["run"] for step in jobs["ci-ok"]["steps"] if "RESULTS" in step.get("env", {}))
+    assert "success | skipped) ;;" in script
     assert "continue-on-error" not in jobs["ci-ok"]
+    for name in ("setup", "e2e", "electron"):
+        assert "needs.changes.outputs.macos_full != 'true'" in jobs[name]["strategy"]["matrix"]["os"]
+    assert "needs.changes.outputs.macos_full != 'true'" in jobs["test"]["strategy"]["matrix"]["include"]
+
+
+def test_a_pull_request_runs_one_small_macos_job_and_main_runs_the_full_macos_suite():
+    jobs = _ci_jobs()
+    on_pull_request, on_main = set(), set()
+    for name, job in jobs.items():
+        runs_on = str(job.get("runs-on", ""))
+        matrix = job.get("strategy", {}).get("matrix")
+        oses = matrix.get("os") if isinstance(matrix, dict) else None  # a planned matrix lists plugins, on Linux
+        for event, found in (("pull_request", on_pull_request), ("push", on_main)):
+            if event == "pull_request" and not _runs_on_pull_request(job):
+                continue
+            if event == "push" and "github.event_name == 'pull_request'" in str(job.get("if", "")):
+                continue
+            if "macos" in runs_on or (oses is not None and any("macos" in os for os in _oses(oses, event))):
+                found.add(name)
+    include = jobs["test"]["strategy"]["matrix"]["include"]
+    assert "needs.changes.outputs.macos_full != 'true' && '[]'" in include
+    assert on_pull_request == {"macos-smoke"}
+    assert on_main == {"setup", "e2e", "notifier", "macos-specific", "electron"}  # and the test matrix's macOS shards
+    assert _oses(jobs["setup"]["strategy"]["matrix"]["os"], "push") == [
+        "ubuntu-24.04", "ubuntu-24.04-arm", "macos-latest", "macos-15-intel",
+    ]  # fmt: skip
+    smoke = jobs["macos-smoke"]
+    assert (smoke["name"], smoke["runs-on"]) == ("macOS smoke", "macos-latest")
+    assert smoke["timeout-minutes"] <= 10
+    assert smoke["if"].startswith("github.event_name == 'pull_request' && ")
+    runs = {step.get("run"): step.get("if") for step in smoke["steps"] if "run" in step}
+    assert runs["make test-macos-smoke"] is None
+    assert runs["make notifier"] is None  # the macos_specific real-launch tests must not skip
+    assert any(step.get("with", {}).get("name") == "notifier" for step in smoke["steps"])
+    build = jobs["build"]
+    assert {"macos-smoke", "notifier"} <= set(build["needs"])
+    assert "needs.macos-smoke.result != 'failure'" in build["if"]
+    wheel_check = next(step for step in build["steps"] if step.get("name") == "Check the wheel ships Heinzel Notifier")
+    assert "needs.macos-smoke.result == 'success'" in wheel_check["if"]
+    recipe = (REPO / "Makefile").read_text(encoding="utf-8").split("\ntest-macos-smoke:", 1)[1].split("\n\n", 1)[0]
+    assert "uv run hz --version" in recipe
+    assert "-m macos_specific" in recipe
+    assert " -n " not in recipe
+
+
+def test_a_pull_request_tests_python_oldest_and_newest_and_main_every_supported_python():
+    test = _ci_jobs()["test"]
+    pythons = test["strategy"]["matrix"]["python"]
+    assert _oses(pythons, "pull_request") == ["3.12", "3.15"]
+    assert _oses(pythons, "push") == ["3.12", "3.13", "3.14", "3.15"]
+    probe = next(step for step in test["steps"] if step.get("run") == "make linux-user-manager-proof")
+    assert probe["if"] == "matrix.os == 'ubuntu-24.04' && matrix.python == '3.12'"  # a cell every pull request runs
+
+
+def test_a_failed_cheap_check_cancels_the_rest_of_a_pull_request_run():
+    jobs = _ci_jobs()
+    for cheap in ("dependency-review", "commits", "lint", "secrets", "setup", "audit"):
+        stop = jobs[f"stop-after-{cheap}"]
+        assert stop["if"] == (
+            "failure() && github.event_name == 'pull_request' && "
+            "github.event.pull_request.head.repo.full_name == github.repository"
+        )
+        assert stop["needs"] == [cheap]
+        assert stop["permissions"] == {"actions": "write"}
+        assert any(step.get("run") == 'gh run cancel "$RUN_ID" --repo "$REPOSITORY"' for step in stop["steps"])
+    for expensive in ("test", "e2e", "coverage", "electron", "macos-smoke"):
+        assert "lint" not in str(jobs[expensive].get("needs", "")), expensive  # they start in parallel, not after
 
 
 def test_release_acceptance_can_pin_public_artifacts_and_correlate_its_run():
