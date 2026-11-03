@@ -105,6 +105,7 @@ export function ContributionToggle({ control, refresh, applySettings }: Props) {
   const mounted = useRef(true);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [shareFailed, setShareFailed] = useState(false);
   const [copiedUrl, setCopiedUrl] = useState<string | null>(null);
   useEffect(() => {
     mounted.current = true;
@@ -176,12 +177,18 @@ export function ContributionToggle({ control, refresh, applySettings }: Props) {
   const share = async () => {
     const value = authenticatedUrl(control) ?? publicUrl(control.url);
     if (!control.checked || !value || !navigator.share) return;
+    setError(null);
     try {
       await navigator.share({ url: value });
-      if (mounted.current) setError(null);
+      if (mounted.current) {
+        setError(null);
+        setShareFailed(false);
+      }
     } catch (cause) {
-      if (mounted.current && !(cause instanceof DOMException && cause.name === "AbortError"))
-        setError(t("contrib.toggle.shareFailed"));
+      if (mounted.current) {
+        setShareFailed(true);
+        if (!(cause instanceof DOMException && cause.name === "AbortError")) setError(t("contrib.toggle.shareFailed"));
+      }
     }
   };
 
@@ -252,10 +259,12 @@ export function ContributionToggle({ control, refresh, applySettings }: Props) {
                 {t("contrib.toggle.shareUrl")}
               </Button>
             )}
-            <Button type="button" size="sm" variant="outline" onClick={() => void copy()}>
-              {copied ? <Check aria-hidden /> : <Copy aria-hidden />}
-              {t("contrib.toggle.copyUrl")}
-            </Button>
+            {(typeof navigator.share !== "function" || shareFailed) && (
+              <Button type="button" size="sm" variant="outline" onClick={() => void copy()}>
+                {copied ? <Check aria-hidden /> : <Copy aria-hidden />}
+                {t("contrib.toggle.copyUrl")}
+              </Button>
+            )}
             <Button size="sm" variant="outline" asChild>
               <a href={displayUrl ?? url} target="_blank" rel="noopener noreferrer">
                 <ExternalLink aria-hidden />

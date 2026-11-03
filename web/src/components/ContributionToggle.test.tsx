@@ -245,6 +245,7 @@ describe("authenticated URL copy", () => {
     vi.stubGlobal("navigator", Object.assign(Object.create(navigator), { share }));
     const user = userEvent.setup();
     show(control({ checked: true, url: ORIGIN, sign_in_url: ORIGIN }));
+    expect(screen.queryByRole("button", { name: "Copy URL" })).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Share" }));
     expect(share).toHaveBeenCalledWith({ url: `${ORIGIN}/#token=session-for-tests` });
     expect(fetch).not.toHaveBeenCalled();
@@ -263,14 +264,19 @@ describe("authenticated URL copy", () => {
     const share = vi
       .fn()
       .mockRejectedValueOnce(new DOMException("Cancelled", "AbortError"))
-      .mockRejectedValueOnce(new Error("private detail"));
+      .mockRejectedValueOnce(new Error("private detail"))
+      .mockRejectedValueOnce(new DOMException("Cancelled", "AbortError"));
     vi.stubGlobal("navigator", Object.assign(Object.create(navigator), { share }));
     const user = userEvent.setup();
     show(control({ checked: true, url: ORIGIN, sign_in_url: ORIGIN }));
     await user.click(screen.getByRole("button", { name: "Share" }));
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Copy URL" })).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Share" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("Could not share the link. You can copy it instead.");
+    expect(screen.getByRole("button", { name: "Copy URL" })).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Share" }));
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Copy URL" })).toBeVisible();
   });
 

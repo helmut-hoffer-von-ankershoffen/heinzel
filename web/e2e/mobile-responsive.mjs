@@ -319,22 +319,25 @@ try {
       const pane = await footerPane(page, entry.id, "Share probe");
       const copy = pane.getByRole("button", { name: "Copy URL", exact: true });
       await assertContained(page, pane, "phone: share pane");
-      await assertContained(page, copy, "phone: Copy URL");
-      await assertTouchTarget(copy, "Copy URL", "phone");
       await page.screenshot({ path: join(shots, `mobile-${section}-${supported ? "supported" : "unsupported"}.png`) });
       if (supported) {
         const share = pane.getByRole("button", { name: "Share", exact: true });
         await assertContained(page, share, "phone: Share");
         await assertTouchTarget(share, "Share", "phone");
+        assert.equal(await copy.count(), 0, "Native sharing replaces the separate Copy button");
         await share.tap();
         assert.equal(await page.evaluate(() => window.shareProbe.calls), 1);
         assert.equal(await pane.getByRole("alert").count(), 0, "Cancellation is silent");
+        await copy.waitFor(); // AbortError can also mean that no share targets were available.
         await share.tap();
         await pane.getByRole("alert").getByText("Could not share the link. You can copy it instead.").waitFor();
         assert.equal(await page.evaluate(() => window.shareProbe.url), `${fixtureUrl}/`);
       } else {
         assert.equal(await pane.getByRole("button", { name: "Share", exact: true }).count(), 0);
       }
+      await assertContained(page, copy, "phone: Copy URL");
+      await assertTouchTarget(copy, "Copy URL", "phone");
+      if (supported) await page.screenshot({ path: join(shots, `mobile-${section}-failed.png`) });
       await copy.tap();
       await page.waitForFunction((expected) => window.shareProbe.copied === expected, `${fixtureUrl}/`);
       assert.equal(
