@@ -288,7 +288,8 @@ class NotifyService(Notifications):
         A notice the notifier refused stays due and is tried again at the next tick, until it is stale. First, once
         an hour, it looks for doctor's findings and a newer release (`look`), so they pop up in the same tick.
         """
-        self._end_leftover_instances()
+        if self.settings.native:
+            self._end_leftover_instances()
         self.look()
         if not self.settings.native or self.is_watched() or self.notifier.name is None:
             return 0
@@ -311,7 +312,8 @@ class NotifyService(Notifications):
     def _end_leftover_instances(self, *, install: bool = True) -> None:
         """End Heinzel Notifier processes that outlived any notification: a build that couldn't end itself, or a hang.
 
-        Every tick does it, so an installation heals itself the first tick after it is updated. Its failure is logged.
+        Every tick with native delivery enabled does it, so an installation heals itself after it is updated.
+        Its failure is logged.
         """
         notifier = self.notifier
         if notifier.name != HEINZEL or notifier.app is None:

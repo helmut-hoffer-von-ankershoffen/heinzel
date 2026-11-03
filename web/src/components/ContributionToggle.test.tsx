@@ -51,7 +51,10 @@ beforeEach(() => {
     vi.fn(async () => Response.json({})),
   );
 });
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
 
 describe("generic provider toggle", () => {
   it.each([true, false])("shows the verified switch state as visible text (%s)", (checked) => {
@@ -227,6 +230,56 @@ describe("generic provider toggle", () => {
 });
 
 describe("authenticated URL copy", () => {
+  it("offers Copy without Share when native sharing is unavailable", async () => {
+    vi.stubGlobal("navigator", Object.assign(Object.create(navigator), { share: undefined }));
+    const user = userEvent.setup();
+    const clipboard = vi.spyOn(navigator.clipboard, "writeText");
+    show(control({ checked: true, url: ORIGIN, sign_in_url: ORIGIN }));
+    expect(screen.queryByRole("button", { name: "Share" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Copy URL" }));
+    expect(clipboard).toHaveBeenCalledWith(`${ORIGIN}/#token=session-for-tests`);
+  });
+
+  it("shares the approved session URL directly from the click", async () => {
+    const share = vi.fn(async () => {});
+    vi.stubGlobal("navigator", Object.assign(Object.create(navigator), { share }));
+    const user = userEvent.setup();
+    show(control({ checked: true, url: ORIGIN, sign_in_url: ORIGIN }));
+    expect(screen.queryByRole("button", { name: "Copy URL" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Share" }));
+    expect(share).toHaveBeenCalledWith({ url: `${ORIGIN}/#token=session-for-tests` });
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("shares only the public URL when the sign-in origin is not approved", async () => {
+    const share = vi.fn(async () => {});
+    vi.stubGlobal("navigator", Object.assign(Object.create(navigator), { share }));
+    const user = userEvent.setup();
+    show(control({ checked: true, url: ORIGIN, sign_in_url: "https://other.tail-example.ts.net" }));
+    await user.click(screen.getByRole("button", { name: "Share" }));
+    expect(share).toHaveBeenCalledWith({ url: `${ORIGIN}/` });
+  });
+
+  it("treats cancellation as a no-op and provides copy if sharing fails", async () => {
+    const share = vi
+      .fn()
+      .mockRejectedValueOnce(new DOMException("Cancelled", "AbortError"))
+      .mockRejectedValueOnce(new Error("private detail"))
+      .mockRejectedValueOnce(new DOMException("Cancelled", "AbortError"));
+    vi.stubGlobal("navigator", Object.assign(Object.create(navigator), { share }));
+    const user = userEvent.setup();
+    show(control({ checked: true, url: ORIGIN, sign_in_url: ORIGIN }));
+    await user.click(screen.getByRole("button", { name: "Share" }));
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Copy URL" })).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Share" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Could not share the link. You can copy it instead.");
+    expect(screen.getByRole("button", { name: "Copy URL" })).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Share" }));
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Copy URL" })).toBeVisible();
+  });
+
   it("shows and copies the usable session URL, including its fragment token", async () => {
     const user = userEvent.setup();
     const clipboard = vi.spyOn(navigator.clipboard, "writeText");

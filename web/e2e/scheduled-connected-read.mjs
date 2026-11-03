@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { join } from "node:path";
 import { openChatJourney, revealChat, runDaemonTurn } from "./chat-ready.mjs";
+import { disclosureDiagnostics, watchDisclosure } from "./disclosure-diagnostics.mjs";
 
 const { axe, browser, context, page, token, url } = await openChatJourney();
 try {
@@ -46,6 +47,7 @@ try {
   await panel.getByRole("button", { name: "Confirm" }).click();
   await panel.getByText(/Recorded state: approved/).waitFor();
   const schedule = page.locator("details").filter({ has: page.getByText("Recurring agent turns", { exact: true }) });
+  await watchDisclosure(schedule.getByText("Recurring agent turns", { exact: true }), "recurring-turns");
   await schedule.getByText("Recurring agent turns", { exact: true }).click();
   await schedule.getByText(/Suggested interval: every 7 minutes/).waitFor();
   assert.equal(await schedule.getByLabel("Every (minutes)").inputValue(), "5");
@@ -74,6 +76,7 @@ try {
   const session = new URLSearchParams(page.url().split("?")[1]).get("chat");
   assert.ok(session);
   await runDaemonTurn(page, process.argv[4], session);
+  await watchDisclosure(page.getByText(/Tool activity for this reply/).nth(2), "daemon-activity");
   await page
     .getByText(/Tool activity for this reply/)
     .nth(2)
@@ -89,6 +92,7 @@ try {
   await panel.getByText(/Recorded state: revoked/).waitFor();
   await page.reload();
   await revealChat(page);
+  await watchDisclosure(schedule.getByText("Recurring agent turns", { exact: true }), "recurring-turns-after-reload");
   await schedule.getByText("Recurring agent turns", { exact: true }).click();
   await schedule.getByText(/stale · contract revision/).waitFor();
   assert.equal(await panel.evaluate((node) => node.scrollWidth > node.clientWidth), false);
@@ -130,7 +134,8 @@ try {
     })
     .catch(() => null);
   await page.screenshot({ path: join(process.argv[4], `scheduled-${process.argv[3]}-failure.png`) }).catch(() => {});
-  const diagnostic = `${message}\n${visible}\nLayout: ${JSON.stringify(layout)}`;
+  const disclosures = await disclosureDiagnostics(page);
+  const diagnostic = `${message}\n${visible}\nLayout: ${JSON.stringify(layout)}\nDisclosure trace: ${JSON.stringify(disclosures)}`;
   process.stderr.write(`${diagnostic.replaceAll(decodeURIComponent(token), "<redacted-session>")}\n`);
   process.exitCode = 1;
 } finally {

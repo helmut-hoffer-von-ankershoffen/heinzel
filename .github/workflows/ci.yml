@@ -25,7 +25,7 @@ env:
 # pull request runs Linux, Python oldest and newest, plus a macOS smoke job. Platform, shared and unknown changes also
 # run the full applicable macOS suite (setup, unit and integration shards, end-to-end,
 # notifier, macOS-only tests, Electron) and the full Python matrix run on every push to main, daily and on dispatch, and
-# `CI OK` includes them there; the existing temporary matrix exception remains until three green full-suite runs.
+# `CI OK` includes every scheduled job; macOS failures block after three clean full-suite main runs.
 # Cheap checks cancel a failing same-repository pull request's run early; fork PRs finish with read-only tokens.
 # Provider-specific integration checks live with their owning plugins.
 jobs:
@@ -195,7 +195,6 @@ jobs:
     # What a contributor runs on a fresh machine, on each platform scripts/tools.toml pins: `make setup` installs
     # everything the build needs, relying only on git, make and uv, and `make doctor` confirms it.
     runs-on: ${{ matrix.os }}
-    continue-on-error: ${{ startsWith(matrix.os, 'macos') && !(github.event_name == 'pull_request' && needs.changes.outputs.macos_full == 'true') }} # full macOS PR checks block; main's temporary exception remains
     timeout-minutes: 10
     strategy:
       fail-fast: ${{ github.event_name == 'pull_request' }} # stop waiting for other setup cells on a red PR
@@ -238,7 +237,6 @@ jobs:
     if: needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true'
     name: Test (${{ matrix.os }}, Python ${{ matrix.python }}${{ matrix.levels && format(', {0}', matrix.levels) || '' }})
     runs-on: ${{ matrix.os }}
-    continue-on-error: ${{ startsWith(matrix.os, 'macos') && !(github.event_name == 'pull_request' && needs.changes.outputs.macos_full == 'true') }} # full macOS PR checks block; main's temporary exception remains
     timeout-minutes: 10
     strategy:
       fail-fast: ${{ github.event_name == 'pull_request' }} # a red cell is enough to know on a pull request
@@ -367,7 +365,6 @@ jobs:
     needs: changes
     if: needs.changes.outputs.core == 'true' && needs.changes.outputs.site_only != 'true'
     runs-on: ${{ matrix.os }}
-    continue-on-error: ${{ startsWith(matrix.os, 'macos') && !(github.event_name == 'pull_request' && needs.changes.outputs.macos_full == 'true') }} # full macOS PR checks block; main's temporary exception remains
     timeout-minutes: 15
     strategy:
       fail-fast: false
@@ -506,7 +503,6 @@ jobs:
     needs: changes
     if: needs.changes.outputs.electron == 'true'
     runs-on: ${{ matrix.os }}
-    continue-on-error: ${{ startsWith(matrix.os, 'macos') && !(github.event_name == 'pull_request' && needs.changes.outputs.macos_full == 'true') }} # full macOS PR checks block; main's temporary exception remains
     timeout-minutes: 15
     strategy:
       fail-fast: false

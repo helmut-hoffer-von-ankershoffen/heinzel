@@ -5,7 +5,9 @@ import http.client
 import importlib.util
 import io
 import re
+import ssl
 import tarfile
+import urllib.error
 import zipfile
 from pathlib import Path
 
@@ -155,6 +157,133 @@ def test_platforms_are_named_as_in_the_manifest(system, machine, expected):
 
 
 # Downloads and archives
+
+
+@pytest.fixture
+def transport(monkeypatch):
+    """A deterministic transport clock; retries never sleep in the test suite."""
+    now = [0.0]
+    monkeypatch.setattr(tools.time, "monotonic", lambda: now[0])
+    monkeypatch.setattr(tools.time, "sleep", lambda delay: now.__setitem__(0, now[0] + delay))
+    monkeypatch.setattr(tools, "ssl_context", lambda: None)
+    return now
+
+
+@pytest.mark.parametrize(
+    "interruption",
+    [
+        ssl.SSLEOFError(8, "unexpected EOF"),
+        urllib.error.URLError(ssl.SSLEOFError(8, "unexpected EOF")),
+        ConnectionResetError("connection reset"),
+        http.client.IncompleteRead(b"partial", 100),
+    ],
+)
+@pytest.mark.parametrize("during_read", [False, True])
+def test_interrupted_download_restarts_and_caches_only_the_complete_verified_body(
+    tmp_path, monkeypatch, transport, interruption, during_read
+):
+    download = tools.Download("https://example.com/x", sha(BINARY))
+    requests = []
+
+    class InterruptedResponse(io.BytesIO):
+        def read(self):
+            raise interruption
+
+    def open_(request, **kwargs):
+        requests.append((request.full_url, kwargs["timeout"]))
+        if len(requests) == 1:
+            transport[0] += 10
+            if during_read:
+                return InterruptedResponse(b"partial")
+            raise interruption
+        return io.BytesIO(BINARY)
+
+    monkeypatch.setattr(tools.urllib.request, "urlopen", open_)
+    assert tools.fetch(download, tmp_path, tools.http_get) == BINARY
+    assert (tmp_path / download.sha256).read_bytes() == BINARY
+    assert requests == [(download.url, 120), (download.url, 109.5)]
+
+
+def test_persistent_tls_eof_exhausts_three_attempts_without_caching(tmp_path, monkeypatch, transport):
+    requests = []
+
+    def open_(*args, **kwargs):
+        requests.append(kwargs["timeout"])
+        raise urllib.error.URLError(ssl.SSLEOFError(8, "unexpected EOF"))
+
+    monkeypatch.setattr(tools.urllib.request, "urlopen", open_)
+    with pytest.raises(tools.ToolError, match="unexpected EOF"):
+        tools.fetch(tools.Download("https://example.com/x", ZERO), tmp_path, tools.http_get)
+    assert requests == [120, 119.5, 118.5]
+    assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.parametrize("elapsed", [120, 119.5])
+def test_interruption_at_the_timeout_budget_fails_without_another_request(monkeypatch, transport, elapsed):
+    requests = []
+
+    def open_(*args, **kwargs):
+        requests.append(kwargs["timeout"])
+        transport[0] += elapsed
+        raise ssl.SSLEOFError(8, "unexpected EOF")
+
+    monkeypatch.setattr(tools.urllib.request, "urlopen", open_)
+    with pytest.raises(tools.ToolError, match="unexpected EOF"):
+        tools.download_bytes("https://example.com/x", tools.http_get)
+    assert requests == [120]
+
+
+def test_backoff_delayed_past_the_timeout_budget_does_not_start_another_request(monkeypatch, transport):
+    requests = []
+
+    def open_(*args, **kwargs):
+        requests.append(args)
+        raise ssl.SSLEOFError(8, "unexpected EOF")
+
+    monkeypatch.setattr(tools.urllib.request, "urlopen", open_)
+    monkeypatch.setattr(tools.time, "sleep", lambda _: transport.__setitem__(0, 121.0))
+    with pytest.raises(tools.ToolError, match="unexpected EOF"):
+        tools.download_bytes("https://example.com/x", tools.http_get)
+    assert len(requests) == 1
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        urllib.error.URLError(ssl.SSLCertVerificationError(1, "certificate rejected")),
+        ssl.SSLError(1, "bad protocol"),
+        urllib.error.HTTPError("https://example.com/x", 404, "not found", {}, None),
+        urllib.error.HTTPError("https://example.com/x", 503, "unavailable", {}, None),
+    ],
+)
+def test_certificate_protocol_and_http_errors_fail_without_retries(monkeypatch, transport, error):
+    requests = []
+
+    def open_(*args, **kwargs):
+        requests.append(args)
+        raise error
+
+    monkeypatch.setattr(tools.urllib.request, "urlopen", open_)
+    with pytest.raises(tools.ToolError, match="download failed"):
+        tools.download_bytes("https://example.com/x", tools.http_get)
+    assert len(requests) == 1
+    assert transport == [0.0]
+
+
+def test_recovered_download_with_wrong_checksum_is_refused_without_further_retries(tmp_path, monkeypatch, transport):
+    requests = []
+
+    def open_(*args, **kwargs):
+        requests.append(args)
+        if len(requests) == 1:
+            raise ssl.SSLEOFError(8, "unexpected EOF")
+        return io.BytesIO(b"tampered")
+
+    monkeypatch.setattr(tools.urllib.request, "urlopen", open_)
+    with pytest.raises(tools.ToolError, match="checksum mismatch"):
+        tools.fetch(tools.Download("https://example.com/x", sha(BINARY)), tmp_path, tools.http_get)
+    assert len(requests) == 2
+    assert list(tmp_path.iterdir()) == []
 
 
 def test_fetch_refuses_a_download_whose_checksum_differs_and_caches_nothing(tmp_path):
