@@ -43,8 +43,8 @@ Chosen option: **immutable public declarations consumed by one prerequisite serv
 owner's own setup step**, because ownership belongs to the module while installing and reporting are shared.
 
 - **Declaration.** `Module.prerequisite(name, purpose=, linux=, macos=, when=, ...)` adds a `PrerequisiteLet` named
-  after the executable. It carries the purpose, a version probe (exactly one of `--version`, `-version`, `-V` or
-  `version`, without suffix arguments that could execute code), an optional minimum version, a
+  after the executable. It carries the purpose, a version probe (exactly one flag: `--version`, `-version` or `-V`,
+  without suffix arguments or bare subcommands that could execute code), an optional minimum version, a
   `Homebrew` formula or cask (or `ManualInstall` text) for macOS, a `ManualInstall` for Linux, and a context:
   `install` (every standard app), `setup` (the owner's setup) or `feature` (only when selected). An optional
   `needed` predicate, evaluated only by checks and installs, takes settings or the capability view and returns whether

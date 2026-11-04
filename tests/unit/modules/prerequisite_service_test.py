@@ -69,9 +69,9 @@ def test_a_probe_gets_the_owners_arguments_and_no_credentials(make_kernel):
     machine = Machine(present={"/usr/bin/tool": "1.2"})
     machine.environment["HZ_CREDENTIAL_SERVICE_TOKEN"] = "secret"
 
-    engine(machine, make_kernel, example=owner(tool(version_args=("version",)))).check()
+    engine(machine, make_kernel, example=owner(tool(version_args=("-V",)))).check()
 
-    assert machine.commands[-1] == ["/usr/bin/tool", "version"]
+    assert machine.commands[-1] == ["/usr/bin/tool", "-V"]
     assert "HZ_CREDENTIAL_SERVICE_TOKEN" not in machine.environments[-1]
 
 

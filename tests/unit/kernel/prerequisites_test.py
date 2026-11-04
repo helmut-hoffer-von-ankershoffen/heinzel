@@ -77,7 +77,14 @@ def test_version_probes_refuse_every_suffix_before_any_program_can_run(probe: tu
         Module("example", "An example.").prerequisite("perl", purpose="Check Perl.", linux=LINUX, version_args=probe)
 
 
-@pytest.mark.parametrize("probe", [("--version",), ("-version",), ("-V",), ("version",)])
+def test_a_bare_version_word_may_name_a_script_so_it_is_not_a_generic_probe():
+    with pytest.raises(ValueError, match="probes its version"):
+        Module("example", "An example.").prerequisite(
+            "python", purpose="Check Python.", linux=LINUX, version_args=("version",)
+        )
+
+
+@pytest.mark.parametrize("probe", [("--version",), ("-version",), ("-V",)])
 def test_a_version_probe_only_asks_for_a_version(probe: tuple[str, ...]):
     assert declare(version_args=probe).version_args == probe
 
