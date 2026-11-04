@@ -222,7 +222,7 @@ def _preserved_wheel_constraints(prefix: Path, requirements: list[str]) -> tuple
     wanted = [Requirement(item) for item in requirements]
     names: set[str] = {canonicalize_name(item.name) for item in wanted}
     found = _selected_metadata(_locations(prefix), names, set())
-    result = []
+    result: list[str] = []
     for requirement in wanted:
         if requirement.url is not None:
             continue
