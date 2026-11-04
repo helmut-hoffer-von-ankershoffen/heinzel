@@ -5,6 +5,36 @@ import { disclosureDiagnostics, watchDisclosure } from "./disclosure-diagnostics
 import { settleRoutes } from "./route-settlement.mjs";
 
 const { axe, browser, context, page, token, url } = await openChatJourney();
+const lateActivity = process.argv[6] === "late-activity";
+if (lateActivity) {
+  // Reproduce the hosted ordering: page DOM growth is committed between press/release, while its resize
+  // notification arrives after release. Keep actual browser layout, response data and physical pointer events.
+  await page.addInitScript(() => {
+    const NativeObserver = window.ResizeObserver;
+    const pending = new Map();
+    window.__hzHoldPageResize = false;
+    window.__hzReleasePageResize = () => {
+      window.__hzHoldPageResize = false;
+      for (const [observer, deliver] of pending) {
+        pending.delete(observer);
+        deliver();
+      }
+    };
+    window.ResizeObserver = class extends NativeObserver {
+      constructor(callback) {
+        super((entries, observer) => {
+          if (window.__hzHoldPageResize && entries.some(({ target }) => target.querySelector("#content")))
+            pending.set(observer, () => callback(entries, observer));
+          else callback(entries, observer);
+        });
+      }
+      disconnect() {
+        pending.delete(this);
+        super.disconnect();
+      }
+    };
+  });
+}
 const revocations = [];
 let latePage;
 const revocationPath = "/api/heinzel/revoke-connected-read";
@@ -87,7 +117,7 @@ try {
   await schedule.getByText(/approved; the daemon must be running/i).waitFor();
   const session = new URLSearchParams(page.url().split("?")[1]).get("chat");
   assert.ok(session);
-  if (process.argv[6] === "late-page") {
+  if (process.argv[6] === "late-page" || lateActivity) {
     const ready = Promise.withResolvers();
     const release = Promise.withResolvers();
     const inserted = Promise.withResolvers();
@@ -101,11 +131,36 @@ try {
     latePage = { ready: ready.promise, release: release.resolve, inserted: inserted.promise };
   }
   await runDaemonTurn(page, process.argv[4], session);
-  await watchDisclosure(page.getByText(/Tool activity for this reply/).nth(2), "daemon-activity");
-  await page
-    .getByText(/Tool activity for this reply/)
-    .nth(2)
-    .click();
+  const activity = page.getByText(/Tool activity for this reply/).nth(2);
+  await watchDisclosure(activity, "daemon-activity");
+  if (lateActivity) {
+    await latePage.ready;
+    await activity.hover();
+    const box = await activity.boundingBox();
+    assert.ok(box);
+    const pointer = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+    const priorHeight = await page.locator("#content").evaluate((node) => node.getBoundingClientRect().height);
+    await page.evaluate(() => {
+      window.__hzHoldPageResize = true;
+    });
+    try {
+      await page.mouse.down();
+      latePage.release();
+      await latePage.inserted;
+      await page.waitForFunction(
+        (height) => document.getElementById("content").getBoundingClientRect().height > height,
+        priorHeight,
+      );
+      const stillUnderPointer = await activity.evaluate(
+        (node, { x, y }) => node.contains(document.elementFromPoint(x, y)),
+        pointer,
+      );
+      await page.mouse.up();
+      assert.equal(stillUnderPointer, true, "late page loading keeps the pressed disclosure under the pointer");
+    } finally {
+      await page.evaluate(() => window.__hzReleasePageResize());
+    }
+  } else await activity.click();
   await page
     .getByText(/connected_read · completed/)
     .first()
@@ -114,7 +169,7 @@ try {
   assert.equal(await page.getByText("Approved read: first recorded result.").count(), 1);
   await page.getByText(/this is not event deduplication or complete history/i).waitFor();
   const revoke = panel.getByRole("button", { name: "Revoke this grant" });
-  if (latePage) {
+  if (latePage && !lateActivity) {
     await latePage.ready;
     await revoke.hover();
     const priorHeight = await page.locator("#content").evaluate((node) => node.getBoundingClientRect().height);

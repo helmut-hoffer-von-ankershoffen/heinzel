@@ -4,7 +4,7 @@ date: 2026-10-23
 implementation: built
 amends: 0024
 amends-0024: the directory is a capability
-amended-by: 0049, 0055, 0059
+amended-by: 0049, 0055, 0059, 0130
 related: 0012, 0017, 0021, 0022, 0023
 implemented-by: 9
 ---

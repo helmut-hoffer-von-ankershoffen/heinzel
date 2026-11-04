@@ -3,6 +3,7 @@
 No test reaches a model: the fakes are shell scripts in the test's directory that record how they were called.
 """
 
+import importlib.util
 import json
 import tomllib
 
@@ -171,3 +172,65 @@ def test_signing_in_to_chatgpt_is_a_terminal_act_only(make_kernel):
     assert "ai_access_login" not in names
     client = TestClient(api.build(kernel), base_url="http://localhost")
     assert client.post("/ai/access/login").status_code in {404, 405}
+
+
+@pytest.mark.parametrize("selected", ["claude-code", "chatgpt", "pydantic-ai"])
+def test_doctor_only_requires_authentication_for_the_selected_access(make_kernel, fakes, selected):
+    user_config_dir().mkdir(parents=True, exist_ok=True)
+    (user_config_dir() / "config.toml").write_text(
+        f'[capabilities]\nai_access = "{selected}"\nagent_runner = "claude-code"\n', encoding="utf-8"
+    )
+    kernel = make_kernel(builtins=True, config=Config.load())
+    _, report = hz(kernel, "system", "doctor")
+    credentials = report["checks"]["system.credential"]
+    assert all(check["status"] == "up" for check in credentials)
+    assert all("not stored" in check["detail"] for check in credentials if check["name"].startswith("credential "))
+    [access] = report["checks"]["ai.access"]
+    assert access["status"] == ("up" if selected == "claude-code" else "degraded")
+
+
+def test_selected_configured_vendor_still_degrades_when_its_api_key_is_missing(make_kernel, fakes, monkeypatch):
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("HZ_CREDENTIAL_AI_ACCESS_API_KEY", raising=False)
+    user_config_dir().mkdir(parents=True, exist_ok=True)
+    (user_config_dir() / "config.toml").write_text(
+        '[capabilities]\nai_access = "pydantic-ai"\nagent_runner = "claude-code"\n'
+        '[ai.access]\nmodel = "anthropic:claude-sonnet-4-5"\n',
+        encoding="utf-8",
+    )
+    kernel = make_kernel(builtins=True, config=Config.load())
+    # Only SDK presence is simulated; selected-provider status and doctor execute normally without network.
+    find_spec = importlib.util.find_spec
+    monkeypatch.setattr(
+        importlib.util, "find_spec", lambda package: object() if package == "anthropic" else find_spec(package)
+    )
+    _, listing = hz(kernel, "ai", "access", "list")
+    chosen = next(option for option in listing["options"] if option["in_use"])
+    assert chosen["status"] == "not signed in"
+    assert chosen["detail"] == "no API key for anthropic"
+    _, report = hz(kernel, "system", "doctor")
+    assert all(check["status"] == "up" for check in report["checks"]["system.credential"])
+    [access] = report["checks"]["ai.access"]
+    assert access["status"] == "degraded"
+    assert "no API key for anthropic" in access["detail"]
+
+
+def test_explicitly_deferred_ai_is_honest_and_ask_chat_fail_before_cli_or_network(make_kernel, fakes):
+    user_config_dir().mkdir(parents=True, exist_ok=True)
+    (user_config_dir() / "config.toml").write_text('[capabilities]\nai_access="none"\nagent_runner="none"\n')
+    kernel = make_kernel(builtins=True, config=Config.load())
+    _, report = hz(kernel, "system", "doctor")
+    assert report["checks"]["ai.access"][0]["status"] == "up"
+    assert "intentionally not configured" in report["checks"]["ai.access"][0]["detail"]
+    relevant = [c for c in report["checks"]["system.capability"] if "agent-runner" in c["name"]]
+    assert len(relevant) == 2
+    assert all(c["status"] == "up" and "on-demand" in c["detail"] for c in relevant)
+    assert not fakes.exists(), "explicit deferral must not even probe provider authentication"
+    for arguments in [
+        ["system", "runner", "ask", "Hello"],
+        ["chat", "send", "0123456789abcdef", "Hello"],
+    ]:
+        result = CliRunner().invoke(build(kernel), arguments)
+        assert result.exit_code != 0
+        assert "no adapter bound" in result.output
+    assert not fakes.exists()

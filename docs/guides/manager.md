@@ -262,7 +262,7 @@ missing parent or site or a cycle, each with its fix; `hz system config set team
 
 ## What's next
 
-- Rather click? `hz ui` opens a web app on localhost, for this session only.
+- Rather click? `hz ui serve` opens a web app on localhost, for this session only.
 - Every command takes `--json`, and `hz system serve mcp` gives coding agents the same operations as MCP tools.
 - By default `hz` lists only the everyday commands. `hz system expert on` lists the rest, such as `hz heinzel
   playbooks`, `discover` and `sent`, and `hz system plugin`, `config`, `daemon` and `layer`. They run either way.

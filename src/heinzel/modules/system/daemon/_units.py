@@ -4,8 +4,10 @@ Both fire on wall-clock slots, not after an interval, because launchd's `StartCa
 `OnCalendar=` with `Persistent=true` catch up missed slots, coalesced, after sleep; `StartInterval` does not.
 """
 
+import json
 import plistlib
 import shlex
+from collections.abc import Mapping
 from pathlib import Path
 
 LABEL = "io.github.helmut-hoffer-von-ankershoffen.heinzel.daemon"
@@ -56,9 +58,13 @@ LOGIN_ITEM_HINT = "Install the notifier to show Heinzelmännchen with its icon i
 """Said by `install` while the app is missing; the plist already names it, so installing it later is enough."""
 
 
-def launchd_plist(executable: Path, minutes: int, log_dir: Path) -> str:
+def launchd_plist(executable: Path, minutes: int, log_dir: Path, profile: Mapping[str, str] | None = None) -> str:
     """The LaunchAgent: a tick at every `minutes`-minute slot, in the background, at low priority."""
-    return plistlib.dumps(_launchd_agent(executable, minutes, log_dir), sort_keys=True).decode()
+    agent = _launchd_agent(executable, minutes, log_dir)
+    if profile is not None:
+        agent["EnvironmentVariables"] = {"PATH": f"{executable.parent}:{PATH}", **profile}
+        agent["WorkingDirectory"] = profile["HOME"]
+    return plistlib.dumps(agent, sort_keys=True).decode()
 
 
 def released_launchd_minutes(content: bytes, executable: Path, log_dir: Path) -> int | None:
@@ -101,9 +107,17 @@ def on_calendar(minutes: int) -> str:
     return "*:00" if minutes == 60 else f"*:0/{minutes}"  # noqa: PLR2004 - an hour
 
 
-def systemd_service(executable: Path) -> str:
+def systemd_service(executable: Path, profile: Mapping[str, str] | None = None) -> str:
     """The oneshot service that runs one tick."""
     command = shlex.join([str(executable), *TICK]).replace("%", "%%")  # systemd expands % specifiers
+    routing = ""
+    if profile is not None:
+        environment = {"PATH": f"{executable.parent}:{PATH}", **profile}
+        routing = "".join(
+            f"Environment={json.dumps(f'{key}={value}', ensure_ascii=False).replace('%', '%%')}\n"
+            for key, value in sorted(environment.items())
+        )
+        routing += f"WorkingDirectory={json.dumps(profile['HOME'], ensure_ascii=False).replace('%', '%%')}\n"
     return (
         "[Unit]\n"
         "Description=Heinzelmännchen daemon tick\n"
@@ -112,6 +126,7 @@ def systemd_service(executable: Path) -> str:
         "[Service]\n"
         "Type=oneshot\n"
         f"ExecStart={command}\n"
+        f"{routing}"
         "StandardOutput=null\n"
         f"Nice={NICE}\n"
         "IOSchedulingClass=idle\n"

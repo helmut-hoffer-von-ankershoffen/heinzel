@@ -2,7 +2,9 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { anchorWorkspace } from "./workspaceAnchor";
 
 let resized: () => void;
+let mutated: () => void;
 const disconnected = vi.fn();
+const mutationDisconnected = vi.fn();
 class Observer {
   constructor(callback: () => void) {
     resized = callback;
@@ -11,7 +13,19 @@ class Observer {
   disconnect = disconnected;
 }
 
-beforeEach(() => vi.stubGlobal("ResizeObserver", Observer));
+class Mutations {
+  constructor(callback: () => void) {
+    mutated = callback;
+  }
+  observe() {}
+  disconnect = mutationDisconnected;
+}
+
+beforeEach(() => {
+  mutated = () => {};
+  vi.stubGlobal("ResizeObserver", Observer);
+  vi.stubGlobal("MutationObserver", Mutations);
+});
 afterEach(() => {
   document.body.replaceChildren();
   vi.unstubAllGlobals();
@@ -39,6 +53,7 @@ function layout() {
   return {
     scroller,
     page,
+    workspace,
     button,
     dispose,
     grow: (change: number) => (height += change),
@@ -60,6 +75,42 @@ it("keeps a pressed workspace control at the same visible position while the pag
   expect(view.scroller.scrollTop).toBe(1400);
   view.dispose();
 });
+
+it("anchors a DOM update at the microtask checkpoint before pointer release and the resize notification", () => {
+  const view = layout();
+  view.button.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+  view.grow(1200);
+  mutated();
+  expect(view.scroller.scrollTop).toBe(1600);
+  view.button.dispatchEvent(new Event("pointerup", { bubbles: true }));
+  resized();
+  expect(view.scroller.scrollTop).toBe(1600);
+  view.dispose();
+});
+
+it.each(["Page interaction", "scroll away", "removed control", "closed workspace", "disconnected", "disposed"])(
+  "ignores queued page mutations after %s",
+  (reason) => {
+    const view = layout();
+    view.button.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    if (reason === "Page interaction") view.page.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    if (reason === "scroll away") {
+      view.scroller.scrollTop = 0;
+      view.scroller.dispatchEvent(new Event("scroll"));
+    }
+    if (reason === "removed control") view.button.remove();
+    if (reason === "closed workspace") view.workspace.hidden = true;
+    if (reason === "disconnected") view.workspace.remove();
+    if (reason === "disposed") view.dispose();
+    const before = view.scroller.scrollTop;
+    view.grow(1200);
+    mutated();
+    expect(view.scroller.scrollTop).toBe(before);
+    if (reason !== "disposed") view.dispose();
+    expect(disconnected).toHaveBeenCalledOnce();
+    expect(mutationDisconnected).toHaveBeenCalledOnce();
+  },
+);
 
 it("does not compensate twice when the browser already anchored the scroll", () => {
   const view = layout();

@@ -7,7 +7,6 @@ Register a flag here when the work starts, and delete it with its checks when th
 from heinzel.kernel._settings import Settings
 
 FEATURES: dict[str, str] = {
-    "persistent_web": "Supervised web availability while OS lifecycle acceptance is being completed.",
     "durable_agents": "Durable agents that keep working between sessions, while they are being built.",
 }
 """Every flag and what it switches on; everything is off unless named in the setting `features`."""
@@ -26,4 +25,5 @@ def feature_enabled(settings: Settings, name: str) -> bool:
 
 def unknown_features(settings: Settings) -> list[str]:
     """Names in the setting that no flag has, to report; they switch nothing on."""
-    return sorted(settings.features - FEATURES.keys())
+    # Shipped web availability no longer has a gate; older selected profiles may still name it.
+    return sorted(settings.features - FEATURES.keys() - {"persistent_web"})

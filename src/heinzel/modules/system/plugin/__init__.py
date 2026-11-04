@@ -119,7 +119,7 @@ def add(
 
     Without `confirm` it only reads PyPI or GitHub and answers what `requirement` would be installed, pinned to the
     release or commit it read; the answer includes a receipt that can confirm exactly that candidate once. Existing
-    callers may still confirm by spec. Running servers (`hz ui`, MCP) see the plugin after a restart
+    callers may still confirm by spec. Running servers (`hz ui serve`, MCP) see the plugin after a restart
     (`restart_required`).
     """
     change = service.add(spec, confirm=confirm, operation_id=operation_id)

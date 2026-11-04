@@ -417,7 +417,7 @@ def test_foreground_ui_with_no_owned_integration_does_not_require_uv(make_kernel
     monkeypatch.setattr(_service.shutil, "which", lambda _: None)
     opened = []
     monkeypatch.setattr(web, "serve", lambda kernel, **kwargs: opened.append(kwargs))
-    result = CliRunner().invoke(build(make_kernel(builtins=True)), ["ui", "--no-browser"])
+    result = CliRunner().invoke(build(make_kernel(builtins=True)), ["ui", "serve", "--no-browser"])
     assert result.exit_code == 0, result.output
     assert len(opened) == 1
 
@@ -539,19 +539,16 @@ def test_owned_service_home_below_root_sticky_tmp_is_supported_without_adopting_
         assert isolated.unit.is_file()
 
 
-def test_preview_defaults_off_and_does_not_install_but_keeps_inspection_and_removal(make_kernel, service):
+def test_default_install_keeps_inspection_and_owned_removal_without_a_preview(make_kernel, service):
     service, manager, port = service
     kernel = make_kernel(builtins=True)
     kernel.bind(WebService, service)
     app = build(kernel)
-    blocked = CliRunner().invoke(app, ["ui", "install", "--port", str(port), "--json"])
-    assert blocked.exit_code == 1
-    assert "disabled preview" in blocked.output
-    assert not service.marker.exists()
-    assert manager.calls == []
-    service.install(port)  # An earlier enabled preview may still need safe cleanup after its flag is switched off.
+    installed = CliRunner().invoke(app, ["ui", "install", "--port", str(port), "--json"])
+    assert installed.exit_code == 0, installed.output
+    assert json.loads(installed.stdout)["status"]["installed"] is True
+    assert manager.loaded
     assert CliRunner().invoke(app, ["ui", "status", "--json"]).exit_code == 0
-    assert CliRunner().invoke(app, ["ui", "restart", "--json"]).exit_code == 1
     removed = CliRunner().invoke(app, ["ui", "uninstall", "--json"])
     assert removed.exit_code == 0
     assert json.loads(removed.stdout)["changed"]
@@ -571,13 +568,13 @@ def test_dangling_attachment_record_never_falls_back_to_a_foreground_server(
     monkeypatch.setattr(web, "serve", lambda *_args, **_kwargs: pytest.fail("Unsafe foreground fallback"))
     kernel = make_kernel(builtins=True)
     kernel.bind(WebService, service)
-    result = CliRunner().invoke(build(kernel), ["ui", "--no-browser"])
+    result = CliRunner().invoke(build(kernel), ["ui", "open", "--no-browser"])
     assert result.exit_code == 1
     assert "not ready" in result.output
     assert service.marker.is_symlink()
 
 
-def test_disabled_preview_refuses_existing_attachment_instead_of_starting_a_competitor(
+def test_default_attachment_uses_existing_private_service_instead_of_starting_a_competitor(
     make_kernel, service, monkeypatch
 ):
     from heinzel.heads import web
@@ -588,21 +585,27 @@ def test_disabled_preview_refuses_existing_attachment_instead_of_starting_a_comp
     monkeypatch.setattr(web, "serve", lambda *_args, **_kwargs: pytest.fail("Unsafe foreground fallback"))
     kernel = make_kernel(builtins=True)
     kernel.bind(WebService, service)
-    result = CliRunner().invoke(build(kernel), ["ui", "--no-browser"])
-    assert result.exit_code == 1
-    assert "preview is disabled" in result.output
+    control = start_control(service, port)
+    try:
+        result = CliRunner().invoke(build(kernel), ["ui", "open", "--no-browser"])
+        assert result.exit_code == 0, result.output
+        assert result.stdout == f"http://127.0.0.1:{port}/#token={TOKEN}\n"
+    finally:
+        control.close()
 
 
-def test_supervised_startup_refuses_disabled_preview_before_serving(make_kernel, monkeypatch):
+@pytest.mark.parametrize("legacy", [False, True])
+def test_supervised_entry_keeps_its_generation_without_a_preview(make_kernel, monkeypatch, legacy):
     from heinzel.heads import web
 
-    monkeypatch.setattr(web, "serve", lambda *_args, **_kwargs: pytest.fail("Disabled preview started a server"))
-    result = CliRunner().invoke(
-        build(make_kernel(builtins=True)),
-        ["ui", "--no-browser", "--port", "8737", "--supervised", "a" * 32],
-    )
-    assert result.exit_code == 1
-    assert "preview is disabled" in result.output
+    calls = []
+    monkeypatch.setattr(web, "serve", lambda *_args, **kwargs: calls.append(kwargs))
+    command = ["ui", *([] if legacy else ["serve"]), "--no-browser", "--port", "4321", "--supervised", "a" * 32]
+    result = CliRunner().invoke(build(make_kernel(builtins=True)), command)
+    assert result.exit_code == 0, result.output
+    assert calls[0]["supervised"] == "a" * 32
+    assert calls[0]["port"] == 4321
+    assert calls[0]["browser"] is False
 
 
 def assert_loaded_identity_refused(service, manager, port, alteration):
@@ -810,7 +813,6 @@ def test_real_user_factory_binds_profile_and_refuses_process_behavior_before_man
         "XDG_CONFIG_DIRS": os.environ.get("XDG_CONFIG_DIRS", "/etc/xdg"),
     }
     assert created.unsupported == ()
-    assert created.selected_preview is True
     created.runner, created.which = manager, selected.which
     manager.service = created
     for name in ("hz_features", "Hz_Auto_Update", "HZ_LOG_LEVEL"):
@@ -834,10 +836,10 @@ def test_real_user_factory_binds_profile_and_refuses_process_behavior_before_man
     explicit.write_text("[hz]\nfeatures = []\n")
     disabled = WebService.for_user(kernel)
     disabled.runner, disabled.which = manager, selected.which
-    assert disabled.selected_preview is False
-    with pytest.raises(HeinzelError, match="Enable persistent_web in the selected user configuration"):
-        disabled.install(port)
-    assert manager.calls == []
+    preview = disabled.install(port, dry_run=True)
+    assert preview.dry_run
+    assert preview.files
+    assert not any(command[1] in {"bootstrap", "enable"} for command in manager.calls)
     assert disabled.status().installed is False
     assert disabled.uninstall().changed is False
 
@@ -960,3 +962,21 @@ def test_linux_unknown_stop_state_fails_immediately_and_retains_all_integration(
     assert clock.now == 0.0
     stops = [command for command in manager.calls if "disable" in command]
     assert len(stops) == 1
+
+
+def test_released_launcher_remains_owned_but_changed_legacy_bytes_are_refused(service):
+    service, manager, port = service
+    service.install(port)
+    record = json.loads(service.marker.read_text())
+    old = service._launch_content(port, record["generation"], record["profile"], legacy=True)
+    assert " ui --no-browser " in old
+    assert " ui serve --no-browser " in record["launcher"]
+    record["launcher"] = old
+    private_write(service.launcher, old)
+    private_write(service.marker, json.dumps(record))
+    assert service.status().installed
+    assert service.status().loaded
+    private_write(service.launcher, old + "# changed\n")
+    with pytest.raises(HeinzelError):
+        service.uninstall()
+    assert manager.loaded

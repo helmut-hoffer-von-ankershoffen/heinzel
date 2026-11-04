@@ -1,6 +1,6 @@
 """Where notices are kept: one JSON file in the state directory, bounded, pruned on every write, private.
 
-`hz ui` and the daemon's tick are separate processes that both write here (one records and marks shown, the other
+`hz ui serve` and the daemon's tick are separate processes that both write here (one records and marks shown, the other
 too), so every change holds an exclusive lock and replaces the file at once; a crash never leaves half a file.
 Notices name contracts and what failed, so the directory is 0700 and the files 0600.
 """
