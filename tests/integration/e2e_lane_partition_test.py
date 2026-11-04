@@ -71,7 +71,7 @@ def selected(nodes: Counter[str], commands: list[list[str]]) -> Counter[str]:
                 for node, count in nodes.items()
                 if (not targets or node in targets or node.partition("::")[0] in targets)
                 and node.partition("::")[0] not in ignored
-                and node not in deselected
+                and not node.startswith(tuple(deselected))
             }
         )
     return result
@@ -131,3 +131,30 @@ def test_partition_rejects_unmodeled_or_duplicate_collection(arguments):
     ]
     with pytest.raises(AssertionError):
         selected(Counter({"tests/e2e/sample_test.py::test_one": 1}), [prefix + arguments])
+
+
+def test_partition_matches_pytest_deselection_prefix_semantics():
+    prefix = [
+        "uv",
+        "run",
+        "pytest",
+        "-m",
+        "e2e",
+        "-n",
+        "2" if sys.platform == "darwin" else "3",
+        "-q",
+        "--session-timeout=600",
+        "-x",
+    ]
+    nodes = Counter(
+        {
+            "tests/e2e/sample_test.py::test_one": 1,
+            "tests/e2e/sample_test.py::test_one_extra": 1,
+            "tests/e2e/sample_test.py::test_two": 1,
+        }
+    )
+    assert selected(nodes, [[*prefix, "--deselect=tests/e2e/sample_test.py::test_one"]]) == Counter(
+        {
+            "tests/e2e/sample_test.py::test_two": 1,
+        }
+    )
