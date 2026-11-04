@@ -34,6 +34,7 @@ def makefile() -> str:
     text = (
         (ROOT / "Makefile")
         .read_text(encoding="utf-8")
+        .replace("\tuv run --quiet --script scripts/build.py prepare\n", "")
         .replace("uv run --quiet --script scripts/build.py sync", "uv sync --frozen --all-groups --quiet")
         .replace("uv run --quiet --script scripts/build.py", "uv build")
     )
