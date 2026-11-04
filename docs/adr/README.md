@@ -120,6 +120,7 @@ Status says whether we agreed. The second line of the Status column says whether
 | [0128](0128-conditional-credential-health.md) Optional credentials do not degrade unused features | proposed · 4 Nov<br>partial |  |
 | [0129](0129-explicit-web-serving-and-separate-service-consent.md) Explicit web serving and separate service consent | proposed · 4 Nov<br>partial |  |
 | [0130](0130-on-demand-health-preserves-runtime-requirements.md) On-demand health preserves runtime requirements | proposed · 4 Nov<br>partial |  |
+| [0132](0132-explicit-legacy-daemon-retirement.md) Retire legacy daemon definitions only through an explicit bound recovery plan | proposed · 4 Nov<br>partial |  |
 
 </div>
 <!-- adr-index:end -->
