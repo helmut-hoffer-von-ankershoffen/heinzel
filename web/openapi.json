@@ -1602,6 +1602,12 @@
             "title": "Capability",
             "type": "string"
           },
+          "health_on_demand": {
+            "default": false,
+            "description": "Health-only explicit deferral; the execution requirement remains mandatory.",
+            "title": "Health On Demand",
+            "type": "boolean"
+          },
           "hosts": {
             "description": "Hosts that adapter sends data to; `unknown (configured)` when its configuration decides.",
             "items": {

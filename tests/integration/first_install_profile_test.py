@@ -83,3 +83,57 @@ def test_setup_cannot_be_completed_with_non_green_health(monkeypatch, status):
     monkeypatch.setattr(bootstrap, "_managed_json", lambda *_args: {"status": status})
     with pytest.raises(HeinzelError, match="Setup is not complete"):
         bootstrap._verify_setup(Path("/fixture/persistent/bin/hz"), {})
+
+
+def test_defer_ai_is_explicit_persistent_and_preserves_existing_selection(managed_profile):
+    _kernel, directory, calls = managed_profile
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / "config.toml").write_text('[capabilities]\nai_access="gateway"\n')
+    answers = ScriptedPrompter([""])
+    bootstrap._configure_ai(Path("/fixture/persistent/bin/hz"), {}, answers)
+    config = Config.load(directory)
+    assert config.data["capabilities"] == {"ai_access": "gateway", "agent_runner": "none"}
+    assert [call[3:] for call in calls if call[:3] == ["system", "config", "set"]] == [
+        ["capabilities.agent_runner", "none"]
+    ]
+    bootstrap._configure_ai(Path("/fixture/persistent/bin/hz"), {}, ScriptedPrompter([]))
+    assert len([call for call in calls if call[:3] == ["system", "config", "set"]]) == 1
+
+
+def test_declining_ai_deferral_never_silently_changes_bindings(managed_profile):
+    _kernel, directory, calls = managed_profile
+    bootstrap._configure_ai(Path("/fixture/persistent/bin/hz"), {}, ScriptedPrompter(["n"]))
+    assert not (directory / "config.toml").exists()
+    assert not any(call[:3] == ["system", "config", "set"] for call in calls)
+
+
+def test_environment_ai_selection_is_preserved(managed_profile, monkeypatch):
+    _kernel, directory, calls = managed_profile
+    monkeypatch.setenv("HZ_CAPABILITIES__AI_ACCESS", "gateway")
+    monkeypatch.setenv("HZ_CAPABILITIES__AGENT_RUNNER", "command")
+    bootstrap._configure_ai(Path("/fixture/persistent/bin/hz"), {}, ScriptedPrompter([]))
+    assert not (directory / "config.toml").exists()
+    assert not any(call[:3] == ["system", "config", "set"] for call in calls)
+
+
+def test_noninteractive_missing_profile_is_explicitly_incomplete_without_prompts_or_writes(managed_profile):
+    _kernel, _directory, calls = managed_profile
+    with pytest.raises(HeinzelError, match="Setup is incomplete"):
+        bootstrap._require_profile(Path("/fixture/persistent/bin/hz"), {})
+    assert calls == [["org", "show"]]
+
+
+def test_bare_noninteractive_first_use_stops_incomplete_before_opening(managed_profile, monkeypatch):
+    _kernel, _directory, calls = managed_profile
+    executable = Path("/fixture/persistent/bin/hz")
+    monkeypatch.setattr(bootstrap.sys, "argv", ["heinzel"])
+    monkeypatch.setattr(bootstrap.sys.stdin, "isatty", lambda: False)
+    monkeypatch.setattr(bootstrap, "installed_app", lambda: executable)
+    monkeypatch.setattr(bootstrap, "_workspace_command", lambda *_args: ["ui", "open"])
+    launched = []
+    monkeypatch.setattr(bootstrap, "_launch_app", lambda *_args: launched.append(True))
+    with pytest.raises(SystemExit) as result:
+        bootstrap.main()
+    assert result.value.code == 1
+    assert not launched
+    assert calls == [["org", "show"]]

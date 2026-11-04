@@ -1,5 +1,6 @@
 """An installed uv tool retains authenticated web identity through replacement, exec and crash recovery."""
 
+import json
 import subprocess
 from urllib.parse import urlsplit
 
@@ -157,4 +158,41 @@ def test_installed_ui_group_is_inert_and_default_install_retains_profile_refusal
     assert "process-only settings" in refused.stderr
     assert "preview" not in refused.stderr
     assert not (sandbox.root / "state/ui/service.json").exists()
+    assert not (sandbox.root / "units").exists()
+
+
+def test_installed_account_free_complete_profile_has_green_doctor(sandbox, wheel):
+    sandbox.run("uv", "tool", "install", "--offline", wheel)
+    environment = {**sandbox.env, "HOME": str((sandbox.root / "private-home").resolve())}
+    for key, value in {
+        "org.name": "Mira",
+        "team.name": "Payments",
+        "org.handle": "mira",
+        "org.role": "engineer",
+        "org.timezone": "Europe/Berlin",
+        "capabilities.ai_access": "none",
+        "capabilities.agent_runner": "none",
+    }.items():
+        result = subprocess.run(
+            [str(sandbox.hz_bin), "system", "config", "set", key, value, "--json"],
+            env=environment,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=30,
+        )
+        assert result.returncode == 0, result.stderr
+    observed = subprocess.run(
+        [str(sandbox.hz_bin), "system", "doctor", "--json"],
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=30,
+    )
+    assert observed.returncode == 0, observed.stderr
+    report = json.loads(observed.stdout)
+    assert report["status"] == "up", json.dumps(report, indent=2)
+    assert report["checks"]["ai.access"][0]["detail"].startswith("intentionally not configured")
+    assert all(check["status"] == "up" for checks in report["checks"].values() for check in checks)
     assert not (sandbox.root / "units").exists()

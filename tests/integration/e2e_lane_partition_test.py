@@ -80,6 +80,9 @@ def test_ci_lanes_preserve_every_original_node_once_including_supervised_paramet
     expected_supervised.add(
         "tests/e2e/ui_service_test.py::test_installed_ui_group_is_inert_and_default_install_retains_profile_refusal"
     )
+    expected_supervised.add(
+        "tests/e2e/ui_service_test.py::test_installed_account_free_complete_profile_has_green_doctor"
+    )
     assert set(lanes["supervised"]) == expected_supervised
     assert not set(lanes["supervised"]).intersection(lanes["cli"])
     assert "tests/e2e/tool_install_test.py::test_a_plugin_from_a_git_repository_is_added_with_confirm" in lanes["cli"]

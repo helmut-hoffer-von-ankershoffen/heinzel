@@ -99,7 +99,7 @@ class Module:
         ```
     """
 
-    def __init__(
+    def __init__(  # noqa: PLR0913 - explicit, independent module declarations
         self,
         name: str,
         summary: str,
@@ -107,6 +107,7 @@ class Module:
         essential: bool = False,
         requires: Iterable[str] = (),
         renamed_from: str | None = None,
+        inspects: Iterable[str] = (),
     ) -> None:
         """Declare a module.
 
@@ -116,6 +117,8 @@ class Module:
             essential: Can't be disabled; for the few built-ins needed to repair a broken setup (`system`).
             requires: Capabilities the whole module reads (ADR 0028), e.g. `["tracker:read", "documents:read"]`;
                 `write` is declared on the publish operation that writes, never here.
+            inspects: Offline adapter inventory grants, e.g. `["ai-access:read"]`; never bound handles, live
+                actions or health requirements (ADR 0130).
             renamed_from: The module's old name, for the one minor release both work (ADR 0051): its settings table
                 and `HZ_<OLD>__*` variables fill in what the new ones don't set, and the daemon runs a job asked for
                 by its old id. Old command paths are each operation's `aliases`.
@@ -141,6 +144,12 @@ class Module:
                 f"writes, `@module.operation(read_only=False, requires=[...])`"
             )
             raise ValueError(msg)
+        self.inspects = parse_requirements(inspects)
+        for inspection in self.inspects:
+            capability = CAPABILITIES[inspection.capability]
+            if inspection.adapter or inspection.modes != {"read"} or not capability.inspection_methods:
+                msg = f"Module {name!r} inspection {inspection} must name an unpinned read inventory capability"
+                raise ValueError(msg)
         self.name = name
         self.summary = summary
         self.essential = essential
@@ -181,6 +190,7 @@ class Module:
         heads: Iterable[str] | None = None,
         requires: Iterable[str] = (),
         optional: bool = False,
+        health_on_demand: bool = False,
         audience: Audience = "expert",
         aliases: Iterable[str] = (),
     ) -> Callable[[F], F]: ...
@@ -198,6 +208,7 @@ class Module:
         heads: Iterable[str] | None = None,
         requires: Iterable[str] = (),
         optional: bool = False,
+        health_on_demand: bool = False,
         audience: Audience = "expert",
         aliases: Iterable[str] = (),
     ) -> F | Callable[[F], F]:
@@ -216,6 +227,8 @@ class Module:
             optional: True if it does without its own `requires` when nothing serves them, asking
                 `CapabilityView.serves` first: an unmet one is then no doctor finding, and its handle refuses only
                 when called. Read-only operations only.
+            health_on_demand: Health-only deferral of own unpinned requirements when explicitly unbound.
+                Runtime validation and injection remain mandatory; this does not make execution optional.
             audience: `everyday` to list it in help, completion and the web app's navigation for everyone; `expert`
                 (the default) lists it in expert mode only. It runs either way (ADR 0041).
             aliases: Old command paths that still run it for one minor release, e.g. `["workflow run"]`: the CLI
@@ -249,6 +262,7 @@ class Module:
                     heads=frozenset(heads) if heads is not None else None,
                     requires=requirements,
                     optional=optional,
+                    health_on_demand=health_on_demand,
                     audience=audience,
                     aliases=tuple(" ".join(a.split()) for a in old_paths),
                 )

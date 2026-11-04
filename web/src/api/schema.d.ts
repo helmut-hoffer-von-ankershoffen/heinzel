@@ -4329,6 +4329,12 @@ export interface components {
              */
             capability: string;
             /**
+             * Health On Demand
+             * @description Health-only explicit deferral; the execution requirement remains mandatory.
+             * @default false
+             */
+            health_on_demand: boolean;
+            /**
              * Hosts
              * @description Hosts that adapter sends data to; `unknown (configured)` when its configuration decides.
              */

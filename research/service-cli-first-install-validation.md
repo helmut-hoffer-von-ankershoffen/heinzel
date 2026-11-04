@@ -31,8 +31,20 @@ and inert installed web-group discovery with retained selected-profile refusal. 
 adapters, not OS acceptance. Both Chromium and WebKit mounted phone daemon-install/removal cases passed in 10.47 seconds, retaining the actual manager hold, physical confirmation, accessibility and no-horizontal-scroll assertions. Eighteen owned Electron CLI controller tests passed. No deadline or physical interaction
 was substituted; the daemon browser's named-step count now excludes the unconsented notifier step.
 
-The actual isolated profile-complete doctor report is still degraded on this source: default AI access and runner
-login are absent, the two alternative AI credentials are reported missing, and the test interpreter is an unmanaged
-source environment. Notification health is up with the genuine fresh default. No successful aggregate installation
-or OS/provider acceptance is inferred from this report. The explicitly requested account-free AI intent and optional
-credential health composition remains required before this can claim green first-install completion.
+The initial source-environment doctor remained degraded; that observation identified default provider login and
+optional alternative credentials rather than genuine profile requirements. The combined source preserves the
+reviewed optional-credential commit through a normal merge. An explicit interactive Set up AI later choice now
+persists supported `none` bindings while preserving existing selections and environment precedence. Its health-only
+on-demand requirements never become optional execution requirements. Inventory handles authorize offline status
+only; actual live-test handles are granted per operation and never cached on the inventory service.
+
+Two further regressions fail against the committed pre-integration source in 2.41 seconds: explicitly deferred AI
+was degraded, and bare noninteractive first use opened an incomplete profile. The new source passes both contracts.
+A real isolated uv-tool wheel installation with a real complete profile and explicit account-free intent now has
+an aggregate doctor status **up**, including genuine default notification health, in 16.90 seconds. No account,
+credential, provider login, installed daemon or web server is invented to obtain that result. Installation choices
+remain independent and require their actual manager/ownership proofs before onboarding can complete.
+
+The daemon ownership/profile safety integration remains a separate required reviewed source input. Hosted CI,
+real launchd/systemd installation, notification permission/delivery and complete uvx standard-composition first-use
+acceptance are not verified by these fixtures. No public push, release or current live installation was changed.

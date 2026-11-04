@@ -21,6 +21,8 @@ def managed_workspace(monkeypatch):
     monkeypatch.setattr(bootstrap, "_workspace_command", lambda *_args: ["ui", "open"])
     monkeypatch.setattr(bootstrap, "_complete_profile", lambda *_args: None)
     monkeypatch.setattr(bootstrap, "_verify_setup", lambda *_args: None)
+    monkeypatch.setattr(bootstrap, "_require_profile", lambda *_args: None)
+    monkeypatch.setattr(bootstrap, "_configure_ai", lambda *_args: None)
 
 
 @pytest.mark.parametrize("already_installed", [False, True])
@@ -296,7 +298,7 @@ def test_interactive_choices_are_separate_and_run_only_in_verified_persistent_py
         if command[4:6] == ["system", "notify"]:
             value = {"notifier": None, "shown": False, "problem": "No desktop", "next": []}
         else:
-            value = {"installed": True, "loaded": True, "ready": True, "executable": str(executable)}
+            value = {"installed": True, "loaded": True, "owned": True, "ready": True, "executable": str(executable)}
         return subprocess.CompletedProcess(command, 0, json.dumps(value), "")
 
     calls = []
@@ -434,3 +436,21 @@ def test_managed_profile_commands_refuse_changed_installation_before_running(mon
     monkeypatch.setattr(bootstrap.subprocess, "run", lambda *_args, **_kwargs: pytest.fail("Unverified target ran"))
     with pytest.raises(HeinzelError, match="changed before setup"):
         bootstrap._managed_json(tmp_path / "ephemeral/bin/hz", {}, ["org", "show"])
+
+
+@pytest.mark.parametrize("owned", [False, None, "yes", 1])
+def test_daemon_selection_cannot_complete_without_authoritative_ownership(monkeypatch, tmp_path, owned):
+    executable = tmp_path / "persistent/bin/hz"
+    executable.parent.mkdir(parents=True)
+    executable.touch()
+    monkeypatch.setattr(bootstrap, "installed_app", lambda: executable)
+    monkeypatch.setattr(
+        bootstrap,
+        "_service_status",
+        lambda *_args: {"installed": True, "loaded": True, "owned": owned, "executable": str(executable)},
+    )
+    monkeypatch.setattr(
+        bootstrap.subprocess, "run", lambda command, **_kwargs: subprocess.CompletedProcess(command, 0, "{}", "")
+    )
+    with pytest.raises(HeinzelError, match="ownership and selected profile"):
+        bootstrap._install_services(executable, [("system", "daemon")], {})

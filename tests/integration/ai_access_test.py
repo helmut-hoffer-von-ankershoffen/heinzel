@@ -213,3 +213,24 @@ def test_selected_configured_vendor_still_degrades_when_its_api_key_is_missing(m
     [access] = report["checks"]["ai.access"]
     assert access["status"] == "degraded"
     assert "no API key for anthropic" in access["detail"]
+
+
+def test_explicitly_deferred_ai_is_honest_and_ask_chat_fail_before_cli_or_network(make_kernel, fakes):
+    user_config_dir().mkdir(parents=True, exist_ok=True)
+    (user_config_dir() / "config.toml").write_text('[capabilities]\nai_access="none"\nagent_runner="none"\n')
+    kernel = make_kernel(builtins=True, config=Config.load())
+    _, report = hz(kernel, "system", "doctor")
+    assert report["checks"]["ai.access"][0]["status"] == "up"
+    assert "intentionally not configured" in report["checks"]["ai.access"][0]["detail"]
+    relevant = [c for c in report["checks"]["system.capability"] if "agent-runner" in c["name"]]
+    assert len(relevant) == 2
+    assert all(c["status"] == "up" and "on-demand" in c["detail"] for c in relevant)
+    assert not fakes.exists(), "explicit deferral must not even probe provider authentication"
+    for arguments in [
+        ["system", "runner", "ask", "Hello"],
+        ["chat", "send", "0123456789abcdef", "Hello"],
+    ]:
+        result = CliRunner().invoke(build(kernel), arguments)
+        assert result.exit_code != 0
+        assert "no adapter bound" in result.output
+    assert not fakes.exists()

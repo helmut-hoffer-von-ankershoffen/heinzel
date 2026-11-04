@@ -12,7 +12,6 @@ Outside expert mode, help and shell completion list the everyday operations only
 import inspect
 import json
 import logging
-import os
 import platform
 import sys
 from collections.abc import Callable
@@ -206,12 +205,14 @@ def _mount_ui(app: typer.Typer, groups: dict[str, typer.Typer], kernel: Kernel, 
             if ctx.invoked_subcommand is not None or port is None or browser:
                 problem = "Use `hz ui serve` for foreground serving."
                 raise typer.BadParameter(problem)
+            error.print("The legacy foreground flags are deprecated; use `hz ui serve`.")
             ui_command(kernel, error)(ctx, port=port, browser=False, supervised=supervised)
-        elif port is not None or not browser or "HEINZEL_UI_RESUME" in os.environ:
+        elif port is not None or getattr(ctx.get_parameter_source("browser"), "name", None) == "COMMANDLINE":
             # Published updaters trial and exec the older foreground vector; socket handoff still validates in web.
             if ctx.invoked_subcommand is not None:
                 problem = "Use `hz ui serve` for foreground serving."
                 raise typer.BadParameter(problem)
+            error.print("The legacy foreground flags are deprecated; use `hz ui serve`.")
             ui_command(kernel, error)(ctx, port=port, browser=browser)
         elif ctx.invoked_subcommand is None:
             typer.echo(ctx.get_help())

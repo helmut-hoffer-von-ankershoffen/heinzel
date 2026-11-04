@@ -94,6 +94,9 @@ def _install_services(executable: Path, choices: list[tuple[str, ...]], environm
             continue
         status = _service_status(executable, service, environment)
         if service == ("system", "daemon"):
+            if status.get("owned") is not True:
+                msg = "The daemon ownership and selected profile could not be verified; inspect its status."
+                raise HeinzelError(msg)
             target = status.get("executable")
             if not isinstance(target, str) or not Path(target).samefile(executable):
                 msg = (
@@ -272,12 +275,60 @@ def _complete_profile(executable: Path, environment: dict[str, str], prompter: P
     prompter.say("Profile saved through Heinzel configuration. Existing values were preserved.")
 
 
+def _require_profile(executable: Path, environment: dict[str, str]) -> None:
+    profile = _managed_json(executable, environment, ["org", "show"])
+    if not isinstance(profile, dict) or not isinstance(profile.get("missing"), list):
+        msg = "Setup could not verify your required profile; run `hz org show --json`."
+        raise HeinzelError(msg)
+    if profile["missing"]:
+        msg = "Setup is incomplete: run `uvx heinzel@latest` in an interactive terminal to complete your real profile."
+        raise HeinzelError(msg)
+
+
+def _configure_ai(executable: Path, environment: dict[str, str], prompter: Prompter | None = None) -> None:
+    report = _managed_json(executable, environment, ["system", "config", "show"])
+    if not isinstance(report, dict) or not isinstance(report.get("settings"), list):
+        msg = "AI setup intent could not be verified; inspect configuration before continuing."
+        raise HeinzelError(msg)
+    undecided = [
+        item["key"]
+        for item in report["settings"]
+        if isinstance(item, dict)
+        and item.get("section") == "capabilities"
+        and item.get("key") in {"ai_access", "agent_runner"}
+        and item.get("source") == "default"
+    ]
+    if not undecided:
+        return
+    if prompter is None:
+        from rich.console import Console  # noqa: PLC0415 - interactive setup only
+
+        from heinzel.heads.cli._setup import ConsolePrompter  # noqa: PLC0415 - no silent noninteractive selection
+
+        prompter = ConsolePrompter(Console(file=sys.stderr))
+    if not prompter.confirm("Set up AI later? Existing explicit AI selections will be kept.", default=True):
+        return
+    for key in undecided:
+        _managed_json(executable, environment, ["system", "config", "set", f"capabilities.{key}", "none"])
+    prompter.say("AI is intentionally not configured for deferred uses. Choose access when you need it.")
+
+
 def _verify_setup(executable: Path, environment: dict[str, str]) -> None:
     health = _managed_json(executable, environment, ["system", "doctor"])
     if not isinstance(health, dict) or health.get("status") != "up":
         msg = "Setup is not complete: system health is not green. Run `hz system doctor` and resolve its real findings."
         raise HeinzelError(msg)
     sys.stderr.write("Setup complete; system health is up.\n")
+
+
+def _prepare_profile(executable: Path, environment: dict[str, str], workspace: list[str], *, interactive: bool) -> None:
+    if workspace != ["ui", "open"]:
+        return  # Published older applications keep their existing prompt-free compatibility path.
+    if interactive:
+        _complete_profile(executable, environment)
+        _configure_ai(executable, environment)
+    else:
+        _require_profile(executable, environment)
 
 
 def _launch_app(executable: Path, workspace: list[str], environment: dict[str, str]) -> None:
@@ -314,8 +365,8 @@ def main() -> None:
         environment = {key: value for key, value in os.environ.items() if key not in {"PYTHONPATH", "PYTHONHOME"}}
         environment["PATH"] = f"{executable.parent}{os.pathsep}{os.environ.get('PATH', '')}"
         workspace = arguments or _workspace_command(executable, environment, choices)
-        if interactive and workspace == ["ui", "open"]:
-            _complete_profile(executable, environment)
+        if not arguments:
+            _prepare_profile(executable, environment, workspace, interactive=interactive)
         _install_services(executable, choices, environment)
         if interactive and workspace == ["ui", "open"]:
             _verify_setup(executable, environment)

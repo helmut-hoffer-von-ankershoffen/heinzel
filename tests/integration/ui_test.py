@@ -130,7 +130,7 @@ def test_explicit_serve_never_attaches_to_an_existing_service(make_kernel, monke
     assert calls[0]["port"] == 0
 
 
-@pytest.mark.parametrize("arguments", [["ui", "--port", "0", "--no-browser"], ["ui"]])
+@pytest.mark.parametrize("arguments", [["ui", "--port", "0", "--no-browser"], ["ui", "--browser"]])
 def test_published_updater_vectors_keep_foreground_socket_handoff(make_kernel, monkeypatch, arguments):
     calls = []
     monkeypatch.setenv("HEINZEL_UI_RESUME", "fixture-inherited-socket")
@@ -138,3 +138,11 @@ def test_published_updater_vectors_keep_foreground_socket_handoff(make_kernel, m
     result = CliRunner().invoke(build(make_kernel(builtins=True)), arguments)
     assert result.exit_code == 0, result.output
     assert len(calls) == 1
+
+
+def test_bare_ui_stays_inert_even_with_a_resume_environment(make_kernel, monkeypatch):
+    monkeypatch.setenv("HEINZEL_UI_RESUME", "fixture-inherited-socket")
+    monkeypatch.setattr(web, "serve", lambda *_args, **_kwargs: pytest.fail("Bare ui must remain inert"))
+    result = CliRunner().invoke(build(make_kernel(builtins=True)), ["ui"])
+    assert result.exit_code == 0
+    assert "serve" in result.stdout

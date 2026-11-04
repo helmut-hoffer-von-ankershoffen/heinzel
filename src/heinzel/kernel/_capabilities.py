@@ -55,6 +55,14 @@ class Capability:
     """Whether its only installed adapter serves it without a binding (ADR 0055). Not for `mail`: reading a mailbox
     is the person's explicit choice, whatever happens to be installed."""
 
+    inspection_methods: frozenset[str] = frozenset()
+    """Offline inventory methods, never live actions; available only through explicit module inspection grants."""
+
+    def __post_init__(self) -> None:
+        if any(self.methods.get(name) != "read" for name in self.inspection_methods):
+            msg = f"Capability {self.name!r} inspection methods must be declared read methods"
+            raise ValueError(msg)
+
     @property
     def modes(self) -> frozenset[Mode]:
         """The modes this capability has: `read`, and `write` if any method writes."""
@@ -78,6 +86,7 @@ CAPABILITIES: Mapping[str, Capability] = MappingProxyType(
                 protocol=AiAccess,
                 summary="How hz reaches AI: whether an option is there and signed in, and a cheap live check of it.",
                 methods=MappingProxyType({"status": "read", "test": "read"}),
+                inspection_methods=frozenset({"status"}),
             ),
             Capability(
                 name="calendar",
