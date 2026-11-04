@@ -24,7 +24,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal, cast
-from urllib.parse import parse_qs, urlsplit, urlunsplit
+from urllib.parse import parse_qs, unquote, urlsplit, urlunsplit
 
 import tomlkit
 from packaging.requirements import InvalidRequirement, Requirement
@@ -279,20 +279,48 @@ def _constraint_policy(data: dict[str, Any]) -> ToolConstraintPolicy:
 
 
 def _transient_entry(added: str) -> str:
-    """The receipt entry one exact-version guard becomes.
+    """The receipt entry one exact-version or hash-bound local wheel guard becomes.
 
     Raises:
-        HeinzelError: If `added` is anything but one plain exact-version requirement.
+        HeinzelError: If `added` is not a supported exact-version or hash-bound local wheel requirement.
     """
     requirement = Requirement(added)
+    if requirement.url is not None:
+        return _transient_wheel_entry(requirement)
     specifiers = list(requirement.specifier)
-    if requirement.url or requirement.marker or requirement.extras or len(specifiers) != 1:
+    if requirement.marker or requirement.extras or len(specifiers) != 1:
         raise HeinzelError(_CONSTRAINT_ERROR)
     specifier = specifiers[0]
     if specifier.operator != "==" or "*" in specifier.version:
         raise HeinzelError(_CONSTRAINT_ERROR)
     Version(specifier.version)
     entry = {"name": canonicalize_name(requirement.name, validate=True), "specifier": str(specifier)}
+    return json.dumps(entry, sort_keys=True, separators=(",", ":"))
+
+
+def _transient_wheel_entry(requirement: Requirement) -> str:
+    """Match uv's local wheel constraint entry; metadata verification separately checks the selected hash.
+
+    uv 0.13.7 retains the path in its receipt and drops the hash fragment. Only a hash-bound local wheel is accepted.
+
+    Raises:
+        HeinzelError: If this is not one exact hash-bound local wheel source.
+    """
+    source = urlsplit(requirement.url or "")
+    if (
+        requirement.marker
+        or requirement.extras
+        or source.scheme != "file"
+        or source.netloc
+        or source.query
+        or not source.path.startswith("/")
+        or not re.fullmatch(r"sha256=[a-f0-9]{64}", source.fragment)
+    ):
+        raise HeinzelError(_CONSTRAINT_ERROR)
+    name, _, _, _ = parse_wheel_filename(unquote(source.path.rsplit("/", 1)[-1]))
+    if name != canonicalize_name(requirement.name):
+        raise HeinzelError(_CONSTRAINT_ERROR)
+    entry = {"name": name, "path": unquote(source.path)}
     return json.dumps(entry, sort_keys=True, separators=(",", ":"))
 
 
@@ -322,7 +350,7 @@ def _without_added_options(raw: bytes, options: Mapping[str, object]) -> bytes:
 
 
 def _remove_transient_constraint(raw: bytes, original: ToolConstraintPolicy, added: tuple[str, ...]) -> bytes:
-    """Remove exactly the last, temporary exact-version constraints from a matching receipt.
+    """Remove exactly the last temporary constraints from a matching receipt.
 
     Raises:
         HeinzelError: If the policy or added constraints do not match exactly.
@@ -728,7 +756,7 @@ class Installation:
         added: str | tuple[str, ...],
         options: Mapping[str, object] | None = None,
     ) -> str:
-        """Remove exact-version guards only from the independently verified post-mutation generation.
+        """Remove version and verified wheel-source guards from the independently verified post-mutation generation.
 
         uv also records the resolver options a run was given (`[tool.options]`, such as `exclude-newer`); `options`
         names exactly those this mutation added, and they go too. Anything else in the receipt stays as it is.
@@ -799,6 +827,24 @@ class Installation:
         )
         if self.startup_fingerprint() != before:
             msg = "The installed tool changed during metadata inspection; no installed code was started."
+            raise HeinzelError(msg)
+        return result
+
+    def preserved_tool_wheel_constraints(self, requirements: list[str]) -> tuple[str, ...]:
+        """Keep unchanged verified wheel provenance while a plugin mutation retains installed packages.
+
+        A bare registry receipt may name a standard-app wheel installed through a verified transient override.
+        Its existing hash-bound source is authoritative only while the complete startup checkpoint still matches.
+
+        Raises:
+            HeinzelError: If metadata or the checkpoint changes during capture.
+        """
+        if not self.startup_state_matches():
+            return ()
+        before = self.startup_fingerprint()
+        result = _installed_metadata.preserved_wheel_constraints(self.prefix, requirements)
+        if self.startup_fingerprint() != before or not self.startup_state_matches():
+            msg = "The verified tool changed while preserving its wheel sources; no package change was started."
             raise HeinzelError(msg)
         return result
 
