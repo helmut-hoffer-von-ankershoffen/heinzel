@@ -174,6 +174,13 @@ def _compose_removal(context: _RemovalContext, on_recovery: Callable[[str], None
                 msg = "The Heinzel installation changed during inspection; nothing was removed."
                 raise HeinzelError(msg)
             manager_units = {**remove_web.manager_units, **daemon_removal.manager_units}
+            if set(manager_units) & {item.name for item in integrations}:
+                msg = "Host integration manager identities collide; nothing was stopped."
+                raise HeinzelError(msg)
+            files = (*remove_web.files, *daemon_removal.files, *(file for item in integrations for file in item.files))
+            if len({file.path for file in files}) != len(files):
+                msg = "Host integration file identities collide; nothing was stopped."
+                raise HeinzelError(msg)
             if sys.platform == "linux":
                 manager_units.update({item.name: item.manager_facts() for item in integrations})
             journal = RemovalJournal(
@@ -182,12 +189,13 @@ def _compose_removal(context: _RemovalContext, on_recovery: Callable[[str], None
                 binary=binary,
                 state=settings.state_dir,
                 captured=RemovalCapture(
-                    (*remove_web.files, *daemon_removal.files, *(file for item in integrations for file in item.files)),
+                    files,
                     installation.tool_entrypoints(),
                     manager_units,
                     gate=gate,
                     locks=lock_paths,
                     labels=tuple(item.name for item in integrations),
+                    integrations=integrations,
                 ),
             )
             if not installation.startup_state_matches() or installation.startup_fingerprint() != before:
@@ -236,7 +244,9 @@ def _apply_removal(
         for integration in integrations:
             journal.require_gate()
             integration.finish()
+        journal.require_gate()
         remove_web.finish()
+        journal.require_gate()
         daemon_removal.finish()
         journal.complete()
     except (OSError, ValueError, HeinzelError) as error:

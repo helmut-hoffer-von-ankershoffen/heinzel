@@ -19,3 +19,8 @@ The service captures the selected user and explicit configuration paths and reso
 Calendar offers, claims and native presentation refresh policy and time after provider validation, including exclusive expiry under the store lock. Policy edits update consent, quiet mode, native delivery, working hours and time zone without waiting for a worker restart. A profile with working hours 07–22 in Europe/Berlin therefore suppresses reminders during 22–07; a reminder does not survive its meeting boundary to be shown the next morning. The browser checks expiry again after service-worker registration and the cross-tab sound lock, so delayed registration or tab suspension cannot revive an expired meeting reminder.
 
 The authenticated desktop web head offers profile-specific setup and removal through the app's confirmation dialog. Confirmation describes login persistence and the separate background-read consent; cancellation performs no operation. The public API and MCP cannot install or remove this worker. Calendar never sends the person to a terminal to finish setup. Unit tests use fake supervisors and clocks; they do not establish actual launchd/systemd, native OS or provider acceptance.
+
+ADR 0133 composes the worker with offline SDK removal. Setup and each worker cycle honor an SDK-wide gate and
+SDK/profile lifecycle locks before resolving notification or agenda services. Every recorded profile's exact owned
+unit joins provider-free maintenance inventory; removal stops all workers before deleting the SDK and keeps their
+definitions for copied recovery until the SDK is observed gone. Consent and replay/deduplication history remain.

@@ -141,7 +141,13 @@ class CalendarMaintenance(HostMaintenanceIntegration):
             if (
                 not lines
                 or lines[0].split() != ["PID", "Status", "Label"]
-                or any(len(line.split()) != MANAGER_COLUMNS for line in lines[1:])
+                or any(
+                    len(line.split()) != MANAGER_COLUMNS
+                    or not re.fullmatch(r"-|[1-9][0-9]{0,9}", line.split()[0])
+                    or not re.fullmatch(r"-?[0-9]{1,10}", line.split()[1])
+                    for line in lines[1:]
+                )
+                or len({line.split()[-1] for line in lines[1:]}) != len(lines) - 1
             ):
                 self._refuse()
             labels = [line.split()[-1] for line in lines[1:] if line.split()[-1].startswith(LABEL)]

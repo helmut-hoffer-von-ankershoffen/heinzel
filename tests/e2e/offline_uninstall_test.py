@@ -185,6 +185,24 @@ if os.environ.get("HZ_OFFLINE_INTERRUPT_FIXTURE") == "1":
         raise KeyboardInterrupt("immutable fixture interruption before uv removal")
 
     Installation.uninstall_offline = interrupted
+if sys.argv[1:3] == ["fixture", "retention"]:
+    from datetime import UTC, datetime, timedelta
+    from heinzel import Config, NoticeKind, Settings
+    from heinzel.modules.system.notify import NotifyService, NotifySettings
+
+    configuration = Path(os.environ["HZ_CONFIG_HOME"]) / "config.toml"
+    configuration.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    configuration.write_text("[system.notify]\ncalendar = true\nnative = false\nworking_hours = false\n")
+    configuration.chmod(0o600)
+    config = Config.load(Path.home())
+    service = NotifyService(config.settings(Settings, "hz"), config.settings(NotifySettings, "system.notify"), {})
+    arguments = dict(
+        route="/", command="", key="calendar-retention-fixture", expires=datetime.now(UTC) + timedelta(hours=1)
+    )
+    assert service.emit_once(NoticeKind.CALENDAR, "Fixture reminder", "Retained replay proof", **arguments)
+    assert not service.emit_once(NoticeKind.CALENDAR, "Fixture reminder", "Retained replay proof", **arguments)
+    print("retention prepared")
+    raise SystemExit(0)
 from heinzel.heads.cli import main
 
 main()
@@ -542,7 +560,38 @@ def prepare_calendar_workers(selected, environment):
         retained = base / "data/reminder-consent-and-replay"
         retained.parent.mkdir(parents=True, exist_ok=True)
         retained.write_text("retained")
-        data.append(retained)
+        result = subprocess.run(
+            [
+                str(selected.root / "tools/heinzel/bin/python"),
+                "-I",
+                "-m",
+                "offline_uninstall_fixture",
+                "fixture",
+                "retention",
+            ],
+            env=environment | profile,
+            cwd=selected.home,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=120,
+        )
+        assert result.returncode == 0, result.stderr
+        stored = [path for path in (base / "state/notify").iterdir() if path.is_file()]
+        assert any(path.name == "notices.json" for path in stored)
+        data.extend((path, path.read_bytes()) for path in [retained, base / "config/config.toml", *stored])
+    listed = subprocess.run(
+        [str(selected.root / "tools/heinzel/bin/uv"), "--offline", "--no-config", "tool", "list", "--show-paths"],
+        env=environment,
+        cwd=selected.home,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=30,
+    )
+    assert listed.returncode == 0, listed.stderr
+    assert "heinzel" in listed.stdout
+    assert ".heinzel-maintenance" not in listed.stdout
     return paths, data
 
 
@@ -579,6 +628,7 @@ def installed_uninstall(selected, environment, change):
         "recovery",
         "calendar",
         "calendar-recovery",
+        "calendar-foreign",
         "tampered-receipt",
         "foreign-script",
         "missing-remover",
@@ -629,6 +679,9 @@ def test_installed_uninstall_needs_no_network_or_discovery_and_keeps_user_work(
     calendar_paths, calendar_data = (
         prepare_calendar_workers(selected, environment) if change.startswith("calendar") else ([], [])
     )
+    if change == "calendar-foreign":
+        calendar_paths[0].write_bytes(calendar_paths[0].read_bytes() + b"\n# foreign change\n")
+    calendar_expected = {path: path.read_bytes() for path in calendar_paths}
     receipt = selected.root / "tools/heinzel/uv-receipt.toml"
     alter_installation(change, receipt, selected, settings)
     result, environment = installed_uninstall(selected, environment, change)
@@ -636,11 +689,11 @@ def test_installed_uninstall_needs_no_network_or_discovery_and_keeps_user_work(
         result = recover_installed_interruption(selected, settings, environment, result)
     assert data.read_text() == "retained user work"
     assert (foreign / "kept.txt").read_text() == "another tool"
-    _assert_removal_outcome(change, result, selected, receipt, (calendar_paths, calendar_data))
+    _assert_removal_outcome(change, result, selected, receipt, (calendar_paths, calendar_data, calendar_expected))
 
 
 def _assert_removal_outcome(change, result, selected, receipt, calendar):
-    calendar_paths, calendar_data = calendar
+    calendar_paths, calendar_data, calendar_expected = calendar
     if change in {"none", "old015-upgrade", "recovery", "calendar", "calendar-recovery"}:
         assert result.returncode == 0, result.stderr
         if change not in {"recovery", "calendar-recovery"}:
@@ -657,11 +710,19 @@ def _assert_removal_outcome(change, result, selected, receipt, calendar):
             assert len(manager) == 2
             assert all(not item["active"] for item in manager.values())
             assert all(not path.exists() for path in calendar_paths)
-            assert all(path.read_text() == "retained" for path in calendar_data)
+            assert all(path.read_bytes() == content for path, content in calendar_data)
     else:
         assert result.returncode == 1
         assert receipt.exists()
-        assert not (selected.root / "manager-calls.jsonl").exists()
+        if change == "calendar-foreign":
+            manager = json.loads((selected.root / "calendar-manager.json").read_text())
+            assert all(item["active"] for item in manager.values())
+            assert all(path.read_bytes() == content for path, content in calendar_expected.items())
+            assert all(path.read_bytes() == content for path, content in calendar_data)
+            calls = [json.loads(line) for line in (selected.root / "manager-calls.jsonl").read_text().splitlines()]
+            assert not any("bootout" in call or "disable" in call or "stop" in call for call in calls)
+        else:
+            assert not (selected.root / "manager-calls.jsonl").exists()
         if change == "foreign-script":
             assert selected.hz_bin.read_text() == "foreign command must stay"
 

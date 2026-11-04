@@ -39,6 +39,6 @@ def boot(
     settings = settings or config.settings(Settings, KERNEL_SECTION)
     if maintenance:
         # Disabled feature owners must still expose their already-installed lifecycle inventory.
-        settings = settings.model_copy(update={"disabled_modules": []})
+        settings = settings.model_copy(update={"disabled_modules": frozenset()})
     records, errors = discover(plugins=not builtin_only and settings.plugins_enabled, source_discovery=source_discovery)
     return Kernel(settings, records, errors, config, source_discovery=source_discovery)

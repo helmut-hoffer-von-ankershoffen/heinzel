@@ -8,6 +8,10 @@ import shlex
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from heinzel.kernel._host_maintenance import HostIntegration
 
 from heinzel.kernel import _uninstall_recovery as recovery
 from heinzel.kernel._installation_continuity import tool_python
@@ -24,6 +28,7 @@ class RemovalCapture:
     gate: Path | None = None
     locks: tuple[Path, ...] = ()
     labels: tuple[str, ...] = ()
+    integrations: tuple["HostIntegration", ...] = ()
 
 
 class RemovalJournal:
@@ -48,6 +53,14 @@ class RemovalJournal:
         python, python_digest, _identity = tool_python(prefix)
         self.command = shlex.join([python, "-I", str(self.directory / "recover.py")])
         info = prefix.stat()
+        lock_names = sorted(
+            {
+                str(state / "ui/lifecycle.lock"),
+                str(state / "daemon/lifecycle.lock"),
+                str(state / "daemon/tick.lock"),
+                *(str(path) for path in captured.locks),
+            }
+        )
         self.value = {
             "format": 1,
             "uid": os.getuid(),
@@ -61,6 +74,28 @@ class RemovalJournal:
             "manifest": recovery.manifest(prefix),
             "manager_units": manager_units,
             "manager_labels": list(captured.labels),
+            "integrations": [
+                {
+                    "name": item.name,
+                    "prefix": str(item.prefix),
+                    "platform": item.platform,
+                    "unit": str(item.unit),
+                    "program": str(item.program),
+                    "arguments": list(item.arguments),
+                    "environment": item.environment,
+                    "directory": str(item.directory),
+                    "locks": [str(path) for path in item.locks],
+                    "files": [
+                        {
+                            "path": str(file.path),
+                            "identity": list(file.identity),
+                            "content": file.content.decode("utf-8"),
+                        }
+                        for file in item.files
+                    ],
+                }
+                for item in captured.integrations
+            ],
             "uv": str(executable.path),
             "uv_sha256": executable.digest,
             "uv_identity": list(executable.identity),
@@ -89,16 +124,12 @@ class RemovalJournal:
                 }
                 for file in files
             ],
-            "locks": sorted(
-                {
-                    str(state / "ui/lifecycle.lock"),
-                    str(state / "daemon/lifecycle.lock"),
-                    str(state / "daemon/tick.lock"),
-                    *(str(path) for path in captured.locks),
-                }
-            ),
+            "locks": lock_names,
             "gate": str(self.gate),
             "gate_content": self.gate_content,
+        }
+        self.value["lock_identities"] = {
+            name: [Path(name).lstat().st_dev, Path(name).lstat().st_ino] for name in lock_names
         }
         if len(json.dumps(self.value).encode()) > recovery.MAX_BYTES:
             msg = "The local uninstall recovery record exceeds its budget; no service was stopped."

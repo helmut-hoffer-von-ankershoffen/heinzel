@@ -54,7 +54,18 @@ class MaintenanceLocks:
         stack = ExitStack()
         try:
             for path in self.paths:
+                missing: list[Path] = []
+                parent = path.parent
+                while not os.path.lexists(parent):
+                    missing.append(parent)
+                    parent = parent.parent
                 stack.enter_context(private_lock(path))
+                for directory in {path.parent, *(item.parent for item in missing), *missing}:
+                    descriptor = os.open(directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+                    try:
+                        os.fsync(descriptor)
+                    finally:
+                        os.close(descriptor)
                 info = path.lstat()
                 self._identities[path] = info.st_dev, info.st_ino
         except BaseException:
@@ -166,7 +177,14 @@ class HostIntegrationRemoval:
                 listing.returncode
                 or not rows
                 or rows[0].split() != ["PID", "Status", "Label"]
-                or any(len(row.split()) != MANAGER_COLUMNS or row.split()[-1] == item.name for row in rows[1:])
+                or any(
+                    len(row.split()) != MANAGER_COLUMNS
+                    or not re.fullmatch(r"-|[1-9][0-9]{0,9}", row.split()[0])
+                    or not re.fullmatch(r"-?[0-9]{1,10}", row.split()[1])
+                    or row.split()[-1] == item.name
+                    for row in rows[1:]
+                )
+                or len({row.split()[-1] for row in rows[1:]}) != len(rows) - 1
             ):
                 self._refuse()
             return False, None, False

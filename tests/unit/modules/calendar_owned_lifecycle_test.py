@@ -25,10 +25,10 @@ from heinzel.kernel._uninstall_journal import RemovalCapture, RemovalJournal
 from heinzel.modules.org import _reminder_service as supervisor
 from heinzel.modules.org._reminder_maintenance import CalendarMaintenance
 from tests.unit.kernel.installation_continuity_test import tool
-from tests.unit.offline_uninstall_recovery_test import copy_module, successful_uv
+from tests.unit.offline_uninstall_recovery_test import copy_module, journal, successful_uv
 from tests.unit.offline_uninstall_test import removable
 
-__all__ = ["removable", "tool"]
+__all__ = ["journal", "removable", "tool"]
 pytestmark = pytest.mark.unit
 
 
@@ -223,9 +223,13 @@ def test_copied_recovery_with_sdk_absent_cleans_all_profiles_and_refuses_loaded_
                 gate=host_maintenance_gate(installation.prefix),
                 locks=paths,
                 labels=tuple(item.name for item in descriptors),
+                integrations=descriptors,
             ),
         )
         record.begin()
+    assert [item["name"] for item in record.value["integrations"]] == [item.name for item in descriptors]
+    assert all(item["arguments"][-1] == "calendar-reminder-worker" for item in record.value["integrations"])
+    assert all(item["files"][0]["content"] for item in record.value["integrations"])
     module = copy_module(record)
     monkeypatch.setattr(module, "_linux_identity", lambda: (1, 2, 3))
     monkeypatch.setattr(module, "_manager", lambda command, platform: manager.command(command).stdout)
@@ -246,3 +250,67 @@ def test_copied_recovery_with_sdk_absent_cleans_all_profiles_and_refuses_loaded_
     assert all(not item.unit.exists() for item in descriptors)
     assert not record.gate.exists()
     assert all((Path(profile.environment["HZ_DATA_DIR"]) / "retained").exists() for profile in profiles)
+
+
+def test_recovery_rejects_replaced_union_lock_before_manager_or_native_effect(journal, monkeypatch):
+    record, installation, unit = journal
+    path = Path(record.value["locks"][0])
+    saved = path.with_suffix(".retained")
+    path.rename(saved)
+    path.write_text("")
+    path.chmod(0o600)
+    module = copy_module(record)
+    monkeypatch.setattr(
+        module, "managers_absent", lambda *_: pytest.fail("Changed locks cannot authorize manager effects")
+    )
+    with pytest.raises(ValueError, match="lock ownership changed"):
+        module.recover(record.directory, module.EXPECTED_AUTHORITY)
+    assert saved.exists()
+    assert path.exists()
+    assert installation.prefix.exists()
+    assert unit.exists()
+    assert record.gate.exists()
+
+
+def test_disabled_owner_is_inventoried_without_resolving_accounts_or_external_plugins(monkeypatch):
+    from heinzel.kernel import Credentials, Kernel, Settings, _discovery, boot
+    from heinzel.modules.system._uninstall import _contributions
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("Maintenance inventory must not access external plugins, credentials or providers")
+
+    monkeypatch.setattr(_discovery, "entry_points", forbidden)
+    monkeypatch.setattr(Credentials, "__init__", forbidden)
+    original = Kernel.resolve
+    kinds = []
+
+    def resolve(kernel, kind):
+        kinds.append(kind)
+        assert kind is CalendarMaintenance
+        return original(kernel, kind)
+
+    monkeypatch.setattr(Kernel, "resolve", resolve)
+    settings = Settings(disabled_modules=["org", "system.daemon"])
+    ordinary = boot(settings, builtin_only=True)
+    assert all(record.qualname != "org" for record in ordinary.modules)
+    maintenance = boot(settings, builtin_only=True, maintenance=True)
+    assert len(_contributions(maintenance)) == 1
+    assert kinds == [CalendarMaintenance]
+    assert settings.disabled_modules == frozenset({"org", "system.daemon"})
+
+
+@pytest.mark.parametrize("change", ["foreign", "rebound"])
+def test_host_inventory_refuses_foreign_or_rebound_contribution(change):
+    from dataclasses import replace
+
+    from heinzel.kernel import boot
+    from heinzel.modules.system._uninstall import _contributions
+
+    kernel = boot(builtin_only=True, maintenance=True)
+    if change == "foreign":
+        record = kernel._records["org"]
+        kernel._records["org"] = replace(record, origin=replace(record.origin, builtin=False))
+    else:
+        kernel.bind(CalendarMaintenance, CalendarMaintenance())
+    with pytest.raises(HeinzelError, match="expected built-in"):
+        _contributions(kernel)

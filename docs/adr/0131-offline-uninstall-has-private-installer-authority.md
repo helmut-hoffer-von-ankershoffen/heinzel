@@ -58,7 +58,7 @@ through the observed uv outcome. Successful removal must observe the tool enviro
 
 Before stopping services, a private journal and a standalone standard-library recovery script are saved and their
 directories synchronized. The immutable recovery authority is hash-bound into that copied script; only the observed
-phase is mutable. A durable existing installation gate prevents cooperating starts while outcome is uncertain.
+phase is mutable. A durable SDK-wide gate outside the SDK prevents cooperating starts from every profile while outcome is uncertain.
 Recovery still works through the captured external Python after the SDK is removed.
 
 It never starts or signals jobs: fixed user managers must confirm quiescence before retry. A partial SDK must be a subset of the captured opened-file
@@ -97,3 +97,9 @@ Linux fixtures use inherited seccomp IP-socket denial; hosted execution and actu
 macOS/Linux user-manager acceptance remain required before claiming those outcomes. The live user manager is excluded.
 
 Publisher provenance: [Astral uv 0.13.7 artifacts](https://pypi.org/pypi/uv/0.13.7/json).
+
+ADR 0133 extends this authority to exact built-in host integration contributions. Every recorded calendar profile
+sharing the SDK joins one provider-free inventory, deterministic union of physical lifecycle locks and the same
+durable gate before any stop. All workers must be observed quiescent before uv; definitions remain until SDK removal.
+The copied journal hash-binds full program/argv/profile/environment, unit bytes/inodes and lock identities. Consent,
+configuration and notification replay state are retained; no integration callback is persisted or executed by recovery.

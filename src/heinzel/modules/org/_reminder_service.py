@@ -124,7 +124,7 @@ def definition(platform: str, executable: Path, profile: Profile | None = None) 
 
 
 def _run(command: list[str]) -> subprocess.CompletedProcess[str]:
-    kernel = boot(builtin_only=True, cwd=Path.home())
+    kernel = boot(builtin_only=True, cwd=Path.home(), maintenance=True)
     return kernel.resolve_builtin_service(HostServiceManager, "system.daemon").command(command)
 
 

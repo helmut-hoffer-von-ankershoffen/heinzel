@@ -546,7 +546,13 @@ def _locks(journal: dict[str, Any]) -> Generator[None, None, None]:
             physical(path.parent)
             descriptor = os.open(path, os.O_RDWR | os.O_NOFOLLOW)
             info = os.fstat(descriptor)
-            if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o077:
+            if (
+                not stat.S_ISREG(info.st_mode)
+                or info.st_uid != os.getuid()
+                or info.st_mode & 0o077
+                or info.st_nlink != 1
+                or [info.st_dev, info.st_ino] != journal["lock_identities"][name]
+            ):
                 os.close(descriptor)
                 msg = "Recovery lock ownership changed"
                 raise ValueError(msg)
