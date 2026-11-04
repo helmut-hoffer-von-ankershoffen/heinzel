@@ -571,6 +571,17 @@ try {
           .getByRole("button", { name: settingsPage.title, exact: true })
           .click();
       await assertContained(page, settingsDialog, `${spec.name}: settings ${settingsPage.id}`);
+      if (settingsPage.id === "web-server") {
+        const restart = settingsDialog.getByRole("button", { name: "Restart web server", exact: true });
+        await assertTouchTarget(restart, "Restart web server", spec.name);
+        await restart.click();
+        const confirmation = settingsDialog.getByRole("alertdialog", { name: "Restart web server", exact: true });
+        await assertContained(page, confirmation, `${spec.name}: web server restart confirmation`);
+        assert.match(await confirmation.textContent(), /This page reconnects for you/);
+        await page.screenshot({ path: join(shots, `mobile-${spec.name}-web-server-confirmation.png`) });
+        await confirmation.getByRole("button", { name: "Cancel", exact: true }).click();
+        await confirmation.waitFor({ state: "hidden" });
+      }
       if (settingsPage.id === "credentials") {
         await settingsDialog
           .locator("option")

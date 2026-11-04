@@ -15,6 +15,9 @@ import {
 type Props = {
   target: string;
   changes: string[];
+  actionLabel?: string;
+  confirmation?: string;
+  appliedMessage?: string;
   version?: string;
   settings?: ExpectedSetting[];
   /** Return false when applying the change does not require replacing the running server. */
@@ -31,6 +34,9 @@ type Props = {
 export function RestartAndApply({
   target,
   changes,
+  actionLabel,
+  confirmation,
+  appliedMessage,
   version,
   settings,
   preserve,
@@ -117,26 +123,26 @@ export function RestartAndApply({
     <div className="space-y-2 text-sm">
       {!deferred && !observation && (
         <Button size="sm" variant="outline" disabled={pending} onClick={() => setConfirming(true)}>
-          {t("lifecycle.action")}
+          {actionLabel ?? t("lifecycle.action")}
         </Button>
       )}
       {deferred && deferredMessage && <p role="status">{deferredMessage}</p>}
       {confirming && (
         <div
           role="alertdialog"
-          aria-label={t("lifecycle.targetAction", { target })}
+          aria-label={actionLabel ?? t("lifecycle.targetAction", { target })}
           className="space-y-3 rounded-xl border border-border p-3"
         >
-          <p>{t("lifecycle.question", { target })}</p>
+          <p>{confirmation ?? t("lifecycle.question", { target })}</p>
           <ul className="list-inside list-disc">
             {changes.map((change) => (
               <li key={change}>{change}</li>
             ))}
           </ul>
           <p className="text-muted-foreground">{t("lifecycle.pageStays")}</p>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button size="sm" onClick={() => void run()}>
-              {t("lifecycle.targetAction", { target })}
+              {actionLabel ?? t("lifecycle.targetAction", { target })}
             </Button>
             <Button size="sm" variant="ghost" onClick={() => setConfirming(false)}>
               {t("lifecycle.cancel")}
@@ -144,7 +150,9 @@ export function RestartAndApply({
           </div>
         </div>
       )}
-      {phase && !error && <p role="status">{t(`lifecycle.phase.${phase}`)}</p>}
+      {phase && !error && (
+        <p role="status">{phase === "applied" && appliedMessage ? appliedMessage : t(`lifecycle.phase.${phase}`)}</p>
+      )}
       {error && (
         <p role="alert" className="text-bad">
           {error.message}
