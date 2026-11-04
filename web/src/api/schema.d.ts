@@ -674,6 +674,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/heinzel/indexed-conversation-search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Search a disposable private text index; its coverage is not a completeness guarantee.
+         * @description Search a disposable private text index; its coverage is not a completeness guarantee.
+         */
+        post: operations["heinzel_indexed_conversation_search"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/heinzel/input-snapshot-history": {
         parameters: {
             query?: never;
@@ -1391,6 +1411,46 @@ export interface paths {
         get: operations["heinzel_scheduled_notification_attempts"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/heinzel/search-agent-conversations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Search the current owner's conversations with explicit bounded progress.
+         * @description Search the current owner's conversations with explicit bounded progress.
+         */
+        post: operations["heinzel_search_agent_conversations"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/heinzel/search-conversation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Search privately by POST so terms do not appear in request URLs; this changes no state.
+         * @description Search privately by POST so terms do not appear in request URLs; this changes no state.
+         */
+        post: operations["heinzel_search_conversation"];
         delete?: never;
         options?: never;
         head?: never;
@@ -5943,6 +6003,62 @@ export interface components {
             service: string;
         };
         /**
+         * CrossHistoryPage
+         * @description At most one agent's results or explicit bounded progress.
+         */
+        CrossHistoryPage: {
+            /**
+             * Completeness
+             * @description Search completeness cannot be established.
+             * @default unknown
+             * @constant
+             */
+            completeness: "unknown";
+            /**
+             * Items
+             * @description Matches from at most one conversation in this step.
+             */
+            items: components["schemas"]["SessionMessage"][];
+            /**
+             * Jump Cursors
+             * @description Owner and journal-bound message navigation hints.
+             */
+            jump_cursors?: string[];
+            /**
+             * Next Cursor
+             * @description Continuation for the same owner, query and catalog prefix, if available.
+             */
+            next_cursor: string | null;
+            /**
+             * Session Id
+             * @description Owner-scoped conversation for this step, if any.
+             */
+            session_id: string | null;
+            /**
+             * Status
+             * @description Bounded search progress for this step.
+             * @enum {string}
+             */
+            status: "indexing" | "results" | "next-agent" | "done" | "blocked";
+        };
+        /**
+         * CrossHistoryRequest
+         * @description One owner's query; continuation is a navigation hint, not authority.
+         */
+        CrossHistoryRequest: {
+            /** Cursor */
+            cursor?: string | null;
+            /**
+             * Query
+             * @default
+             */
+            query: string;
+            /** Since */
+            since?: string | null;
+            /** Until */
+            until?: string | null;
+        };
+        /**
          * DaemonStatus
          * @description Whether the daemon is installed, loaded and healthy.
          */
@@ -6946,6 +7062,93 @@ export interface components {
              * @description How far back it reads, for methods with a time window.
              */
             window: string | null;
+        };
+        /**
+         * HistorySearchPage
+         * @description One scan window and its continuation; an empty page can still have more.
+         */
+        HistorySearchPage: {
+            /**
+             * Items
+             * @description Matches in this bounded scan window.
+             */
+            items: components["schemas"]["SessionMessage"][];
+            /**
+             * Jump Cursors
+             * @description Owner and journal-bound message navigation hints.
+             */
+            jump_cursors?: string[];
+            /**
+             * Next Cursor
+             * @description Continuation for the same query and journal prefix, if available.
+             */
+            next_cursor: string | null;
+            /**
+             * Scanned
+             * @description Number of message bodies examined in this scan window.
+             */
+            scanned: number;
+            /**
+             * Session Id
+             * @description The owner-scoped conversation searched.
+             */
+            session_id: string;
+        };
+        /**
+         * HistorySearchRequest
+         * @description Exact text and time bounds for one owner-private conversation.
+         */
+        HistorySearchRequest: {
+            /** Cursor */
+            cursor?: string | null;
+            /**
+             * Query
+             * @default
+             */
+            query: string;
+            /** Session Id */
+            session_id: string;
+            /** Since */
+            since?: string | null;
+            /** Until */
+            until?: string | null;
+        };
+        /**
+         * IndexedHistoryPage
+         * @description Private matching messages; coverage is a checked cache, not a completeness proof.
+         */
+        IndexedHistoryPage: {
+            /**
+             * Completeness
+             * @description Whether the retained search can establish completeness.
+             * @default unknown
+             */
+            completeness: string;
+            /**
+             * Items
+             * @description Matches in this bounded results page.
+             */
+            items: components["schemas"]["SessionMessage"][];
+            /**
+             * Jump Cursors
+             * @description Owner and journal-bound message navigation hints.
+             */
+            jump_cursors?: string[];
+            /**
+             * Mode
+             * @description Search method used for this page.
+             */
+            mode: string;
+            /**
+             * Next Cursor
+             * @description Continuation for the same query and journal prefix, if available.
+             */
+            next_cursor: string | null;
+            /**
+             * Session Id
+             * @description The owner-scoped conversation searched.
+             */
+            session_id: string;
         };
         /**
          * InputSnapshotPage
@@ -13711,6 +13914,10 @@ export interface components {
             /** Session Id */
             session_id: string;
         };
+        /** heinzel_indexed_conversation_search_Input */
+        heinzel_indexed_conversation_search_Input: {
+            request: components["schemas"]["HistorySearchRequest"];
+        };
         /** heinzel_new_chat_Input */
         heinzel_new_chat_Input: {
             /** @description The complete personal appearance overrides; null leaves the current look unchanged. */
@@ -14147,6 +14354,14 @@ export interface components {
              */
             session_id: string;
         };
+        /** heinzel_search_agent_conversations_Input */
+        heinzel_search_agent_conversations_Input: {
+            request: components["schemas"]["CrossHistoryRequest"];
+        };
+        /** heinzel_search_conversation_Input */
+        heinzel_search_conversation_Input: {
+            request: components["schemas"]["HistorySearchRequest"];
+        };
         /** system_state_push_Input */
         system_state_push_Input: Record<string, never>;
         /** system_state_reset_Input */
@@ -14220,6 +14435,8 @@ export type SchemaContractVersion = components['schemas']['ContractVersion'];
 export type SchemaContributionInfo = components['schemas']['ContributionInfo'];
 export type SchemaCredentialDoc = components['schemas']['CredentialDoc'];
 export type SchemaCredentialInfo = components['schemas']['CredentialInfo'];
+export type SchemaCrossHistoryPage = components['schemas']['CrossHistoryPage'];
+export type SchemaCrossHistoryRequest = components['schemas']['CrossHistoryRequest'];
 export type SchemaDaemonStatus = components['schemas']['DaemonStatus'];
 export type SchemaDefaultView = components['schemas']['DefaultView'];
 export type SchemaDelivered = components['schemas']['Delivered'];
@@ -14250,6 +14467,9 @@ export type SchemaHeinzelList = components['schemas']['HeinzelList'];
 export type SchemaHeinzelSummary = components['schemas']['HeinzelSummary'];
 export type SchemaHintProblem = components['schemas']['HintProblem'];
 export type SchemaHintView = components['schemas']['HintView'];
+export type SchemaHistorySearchPage = components['schemas']['HistorySearchPage'];
+export type SchemaHistorySearchRequest = components['schemas']['HistorySearchRequest'];
+export type SchemaIndexedHistoryPage = components['schemas']['IndexedHistoryPage'];
 export type SchemaInputSnapshotPage = components['schemas']['InputSnapshotPage'];
 export type SchemaInputSnapshotView = components['schemas']['InputSnapshotView'];
 export type SchemaInstalled = components['schemas']['Installed'];
@@ -14446,6 +14666,7 @@ export type SchemaHeinzelAssociateArtifactInput = components['schemas']['heinzel
 export type SchemaHeinzelChatInput = components['schemas']['heinzel_chat_Input'];
 export type SchemaHeinzelDiscardCapturedWriteInput = components['schemas']['heinzel_discard_captured_write_Input'];
 export type SchemaHeinzelExecuteCapturedWriteInput = components['schemas']['heinzel_execute_captured_write_Input'];
+export type SchemaHeinzelIndexedConversationSearchInput = components['schemas']['heinzel_indexed_conversation_search_Input'];
 export type SchemaHeinzelNewChatInput = components['schemas']['heinzel_new_chat_Input'];
 export type SchemaHeinzelPauseAgentScheduleInput = components['schemas']['heinzel_pause_agent_schedule_Input'];
 export type SchemaHeinzelPrepareConnectedReadSetReviewInput = components['schemas']['heinzel_prepare_connected_read_set_review_Input'];
@@ -14466,6 +14687,8 @@ export type SchemaHeinzelResolveScheduledNotificationInput = components['schemas
 export type SchemaHeinzelRevokeConnectedReadInput = components['schemas']['heinzel_revoke_connected_read_Input'];
 export type SchemaHeinzelRevokeConnectedReadSetInput = components['schemas']['heinzel_revoke_connected_read_set_Input'];
 export type SchemaHeinzelScheduleControlInput = components['schemas']['heinzel_schedule_control_Input'];
+export type SchemaHeinzelSearchAgentConversationsInput = components['schemas']['heinzel_search_agent_conversations_Input'];
+export type SchemaHeinzelSearchConversationInput = components['schemas']['heinzel_search_conversation_Input'];
 export type SchemaSystemStatePushInput = components['schemas']['system_state_push_Input'];
 export type SchemaSystemStateResetInput = components['schemas']['system_state_reset_Input'];
 export type $defs = Record<string, never>;
@@ -15516,6 +15739,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ContractGraph"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    heinzel_indexed_conversation_search: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["heinzel_indexed_conversation_search_Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IndexedHistoryPage"];
                 };
             };
             /** @description Validation Error */
@@ -16682,6 +16938,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ScheduledNotificationPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    heinzel_search_agent_conversations: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["heinzel_search_agent_conversations_Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CrossHistoryPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    heinzel_search_conversation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["heinzel_search_conversation_Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HistorySearchPage"];
                 };
             };
             /** @description Validation Error */

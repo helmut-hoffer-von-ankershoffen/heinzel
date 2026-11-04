@@ -22,6 +22,7 @@ from heinzel.kernel import (
     RunnerSnapshotProvider,
 )
 from heinzel.kernel._approval import ApprovalConfirmation, ApprovalIssuer, arguments_hash
+from heinzel.kernel._features import feature_enabled
 from heinzel.modules.heinzel._autonomous_schedule import (
     AutonomousSchedules,
     ScheduleBinding,
@@ -44,6 +45,9 @@ from heinzel.modules.heinzel._connected_read_set_approvals import ConnectedReadS
 from heinzel.modules.heinzel._connected_read_set_reviews import ConnectedReadSetReviews, ReadSetReview
 from heinzel.modules.heinzel._connected_read_sets import ConnectedReadSets, ReadSetProposal, ReadSetSelection
 from heinzel.modules.heinzel._contract_review import ContractReview, ContractReviewView
+from heinzel.modules.heinzel._cross_history import CrossHistoryPage, CrossHistoryRequest, search_owner_history
+from heinzel.modules.heinzel._history_fts import IndexedHistoryPage, indexed_search
+from heinzel.modules.heinzel._history_search import HistorySearchPage, HistorySearchRequest, search_history
 from heinzel.modules.heinzel._input_receipts import InputSnapshotPage, snapshot_history
 from heinzel.modules.heinzel._model_grants import ModelGrants
 from heinzel.modules.heinzel._model_policy_operations import ModelPolicyService, register_model_policy_operations
@@ -910,7 +914,40 @@ def _register_review_services(module: Module) -> None:
     _register_connected_read_operations(module)
     _register_connected_read_set_operations(module)
     _register_autonomous_schedule_operations(module)
+    _register_history_search(module)
     register_captured_write_operations(module)
+
+
+def _check_history(kernel: Kernel) -> None:
+    if not feature_enabled(kernel.settings, "connected_history"):
+        msg = "Connected history is not enabled"
+        raise HeinzelError(msg)
+
+
+def _register_history_search(module: Module) -> None:
+    """Register bounded owner-private conversation search."""
+
+    @module.operation(private=True, read_only=False, heads={"web", "api-private"}, audience="everyday")
+    def search_agent_conversations(
+        service: SessionCrud, kernel: Kernel, request: CrossHistoryRequest
+    ) -> CrossHistoryPage:
+        """Search the current owner's conversations with explicit bounded progress."""
+        _check_history(kernel)
+        return search_owner_history(service, request)
+
+    @module.operation(private=True, read_only=False, heads={"web", "api-private"}, audience="everyday")
+    def search_conversation(service: SessionCrud, kernel: Kernel, request: HistorySearchRequest) -> HistorySearchPage:
+        """Search privately by POST so terms do not appear in request URLs; this changes no state."""
+        _check_history(kernel)
+        return search_history(service, request)
+
+    @module.operation(private=True, read_only=False, heads={"web", "api-private"}, audience="everyday")
+    def indexed_conversation_search(
+        service: SessionCrud, kernel: Kernel, request: HistorySearchRequest
+    ) -> IndexedHistoryPage:
+        """Search a disposable private text index; its coverage is not a completeness guarantee."""
+        _check_history(kernel)
+        return indexed_search(service, request)
 
 
 def register_session_operations(module: Module) -> None:  # noqa: C901 - operation declarations define one shared head surface

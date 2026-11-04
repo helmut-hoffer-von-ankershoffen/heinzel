@@ -27,6 +27,7 @@ from heinzel.kernel._session_io import (
     JSON_VALUE,
     MAX_LINE,
     PRIVATE_DIR,
+    PRIVATE_FILE,
     append_line,
     child,
     directory,
@@ -39,6 +40,8 @@ from heinzel.kernel._session_io import (
     temporary_name,
 )
 
+_MAX_INDEXED_PAGE = 200
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (version TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS sessions (
@@ -48,6 +51,10 @@ CREATE TABLE IF NOT EXISTS sessions (
 CREATE TABLE IF NOT EXISTS events (
     session TEXT NOT NULL, seq INTEGER NOT NULL, kind TEXT NOT NULL, turn TEXT, key TEXT, event TEXT NOT NULL,
     PRIMARY KEY (session, seq)
+);
+CREATE TABLE IF NOT EXISTS digest_meta (version TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS event_lines (
+    session TEXT NOT NULL, seq INTEGER NOT NULL, digest TEXT NOT NULL, raw BLOB NOT NULL, PRIMARY KEY (session, seq)
 );
 CREATE INDEX IF NOT EXISTS event_keys ON events(session, kind, key);
 CREATE INDEX IF NOT EXISTS event_turns ON events(session, turn, seq);
@@ -68,6 +75,108 @@ def _read_spine(folder: int) -> SessionRead:
         return scan(folder)
     except (OSError, HeinzelError):
         return SessionRead(problem="Session spine is not a readable private regular file")
+
+
+def _line_digest(raw: object, digest: object) -> str:
+    if not isinstance(raw, bytes) or not isinstance(digest, str) or hashlib.sha256(raw).hexdigest() != digest:
+        msg = "The indexed session event differs from its checkpoint; rebuild or repair it"
+        raise HeinzelError(msg)
+    return digest
+
+
+def _raw_lines(folder: int, result: SessionRead) -> list[bytes]:
+    if not result.events:
+        return []
+    descriptor = open_file(folder, "session.jsonl", os.O_RDONLY)
+    with os.fdopen(descriptor, "rb") as handle:
+        lines: list[bytes] = []
+        for digest in result.hashes:
+            line = handle.readline(MAX_LINE + 1)
+            if hashlib.sha256(line).hexdigest() != digest:
+                msg = "The session changed during index rebuild; retry after it settles"
+                raise HeinzelError(msg)
+            lines.append(line)
+        return lines
+
+
+def _indexed_event(raw: str | bytes) -> SessionEvent:
+    try:
+        return SessionEvent.model_validate_json(raw)
+    except (ValueError, ValidationError):
+        msg = "The indexed session contains an invalid event; rebuild or repair it"
+        raise HeinzelError(msg) from None
+
+
+def _page_anchor(
+    index: sqlite3.Connection, session: str, position: tuple[int, str | None], anchor: tuple[int, str | None] | None
+) -> tuple[int, str | None]:
+    row = index.execute("SELECT seq, hash, problem FROM sessions WHERE session = ?", (session,)).fetchone()
+    if row is None or row["problem"]:
+        msg = "The session index is unavailable or needs repair"
+        raise HeinzelError(msg)
+    after, previous = position
+    high, high_hash = anchor if anchor is not None else (int(row["seq"]), row["hash"])
+    if type(high) is not int or not 0 <= after <= high <= int(row["seq"]):
+        msg = "Invalid indexed session page"
+        raise HeinzelError(msg)
+    if (after == 0) != (previous is None) or (high == 0) != (high_hash is None):
+        msg = "Invalid indexed session page"
+        raise HeinzelError(msg)
+    if high:
+        found = index.execute(
+            "SELECT digest, raw FROM event_lines WHERE session = ? AND seq = ?", (session, high)
+        ).fetchone()
+        if found is None or _line_digest(found["raw"], found["digest"]) != high_hash:
+            msg = "The indexed session checkpoint differs; rebuild or repair the session"
+            raise HeinzelError(msg)
+    return high, high_hash
+
+
+def _page_events(
+    index: sqlite3.Connection,
+    session: str,
+    position: tuple[int, str | None],
+    anchor: tuple[int, str | None],
+    limit: int,
+) -> SessionRead:
+    after, previous = position
+    high, high_hash = anchor
+    rows = index.execute(
+        "SELECT event_lines.raw, event_lines.digest FROM events LEFT JOIN event_lines "
+        "ON events.session = event_lines.session AND events.seq = event_lines.seq "
+        "WHERE events.session = ? AND events.seq > ? AND events.seq <= ? ORDER BY events.seq LIMIT ?",
+        (session, after, high, limit),
+    ).fetchall()
+    result = SessionRead()
+    for item in rows:
+        digest = _line_digest(item["raw"], item["digest"])
+        event = _indexed_event(item["raw"])
+        if event.seq != after + 1 or event.prev != previous:
+            msg = "The indexed session chain differs; rebuild or repair the session"
+            raise HeinzelError(msg)
+        previous = digest
+        after = event.seq
+        result.events.append(event)
+        result.hashes.append(previous)
+    if after < high and len(rows) < limit:
+        msg = "The indexed session is incomplete; rebuild or repair the session"
+        raise HeinzelError(msg)
+    if after == high and previous != high_hash:
+        msg = "The indexed session checkpoint differs; rebuild or repair the session"
+        raise HeinzelError(msg)
+    if after < high:
+        following = index.execute(
+            "SELECT raw, digest FROM event_lines WHERE session = ? AND seq = ?", (session, after + 1)
+        ).fetchone()
+        if following is None:
+            msg = "The indexed session is incomplete; rebuild or repair the session"
+            raise HeinzelError(msg)
+        _line_digest(following["raw"], following["digest"])
+        next_event = _indexed_event(following["raw"])
+        if next_event.seq != after + 1 or next_event.prev != previous:
+            msg = "The indexed session chain differs; rebuild or repair the session"
+            raise HeinzelError(msg)
+    return result
 
 
 def _read_body(parent: int, turn: str, expected_hash: str | None) -> list[JsonValue]:
@@ -187,6 +296,28 @@ class SessionStore:
                 result.hashes = [digest for _, digest in pairs]
             return result
 
+    def indexed_page(
+        self, session: str, *, position: tuple[int, str | None], anchor: tuple[int, str | None] | None, limit: int
+    ) -> tuple[SessionRead, tuple[int, str | None]]:
+        """Read a bounded contiguous indexed page; damaged or mismatched indexes fail closed.
+
+        Raises:
+            HeinzelError: If the index, anchor, page, or session is invalid.
+            OSError: If private storage cannot be read.
+        """
+        identifier(session)
+        if (
+            type(position[0]) is not int
+            or position[0] < 0
+            or type(limit) is not int
+            or not 1 <= limit <= _MAX_INDEXED_PAGE
+        ):
+            msg = "Invalid indexed session page"
+            raise HeinzelError(msg)
+        with directory(self.root) as root, self._index(root) as index:
+            chosen = _page_anchor(index, session, position, anchor)
+            return _page_events(index, session, position, chosen, limit), chosen
+
     def reindex(self) -> list[SessionHead]:
         """Rebuild metadata from all spines, preserving damage reports and the original files.
 
@@ -198,6 +329,47 @@ class SessionStore:
             self._sync(root, index, force=True)
             index.commit()
             return [self._head(row) for row in index.execute("SELECT * FROM sessions ORDER BY session")]
+
+    def body_inventory(
+        self, session: str, *, known: tuple[int, int, int, int] | None
+    ) -> tuple[tuple[int, int, int, int] | None, frozenset[str] | None]:
+        """List retained private body IDs only when their directory changes.
+
+        Raises:
+            HeinzelError: If storage is unsafe or changes while it is being inspected.
+            OSError: If private storage cannot be read.
+        """
+        identifier(session)
+        try:
+            with directory(self.root) as root, child(root, session) as folder, child(folder, "turns") as turns:
+                before = os.fstat(turns)
+                signature = (before.st_dev, before.st_ino, before.st_mtime_ns, before.st_ctime_ns)
+                if signature == known:
+                    return signature, None
+                ids: set[str] = set()
+                with os.scandir(turns) as entries:
+                    for entry in entries:
+                        if not entry.name.endswith(".jsonl"):
+                            continue
+                        try:
+                            info = entry.stat(follow_symlinks=False)
+                        except FileNotFoundError:
+                            msg = "Retained message bodies changed during inspection; retry the search"
+                            raise HeinzelError(msg) from None
+                        if (
+                            stat.S_ISREG(info.st_mode)
+                            and info.st_uid == os.getuid()
+                            and stat.S_IMODE(info.st_mode) == PRIVATE_FILE
+                            and info.st_nlink == 1
+                        ):
+                            ids.add(entry.name.removesuffix(".jsonl"))
+                after = os.fstat(turns)
+                if signature != (after.st_dev, after.st_ino, after.st_mtime_ns, after.st_ctime_ns):
+                    msg = "Retained message bodies changed during inspection; retry the search"
+                    raise HeinzelError(msg)
+                return signature, frozenset(ids)
+        except FileNotFoundError:
+            return None, frozenset()
 
     def body(self, session: str, turn: str, *, expected_hash: str) -> list[JsonValue]:
         """Read a committed body without taking a writer lock, verifying its exact saved bytes.
@@ -223,6 +395,10 @@ class SessionStore:
             index = self._connect(root)
             try:
                 self._sync(root, index)
+                marker = index.execute("SELECT version FROM digest_meta").fetchone()
+                if marker is None or marker["version"] != "exact-lines-v2":
+                    index.execute("DELETE FROM digest_meta")
+                    index.execute("INSERT INTO digest_meta VALUES ('exact-lines-v2')")
                 index.commit()
                 yield index
                 index.commit()
@@ -250,7 +426,16 @@ class SessionStore:
             try:
                 index.row_factory = sqlite3.Row
                 index.execute("PRAGMA synchronous = FULL")
+                had_lines = (
+                    index.execute(
+                        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'event_lines'"
+                    ).fetchone()
+                    is not None
+                )
                 index.executescript(SCHEMA)
+                digest_revision = index.execute("SELECT version FROM digest_meta").fetchone()
+                if not had_lines or digest_revision is None or digest_revision["version"] != "exact-lines-v2":
+                    index.execute("UPDATE sessions SET mtime = -1")
                 revision = index.execute("SELECT version FROM meta").fetchone()
                 if revision is None or revision["version"] != self.projection_version:
                     # Reproject without discarding the previous checkpoint used to detect changed tails.
@@ -320,11 +505,14 @@ class SessionStore:
             watermark = int(previous["seq"])
             if len(result.events) < watermark or result.hashes[watermark - 1] != previous["hash"]:
                 result.problem = "Session differs from its previously indexed checkpoint"
+        raw_lines = _raw_lines(folder, result)
         projection: dict[str, JsonValue] = {}
         index.execute("DELETE FROM events WHERE session = ?", (session,))
-        for event in result.events:
+        index.execute("DELETE FROM event_lines WHERE session = ?", (session,))
+        for event, digest, raw in zip(result.events, result.hashes, raw_lines, strict=True):
             projection = PROJECTION.validate_python(self.project(projection, event))
             self._insert(index, session, event)
+            self._insert_line(index, session, event.seq, digest, raw)
         if previous and result.problem:
             # Preserve the original checkpoint: a second reindex must not legitimize the damaged tail.
             index.execute(
@@ -351,6 +539,10 @@ class SessionStore:
             "INSERT INTO events VALUES (?, ?, ?, ?, ?, ?)",
             (session, event.seq, event.kind, event.turn, event.key, event.model_dump_json()),
         )
+
+    @staticmethod
+    def _insert_line(index: sqlite3.Connection, session: str, seq: int, digest: str, raw: bytes) -> None:
+        index.execute("INSERT INTO event_lines VALUES (?, ?, ?, ?)", (session, seq, digest, raw))
 
     @staticmethod
     def _save_head(
@@ -456,6 +648,9 @@ class SessionWriter:
             append_line(self.folder, "session.jsonl", line)
             self.store._insert(  # pyright: ignore[reportPrivateUsage]  # noqa: SLF001 - scoped writer
                 index, self.session, event
+            )
+            self.store._insert_line(  # pyright: ignore[reportPrivateUsage]  # noqa: SLF001 - scoped writer
+                index, self.session, event.seq, hashlib.sha256(line).hexdigest(), line
             )
             info = os.stat("session.jsonl", dir_fd=self.folder, follow_symlinks=False)
             self.store._save_head(  # pyright: ignore[reportPrivateUsage]  # noqa: SLF001 - scoped writer

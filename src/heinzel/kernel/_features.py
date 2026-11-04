@@ -7,6 +7,7 @@ Register a flag here when the work starts, and delete it with its checks when th
 from heinzel.kernel._settings import Settings
 
 FEATURES: dict[str, str] = {
+    "connected_history": "Owner-private bounded history search while connected helpers are being completed.",
     "captured_writes": "Exact human-reviewed conditional writes while provider integrations are being completed.",
     "persistent_web": "Supervised web availability while OS lifecycle acceptance is being completed.",
     "durable_agents": "Durable agents that keep working between sessions, while they are being built.",

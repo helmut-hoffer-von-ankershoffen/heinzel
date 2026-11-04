@@ -114,6 +114,36 @@ class CapturedWriteHost:
             body = immutable_body(writer, "captured-write-draft", review_payload(draft), control=True)
             writer.append("write.drafted", key=draft.request_id, data=body.model_dump(mode="json"))
 
+    def draft_in_turn(self, draft: CapturedWriteDraft, turn: str, writer: SessionWriter) -> None:
+        """Persist an inert model proposal only while its exact owner turn holds the main writer.
+
+        Raises:
+            HeinzelError: If the owner, turn lock or request identity cannot be verified.
+        """
+        self._owner(draft, drafting=True)
+        if not self.crud.repository.is_main_writer(draft.session, writer):
+            msg = "Drafting requires its owning turn lock"
+            raise HeinzelError(msg)
+        with self.crud.repository.control_writer(draft.session) as control:
+            events = self.crud.repository.control_read(draft.session).events
+            if not any(e.kind == "interactive.started" and e.key == turn for e in events) or any(
+                e.kind in {"message.replied", "interactive.abandoned"} and e.key == turn for e in events
+            ):
+                msg = "Drafting requires its active accepted turn"
+                raise HeinzelError(msg)
+            prior = [e for e in events if e.kind == "write.drafted" and e.key == draft.request_id]
+            if prior:
+                if (
+                    len(prior) != 1
+                    or prior[0].turn != turn
+                    or self._read(draft.session, prior[0], drafting=True) != draft
+                ):
+                    msg = "This draft request already identifies different terms"
+                    raise HeinzelError(msg)
+                return
+            body = immutable_body(control, "captured-write-draft", review_payload(draft), control=True)
+            control.append("write.drafted", key=draft.request_id, turn=turn, data=body.model_dump(mode="json"))
+
     def discard(self, session: str, request: str) -> None:
         """Set a draft aside for good; an attempted write stays as it is.
 
@@ -139,7 +169,7 @@ class CapturedWriteHost:
             review_payload(self._read(session, e)) for e in events if e.kind == "write.drafted" and e.key not in settled
         ]
 
-    def _read(self, session: str, event: SessionEvent) -> CapturedWriteDraft:
+    def _read(self, session: str, event: SessionEvent, *, drafting: bool = False) -> CapturedWriteDraft:
         try:
             draft = CapturedWriteDraft.model_validate(self.crud.read_body(session, event))
         except (ValueError, TypeError):
@@ -148,7 +178,7 @@ class CapturedWriteHost:
         if draft.session != session or event.key != draft.request_id:
             msg = "The captured write draft is invalid"
             raise HeinzelError(msg)
-        self._owner(draft)
+        self._owner(draft, drafting=drafting)
         return draft
 
     def current(self, session: str, request: str) -> CapturedWriteDraft:

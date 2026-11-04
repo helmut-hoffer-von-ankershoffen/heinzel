@@ -4211,6 +4211,126 @@
         "title": "CredentialInfo",
         "type": "object"
       },
+      "CrossHistoryPage": {
+        "description": "At most one agent's results or explicit bounded progress.",
+        "properties": {
+          "completeness": {
+            "const": "unknown",
+            "default": "unknown",
+            "description": "Search completeness cannot be established.",
+            "title": "Completeness",
+            "type": "string"
+          },
+          "items": {
+            "description": "Matches from at most one conversation in this step.",
+            "items": {
+              "$ref": "#/components/schemas/SessionMessage"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "jump_cursors": {
+            "description": "Owner and journal-bound message navigation hints.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Jump Cursors",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Continuation for the same owner, query and catalog prefix, if available.",
+            "title": "Next Cursor"
+          },
+          "session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Owner-scoped conversation for this step, if any.",
+            "title": "Session Id"
+          },
+          "status": {
+            "description": "Bounded search progress for this step.",
+            "enum": [
+              "indexing",
+              "results",
+              "next-agent",
+              "done",
+              "blocked"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "session_id",
+          "items",
+          "next_cursor"
+        ],
+        "title": "CrossHistoryPage",
+        "type": "object"
+      },
+      "CrossHistoryRequest": {
+        "additionalProperties": false,
+        "description": "One owner's query; continuation is a navigation hint, not authority.",
+        "properties": {
+          "cursor": {
+            "anyOf": [
+              {
+                "maxLength": 8192,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cursor"
+          },
+          "query": {
+            "default": "",
+            "maxLength": 200,
+            "title": "Query",
+            "type": "string"
+          },
+          "since": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Since"
+          },
+          "until": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Until"
+          }
+        },
+        "title": "CrossHistoryRequest",
+        "type": "object"
+      },
       "DaemonStatus": {
         "description": "Whether the daemon is installed, loaded and healthy.",
         "properties": {
@@ -6084,6 +6204,173 @@
           "summary"
         ],
         "title": "HintView",
+        "type": "object"
+      },
+      "HistorySearchPage": {
+        "description": "One scan window and its continuation; an empty page can still have more.",
+        "properties": {
+          "items": {
+            "description": "Matches in this bounded scan window.",
+            "items": {
+              "$ref": "#/components/schemas/SessionMessage"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "jump_cursors": {
+            "description": "Owner and journal-bound message navigation hints.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Jump Cursors",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Continuation for the same query and journal prefix, if available.",
+            "title": "Next Cursor"
+          },
+          "scanned": {
+            "description": "Number of message bodies examined in this scan window.",
+            "maximum": 50.0,
+            "minimum": 0.0,
+            "title": "Scanned",
+            "type": "integer"
+          },
+          "session_id": {
+            "description": "The owner-scoped conversation searched.",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "items",
+          "next_cursor",
+          "scanned"
+        ],
+        "title": "HistorySearchPage",
+        "type": "object"
+      },
+      "HistorySearchRequest": {
+        "additionalProperties": false,
+        "description": "Exact text and time bounds for one owner-private conversation.",
+        "properties": {
+          "cursor": {
+            "anyOf": [
+              {
+                "maxLength": 2048,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cursor"
+          },
+          "query": {
+            "default": "",
+            "maxLength": 200,
+            "title": "Query",
+            "type": "string"
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "since": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Since"
+          },
+          "until": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Until"
+          }
+        },
+        "required": [
+          "session_id"
+        ],
+        "title": "HistorySearchRequest",
+        "type": "object"
+      },
+      "IndexedHistoryPage": {
+        "description": "Private matching messages; coverage is a checked cache, not a completeness proof.",
+        "properties": {
+          "completeness": {
+            "default": "unknown",
+            "description": "Whether the retained search can establish completeness.",
+            "title": "Completeness",
+            "type": "string"
+          },
+          "items": {
+            "description": "Matches in this bounded results page.",
+            "items": {
+              "$ref": "#/components/schemas/SessionMessage"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "jump_cursors": {
+            "description": "Owner and journal-bound message navigation hints.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Jump Cursors",
+            "type": "array"
+          },
+          "mode": {
+            "description": "Search method used for this page.",
+            "title": "Mode",
+            "type": "string"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Continuation for the same query and journal prefix, if available.",
+            "title": "Next Cursor"
+          },
+          "session_id": {
+            "description": "The owner-scoped conversation searched.",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "items",
+          "next_cursor",
+          "mode"
+        ],
+        "title": "IndexedHistoryPage",
         "type": "object"
       },
       "InputSnapshotPage": {
@@ -17671,6 +17958,19 @@
         "title": "heinzel_execute_captured_write_Input",
         "type": "object"
       },
+      "heinzel_indexed_conversation_search_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "request": {
+            "$ref": "#/components/schemas/HistorySearchRequest"
+          }
+        },
+        "required": [
+          "request"
+        ],
+        "title": "heinzel_indexed_conversation_search_Input",
+        "type": "object"
+      },
       "heinzel_new_chat_Input": {
         "additionalProperties": false,
         "properties": {
@@ -18464,6 +18764,32 @@
           "action"
         ],
         "title": "heinzel_schedule_control_Input",
+        "type": "object"
+      },
+      "heinzel_search_agent_conversations_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "request": {
+            "$ref": "#/components/schemas/CrossHistoryRequest"
+          }
+        },
+        "required": [
+          "request"
+        ],
+        "title": "heinzel_search_agent_conversations_Input",
+        "type": "object"
+      },
+      "heinzel_search_conversation_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "request": {
+            "$ref": "#/components/schemas/HistorySearchRequest"
+          }
+        },
+        "required": [
+          "request"
+        ],
+        "title": "heinzel_search_conversation_Input",
         "type": "object"
       },
       "system_state_push_Input": {
@@ -20093,6 +20419,48 @@
           }
         },
         "summary": "Show the workflow your contracts make: what each maintains and reads, cycles, unmaintained inputs.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/indexed-conversation-search": {
+      "post": {
+        "description": "Search a disposable private text index; its coverage is not a completeness guarantee.",
+        "operationId": "heinzel_indexed_conversation_search",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/heinzel_indexed_conversation_search_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IndexedHistoryPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Search a disposable private text index; its coverage is not a completeness guarantee.",
         "tags": [
           "heinzel"
         ]
@@ -21803,6 +22171,90 @@
           }
         },
         "summary": "Inspect bounded owner-private scheduled attempts and their recorded outcomes.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/search-agent-conversations": {
+      "post": {
+        "description": "Search the current owner's conversations with explicit bounded progress.",
+        "operationId": "heinzel_search_agent_conversations",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/heinzel_search_agent_conversations_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CrossHistoryPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Search the current owner's conversations with explicit bounded progress.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/search-conversation": {
+      "post": {
+        "description": "Search privately by POST so terms do not appear in request URLs; this changes no state.",
+        "operationId": "heinzel_search_conversation",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/heinzel_search_conversation_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HistorySearchPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Search privately by POST so terms do not appear in request URLs; this changes no state.",
         "tags": [
           "heinzel"
         ]
