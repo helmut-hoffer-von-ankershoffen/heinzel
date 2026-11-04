@@ -6,7 +6,7 @@ import { useId } from "react";
 import { useConfig, useSetSetting } from "@/api/queries";
 import { t } from "@/i18n";
 import { Switch } from "@/layout/SettingControls";
-import { useAutoUpdateFacts, useAutoUpdateHeld } from "./autoUpdateApi";
+import { useAutoUpdateHeld, useAutoUpdateStatus } from "./autoUpdateApi";
 
 /** The setting in effect: on unless someone turned it off (its default is on). */
 export function useAutoUpdateSetting(): { on: boolean; known: boolean; fromEnv: boolean } {
@@ -19,15 +19,15 @@ export function useAutoUpdateSetting(): { on: boolean; known: boolean; fromEnv: 
 export function AutoUpdateToggle() {
   const { on, known, fromEnv } = useAutoUpdateSetting();
   const development = useAutoUpdateHeld();
-  const byHand = useAutoUpdateFacts()?.by_hand ?? [];
+  const byHand = useAutoUpdateStatus().data?.by_hand ?? [];
   const save = useSetSetting();
   const labelId = useId();
   return (
     <div className="flex items-start gap-3 border-t border-border/70 pt-2">
       <div className="min-w-0 flex-1">
         <p id={labelId}>{t("autoUpdate.setting")}</p>
-        <p className="text-xs text-muted-foreground">{development ?? t("autoUpdate.settingHelp")}</p>
-        {development === null && byHand.length > 0 && (
+        {development && <p className="text-xs text-muted-foreground">{development}</p>}
+        {byHand.length > 0 && (
           <p className="text-xs text-muted-foreground">{t("autoUpdate.byHand", { plugins: byHand.join(", ") })}</p>
         )}
         {save.error && (
