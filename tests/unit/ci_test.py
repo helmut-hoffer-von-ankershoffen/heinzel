@@ -1487,7 +1487,7 @@ def test_a_pull_request_runs_one_small_macos_job_and_main_runs_the_full_macos_su
     assert on_pull_request == {"macos-smoke"}
     assert on_main == {"setup", "e2e", "notifier", "macos-specific", "electron"}  # and the test matrix's macOS shards
     assert _oses(jobs["setup"]["strategy"]["matrix"]["os"], "push") == [
-        "ubuntu-24.04", "ubuntu-24.04-arm", "macos-latest", "macos-15-intel",
+        "ubuntu-24.04", "ubuntu-24.04-arm", "macos-latest",
     ]  # fmt: skip
     smoke = jobs["macos-smoke"]
     assert (smoke["name"], smoke["runs-on"]) == ("macOS smoke", "macos-latest")
@@ -1514,9 +1514,7 @@ def test_native_macos_matrices_follow_scope_only_on_pull_requests(event, macos_f
     jobs = _ci_jobs()
     native = event != "pull_request" or macos_full
     assert _oses(jobs["setup"]["strategy"]["matrix"]["os"], event, macos_full=macos_full) == (
-        ["ubuntu-24.04", "ubuntu-24.04-arm", "macos-latest", "macos-15-intel"]
-        if native
-        else ["ubuntu-24.04", "ubuntu-24.04-arm"]
+        ["ubuntu-24.04", "ubuntu-24.04-arm", "macos-latest"] if native else ["ubuntu-24.04", "ubuntu-24.04-arm"]
     )
     for name in ("e2e", "electron"):
         assert _oses(jobs[name]["strategy"]["matrix"]["os"], event, macos_full=macos_full) == (

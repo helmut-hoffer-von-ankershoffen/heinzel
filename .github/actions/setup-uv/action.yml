@@ -29,6 +29,9 @@ runs:
       env:
         ACTION_PATH: ${{ github.action_path }}
       run: |
+        if [ "${RUNNER_OS:-}" = macOS ]; then
+          test "$(uname -m)" = arm64 || { echo '::error::macOS CI requires Apple silicon (arm64)'; exit 1; }
+        fi
         printf 'url=data:application/json;base64,%s\n' "$(base64 < "$ACTION_PATH/uv-manifest.json" | tr -d '\r\n')" >> "$GITHUB_OUTPUT"
     - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
       with:

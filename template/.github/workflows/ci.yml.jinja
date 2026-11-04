@@ -96,7 +96,7 @@ jobs:
     permissions:
       contents: read
     name: make setup (${{ matrix.os }})
-    # What a contributor runs on a fresh machine, on each platform scripts/tools.toml pins: `make setup` installs
+    # What a contributor runs on Linux architectures and Apple-silicon macOS: `make setup` installs
     # everything the build needs, relying only on git, make and uv, and `make doctor` confirms it.
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10
