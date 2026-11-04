@@ -301,7 +301,9 @@ describe("Footer items are icons with a state and a pane", () => {
     const user = userEvent.setup();
     renderAt("/doctor");
     const bar = await screen.findByRole("contentinfo");
-    await user.click(await within(bar).findByRole("button", { name: "Calendar unavailable, error" }));
+    const calendar = await within(bar).findByRole("button", { name: "Calendar unavailable, error" });
+    expect(calendar).toHaveClass("text-bad");
+    await user.click(calendar);
     const panel = await screen.findByRole("region", { name: "Calendar" });
     expect(await within(panel).findByText("No calendar connected.")).toBeInTheDocument();
     expect(await within(panel).findByText(/Calendar reminders need a background worker/)).toBeInTheDocument();

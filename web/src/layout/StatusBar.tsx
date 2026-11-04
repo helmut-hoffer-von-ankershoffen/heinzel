@@ -141,7 +141,7 @@ function MeetingItem({ now, onOpen }: { now: Date; onOpen: () => void }) {
   return (
     <FooterItem
       label={label}
-      className="h-auto min-h-8"
+      className={agenda.isError || agenda.data?.problem ? "h-auto min-h-8 text-bad" : "h-auto min-h-8"}
       state={agenda.isError || agenda.data?.problem ? "bad" : "off"}
       content={
         <span className="flex max-w-44 items-center gap-1 sm:max-w-72">
