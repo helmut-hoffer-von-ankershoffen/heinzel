@@ -328,13 +328,14 @@ try {
       await page.goto(url);
       await page.locator("#splash").waitFor({ state: "hidden", timeout: 15_000 });
       await statusRequested.promise;
-      const opening = footerPane(page, entry.id, "Share probe");
-      // Observe the held state after opening starts: shell readiness does not publish status items.
+      // Other real contributions can already require More. A held, unpublished item must have neither its
+      // trigger nor an overflow entry; shell readiness alone cannot make that item actionable.
       const held = await page.evaluate(() => ({
         target: !!document.querySelector('[data-footer-content="probe:share"] button'),
-        more: getComputedStyle(document.querySelector('[data-footer-content="@more"] button')).visibility,
+        overflow: !!document.querySelector('[data-footer-part="probe:share"][data-footer-hidden="overflow"]'),
       }));
-      assert.deepEqual(held, { target: false, more: "hidden" });
+      assert.deepEqual(held, { target: false, overflow: false });
+      const opening = footerPane(page, entry.id, "Share probe");
       publishStatus.resolve();
       const pane = await opening;
       const copy = pane.getByRole("button", { name: "Copy URL", exact: true });

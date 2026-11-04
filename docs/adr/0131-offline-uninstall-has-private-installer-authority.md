@@ -61,6 +61,10 @@ directories synchronized. The immutable recovery authority is hash-bound into th
 phase is mutable. A durable SDK-wide gate outside the SDK prevents cooperating starts from every profile while outcome is uncertain.
 Recovery still works through the captured external Python after the SDK is removed.
 
+Its read-only opened-file
+continuity check preserves the installer's root-or-user interpreter ownership policy, including system Python.
+This never grants root-owned journals, gates or integration files the separate owner-only removal authority.
+
 It never starts or signals jobs: fixed user managers must confirm quiescence before retry. A partial SDK must be a subset of the captured opened-file
 manifest; replacement, changed or new entries refuse. Retained loaded Linux units must match hash-bound original
 fragment, argv and selected-profile facts as well as quiescence; an inactive foreign label is insufficient.

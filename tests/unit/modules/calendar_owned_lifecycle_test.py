@@ -252,15 +252,26 @@ def _calendar_record(calendar, tmp_path, monkeypatch, *, compatibility=False, be
 
 
 @pytest.mark.parametrize("late_change", [None, "unknown-worker", "extra-definition", "changed-definition"])
+@pytest.mark.parametrize("system_python", [False, True])
 def test_copied_recovery_with_sdk_absent_cleans_all_profiles_and_refuses_loaded_worker(
-    calendar, tmp_path, monkeypatch, late_change
+    calendar, tmp_path, monkeypatch, late_change, system_python
 ):
     installation, _owner, descriptors, manager, profiles = calendar
+    if system_python:
+        python = Path("/usr/bin/python3").resolve(strict=True)
+        assert python.stat().st_uid == 0
+        link = installation.prefix / "bin/python"
+        link.unlink()
+        link.symlink_to(python)
     record = _calendar_record(calendar, tmp_path, monkeypatch)
     assert [item["name"] for item in record.value["integrations"]] == [item.name for item in descriptors]
     assert all(item["arguments"][-1] == "calendar-reminder-worker" for item in record.value["integrations"])
     assert all(item["files"][0]["content"] for item in record.value["integrations"])
     module = copy_module(record)
+    if system_python:
+        # Exercise the copied script's recorded interpreter check without executing system Python or any manager.
+        assert record.value["python"] == str(python)
+        monkeypatch.setattr(module, "sys", SimpleNamespace(executable=str(python)))
     monkeypatch.setattr(module, "_linux_identity", lambda: (1, 2, 3))
     monkeypatch.setattr(module, "_manager", lambda command, platform: manager.command(command).stdout)
     calls = []

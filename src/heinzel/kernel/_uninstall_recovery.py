@@ -168,8 +168,53 @@ def manifest(prefix: Path) -> dict[str, list[int | str]]:
 
 
 def python_continuity(path: Path) -> str:
-    content = read(path, 128 * 1024 * 1024, private=False)
-    return hashlib.sha256(len(content).to_bytes(8, "big") + content).hexdigest()
+    # The external interpreter was admitted by tool_python: its physical files and parents can be root-owned.
+    # This read-only authority is deliberately separate from owner-only journals, gates and integration files.
+    _python_parents(path)
+    descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    try:
+        info = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(info.st_mode)
+            or info.st_uid not in {0, os.getuid()}
+            or info.st_mode & 0o022
+            or not info.st_mode & 0o111
+            or info.st_size > 128 * 1024 * 1024
+        ):
+            msg = "The original recovery interpreter authority changed"
+            raise ValueError(msg)
+        digest = hashlib.sha256(info.st_size.to_bytes(8, "big"))
+        remaining = info.st_size
+        while remaining:
+            content = os.read(descriptor, min(remaining, 1024 * 1024))
+            if not content:
+                msg = "The original recovery interpreter changed during inspection"
+                raise ValueError(msg)
+            digest.update(content)
+            remaining -= len(content)
+        _python_parents(path)
+        if identity(info) != identity(os.fstat(descriptor)) or identity(info) != identity(path.lstat()):
+            msg = "The original recovery interpreter changed during inspection"
+            raise ValueError(msg)
+        return digest.hexdigest()
+    finally:
+        os.close(descriptor)
+
+
+def _python_parents(path: Path) -> None:
+    if not path.is_absolute() or path.resolve(strict=True) != path:
+        msg = "The original recovery interpreter is redirected"
+        raise ValueError(msg)
+    for parent in path.parents:
+        info = parent.lstat()
+        sticky = info.st_uid == 0 and bool(info.st_mode & stat.S_ISVTX)
+        if (
+            not stat.S_ISDIR(info.st_mode)
+            or info.st_uid not in {0, os.getuid()}
+            or (info.st_mode & 0o022 and not sticky)
+        ):
+            msg = "The original recovery interpreter directory authority changed"
+            raise ValueError(msg)
 
 
 def authority_digest(journal: dict[str, Any]) -> str:
