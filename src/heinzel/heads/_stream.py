@@ -100,7 +100,7 @@ def streamed(
             emit("error", {"error": str(exc)})
         except Exception:
             log.exception("Streaming %s failed", operation.name)
-            emit("error", {"error": f"{operation.name} failed with a bug; the log of `hz ui` says why."})
+            emit("error", {"error": f"{operation.name} failed with a bug; the log of `hz ui serve` says why."})
         finally:
             emit(END, {})
             release()

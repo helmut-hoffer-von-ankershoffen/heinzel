@@ -63,7 +63,7 @@ async function run(redirectOnStart) {
     const dirs = ["bin", "home", "config", "data", "state", "cache", "logs", "tmp", "electron-profile", "electron-session", "electron-logs"];
     await Promise.all(dirs.map((name) => mkdir(join(root, name), { mode: 0o700 })));
     const cli = join(root, "bin", "hz");
-    await writeFile(cli, `#!${process.execPath}\nif (JSON.stringify(process.argv.slice(2)) !== JSON.stringify(["ui","--port","0","--no-browser"])) process.exit(64);\nprocess.stdout.write(process.env.HZ_TEST_URL + "\\n");\nprocess.on("SIGINT", () => process.exit(0));\nsetInterval(() => {}, 1000);\n`, { mode: 0o700 });
+    await writeFile(cli, `#!${process.execPath}\nif (JSON.stringify(process.argv.slice(2)) !== JSON.stringify(["ui","serve","--port","0","--no-browser"])) process.exit(64);\nprocess.stdout.write(process.env.HZ_TEST_URL + "\\n");\nprocess.on("SIGINT", () => process.exit(0));\nsetInterval(() => {}, 1000);\n`, { mode: 0o700 });
     const env = {
       PATH: `${join(root, "bin")}${delimiter}/usr/bin:/bin:/usr/sbin:/sbin`, HOME: join(root, "home"), TMPDIR: join(root, "tmp"),
       USER: process.env.USER || "", LOGNAME: process.env.LOGNAME || "", LANG: "en_US.UTF-8",

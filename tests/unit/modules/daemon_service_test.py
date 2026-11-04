@@ -2686,6 +2686,14 @@ def test_failed_scheduled_tick_records_failure(make, monkeypatch):
     assert heartbeat["outcome"] == "failed"
 
 
+def test_explicit_daemon_only_install_never_installs_the_notifier(make, bin_dir):
+    service = make(runner=Runner(bin_dir), install_notifier=lambda: pytest.fail("No notifier consent"))
+    phased = progress_of(service)
+    result = service.install(timedelta(minutes=5), notifier=False)
+    assert not result.dry_run
+    assert "notifier" not in {event["id"] for event in phased.events}
+
+
 @pytest.mark.parametrize("changed", ["unit", "profile", "loaded-profile", "loaded-argv"])
 def test_daemon_install_refuses_foreign_or_changed_ownership_before_effects(make, bin_dir, settings, tmp_path, changed):
     runner = Runner(bin_dir)

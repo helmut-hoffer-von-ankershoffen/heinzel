@@ -2240,7 +2240,7 @@ $ hz system daemon [OPTIONS] COMMAND [ARGS]...
 
 **Commands**:
 
-* `install`: (expert) Install and load the launchd...
+* `install`: (expert) Install and load scheduled...
 * `jobs`: (expert) List every job with its schedule,...
 * `logs`: (expert) Show the latest lines of the...
 * `pause`: (expert) Pause the daemon: ticks run no...
@@ -2252,7 +2252,7 @@ $ hz system daemon [OPTIONS] COMMAND [ARGS]...
 
 #### `hz system daemon install`
 
-(expert) Install and load the launchd agent or systemd timer that ticks every few minutes.
+(expert) Install and load scheduled Heinzels; native notifier installation is a separate choice.
 
 **Usage**:
 
@@ -2264,6 +2264,7 @@ $ hz system daemon install [OPTIONS]
 
 * `--interval <str>`: Minutes between ticks, dividing an hour: 1m … 30m, or 1h.  [default: 5m]
 * `--dry-run / --no-dry-run`: Only show the unit that would be written.  [default: no-dry-run]
+* `--notifier / --no-notifier`: Also install the native notifier; otherwise choose it separately.  [default: no-notifier]
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
@@ -3768,22 +3769,20 @@ $ hz ui [OPTIONS] COMMAND [ARGS]...
 
 **Options**:
 
-* `--port <int>`: Port on 127.0.0.1;  ui_port by default, 0 picks a free one.
-* `--browser / --no-browser`: Open the default browser at the app; --no-browser prints only its URL.  [default: browser]
-* `--devices`: List the browsers and installed apps paired with hz, then stop.
-* `--revoke <str>`: Unpair a device by its id from --devices, or `all`, then stop.
 * `--help`: Show this message and exit.
 
 **Commands**:
 
-* `install`: Install preview web availability after...
-* `restart`: Restart the preview web service with its...
+* `install`: Install web availability after login,...
+* `open`: Open the owned web service, or run in the...
+* `restart`: Restart the owned web service with its...
+* `serve`: Run the web server in the foreground;...
 * `status`: Show exact OS ownership and the live web...
 * `uninstall`: Remove only the owned web login service,...
 
 ### `hz ui install`
 
-Install preview web availability after login, separately from scheduled background work.
+Install web availability after login, separately from scheduled Heinzels.
 
 **Usage**:
 
@@ -3799,9 +3798,27 @@ $ hz ui install [OPTIONS]
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
 
+### `hz ui open`
+
+Open the owned web service, or run in the foreground when none is installed.
+
+**Usage**:
+
+```console
+$ hz ui open [OPTIONS]
+```
+
+**Options**:
+
+* `--port <int>`: Port on 127.0.0.1;  ui_port by default, 0 picks a free one.
+* `--browser / --no-browser`: Open the default browser at the app; --no-browser prints only its URL.  [default: browser]
+* `--devices`: List the browsers and installed apps paired with hz, then stop.
+* `--revoke <str>`: Unpair a device by its id from --devices, or `all`, then stop.
+* `--help`: Show this message and exit.
+
 ### `hz ui restart`
 
-Restart the preview web service with its existing port and authenticated session.
+Restart the owned web service with its existing port and authenticated session.
 
 **Usage**:
 
@@ -3813,6 +3830,24 @@ $ hz ui restart [OPTIONS]
 
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz ui serve`
+
+Run the web server in the foreground; Ctrl-C stops it.
+
+**Usage**:
+
+```console
+$ hz ui serve [OPTIONS]
+```
+
+**Options**:
+
+* `--port <int>`: Port on 127.0.0.1;  ui_port by default, 0 picks a free one.
+* `--browser / --no-browser`: Open the default browser at the app; --no-browser prints only its URL.  [default: browser]
+* `--devices`: List the browsers and installed apps paired with hz, then stop.
+* `--revoke <str>`: Unpair a device by its id from --devices, or `all`, then stop.
 * `--help`: Show this message and exit.
 
 ### `hz ui status`

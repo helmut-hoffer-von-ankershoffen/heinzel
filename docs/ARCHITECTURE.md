@@ -102,7 +102,7 @@ and keep message/attachment/proof input out of URL query strings. Existing opera
 Read and write scopes are enforced in the kernel; services still check each resource's owner. Installation
 identity and default API credentials use user-scope settings, so a project cannot redirect them. See
 [ADR 0068](adr/0068-human-approval-proofs-and-head-parity.md); human-proof issuance and consumption remain proposed.
-The **web head** (`hz ui`, `heinzel.heads.web`) serves a
+The **web head** (`hz ui serve`, `heinzel.heads.web`) serves a
 React app (`web/`, built into the package) at `/` and the API head's endpoints for head `web` under `/api`, on
 localhost only, behind a token made per process and sent as `Authorization: Bearer`; every response carries a strict
 CSP. Operations hidden from the unauthenticated REST head because they read your profile or your systems list `web`

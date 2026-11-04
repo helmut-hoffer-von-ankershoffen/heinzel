@@ -115,7 +115,7 @@ class AccessService:
 
     @staticmethod
     def bindings() -> Bindings:
-        """The bindings as the files and environment say now, not as at boot: `hz ui` keeps running.
+        """The bindings as the files and environment say now, not as at boot: `hz ui serve` keeps running.
 
         Raises:
             HeinzelError: If a configuration file is not valid TOML.
@@ -180,10 +180,10 @@ class AccessService:
             )
             next_steps = [f"hz ai access use {chosen.name}"]
         elif runner != self._view.bound("agent-runner"):
-            # Bindings are read once at boot: a running `hz ui` or MCP server keeps the runner it started with.
+            # Bindings are read once at boot: a running `hz ui serve` or MCP server keeps the runner it started with.
             note = (
                 f"The agent runner is now {runner or 'none'}, but this hz process started with "
-                f"{self._view.bound('agent-runner') or 'none'}; restart `hz ui` or the MCP server to apply it."
+                f"{self._view.bound('agent-runner') or 'none'}; restart `hz ui serve` or the MCP server to apply it."
             )
         elif chosen.status in {"not installed", "not signed in"} and chosen.fix:
             next_steps = [chosen.fix]
@@ -235,7 +235,7 @@ class AccessService:
             return listing.model_copy(update={"note": overridden, "next": [f"unset {VARIABLE}"]})
         return listing.model_copy(update={"note": " ".join(p for p in (missing, listing.note) if p) or None})
 
-    def test(self, name: str | None) -> AccessTestReport:
+    def test(self, name: str | None, options: Adapters[AiAccess]) -> AccessTestReport:
         """Run the live check of `name`, or of the option in use, and keep its result for the listing.
 
         Raises:
@@ -247,7 +247,7 @@ class AccessService:
                 msg = f"No AI access is chosen; name one to test, e.g. `hz ai access test --name {DEFAULT}`."
                 raise HeinzelError(msg)
         self._known(name)
-        result = _isolated(name, "test", self._options[name].test)
+        result = _isolated(name, "test", options[name].test)
         if isinstance(result, str):
             result = AccessTest(ok=False, detail=result)
         last = LastTest(
@@ -277,6 +277,10 @@ class AccessService:
 
     def checks(self) -> list[Check]:
         """Doctor: the AI access in use is installed and signed in, and the bound agent runner is the one it names."""
+        if self.bindings().ai_access is None:
+            return [
+                Check(name="ai access", status=Status.UP, detail="intentionally not configured; set up AI when needed")
+            ]
         listing = self.listing()
         chosen = next((o for o in listing.options if o.in_use), None)
         if chosen is None:

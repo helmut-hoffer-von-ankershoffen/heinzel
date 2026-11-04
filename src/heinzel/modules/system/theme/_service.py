@@ -195,7 +195,7 @@ class ThemeService(ThemeFonts, ThemeChoice):
         Raises:
             HeinzelError: If a configuration file is not valid TOML.
         """
-        # Read now, not from the settings of boot: `hz ui` keeps running while a terminal switches the theme.
+        # Read now, not from the settings of boot: `hz ui serve` keeps running while a terminal switches the theme.
         config = Config.load()
         available = self.available()
         recommended = _recommended(available)

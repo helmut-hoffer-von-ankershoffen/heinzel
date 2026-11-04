@@ -255,7 +255,7 @@ Run modules' jobs in the background, supervised by launchd or systemd.
 
 | Operation | CLI | MCP tool | REST | Web | Changes state | Expert |
 | --- | --- | --- | --- | --- | --- | --- |
-| Install and load the launchd agent or systemd timer that ticks every few minutes. | `hz system daemon install` | — | — | `POST /api/system/daemon/install` | yes | expert |
+| Install and load scheduled Heinzels; native notifier installation is a separate choice. | `hz system daemon install` | — | — | `POST /api/system/daemon/install` | yes | expert |
 | Unload and remove the daemon's unit; receipts and logs stay. | `hz system daemon uninstall` | — | — | `POST /api/system/daemon/uninstall` | yes | expert |
 | Restart the daemon so it runs with the installed hz. | `hz system daemon restart` | `system_daemon_restart` | `POST /system/daemon/restart` | `POST /api/system/daemon/restart` | yes | expert |
 | Check-ins need a resumed daemon with 5m ticks and a matching service version. | `hz system daemon status` | `system_daemon_status` | `GET /system/daemon/status` | `GET /api/system/daemon/status` |  | expert |
@@ -484,7 +484,7 @@ Open the web workspace or manage its optional persistent service.
 
 | Operation | CLI | MCP tool | REST | Web | Changes state | Expert |
 | --- | --- | --- | --- | --- | --- | --- |
-| Install preview web availability after login, separately from scheduled background work. | `hz ui install` | — | — | — | yes |  |
+| Install web availability after login, separately from scheduled Heinzels. | `hz ui install` | — | — | — | yes |  |
 | Show exact OS ownership and the live web server's readiness and version. | `hz ui status` | — | — | — |  |  |
-| Restart the preview web service with its existing port and authenticated session. | `hz ui restart` | — | — | — | yes |  |
+| Restart the owned web service with its existing port and authenticated session. | `hz ui restart` | — | — | — | yes |  |
 | Remove only the owned web login service, preserving your data and paired devices. | `hz ui uninstall` | — | — | — | yes |  |

@@ -134,7 +134,7 @@ class NotifyService(Notifications):
             settings,
             config.settings(NotifySettings, MODULE_SECTION),
             config.section("org"),
-            ui_url=lambda route: f"http://127.0.0.1:{settings.ui_port}{route}",  # `hz ui`'s fixed port (ADR 0046)
+            ui_url=lambda route: f"http://127.0.0.1:{settings.ui_port}{route}",  # `hz ui serve`'s fixed port (ADR 0046)
         )
         service.watcher = lambda: watch(kernel, service, service.wanted)
         service.calendar_valid = lambda now: _calendar_keys(kernel, now)

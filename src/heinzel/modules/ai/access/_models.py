@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import ClassVar, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from heinzel import ModuleSettings
 
@@ -145,11 +145,16 @@ class AccessSettings(ModuleSettings):
 class Bindings(ModuleSettings):
     """The two bindings AI access reads afresh on every call: `[capabilities] ai_access` and `agent_runner`.
 
-    Read again on each listing, like the theme, because `hz ui` keeps running while a terminal switches.
+    Read again on each listing, like the theme, because `hz ui serve` keeps running while a terminal switches.
     """
 
     ai_access: str | None = "claude-code"
     agent_runner: str | None = "claude-code"
+
+    @field_validator("ai_access", "agent_runner", mode="before")
+    @classmethod
+    def _unbound(cls, value: object) -> object:
+        return None if value == "none" else value
 
     ignored_in_project: ClassVar[frozenset[str]] = frozenset({"ai_access", "agent_runner"})
 

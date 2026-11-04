@@ -11,7 +11,7 @@ RIGHTS = (
     "Plugins run with your rights. Community plugins are not reviewed by the Heinzelmännchen maintainers; "
     "add only those you trust (SECURITY.md)."
 )
-RESTART = "Every new hz command sees it now; restart a running `hz ui` or MCP server to load it there."
+RESTART = "Every new hz command sees it now; restart a running `hz ui serve` or MCP server to load it there."
 
 
 class _PasteableGroup(Group):

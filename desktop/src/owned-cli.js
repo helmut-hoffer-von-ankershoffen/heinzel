@@ -52,7 +52,7 @@ export function createOwnedCli({
       try {
         childClosed = false;
         childProcessError = false;
-        child = spawn("hz", ["ui", "--port", "0", "--no-browser"], {
+        child = spawn("hz", ["ui", "serve", "--port", "0", "--no-browser"], {
           shell: false,
           windowsHide: true,
           stdio: ["ignore", "pipe", "ignore"],

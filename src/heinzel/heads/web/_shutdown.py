@@ -1,4 +1,4 @@
-"""How `hz ui` stops: the responses that stay open end first, so a Ctrl-C stops it at once and quietly.
+"""How `hz ui serve` stops: the responses that stay open end first, so a Ctrl-C stops it at once and quietly.
 
 The notice stream and the terminal keep their requests open for minutes. uvicorn's graceful shutdown waits for them,
 then cancels them, and each cancellation would land in the log as an "Exception in ASGI application" with its
@@ -7,7 +7,8 @@ each terminal hangs up its shell and closes its socket with "going away" and a r
 running when the short backstop runs out (an operation streaming its progress) is cancelled as before; the log
 records of that cancellation are dropped while stopping, and only then, so a real error still logs while serving.
 
-Ctrl-C is how a session of `hz ui` ends, so the server doesn't raise it again once it stopped, as uvicorn does: `serve`
+Ctrl-C is how a session of `hz ui serve` ends, so the server doesn't raise it again once it stopped, as uvicorn does:
+`serve`
 returns and the CLI says so in one line. A second Ctrl-C while it stops ends the wait at once, as in uvicorn, and one
 after that, while the process exits, ends it at once without a traceback.
 """

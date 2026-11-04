@@ -29,7 +29,9 @@ def test_ui_subtree_retains_every_command_option_and_help(make_kernel):
     assert direct.params == full.params or [p.name for p in direct.params] == [p.name for p in full.params]
 
 
-@pytest.mark.parametrize("arguments", [["ui", "--devices"], ["ui", "--unknown"], ["ui", "--port", "bad"]])
+@pytest.mark.parametrize(
+    "arguments", [["ui", "serve", "--devices"], ["ui", "serve", "--unknown"], ["ui", "serve", "--port", "bad"]]
+)
 def test_ui_parsing_and_read_only_results_match(arguments, make_kernel):
     kernel = make_kernel(builtins=True)
     runner = CliRunner()
@@ -56,9 +58,10 @@ def test_direct_ui_does_not_construct_unrelated_operation_schemas(monkeypatch, m
 @pytest.mark.parametrize(
     ("arguments", "expected"),
     [
-        (["ui", "--port", "0", "--no-browser"], True),
+        (["ui", "serve", "--port", "0", "--no-browser"], True),
         (["ui", "status"], True),
         (["ui", "--help"], False),
+        (["ui", "serve", "--help"], False),
         (["--help", "ui"], False),
         (["--command-tree"], False),
         (["--version"], False),

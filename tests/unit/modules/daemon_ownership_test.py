@@ -50,7 +50,10 @@ def test_unsupported_profile_routing_refuses_before_any_unit_is_written(settings
     assert not (tmp_path / "units").exists()
 
 
-@pytest.mark.parametrize("drift", ["program", "argv", "profile", "extra-profile", "directory", "duplicate-program"])
+@pytest.mark.parametrize(
+    "drift",
+    ["program", "argv", "profile", "extra-profile", "directory", "duplicate-program", "oversized", "oversized-bytes"],
+)
 def test_loaded_launchd_identity_includes_exact_argv_and_profile(settings, tmp_path, drift):
     executable, unit = tmp_path / "hz", tmp_path / "job.plist"
     profile = profile_environment(settings, DaemonSettings(unit_dir=tmp_path), Config.empty())
@@ -72,6 +75,10 @@ def test_loaded_launchd_identity_includes_exact_argv_and_profile(settings, tmp_p
         output = output.replace("environment = {\n", "environment = {\nHZ_CONFIG => /foreign\n")
     elif drift == "directory":
         output = output.replace(f"working directory = {profile['HOME']}", "working directory = /foreign")
+    elif drift == "oversized":
+        output += "padding = " + "x" * 1_000_001 + "\n"
+    elif drift == "oversized-bytes":
+        output += "padding = " + "é" * 500_001 + "\n"
     else:
         output += f"program = {executable}\n"
     with pytest.raises(HeinzelError, match="identity or selected profile"):
@@ -93,7 +100,24 @@ def test_malformed_loaded_launchd_pid_never_becomes_a_stopped_service(settings, 
         launchd_owned(output, unit, executable, environment)
 
 
-@pytest.mark.parametrize("drift", ["fragment", "dropin", "argv", "profile", "pid", "queued", "control", "duplicate"])
+@pytest.mark.parametrize(
+    "drift",
+    [
+        "fragment",
+        "dropin",
+        "argv",
+        "profile",
+        "pid",
+        "pid-negative",
+        "pid-overflow",
+        "pid-multiline",
+        "queued",
+        "control",
+        "duplicate",
+        "oversized-service",
+        "oversized-timer",
+    ],
+)
 def test_loaded_systemd_identity_refuses_foreign_fragments_profiles_and_uncertain_execution(settings, tmp_path, drift):
     import shlex
 
@@ -128,6 +152,15 @@ def test_loaded_systemd_identity_refuses_foreign_fragments_profiles_and_uncertai
         service = service.replace(str(settings.state_dir), "/foreign/state")
     elif drift == "pid":
         service = service.replace("MainPID=0", "MainPID=unknown")
+    elif drift.startswith("pid-"):
+        value = {"pid-negative": "-1", "pid-overflow": "12345678901", "pid-multiline": "1\nMainPID=2"}[drift]
+        service = service.replace("MainPID=0", "MainPID=" + value)
+    elif drift.startswith("oversized-"):
+        padding = "Padding=" + "x" * 1_000_001 + "\n"
+        service, timer = {
+            "oversized-service": (service + padding, timer),
+            "oversized-timer": (service, timer + padding),
+        }[drift]
     elif drift == "queued":
         service = service.replace("Job=", "Job=41/start")
     elif drift == "control":

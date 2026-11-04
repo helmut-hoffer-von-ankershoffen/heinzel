@@ -1628,7 +1628,7 @@ export interface paths {
         put?: never;
         /**
          * Restart hz ui to load changes a running server can't, such as an added plugin.
-         * @description The process runs `hz` again with the same port and token. Poll /lifecycle until its instance differs from the retiring instance in this reply, then verify the loaded version and target settings. A server that isn't `hz ui` (`make web-dev`) answers 400.
+         * @description The process runs `hz` again with the same port and token. Poll /lifecycle until its instance differs from the retiring instance in this reply, then verify the loaded version and target settings. A server that isn't `hz ui serve` (`make web-dev`) answers 400.
          */
         post: operations["web_restart"];
         delete?: never;
@@ -2023,8 +2023,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Install and load the launchd agent or systemd timer that ticks every few minutes.
-         * @description Install and load the launchd agent or systemd timer that ticks every few minutes.
+         * Install and load scheduled Heinzels; native notifier installation is a separate choice.
+         * @description Install and load scheduled Heinzels; native notifier installation is a separate choice.
          */
         post: operations["system_daemon_install"];
         delete?: never;
@@ -2443,7 +2443,7 @@ export interface paths {
          *
          *     Without `confirm` it only reads PyPI or GitHub and answers what `requirement` would be installed, pinned to the
          *     release or commit it read; the answer includes a receipt that can confirm exactly that candidate once. Existing
-         *     callers may still confirm by spec. Running servers (`hz ui`, MCP) see the plugin after a restart
+         *     callers may still confirm by spec. Running servers (`hz ui serve`, MCP) see the plugin after a restart
          *     (`restart_required`).
          */
         post: operations["system_plugin_add"];
@@ -4473,6 +4473,12 @@ export interface components {
              * @description The capability, e.g. `tracker`.
              */
             capability: string;
+            /**
+             * Health On Demand
+             * @description Health-only explicit deferral; the execution requirement remains mandatory.
+             * @default false
+             */
+            health_on_demand: boolean;
             /**
              * Hosts
              * @description Hosts that adapter sends data to; `unknown (configured)` when its configuration decides.
@@ -8720,7 +8726,7 @@ export interface components {
             previewed: boolean;
             /**
              * Restart Required
-             * @description Whether a running `hz ui` or MCP server must restart to load the change; the web app restarts its server with `POST /api/restart`. Every new `hz` command sees it at once.
+             * @description Whether a running `hz ui serve` or MCP server must restart to load the change; the web app restarts its server with `POST /api/restart`. Every new `hz` command sees it at once.
              */
             restart_required: boolean;
         };
@@ -17436,6 +17442,8 @@ export interface operations {
                 interval?: string;
                 /** @description Only show the unit that would be written. */
                 dry_run?: boolean;
+                /** @description Also install the native notifier; otherwise choose it separately. */
+                notifier?: boolean;
             };
             header?: never;
             path?: never;

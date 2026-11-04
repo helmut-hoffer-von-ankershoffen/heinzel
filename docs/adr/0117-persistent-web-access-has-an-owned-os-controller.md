@@ -9,6 +9,7 @@ amends-0046: offer explicit OS supervised web availability after login
 amends-0078: retain the supported uv web server as a separate availability mode
 amends-0116: sample durable mutation gates before supervised startup and restart
 related: 0020, 0047, 0083, 0084, 0087, 0108, 0110
+amended-by: 0129
 ---
 
 # 0117: Persistent web access has an owned OS controller

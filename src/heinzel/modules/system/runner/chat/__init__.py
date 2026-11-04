@@ -127,7 +127,9 @@ def open_check_in(
 
 
 # Spends money, within the per-message and the session cap.
-@module.operation(read_only=False, heads=HEADS, requires=["agent-runner:read"], audience="everyday")
+@module.operation(
+    read_only=False, heads=HEADS, requires=["agent-runner:read"], health_on_demand=True, audience="everyday"
+)
 def send(  # noqa: PLR0913, PLR0917 - one parameter per input of the operation
     service: ChatService,
     runner: AgentRunner,
