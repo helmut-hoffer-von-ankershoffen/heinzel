@@ -331,6 +331,8 @@ class CredentialLet(Let):
     """What the credential is for and where to get one, shown by `hz system credential list` and doctor."""
     service: str | None = None
     """Where it is kept; the qualified name of the declaring module when None. Name another to share one."""
+    required: bool = True
+    """Whether absence itself degrades health; False when the owning feature checks conditional or alternate auth."""
 
 
 @dataclass(frozen=True, kw_only=True, slots=True)

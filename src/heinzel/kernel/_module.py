@@ -445,11 +445,15 @@ class Module:
 
         return decorate if func is None else decorate(func)
 
-    def credential(self, name: str, *, purpose: str, service: str | None = None) -> CredentialLet:
+    def credential(
+        self, name: str, *, purpose: str, service: str | None = None, required: bool = True
+    ) -> CredentialLet:
         """Declare a secret the module needs; pass the returned let to `Credentials.get` to read its value.
 
         Args:
             name: Lowercase, dash-separated, e.g. `api-token`.
+            required: Whether missing this secret alone degrades health; conditional authentication belongs in the
+                owning feature health check when False.
             purpose: What it is for and where to get one, e.g. "GitHub token with repo scope, from github.com/settings".
             service: Keep it under another service to share it between modules, a qualified module name such as
                 `github` or `system.credential`; defaults to this module's.
@@ -466,7 +470,7 @@ class Module:
         if not purpose.strip():
             msg = f"Credential {name!r} needs a purpose; people see it when it is missing"
             raise ValueError(msg)
-        let = CredentialLet(name=name, purpose=purpose, service=service)
+        let = CredentialLet(name=name, purpose=purpose, service=service, required=required)
         self.add(let)
         return let
 
