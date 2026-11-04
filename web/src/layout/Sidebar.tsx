@@ -23,12 +23,12 @@ import {
 } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { NavLink, useLocation } from "react-router";
+import { Link, matchPath, NavLink, useLocation } from "react-router";
 import { useContracts, useExpert, useNavigation, useProfile, useSetExpert } from "@/api/queries";
 import { ICONS, StatusItems, useEffectRunner } from "@/components/Contributions";
 import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
-import { contributionPath } from "@/lib/navigation";
+import { contributionIsActive, contributionPath } from "@/lib/navigation";
 import { placePopover } from "@/lib/placement";
 import { cn } from "@/lib/utils";
 import { ViewSlot } from "@/plugins/Views";
@@ -267,6 +267,17 @@ function ProviderNavigation({ compact = false }: { compact?: boolean }) {
           const Icon = ICONS[entry.icon];
           const effect = entry.sidebar;
           if (!effect) return null;
+          const active =
+            effect.kind === "navigate"
+              ? contributionIsActive(
+                  effect.path,
+                  location,
+                  matchPath(
+                    { path: new URL(effect.path, "https://navigation.invalid").pathname, end: true },
+                    location.pathname,
+                  ) !== null,
+                )
+              : false;
           const content = (
             <>
               <Icon aria-hidden />
@@ -276,15 +287,15 @@ function ProviderNavigation({ compact = false }: { compact?: boolean }) {
           return (
             <li key={entry.id}>
               {effect.kind === "navigate" ? (
-                <NavLink
+                <Link
                   to={contributionPath(effect.path, location)}
-                  end
-                  className={compact ? railLink : link}
+                  className={compact ? railLink({ isActive: active }) : link({ isActive: active })}
                   title={entry.title}
                   aria-label={compact ? entry.title : undefined}
+                  aria-current={active ? "page" : undefined}
                 >
                   {content}
-                </NavLink>
+                </Link>
               ) : (
                 <button
                   type="button"
