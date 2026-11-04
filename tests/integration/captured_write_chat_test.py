@@ -26,12 +26,10 @@ class FakeDocuments:
     def read(self, ref: str) -> Document:
         return Document(ref=ref, title="Fixture", text="")
 
-    def replace_section(self, ref: str, marker: str, text: str) -> None:
-        msg = "The generic legacy write method must not be called"
-        raise AssertionError(msg)
 
 
 class FakeWrites(CapturedWriteService):
+    supported_operations = frozenset({"insert-draft"})
     def open_lease(self, draft):
         _STATE["opens"] += 1
         if _STATE["mutate_open"]:
@@ -74,19 +72,19 @@ class FakeWrites(CapturedWriteService):
 
 module = Module("fakewrite", "Offline captured-write fixture")
 module.service(FakeWrites)
-module.provides("documents", name="fakewrite", modes={"read", "write"}, hosts=["fixture.invalid"])(FakeDocuments)
+module.provides("documents", name="fakewrite", modes={"read"}, hosts=["fixture.invalid"])(FakeDocuments)
 """
 
 
 @pytest.fixture
-def captured_client(tmp_path, monkeypatch, settings):
+def captured_client(tmp_path, monkeypatch, settings, request):
     from heinzel.kernel import _discovery
 
     package = "fixture_conditional_write_" + uuid4().hex
     root = tmp_path / package
     root.mkdir()
     source = root / "__init__.py"
-    source.write_text(_SOURCE)
+    source.write_text(getattr(request, "param", _SOURCE))
     entry = installed_entry(root, "fakewrite", package, declared=True)
     monkeypatch.setattr(_discovery, "entry_points", lambda **_kwargs: [entry])
     monkeypatch.syspath_prepend(str(tmp_path))
@@ -221,4 +219,75 @@ def test_source_changed_during_open_is_closed_without_a_write(captured_client):
     )
     assert response.status_code == 400, response.text
     assert state["opens"] == state["closed"] == 1
+    assert state["writes"] == 0
+
+
+@pytest.mark.parametrize(
+    "captured_client",
+    [
+        _SOURCE.replace('    supported_operations = frozenset({"insert-draft"})\n', ""),
+        _SOURCE.replace('frozenset({"insert-draft"})', "frozenset()"),
+        _SOURCE.replace('frozenset({"insert-draft"})', 'frozenset({"replace-section"})'),
+        _SOURCE.replace('frozenset({"insert-draft"})', '{"insert-draft"}'),
+        _SOURCE.replace(
+            "class FakeWrites(CapturedWriteService):",
+            "class ForeignDeclaration(CapturedWriteService):\n"
+            '    supported_operations = frozenset({"insert-draft"})\n\n'
+            "class FakeWrites(ForeignDeclaration):",
+        ).replace(
+            'class FakeWrites(ForeignDeclaration):\n    supported_operations = frozenset({"insert-draft"})',
+            "class FakeWrites(ForeignDeclaration):",
+        ),
+        _SOURCE.replace("module.service(FakeWrites)", "# no registered captured service"),
+    ],
+    indirect=True,
+    ids=["absent", "empty", "unsupported", "mutable", "inherited", "unregistered"],
+)
+def test_invalid_captured_declaration_never_opens_a_lease(captured_client):
+    client, _kernel, _current, _session, proposal, state, _source = captured_client
+    response = client.post("/api/heinzel/propose-captured-write", headers=AUTH, json={"proposal": proposal})
+    assert response.status_code == 400, response.text
+    assert state["opens"] == state["writes"] == 0
+
+
+@pytest.mark.parametrize("change", ["declaration", "instance-declaration", "foreign-service", "configuration"])
+def test_declared_service_continuity_is_rechecked_before_confirmation(captured_client, change, monkeypatch):
+    from heinzel import CapturedWriteService
+
+    client, kernel, _current, session, proposal, state, _source = captured_client
+    response = client.post("/api/heinzel/propose-captured-write", headers=AUTH, json={"proposal": proposal})
+    assert response.status_code == 200, response.text
+    staged, action = stage(client, session)
+    selected = kernel.resolve(SelectedWriteService)
+    service = selected.service
+    assert service is not None
+    if change == "declaration":
+        monkeypatch.setattr(type(service), "supported_operations", frozenset())
+    elif change == "instance-declaration":
+        monkeypatch.setattr(service, "supported_operations", frozenset({"insert-draft"}))
+    elif change == "foreign-service":
+
+        class ForeignWrites(CapturedWriteService):
+            supported_operations = frozenset({"insert-draft"})
+
+        kernel.bind(type(service), ForeignWrites())
+    else:
+        changed = Config(
+            files=(), data={"capabilities": {"documents": "another"}, "hz": {"features": ["captured_writes"]}}
+        )
+        monkeypatch.setattr(Config, "load", classmethod(lambda _cls, _cwd=None: changed))
+    response = client.post(
+        "/api/system/runner/chat/confirm", headers=AUTH, params={"session": staged["id"], "action": action["id"]}
+    )
+    assert response.status_code == 400, response.text
+    assert state["writes"] == 0
+
+
+def test_read_only_protocol_registration_and_exact_captured_declaration_are_separate(captured_client):
+    _client, kernel, _current, _session, _proposal, state, _source = captured_client
+    selected = kernel.resolve(SelectedWriteService)
+    selected._resolved()
+    assert selected.registration.modes == frozenset({"read"})
+    assert not hasattr(selected.registration.factory, "replace_section")
+    assert selected.service.supported_operations == frozenset({"insert-draft"})
     assert state["writes"] == 0

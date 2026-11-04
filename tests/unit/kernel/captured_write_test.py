@@ -29,6 +29,8 @@ def _draft(**changes):
 
 
 def test_default_provider_refuses_and_draft_repr_hides_content():
+    assert CapturedWriteService.supported_operations == frozenset()
+    assert type(CapturedWriteService.supported_operations) is frozenset
     draft = _draft()
     assert "private draft content" not in repr(draft)
     with pytest.raises(HeinzelError, match="does not support"):

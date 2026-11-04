@@ -1,6 +1,6 @@
 """Private captured-write contracts; a declaration is not authority to perform an effect."""
 
-from typing import Literal
+from typing import ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
 
@@ -104,7 +104,15 @@ class CapturedWriteLease:
 
 
 class CapturedWriteService(ServiceContract):
-    """An explicitly selected provider; the default denies every write."""
+    """An explicitly selected provider; the default denies every write.
+
+    Implementations explicitly redeclare `supported_operations` on the concrete registered service class. This is
+    separate from legacy ProviderLet modes, which describe implemented capability protocol methods. The host accepts
+    only its supported captured operations and binds the declaration into source continuity; it grants no approval.
+    """
+
+    supported_operations: ClassVar[frozenset[str]] = frozenset()
+    """Explicit implemented captured operations, independent of legacy protocol modes; never permission."""
 
     def target(self, _reference: str) -> CapturedWriteTarget:
         """Observe the account and current revision of `reference`, without writing.

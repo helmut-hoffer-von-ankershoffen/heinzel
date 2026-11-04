@@ -29,8 +29,21 @@ class SelectedWriteService(CapturedWriteService):
     def __init__(self, kernel: Kernel) -> None:
         self.kernel = kernel
         self.record, self.registration = kernel.selected_capability_provider("documents")
-        self.binding_id = self._binding_id()
         self.service: CapturedWriteService | None = None
+        self.binding_id = self._binding_id()
+
+    @staticmethod
+    def _operations(service: CapturedWriteService) -> frozenset[str]:
+        # An inherited/instance attribute or mutable collection is not an explicit implementation declaration.
+        operations = vars(type(service)).get("supported_operations")
+        if (
+            type(operations) is not frozenset
+            or operations != frozenset({OPERATION})
+            or "supported_operations" in vars(service)
+        ):
+            msg = "The selected provider has no supported captured-write declaration"
+            raise HeinzelError(msg)
+        return frozenset({OPERATION})
 
     def _binding_id(self) -> str:
         discovery = self.kernel.source_discovery
@@ -39,7 +52,17 @@ class SelectedWriteService(CapturedWriteService):
             raise HeinzelError(msg)
         binding = discovery.binding(self.kernel, "documents", CapturedWriteService)
         capture = binding.capture
+        service = capture.service(self.kernel, self.record, CapturedWriteService)
+        operations = self._operations(service)
+        if self.service is not None and service is not self.service:
+            msg = "The selected document provider service changed"
+            raise HeinzelError(msg)
+        self.service = service
         identity = (
+            "documents",
+            type(service).__module__,
+            type(service).__qualname__,
+            *sorted(operations),
             self.record.qualname,
             self.record.origin.distribution or "",
             self.record.origin.version or "",
@@ -66,7 +89,6 @@ class SelectedWriteService(CapturedWriteService):
             or config.settings(Settings, "hz").disabled_modules != self.kernel.settings.disabled_modules
             or record is not self.record
             or registration is not self.registration
-            or "write" not in registration.modes
             or self._binding_id() != self.binding_id
         ):
             msg = "The selected document provider or write binding changed"
@@ -81,6 +103,7 @@ class SelectedWriteService(CapturedWriteService):
         if self.service is not None and service is not self.service:
             msg = "The selected document provider service changed"
             raise HeinzelError(msg)
+        self._operations(service)
         self.service = service
         return service
 
@@ -105,8 +128,17 @@ class SelectedWriteService(CapturedWriteService):
             raise HeinzelError(msg)
 
     def target(self, reference: str) -> CapturedWriteTarget:
-        """Observe where a draft would go; this writes nothing and needs no approval."""
-        return self._resolved().target(reference)
+        """Observe where a draft would go; this writes nothing and needs no approval.
+
+        Raises:
+            HeinzelError: If selected source, declaration, configuration or service continuity changes.
+        """
+        service = self._resolved()
+        result = service.target(reference)
+        if self._resolved() is not service:
+            msg = "The selected document provider service changed"
+            raise HeinzelError(msg)
+        return CapturedWriteTarget.model_validate_json(result.model_dump_json())
 
     def open_lease(self, draft: CapturedWriteDraft) -> CapturedWriteLease:
         """Open only an exact currently selected provider; the lease itself is not authority.

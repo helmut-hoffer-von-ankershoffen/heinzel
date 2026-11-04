@@ -24,6 +24,14 @@ Chosen option: **one captured conditional mutation per human approval**, because
 
 - Immutable bounded terms name owner, session, provider binding, account, source, resource, operation, content, scope
   and base revision. Default providers deny. Existing sign-ins and scopes remain unchanged.
+- Captured writes are a separate registered `CapturedWriteService`. Its concrete source-captured class declares
+  `supported_operations: ClassVar[frozenset[str]]`, empty by default. The host currently accepts only the exact
+  `insert-draft` declaration. Absent, inherited, mutable, unsupported or instance-shadowed declarations are refused.
+  Legacy `ProviderLet.modes` continues to describe implemented protocol methods: a documents provider may implement
+  only `read` while its separate captured service declares conditional drafting. No legacy write method is invented.
+- The binding digest includes capability, concrete captured-service identity and declared operations alongside the
+  installed distribution, source graph and approved runtime. Declaration and service drift fail closed, including
+  around target observation, lease opening, review and mutation. A declaration never grants human approval.
 - The selected-provider wrapper rechecks configuration, registration, source capture and service continuity around
   every lease action. A separately reviewed adapter must implement actual provider compare-and-set and synchronous
   quiescence; the host cannot sandbox trusted same-user provider code.
@@ -35,8 +43,8 @@ Chosen option: **one captured conditional mutation per human approval**, because
 - Missing acknowledgement, changed account/source, cleanup failure or lost receipt leaves an uncertain disposition.
   Reopening or repeating confirmation never retries an attempted effect. Only a recorded provider acknowledgement
   may be shown as acknowledged; a subsequent read is not proof that this host performed the write.
-- Channel delivery/confirmation, model drafting tools, conversation history/search, other connected-helper behavior
-  and the rolling-document workflow remain separate work. In particular this adds no standing append grant or
+- Channel delivery/confirmation, other connected-helper behavior and the rolling-document workflow remain separate
+  work. Bounded owner-private history/search and inert model drafting are source-prepared behind default-off flags. In particular this adds no standing append grant or
   automatic publish of edited content.
 
 ### Consequences
