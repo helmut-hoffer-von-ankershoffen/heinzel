@@ -114,7 +114,7 @@ unchanged and ask for recovery help.
 
 ## Uninstall offline
 
-For a verified standard installation of 0.9.16 or later, run `hz system uninstall`.
+For a verified standard installation, run `hz system uninstall`.
 It needs no network or running web UI. Your logged-in user service manager must be available: it stops only the installation's verified owned web and daemon jobs, then removes its uv tool
 and command scripts. Your data, configuration, agent skills, notifier and private recovery history stay.
 

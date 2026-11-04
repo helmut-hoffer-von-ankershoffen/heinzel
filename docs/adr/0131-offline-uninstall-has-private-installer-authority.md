@@ -27,10 +27,13 @@ to remove an installation. Its running SDK may disappear before integration clea
 
 Chosen option: **pin uv as a Core runtime dependency**, because the immutable 0.9.15 updater already resolves
 new Core dependencies. It can therefore install offline removal authority without changing its published bytes.
+
 The dependency is `uv==0.13.7`; supported macOS ARM64/x86-64 and glibc Linux ARM64/x86-64 executables have independently
 pinned publisher SHA256 hashes. Other artifact/platform combinations refuse before service effects.
+
 Uninstall selects only the concrete installed distribution under its verified tool prefix, validates bounded opened
 metadata, RECORD membership and native bytes, and copies the executable into a physical private recovery folder. Its bytes and inode are rechecked; an offline version probe must succeed before any service stops.
+
 External uv paths, including Homebrew paths, are not executed by removal. Group-writable ancestors remain refused.
 Publisher-pinned license material is copied alongside the private recovery artifacts. No uv Python module is imported,
 and no PATH or cache fallback is accepted.
@@ -38,25 +41,31 @@ and no PATH or cache fallback is accepted.
 `hz system uninstall` parses help and invalid arguments in the CLI head before discovery and background update checks.
 Execution asks public `boot` for a host-owned built-in-only kernel scoped to `Config.load(Path.home())`, then resolves
 only `OfflineUninstall` from the exact registered built-in system class through `resolve_builtin_service` provenance.
+
 External entry points are never enumerated or loaded. Registration stays lazy: no account, provider, credential,
 update-check or bootstrap service is resolved. The implementation calls the existing recordless removal coordinator;
 heads depend only on the public kernel maintenance contract and typed result, never on concrete module imports.
+
 Only an existing continuity-verified standard uv tool qualifies. The exact environment runner does not merge ambient
 UV policy. Both target directories and all offline/no-download/no-config flags are explicit. SDK, desktop runtime,
 unmarked, changed and redirected targets refuse with local guidance.
 
 Daemon and web cleanup use one fixed, session-verified manager authority with a sanitized bus environment. File and
 loaded-manager identity are checked before mutation. Preview flags do not hide cleanup of an already owned service.
+
 Lifecycle and tick locks fence cooperating writers. Stop and final file deletion are separate: definitions remain
 through the observed uv outcome. Successful removal must observe the tool environment and receipt-owned scripts gone.
 
 Before stopping services, a private journal and a standalone standard-library recovery script are saved and their
 directories synchronized. The immutable recovery authority is hash-bound into that copied script; only the observed
 phase is mutable. A durable existing installation gate prevents cooperating starts while outcome is uncertain.
-Recovery still works through the captured external Python after the SDK is removed. It never starts or signals jobs:
-fixed user managers must confirm quiescence before retry. A partial SDK must be a subset of the captured opened-file
+Recovery still works through the captured external Python after the SDK is removed.
+
+It never starts or signals jobs: fixed user managers must confirm quiescence before retry. A partial SDK must be a subset of the captured opened-file
 manifest; replacement, changed or new entries refuse. Retained loaded Linux units must match hash-bound original
-fragment, argv and selected-profile facts as well as quiescence; an inactive foreign label is insufficient. After verified SDK removal, recovery also finishes only unchanged original receipt-owned script links.
+fragment, argv and selected-profile facts as well as quiescence; an inactive foreign label is insufficient.
+
+After verified SDK removal, recovery also finishes only unchanged original receipt-owned script links.
 Cleanup unlinks only unchanged captured integration files,
 synchronizes their directories and completes any user-manager reload before clearing its exact gate.
 
@@ -78,9 +87,13 @@ unlink/reload/fsync failures and recovery retry without another uv mutation.
 
 Installed macOS fixtures use the real standard installer and immutable built wheels, including an explicit manager-double
 module; they do not manufacture continuity or relax startup metadata validation. The installed SDK's real CLI dispatch
-and pinned uv run under OS IP-network denial. The immutable 0.9.15 updater has resolved the new runtime dependency,
+and pinned uv run under OS IP-network denial.
+
+The immutable 0.9.15 updater has resolved the new runtime dependency,
 and the copied recovery script has performed actual offline tool removal with no importable SDK. Separate proof checks that local Unix IPC remains possible. This is not
-real OS manager acceptance. Linux fixtures use inherited seccomp IP-socket denial; hosted execution and actual isolated
+real OS manager acceptance.
+
+Linux fixtures use inherited seccomp IP-socket denial; hosted execution and actual isolated
 macOS/Linux user-manager acceptance remain required before claiming those outcomes. The live user manager is excluded.
 
 Publisher provenance: [Astral uv 0.13.7 artifacts](https://pypi.org/pypi/uv/0.13.7/json).
