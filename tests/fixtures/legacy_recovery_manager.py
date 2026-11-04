@@ -99,6 +99,8 @@ original_init = daemon.DaemonService.__init__
 
 def initialize(self, *args, **kwargs):
     original_init(self, *args, **kwargs)
+    original_which = self._which
+    self._which = lambda name: "/bin/launchctl" if name == "launchctl" else original_which(name)
     self._runner = runner
     self._quiescence_probe = probe
     self._desktop_session = lambda: "Aqua"

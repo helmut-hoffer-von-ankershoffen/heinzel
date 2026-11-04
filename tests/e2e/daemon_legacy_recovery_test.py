@@ -165,6 +165,34 @@ def retain_fixture_source(selected, run):
     run("system", "plugin", "develop", str(source))
 
 
+def handover_evidence(settings, root):
+    """Report only fixed presence/liveness facts, never child output, configuration or identities."""
+    directory = settings.state_dir / "daemon"
+    facts = {
+        name: (directory / filename).exists()
+        for name, filename in (
+            ("marker", "install.json"),
+            ("observation", "handover-observation.json"),
+            ("heartbeat", "heartbeat.json"),
+        )
+    }
+    marker = directory / "install.json"
+    facts["handover_id_present"] = marker.exists() and "handover_id" in json.loads(marker.read_text())
+    pid = json.loads((root / "manager.json").read_text()).get("pid")
+    facts["manager_has_pid"] = type(pid) is int and pid > 0
+    try:
+        if facts["manager_has_pid"]:
+            os.kill(pid, 0)
+        facts["child_alive"] = facts["manager_has_pid"]
+    except ProcessLookupError:
+        facts["child_alive"] = False
+    for name in ("stdout", "stderr"):
+        path = root / f"tick-{name}.txt"
+        facts[f"{name}_present"] = path.exists()
+        facts[f"{name}_nonempty"] = path.exists() and path.stat().st_size > 0
+    return facts
+
+
 def wait_for_genuine_handover(settings, root):
     deadline = time.monotonic() + 15
     while time.monotonic() < deadline:
@@ -181,7 +209,10 @@ def wait_for_genuine_handover(settings, root):
             return
         time.sleep(0.05)
     message = (
-        "The real published SDK child tick did not complete its handover: " + (root / "tick-stderr.txt").read_text()
+        "The real published SDK child tick did not complete its handover: "
+        + json.dumps(handover_evidence(settings, root), sort_keys=True)
+        + "\n"
+        + (root / "tick-stderr.txt").read_text()
     )
     raise AssertionError(message)
 
